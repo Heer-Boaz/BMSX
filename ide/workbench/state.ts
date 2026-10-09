@@ -157,6 +157,7 @@ export class RuntimeIdeState {
 			this.guest.invalidate(reason);
 			resetRuntimeDebuggerExecution(this.debugger);
 			clearFaultSnapshot(this.fault);
+			this.fault.hostFrameFailure = undefined;
 			this.fault.supervisorFaultSequence = runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
 			clearAllRuntimeErrorOverlays();
 			clearHoverTooltip();

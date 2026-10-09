@@ -54,7 +54,7 @@ export class RuntimeDebuggerExecution {
 		const state = this.state, plans = state.plans;
 		return !this.closing && this.active === undefined && this.tasks.ready && !this.execution.frameStepBlocked
 			&& !this.execution.frameStepPending && this.navigation.active === undefined && !this.rewind.active
-			&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
+			&& this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
 			&& (!plans.controlActive || plans.honorUserStops && (state.source.stop !== undefined || plans.controlSuspended))
 			&& (state.source.stop !== undefined || this.execution.paused || plans.controlSuspended)
 			&& (mode === 'continue' || state.source.stop !== undefined)
@@ -126,7 +126,7 @@ export class RuntimeDebuggerExecution {
 		this.beforeHostFrame();
 		const operation = this.active;
 		if (operation === undefined) return;
-		if (this.tasks.failure !== undefined || this.fault.hostFrameFailed) {
+		if (this.tasks.failure !== undefined || this.fault.hostFrameFailure !== undefined) {
 			this.suspend(operation);
 			this.stopped(operation, 'failed', this.tasks.failure !== undefined ? String(this.tasks.failure.error) : 'host-frame-failed');
 			this.finish(operation); return;

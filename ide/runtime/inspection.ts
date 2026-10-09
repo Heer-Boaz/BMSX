@@ -48,7 +48,7 @@ export class RuntimeInspectionService {
 
 	private get suspended(): boolean {
 		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && !this.execution.launchPending && !this.execution.frameStepPending
-			&& !this.rewind.seeking && !this.rewind.playing && !this.fault.hostFrameFailed
+			&& !this.rewind.seeking && !this.rewind.playing && this.fault.hostFrameFailure === undefined
 			&& (this.rewind.active || this.debuggerState.source.stop !== undefined || this.debuggerState.plans.controlSuspended
 				|| this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debuggerState)));
 	}

@@ -247,6 +247,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'runProject' },
 	],
 	'menubar.view': [
+		{ type: 'command', command: 'hostError' },
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'assistant' },

@@ -409,6 +409,18 @@ values acquire no inferred write target. See
 Debugger and fault source navigation await resource/editor attachment before
 placing cursor/stop adornments; the host-frame path itself remains synchronous.
 
+Unexpected host/UI exceptions are separate from that physical supervisor path.
+`surfaceHostFrameError` retains the original host stack in `hostFrameFailure`,
+logs it and opens the transient read-only Host Error editor. It neither captures
+guest frames nor changes the original exception or an existing guest snapshot.
+Pending boot/Hot Resume operations receive that same exception. Guest execution
+remains blocked until accepted installation or physical reset/restore clears
+the host failure. The diagnostic tab retains its text independently of recovery.
+It uses ordinary document scrolling and shared measured word wrapping, with no
+guest resource, working copy or serialized session. Clipboard copies the original
+stack, not its visual rows. Global failure status and the active editor's status
+occupy separate bounds; the status painter never branches on an editor-input kind.
+
 The production examples, combined browser-Studio proof and remaining authoring
 scope are in [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md).
 

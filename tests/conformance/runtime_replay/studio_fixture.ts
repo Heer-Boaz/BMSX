@@ -106,7 +106,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		}
 		observations.hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
-		check(!ide.fault.hostFrameFailed, 'workbench host frame failed');
+		check(ide.fault.hostFrameFailure === undefined, 'workbench host frame failed');
 		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected guest fault');
 	};
 	const until = async (predicate: () => boolean, message: string) => {

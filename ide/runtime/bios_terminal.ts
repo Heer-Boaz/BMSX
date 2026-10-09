@@ -31,7 +31,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 	public get active(): boolean { return this.phase !== TerminalPhase.Closed; }
 	public get canOpen(): boolean {
 		return this.active || this.tasks.mutationReady && !this.rewind.active && !this.execution.launchPending
-			&& !this.execution.frameStepPending && !this.fault.hostFrameFailed
+			&& !this.execution.frameStepPending && this.fault.hostFrameFailure === undefined
 			&& !this.debuggerState.plans.mutationActive && this.debuggerState.executionContext === undefined;
 	}
 	public open(): void {

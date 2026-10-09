@@ -48,7 +48,7 @@ function executeWorkbenchHostMenuAction(
 			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput);
 			void operation.completion.then(result => {
 				if (result.status === 'reset' && ide.boots.latestOperation === operation) screen.reset(presenter, runtime);
-			}).catch(error => workbenchMode.surfaceHostFrameError(ide, ide.logOutput, runtime, error));
+			}).catch(error => workbenchMode.surfaceHostFrameError(ide, ide.logOutput, error));
 			return true;
 		}
 		case HostMenuInput.ExitGame:
@@ -174,7 +174,7 @@ export function runWorkbenchHostFrame(
 			// Seek and recorded-frame stepping can execute inside service(), before the ordinary update.
 			if (session.rewind.seeking || session.rewind.playing) ide.guest.invalidate();
 			session.rewind.service(collectHistory);
-			if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
+			if (session.rewind.playing && !session.execution.executionBlocked() && ide.fault.hostFrameFailure === undefined) {
 				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
 				session.syncMachineOutput(runtime, input, audioOutput);
 			}
@@ -183,9 +183,9 @@ export function runWorkbenchHostFrame(
 			session.execution.finishFrameStep();
 			activateEditor(ide.editor, ide.sources, runtime, audioOutput);
 			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
+				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, error));
 		}
-		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active
+		const runtimeReady = ide.runtimeTasks.ready && ide.fault.hostFrameFailure === undefined && !session.rewind.active
 			&& !ide.debugger.plans.controlSuspended;
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);
@@ -238,7 +238,7 @@ export function runWorkbenchHostFrame(
 					audioOutput,
 				);
 				void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-					.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
+					.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, error));
 			}
 			action = HostFrameAction.PresentPending;
 		}
@@ -272,7 +272,7 @@ export function runWorkbenchHostFrame(
 		}
 	} catch (error) {
 		session.execution.finishFrameStep();
-		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
+		workbenchMode.surfaceHostFrameError(ide, logOutput, error);
 		presentWorkbenchError(
 			session,
 			runtime,

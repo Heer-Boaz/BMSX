@@ -61,7 +61,7 @@ export class ActorExecutionService {
 	public get canExecute(): boolean {
 		return !this.closing && this.active === undefined && this.tasks.mutationReady && !this.execution.launchPending
 			&& this.debuggerState.executionContext === undefined && !this.debuggerState.plans.mutationActive
-			&& !this.rewind.active && !this.execution.frameStepPending && !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
+			&& !this.rewind.active && !this.execution.frameStepPending && this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
 			&& (this.runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0;
 	}
@@ -198,7 +198,7 @@ export class ActorExecutionService {
 	public afterHostFrame(): void {
 		const operation = this.active;
 		if (operation === undefined || operation.status === 'queued') return;
-		if (this.fault.hostFrameFailed || this.tasks.failure !== undefined) {
+		if (this.fault.hostFrameFailure !== undefined || this.tasks.failure !== undefined) {
 			this.finish(operation, { status: 'host-error', values: [], tags: [], reason: this.tasks.failure !== undefined
 				? String(this.tasks.failure.error) : 'Host execution failed.' }); return;
 		}

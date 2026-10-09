@@ -314,7 +314,7 @@ export class IdeCommandController {
 			return;
 		}
 		if (isEditorViewCommand(command)) {
-			executeEditorViewCommand(this.editor, this.sources, command);
+			executeEditorViewCommand(this.editor, this.sources, this.fault, command);
 			return;
 		}
 		if (isEditorWorkspaceCommand(command)) {
@@ -364,6 +364,7 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
 			case 'terminal': return this.editor.terminal.canOpen;
 			case 'conversations': return this.editor.observedConversation.available;
@@ -494,7 +495,7 @@ export class IdeCommandController {
 			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':
 				return this.runtimeTasks.ready && !this.execution.frameStepPending
-					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
+					&& this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
 					&& this.debuggerState.source.stop === undefined && !this.debuggerState.plans.controlActive
 					&& !this.scenarioRuns.active && !this.rewind.seeking;
 			case 'scenarioLab.debug':

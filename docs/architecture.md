@@ -5013,6 +5013,16 @@ editor activation, the IDE resolves that snapshot through its installed
 symbols, opens the owning source resource, positions the caret at the reported
 line and column, and presents the runtime-error overlay.
 
+Host exceptions do not enter that guest-fault path. The workbench retains the
+original host stack separately, logs it unchanged and opens a transient read-only
+Host Error editor. Its wrapping, scrolling and clipboard consume host text, not
+Lua frames or a synthetic source resource. The status bar reserves failure chrome
+independently of the active editor's status; it never recognizes the error editor
+to suppress that chrome. Pending boot/source operations receive the original
+exception object. Accepted media installation or physical reset/restore clears
+host failure admission; clearing a guest fault snapshot does not. A host failure
+does not overwrite a previously captured physical guest fault or resume execution.
+
 TypeScript BLua32 source tooling is owned by `@bmsx/blua-toolchain` under
 `toolchain/ts/lua`; ROM authoring is the downstream `@bmsx/rompack-tooling`
 package under `toolchain/ts/rompack`. Neither is compiled by the emulator

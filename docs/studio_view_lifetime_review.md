@@ -236,18 +236,59 @@ previous Rename owner into a scratch workflow bundle fails at palette Escape
 with the original `onDidInvalidate` error. Focus eligibility reads the retained
 context only on focus transitions; no per-frame work or runtime change was added.
 
-## Separate finding: host exceptions acquire a guest fault stack
+## Host exceptions and physical guest faults have separate owners
 
 The two independently reproduced focus crashes also expose an existing diagnostic
-ownership problem. `surfaceHostFrameError` forwards every host exception to
+ownership problem. `surfaceHostFrameError` formerly forwarded every host exception to
 `handleLuaError`/`recordLuaError`, replacing its JavaScript stack with the guest's
 current frames. A Rename `TypeError` therefore appeared at `vblank.wait` with
 `HALT_UNTIL_IRQ`, even though the cartridge caused no exception. Physical guest
 faults already enter through the separate supervisor fault-sequence owner.
 
-This finding is not corrected by changing a focus control. The follow-up must
-separate host failure presentation from physical guest fault snapshots while
-preserving host-frame failure admission and pending-operation settlement.
-Tests that manufacture a guest diagnostic from a plain host `Error` also need
-to follow the actual guest-fault or suspended-stack owner. No runtime/fault-policy
-change is included in the focus corrections above.
+That path is now removed, not wrapped or renamed. Host failure retains the
+original JavaScript stack, logs it and automatically opens a transient Host Error
+document. View: Host Error can reopen it while the failure is active. Its ordinary
+scroll control handles arrows, paging, Home/End and pointer scrolling; clipboard
+copies the original stack, independently of visual wrapping. Only stack, font or
+width changes rebuild the text projection. There is no guest source identity,
+synthetic Lua frame, new terminal or persisted host diagnostic.
+
+The status bar owns a distinct failure slot, while the active pane receives the
+remaining status bounds. It does not inspect an editor-input kind to decide which
+failure to show. Normal status painting adds no rectangle allocation or extra
+clip transition. Host failure still blocks execution and settles pending boot and
+source operations with the original error. Accepted installation and physical
+reset/restore clear admission; clearing a guest snapshot alone cannot do so. An
+existing physical fault snapshot is not replaced by host exception presentation.
+
+Tests that formerly manufactured a guest diagnostic from a plain host Error now
+raise real CPU exceptions and publish the supervisor latches through minimal test
+firmware, or use the ordinary suspended-stack reader. The machine and C++ core
+are unchanged; these are IDE diagnostic and validation-owner corrections.
+
+Production references read before implementation: VS Code's
+[unexpected-error owner](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/errors.ts),
+[target-driven debug session](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugSession.ts)
+[independent status entries](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/statusbar/statusbarPart.ts)
+and [read-only wrapped output editor](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/output/browser/outputView.ts).
+
+The focused existing suites pass (159 cases), as do IDE/test typechecks,
+debug/release Studio builds and the strict boundary audit (zero issues). Actual
+Studio, frame-recovery, execution-operation and boot-operation browser workflows
+pass on software, WebGL2 and WebGPU.
+
+Injecting only the previous Rename owner into a scratch product bundle reproduces
+the original native TypeError through keyboard input. The Host Error document
+shows its unchanged JavaScript stack; native copy, close, reopen and Reboot work.
+Guest cycles remain frozen until recovery, without a guest fault or supervisor
+publication. A 105-line native host stack also scrolls through arrows, paging,
+Home/End and the mouse wheel, while clipboard retains the original text. Those
+rebuilt product captures were viewed, including failure status on the source pane.
+
+Separate scratch lifecycle checks confirm that pending boot/source receipts carry
+the original exception object, and that a host failure above a real guest bus
+fault retains that physical snapshot, its seven guest frames and its supervisor
+sequence while showing the host document. Reboot recovers both. These standalone
+checks produced no uncaught page errors or Studio API requests. Scratch injections
+do not enter the shipped bundle. This validates the IDE error boundary, not native
+parity, mobile canvas reflow or whole-engine performance.

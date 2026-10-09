@@ -54,7 +54,7 @@ export class RuntimeFrameNavigation {
 	public get available(): boolean {
 		return !this.closing && this.active === undefined && this.tasks.ready && !this.execution.frameStepBlocked
 			&& !this.execution.frameStepPending
-			&& !this.fault.hostFrameFailed && !this.debuggerState.plans.mutationActive
+			&& this.fault.hostFrameFailure === undefined && !this.debuggerState.plans.mutationActive
 			&& !runtimeDebuggerExecutionRequested(this.debuggerState) && !this.rewind.seeking && !this.rewind.playing;
 	}
 	public canStep(direction: -1 | 1): boolean {
@@ -144,7 +144,7 @@ export class RuntimeFrameNavigation {
 		if (operation.executionRevision !== this.execution.revision || operation.rewindRevision !== this.rewind.revision) {
 			this.cancel(operation); return;
 		}
-		if (this.tasks.failure !== undefined || this.fault.hostFrameFailed) {
+		if (this.tasks.failure !== undefined || this.fault.hostFrameFailure !== undefined) {
 			this.stopOwnedCommands(operation);
 			this.finish('failed', this.tasks.failure !== undefined ? String(this.tasks.failure.error) : 'host-frame-failed'); return;
 		}

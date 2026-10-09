@@ -1,3 +1,4 @@
+import type { HostErrorInput } from '../../contrib/host_error/editor_input';
 import type {
 	BehaviorLensTabId,
 	CodeEditorTabId,
@@ -49,13 +50,13 @@ export class EditorTabGroupModel {
 		let passedActive = false;
 		for (const input of this.editorTabs) {
 			if (input === this.activeEditor) passedActive = true;
-			if (input.kind === 'rom_inspector' || input.kind === 'workspace_edit_review' || input.kind === 'assistant' || input.kind === 'conversation_observer') continue;
+			if (input.kind === 'host_error' || input.kind === 'rom_inspector' || input.kind === 'workspace_edit_review' || input.kind === 'assistant' || input.kind === 'conversation_observer') continue;
 			const index = inputs.length;
 			const serializer: EditorInputSerializer<PersistentEditorInput> = serializers[input.kind];
 			const value = serializer.serialize(input);
 			const prior = previous?.inputs[index];
 			inputs.push(prior !== undefined && prior.kind === input.kind && prior.value === value ? prior : { kind: input.kind, value });
-			if (input === this.activeEditor || (this.activeEditor?.kind === 'rom_inspector' || this.activeEditor?.kind === 'workspace_edit_review' || this.activeEditor?.kind === 'assistant' || this.activeEditor?.kind === 'conversation_observer') && (!passedActive || active === null)) active = index;
+			if (input === this.activeEditor || (this.activeEditor?.kind === 'host_error' || this.activeEditor?.kind === 'rom_inspector' || this.activeEditor?.kind === 'workspace_edit_review' || this.activeEditor?.kind === 'assistant' || this.activeEditor?.kind === 'conversation_observer') && (!passedActive || active === null)) active = index;
 			if (input === this.previewEditor) preview = index;
 		}
 		if (previous !== undefined && active === previous.active && preview === previous.preview
@@ -158,6 +159,7 @@ export class EditorTabGroupModel {
 		this.emitChanged();
 	}
 
+	public findById(tabId: 'host-error'): HostErrorInput | undefined;
 	public findById(tabId: CodeEditorTabId): CodeEditorInput | undefined;
 	public findById(tabId: ResourceViewerTabId): ResourceViewerInput | undefined;
 	public findById(tabId: BehaviorLensTabId): BehaviorLensInput | undefined;

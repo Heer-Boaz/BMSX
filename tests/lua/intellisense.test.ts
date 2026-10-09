@@ -1,3 +1,5 @@
+import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
+import { readRuntimeStackFrames, buildLuaStackFrames, createLuaSourceStackTraceFrame } from '../../ide/runtime/stack_trace';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
 import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
@@ -27,7 +29,7 @@ import {
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
 } from '../../ide/runtime/source_registry';
-import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault_state';
+import { createRuntimeFaultState, recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import {
@@ -496,12 +498,8 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	const runFunctionIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:run'));
 	const runPoints = image.symbols.metadata.statementPointsByFunction[runFunctionIndex];
 	const inlinePoint = runPoints.find(point => point.inlineCallSites.length === 1)!;
-	const pointAfterInline = runPoints.find(point =>
-		point.wordOffset > inlinePoint.wordOffset
-		&& point.inlineCallSites.length === 0
-	)!;
 	const stopPc = image.image.functions[runFunctionIndex].codeAddress
-		+ pointAfterInline.wordOffset * INSTRUCTION_BYTES;
+		+ inlinePoint.wordOffset * INSTRUCTION_BYTES;
 	runtime.machine.cpu.setExecutionHook(
 		(_executionDomainId, pc) => pc === stopPc,
 		SYSTEM_EXECUTION_DOMAIN_MASK,
@@ -510,13 +508,14 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	runtime.machine.cpu.reset();
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 	const fault = createRuntimeFaultState();
-	recordLuaError(fault, bridge.sources, runtime, new Error('inline stop'));
-	assert.equal(fault.lastLuaCallStack[0].functionName, 'inspect');
-	assert.equal(fault.lastLuaCallStack[0].kind, 'source');
-	assert.equal(fault.lastLuaCallStack[0].line, 2);
-	assert.equal(fault.lastLuaCallStack[1].functionName, 'run');
-	assert.equal(fault.lastLuaCallStack[1].kind, 'source');
-	assert.equal(fault.lastLuaCallStack[1].line, 7);
+	const stack = buildLuaStackFrames(readRuntimeStackFrames(runtime.machine.cpu, bridge.sources),
+		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(bridge.sources, domain, path, line, column, name));
+	assert.equal(stack[0].functionName, 'inspect');
+	assert.equal(stack[0].kind, 'source');
+	assert.equal(stack[0].line, 2);
+	assert.equal(stack[1].functionName, 'run');
+	assert.equal(stack[1].kind, 'source');
+	assert.equal(stack[1].line, 7);
 
 	const callerLine = source.split('\n')[7];
 	const resolved = readRuntimeLuaValue(
@@ -539,28 +538,28 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 
 test('intellisense resolves captured fault upvalues after the CPU stack is replaced', async () => {
 	const source = [
-		'local captured = { value = 42 }',
+		"require('supervisor_fault'); local captured = { value = 42 }",
 		'return function()',
-		'\thalt_until_irq',
+		"\traise_fault('fault snapshot')",
 		'\treturn captured',
 		'end',
 	].join('\n');
-	const { bridge, runtime, analysis } = createIntellisenseRuntime(source);
+	const { bridge, runtime, analysis } = createIntellisenseRuntime(source, 0, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
 	const cpu = runtime.machine.cpu;
-	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	cpu.reset(); cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
 	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
-	runtime.callClosure(closure);
-	assert.equal(cpu.getFrameDepth(), 1);
+	cpu.beginCompletionCall(closure);
+	runToSupervisorFault(runtime);
 
 	const fault = createRuntimeFaultState();
-	recordLuaError(fault, bridge.sources, runtime, new Error('fault snapshot'));
+	recordSupervisorFault(fault, bridge.sources, runtime, bridge.suspendedGuest);
 	assert.equal(fault.lastCpuFaultSnapshot.length, 1);
 	assert.equal(fault.lastCpuFaultSnapshot[0].upvalues.length, 1);
 
-	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	cpu.reset(); cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
@@ -869,10 +868,14 @@ return descend(1)`,
 			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
 				analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected);
 
-			recordLuaError(fault, bridge.sources, runtime, new Error('recursive stop'));
-			cpu.reset();
-			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-				analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected,
+			const faultSource = "require('supervisor_fault'); " + scenario.source.replace('halt_until_irq', "raise_fault('recursive stop')");
+			const faulted = createIntellisenseRuntime(faultSource, optLevel, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
+			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
+			runToSupervisorFault(faulted.runtime);
+			recordSupervisorFault(fault, faulted.bridge.sources, faulted.runtime, faulted.bridge.suspendedGuest);
+			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
+			assert.deepEqual(readRuntimeLuaValue(faulted.runtime, faulted.bridge.sources, fault, faulted.bridge.suspendedGuest,
+				faulted.analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected,
 				'captured fault frames retain the same invocation after the physical stack is replaced');
 		});
 	}

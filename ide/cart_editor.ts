@@ -1,3 +1,4 @@
+import { HostErrorPane } from './workbench/contrib/host_error/editor_pane';
 import { RomInspectorPane } from './workbench/contrib/rom_inspector/editor_pane';
 import { CartMapController } from './workbench/contrib/cart_maps/controller';
 import { CartMapPane } from './workbench/contrib/cart_maps/editor_pane';
@@ -414,6 +415,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
 			terminal: () => new TerminalPane(this.resourcePanel, this.terminal),
@@ -581,7 +583,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (editorViewState.dimCrtInEditor) {
 			this.disableCrtPostprocessingForEditor();
 		}
-		if (this.fault.faultSnapshot) {
+		if (this.fault.faultSnapshot && this.fault.hostFrameFailure === undefined) {
 			const rendered = this.renderRuntimeFaultOverlay({
 				snapshot: this.fault.faultSnapshot,
 				needsFlush: this.fault.faultOverlayNeedsFlush,

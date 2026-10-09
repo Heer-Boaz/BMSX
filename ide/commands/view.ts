@@ -1,3 +1,5 @@
+import type { RuntimeFaultState } from '../runtime/fault_state';
+import { openHostError } from '../workbench/contrib/host_error/editor_input';
 import { openRomInspector } from '../workbench/contrib/rom_inspector/quick_access';
 import { openEventViewer } from '../workbench/contrib/events/editor_input';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
@@ -16,6 +18,7 @@ import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
+		case 'hostError':
 		case 'romInspector':
 		case 'events':
 		case 'terminal':
@@ -48,8 +51,9 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	}
 }
 
-export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, command: EditorViewCommandId): void {
+export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId): void {
 	switch (command) {
+		case 'hostError': openHostError(editor.editorPanes, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
 		case 'events': openEventViewer(editor.editorPanes, editor.events); return;
 		case 'terminal':

@@ -12,7 +12,7 @@ import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
-import type { LogOutput } from '../../hosts/common/log';
+import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../workspace/record_provider';
@@ -43,7 +43,7 @@ import type { WorkspaceRecord } from '../workspace/records';
 import {
 	workspaceDirtyRecords,
 } from './workspace/state';
-import { handleLuaError } from './runtime_errors';
+import { openHostError } from './contrib/host_error/editor_input';
 import {
 	toggleEditor,
 } from './overlay_modes';
@@ -190,21 +190,16 @@ export function tickIdeInput(state: RuntimeIdeState, input: Input): void {
 export function surfaceHostFrameError(
 	state: RuntimeIdeState,
 	logOutput: LogOutput,
-	runtime: Runtime,
 	error: unknown,
 ): void {
 	state.overlayRenderer.abandonFrame();
-	state.fault.hostFrameFailed = true;
+	const stack = error instanceof Error ? error.stack ?? error.toString() : String(error);
+	state.fault.hostFrameFailure = stack;
 	state.hotResumes.failPending(error);
 	state.boots.failPending(error);
-	handleLuaError(
-		logOutput,
-		state.fault,
-		state.sources,
-		runtime,
-		state.guest,
-		error,
-	);
+	logOutput.log(LogLevel.Error, stack);
+	openHostError(state.editor.editorPanes, stack);
+	state.editor.activate();
 }
 
 export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {

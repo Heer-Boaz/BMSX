@@ -1,3 +1,4 @@
+import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HostPauseReason } from '../../hosts/common/execution_control';
@@ -6,7 +7,7 @@ import { runtimeDebuggerExecutionRequested, resetRuntimeDebuggerExecution, resum
 import type { SourceExecutionOperation } from '../../ide/runtime/debugger_execution';
 import { RuntimeDebuggerPlanResult } from '../../ide/runtime/debugger_plans';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import { recordLuaError } from '../../ide/runtime/fault_state';
+import { recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { DebuggerSourceContext } from '../../ide/workbench/services/assistant/debugger_sources';
@@ -180,13 +181,15 @@ test('a source-stop receipt waits for outstanding history work without running f
 });
 
 test('fault, physical reset and target shutdown each settle pending operations honestly', async t => {
-	for (const event of ['fault', 'reset', 'close'] as const) {
-		const f = fixture(t), op = f.owner.resume('continue', 'workbench');
-		if (event === 'fault') { recordLuaError(f.fault, f.sources, f.runtime, new Error('probe fault')); f.owner.afterHostFrame(); }
+	for (const event of ['fault', 'host-fault', 'reset', 'close'] as const) {
+		const f = event === 'fault' ? fixture(t, "require('supervisor_fault'); raise_fault('probe fault')", 0, [SUPERVISOR_FAULT_MODULE]) : fixture(t);
+		const op = f.owner.resume('continue', 'workbench');
+		if (event === 'fault') { f.cpu.installBootPrimitives(); runToSupervisorFault(f.runtime); recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest); f.owner.afterHostFrame(); }
+		else if (event === 'host-fault') { f.fault.hostFrameFailure = new TypeError('host failure').stack; f.owner.afterHostFrame(); }
 		else if (event === 'reset') { f.cpu.reset(); f.owner.didReset(); resetRuntimeDebuggerExecution(f.state); }
 		else f.owner.dispose();
 		const result = await op.completion;
-		assert.equal(result.status, event === 'fault' ? 'stopped' : event === 'reset' ? 'replaced' : 'interrupted');
+		assert.equal(result.status, event === 'fault' ? 'stopped' : event === 'host-fault' ? 'failed' : event === 'reset' ? 'replaced' : 'interrupted');
 		assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
 	}
 });

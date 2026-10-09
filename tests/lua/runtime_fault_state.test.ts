@@ -1,15 +1,17 @@
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH } from '../../machine/ts/spec/bmsx/io';
+import { runToSupervisorFault } from '../helpers/supervisor_fault';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
-import { handleLuaError } from '../../ide/workbench/runtime_errors';
+import { handleSupervisorFault } from '../../ide/workbench/runtime_errors';
 import {
 	registerLuaSourceRecord,
 	type LuaSourceRegistry,
 } from '../../ide/runtime/source_registry';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
@@ -40,19 +42,23 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		start: { line: 1, column: 1 },
 		end: { line: 1, column: source.length + 1 },
 	};
-	const linkedCode = new Uint8Array(3 * INSTRUCTION_BYTES);
+	const linkedCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(linkedCode, 0, OpCode.HALT, 0, 0, 0, 0);
-	writeInstruction(linkedCode, 1, OpCode.HALT, 0, 0, 0, 0);
-	writeInstruction(linkedCode, 2, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(linkedCode, 1, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
+	writeInstruction(linkedCode, 2, OpCode.LOADK, 1, 0, 0, 0);
+	writeInstruction(linkedCode, 3, OpCode.LOADK, 2, 0, 1, 0);
+	writeInstruction(linkedCode, 4, OpCode.STORE_MEM_D, 2, 1, MemoryAccessKind.Word, 0);
+	writeInstruction(linkedCode, 5, OpCode.HALT, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: linkedCode,
 		functions: [
 			{ firstWord: 0, wordCount: 1, maxStack: 1 },
 			{ firstWord: 1, wordCount: 1, maxStack: 1 },
-			{ firstWord: 2, wordCount: 1, maxStack: 1 },
+			{ firstWord: 2, wordCount: 4, maxStack: 3, numParams: 1 },
 		],
+		constants: [IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT | SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH],
 		functionIds: ['startup', 'source_target', 'exception'],
-		debugRanges: [sourceRange, sourceRange, null],
+		debugRanges: [sourceRange, sourceRange, null, null, null, null],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
@@ -75,10 +81,10 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, 0);
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0);
 	const mappedCode = new Uint8Array(INSTRUCTION_BYTES);
-	writeInstruction(mappedCode, 0, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(mappedCode, 0, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
 	memory.writeBytes(codeAddress, mappedCode);
 	cpu.beginCompletionCall(new Closure(functionAddress, [], 0));
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runToSupervisorFault(runtime);
 
 	const luaSources: LuaSourceRegistry = {
 		records: [],
@@ -110,13 +116,12 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 			messages.push(message);
 		},
 	};
-	handleLuaError(
+	handleSupervisorFault(
 		logOutput,
 		fault,
 		sources,
 		runtime,
 		new SuspendedGuestSession(runtime),
-		new Error('mapped runtime fault'),
 	);
 
 	assert.equal(fault.lastCpuFaultSnapshot.length, 1);
@@ -126,7 +131,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(fault.lastLuaCallStack[0].kind, 'instruction');
 	assert.equal(fault.lastLuaCallStack[0].instructionAddress, codeAddress);
 	assert.deepEqual(fault.faultSnapshot.resource, { domain: -1, path: sourcePath });
-	assert.match(messages.join('\n'), /op=HALT/);
+	assert.match(messages.join('\n'), /op=CALL/);
 
 	cpu.reset();
 	cpu.abortCompletionCall(0);
@@ -148,16 +153,15 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		new Closure(functionAddress, [], 0),
 		[new Closure(image.symbols.functionAddresses[1], [], 0)],
 	);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runToSupervisorFault(runtime);
 
 	const mixedFault = createRuntimeFaultState();
-	handleLuaError(
+	handleSupervisorFault(
 		logOutput,
 		mixedFault,
 		sources,
 		runtime,
 		new SuspendedGuestSession(runtime),
-		new Error('mapped caller fault'),
 	);
 	assert.equal(mixedFault.lastCpuFaultSnapshot.length, 2);
 	assert.equal(mixedFault.lastLuaCallStack[0].functionName, 'source_target');
@@ -169,12 +173,4 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.deepEqual(mixedFault.faultSnapshot.resource, { domain: -1, path: sourcePath });
 	assert.match(messages.join('\n'), /workspace\/runtime_fault_state\.lua:1:1/);
 
-	const suspendedPc = cpu.readFramePc(1);
-	cpu.beginCompletionCallInExecutionDomain(-1, image.symbols.functionAddresses[0]);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const evaluationFault = createRuntimeFaultState();
-	handleLuaError(logOutput, evaluationFault, sources, runtime, new SuspendedGuestSession(runtime), new Error('evaluation fault'));
-	assert.equal(evaluationFault.lastCpuFaultSnapshot.length, 3);
-	assert.equal(evaluationFault.lastCpuFaultSnapshot[1].tracePc, suspendedPc,
-		'a debugger completion root does not create a guest CALL site in the suspended frame');
 });

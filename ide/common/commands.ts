@@ -18,6 +18,7 @@ export type EditorSymbolNavigationCommandId =
 	| 'callHierarchy';
 
 export type EditorViewCommandId =
+	| 'hostError'
 	| 'romInspector'
 	| 'events'
 	| 'terminal'

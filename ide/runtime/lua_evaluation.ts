@@ -68,7 +68,7 @@ export class RuntimeLuaEvaluation {
 	public get canEvaluate(): boolean {
 		return !this.closed && this.active === undefined && this.debuggerState.executionContext === undefined && this.tasks.mutationReady && !this.execution.launchPending
 			&& !this.debuggerState.plans.mutationActive && !this.rewind.active && !this.execution.frameStepPending
-			&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
+			&& this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
 			&& (this.runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0;
 	}
@@ -110,7 +110,7 @@ export class RuntimeLuaEvaluation {
 	public afterHostFrame(): void {
 		const operation = this.active;
 		if (operation === undefined) return;
-		if (this.fault.hostFrameFailed || this.tasks.failure !== undefined) {
+		if (this.fault.hostFrameFailure !== undefined || this.tasks.failure !== undefined) {
 			this.finish(operation, { status: 'host-error', values: [this.tasks.failure !== undefined
 				? String(this.tasks.failure.error) : 'Host execution failed; use the debugger recovery controls.'] });
 			return;

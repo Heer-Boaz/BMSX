@@ -2,18 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { recordLuaError } from '../../ide/runtime/fault_state';
+import { recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeRuntimeToolRequest } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { compileLuaSource } from './cpu_test_harness';
+import { compileLuaSource, parseLuaChunk } from './cpu_test_harness';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
+import { readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { StaticDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 
-function fixture(source: string, optLevel: 0 | 3, breakpoint?: number) {
-	const compiled = compileLuaSource(source, 'stack_probe', optLevel), image = linkTestSystemBlua32(compiled);
+function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting = false) {
+	const compiled = faulting
+		? compileLuaChunkToProgram(parseLuaChunk(source, 'stack_probe'), [SUPERVISOR_FAULT_MODULE],
+			{ programDomain: 'system', entrySource: source, optLevel, preloadModules: [SUPERVISOR_FAULT_MODULE.path] })
+		: compileLuaSource(source, 'stack_probe', optLevel), image = linkTestSystemBlua32(compiled);
 	const runtime = createTestRuntime(image.romBytes);
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'stack_probe.lua', projectRootPath: '', can_boot_from_source: true, revision: 0 };
 	registerLuaSourceRecord(registry, { resid: 'stack_probe.lua', type: 'lua', src: source, base_src: source,
@@ -26,7 +33,8 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number) {
 		f.debuggerState.breakpoints.set({ domain: -1, path: 'stack_probe.lua' }, [breakpoint]);
 	}
 	runtime.machine.cpu.reset();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100_000), breakpoint === undefined ? RunResult.Halted : RunResult.ExecutionStopped);
+	if (faulting) { runtime.machine.cpu.installBootPrimitives(); runToSupervisorFault(runtime); }
+	else assert.equal(runtime.machine.cpu.runUntilDepth(0, 100_000), breakpoint === undefined ? RunResult.Halted : RunResult.ExecutionStopped);
 	f.inspection.pause();
 	return f;
 }
@@ -277,9 +285,9 @@ return run(42)`, level);
 });
 
 test('installed symbols own stack/scopes despite source edits; fault diagnostics do not substitute the captured fault stack', t => {
-	const f = fixture('local x = 42\nhalt_until_irq\nreturn x', 0);
+	const f = fixture("local x = 42\nraise_fault('retained diagnostic')\nreturn x", 0, undefined, true);
 	f.sources.systemLuaSources.records[0].src = '-- a dirty first line\nlocal x = 99\nhalt_until_irq\nreturn x';
-	recordLuaError(f.fault, f.sources, f.runtime, new Error('retained diagnostic'));
+	recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest);
 	const captured = f.fault.lastCpuFaultSnapshot;
 	f.runtime.machine.cpu.reset();
 	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
@@ -464,4 +472,12 @@ test('manual frame contexts retain only installed source identity and expire acr
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 	assert.notEqual(source.stop!.id, next.stopId, 'reset cannot recycle source-stop identities');
 	inspection.dispose();
+});
+
+test('a debugger completion root does not invent a guest call site in its suspended caller', () => {
+	const f = fixture('function park() halt_until_irq end\npark()', 0), cpu = f.runtime.machine.cpu;
+	const depth = cpu.getFrameDepth(), suspendedPc = cpu.readFramePc(depth - 1);
+	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('park')) as Closure);
+	assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
+	assert.equal(readRuntimeStackFrames(cpu, f.sources)[depth - 1].tracePc, suspendedPc);
 });

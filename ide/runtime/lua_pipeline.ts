@@ -7,7 +7,6 @@ import { collectProgramSources, type ProgramSourceModule, type ProgramSources } 
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { advanceLuaSourceRevision, type LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -499,7 +498,6 @@ export function bootInstalledBlua32Media(
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 ): void {
-	resetHandledLuaErrors(fault);
 	runtime.resetForSystemBoot();
 	fault.supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
 		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,

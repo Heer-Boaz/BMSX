@@ -1,7 +1,3 @@
-import { LuaError, LuaSyntaxError } from '../../toolchain/ts/lua/errors';
-import {
-	extractErrorMessage,
-} from '../common/errors';
 import {
 	buildErrorStackString,
 	sanitizeLuaErrorMessage,
@@ -21,11 +17,8 @@ import type {
 	SuspendedGuestValue,
 } from './suspended_guest';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
-import {
-	resolveRuntimeLuaSource,
-	type RuntimeSourceState,
-} from './sources';
-import type { ResourceDomain, ResourceIdentity } from '../common/resource';
+import type { RuntimeSourceState } from './sources';
+import type { ResourceIdentity } from '../common/resource';
 import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
@@ -52,7 +45,6 @@ type RuntimeErrorLocation = {
 	line: number;
 	column: number;
 };
-export type RecordedRuntimeLuaError = { error: Error; stackText: string };
 
 export type RuntimeErrorDetails = {
 	luaStack: ReadonlyArray<StackTraceFrame>;
@@ -79,7 +71,6 @@ export type RuntimeCpuFaultFrame = {
 };
 
 export type RuntimeFaultState = {
-	handledLuaErrors: WeakSet<object>;
 	supervisorFaultSequence: number;
 	lastLuaCallStack: StackTraceFrame[];
 	lastCpuFaultSnapshot: RuntimeCpuFaultFrame[];
@@ -87,14 +78,12 @@ export type RuntimeFaultState = {
 	lastCpuFaultPc: number;
 	faultSnapshot: FaultSnapshot;
 	faultOverlayNeedsFlush: boolean;
-	hostFrameFailed: boolean;
+	/** Original host diagnostic, never a guest stack. Cleared only by accepted recovery. */
+	hostFrameFailure: string | undefined;
 };
-
-const EMPTY_STACK_TRACE_FRAMES: ReadonlyArray<StackTraceFrame> = [];
 
 export function createRuntimeFaultState(): RuntimeFaultState {
 	return {
-		handledLuaErrors: new WeakSet<object>(),
 		supervisorFaultSequence: 0,
 		lastLuaCallStack: [],
 		lastCpuFaultSnapshot: [],
@@ -102,32 +91,7 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 		lastCpuFaultPc: 0,
 		faultSnapshot: null,
 		faultOverlayNeedsFlush: false,
-		hostFrameFailed: false,
-	};
-}
-
-
-export function resetHandledLuaErrors(fault: RuntimeFaultState): void {
-	fault.handledLuaErrors = new WeakSet<object>();
-}
-
-function luaErrorSourcePath(error: LuaError): string {
-	return error.path.startsWith('@') ? error.path.slice(1) : error.path;
-}
-
-function runtimeLuaErrorLocation(
-	sources: RuntimeSourceState,
-	domain: ResourceDomain,
-	error: LuaError,
-): RuntimeErrorLocation {
-	const match = resolveRuntimeLuaSource(sources, {
-		domain,
-		path: luaErrorSourcePath(error),
-	})!;
-	return {
-		resource: { domain, path: match.record.source_path },
-		line: error.line,
-		column: error.column,
+		hostFrameFailure: undefined,
 	};
 }
 
@@ -143,39 +107,6 @@ function firstSourceStackFrame(
 	return null;
 }
 
-function resolveRuntimeErrorLocation(
-	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
-	error: Error,
-): RuntimeErrorLocation {
-	const sourceFrame = firstSourceStackFrame(fault.lastLuaCallStack);
-	if (sourceFrame) {
-		return {
-			resource: sourceFrame.resource,
-			line: sourceFrame.line,
-			column: sourceFrame.column,
-		};
-	}
-	if (error instanceof LuaError) {
-		return runtimeLuaErrorLocation(sources, sources.activeCartridgeSlot, error);
-	}
-	return {
-		resource: {
-			domain: sources.activeCartridgeSlot,
-			path: sources.activeLuaSources.entrySourcePath,
-		},
-		line: 0,
-		column: 0,
-	};
-}
-
-function errorStackFunctionName(luaFrames: ReadonlyArray<StackTraceFrame>): string {
-	if (luaFrames.length > 0) {
-		return luaFrames[0].functionName;
-	}
-	return '(anonymous)';
-}
-
 export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 	fault.faultSnapshot = null;
 	fault.lastLuaCallStack = [];
@@ -183,18 +114,6 @@ export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 	fault.lastCpuFaultExecutionDomainId = -1;
 	fault.lastCpuFaultPc = 0;
 	fault.faultOverlayNeedsFlush = false;
-	fault.hostFrameFailed = false;
-}
-
-function setRuntimeFault(fault: RuntimeFaultState, payload: {
-	message: string;
-	resource: ResourceIdentity;
-	line: number;
-	column: number;
-	details: RuntimeErrorDetails;
-}): void {
-	fault.faultSnapshot = payload;
-	fault.faultOverlayNeedsFlush = true;
 }
 
 function captureRuntimeCpuFaultFrames(
@@ -250,54 +169,6 @@ function captureRuntimeCpuFaultFrames(
 		};
 	}
 	return frames;
-}
-
-export function recordLuaError(
-	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
-	runtime: Runtime,
-	whatever: unknown,
-): RecordedRuntimeLuaError | null {
-	const error = whatever instanceof Error ? whatever : new Error(String(whatever));
-	if (fault.handledLuaErrors.has(error)) {
-		return null;
-	}
-	const cpu = runtime.machine.cpu;
-	const lastExecutionDomainId = cpu.readLastExecutionDomain();
-	const lastPc = cpu.lastPc;
-	fault.lastCpuFaultExecutionDomainId = lastExecutionDomainId;
-	fault.lastCpuFaultPc = lastPc;
-	fault.lastCpuFaultSnapshot = captureRuntimeCpuFaultFrames(
-		sources,
-		runtime,
-		cpu.getFrameDepth(),
-		lastExecutionDomainId,
-		lastPc,
-	);
-	fault.lastLuaCallStack = buildLuaStackFrames(fault.lastCpuFaultSnapshot,
-		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(sources, domain, path, line, column, name));
-	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
-	const location = resolveRuntimeErrorLocation(fault, sources, error);
-	const runtimeDetails = buildRuntimeErrorDetails(fault, sources, error);
-	const stackFrames = runtimeDetails ? runtimeDetails.luaStack : EMPTY_STACK_TRACE_FRAMES;
-	const stackText = buildErrorStackString(
-		error instanceof Error && error.name ? error.name : 'Error',
-		message,
-		stackFrames,
-	);
-	setRuntimeFault(fault, {
-		message,
-		resource: location.resource,
-		line: location.line,
-		column: location.column,
-		details: runtimeDetails,
-	});
-	if (error instanceof Error) {
-		error.message = message;
-		error.stack = stackText;
-	}
-	fault.handledLuaErrors.add(error);
-	return { error, stackText };
 }
 
 export function recordSupervisorFault(
@@ -376,42 +247,15 @@ export function recordSupervisorFault(
 			column: 0,
 		};
 	}
-	const details = buildRuntimeErrorDetails(fault, sources);
+	const details: RuntimeErrorDetails = { luaStack: fault.lastLuaCallStack };
 	const stackText = buildErrorStackString(name, message, details.luaStack);
-	setRuntimeFault(fault, {
+	fault.faultSnapshot = {
 		message,
 		resource: location.resource,
 		line: location.line,
 		column: location.column,
 		details,
-	});
-	return stackText;
-}
-
-function buildRuntimeErrorDetails(
-	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
-	error?: unknown,
-): RuntimeErrorDetails {
-	if (error instanceof LuaSyntaxError) {
-		return null;
-	}
-	const luaFrames = fault.lastLuaCallStack.slice();
-	if (error instanceof LuaError) {
-		const sourceFrame = firstSourceStackFrame(luaFrames);
-		luaFrames[0] = createLuaSourceStackTraceFrame(
-			sources,
-			sourceFrame ? sourceFrame.resource.domain : sources.activeCartridgeSlot,
-			luaErrorSourcePath(error),
-			error.line,
-			error.column,
-			errorStackFunctionName(luaFrames),
-		);
-	}
-	if (luaFrames.length === 0) {
-		return null;
-	}
-	return {
-		luaStack: luaFrames,
 	};
+	fault.faultOverlayNeedsFlush = true;
+	return stackText;
 }

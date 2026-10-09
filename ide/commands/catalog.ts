@@ -73,6 +73,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspaceEditReview.discard': { category: 'Review', title: 'Discard Workspace Edit', shortTitle: 'Discard' },
 	goToDefinition: { category: 'Go', title: 'Go to Definition' },
 	callHierarchy: { category: 'Go', title: 'Show Call Hierarchy' },
+	hostError: { category: 'View', title: 'Host Error' },
 	romInspector: { category: 'View', title: 'ROM Inspector' },
 	'romInspector.assets': { category: 'ROM Inspector', title: 'Show Assets', shortTitle: 'Assets' },
 	'romInspector.structure': { category: 'ROM Inspector', title: 'Show ROM Layout', shortTitle: 'Layout' },

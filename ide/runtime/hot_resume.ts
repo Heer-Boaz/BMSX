@@ -5,7 +5,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
 } from '../../toolchain/ts/rompack/blua32_revision';
-import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
+import { clearFaultSnapshot } from './fault_state';
 import {
 	buildBlua32Media,
 	installBlua32Media,
@@ -460,7 +460,7 @@ function applyPreparedHotResume(
 	}
 	report({ kind: 'applied' });
 	clearFaultSnapshot(fault);
-	resetHandledLuaErrors(fault);
+	fault.hostFrameFailure = undefined;
 	clearAllRuntimeErrorOverlays();
 	applyRuntimeDebuggerHotResume(
 		debuggerState,

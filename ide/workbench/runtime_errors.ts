@@ -11,7 +11,6 @@ import {
 } from '../runtime/suspended_guest';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import {
-	recordLuaError,
 	recordSupervisorFault,
 	type RuntimeCpuFaultFrame,
 	type RuntimeFaultState,
@@ -98,21 +97,6 @@ function logFaultInstruction(
 	logOutput.log(LogLevel.Error, `\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
 		logOutput.log(LogLevel.Error, `\tsource=${formatDebugSourceLine(instruction.sourceRange)}`);
-	}
-}
-
-export function handleLuaError(
-	logOutput: LogOutput,
-	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
-	runtime: Runtime,
-	session: SuspendedGuestSession,
-	whatever: unknown,
-): void {
-	const recorded = recordLuaError(fault, sources, runtime, whatever);
-	if (recorded) {
-		logOutput.log(LogLevel.Error, recorded.stackText);
-		logFaultInstruction(logOutput, fault, runtime, session);
 	}
 }
 
