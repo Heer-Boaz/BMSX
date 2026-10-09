@@ -25,6 +25,28 @@ definitions, coordinated curve/sequence authoring and persistent interactive
 scenario sessions remain separate slices below. No exported-definition rewrite
 has been imposed on those carts to make the first editor appear complete.
 
+The compiled fixture mechanism is now separate from automatic case policy.
+`GuestFixture` owns physical admission and phase calls; `FixtureOperations`
+transports the existing compiled context yields. `TestExecution` still owns
+automatic budgets/results and composes debugger instrumentation. `PlayFixture`
+admits an integration module's shared setup without executing any test body or
+creating a result. Ready grants no CPU time; explicit Stop performs bounded
+teardown. Uncooperative continuations remain quarantined and inspectable.
+Only Ready worlds are eligible for gameplay history; admission/cleanup never
+restore a partially executed host protocol. Teardown resolves the current guest
+module after a restored heap, not borrowed pre-restore closures.
+
+These are **development-harness checks**, not an interactive Play UI claim:
+O0/O3 admission, real ICU setup samples, publication/capture, independent world
+execution, authoring isolation, cancellation/failure and Stop after save-state
+restore. A local Node 22 comparison against the previous case runner used 5,000
+compiled log yields (12 alternating measured runs per version after warmup):
+115.67 ms versus 116.50 ms median, the same 420,443 guest cycles and 5,003 grants.
+Guest heap use fell by six bytes because unused `cancel` is no longer eagerly
+interned. This is a specific admission workload measurement, not a general
+performance guarantee. Focused human input, persistent output, real-time pacing,
+session inspection/history and the Studio-only `2025` acceptance remain open.
+
 ## Reference owners
 
 - [Godot's animation track editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_track_editor.cpp)
@@ -104,8 +126,8 @@ producer parameters can be edited, generated samples cannot become source.
 
 ## Interactive scenario slice
 
-Before implementation, separate reusable guest fixture admission from automatic
-test policy. Initialization/setup/teardown use actual compiled guest coroutines
+Reusable guest fixture admission is separate from automatic test policy.
+Initialization/setup/teardown use actual compiled guest coroutines
 and the existing physical publication boundaries. A Play session must neither
 fake a passing test nor keep an assertion coroutine running indefinitely.
 

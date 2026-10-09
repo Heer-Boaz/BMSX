@@ -1016,6 +1016,17 @@ ICU samples, owner-published mutation receipts and accepted presentations.
 Unit bodies do not enter the game loop. CPU faults and uncooperative timeouts
 quarantine the continuation rather than truncating it to manufacture cleanup.
 
+Compiled fixture admission and yielded-operation transport have retained owners
+in `GuestFixture` and `FixtureOperations`, separate from case budgets/results.
+`PlayFixture` uses an integration module's shared setup/teardown without choosing
+a test body or manufacturing a passing result. Its Ready state grants no CPU
+time and has no case deadline; a persistent session must own gameplay pacing,
+input, presentation and history. Admission/cleanup remain bounded. Only Ready
+worlds may enter gameplay history. Subsequent teardown resolves the module in
+the current guest heap after restore, never cached pre-restore closures.
+This fixture lifecycle alone does not expose a Play viewport or retarget the
+authoring debugger. See [animation and interactive scenarios](studio_animation_and_play_design.md).
+
 `TestTargetFactory` is supplied by product composition. The test run supplies
 case-owned ICU input and immutable media; `hosts/common/offscreen_machine.ts`
 owns the actual Runtime, lazy renderer/presenter, physical stepping/output and

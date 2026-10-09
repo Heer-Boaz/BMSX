@@ -34,6 +34,7 @@ import {
 	IO_SYS_SUPERVISOR_FAULT_CAUSE,
 	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
 	IO_SYS_SUPERVISOR_FAULT_EPC,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 } from '../../machine/ts/spec/bmsx/io';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
@@ -169,6 +170,16 @@ function captureRuntimeCpuFaultFrames(
 		};
 	}
 	return frames;
+}
+
+/** Physical fault-latch report for targets without authoring source/stack state. */
+export function readSupervisorFaultReport(runtime: Runtime): string | undefined {
+	const memory = runtime.machine.memory;
+	if (memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0) return undefined;
+	return `Machine fault: domain ${memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_DOMAIN) | 0}, `
+		+ `cause ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_CAUSE), 8)}, `
+		+ `PC ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC), 8)}, `
+		+ `address ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
 }
 
 export function recordSupervisorFault(
