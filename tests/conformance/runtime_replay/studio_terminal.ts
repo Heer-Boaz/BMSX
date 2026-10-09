@@ -45,9 +45,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 		for (let index = 0; index < 20; index++) await frame();
 	};
 	await command('help'); await test.capture?.('bios-help');
-	await command('q');
 	await command('regs'); await test.capture?.('bios-registers');
-	await command('q');
 	await command('lua bios_terminal_probe=42');
 	check(ide.guest.global('bios_terminal_probe') === 42, 'physical LUA command writes the live cartridge registerfile');
 	check(ide.sources.currentBlua32Media === media && ide.luaEvaluation.active === undefined && ide.luaEvaluation.lastResult === undefined,

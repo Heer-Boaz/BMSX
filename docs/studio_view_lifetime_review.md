@@ -159,3 +159,22 @@ Local batched projection measurements over the real BIOS, Nemesis and Pietious
 asset, section and function lists range from 0.002 to 0.315 ms/query (largest
 function list: 2,132 entries). This measures query projection, not a complete
 host frame or native performance. Unchanged frames do not project again.
+
+## Validation follows the physical terminal and native editor owners
+
+The standalone workspace fixture still expected the deleted Lua-only console's
+transcript, clipboard and automatic activation. Those expectations were removed;
+the existing physical BIOS workflow remains the terminal gate. The fixture also
+now uses AEM's existing Open Source action after opening its native editor,
+rather than assuming every resource opens directly as source text. The BIOS
+workflow no longer sends unnecessary `q` commands after non-modal HELP/REGS.
+No product, terminal or runtime behavior changed in this validation correction.
+
+Both standalone cases pass, including real browser quota failure/retry and
+canonical YAML/AEM editing, Save and reload while offline, without Studio API
+requests. The physical BIOS workflow passes on software, WebGL2 and WebGPU.
+Separately, actual keyboard/pointer interaction in the rebuilt standalone
+product runs HELP, REGS, LUA (`6 * 7` yielding `42`) and CONT. Those captures and
+the native AEM/source, offline reload and failed-save UI captures were viewed.
+No uncaught page errors occurred. Test typecheck, strict boundary audit and diff
+checks pass; these checks are not native-runtime parity or whole-engine proof.

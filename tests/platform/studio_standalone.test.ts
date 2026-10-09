@@ -83,7 +83,7 @@ test('browser workspace: committed CRUD, exclusive cross-connection create and d
 	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
 });
 
-test('standalone product: Terminal, source creation, Save, reload and offline editing without server requests', { timeout: 120000 }, async t => {
+test('standalone product: source creation, Save, reload and offline editing without server requests', { timeout: 120000 }, async t => {
 	const { page, address, requests, errors } = await standalone(t);
 	const evidence = '/tmp/bmsx-studio-standalone'; await mkdir(evidence, { recursive: true });
 	const frame = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -95,26 +95,8 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	// Let the actual BIOS/cart intro run before the workbench's normal host pause.
 	await page.waitForTimeout(15000); await press('ControlRight+ShiftRight');
 	await screenshot('editor');
-	await command('Lua Terminal');
-	await page.evaluate(() => navigator.clipboard.writeText('return 6 * 7')); await press('Control+v'); await press('Enter');
-	await page.waitForTimeout(1000);
-	await press('Shift+Tab'); // Composer -> transcript, through the real focus ring.
-	for (let index = 0; index < 10; index++) await press('ArrowDown');
-	await press('Control+c');
-	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '42');
-	await screenshot('terminal');
-	// Restore the actual active Terminal, before startup has initialized the CPU.
-	// Do not reopen it via a command: that would miss pane activation during recovery.
-	await page.reload(); await boot();
-	await page.waitForTimeout(15000); await press('ControlRight+ShiftRight');
-	await screenshot('terminal-restored');
-	await page.evaluate(() => navigator.clipboard.writeText('return 21 * 2')); await press('Control+v'); await press('Enter');
-	await page.waitForTimeout(1000);
-	await press('Shift+Tab');
-	for (let index = 0; index < 10; index++) await press('ArrowDown');
-	await press('Control+c');
-	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '42');
-	await screenshot('terminal-restored-evaluation');
+	// Physical BIOS commands and admission are covered by studio_terminal.ts,
+	// not by the removed host-console transcript or its clipboard/focus model.
 	await command('New Lua File'); await press('Enter');
 	await page.keyboard.type('standalone_probe.lua', { delay: 25 }); await press('Enter');
 	await page.waitForTimeout(300); await screenshot('created');
@@ -167,6 +149,10 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 		const path = `carts/nemesis_s/res/data/${name}`;
 		const authored = await readFile(path, 'utf8');
 		await press('Control+,'); await page.evaluate(text => navigator.clipboard.writeText(text), name); await press('Control+v'); await press('Enter');
+		if (format === 'aem') {
+			await screenshot('aem-resource-editor');
+			await command('Audio Events: Open Source');
+		}
 		await press('Control+a'); await press('Control+c');
 		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), authored);
 		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-packaged-source`);
@@ -182,6 +168,7 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	await page.context().setOffline(false); await page.reload(); await boot(); await press('ControlRight+ShiftRight');
 	for (const { name, format } of documents) {
 		await press('Control+,'); await page.evaluate(text => navigator.clipboard.writeText(text), name); await press('Control+v'); await press('Enter');
+		if (format === 'aem') await command('Audio Events: Open Source');
 		await press('Control+a'); await press('Control+c');
 		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), edited.get(name));
 		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-restored`);
