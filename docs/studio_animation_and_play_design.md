@@ -29,11 +29,12 @@ Stop performs bounded fixture cleanup; Reset captures current source and joins
 the old lifetime before constructing another world. Closing the transient tab
 revokes input/audio immediately and joins backend work before disposal.
 
-This is **not yet** the final `2025` transition/combat workflow. Inline
-procedural definition selection/navigation is implemented below; coordinated
-curve/sequence authoring remains separate work. Play's Actor/FSM inspection is implemented in the
-target-binding slice below. No exported-definition rewrite has been
-imposed on those carts to make the first editor appear complete.
+The basic `2025` transition/combat workflow is now visibly exercised end to
+end: authored fixtures, source-backed edits, Save, physical Reset, matching
+video frames and target-bound Actor/FSM inspection. The acceptance record below
+distinguishes that workflow from coordinated curve/sequence authoring, which
+remains separate work. Procedural animation remains procedural; no exported-
+definition rewrite has been imposed on the cart to fit the editor.
 
 The compiled fixture mechanism is now separate from automatic case policy.
 `GuestFixture` owns physical admission and phase calls; `FixtureOperations`
@@ -362,7 +363,8 @@ host errors retain their identity; an already published physical fault blocks
 the next grant. The latter check stimulates the producer-side read-only fault
 latch, not a guest write or a claimed end-to-end firmware crash.
 These remain development checks, separate from the visible Play checks below.
-Final `2025` authoring is not yet validated.
+The later acceptance record validates procedural transition edits and a native
+combat value track; it does not validate coordinated curve/sequence authoring.
 
 ### Physical transport and source execution
 
@@ -446,10 +448,10 @@ condition is on the already instrumented source hook; a machine without active
 source stops retains its uninstrumented executor. No hardware representation,
 guest instructions/cycles, history codec or mirrored C++ machine change is needed.
 
-The physical Actor/FSM binding is implemented in the target-binding slice below.
-Remaining acceptance work: extend canonical procedural animation authoring,
-then perform the transition and combat redesign through visible Studio
-interaction. Do not present primary Actor Lab as inspection of Play.
+The physical Actor/FSM binding and inline/procedural source navigation were
+implemented in the subsequent slices below. The later acceptance record
+exercises them during transition/combat edits. Primary Actor Lab must never be
+presented as inspection of Play.
 
 ### Installed code provenance before target-bound inspection
 
@@ -636,4 +638,81 @@ boundary audit pass. The same visible Studio session, with its empty document
 still present, now admits the new fixture, publishes the game and can pause it;
 Session Details identifies the captured fixture and independent physical machine.
 Evidence is under `/tmp/bmsx-play-visible/acceptance-transition-*` during
-development. This is admission evidence, not yet a transition redesign.
+development. This check established admission; the subsequent redesign is
+recorded below.
+
+## Visible transition and combat acceptance
+
+The browser session used ordinary Studio keyboard/pointer controls. The two
+fixture files were created, typed, formatted and saved through Source:
+
+- `carts/2025/tests/studio_transition_assert.lua` admits the real director at
+  `overgang_monday` through its existing state machine.
+- `carts/2025/tests/studio_combat_assert.lua` admits the real combat director
+  at `combat_wekker` through its existing start operation.
+
+Both reuse the integration fixture's bounded setup for automatic **Run** and
+interactive **Play**. The case body verifies the admitted scene; Play does not
+run that case or manufacture a test result. There is no hidden guest setup
+script, generated substitute scene or live heap injection.
+
+### Transition
+
+1. Play the transition fixture; pause and review actual physical video frames
+   9 and 10, including an actual previous/next frame round trip.
+2. Inspect the independent `p3.director`, its active FSM and native timeline.
+3. Use the existing `timelinebuilders.lua` Source view to replace the panel's
+   entry/exit easing with its existing quadratic easing functions. Save and
+   explicitly Reset Play from current source.
+4. Review the same video frames again. The panel positions visibly differ;
+   Actor Details reports the actual timeline's `position_ms = 140`, `head = 7`
+   and playing state. The builder and canonical transition YAML remain intact.
+5. Open the original Game view: the authoring machine still shows the title.
+
+This is an actual procedural-source edit, not a claim that generated frames
+became visually editable keys. The editor's producer navigation leads back to
+that source instead of replacing the algorithm with sampled tracks.
+
+### Combat
+
+1. Play the combat fixture and record physical frame 8 as the baseline.
+2. Open the existing inline `combat_intro` definition in Animation. Add a
+   native linear value track, edit its keys to `(0 ms, 1.35)` and
+   `(336 ms, 0.65)`, then Save through the shared Source document.
+3. The initial track targeted `sprite_component.scale_x`. Live inspection
+   correctly showed that the procedural frame still owned that same property:
+   value evaluation precedes frame application in the native evaluator. A
+   source edit or a green harness test alone would have missed this conflict.
+4. Edit the path through Animation Details to the existing independent
+   `sprite_component.draw_scale_x` channel. The sprite's native draw datapath
+   multiplies that channel with its procedural scale. No evaluator-order change,
+   new blending layer or cart rewrite was made to satisfy the test.
+5. Save, Reset, review physical frame 8 and inspect the actual Maya sprite
+   component. Its `draw_scale_x` is now `1.1` instead of `1`, and the portrait's
+   geometry visibly differs from the baseline.
+6. Resume and focus the Play viewport. Ordinary Down/confirm input selects the
+   hit choice. Pause the real hit animation and open the corresponding live
+   FSM graph: Follow reveals the active `combat_hit` state.
+
+The artistic experiment edits were undone through the shared document history
+and saved; the original `combat.lua` and `timelinebuilders.lua` bytes are
+unchanged. The reusable fixtures remain. Both cases pass through Scenario Lab
+Run, including after a full browser reload; the workspace catalog rediscovers
+them without a shell rebuild. Play and Stop are also exercised after reload.
+
+Local evidence is retained under the ignored
+`.bmsx/authoring/2025-animation-play-2026-10-10/`: `actions.jsonl`, the input
+driver, validation logs and `acceptance-transition-*`, `acceptance-combat-*`,
+`acceptance-final-*` screenshots.
+No `page.evaluate`, direct model edit, clipboard injection or external runtime
+inspection drives this workflow. Repository source inspection was used during
+development diagnosis; this is visible editing/playback/inspection evidence,
+not a claim that every piece of project discovery occurred solely inside Studio.
+
+Separate development validation: the combined focused bundle passes 402 checks;
+IDE/test typechecks and the strict boundary audit pass. The earlier physical
+audio and three-backend checks remain harness evidence, not proof of new audio
+authoring in this browser session. Coordinated curve handles, sequence overview
+and the complete effects/audio composition acceptance gate remain open. They
+must extend the existing source/resource owners, not bake procedural samples
+or introduce a second animation format.
