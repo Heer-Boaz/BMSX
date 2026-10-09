@@ -123,7 +123,8 @@ return {kind='integration',
 		const logs: string[] = [];
 		const play = new PlayFixture(target, input.fixture, f.program, 0, {
 			log(_tick, value) { logs.push(valueToString(value, target.runtime.machine.cpu.stringPool)); },
-			captureRequested: assert.fail, captured: assert.fail, observeFsm: assert.fail, observeActionEffects: assert.fail,
+			captureRequested: () => assert.fail('unexpected capture'), captured: () => assert.fail('unexpected publication'),
+			observeFsm: () => assert.fail('unexpected FSM recording'), observeActionEffects: () => assert.fail('unexpected ActionEffect recording'),
 		});
 		t.after(() => { play.dispose(); input.dispose(); physical.dispose(); });
 		physical.guestInputRecipient = input.physical;

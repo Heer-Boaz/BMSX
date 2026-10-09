@@ -145,6 +145,7 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		animation: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(),
 		host_error: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(),
 		rom_inspector: () => new RecordingEditorPane<RomInspectorInput>(),
 		event_viewer: () => new RecordingEditorPane<EventViewerInput>(),

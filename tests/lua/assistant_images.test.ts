@@ -26,7 +26,7 @@ test('removal and draft replacement retire pending clipboard reads; failed files
 test('visible image cache reuses decoded pixels and releases backend textures on eviction and teardown', async () => {
 	let decodes = 0, uploads = 0, releases = 0;
 	const cache = new ImagePreviewCache(async () => { decodes++; return pixels; });
-	const textures = new HostBitmapTextures(() => ++uploads, assert.fail, () => { releases++; });
+	const textures = new HostBitmapTextures(() => ++uploads, () => assert.fail('unexpected image update'), () => { releases++; });
 	cache.beginFrame(); const preview = cache.use('one'); await Promise.resolve();
 	assert.equal(textures.get(preview.bitmap!), 1); cache.endFrame();
 	cache.beginFrame(); assert.equal(cache.use('one'), preview); assert.equal(textures.get(preview.bitmap!), 1); cache.endFrame();

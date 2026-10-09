@@ -1,3 +1,4 @@
+import { AnimationInputSerializer } from '../../../ide/workbench/contrib/animation/editor_serializer';
 import { CartMapInputSerializer } from '../../../ide/workbench/contrib/cart_maps/editor_serializer';
 import { LuaProgramInputSerializer } from '../../../ide/workbench/contrib/lua_program/editor_serializer';
 import { AemEditorInputSerializer } from '../../../ide/workbench/contrib/aem/editor_serializer';
@@ -29,6 +30,7 @@ import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_i
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
+	animation: new AnimationInputSerializer(null, null),
 	aem_editor: new AemEditorInputSerializer(null),
 	cart_map: new CartMapInputSerializer(null),
 	lua_program: new LuaProgramInputSerializer(null, null),
