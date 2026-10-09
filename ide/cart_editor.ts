@@ -256,6 +256,7 @@ export class RuntimeCartEditor implements CartEditor {
 		return this.isActive && inputFocus.target?.guestInputBounds === undefined;
 	}
 	public get executionSuspended(): boolean {
+		// Automatic authoring hold only; explicit transport pause has a separate host owner.
 		return this.isActive && (this.actionPrompt.visible || this.quickInput.visible || this.contextMenu.visible
 			|| !this.debuggerState.plans.workbenchExecutionRequested
 			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)

@@ -98,6 +98,18 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index]);
 			}
 		}
+		for (let index = 0; index < this.controls.length; index++) {
+			if (this.controls[index].field.readOnly) continue;
+			const bounds = this.input.properties[index].bounds;
+			if (bounds.bottom <= this.input.details.bounds.top || bounds.top >= this.input.details.bounds.bottom) continue;
+			this.controls[index].layout(bounds.right - bounds.left);
+		}
+		for (let index = 0; index < this.options.controls.length; index++) {
+			if (this.options.controls[index].field.readOnly) continue;
+			const bounds = this.input.optionProperties[index].bounds;
+			if (bounds.bottom <= this.input.details.bounds.top || bounds.top >= this.input.details.bounds.bottom) continue;
+			this.options.controls[index].layout(bounds.right - bounds.left);
+		}
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 

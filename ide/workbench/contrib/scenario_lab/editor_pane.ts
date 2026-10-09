@@ -145,7 +145,8 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.actionBar.update();
 		if (this.inspectedMessage !== undefined && selectedScenarioResultRow(this.input.view)?.id !== this.inspectedMessage.id) this.inspector.hide();
 		this.inspector.update();
-		this.targetInspection.update();
+		this.targetInspection.update(view.layout);
+		if (this.inspector.visible) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, view.layout);
 	}
 
 	private selectedDetailsRow(): ScenarioLabInspectableRow | undefined {
@@ -165,12 +166,9 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 
 	public draw(): void {
 		if (this.targetInspection.model !== undefined) {
-			prepareScenarioLabLayout(this.input.view, this.contentBounds);
-			this.targetInspection.draw(this.input.view.layout); return;
+			this.targetInspection.draw(); return;
 		}
 		if (this.inspector.visible) {
-			prepareScenarioLabLayout(this.input.view, this.contentBounds);
-			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.view.layout);
 			drawWorkbenchPropertyInspector(this.inspector);
 			return;
 		}

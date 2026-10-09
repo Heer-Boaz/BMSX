@@ -24,7 +24,7 @@ The reference is VS Code's separate
 and [editor-group orchestration](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPanes.ts).
 Focus is another operation, not a shortcut for any of those lifetimes.
 
-## Open: focus participates in execution policy
+## Verified: Workbench admission is not focus-owned transport
 
 `RuntimeCartEditor.executionSuspended` uses
 `inputFocus.target.guestInputBounds` to release the Workbench hold. This is
@@ -33,27 +33,54 @@ checked by the real game-input conformance workflow; it is not an isolated
 Terminal mistake. Restoring game focus can consequently change whether the
 guest advances, although `InputFocusTarget` describes input routing.
 
-Live inspector inputs additionally carry local `running` flags while
-`HostExecutionControl` owns explicit pause and the scheduler consumes the final
-hold. These flags release the automatic Workbench hold; they are not another
-playback clock. Game focus cannot clear an explicit Requested pause. The verified
-coupling is therefore automatic execution admission, not a demonstrated failure
-of Pause. Replacing the focus branch with another pane flag would repeat the
-ownership problem. A follow-up must establish one Workbench admission policy
-for the live inspectors and Game panel, independently of input routing. It must
-preserve the separate explicit transport, debugger/evaluation plans and rewind
-review owners rather than merge them into another generic execution service.
-VS Code's [debug session](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugSession.ts)
-owns Continue/Pause operations separately from editor attachment and focus.
+The follow-up inspected the actual commands, focus control, pane lifetime and
+host-frame consumer together. The admission policy already has one owner:
+`RuntimeCartEditor.executionSuspended`. Focus publishes routing context; it does
+not dispatch Continue, change a transport revision or clear Requested pause.
+The policy intentionally consumes that context to decide whether source
+authoring should hold the guest. Independence of transport from focus does not
+require removing this deliberate UX behavior or copying its intent into a
+second flag/service.
 
-## Open: inspector painting still prepares interaction geometry
+| Representation | Producer / owner | Meaning |
+| --- | --- | --- |
+| `guestInputBounds` | Embedded `GameInputControl` | Physical input destination, including while explicitly paused. |
+| `suspendsRuntime` / inspector `running` | Active pane and inspection lifetime | Permission to release the automatic authoring hold for live inspection; not actual playback state. |
+| `workbenchExecutionRequested` | Debugger/supervisor operation plan | An explicit operation may execute while Studio remains open. |
+| `executionSuspended` | `RuntimeCartEditor` | Composed Workbench hold, consumed by the host frame. |
+| `HostPauseReason.Requested` | `HostExecutionControl` | Explicit transport intent; neither focus nor pane activation clears it. |
+
+The real game-input workflow exercises source focus, the side panel, Actor Lab
+Details, explicit pause, frame advance and rewind. Focusing an explicitly paused
+viewport still routes physical input but leaves the guest clock held. Hidden
+viewports release their focus. No execution-policy rewrite is warranted by
+these findings. Preserve the separate transport, debugger/evaluation plans and
+rewind review owners.
+
+VS Code's [debug session](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugSession.ts)
+and Godot's [debugger/run-bar integration](https://github.com/godotengine/godot/blob/master/editor/debugger/editor_debugger_node.cpp)
+keep Continue/Pause operations with the debug target, not editor attachment or
+rendering. They are references for that separation, not proof that BMSX's
+automatic source-authoring hold must match their UX.
+
+## Corrected: inspector painting prepared interaction geometry
 
 `BehaviorLensEditorPane.draw`, `ScenarioLabEditorPane.draw` and
-`ScenarioTargetInspection.draw` still lay out inspector controls. Paint therefore
-participates in preparing pointer targets. The existing controls already own
-layout operations; their containing panes must publish geometry during update,
-before input/rendering consumes it. Do not introduce another geometry cache,
-generic view facade or repaint-triggered execution to repair this boundary.
+`ScenarioTargetInspection.draw` laid out their inspector controls. Inline
+ActionEffect and shared property editing also revealed the selection while
+painting, and the shared value-input painter measured the text viewport.
+
+The existing pane updates now prepare parent layout, then inspector/review/value
+geometry. Scenario target inspection prepares its action bar and lazy tree in
+its update, not draw. AEM and Lua Program prepare their property tree before the
+shared inline edit. Scene, Cart Maps and ROM Inspector prepare their own value
+controls; invisible/read-only Scene fields do not acquire new measurement work.
+The existing geometry and measurement caches remain with their original owners.
+There is no new view facade, generic lifecycle or execution side effect.
+
+This follows VS Code's [prepare/render scheduling](https://github.com/microsoft/vscode/blob/main/src/vs/editor/browser/view.ts),
+[variable-view layout](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
+and [split-view child layout](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/splitview/splitview.ts).
 
 ## Boundaries that must remain
 
@@ -66,9 +93,10 @@ generic view facade or repaint-triggered execution to repair this boundary.
 - Source models and navigation bookmarks retain resource identity independently
   of the active code pane. Same-input navigation is not source installation.
 
-The first correction changes no CPU instruction hook, guest representation or
+These corrections change no CPU instruction hook, guest representation or
 per-frame observer. Validation distinguishes owner/lifecycle tests, compiled
-Studio workflows and visible product interaction; none closes the open slices.
+Studio workflows and visible product interaction; it is not native parity or a
+whole-engine architecture sign-off.
 
 ## Validation of the input/options correction
 
@@ -84,3 +112,25 @@ there are no uncaught page errors or Studio API requests in that interaction.
 This is visible product evidence, unlike the compiled workflow's model fixtures.
 IDE typecheck, strict boundary audit, debug/release Studio builds and diff checks
 also pass. These checks do not establish a whole-engine audit or native parity.
+
+## Validation of geometry preparation and execution admission
+
+The existing focused suites pass (99 cases), including retained property
+measurement, inline drafts, Scene scrolling and assistant tool composition. A
+stale test-fixture reference to the removed terminal was corrected to the actual
+`RuntimeLuaEvaluation` owner; both IDE and test typechecks pass.
+
+The full Studio workflow, isolated Scenario Lab test-runner workflow, Pietious
+Cart Maps/reload and game-input/pause workflow pass on software, WebGL2 and
+WebGPU. The physical retained-test stack can be expanded after `update` and
+before the first paint. Rebuilding that same test with the old target-inspector
+owner fails on this exact operation. The mutation is test-local, without an
+unsafe product switch or edits to the running workspace owners.
+
+Separately, keyboard/pointer interaction in the rebuilt standalone Studio was
+used to inspect the actual ActionEffect value draft and source-details UI, an
+AEM property draft and the ROM filter's applied results. The resulting product
+captures were viewed, not merely generated. There were no uncaught page errors
+or Studio API requests. Debug/release Studio builds, strict architecture-boundary
+audit (zero issues) and diff checks pass. This closes these scoped view-owner
+findings, not a native-runtime parity or whole-engine performance audit.

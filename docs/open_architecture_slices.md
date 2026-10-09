@@ -482,18 +482,17 @@ renderers. Dit sluit B03/B04, propertyauthoring of A08 niet.
 
 ### Aanvullende behavior-review na A04
 
-De [bredere view-lifetime-review](studio_view_lifetime_review.md) legt twee
-aanvullende owner-slices vast. De gedeelde scheiding tussen input-attachment en
-navigatieopties sluit deze punten niet:
+De [bredere view-lifetime-review](studio_view_lifetime_review.md) is opgevolgd:
+inspector-/value-layout komt nu uit de concrete view-update, niet uit paint.
+Dit omvat de gedeelde value-input-painter en zijn Scene/Cart Maps/ROM/AEM/Lua
+Program-consumers, zonder een tweede cache of lifecyclelaag.
 
-- Automatische Workbench-executionadmission krijgt een samenhangende policy,
-  apart van inputrouting. Beoordeel `RuntimeCartEditor.executionSuspended`,
-  live-inspector-`running` en Game panel samen. Expliciete pause blijft al bij
-  `HostExecutionControl`; dit is geen bewijs dat Pause genegeerd wordt en geen
-  reden om pause/debugger/evaluation/rewind in een nieuwe service samen te drukken.
-- Inspector-layout hoort vóór paint bij de concrete view-update. Behavior Lens,
-  Scenario Lab en ScenarioTargetInspection mogen hun pointergeometrie niet
-  afhankelijk maken van een eerdere `draw`.
+De executionadmission is opnieuw samen met de echte input- en transportowners
+getoetst. `RuntimeCartEditor.executionSuspended` is al de centrale automatische
+Workbench-policy; game-focus mag die authoring-hold vrijgeven maar kan geen
+expliciete `HostExecutionControl`-pause wissen. Dat is bewust UX-gedrag, geen
+focus-handler die Continue uitvoert. Geen extra service of gedupliceerde intent
+toegevoegd. Deze bevinding sluit geen andere UX-/broncontracten hieronder.
 
 De [nieuwe gebruikersreview](behavior_authoring_ux_review.md) onderscheidt
 ontbrekende functionaliteit van presentatieproblemen. Deze contracten zijn

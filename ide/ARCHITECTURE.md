@@ -31,6 +31,21 @@ Views without selection options perform no attachment work from `setOptions`.
 This follows VS Code's separate
 [`EditorPane` input/options/visibility operations](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPane.ts).
 
+Concrete pane updates publish inspector, inline value and review geometry.
+Hit testing and painting consume that retained geometry; painters do not reveal
+selections, change scroll position or measure value-input viewports. Composite
+views prepare their child controls after preparing the parent layout. Existing
+measurement invalidation remains with the controls, without a second cache or
+generic view lifecycle. This follows VS Code's separate
+[`prepareRender` and `render` phases](https://github.com/microsoft/vscode/blob/main/src/vs/editor/browser/view.ts).
+
+`RuntimeCartEditor.executionSuspended` owns the automatic Workbench hold. It
+combines modal state, explicit workbench operations, active-view admission and
+game-input focus. Focus does not dispatch Continue or change explicit pause;
+`HostExecutionControl` owns that transport independently. Per-inspector
+`running` state permits live inspection instead of creating another clock.
+See the [owner review](../docs/studio_view_lifetime_review.md).
+
 ## BIOS Terminal and debugger evaluation
 
 `workbench/contrib/terminal` displays the physical BIOS monitor's completed

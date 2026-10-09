@@ -54,7 +54,11 @@ export class WorkbenchPropertyEdit<T> {
 		this.lifetime = undefined;
 		this.control.field.focusTarget.release();
 	}
-	public update(): void { if (this.binding?.model.readOnly) this.close(); }
+	public update(): void {
+		if (this.binding === undefined) return;
+		if (this.binding.model.readOnly) this.close();
+		else this.layout();
+	}
 	private layout(): void {
 		const { tree, row } = this.binding!;
 		revealWorkbenchListSelection(tree);
@@ -63,14 +67,12 @@ export class WorkbenchPropertyEdit<T> {
 		this.control.layout(this.bounds.right - this.bounds.left);
 	}
 	public draw(): void {
-		this.layout();
 		api.pushClipRect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom);
 		drawValueInput(this.control, this.bounds);
 		api.popClipRect();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!this.active) return false;
-		this.layout();
 		if (!this.control.field.pointerSelecting && (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds))) return false;
 		this.control.handlePointer(this.bounds.left + 3, snapshot.viewportX, (snapshot.justPressedButtons & PointerButton.Primary) !== 0, (snapshot.pressedButtons & PointerButton.Primary) !== 0);
 		return true;

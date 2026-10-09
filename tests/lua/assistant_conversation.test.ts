@@ -52,12 +52,12 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const runtime = createTestRuntime(image.romBytes);
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
-	const { events, hotResumes, boots, actorExecution, debuggerExecution, terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest, models, storage);
+	const { events, hotResumes, boots, actorExecution, debuggerExecution, luaEvaluation, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest, models, storage);
 	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
 	const testRuns = new ScenarioRunService(models, sources, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
-	const tools = new WorkspaceToolService(models, sources, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, boots, hotResumes, events, new VirtualHeadlessClock());
+	const tools = new WorkspaceToolService(models, sources, diagnostics, testRuns, inspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, boots, hotResumes, events, new VirtualHeadlessClock());
 	const conversation = new AssistantConversation(models, sources, tools, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);

@@ -90,10 +90,12 @@ export class ActionEffectPropertyEdit {
 	}
 
 	public update(): void {
-		if (this.binding !== undefined && this.binding.model.readOnly) this.close();
+		if (this.binding === undefined) return;
+		if (this.binding.model.readOnly) this.close();
+		else this.layout();
 	}
 
-	public layout(): void {
+	private layout(): void {
 		const binding = this.binding!;
 		revealWorkbenchListSelection(binding.properties.tree);
 		const { layout, scroll } = binding.properties.tree;
@@ -103,7 +105,6 @@ export class ActionEffectPropertyEdit {
 	}
 
 	public draw(): void {
-		this.layout();
 		api.pushClipRect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom);
 		drawValueInput(this.control, this.bounds);
 		api.popClipRect();
@@ -111,7 +112,6 @@ export class ActionEffectPropertyEdit {
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!this.active) return false;
-		this.layout();
 		if (!this.control.field.pointerSelecting && (!snapshot.valid || !snapshot.insideViewport
 			|| !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds))) return false;
 		this.control.handlePointer(this.bounds.left + 3, snapshot.viewportX,

@@ -35,8 +35,12 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
 	const sourceSelection = lens.view.selection;
-	await runPaletteCommand('Behavior Lens: Open Source Details');
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	ide.editor.commands.execute('behaviorLens.details');
+	const pane = ide.editor.editorPanes.activePane as BehaviorLensEditorPane;
+	pane.update();
+	const inspector = pane.inspector;
+	check(inspector.model.rowAt(inspector.model.viewport.bounds.top + 1) === 0,
+		'inspection: the pane prepares readable hit targets before its first paint');
 	check(inspector.visible && !ide.editor.quickInput.visible, 'inspection: full property reader replaces the canvas, not its model or source');
 	const targetIndex = inspector.model.rows.findIndex(row => row.element.label.endsWith('ON_FINISHED'));
 	check(targetIndex >= 0, 'inspection: unknown extension field remains inspectable');

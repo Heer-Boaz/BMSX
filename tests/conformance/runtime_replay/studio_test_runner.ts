@@ -3,6 +3,7 @@ import { testStudioScenarioOutput } from './studio_scenario_output';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
+import { PointerButton } from '../../../ide/input/pointer/buttons';
 
 /** Real Studio commands, source models and isolated physical execution targets. */
 export async function runStudioTestRunner(test: StudioFixture) {
@@ -47,6 +48,22 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	check(cycles() === authoringCycles && ide.sources.currentBlua32Media === authoringMedia, 'run never reboots or mutates the paused authoring target');
 	check(ide.fault.faultSnapshot === null, 'failed test does not fault Studio');
 	await test.capture?.('named-test-results');
+	await press('Tab'); await press('Home');
+	const retainedIndex = tab.view.resultPane.rows.findIndex(row => row.id === run.items[0].id);
+	for (let index = 0; index < retainedIndex; index++) await press('ArrowDown');
+	ide.editor.commands.execute('scenarioLab.inspectTarget');
+	const targetPane = ide.editor.editorPanes.activePane;
+	if (!(targetPane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab target pane expected');
+	targetPane.update();
+	const targetTree = targetPane.targetInspection.model!.tree, root = targetTree.roots[0];
+	check(root.collapsed && root.children.length === 0, 'target inspection starts without eagerly loading stack pages');
+	const hit = targetPane.targetInspection.handlePointer({ valid: true, insideViewport: true,
+		viewportX: targetTree.layout.contentLeft + targetTree.layout.twistieWidth / 2,
+		viewportY: targetTree.layout.contentTop + targetTree.layout.rowHeight / 2,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, true, test.clock.now());
+	check(hit && !root.collapsed && root.children.length > 0, 'view update makes the actual retained stack clickable before its first paint');
+	await frame(); await test.capture?.('retained-target-stack');
+	await press('Escape'); await press('ShiftLeft', 'Tab');
 
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length,
 		text: authored.replace("error('isolated assertion')", 'assert(true)') }]);

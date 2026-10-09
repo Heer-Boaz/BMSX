@@ -119,7 +119,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.edit.close()) });
 	}
 	public override update(): void {
-		this.controller.refresh(this.input); this.controller.refreshRuntime(this.input); this.edit.update();
+		this.controller.refresh(this.input); this.controller.refreshRuntime(this.input);
 		const input = this.input;
 		updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		for (const item of input.actionBar.items) {
@@ -136,6 +136,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		}
 		layoutWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree, editorViewState.font.renderFont(), measureTextRange,
 			input.layout.left + 4, input.layout.top + input.layout.rowHeight + 7, input.layout.right - 4, input.layout.bottom);
+		this.edit.update();
 		this.actions.update();
 	}
 	public draw(): void {

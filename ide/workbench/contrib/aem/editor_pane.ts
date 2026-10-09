@@ -71,11 +71,12 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		lifetime.add({ dispose: model.onDidChangeContent(() => this.edit.close()) });
 	}
 	public override update(): void {
-		projectAemSource(this.input); this.edit.update(); updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
+		projectAemSource(this.input); updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
 		const { layout, actionBar, tree } = this.input;
 		layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
 		layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange, layout.left + 4,
 			layout.top + layout.rowHeight + 7, layout.right - 4, layout.bottom);
+		this.edit.update();
 		this.actions.update();
 	}
 	public draw(): void {

@@ -251,6 +251,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.inspector.update();
 		this.graph.update();
 		this.actionBar.update();
+		const layout = this.input.view.layout;
+		if (this.inspector.visible) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, layout);
+		else if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, layout);
 	}
 
 	public override clearInput(): void {
@@ -267,11 +270,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public draw(): void {
 		const view = this.input.view;
 		if (this.inspector.visible) {
-			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view, this.contentBounds));
 			drawWorkbenchPropertyInspector(this.inspector);
 			return;
 		}
-		if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view, this.contentBounds));
 		drawBehaviorLens(view, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
 			this.graph.connectionHandles, this.sourceEditReview.visible ? this.sourceEditReview : undefined);
 		if (this.propertyEdit.active) this.propertyEdit.draw();
@@ -294,10 +295,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.propertyEdit.handlePointer(snapshot)) return true;
-		if (this.sourceEditReview.visible) {
-			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view, this.contentBounds));
-			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
-		}
+		if (this.sourceEditReview.visible) return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view, this.contentBounds);

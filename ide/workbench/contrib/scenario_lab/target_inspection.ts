@@ -72,9 +72,23 @@ export class ScenarioTargetInspection {
 		this.model?.inspection.dispose(); this.model = undefined;
 	}
 	public dispose(): void { this.hide(); this.details.dispose(); this.actions.dispose(); this.unbindKeyboard(); }
-	public update(): void {
+	public update(bounds: Readonly<RectBounds>): void {
 		if (this.model === undefined) return;
 		this.details.update(); this.actions.update();
+		const font = editorViewState.font;
+		if (this.details.visible) {
+			this.details.layout(font.renderFont(), measureTextRange, measureText, bounds);
+			return;
+		}
+		const renderFont = font.renderFont(), top = bounds.top + font.lineHeight + 8;
+		if (this.headerFont !== renderFont || this.header.left !== bounds.left || this.header.top !== bounds.top || this.header.right !== bounds.right) {
+			this.headerFont = renderFont;
+			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
+			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, renderFont);
+			const state = this.model.inspection.state, first = this.bar.items.find(item => item.visible)!;
+			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, first.bounds.left - bounds.left - 8, measureTextRange);
+		}
+		layoutWorkbenchPropertyTree(this.model.tree, renderFont, measureTextRange, bounds.left, top, bounds.right, bounds.bottom);
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		return this.model !== undefined && (command === 'scenarioLab.closeTarget'
@@ -105,24 +119,14 @@ export class ScenarioTargetInspection {
 		});
 	}
 
-	public draw(bounds: RectBounds): void {
-		const font = editorViewState.font;
+	public draw(): void {
 		if (this.details.visible) {
-			this.details.layout(font.renderFont(), measureTextRange, measureText, bounds);
 			drawWorkbenchPropertyInspector(this.details); return;
 		}
-		const renderFont = font.renderFont(), top = bounds.top + font.lineHeight + 8;
-		if (this.headerFont !== renderFont || this.header.left !== bounds.left || this.header.top !== bounds.top || this.header.right !== bounds.right) {
-			this.headerFont = renderFont;
-			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
-			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, editorViewState.font.renderFont());
-			const state = this.model!.inspection.state, first = this.bar.items.find(item => item.visible)!;
-			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, first.bounds.left - bounds.left - 8, measureTextRange);
-		}
-		api.fill_rect(bounds.left, bounds.top, bounds.right, top, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
-		drawEditorText(font, this.title, bounds.left + 4, bounds.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(this.bar, renderFont);
-		layoutWorkbenchPropertyTree(this.model!.tree, renderFont, measureTextRange, bounds.left, top, bounds.right, bounds.bottom);
+		const header = this.header;
+		api.fill_rect(header.left, header.top, header.right, header.bottom, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
+		drawEditorText(editorViewState.font, this.title, header.left + 4, header.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);
+		renderWorkbenchActionBar(this.bar, this.headerFont!);
 		drawWorkbenchPropertyTree(this.model!.tree);
 	}
 

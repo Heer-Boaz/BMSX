@@ -104,6 +104,10 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		}
 		this.actions.update();
 		layoutCartMap(this.input, this.contentBounds, changed);
+		if (this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
+			const bounds = this.input.fieldBounds[axis];
+			this.controls[axis].layout(bounds.right - bounds.left);
+		}
 	}
 	private applyMove(edit: EditorModelEdit): void {
 		const input = this.input;

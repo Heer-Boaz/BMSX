@@ -212,6 +212,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 		if (layoutChanged || contentActionsChanged) layoutWorkbenchActionBar(input.contentActions, right - 4,
 			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont());
+		this.filter.layout(input.filterBounds.right - input.filterBounds.left);
 		this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, input.detailsBounds);
 		this.inspector.update();
 		this.actions.update(); this.contentActions.update();

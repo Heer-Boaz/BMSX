@@ -4,6 +4,7 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
+import { PointerButton } from '../../../ide/input/pointer/buttons';
 
 /** Independent source, real commands, value focus/draft history and workspace Save. */
 export async function testStudioActionEffectEdit(test: StudioFixture): Promise<void> {
@@ -36,6 +37,17 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 		await press('ControlLeft', 'KeyA'); await clipboard.writeText(text); await press('ControlLeft', 'KeyV');
 	};
 	await select('period_ms');
+	ide.editor.commands.execute('behaviorLens.editProperty');
+	pane.update();
+	check(editor.handlePointer({ valid: true, insideViewport: true,
+		viewportX: (editor.bounds.left + editor.bounds.right) / 2, viewportY: (editor.bounds.top + editor.bounds.bottom) / 2,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }),
+		'effect: update prepares the editable value hit target without painting it');
+	const draftScroll = properties.tree.scroll, draftEnd = editor.control.viewport.end;
+	pane.draw();
+	check(properties.tree.scroll === draftScroll && editor.control.viewport.end === draftEnd,
+		'effect: paint consumes the prepared draft without scrolling or relaying out its input');
+	await press('Escape');
 	let version = model.version;
 	await open(); await paste('20 * 3');
 	check(model.version === version && editor.control.pending, 'effect: typing is a draft, not source mutation');
