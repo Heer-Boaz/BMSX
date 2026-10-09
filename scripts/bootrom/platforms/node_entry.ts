@@ -1,3 +1,4 @@
+import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { HostRewind } from '../../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
@@ -118,9 +119,8 @@ async function main(): Promise<void> {
 		),
 	);
 	const audioOutput = new HostAudioOutput(
-		new DiscardingAudioSink(),
+		new HostAudioDevice(new DiscardingAudioSink()),
 		runtime.machine.audioController,
-		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,
 	);
 	const logOutput = new ConsoleLogOutput();
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
-	audioOutput.bootstrap();
+	audioOutput.device.select(audioOutput);
 	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	runtime.frameScheduler.clearQueuedTime();
 	const frameLoop = frames.start((currentTime) => {

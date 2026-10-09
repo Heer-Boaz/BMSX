@@ -287,7 +287,7 @@ export function presentHostPresentation(
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
-	audioOutput.pumpRuntimeAudio();
+	audioOutput.device.sink.pumpRuntimeAudio();
 	switch (action) {
 		case HostFrameAction.PresentPending:
 			screen.presentPending(

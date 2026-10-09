@@ -1,7 +1,6 @@
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import type { AudioController } from '../../machine/ts/machine/devices/audio/controller';
-import type { ApuOutputRing } from '../../machine/ts/machine/devices/audio/output_ring';
-import { HZ_SCALE } from '../../machine/ts/spec/bmsx/timing';
+import type { HostAudioDevice } from './audio_device';
 
 export type AudioOutputPuller = (
 	output: Int16Array,
@@ -27,7 +26,7 @@ const MUTE_REASON_REWIND = 0x20;
 export class HostAudioOutput {
 	private muteReasons = 0;
 	private readonly outputResampler = new AudioOutputResampler();
-	private readonly pullRuntimeAudio: AudioOutputPuller = (
+	public readonly pullRuntimeAudio: AudioOutputPuller = (
 		output,
 		frameCount,
 		sampleRate,
@@ -39,39 +38,21 @@ export class HostAudioOutput {
 	);
 
 	public constructor(
-		private readonly audio: HostAudioSink,
+		public readonly device: HostAudioDevice,
 		private readonly audioController: AudioController,
-		private readonly outputRing: ApuOutputRing,
-		ufpsScaled: number,
-	) {
-		this.audio.setEmulationFrameTimeSec(HZ_SCALE / ufpsScaled);
-	}
-
-	public bootstrap(): void {
-		this.stop();
-		if (this.muteReasons !== 0) {
-			return;
-		}
-		this.start();
-		void this.audio.resume();
-	}
+		public ufpsScaled: number,
+	) {}
+	public get muted(): boolean { return this.muteReasons !== 0; }
 
 	public restart(ufpsScaled: number): void {
-		this.syncTiming(ufpsScaled);
-		this.stop();
-		if (this.muteReasons !== 0) {
-			return;
-		}
-		this.start();
-		void this.audio.resume();
+		this.ufpsScaled = ufpsScaled;
+		this.resetPlayback();
+		this.device.changed(this, true);
 	}
 
 	public syncTiming(ufpsScaled: number): void {
-		this.audio.setEmulationFrameTimeSec(HZ_SCALE / ufpsScaled);
-	}
-
-	public pumpRuntimeAudio(): void {
-		this.audio.pumpRuntimeAudio();
+		this.ufpsScaled = ufpsScaled;
+		this.device.changed(this, false);
 	}
 
 	public mutePause(muted: boolean): void {
@@ -108,22 +89,18 @@ export class HostAudioOutput {
 		if (wasMuted === (this.muteReasons !== 0)) {
 			return;
 		}
-		if (muted) {
-			this.stop();
-			void this.audio.suspend();
-			return;
-		}
-		void this.audio.resume();
-		this.start();
+		if (muted) this.resetPlayback();
+		this.device.changed(this, true);
 	}
 
-	private start(): void {
-		this.audio.setRuntimeAudioPuller(this.pullRuntimeAudio);
-	}
-
-	private stop(): void {
-		this.audio.setRuntimeAudioPuller(null);
+	/** Drops output-only playback, including deferred PCM. Guest APU state is not restored or replaced. */
+	public resetPlayback(): void {
 		this.outputResampler.reset();
-		this.outputRing.clear();
+		this.audioController.synchronizeOutput().clear();
+	}
+
+	public dispose(): void {
+		if (this.device.selected === this) this.device.select(null);
+		else this.resetPlayback();
 	}
 }

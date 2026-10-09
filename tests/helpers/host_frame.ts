@@ -1,3 +1,4 @@
+import { HostAudioDevice } from '../../hosts/common/audio_device';
 import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { HostFrameSession } from '../../hosts/common/host_frame';
@@ -17,7 +18,8 @@ export function createHostFrameFixture() {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const sink = new DiscardingAudioSink();
-	const audio = new HostAudioOutput(sink, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
+	const audio = new HostAudioOutput(new HostAudioDevice(sink), runtime.machine.audioController, runtime.timing.ufpsScaled);
+	audio.device.select(audio);
 	const { presenter } = createHostOverlayFixture(256, 212);
 	const screen = new RenderPresentationState();
 	const tasks = new RuntimeTaskQueue(audio, presenter);

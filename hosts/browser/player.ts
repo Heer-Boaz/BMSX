@@ -6,6 +6,7 @@ import {
 	initializeMachineVideoPresenter,
 } from '../common/machine_runtime';
 import { HostAudioOutput } from '../common/audio_output';
+import { HostAudioDevice } from '../common/audio_device';
 import {
 	HostFrameRunResult,
 	HostFrameSession,
@@ -42,9 +43,8 @@ async function startBrowserPlayer(): Promise<void> {
 			options.videoBackend,
 		);
 		const audioOutput = new HostAudioOutput(
-			options.audio,
+			new HostAudioDevice(options.audio),
 			runtime.machine.audioController,
-			runtime.machine.audioOutput.outputRing,
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
@@ -61,7 +61,7 @@ async function startBrowserPlayer(): Promise<void> {
 		runtime.resetForSystemBoot();
 		runtime.boot();
 		systemOutput.flush(runtime, options.logOutput);
-		audioOutput.bootstrap();
+		audioOutput.device.select(audioOutput);
 		bindBrowserFullscreenShortcut(
 			options.input,
 			execution,

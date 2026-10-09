@@ -1,3 +1,4 @@
+import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { testWebGpuReadbackLifetime } from './browser_gpu_readbacks';
 import { createWebGPUBackend } from '../../../hosts/browser/backend';
@@ -38,7 +39,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	let audioFrames = 0;
 	let audible = false;
 	const samples = new Int16Array(2048);
-	const audioOutput = new HostAudioOutput({
+	const audioOutput = new HostAudioOutput(new HostAudioDevice({
 		setRuntimeAudioPuller(value) { puller = value; },
 		pumpRuntimeAudio() {
 			if (!puller) return;
@@ -47,7 +48,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 			for (let index = 0; index < frames * 2; index += 1) audible ||= samples[index] !== 0;
 		},
 		resume() {}, suspend() {}, setEmulationFrameTimeSec() {},
-	}, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
+	}), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const log = { log(level: number, message: string) { if (level === 3) errors.push(message); } };
 	const tasks = new RuntimeTaskQueue(audioOutput, presenter);
 	const presentation = new RenderPresentationState();
@@ -86,7 +87,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 		await press('Enter');
 	};
 	runtime.boot();
-	audioOutput.bootstrap();
+	audioOutput.device.select(audioOutput);
 	for (let count = 0; count < 8000 && history.latestCycles < runtime.timing.cpuHz * 22; count += 1) await frame();
 	require(history.checkpointCount === 2 && history.earliestCycles > runtime.timing.cpuHz * 6, 'continuous two-slot collection must wrap');
 	require(audible && audioFrames > 48000, 'ordinary play produces real audio');

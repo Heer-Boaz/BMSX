@@ -37,6 +37,7 @@ import {
 	initializeMachineVideoPresenter,
 } from '../../hosts/common/machine_runtime';
 import { HostAudioOutput } from '../../hosts/common/audio_output';
+import { HostAudioDevice } from '../../hosts/common/audio_device';
 import {
 	HostFrameRunResult,
 	HostFrameSession,
@@ -77,9 +78,8 @@ async function startBrowserStudio(): Promise<void> {
 			options.videoBackend,
 		);
 		const audioOutput = new HostAudioOutput(
-			options.audio,
+			new HostAudioDevice(options.audio),
 			runtime.machine.audioController,
-			runtime.machine.audioOutput.outputRing,
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
@@ -136,7 +136,7 @@ async function startBrowserStudio(): Promise<void> {
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		if (workspace.kind === 'http') ide.editor.importFiles = (directory, signal) => importWorkspaceFiles(httpSession(workspace.baseUrl), directory, signal);
 		systemOutput.flush(runtime, options.logOutput);
-		audioOutput.bootstrap();
+		audioOutput.device.select(audioOutput);
 		bindBrowserFullscreenShortcut(
 			options.input,
 			execution,

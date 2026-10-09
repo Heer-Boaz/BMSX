@@ -7,8 +7,7 @@ import { HostMenuInput } from '../../hosts/common/host_overlay_menu';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 
 test('frame advance bypasses inspection pause but keeps initialization blockers and audio muted', t => {
-	const { execution, sink, audio } = createHostFrameFixture();
-	audio.bootstrap();
+	const { execution, sink } = createHostFrameFixture();
 	const suspend = t.mock.method(sink, 'suspend');
 	const resume = t.mock.method(sink, 'resume');
 	execution.setPauseReason(HostPauseReason.Workbench, true);

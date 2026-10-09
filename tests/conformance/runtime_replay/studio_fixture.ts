@@ -1,3 +1,4 @@
+import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { BrowserInputHub } from '../../../hosts/browser/input';
 import { HOST_SUPERVISOR_KEY_CODE } from '../../../hosts/common/input/shortcuts';
 import { decodeImage, encodePngImage } from '../../../hosts/browser/image';
@@ -75,11 +76,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	let puller: AudioOutputPuller | null = null;
 	const observations = { hostFrames: 0, audioFrames: 0, suspended: false, expectedFaultSequence: 0 };
 	const samples = new Int16Array(2048);
-	const audio = new HostAudioOutput({
+	const audio = new HostAudioOutput(new HostAudioDevice({
 		setRuntimeAudioPuller(value) { puller = value; },
 		pumpRuntimeAudio() { if (puller) observations.audioFrames += puller(samples, 960, 48000); },
 		resume() { observations.suspended = false; }, suspend() { observations.suspended = true; }, setEmulationFrameTimeSec() {},
-	}, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
+	}), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const log = new RecordingLogOutput({ log(level, message) { if (level === 3) console.error(message); } });
 	const tasks = new RuntimeTaskQueue(audio, presenter);
 	const screen = new RenderPresentationState();
@@ -232,7 +233,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		}
 		throw new Error('real title actor missing');
 	};
-	audio.bootstrap();
+	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
 		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
 }

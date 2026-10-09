@@ -82,6 +82,18 @@ admission, exercise human input through the actual ICU/IRQ, then verify bounded
 teardown cannot consume that held key. This is session-boundary evidence, not
 an interactive viewport or completed `2025` authoring claim.
 
+Physical audio now has a single device owner with explicit runtime-source
+selection. Inactive session controls cannot suspend or retime the primary
+output; each output retains its own mute reasons and resampler. The actual
+selected callback goes directly to the transport, adding no per-sample routing.
+Source changes discard output-only playback, while releasing composed mutes
+preserves the valid PCM produced after supervisor voice-clock release. Physical
+two-runtime PCM checks and the existing APU/resampler/frame suites pass (44
+checks). Existing real-cart Game/Actor input workflows pass on all three browser
+backends; WebGPU rewind still produces real audible PCM and hidden reconstruction
+passes. Those are development conformance checks, not an interactive Play
+viewport or final Studio-only authoring acceptance.
+
 ## Reference owners
 
 - [Godot's animation track editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_track_editor.cpp)
@@ -242,6 +254,35 @@ The headless host-overlay bitmap path consumes retained pixels directly. The
 WebGL texture owner updates its existing metadata record rather than allocating
 one on each upload. No CPU, scheduler, VRAM, replay or C++ machine code changes
 are needed for this host-output slice.
+
+### Physical audio ownership
+
+Play must not construct a second output controller against the same physical
+sink. The device selects one runtime output. Each runtime output retains its
+own mute reasons, resampler and APU output queue; a source that is not selected
+cannot suspend, replace or retime the selected source. Switching discards the
+previous transport and resets source playback, not guest APU state.
+
+[JUCE's AudioSourcePlayer](https://github.com/juce-framework/JUCE/blob/master/modules/juce_audio_devices/sources/juce_AudioSourcePlayer.cpp)
+selects an explicit source with a separate device callback lifetime. BMSX needs
+that ownership separation, not a mixer, per-session fake sink, mutex or host
+audio sample interpreter. The physical sink receives the selected output's
+existing resampler callback directly: selection adds no per-sample dispatch.
+
+| Representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Guest APU slots/commands/timing | `AudioController`, device service clock | mirrored APU | Unchanged |
+| PCM output | signed stereo i16 `ApuOutputRing` | mirrored output ring | Unchanged |
+| Resampling | per-runtime `AudioOutputResampler` | per-player resampler | Same algorithm and sample rates |
+| Mute intent | per-runtime `HostAudioOutput` reason mask | existing native host reasons | Not a guest register or cross-host schema |
+| Device callback | one selected output, `HostAudioDevice` owns the sink | one libretro player output | Explicit TS host source selection; no dormant native Studio |
+| Transport discard | source resampler reset/APU queue clear; sink puller replacement clears browser transport | existing playback reset/output clear | Output-only boundary, never guest rollback |
+
+Hot-path callsites remain the selected `HostAudioOutput` callback ->
+`AudioController.synchronizeOutput` -> `AudioOutputResampler.pull`. Browser
+audio transport pumping still runs once at host presentation. Device selection,
+mute transitions, reboot/reset and frequency changes are control boundaries;
+they must not allocate callbacks or poll a source registry per sample.
 
 ## Product gates
 

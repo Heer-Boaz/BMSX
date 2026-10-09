@@ -1,3 +1,4 @@
+import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { decodeImage, encodePngImage } from '../../../hosts/node/headless/screenshot';
 import { runGuestTests } from './hostrunner/test_runner';
 import { Worker } from 'node:worker_threads';
@@ -148,9 +149,8 @@ async function main(): Promise<void> {
 		videoBackend,
 	);
 	const audioOutput = new HostAudioOutput(
-		new DiscardingAudioSink(),
+		new HostAudioDevice(new DiscardingAudioSink()),
 		runtime.machine.audioController,
-		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,
 	);
 	const systemOutput = new SystemOutputLog();
@@ -196,7 +196,7 @@ async function main(): Promise<void> {
 		runtime.resetForSystemBoot();
 		runtime.boot();
 		systemOutput.flush(runtime, logOutput);
-		audioOutput.bootstrap();
+		audioOutput.device.select(audioOutput);
 	}
 
 	try {
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
 			);
 			if (ide) {
 				systemOutput.flush(runtime, logOutput);
-				audioOutput.bootstrap();
+				audioOutput.device.select(audioOutput);
 			}
 			const captureDirectory = path.resolve('.bmsx/control/screenshots', String(process.pid));
 			await fs.mkdir(captureDirectory, { recursive: true });
@@ -288,7 +288,7 @@ async function main(): Promise<void> {
 						() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 					);
 					systemOutput.flush(runtime, logOutput);
-					audioOutput.bootstrap();
+					audioOutput.device.select(audioOutput);
 					const interrupt = (): never => {
 						persistWorkspaceSessionLocally();
 						process.exit(130);

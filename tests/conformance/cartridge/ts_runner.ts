@@ -27,6 +27,7 @@ async function main(): Promise<void> {
 		{ RenderPresentationState },
 		{ HostOverlayMenu },
 		{ HostAudioOutput },
+		{ HostAudioDevice },
 		{ SystemOutputLog },
 		{ HeadlessGPUBackend },
 		{ OffscreenVideoOutput },
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
 		import('../../../hosts/common/presentation_state'),
 		import('../../../hosts/common/host_overlay_menu'),
 		import('../../../hosts/common/audio_output'),
+		import('../../../hosts/common/audio_device'),
 		import('../../../hosts/common/system_output_log'),
 		import('../../../machine/ts/render/headless/backend'),
 		import('../../../hosts/common/offscreen_video_output'),
@@ -96,9 +98,8 @@ async function main(): Promise<void> {
 		),
 	);
 	const audioOutput = new HostAudioOutput(
-		new DiscardingAudioSink(),
+		new HostAudioDevice(new DiscardingAudioSink()),
 		runtime.machine.audioController,
-		runtime.machine.audioOutput.outputRing,
 		runtime.timing.ufpsScaled,
 	);
 	const systemOutput = new SystemOutputLog();
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
-	audioOutput.bootstrap();
+	audioOutput.device.select(audioOutput);
 	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	runtime.frameScheduler.clearQueuedTime();
 	let currentTimeMs = session.currentTimeMs;

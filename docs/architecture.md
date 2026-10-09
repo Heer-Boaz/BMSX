@@ -4660,14 +4660,26 @@ at the actual host transport rather than accumulating another frame of hidden
 machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
-`hosts/common/HostAudioOutput` owns the TypeScript browser/Node transport
-lifecycle and distinct pause, Studio, rewind, runtime-task and physical-system
-mute reasons. After each machine update it observes raw
-`SYS_STATUS.SUPERVISOR_ACTIVE`. The inactive-to-active edge detaches the puller,
-resets the resampler, clears AOUT and the existing AudioWorklet transport
-backlog, and suspends the sink. The active-to-inactive edge resumes the sink and
-reattaches the puller without clearing AOUT frames produced after the physical
-voice-clock release.
+`hosts/common/HostAudioDevice` owns the one physical TypeScript browser/Node
+transport and explicitly selects its runtime output. `HostAudioOutput` retains
+each runtime's resampler and distinct pause, Studio, rewind, runtime-task and
+physical-system mute reasons. An inactive output cannot replace the device
+callback, change its timing or suspend it. The device binds the selected
+output's existing resampler callback directly, with no per-sample multiplexing.
+Source selection resets the departing and arriving output playback and replaces
+the sink puller, discarding the existing AudioWorklet transport backlog without
+restoring or replacing guest APU state. Disposing the selected output leaves no
+source; the session owner, not a fallback, chooses the next one.
+
+After each machine update the host observes raw
+`SYS_STATUS.SUPERVISOR_ACTIVE`. Its inactive-to-active edge resets that runtime's
+resampler and materializes and clears its AOUT. For the selected output, it also
+detaches the puller, clears the physical transport and suspends the sink. The
+active-to-inactive edge resumes and reattaches the selected puller without
+clearing AOUT frames produced after the physical voice-clock release. Other
+mute reasons compose; releasing one cannot unmute an output still held by
+another. Physical transport pumping occurs once at host presentation, including
+when the primary machine is held and an interactive Play output is selected.
 
 Libretro has no browser audio context or Studio lifecycle.
 `hosts/libretro/LibretroAudioOutput` owns its frontend frame batch and fractional

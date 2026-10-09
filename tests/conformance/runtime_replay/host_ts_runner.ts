@@ -20,6 +20,7 @@ async function main(): Promise<void> {
 	const { RuntimeTaskQueue } = await import('../../../hosts/common/runtime_task_queue');
 	const { RenderPresentationState } = await import('../../../hosts/common/presentation_state');
 	const { HostAudioOutput } = await import('../../../hosts/common/audio_output');
+	const { HostAudioDevice } = await import('../../../hosts/common/audio_device');
 	const { SystemOutputLog } = await import('../../../hosts/common/system_output_log');
 	const { Input } = await import('../../../hosts/common/input/manager');
 	const { VirtualHeadlessClock } = await import('../../../hosts/node/headless/clock');
@@ -61,7 +62,7 @@ async function main(): Promise<void> {
 		suspend() { suspensions += 1; },
 		setEmulationFrameTimeSec(_seconds: number) {},
 	};
-	const audioOutput = new HostAudioOutput(sink, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
+	const audioOutput = new HostAudioOutput(new HostAudioDevice(sink), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const errors: string[] = [];
 	const log = { log(level: number, message: string) { if (level === 3) errors.push(message); } };
 	const tasks = new RuntimeTaskQueue(audioOutput, presenter);
@@ -157,7 +158,7 @@ async function main(): Promise<void> {
 		assert.notEqual(puller, null, 'live audio reconnects after all pause owners release it');
 	};
 	runtime.boot();
-	audioOutput.bootstrap();
+	audioOutput.device.select(audioOutput);
 	await assertOptionsPause();
 	for (let count = 0; count < 1100; count += 1) await frame();
 	assert.equal(history.checkpointCount, 2, 'continuous history uses the common two-slot policy');
