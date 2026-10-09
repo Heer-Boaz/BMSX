@@ -20,10 +20,19 @@ and corrected an inverse-pixel-rounding bug: a click must not move a key. Separa
 development harnesses execute an edited definition through the real cartlib/CPU
 at O0 and O3; they are not the Studio-only acceptance test.
 
-This is **not yet** the final `2025` transition/combat workflow. Inline procedural
-definitions, coordinated curve/sequence authoring and persistent interactive
-scenario sessions remain separate slices below. No exported-definition rewrite
-has been imposed on those carts to make the first editor appear complete.
+Persistent interactive Play is now exposed through Scenario Lab's **Play** action.
+It captures the selected integration module's shared fixture and the current
+working copies, admits an independent physical machine, and keeps it alive for
+human input. The Play viewport owns no new terminal, animation evaluator or
+transport: the shared rewind bar binds that session's actual history/navigation.
+Stop performs bounded fixture cleanup; Reset captures current source and joins
+the old lifetime before constructing another world. Closing the transient tab
+revokes input/audio immediately and joins backend work before disposal.
+
+This is **not yet** the final `2025` transition/combat workflow. Target-bound
+Actor/FSM inspection, inline procedural definitions and coordinated curve/sequence
+authoring remain separate slices below. No exported-definition rewrite has been
+imposed on those carts to make the first editor appear complete.
 
 The compiled fixture mechanism is now separate from automatic case policy.
 `GuestFixture` owns physical admission and phase calls; `FixtureOperations`
@@ -44,8 +53,8 @@ compiled log yields (12 alternating measured runs per version after warmup):
 115.67 ms versus 116.50 ms median, the same 420,443 guest cycles and 5,003 grants.
 Guest heap use fell by six bytes because unused `cancel` is no longer eagerly
 interned. This is a specific admission workload measurement, not a general
-performance guarantee. Persistent Play input handoff/output, real-time pacing,
-session inspection/history and the Studio-only `2025` acceptance remain open.
+performance guarantee. These checks established fixture admission; they did not
+prove the visible Play viewport or the Studio-only `2025` acceptance.
 
 Host focus now names a physical-input recipient, not merely game bounds. The
 primary player, a secondary session channel and the UI are exclusive recipients;
@@ -71,7 +80,7 @@ not a no-draw tick relabelled as an image. A Node 22 copy-only measurement
 (ten measured batches of 5,000 publications after warmup) measured approximately
 3/47/202 microseconds per publication at 256x212/320x240/640x512, retaining storage.
 Those are local host-copy timings, not GPU upload cost or whole-game performance.
-This resource does not yet constitute a persistent Play session or its viewport.
+This resource is one dependency of Play, not an alternative session owner.
 
 The fixture operation port is now independent of the physical target's input
 source. Automatic cases still own a `TestInput`; Play's input owner selects that
@@ -351,8 +360,8 @@ review/branch, teardown after heap restore and deferred target disposal. Origina
 host errors retain their identity; an already published physical fault blocks
 the next grant. The latter check stimulates the producer-side read-only fault
 latch, not a guest write or a claimed end-to-end firmware crash.
-These remain development checks: persistent Play UI and final `2025` authoring
-are not yet validated.
+These remain development checks, separate from the visible Play checks below.
+Final `2025` authoring is not yet validated.
 
 ### Physical transport and source execution
 
@@ -369,8 +378,9 @@ target. A real host/machine failure settles its outstanding navigation operation
 it cannot leave a waiter attached to a quarantined runtime. Tests stop at an
 actual compiled-source breakpoint, verify that host frames and frame-step cannot
 bypass it, source-step on the shared finite execution owner, then continue and
-video-step that target only. Source stepping UI for Play is not yet claimed by
-this slice. Original physical faults also settle pending source operations.
+video-step that target only. Play's compiled-source picker binds to that immutable
+catalog; its source execution actions use the same physical debugger. Original
+physical faults also settle pending source operations.
 
 `RuntimeTransport` owns playback intent and the matching navigation/history
 target. Live editor panes expose their physical transport alongside their command
@@ -383,5 +393,59 @@ Reference: VS Code's [debug session lifecycle](https://github.com/microsoft/vsco
 and [focused-session toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugToolBar.ts).
 The real browser Game/Actor input workflow passes on software, WebGL2 and WebGPU,
 including the source editor's separate game panel and its explicit Pause. This
-is regression evidence for current primary views, not the final Play viewport or
-visible `2025` redesign.
+is regression evidence for current primary views, not the visible `2025` redesign.
+
+### Interactive contribution and retained evidence
+
+`PlayService` owns source admission, asynchronous preparation, retirement and
+identity-bound Stop/Reset/close. The contribution controller resolves the actual
+integration fixture; the editor input/pane retain only view state and that
+handle. They do not fabricate a passing case or redirect global runtime/source
+owners. Transient inputs declare their persistence capability; the editor group
+does not maintain another list of kind-specific exclusions.
+
+Fixture compilation is shared with automatic scenarios through the existing
+working-copy capture/compiler/media pipeline. FSM and ActionEffect recorder
+readers publish primitive facts to either an automatic-result sink or Play's
+bounded evidence sink. Automatic cases retain strict overflow failure; human
+Play explicitly keeps a rolling observation window and reports expired records.
+The compiled fixture context retains recorder roots across checkpoints. Restore
+retires borrowed tables and begins a new live evidence epoch; reconstruction
+cannot append historical work to that epoch. No ship-cart trace calls are added.
+Session Details formats a snapshot only on request, not on each host frame.
+
+The visible Play check uses ordinary browser keyboard/pointer interaction with
+`2025`: select an existing integration fixture in Scenario Lab, launch, focus the
+game, press the real start key, pause and navigate frames, Reset, switch to the
+independent original Game view, return to Play, Stop and inspect Session Details.
+The compiled-source picker installs a real `cart.lua` render breakpoint. Seeking
+past it and returning to the recorded present complete without a debugger stop;
+live continuation then stops at that breakpoint, and Source Step Over reports a
+source-step stop. Game focus deliberately routes keyboard input to the physical
+game: clicking outside that viewport restores workbench command routing.
+No direct model writes, guest setup injection, clipboard injection or
+`page.evaluate` is part of this check. It tests existing shared setup, not a
+case's scene-specific body, and is not the final transition/combat redesign.
+
+That check exposed a debugger/history deadlock: a newly installed live source
+breakpoint could interrupt hidden reconstruction, while source execution and
+return-to-present both correctly refused to take over the reviewed world.
+The shared source execution hook now admits user stops only outside recorded
+replay. Hidden seeks and paced recorded playback select retained history;
+explicit Resume Here restores ordinary live breakpoint policy. Physical faults
+still stop the machine. The real O0/O3 regression fails before this change and
+checks reconstruction, recorded playback, then a real breakpoint after live
+admission. It does not clear breakpoints, invent a successful seek, disable the
+machine's fault handling or silently branch history.
+
+[MAME's debugger hook admission](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp)
+similarly distinguishes debugger execution from machine save/load work. BMSX
+uses its own recorded-history policy, not MAME's debugger flags. The added
+condition is on the already instrumented source hook; a machine without active
+source stops retains its uninstrumented executor. No hardware representation,
+guest instructions/cycles, history codec or mirrored C++ machine change is needed.
+
+Remaining acceptance work: bind Actor Lab and its source/operation/presentation
+owners to the chosen physical session, extend canonical procedural animation
+authoring, then perform the transition and combat redesign through visible
+Studio interaction. Do not present primary Actor Lab as inspection of Play.

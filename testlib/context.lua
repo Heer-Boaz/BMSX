@@ -51,10 +51,12 @@ function context:capture(label)
 end
 
 function context:observe_fsm_transitions(recorder)
+	self.fsm_recorder = recorder
 	coroutine.yield('fsm', recorder)
 end
 
 function context:observe_actioneffects(recorder)
+	self.actioneffect_recorder = recorder
 	coroutine.yield('actioneffects', recorder)
 end
 

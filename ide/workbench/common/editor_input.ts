@@ -20,6 +20,8 @@ export abstract class AbstractEditorInput<
 
 	/** Only inputs with a registered resource opener can outlive closing their tab. */
 	public toResourceEditor?(): ResourceEditorIdentity;
+	/** A live physical session or host diagnostic cannot be reconstructed from editor-session storage. */
+	public readonly serializable: boolean = true;
 	public onDidChangeDirty?(listener: () => void): () => void;
 
 	public get title(): string { return this.inputTitle; }

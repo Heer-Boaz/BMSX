@@ -3,6 +3,7 @@ import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { TestTargetFactory } from '../testing/target';
+import type { PlaySessionFactory } from './services/play/session';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -70,6 +71,7 @@ export async function initializeIdeFeatures(
 	sources: RuntimeSourceState,
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
 	createTestTarget: TestTargetFactory,
+	createPlaySession: PlaySessionFactory,
 	connectAssistant?: AssistantConnectionFactory,
 	observeConversation?: ConversationObserverFactory,
 ): Promise<RuntimeIdeState> {
@@ -117,6 +119,7 @@ export async function initializeIdeFeatures(
 		workspaceDirtyRecords,
 		createGraphLayoutEngine,
 		createTestTarget,
+		createPlaySession,
 		connectAssistant,
 		observeConversation,
 	);

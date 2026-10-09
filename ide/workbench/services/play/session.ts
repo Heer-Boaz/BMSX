@@ -12,7 +12,7 @@ import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { TestDebuggerSources } from '../../../testing/debugger_sources';
 import type { RuntimeTransport } from '../../../runtime/transport';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
-import type { FixtureOutput } from '../../../testing/fixture_operations';
+import type { PlayEvidence } from './evidence';
 import type { PlayFixture, PlayFixtureState } from '../../../testing/play_fixture';
 import type { FixtureTarget } from '../../../testing/target';
 import type { PlayInput } from './input';
@@ -28,6 +28,7 @@ export interface PlaySession {
 	readonly program: BuiltTestCartridge;
 	readonly sourceDomain: ResourceDomain;
 	readonly fixture: PlayFixture;
+	readonly evidence: PlayEvidence;
 	readonly guest: SuspendedGuestSession;
 	readonly debugger: SourceExecutionState;
 	readonly debugSources: TestDebuggerSources;
@@ -48,5 +49,4 @@ export interface PlaySession {
 }
 
 export type PlaySessionFactory = (systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
-	machineModel: MachineModelSpec, input: PlayInput, program: BuiltTestCartridge, sourceDomain: ResourceDomain,
-	output: FixtureOutput) => PlaySession;
+	machineModel: MachineModelSpec, input: PlayInput, program: BuiltTestCartridge, sourceDomain: ResourceDomain) => PlaySession;

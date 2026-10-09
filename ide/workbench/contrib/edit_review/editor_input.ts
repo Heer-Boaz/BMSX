@@ -10,6 +10,7 @@ let nextReviewId = 1;
 
 /** Ephemeral review of accepted source bytes; never serialized or restored as edit rights. */
 export class WorkspaceEditReviewInput extends ReadonlyEditorInput<`edit-review:${number}`, 'workspace_edit_review'> {
+	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly actionBar = createWorkbenchActionBar('workspaceEditReview.title');
 	public readonly viewport = new WorkbenchScrollViewport();

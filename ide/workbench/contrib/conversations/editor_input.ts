@@ -7,6 +7,7 @@ import { ObservedConversationFooter } from './footer';
 
 /** View of the native thread; closing it releases only this observer. */
 export class ConversationObserverInput extends ReadonlyEditorInput<'codex-conversations', 'conversation_observer'> {
+	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly lifetime = new AbortController();
 	public readonly viewport = new WorkbenchScrollViewport();

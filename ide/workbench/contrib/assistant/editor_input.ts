@@ -18,6 +18,7 @@ import { AssistantFooter } from './footer';
 
 /** Ephemeral view state; the workspace owns the conversation across pane switches. */
 export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'> {
+	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly turnActions = createWorkbenchActionBar('assistant.turn');
 	public readonly lifetime = new AbortController();

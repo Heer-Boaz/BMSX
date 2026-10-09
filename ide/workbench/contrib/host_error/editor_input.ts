@@ -8,6 +8,7 @@ import type { EditorFont } from '../../../editor/ui/view/font';
 
 /** Host diagnostics have no guest resource, working copy or persisted session. */
 export class HostErrorInput extends ReadonlyEditorInput<'host-error', 'host_error'> {
+	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };

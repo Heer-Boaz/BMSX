@@ -1,5 +1,7 @@
 import { RuntimeDebuggerResumeMode as Mode } from '../../../runtime/source_debugger';
-import { openTestDebugSources } from './debugger_sources';
+import { openCompiledDebugSources } from '../debugger/compiled_sources';
+import type { PlayController } from '../play/controller';
+import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
 import { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
@@ -48,6 +50,7 @@ export class ScenarioLabController {
 		private readonly editorPanes: EditorPanes,
 		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
 		public readonly runs: ScenarioRunService,
+		private readonly play: PlayController,
 	) {
 		this.disposeRunListener = this.runs.onDidChangeRun(
 			event => this.handleRunChange(event),
@@ -88,6 +91,7 @@ export class ScenarioLabController {
 	public executeCommand(command: EditorScenarioLabCommandId): void {
 		const view = this.view!;
 		switch (command) {
+			case 'scenarioLab.play': this.refreshSources(); this.play.start(this.selectedModule()!); return;
 			case 'scenarioLab.revealRun': this.revealRun(this.runs.results.liveRun ?? this.runs.results.runs[0]); return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.run':
@@ -105,9 +109,13 @@ export class ScenarioLabController {
 			case 'scenarioLab.stepOver': this.runs.debugger!.resume(Mode.StepOver); return;
 			case 'scenarioLab.stepOut': this.runs.debugger!.resume(Mode.StepOut); return;
 			case 'scenarioLab.pause': this.runs.debugger!.pause(); return;
-			case 'scenarioLab.breakpoints':
-				openTestDebugSources(this.editor.quickInput, this.runs.debugger!, text => { view.status.info = text; view.status.dirty = true; });
+			case 'scenarioLab.breakpoints': {
+				const debug = this.runs.debugger!;
+				openCompiledDebugSources(this.editor.quickInput, debug.sources,
+					listener => debug.onDidChange(() => { if (debug.status === 'closed' || debug.status === 'finished') listener(); }),
+					text => { view.status.info = text; view.status.dirty = true; });
 				return;
+			}
 			case 'scenarioLab.cancel':
 				this.runs.cancel(this.runs.results.liveRun!);
 				return;
@@ -115,11 +123,19 @@ export class ScenarioLabController {
 	}
 
 	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
+		if (command === 'scenarioLab.play') return isScenarioLabActive() && !this.runs.active
+			&& this.play.service.current === undefined && this.selectedModule()?.suite?.kind === 'integration';
 		if (command === 'scenarioLab.revealRun') return this.runs.results.runs.length !== 0;
 		if (command === 'scenarioLab.cancel') return this.runs.active;
 		return isScenarioLabActive()
 			&& this.view !== null
 			&& scenarioLabCommandEnabled(this.view, command);
+	}
+
+	private selectedModule(): ScenarioTestModule | undefined {
+		if (this.view === null) return undefined;
+		const node = selectedScenarioTestNode(this.view);
+		return node?.kind === 'module' ? node : node?.kind === 'test' ? this.runs.collection.getNode(node.parentId) as ScenarioTestModule : undefined;
 	}
 
 	public handleWheel(

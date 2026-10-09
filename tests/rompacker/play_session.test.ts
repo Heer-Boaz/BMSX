@@ -16,7 +16,6 @@ import { PlayInput } from '../../ide/workbench/services/play/input';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { valueToString } from '../../machine/ts/machine/cpu/value';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -47,25 +46,21 @@ while true do
  halt_until_irq
 end`;
 
-async function fixture(t: TestContext, optLevel: 0 | 3 = 0) {
+async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-session-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
-	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SCENE }], {
+	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
-		cartSource: GAME, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }],
+		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }],
 	});
 	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,
-		test: { sourcePath: PATH, source: SCENE }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+		test: { sourcePath: PATH, source: scene }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new PlayInput(new InputChannel(input)));
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input);
 	const logs: string[] = [], device = new HostAudioDevice(new DiscardingAudioSink());
-	const session = new PlayRuntimeSession(target, program, 0, device, {
-		log(_tick, value) { logs.push(valueToString(value, target.runtime.machine.cpu.stringPool)); },
-		captureRequested() {}, captured() {},
-		observeFsm: () => assert.fail('unexpected observer'), observeActionEffects: () => assert.fail('unexpected observer'),
-	}, { log(_level, message) { logs.push(message); } });
+	const session = new PlayRuntimeSession(target, program, 0, device, { log(_level, message) { logs.push(message); } });
 	t.after(async () => { await session.dispose(); authoring.dispose(); input.dispose(); });
 	const frame = async (elapsed = 1000 / 60) => { session.advance(elapsed); await session.tasks.join(); };
 	const settle = async (done: () => boolean) => {
@@ -81,6 +76,43 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0) {
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
 	return { session, target, authoring, input, device, frame, settle, game, field, logs };
 }
+
+for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play observations rebind compiled context roots after rewind without fake case results`, async t => {
+	const scene = `local game<const> = require('game')
+return {kind='integration', setup=function(t)
+ game.fsm={'actor.machine','machine',2,0,{{0,0,'','','',false},{0,0,'','','',false}}}
+ game.effects={'actor','definition',2,0,{{0,0,'activate','move',0},{0,0,'activate','move',0}}}
+ t:observe_fsm_transitions(game.fsm); t:observe_actioneffects(game.effects)
+ end, tests={never=function() error('No test body in Play') end}}
+`;
+	const game = GAME.replace('mem[0x08000064]=1\n mem[0x08000004]', `
+ if game.fsm ~= nil then
+  local n=game.fsm[4]+1; local slot=((n-1)%2)+1
+  local f=game.fsm[5][slot]; f[1]=n; f[2]=n; f[3]='lane'; f[4]='before'; f[5]='after'; f[6]=true; game.fsm[4]=n
+  local e=game.effects[5][slot]; e[1]=n; e[2]=n; e[5]=n; game.effects[4]=n
+ end
+ mem[0x08000064]=1\n mem[0x08000004]`);
+	const f = await fixture(t, optLevel, scene, game), evidence = f.session.evidence;
+	for (let index = 0; index < 10; index++) await f.frame();
+	assert.ok(evidence.fsmTrace!.facts.length > 0);
+	assert.ok(evidence.effectTrace!.facts.length > 0);
+	assert.equal(evidence.fsmTrace!.facts.at(0).target, 'after');
+	assert.equal(evidence.effectTrace!.facts.at(0).kind, 'activate');
+	const oldContext = f.session.fixture.readContext();
+	const epoch = evidence.epoch, navigation = f.session.navigation.step(-1, 3);
+	await f.settle(() => navigation.result !== undefined);
+	assert.equal(navigation.result!.status, 'completed');
+	assert.ok(evidence.epoch > epoch);
+	assert.notEqual(f.session.fixture.readContext(), oldContext, 'heap restore retires borrowed context objects');
+	assert.equal(evidence.fsmTrace, undefined, 'hidden replay is not live evidence');
+	f.session.transport.resumeHere();
+	for (let index = 0; index < 3; index++) await f.frame();
+	assert.ok(evidence.fsmTrace!.facts.length > 0, 'subscription resumes on the actual restored context');
+	assert.ok(evidence.effectTrace!.facts.length > 0);
+	const count = evidence.fsmTrace!.facts.length;
+	f.session.transport.pause(); for (let index = 0; index < 5; index++) await f.frame();
+	assert.equal(evidence.fsmTrace!.facts.length, count, 'paused frames cannot duplicate publications');
+});
 
 for (const optLevel of [0, 3] as const) {
 	test(`O${optLevel}: Play is paced, accepts physical input and frame-steps only its own machine`, async t => {
@@ -138,7 +170,8 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
 	assert.equal(restored.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), true);
 	assert.equal(prior.getStringKey(runtime.machine.cpu.stringPool.intern('closed')), null);
-	assert.deepEqual(f.logs, ['cleanup']);
+	assert.equal(f.session.evidence.logs.length, 1);
+	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });
 
 test('Play quarantines original host failures and physical faults without fabricating cleanup', async t => {
@@ -188,6 +221,28 @@ test('Play source stops bind to its immutable compiled image, never the authorin
 	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
 	assert.equal(f.field('closed'), true);
+});
+
+for (const optLevel of [0, 3] as const) test(`O${optLevel}: recorded review cannot be trapped by live source breakpoints`, async t => {
+	const f = await fixture(t, optLevel), session = f.session, runtime = f.target.runtime;
+	session.transport.pause();
+	for (let step = 0; step < 15; step++) { session.execution.requestFrameStep(); await f.frame(); }
+	const end = runtime.history.latestCycles, source = session.debugSources.catalog.find(entry => entry.domain === 0 && entry.path.endsWith('entry.lua'))!;
+	assert.equal(session.debugSources.setBreakpoints(source.source, [11])[0].status, 'bound');
+	const back = session.navigation.step(-1, 4);
+	await f.settle(() => back.result !== undefined);
+	assert.equal(back.result!.status, 'completed');
+	assert.equal(back.result!.completedFrames, 4);
+	assert.equal(session.debugger.source.stop, undefined, 'reconstruction selects the requested frame, not an intervening breakpoint');
+	session.transport.togglePlayback();
+	await f.settle(() => !session.rewind.playing && !session.rewind.seeking);
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), end);
+	assert.equal(session.debugger.source.stop, undefined, 'recorded playback retains its review lifetime');
+	session.transport.resumeHere();
+	await f.settle(() => session.debugger.source.stop !== undefined);
+	assert.equal(session.rewind.active, false);
+	assert.equal(runtime.history.mode, HistoryMode.Recording, 'explicit live admission restores ordinary breakpoint policy');
+	assert.equal(session.debuggerExecution.canResume('over'), true);
 });
 
 test('closing Play releases input/audio immediately but joins owned callbacks before disposing the target', async t => {

@@ -61,7 +61,7 @@ test('restoring working copies retires their old context without closing workspa
 
 test('disposing the view leaves workspace discovery alive; disposing the service closes admission', t => {
 	const f = fixture(t);
-	const view = new ScenarioLabController(null, null, null, null, f.runs);
+	const view = new ScenarioLabController(null, null, null, null, f.runs, null);
 	view.dispose();
 	f.models.retain(f.sources.luaResources[0], 'lua', 'end end');
 	assert.throws(() => f.runs.start(f.module.id), LuaSyntaxError);

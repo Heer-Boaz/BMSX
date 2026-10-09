@@ -26,6 +26,8 @@ import { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { ScenarioRunService } from './services/testing/scenario_runs';
+import { PlayService } from './services/play/service';
+import type { PlaySessionFactory } from './services/play/session';
 import type { TestTargetFactory } from '../testing/target';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { HotResumeService } from './services/execution/hot_resume';
@@ -53,6 +55,7 @@ export class RuntimeIdeState {
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly guest: SuspendedGuestSession;
 	public readonly scenarioRuns: ScenarioRunService;
+	public readonly play: PlayService;
 	public readonly textFileSaves: TextFileSaveService;
 	public readonly hotResumes: HotResumeService;
 	public readonly boots: BootService;
@@ -85,6 +88,7 @@ export class RuntimeIdeState {
 		workspaceDirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		createTestTarget: TestTargetFactory,
+		createPlaySession: PlaySessionFactory,
 		connectAssistant?: AssistantConnectionFactory,
 		observeConversation?: ConversationObserverFactory,
 	) {
@@ -93,6 +97,7 @@ export class RuntimeIdeState {
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.guest = new SuspendedGuestSession(runtime);
 		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
+		this.play = new PlayService(editorTextModelService, sources, workspaceDirtyRecords, runtime.model, input, createPlaySession);
 		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.guest, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
@@ -129,6 +134,7 @@ export class RuntimeIdeState {
 			rewind,
 			this.overlayRenderer,
 			this.scenarioRuns,
+			this.play,
 			this.textFileSaves,
 			this.hotResumes,
 			this.boots,

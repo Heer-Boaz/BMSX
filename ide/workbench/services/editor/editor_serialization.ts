@@ -1,6 +1,6 @@
 import type { EditorInput } from '../../ui/tab/model';
 
-export type PersistentEditorInput = Exclude<EditorInput, { kind: 'host_error' | 'rom_inspector' | 'workspace_edit_review' | 'assistant' | 'conversation_observer' }>;
+export type PersistentEditorInput = Exclude<EditorInput, { readonly serializable: false }>;
 
 /** Each contribution owns its serialized representation and reconstruction. */
 export interface EditorInputSerializer<TInput extends EditorInput> {

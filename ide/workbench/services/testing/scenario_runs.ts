@@ -11,7 +11,7 @@ import { ScenarioResultService, type ScenarioRun, type ScenarioRunMode, type Sce
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
-import { buildTestRunMedia } from './media_build';
+import { buildFixtureMedia } from '../execution/fixture_media';
 
 export type ScenarioRunEvent = { readonly type: 'started' | 'complete'; readonly run: ScenarioRun }
 	| { readonly type: 'debugger'; readonly run: ScenarioRun; readonly debugger: TestDebugger }
@@ -88,7 +88,7 @@ export class ScenarioRunService {
 
 	private async prepare(run: ScenarioRun, programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
 		try {
-			const media = await buildTestRunMedia(this.sources, this.dirtyRecords, programSources,
+			const media = await buildFixtureMedia(this.sources, this.dirtyRecords, programSources,
 				run.items[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
 			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }),

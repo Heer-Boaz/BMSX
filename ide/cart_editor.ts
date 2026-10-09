@@ -25,6 +25,9 @@ import type { WorkspaceBuilds } from './workbench/services/builds';
 import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ImportWorkspaceFiles } from './workbench/services/file_import';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
+import type { PlayService } from './workbench/services/play/service';
+import { PlayController } from './workbench/contrib/play/controller';
+import { PlayEditorPane } from './workbench/contrib/play/editor_pane';
 import { ObservedConversation } from './workbench/services/assistant/observed_conversation';
 import { ConversationObserverPane } from './workbench/contrib/conversations/editor_pane';
 import { WorkspaceToolService } from './workbench/services/assistant/tool_service';
@@ -231,6 +234,7 @@ export type CartEditor = {
 	readonly luaPrograms: LuaProgramController;
 	readonly actionStrings: ActionStringTester;
 	readonly scenarioLab: ScenarioLabController;
+	readonly play: PlayController;
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
 	readonly fontVariant: Parameters<typeof setFontVariant>[1];
@@ -253,6 +257,7 @@ export type CartEditor = {
 };
 
 export class RuntimeCartEditor implements CartEditor {
+	public readonly play: PlayController;
 	public readonly terminal: BiosTerminal;
 	public readonly tabBar: WorkbenchActionBarControl;
 	public readonly runtimeTimeline: RuntimeTimelineControl;
@@ -360,6 +365,7 @@ export class RuntimeCartEditor implements CartEditor {
 		rewind: HostRewind,
 		overlayRenderer: OverlayRenderer,
 		private readonly scenarioRuns: ScenarioRunService,
+		private readonly playSessions: PlayService,
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
@@ -423,6 +429,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			play_session: () => new PlayEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.navigation),
 			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu),
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
@@ -473,6 +480,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
 
 		const behaviorRegistrations = behaviorSources.registrations;
+		this.play = new PlayController(this, this.playSessions, scenarioRuns);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
@@ -489,6 +497,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorPanes,
 			behaviorRegistrations,
 			scenarioRuns,
+			this.play,
 		);
 		this.aemEditor = new AemEditorController(sources, this.editorPanes, this.quickInput);
 		this.luaPrograms = new LuaProgramController(sources, guest, this.editorPanes, this.navigation, this.quickInput, rewind);
@@ -738,6 +747,8 @@ export class RuntimeCartEditor implements CartEditor {
 		const evaluationDrained = this.luaEvaluation.shutdown();
 		const actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
+		await this.playSessions.dispose();
+		this.play.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
 		const executionDrained = this.hotResumes.shutdown();

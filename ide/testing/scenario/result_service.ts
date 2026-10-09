@@ -1,3 +1,5 @@
+import type { ActionEffectTriggerOutcome as ScenarioActionEffectTriggerOutcome } from '../observations/actioneffect';
+import { RetainedSequence } from '../../common/retained_sequence';
 import type { FaultSnapshot } from '../../runtime/fault_state';
 import type { ResourceIdentity } from '../../common/resource';
 import type {
@@ -73,17 +75,10 @@ export type ScenarioFsmTransitionTrace = {
 	readonly executionDomain: 0 | 1;
 	readonly instanceId: string;
 	readonly machineId: string;
-	readonly transitions: ScenarioRetainedSequence<ScenarioFsmTransitionRecord>;
+	readonly transitions: RetainedSequence<ScenarioFsmTransitionRecord>;
 };
 
-export type ScenarioActionEffectTriggerOutcome =
-	| 'accepted'
-	| 'cooldown'
-	| 'required_tag_missing'
-	| 'blocked_tag_present'
-	| 'required_state_missing'
-	| 'blocked_state_present'
-	| 'custom_gate';
+export type { ActionEffectTriggerOutcome as ScenarioActionEffectTriggerOutcome } from '../observations/actioneffect';
 
 type ScenarioActionEffectFactBase = {
 	readonly id: string;
@@ -113,7 +108,7 @@ export type ScenarioActionEffectTrace = {
 	readonly executionDomain: 0 | 1;
 	readonly ownerId: string;
 	readonly ownerDefinitionId: string;
-	readonly facts: ScenarioRetainedSequence<ScenarioActionEffectFact>;
+	readonly facts: RetainedSequence<ScenarioActionEffectFact>;
 };
 
 export type ScenarioTestResult = {
@@ -125,8 +120,8 @@ export type ScenarioTestResult = {
 	state: ScenarioTestResultState;
 	startTick: number | null;
 	endTick: number | null;
-	readonly logs: ScenarioRetainedSequence<ScenarioResultLog>;
-	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
+	readonly logs: RetainedSequence<ScenarioResultLog>;
+	readonly captures: RetainedSequence<ScenarioResultCapture>;
 	fsmTransitionTrace: ScenarioFsmTransitionTrace | null;
 	actionEffectTrace: ScenarioActionEffectTrace | null;
 	readonly failures: ScenarioRunFailure[];
@@ -154,35 +149,6 @@ export type ScenarioRunItemSource = {
 	readonly source: string;
 	readonly sourceRevision: number;
 };
-
-/** Fixed-capacity insertion-ordered storage without overflow copies. */
-export class ScenarioRetainedSequence<T> {
-	private readonly entries: T[] = [];
-	private startIndex = 0;
-	private dropped = 0;
-
-	public constructor(private readonly capacity: number) {}
-
-	public get length(): number {
-		return this.entries.length;
-	}
-
-	public get droppedCount(): number { return this.dropped; }
-
-	public at(index: number): T {
-		return this.entries[(this.startIndex + index) % this.entries.length];
-	}
-
-	public push(value: T): void {
-		if (this.entries.length < this.capacity) {
-			this.entries.push(value);
-			return;
-		}
-		this.entries[this.startIndex] = value;
-		this.startIndex = (this.startIndex + 1) % this.capacity;
-		this.dropped++;
-	}
-}
 
 /** Separate, bounded owner for live and completed Scenario Lab results. */
 export class ScenarioResultService {
@@ -227,8 +193,8 @@ export class ScenarioResultService {
 				state: 'queued',
 				startTick: null,
 				endTick: null,
-				logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
-				captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
+				logs: new RetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
+				captures: new RetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
 				fsmTransitionTrace: null,
 				actionEffectTrace: null,
 				failures: [],
@@ -300,7 +266,7 @@ export class ScenarioResultService {
 			executionDomain: result.test.resource.domain,
 			instanceId,
 			machineId,
-			transitions: new ScenarioRetainedSequence(
+			transitions: new RetainedSequence(
 				SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT,
 			),
 		};
@@ -345,7 +311,7 @@ export class ScenarioResultService {
 			executionDomain: result.test.resource.domain,
 			ownerId,
 			ownerDefinitionId,
-			facts: new ScenarioRetainedSequence(
+			facts: new RetainedSequence(
 				SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT,
 			),
 		};

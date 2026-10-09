@@ -48,6 +48,7 @@ export class PlayFixture {
 		this.bindHook();
 	}
 	public get admitting(): boolean { return this.state === 'initializing' || this.state === 'setup' || this.state === 'cleanup'; }
+	public readContext() { return this.fixture.readContext(); }
 
 	private bindHook(): void {
 		const mask = !this.admitting ? 0 : !this.fixture.initialized ? executionDomainBit(0)

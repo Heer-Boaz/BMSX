@@ -158,6 +158,12 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 		input.guestInputRecipient = ide.editor.guestInputRecipient;
+		const playEnabled = ide.editor.isActive && hostMenuInput === HostMenuInput.Inactive;
+		ide.play.advance(hostDeltaMs, playEnabled);
+		const play = ide.play.current?.session;
+		if (play !== undefined) play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
+		audioOutput.device.select(play?.ready === true && playEnabled
+			&& ide.editor.editorPanes.activePane?.runtimeTransport === play.transport ? play.audio : audioOutput);
 
 		ide.debuggerExecution.beforeHostFrame();
 		ide.scenarioRuns.advance();

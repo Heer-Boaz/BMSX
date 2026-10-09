@@ -1,10 +1,11 @@
+import type { RetainedSequence } from '../../../common/retained_sequence';
 import { generateUuid } from '../../../common/uuid';
 import type { TestInspection } from '../../../testing/inspection';
 import type { TestStopInspection } from '../../../testing/stop_inspection';
 import type { TestDebugger } from '../../../testing/debugger';
 import { SOURCE_EXECUTION_MODES } from '../../../runtime/source_debugger';
 import type { TestTargetInspection } from '../../../testing/retained_inspection';
-import type { ScenarioRun, ScenarioTestResult, ScenarioRetainedSequence,
+import type { ScenarioRun, ScenarioTestResult,
 	ScenarioResultLog, ScenarioResultCapture, ScenarioFsmTransitionTrace, ScenarioActionEffectTrace,
 	ScenarioFsmTransitionRecord, ScenarioActionEffectFact } from '../../../testing/scenario/result_service';
 import { decodeTestToolRequest } from './test_tool_protocol';
@@ -276,6 +277,6 @@ function caseSummary(handle: string, result: ScenarioTestResult): CaseSummary {
 	return { result: handle, test: result.test, sourceRevision: result.sourceRevision, state: result.state, startTick: result.startTick, endTick: result.endTick };
 }
 /** Materialize a retained ring in its public order only on an explicit evidence read. */
-function retainedOutput<T>(sequence: ScenarioRetainedSequence<T>): RetainedOutput<T> {
+function retainedOutput<T>(sequence: RetainedSequence<T>): RetainedOutput<T> {
 	return { omitted: sequence.droppedCount, entries: Array.from({ length: sequence.length }, (_, index) => sequence.at(index)) };
 }

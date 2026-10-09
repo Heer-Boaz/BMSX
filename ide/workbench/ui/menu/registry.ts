@@ -6,9 +6,9 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'animation.context' | 'events.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -22,6 +22,7 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
+	readonly 'play.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
@@ -68,6 +69,19 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'play.title': [{ type: 'command', command: 'play.stop' }, { type: 'command', command: 'play.more' }],
+	'play.context': [
+		{ type: 'command', command: 'play.reset' },
+		{ type: 'command', command: 'play.source' },
+		{ type: 'command', command: 'play.breakpoints' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'play.continue' },
+		{ type: 'command', command: 'play.stepInto' },
+		{ type: 'command', command: 'play.stepOver' },
+		{ type: 'command', command: 'play.stepOut' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'play.details' },
+	],
 	'animation.title': [
 		{ type: 'command', command: 'animation.addTrack' },
 		{ type: 'command', command: 'animation.addKey' },
@@ -243,6 +257,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'paste' },
 	],
 	'menubar.run': [
+		{ type: 'command', command: 'play.reveal' },
 		{ type: 'command', command: 'pause' },
 		{ type: 'command', command: 'stepFrameBack' },
 		{ type: 'command', command: 'stepFrame' },
@@ -286,6 +301,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.closeTarget' },
 	],
 	'scenarioLab.title': [
+		{ type: 'command', command: 'scenarioLab.play' },
 		{ type: 'command', command: 'scenarioLab.run' },
 		{ type: 'command', command: 'scenarioLab.debug' },
 		...TEST_DEBUG_ACTIONS,

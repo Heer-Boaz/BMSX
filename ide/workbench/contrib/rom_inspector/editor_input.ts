@@ -15,6 +15,7 @@ let snapshotSequence = 0;
 
 /** A retained mounted-image snapshot; reopening a changed image creates another input. */
 export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${number}`, 'rom_inspector'> {
+	public override readonly serializable = false;
 	public readonly model: RomInspectorModel;
 	public preview: HostBitmap | undefined;
 	public readonly imageView = new WorkbenchImageViewport();

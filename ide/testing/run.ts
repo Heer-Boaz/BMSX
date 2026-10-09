@@ -1,20 +1,11 @@
-import type { MachineModelSpec } from '../../machine/ts/spec/bmsx/model';
+import type { FixtureMedia } from './fixture_media';
 import { buildTestCartridge, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
-import type { ScenarioTestSource } from '../../toolchain/ts/rompack/scenario_test';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { TestExecution, DEFAULT_TEST_BUDGETS, type TestBudgets } from './execution';
 import type { TestTarget, TestTargetFactory } from './target';
 import type { TestDebugger } from './debugger';
 import { TestInput } from './input';
 import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from './scenario/result_service';
-
-export type TestRunMedia = {
-	readonly sourceOnlyModules?: readonly ScenarioTestSource[];
-	readonly systemRom: Uint8Array;
-	readonly cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null];
-	readonly machineModel: MachineModelSpec;
-	readonly optLevel: 0 | 1 | 2 | 3;
-};
 
 /** A serial run owns at most its current machine and one retained failed machine. */
 export class TestRun {
@@ -28,7 +19,7 @@ export class TestRun {
 
 	public constructor(
 		public readonly result: ScenarioRun,
-		private readonly media: TestRunMedia,
+		private readonly media: FixtureMedia,
 		private readonly results: ScenarioResultService,
 		private readonly createTarget: TestTargetFactory,
 		private readonly finished: () => void,

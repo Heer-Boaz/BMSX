@@ -5,6 +5,7 @@ import type { ImageDecoder, PngImageEncoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
+import { PlayRuntimeSession } from './play_runtime';
 import { activateEditor } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -84,6 +85,8 @@ export async function prepareWorkbenchRuntime(
 		sources,
 		createGraphLayoutEngine,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input),
+		(systemRom, cartridgeSlots, model, input, program, domain) => new PlayRuntimeSession(
+			new OffscreenMachine(systemRom, cartridgeSlots, model, input), program, domain, audioOutput.device, logOutput),
 		connectAssistant,
 		observeConversation,
 	);

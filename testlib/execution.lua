@@ -8,6 +8,7 @@ function execution.bind(definition, case_name)
 	name = case_name
 	fixture = {}
 	t = context.new(suite.kind)
+	execution.context = t
 end
 
 local response<const> = function(thread, ok, ...)

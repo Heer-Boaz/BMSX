@@ -1,5 +1,6 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
 import { SourceDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerSourceStop } from './source_debugger';
@@ -33,6 +34,8 @@ export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSou
 export function createSourceExecutionState(runtime: Runtime, media: Blua32ToolingMedia, points: SourceLocationPcs): SourceExecutionState {
 	let state: SourceExecutionState;
 	const executionHook: ExecutionHook = (domain, pc) => {
+		// Recorded input is a closed execution history, not admission of new live debugger intent.
+		if (runtime.history.mode === HistoryMode.Replaying) return false;
 		const controlActive = state.plans.controlActive;
 		if (state.source.stop !== undefined || state.source.stepThreadFinished || controlActive && state.plans.shouldStop(domain, pc)) return true;
 		if (!state.source.shouldStop(domain, pc, !controlActive || state.plans.honorUserStops)) return false;

@@ -1,6 +1,6 @@
 import { generateUuid } from '../common/uuid';
-import { ScenarioFsmTransitionObservation } from './scenario/fsm_transition_observation';
-import { ScenarioActionEffectObservation } from './scenario/actioneffect_observation';
+import { FsmTransitionObservation } from './observations/fsm_transition';
+import { ActionEffectObservation } from './observations/actioneffect';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Table } from '../../machine/ts/machine/cpu/table';
@@ -43,8 +43,8 @@ export class TestExecution implements FixtureOutput {
 	private phase: Phase = 'bind';
 	private cancelling = false;
 	private cleanupStartCycles = 0;
-	private fsm: ScenarioFsmTransitionObservation | null = null;
-	private actioneffects: ScenarioActionEffectObservation | null = null;
+	private fsm: FsmTransitionObservation | null = null;
+	private actioneffects: ActionEffectObservation | null = null;
 	private readonly callArgs: Value[] = [];
 	private startTick = 0;
 	private readonly executionHook: ExecutionHook = (domain, pc): boolean => {
@@ -167,10 +167,19 @@ export class TestExecution implements FixtureOutput {
 		this.capturedFrame?.(this.target, label);
 	}
 	public observeFsm(recorder: Table): void {
-		this.fsm = new ScenarioFsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.results, this.result);
+		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool,
+			(sequence, time, tick, lane, previous, target, outcome) =>
+				this.results.appendFsmTransition(trace, sequence, time, tick, lane, previous, target, outcome));
+		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId);
+		this.fsm = observation;
 	}
 	public observeActionEffects(recorder: Table): void {
-		this.actioneffects = new ScenarioActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.results, this.result);
+		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, {
+			trigger: (sequence, time, tick, effect, outcome) => this.results.appendActionEffectTrigger(trace, sequence, time, tick, effect, outcome),
+			activity: (sequence, time, tick, effect, kind, count) => this.results.appendActionEffectActivity(trace, sequence, time, tick, effect, kind, count),
+		});
+		const trace = this.results.beginActionEffectTrace(this.result, observation.ownerId, observation.definitionId);
+		this.actioneffects = observation;
 	}
 
 	private failure(thread: Thread, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {

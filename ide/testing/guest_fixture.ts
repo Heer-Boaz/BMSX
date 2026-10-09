@@ -71,6 +71,13 @@ export class GuestFixture {
 		this.beginCall('cancel', [valueString(this.runtime.machine.cpu.stringPool.intern(phase))]);
 	}
 
+	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
+	public readContext(): Table {
+		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
+		const execution = cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!) as Table;
+		return execution.getStringKey(pool.find('context')!) as Table;
+	}
+
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		// Resolve the current guest module, not closures borrowed from an older heap.

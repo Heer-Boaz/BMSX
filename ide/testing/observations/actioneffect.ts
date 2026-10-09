@@ -4,13 +4,13 @@ import {
 	asStringId,
 	type StringValue,
 } from '../../../machine/ts/machine/cpu/value';
-import {
-	type ScenarioActionEffectFact,
-	type ScenarioActionEffectTrace,
-	type ScenarioActionEffectTriggerOutcome,
-	type ScenarioTestResult,
-	ScenarioResultService,
-} from './result_service';
+export type ActionEffectTriggerOutcome = 'accepted' | 'cooldown' | 'required_tag_missing' | 'blocked_tag_present'
+	| 'required_state_missing' | 'blocked_state_present' | 'custom_gate';
+export type ActionEffectActivityKind = 'activate' | 'deactivate';
+export type ActionEffectSink = {
+	trigger(sequence: number, millisecondsWord: number, observedTick: number, effect: string, outcome: ActionEffectTriggerOutcome): void;
+	activity(sequence: number, millisecondsWord: number, observedTick: number, effect: string, kind: ActionEffectActivityKind, count: number): void;
+};
 
 const CHANNEL_OWNER_ID = 1;
 const CHANNEL_OWNER_DEFINITION_ID = 2;
@@ -29,35 +29,42 @@ const RECORD_VALUE = 5;
  * tables. The producer sequence is the publication barrier; trigger outcomes
  * and aggregate activity counts retain their producer representation and order.
  */
-export class ScenarioActionEffectObservation {
+export class ActionEffectObservation {
 	private readonly capacity: number;
 	private readonly records: Table;
-	private readonly trace: ScenarioActionEffectTrace;
+	public readonly ownerId: string;
+	public readonly definitionId: string;
+	public droppedCount = 0;
 	private consumedSequence = 0;
 
 	public constructor(
 		private readonly channel: Table,
 		private readonly stringPool: StringPool,
-		private readonly results: ScenarioResultService,
-		result: ScenarioTestResult,
+		private readonly publish: ActionEffectSink,
+		private readonly retention: 'strict' | 'rolling' = 'strict',
 	) {
 		this.capacity = channel.getInteger(CHANNEL_CAPACITY) as number;
 		this.records = channel.getInteger(CHANNEL_RECORDS) as Table;
-		this.trace = results.beginActionEffectTrace(
-			result,
-			this.readString(channel, CHANNEL_OWNER_ID),
-			this.readString(channel, CHANNEL_OWNER_DEFINITION_ID),
-		);
+		this.ownerId = this.readString(channel, CHANNEL_OWNER_ID);
+		this.definitionId = this.readString(channel, CHANNEL_OWNER_DEFINITION_ID);
 	}
+
+	/** A restored live subscription begins at its accepted publication, not an older heap's cursor. */
+	public discardPublished(): void { this.consumedSequence = this.channel.getInteger(CHANNEL_PUBLISHED_SEQUENCE) as number; }
 
 	public drain(observedTick: number): void {
 		const publishedSequence = this.channel.getInteger(
 			CHANNEL_PUBLISHED_SEQUENCE,
 		) as number;
 		if (publishedSequence - this.consumedSequence > this.capacity) {
-			throw new Error(
-				`ActionEffect recorder '${this.trace.ownerId}' overflowed its ${this.capacity}-record buffer.`,
-			);
+			if (this.retention === 'strict') {
+				throw new Error(
+					`ActionEffect recorder '${this.ownerId}' overflowed its ${this.capacity}-record buffer.`,
+				);
+			}
+			const oldest = publishedSequence - this.capacity;
+			this.droppedCount += oldest - this.consumedSequence;
+			this.consumedSequence = oldest;
 		}
 		while (this.consumedSequence < publishedSequence) {
 			const producerSequence = this.consumedSequence + 1;
@@ -68,19 +75,17 @@ export class ScenarioActionEffectObservation {
 				RECORD_PRODUCER_TIME_MILLISECONDS_WORD,
 			) as number;
 			const effectId = this.readString(record, RECORD_EFFECT_ID);
-			const kind = this.readString(record, RECORD_KIND) as ScenarioActionEffectFact['kind'];
+			const kind = this.readString(record, RECORD_KIND) as 'trigger' | ActionEffectActivityKind;
 			if (kind === 'trigger') {
-				this.results.appendActionEffectTrigger(
-					this.trace,
+				this.publish.trigger(
 					recordSequence,
 					producerTime,
 					observedTick,
 					effectId,
-					this.readString(record, RECORD_VALUE) as ScenarioActionEffectTriggerOutcome,
+					this.readString(record, RECORD_VALUE) as ActionEffectTriggerOutcome,
 				);
 			} else {
-				this.results.appendActionEffectActivity(
-					this.trace,
+				this.publish.activity(
 					recordSequence,
 					producerTime,
 					observedTick,

@@ -64,12 +64,18 @@ export type EditorDebugCommandId =
 	| 'debugStepOver';
 
 export type EditorScenarioLabCommandId =
+	| 'scenarioLab.play'
 	| 'scenarioLab.debug'
 	| 'scenarioLab.continue' | 'scenarioLab.stepInto' | 'scenarioLab.stepOver' | 'scenarioLab.stepOut' | 'scenarioLab.pause' | 'scenarioLab.breakpoints'
 	| 'scenarioLab.run'
 	| 'scenarioLab.revealRun'
 	| 'scenarioLab.rerun'
 	| 'scenarioLab.cancel';
+
+export type EditorPlayCommandId =
+	| 'play.reveal' | 'play.stop' | 'play.reset' | 'play.source' | 'play.breakpoints'
+	| 'play.continue' | 'play.stepInto' | 'play.stepOver' | 'play.stepOut'
+	| 'play.details' | 'play.more';
 
 export type EditorCommandId =
 	| 'romInspector.assets' | 'romInspector.structure' | 'romInspector.code' | 'romInspector.sort' | 'romInspector.source' | 'romInspector.content' | 'romInspector.zoom' | 'romInspector.collision'
@@ -147,6 +153,7 @@ export type EditorCommandId =
 	| EditorViewCommandId
 	| EditorWorkspaceCommandId
 	| EditorDebugCommandId
+	| EditorPlayCommandId
 	| EditorScenarioLabCommandId;
 
 export type EditorCommandEnablement = {

@@ -19,7 +19,7 @@ import type { Blua32ToolingMedia } from '../../toolchain/ts/rompack/blua32_media
 import { generateUuid } from '../common/uuid';
 import { RuntimeTransport } from '../runtime/transport';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
-import type { FixtureOutput } from '../testing/fixture_operations';
+import { PlayEvidence } from './services/play/evidence';
 import { PlayFixture, type PlayFixtureBudgets } from '../testing/play_fixture';
 import type { PlaySession, PlaySessionFailure, PlaySessionState } from './services/play/session';
 import type { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -28,6 +28,7 @@ import type { PlayInput } from './services/play/input';
 /** Physical play lifetime, not a retained passing case or a second implementation of the machine loop. */
 export class PlayRuntimeSession implements PlaySession {
 	public readonly fixture: PlayFixture;
+	public readonly evidence: PlayEvidence;
 	public readonly guest: SuspendedGuestSession;
 	public readonly audio: HostAudioOutput;
 	public readonly execution: HostExecutionControl;
@@ -49,7 +50,7 @@ export class PlayRuntimeSession implements PlaySession {
 	private closeOperation: Promise<void> | undefined;
 
 	public constructor(public readonly target: OffscreenMachine<PlayInput>, public readonly program: BuiltTestCartridge,
-		public readonly sourceDomain: ResourceDomain, device: HostAudioDevice, output: FixtureOutput,
+		public readonly sourceDomain: ResourceDomain, device: HostAudioDevice,
 		private readonly log: LogOutput, budgets?: PlayFixtureBudgets) {
 		const runtime = target.runtime;
 		this.frames = target.frameOutput;
@@ -71,8 +72,10 @@ export class PlayRuntimeSession implements PlaySession {
 			this.tasks, this.fault, this.guest, this.navigation);
 		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, () => this.ready && this.tasks.ready
 			&& !this.execution.frameStepPending && this.debugger.source.stop === undefined && !this.debugger.plans.controlActive);
-		this.fixture = new PlayFixture(target, target.input.fixture, program, sourceDomain, output, budgets);
+		this.evidence = new PlayEvidence(runtime, () => this.fixture.readContext());
+		this.fixture = new PlayFixture(target, target.input.fixture, program, sourceDomain, this.evidence, budgets);
 		runtime.onStateRestored = origin => {
+			this.evidence.didRestore();
 			this.debuggerExecution.didReset();
 			this.navigation.didRestore(origin);
 			this.guest.invalidate(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
@@ -104,7 +107,10 @@ export class PlayRuntimeSession implements PlaySession {
 			}
 			if (this.fixture.admitting) {
 				this.guest.invalidate();
-				for (let grant = 0; grant < 16 && this.fixture.admitting; grant++) this.fixture.advance();
+				for (let grant = 0; grant < 16 && this.fixture.admitting; grant++) {
+					this.fixture.advance();
+					if (this.fixture.state !== 'initializing') this.evidence.drain();
+				}
 				if (this.fixture.state === 'ready') {
 					this.target.input.interactive = true;
 					this.target.runtime.frameScheduler.clearQueuedTime();
@@ -147,6 +153,7 @@ export class PlayRuntimeSession implements PlaySession {
 			this.quarantine({ kind: 'machine', message: fault, cycles: runtime.machine.scheduler.currentNowCycles(), videoTick: runtime.frameScheduler.lastTickSequence });
 		}
 		this.target.present();
+		if (!this.rewind.active) this.evidence.drain();
 		if (this.tasks.ready && runtime.history.checkpointPending) this.rewind.service(true);
 	}
 	private quarantine(failure: PlaySessionFailure): void {
@@ -178,6 +185,7 @@ export class PlayRuntimeSession implements PlaySession {
 		this.guest.invalidate('heap-replaced');
 		this.navigation.dispose();
 		this.debuggerExecution.dispose();
+		this.evidence.dispose();
 		this.closeOperation = this.close();
 		return this.closeOperation;
 	}

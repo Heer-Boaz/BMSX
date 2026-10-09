@@ -57,6 +57,7 @@ import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_co
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'navigateBack', 'navigateForward',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
+	'scenarioLab.play', 'play.reset', 'play.source',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
@@ -110,6 +111,9 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'play.reveal': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
+			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
+				this.editor.play.execute(command); return;
 			case 'copy': case 'cut': case 'paste':
 				void executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
 				return;
@@ -196,6 +200,7 @@ export class IdeCommandController {
 			case 'behaviorLens.editProperty':
 			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
 			case 'scenarioLab.details':
+			case 'play.more': case 'play.details':
 			case 'scenarioLab.inspectTarget':
 			case 'scenarioLab.inspectStop':
 			case 'scenarioLab.closeTarget':
@@ -273,6 +278,7 @@ export class IdeCommandController {
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.debug':
+			case 'scenarioLab.play':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
@@ -354,6 +360,9 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'play.reveal': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
+			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
+				return this.editor.play.isCommandEnabled(command);
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
 			case 'terminal': return this.editor.terminal.canOpen;
@@ -435,6 +444,7 @@ export class IdeCommandController {
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
 			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
+			case 'play.more': case 'play.details':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':
 			case 'scenarioLab.inspectStop':
@@ -486,6 +496,7 @@ export class IdeCommandController {
 			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':
 				return (context?.getCommand(command) ?? context?.getCommand('pause'))?.isEnabled() === true;
+			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':

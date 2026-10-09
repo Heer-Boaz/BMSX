@@ -5,17 +5,17 @@ import { blua32MediaRequiresRebuild, buildBlua32Media, layoutBlua32MediaInstalla
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import type { LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import type { WorkspaceRecord } from '../../../workspace/records';
-import type { TestRunMedia } from '../../../testing/run';
+import type { FixtureMedia } from '../../../testing/fixture_media';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 
 /** Editable records belong to this build, never to the authoring machine or its debugger. */
-export async function buildTestRunMedia(
+export async function buildFixtureMedia(
 	authoring: RuntimeSourceState,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	programSources: readonly LuaTextModelSourceSnapshot[],
 	slot: 0 | 1,
 	machineModel: MachineModelSpec,
-): Promise<TestRunMedia> {
+): Promise<FixtureMedia> {
 	const sources = forkRuntimeSourceState(authoring);
 	try {
 		await applyAllWorkspaceSourceOverrides(sources, new Map(dirtyRecords));

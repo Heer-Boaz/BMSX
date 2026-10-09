@@ -13,8 +13,8 @@ import {
 	SCENARIO_RUN_RETAIN_COUNT,
 	ScenarioResultService,
 } from '../../ide/testing/scenario/result_service';
-import { ScenarioActionEffectObservation } from '../../ide/testing/scenario/actioneffect_observation';
-import { ScenarioFsmTransitionObservation } from '../../ide/testing/scenario/fsm_transition_observation';
+import { ActionEffectObservation } from '../../ide/testing/observations/actioneffect';
+import { FsmTransitionObservation } from '../../ide/testing/observations/fsm_transition';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import {
@@ -281,15 +281,10 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new ScenarioFsmTransitionObservation(
-		channel,
-		stringPool,
-		service,
-		result,
-	);
+	const observation = new FsmTransitionObservation(channel, stringPool, (...record) => service.appendFsmTransition(trace, ...record));
+	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId);
 	observation.drain(20);
 
-	const trace = result.fsmTransitionTrace!;
 	assert.equal(trace.instanceId, 'object.machine');
 	assert.equal(trace.machineId, 'machine');
 	assert.deepEqual([
@@ -337,15 +332,13 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new ScenarioActionEffectObservation(
-		channel,
-		stringPool,
-		service,
-		result,
-	);
+	const observation = new ActionEffectObservation(channel, stringPool, {
+		trigger: (...record) => service.appendActionEffectTrigger(trace, ...record),
+		activity: (...record) => service.appendActionEffectActivity(trace, ...record),
+	});
+	const trace = service.beginActionEffectTrace(result, observation.ownerId, observation.definitionId);
 	observation.drain(20);
 
-	const trace = result.actionEffectTrace!;
 	assert.equal(trace.ownerId, 'player.1');
 	assert.equal(trace.ownerDefinitionId, 'player');
 	assert.deepEqual(trace.facts.at(0), {
