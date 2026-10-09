@@ -618,3 +618,22 @@ was saved during this check. The screenshots/action log are under
 `/tmp/bmsx-play-visible/inline-animation-*` during development. This proves
 source-backed native definition authoring/navigation, not yet the final
 transition/combat redesign or coordinated curve/sequence authoring.
+
+### Newly authored fixture admission
+
+The visible acceptance creates, formats and saves an ordinary transition fixture
+through Source, selects it in Scenario Lab and admits its independent Play world.
+This exposed a payload-producer error: a present empty Lua buffer had no directory
+extent, so its consumer received the entire ROM instead of zero bytes. Payload
+layout now preserves `start == end` for present empty buffers; absent optional
+payloads remain absent. No Play fallback, source exclusion or encoding recovery
+was added. The directory and physical machine representations are unchanged.
+
+The negative control reproduces the UTF-8 failure before the producer fix; the
+directory round trip and actual O0/O3 new-fixture admission pass afterwards. The
+49-check packaging/Play bundle, IDE/test typechecks, browser product and strict
+boundary audit pass. The same visible Studio session, with its empty document
+still present, now admits the new fixture, publishes the game and can pause it;
+Session Details identifies the captured fixture and independent physical machine.
+Evidence is under `/tmp/bmsx-play-visible/acceptance-transition-*` during
+development. This is admission evidence, not yet a transition redesign.

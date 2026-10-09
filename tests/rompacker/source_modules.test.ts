@@ -39,3 +39,19 @@ test('program source syntax errors retain the authored filename for build diagno
 		source_path: 'nested/broken.lua', buffer: Buffer.from('module<entry>\nreturn ('),
 	}]), (error: LuaSyntaxError) => error instanceof LuaSyntaxError && error.path === 'nested/broken.lua' && error.line === 2);
 });
+
+test('empty source payloads keep their zero-length extent through the ROM directory', () => {
+	const layout = layoutRomAssetPayloads([
+		{ resid: 'empty', type: 'lua', program_module: true, source_path: 'empty.lua', buffer: new Uint8Array(0) },
+		{ resid: 'other', type: 'bin', buffer: new Uint8Array([0xff, 0xfe, 0xfd]) },
+	], true);
+	const rom = new Uint8Array(layout.nextOffset);
+	for (const range of layout.ranges) rom.set(range.buffer, range.start);
+	const directory = decodeRomToc(encodeRomToc({ entries: layout.entries }));
+	const modules = parseBlua32SourceModules(directory.entries.map(entry => ({
+		...entry, buffer: rom.subarray(entry.start, entry.end),
+	})));
+	assert.equal(modules.length, 1);
+	assert.equal(modules[0].source, '');
+	assert.equal(modules[0].chunk.body.length, 0);
+});

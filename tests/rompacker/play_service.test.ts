@@ -25,16 +25,18 @@ import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { createLuaResource } from '../../ide/workspace/workspace';
 
 const SCENE = `local game<const> = require('game')
 return { kind='integration', setup=function(t) game.marker=12; t:log('ready') end,
  teardown=function(t) game.closed=true; t:log('cleanup') end,
  tests={never=function() error('Play must not execute this case') end} }`;
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, optLevel: 0 | 3 = 0) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-service-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SCENE }], {
+		cartOptLevel: optLevel,
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: `module<entry>
@@ -108,4 +110,21 @@ test('closing preparation cannot create a late world; model clear closes the act
 	f.models.clear();
 	await live.closeOperation;
 	assert.equal(f.service.current, undefined); assert.equal(live.closed, true); assert.equal(live.session!.state, 'closed');
+});
+
+for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
+	const f = await fixture(t, optLevel), clock = new VirtualHeadlessClock();
+	await createLuaResource(clock, f.sources, { domain: 0, relativePath: 'empty.lua', contents: '' });
+	const resource = await createLuaResource(clock, f.sources, { domain: 0,
+		relativePath: 'tests/created_assert.lua', contents: SCENE.replace('12', '78') });
+	f.runs.refreshSources();
+	const module = f.runs.collection.findModuleBySourcePath(0, resource.path);
+	const original = f.sources.currentBlua32Media;
+	const accepted = f.service.start(module);
+	await f.ready();
+	assert.equal(accepted.source, module.source);
+	assert.equal(accepted.session!.guest.readStringMember(
+		accepted.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 78);
+	assert.equal(f.sources.currentBlua32Media, original);
+	assert.equal(f.runs.results.runs.length, 0);
 });

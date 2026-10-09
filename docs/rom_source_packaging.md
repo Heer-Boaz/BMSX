@@ -48,6 +48,13 @@ Parser diagnostics remain Lua source diagnostics, including authored filename
 and line/column, rather than binary-cache decoding errors. The unused syntax
 codec, compiled-payload API and storage-only tests are deleted.
 
+An empty payload is present, not absent. The payload layout records its aligned
+`start == end` extent; a missing optional buffer has no extent. Consumers use
+those spans directly, including an empty newly authored Lua document. This
+follows the explicit start/end representation of
+[LLVM MemoryBuffer](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Support/MemoryBuffer.cpp).
+It changes neither the directory format nor the machine datapath.
+
 ## Native footprint
 
 The libretro owner already maps the package read-only and does not eagerly

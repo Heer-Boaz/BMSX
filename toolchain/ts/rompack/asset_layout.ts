@@ -60,17 +60,18 @@ export function layoutRomAssetPayloads(
 		if (source.program_module !== undefined) entry.program_module = source.program_module;
 		entries.push(entry);
 
-		if (source.buffer && source.buffer.length !== 0) {
+		// Buffer presence owns the extent. Empty data retains start == end.
+		if (source.buffer !== undefined) {
 			const range = appendPayload(source.buffer);
 			entry.start = range.start;
 			entry.end = range.end;
 		}
-		if (source.model_texture_buffer && source.model_texture_buffer.length !== 0) {
+		if (source.model_texture_buffer !== undefined) {
 			const range = appendPayload(source.model_texture_buffer);
 			entry.model_texture_start = range.start;
 			entry.model_texture_end = range.end;
 		}
-		if (source.collision_bin_buffer && source.collision_bin_buffer.length !== 0) {
+		if (source.collision_bin_buffer !== undefined) {
 			const range = appendPayload(source.collision_bin_buffer);
 			entry.collision_bin_start = range.start;
 			entry.collision_bin_end = range.end;
