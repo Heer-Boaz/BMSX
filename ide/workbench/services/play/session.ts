@@ -17,6 +17,7 @@ import type { PlayFixture, PlayFixtureState } from '../../../testing/play_fixtur
 import type { FixtureTarget } from '../../../testing/target';
 import type { PlayInput } from './input';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
+import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 
 export type PlaySessionFailure = { readonly kind: 'host'; readonly error: unknown }
 	| { readonly kind: 'machine'; readonly message: string; readonly cycles: number; readonly videoTick: number };
@@ -36,6 +37,7 @@ export interface PlaySession extends RuntimeInstalledSourceState {
 	readonly navigation: RuntimeFrameNavigation;
 	readonly transport: RuntimeTransport;
 	readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
+	readonly actorExecution: ActorExecutionService;
 	readonly audio: HostAudioOutput;
 	readonly execution: HostExecutionControl;
 	readonly rewind: HostRewind;

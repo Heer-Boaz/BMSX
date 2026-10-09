@@ -5,7 +5,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
-import { pushRuntimeDebuggerControlPlan, type RuntimeDebuggerState } from './debugger_state';
+import { pushRuntimeDebuggerControlPlan, type SourceExecutionState } from './debugger_state';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { RuntimeDebuggerSourceStop } from './source_debugger';
 
@@ -96,7 +96,7 @@ class RuntimeGuestBoundaryPlan implements RuntimeDebuggerControlPlan {
 
 /** Prepare against the current suspended heap, never a popup's expired borrow. */
 export function scheduleRuntimeGuestCall(
-	runtime: Runtime, guest: SuspendedGuestSession, debuggerState: RuntimeDebuggerState, tasks: RuntimeTaskQueue,
+	runtime: Runtime, guest: SuspendedGuestSession, debuggerState: SourceExecutionState, tasks: RuntimeTaskQueue,
 	request: RuntimeGuestCallRequest,
 	started: () => void,
 	finished: (completed: boolean) => void,
@@ -110,8 +110,7 @@ export function scheduleRuntimeGuestCall(
 		const args = call.args();
 		let retained: RuntimeDebuggerSourceStop | undefined;
 		const plan = new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, request.admission === 'at-stop' ? completed => {
-			if (completed && retained !== undefined && retained.media === debuggerState.sources.currentBlua32Media
-				&& debuggerState.source.returnToStop(retained)) {
+			if (completed && retained !== undefined && debuggerState.source.returnToStop(retained)) {
 				debuggerState.stopPresentationPending = true;
 			}
 			finish(completed);

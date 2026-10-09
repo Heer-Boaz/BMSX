@@ -36,9 +36,21 @@ export class SourceDebugger {
 	private stepMedia: Blua32ToolingMedia | undefined;
 	private readonly stepPcs = [new Map<number, number>(), new Map<number, number>(), new Map<number, number>()];
 	private readonly suppression: Suppression[] = [];
+	private notifiedStop: RuntimeDebuggerSourceStop | undefined;
+	private readonly stopListeners = new Set<(stop: RuntimeDebuggerSourceStop | undefined) => void>();
 
 	public constructor(private readonly cpu: CPU, private media: Blua32ToolingMedia,
-		private breakpoints: SourceLocationPcs, private readonly changed: () => void) {}
+		private breakpoints: SourceLocationPcs, private readonly bindingChanged: () => void) {}
+
+	public onDidChangeStop(listener: (stop: RuntimeDebuggerSourceStop | undefined) => void): () => void {
+		this.stopListeners.add(listener); return () => this.stopListeners.delete(listener);
+	}
+	private changed(): void {
+		this.bindingChanged();
+		if (this.notifiedStop === this.stop) return;
+		this.notifiedStop = this.stop;
+		for (const listener of this.stopListeners) listener(this.stop);
+	}
 
 	public install(media: Blua32ToolingMedia, breakpoints: SourceLocationPcs): void {
 		if (this.media !== media) { this.stepMedia = undefined; this.stop = undefined; this.retiredStopId = this.stopSerial; }
@@ -116,7 +128,7 @@ export class SourceDebugger {
 
 	/** The completion boundary has stopped before the retained caller can run. */
 	public returnToStop(stop: RuntimeDebuggerSourceStop): boolean {
-		if (stop.id <= this.retiredStopId) return false;
+		if (stop.media !== this.media || stop.id <= this.retiredStopId) return false;
 		this.stop = stop;
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();

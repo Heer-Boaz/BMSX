@@ -1,8 +1,6 @@
-import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
-import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import { COLOR_TAB_BORDER } from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -10,7 +8,6 @@ import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
-import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { IdeCommandController } from '../../../commands/controller';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -32,7 +29,7 @@ import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control'
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { actorDetailsPropertiesEqual, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection, type ActorDetailsProperty } from './details';
-import type { ActorLabController } from './controller';
+import { ActorLabController } from './controller';
 import type { ActorLabInput } from './editor_input';
 import type { ActorNode } from './runtime';
 import { drawActorLab } from './render';
@@ -44,7 +41,8 @@ import type { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorViewportHit } from './viewport_pick';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
-	private readonly gameInput: GameInputControl;
+	private gameInput!: GameInputControl;
+	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly timelineSlider: WorkbenchSliderControl;
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
@@ -69,11 +67,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public readonly inspector = new WorkbenchPropertyInspector<ActorDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
-	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
-		private readonly commands: IdeCommandController, private readonly frameNavigation: RuntimeFrameNavigation,
-		private readonly contextMenu: ContextMenuController, private readonly presenter: VideoPresenter, recipient: InputRecipient) {
+	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
+		private readonly contextMenu: ContextMenuController) {
 		super(resourcePanel);
-		this.gameInput = new GameInputControl(this.focusTarget, recipient);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());
@@ -91,30 +87,30 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('actorLab.playback', {
-				isEnabled: () => commands.transport.playbackEnabled,
-				run: () => { this.input.running = commands.transport.togglePlayback(); },
+				isEnabled: () => this.controller.viewport.transport.playbackEnabled,
+				run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
 			});
 			target.registerCommand('pause', {
-				isEnabled: () => commands.transport.playbackEnabled,
-				run: () => { this.input.running = commands.transport.togglePlayback(); },
+				isEnabled: () => this.controller.viewport.transport.playbackEnabled,
+				run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
 			});
 			target.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
 			target.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
 			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
-				isEnabled: () => this.frameNavigation.canStep(direction),
-				run: () => { this.input.running = false; this.frameNavigation.step(direction); },
+				isEnabled: () => this.controller.viewport.transport.navigation.canStep(direction),
+				run: () => { this.input.running = false; this.controller.viewport.transport.navigation.step(direction); },
 			});
 			target.registerCommand('actorLab.follow', {
-				isEnabled: () => this.input.follow.target !== undefined || controller.selected(this.input) !== undefined,
+				isEnabled: () => this.input.follow.target !== undefined || this.controller.selected(this.input) !== undefined,
 				run: () => {
 					if (this.input.follow.target !== undefined) this.input.follow.stop();
-					else this.input.follow.start(controller.activityScope(this.input)!);
+					else this.input.follow.start(this.controller.activityScope(this.input)!);
 					this.update();
 				},
 			});
 			target.registerCommand('actorLab.revealActive', {
-				isEnabled: () => controller.selected(this.input) !== undefined,
-				run: () => { this.input.follow.pending = controller.activityScope(this.input); this.update(); },
+				isEnabled: () => this.controller.selected(this.input) !== undefined,
+				run: () => { this.input.follow.pending = this.controller.activityScope(this.input); this.update(); },
 			});
 			target.registerCommand('actorLab.more', {
 				isEnabled: () => true,
@@ -125,31 +121,31 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 					lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 				},
 			});
-			target.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
+			target.registerCommand('actorLab.select', { isEnabled: () => true, run: () => this.controller.selectActor(this.input) });
 			target.registerCommand('actorLab.find', {
 				isEnabled: () => this.input.actorPresent && !this.input.dirty,
-				run: () => controller.findMember(this.input, () => { this.update(); this.focus(); }),
+				run: () => this.controller.findMember(this.input, () => { this.update(); this.focus(); }),
 			});
-			target.registerCommand('actorLab.spawn', { isEnabled: controller.canInteract, run: () => controller.spawn(this.input) });
-			target.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => controller.emitEvent(this.input) });
-			target.registerCommand('actorLab.actions', { isEnabled: () => controller.canInteract() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
-			target.registerCommand('actorLab.call', { isEnabled: () => controller.canInteract() && controller.selected(this.input) !== undefined, run: () => controller.callMethod(this.input) });
-			target.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => {
+			target.registerCommand('actorLab.spawn', { isEnabled: () => this.controller.canInteract(), run: () => this.controller.spawn(this.input) });
+			target.registerCommand('actorLab.emit', { isEnabled: () => this.controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => this.controller.emitEvent(this.input) });
+			target.registerCommand('actorLab.actions', { isEnabled: () => this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.controller.actions(this.input) });
+			target.registerCommand('actorLab.call', { isEnabled: () => this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.controller.callMethod(this.input) });
+			target.registerCommand('actorLab.details', { isEnabled: () => this.controller.selected(this.input) !== undefined, run: () => {
 				if (!this.inspector.visible) this.showDetails(true);
 				else this.inspector.focusTarget.focus();
 			} });
 			for (const [command, enabled, execute] of [
-				['actorLab.pinProperty', controller.canPinProperty, controller.pinProperty],
-				['actorLab.unpinProperty', controller.canUnpinProperty, controller.unpinProperty],
-				['actorLab.revealPinnedProperty', controller.canRevealPinnedProperty, controller.revealPinnedProperty],
+				['actorLab.pinProperty', ActorLabController.prototype.canPinProperty, ActorLabController.prototype.pinProperty],
+				['actorLab.unpinProperty', ActorLabController.prototype.canUnpinProperty, ActorLabController.prototype.unpinProperty],
+				['actorLab.revealPinnedProperty', ActorLabController.prototype.canRevealPinnedProperty, ActorLabController.prototype.revealPinnedProperty],
 			] as const) target.registerCommand(command, {
 				isEnabled: () => {
 					const item = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;
-					return this.inspector.visible && item !== undefined && enabled.call(controller, this.input, item);
+					return this.inspector.visible && item !== undefined && enabled.call(this.controller, this.input, item);
 				},
 				run: () => {
 					const item = this.inspector.model.rows[this.inspector.model.selectionIndex].element;
-					execute.call(controller, this.input, item);
+					execute.call(this.controller, this.input, item);
 					this.update();
 					const selection = this.inspector.model.rows.findIndex(row => actorDetailsPropertyMatchesSelection(row.element, this.input.detailsSelection));
 					if (selection >= 0) this.inspector.model.select(selection);
@@ -157,21 +153,21 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				},
 			});
 			target.registerCommand('actorLab.stateGraph', {
-				isEnabled: () => { const kind = controller.selected(this.input)?.kind; return this.input.presentation === 'outline' && (kind === 'machine' || kind === 'state'); },
+				isEnabled: () => { const kind = this.controller.selected(this.input)?.kind; return this.input.presentation === 'outline' && (kind === 'machine' || kind === 'state'); },
 				run: () => {
-					const selectionChanged = controller.openStateGraph(this.input, editorViewState.font.renderFont()); this.update();
+					const selectionChanged = this.controller.openStateGraph(this.input, editorViewState.font.renderFont()); this.update();
 					const view = this.input.stateGraph!.viewport;
 					if (selectionChanged && this.input.follow.target === undefined && view.selection !== null) view.reveal(view.selection);
 					this.graph.focusTarget.focus();
 				},
 			});
 			target.registerCommand('actorLab.outline', { isEnabled: () => this.input.presentation === 'graph',
-				run: () => { controller.openOutline(this.input); this.update(); this.focus(); } });
+				run: () => { this.controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get showsGameFrame(): boolean { return true; }
-	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
+	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.controller.viewport.transport; }
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {
@@ -182,6 +178,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		return this.controller.captureSelection(this.input);
 	}
 	protected override activate(): void {
+		this.controller = this.input.controller;
+		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient);
 		super.activate();
 		this.renderedTopology = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
@@ -199,7 +197,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override clearInput(): void {
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
-		this.inspector.hide(); this.gameInput.clearInput(); this.actions.clearInput();
+		this.inspector.hide(); this.gameInput.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
@@ -209,7 +207,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		// Detaching is not execution; the controller still observes guest invalidation while hidden.
 		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.scrollbar.cancelPointer(); super.clearInput();
 	}
-	public override dispose(): void { pointerHover.release(this); this.inspector.dispose(); this.gameInput.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
+	public override dispose(): void { pointerHover.release(this); this.inspector.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
@@ -303,10 +301,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
-		drawActorLab(this.input, this.commands.transport.state, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel);
+		drawActorLab(this.input, this.controller.viewport.transport.state, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel, this.controller.viewport);
 		const hit = this.viewportHit;
 		if (hit !== undefined) {
-			const bounds = this.input.previewBounds, size = this.presenter.offscreenCanvasSize;
+			const bounds = this.input.previewBounds, size = this.controller.viewport.presenter.offscreenCanvasSize;
 			const scaleX = (bounds.right - bounds.left) / size.x, scaleY = (bounds.bottom - bounds.top) / size.y;
 			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 			api.blit_rect(bounds.left + hit.left * scaleX, bounds.top + hit.top * scaleY,
@@ -330,9 +328,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private updateViewportHit(): void {
 		if (!this.viewportHover) return;
 		const bounds = this.input.previewBounds;
-		if (this.controller.rewind.seeking || this.presenter.gameFrameSequence === undefined
+		if (this.controller.rewind.seeking || this.controller.viewport.presenter.gameFrameSequence === undefined
 			|| !point_in_rect(this.pointerX, this.pointerY, bounds)) { pointerHover.release(this); return; }
-		const size = this.presenter.offscreenCanvasSize;
+		const size = this.controller.viewport.presenter.offscreenCanvasSize;
 		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain,
 			(this.pointerX - bounds.left) * size.x / (bounds.right - bounds.left),
 			(this.pointerY - bounds.top) * size.y / (bounds.bottom - bounds.top));

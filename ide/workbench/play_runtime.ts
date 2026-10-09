@@ -11,7 +11,8 @@ import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_stat
 import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import type { ResourceDomain } from '../common/resource';
 import { createRuntimeFaultState, readSupervisorFaultReport } from '../runtime/fault_state';
-import { createSourceExecutionState, runtimeDebuggerExecutionRequested, type SourceExecutionState } from '../runtime/debugger_state';
+import { createSourceExecutionState, runtimeDebuggerExecutionRequested, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan,
+	didFaultRuntimeDebuggerPlan, discardRuntimeDebuggerPlans, type SourceExecutionState } from '../runtime/debugger_state';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { TestDebuggerSources } from '../testing/debugger_sources';
@@ -24,6 +25,7 @@ import { PlayFixture, type PlayFixtureBudgets } from '../testing/play_fixture';
 import type { PlaySession, PlaySessionFailure, PlaySessionState } from './services/play/session';
 import type { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import type { PlayInput } from './services/play/input';
+import { ActorExecutionService } from './contrib/actor_lab/execution';
 
 /** Physical play lifetime, not a retained passing case or a second implementation of the machine loop. */
 export class PlayRuntimeSession implements PlaySession {
@@ -41,6 +43,7 @@ export class PlayRuntimeSession implements PlaySession {
 	public readonly navigation: RuntimeFrameNavigation;
 	public readonly transport: RuntimeTransport;
 	public readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
+	public readonly actorExecution: ActorExecutionService;
 	public readonly currentBlua32Media: Blua32InstalledMedia;
 	private readonly fault = createRuntimeFaultState();
 	public failure: PlaySessionFailure | undefined;
@@ -74,6 +77,7 @@ export class PlayRuntimeSession implements PlaySession {
 		this.navigation = new RuntimeFrameNavigation(runtime, this.execution, this.rewind, this.tasks, this.debugger, this.fault, this.guest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, this.execution, this.rewind,
 			this.tasks, this.fault, this.guest, this.navigation);
+		this.actorExecution = new ActorExecutionService(runtime, this, this.guest, this.debugger, this.fault, this.tasks, this.execution, this.rewind);
 		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, () => this.ready && this.tasks.ready
 			&& !this.execution.frameStepPending && this.debugger.source.stop === undefined && !this.debugger.plans.controlActive);
 		this.evidence = new PlayEvidence(runtime, () => this.fixture.readContext());
@@ -81,6 +85,8 @@ export class PlayRuntimeSession implements PlaySession {
 		runtime.onStateRestored = origin => {
 			this.evidence.didRestore();
 			this.debuggerExecution.didReset();
+			this.actorExecution.didReplaceMachine();
+			discardRuntimeDebuggerPlans(this.debugger);
 			this.navigation.didRestore(origin);
 			this.guest.invalidate(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 			this.debugger.source.reset();
@@ -105,6 +111,8 @@ export class PlayRuntimeSession implements PlaySession {
 				this.rewind.service(false);
 				this.navigation.dispose();
 				this.debuggerExecution.dispose();
+				void this.actorExecution.shutdown();
+				discardRuntimeDebuggerPlans(this.debugger);
 				this.debugger.source.reset();
 				this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 				this.fixture.stop();
@@ -126,6 +134,7 @@ export class PlayRuntimeSession implements PlaySession {
 			this.systemOutput.flush(this.target.runtime, this.log);
 			this.navigation.afterHostFrame();
 			this.debuggerExecution.afterHostFrame();
+			this.actorExecution.afterHostFrame();
 		} catch (error) {
 			this.quarantine({ kind: 'host', error });
 		}
@@ -141,27 +150,34 @@ export class PlayRuntimeSession implements PlaySession {
 		}
 		presentation.clearPresentation();
 		if (this.rewind.seeking || this.rewind.playing) this.guest.invalidate();
-		this.rewind.service(true);
+		const collectHistory = !this.debugger.plans.mutationActive;
+		this.rewind.service(collectHistory);
+		let executed = false;
 		if (this.rewind.playing && !this.execution.executionBlocked()) {
 			this.rewind.runPlayback(this.execution.consumeElapsedTime(hostDeltaMs));
 			this.frameSession.syncMachineOutput(runtime, this.audio);
 		}
 		if (this.tasks.ready && !this.rewind.active && !this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debugger))
-			&& this.debugger.source.stop === undefined) {
+			&& !this.debugger.plans.controlSuspended && this.debugger.source.stop === undefined) {
+			if (this.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(this.debugger);
 			this.guest.invalidate();
 			executeHostUpdate(this.frameSession, runtime, this.target.presenter, this.audio, presentation, hostDeltaMs);
+			executed = true;
 			this.debugger.source.didExecute();
 		} else runtime.frameScheduler.clearQueuedTime();
 		const fault = readSupervisorFaultReport(runtime);
 		if (fault !== undefined) {
 			this.quarantine({ kind: 'machine', message: fault, cycles: runtime.machine.scheduler.currentNowCycles(), videoTick: runtime.frameScheduler.lastTickSequence });
-		}
+		} else if (executed && this.debugger.plans.controlActive) didExecuteRuntimeDebuggerPlan(this.debugger);
 		this.target.present();
 		if (!this.rewind.active) this.evidence.drain();
-		if (this.tasks.ready && runtime.history.checkpointPending) this.rewind.service(true);
+		if (this.tasks.ready && (runtime.history.checkpointPending || collectHistory !== !this.debugger.plans.mutationActive)) {
+			this.rewind.service(!this.debugger.plans.mutationActive);
+		}
 	}
 	private quarantine(failure: PlaySessionFailure): void {
 		this.failure = failure;
+		if (failure.kind === 'machine' && this.debugger.plans.controlActive) didFaultRuntimeDebuggerPlan(this.debugger);
 		this.navigation.didFault(failure.kind === 'host' ? 'host' : 'guest', failure.kind === 'host' ? String(failure.error) : failure.message);
 		this.debuggerExecution.didFault(failure.kind === 'host' ? 'host' : 'guest', failure.kind === 'host' ? String(failure.error) : failure.message);
 		this.execution.finishFrameStep();
@@ -189,11 +205,14 @@ export class PlayRuntimeSession implements PlaySession {
 		this.guest.invalidate('heap-replaced');
 		this.navigation.dispose();
 		this.debuggerExecution.dispose();
+		const actorsDrained = this.actorExecution.shutdown();
+		discardRuntimeDebuggerPlans(this.debugger);
 		this.evidence.dispose();
-		this.closeOperation = this.close();
+		this.closeOperation = this.close(actorsDrained);
 		return this.closeOperation;
 	}
-	private async close(): Promise<void> {
+	private async close(actorsDrained: Promise<void>): Promise<void> {
+		await actorsDrained;
 		await this.tasks.join();
 		await this.target.backend.finishGxGpuReadbacks();
 		this.target.runtime.history.stop();

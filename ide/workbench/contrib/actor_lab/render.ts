@@ -6,8 +6,10 @@ import type { ActorLabInput } from './editor_input';
 import { drawWorkbenchSlider } from '../../render/slider';
 import { drawWorkbenchGraph } from '../../render/graph';
 import type { WorkbenchGraphItem } from '../../ui/graph/model';
+import type { ActorLabViewport } from './viewport';
 
-export function drawActorLab(input: ActorLabInput, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null, graphFocused: boolean, previewLabel: string): void {
+export function drawActorLab(input: ActorLabInput, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null,
+	graphFocused: boolean, previewLabel: string, viewport: ActorLabViewport): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -46,7 +48,8 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 	}
 	const preview = input.previewBounds;
 	api.blit_text_inline_with_font(previewLabel, preview.left, tree.contentTop + 2, 0, color, font);
-	api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
+	if (viewport.kind === 'direct') api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
+	else if (viewport.frames.bitmap !== undefined) api.drawBitmap(viewport.frames.bitmap, preview.left, preview.top, preview.right, preview.bottom);
 	const timeline = input.timeline;
 	if (timeline.visible) {
 		const { top, label, positionLeft, durationLeft, endLabelTop } = input.timelineLayout;

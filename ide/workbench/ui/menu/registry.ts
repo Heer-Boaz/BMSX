@@ -71,6 +71,7 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'play.title': [{ type: 'command', command: 'play.stop' }, { type: 'command', command: 'play.more' }],
 	'play.context': [
+		{ type: 'command', command: 'play.actors' },
 		{ type: 'command', command: 'play.reset' },
 		{ type: 'command', command: 'play.source' },
 		{ type: 'command', command: 'play.breakpoints' },

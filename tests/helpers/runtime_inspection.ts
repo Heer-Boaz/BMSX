@@ -47,11 +47,12 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
 	const luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
-		const boots = new BootService(models, sources, fault, runtime, tasks, execution, audio, new Map());
+	const boots = new BootService(models, sources, fault, runtime, tasks, execution, audio, new Map());
+	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const hotResumes = new HotResumeService(models, sources, guest, fault, debuggerState,
-		new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), runtime, tasks, execution, new Map());
+		input, runtime, tasks, execution, new Map());
 	hotResumes.onDidApply = () => events.beginTimeline();
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { events, hotResumes, boots, models, storage, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { events, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

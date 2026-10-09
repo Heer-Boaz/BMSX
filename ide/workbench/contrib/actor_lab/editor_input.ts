@@ -14,9 +14,11 @@ import type { ActorStateGraph } from './state_graph';
 import { ActorActivityFollow } from './activity_follow';
 import type { ActorNodeIdentity } from './target';
 import type { ActorDetails, ActorDetailsSelection } from './details';
+import type { ActorLabTabId } from '../../ui/tab/id';
+import type { ActorLabController } from './controller';
 
 /** View state only. Borrowed rows are released before guest execution. */
-export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
+export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab'> {
 	public get resource(): undefined { return undefined; }
 	public domain: ResourceDomain = 0;
 	public actorHashId = 0;
@@ -47,8 +49,9 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
 	};
-	public constructor() {
-		super('actor-lab', 'actor_lab', 'ACTOR LAB', true);
+	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
+		public override readonly serializable: boolean) {
+		super(id, 'actor_lab', title, true);
 		this.onWillDispose(() => { this.runtime.dispose(); this.details?.dispose(); });
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {

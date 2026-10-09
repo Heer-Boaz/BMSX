@@ -12,7 +12,6 @@ import { scheduleRuntimeGuestCall } from './guest_call';
 import { readRuntimeLuaModuleExport } from './lua_inspection';
 import type { RuntimeSourceState } from './sources';
 import type { SuspendedGuestSession } from './suspended_guest';
-import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 
 export type LuaGlobalContext = 'cart' | 'session';
 export type LuaFrameContext = { readonly kind: 'frame'; readonly stopId: number; readonly frame: RuntimeStackTraceFrame };
@@ -99,7 +98,6 @@ export class RuntimeLuaEvaluation {
 		const plans = this.debuggerState.plans;
 		if (!paused && this.debuggerState.source.stop !== undefined) {
 			resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
-			clearExecutionStopHighlights();
 		} else plans.setControlSuspended(paused);
 		if (!paused) this.execution.requestExecution(false);
 		operation.executionRevision = this.execution.revision;
@@ -184,7 +182,7 @@ export class RuntimeLuaEvaluation {
 					} };
 			},
 		}, () => {
-			clearExecutionStopHighlights(); this.execution.requestExecution(false);
+			this.execution.requestExecution(false);
 			operation.executionRevision = this.execution.revision;
 			operation.status = 'running';
 		}, completed => {

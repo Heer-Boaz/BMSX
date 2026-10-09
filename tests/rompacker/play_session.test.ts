@@ -24,6 +24,9 @@ import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { readRuntimeLuaModuleExport, runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache } from '../../ide/runtime/lua_inspection';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { ActorRuntimeTree, runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
+import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
+import { captureActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 
 const SCENE = `local game<const> = require('game')
@@ -47,13 +50,14 @@ while true do
  halt_until_irq
 end`;
 
-async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME, sourceDomain: 0 | 1 = 0) {
+async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME, sourceDomain: 0 | 1 = 0,
+	modules: readonly { path: string; source: string }[] = []) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-session-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
-		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }],
+		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }, ...modules],
 	});
 	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,
 		test: { sourcePath: PATH, source: scene }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
@@ -91,6 +95,57 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses
 	const cache = new RuntimeLuaFunctionSourceCache(code, guest), cached = cache.update(callback);
 	for (let index = 0; index < 1000; index++) assert.strictEqual(cache.update(callback), cached);
 	assert.deepEqual(captureRuntimeMachineState(f.target.runtime), before, 'inspection grants no guest work or mutation');
+});
+
+const ACTOR_WORLD = `local game<const> = require('game')
+local actor<const> = {id='probe',active=true,_components={},_components_by_class={}}
+function actor:change()
+ game.marker=33
+ return game.marker
+end
+local world<const> = {_objects={actor}}
+function world:request_mutation_boundary()
+ self.receipt={reached=false}
+ return self.receipt
+end
+return world`;
+
+for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true]) test(`O${optLevel}: Play actor calls ${closeAtStop ? 'retire at close' : 'resume and settle'} on their own CPU plan`, async t => {
+	const gameSource = GAME.replace('local game<const>', "local world<const> = require('cartlib/world/world')\nlocal game<const>")
+		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
+	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
+	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
+	const actor = (guest.readStringMember(world, '_objects') as Table).getInteger(1) as Table;
+	assert.equal(readActorChoices(session, guest, 0)[0].hashId, actor.hashId);
+	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
+	const target = captureActorTarget(0, world.hashId, tree.roots, tree.roots[0], guest);
+	const identity = guest.identity(guest.readStringMember(actor, 'change')); tree.dispose();
+	const source = session.debugSources.catalog.find(entry => entry.path.endsWith('cartlib/world/world.lua'))!;
+	assert.equal(session.debugSources.setBreakpoints(source.source, [4])[0].status, 'bound');
+	const primary = captureRuntimeMachineState(f.authoring.runtime);
+	const operation = session.actorExecution.start({ kind: 'method', target, identity, method: 'change', args: [] });
+	await f.settle(() => operation.status === 'paused');
+	assert.equal(operation.invoked, true); assert.equal(f.field('marker'), 12, 'the breakpoint precedes the requested mutation');
+	assert.equal(session.transport.playbackEnabled, false); assert.equal(session.navigation.canStep(-1), false);
+	const held = captureRuntimeMachineState(f.target.runtime);
+	for (let index = 0; index < 5; index++) await f.frame();
+	const paused = captureRuntimeMachineState(f.target.runtime);
+	assert.deepEqual(paused.machine, held.machine);
+	assert.deepEqual(paused.frameLoop, held.frameLoop);
+	assert.equal(paused.schedulerNowCycles, held.schedulerNowCycles, 'a control stop discards queued host time, not guest work');
+	if (closeAtStop) {
+		await session.dispose();
+		assert.equal(operation.result!.status, 'interrupted');
+		assert.equal(session.debugger.plans.controlActive, false);
+	} else {
+		session.debugSources.setBreakpoints(source.source, []);
+		session.debuggerExecution.resume('continue', 'workbench');
+		await f.settle(() => operation.result !== undefined);
+		assert.equal(operation.result!.status, 'completed'); assert.deepEqual(operation.result!.values, ['33']);
+		assert.equal(f.field('marker'), 33); assert.equal(session.debugger.plans.mutationActive, false);
+		assert.equal(f.target.runtime.history.mode, HistoryMode.Recording, 'recording restarts only after the admitted call settles');
+	}
+	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
 });
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play observations rebind compiled context roots after rewind without fake case results`, async t => {

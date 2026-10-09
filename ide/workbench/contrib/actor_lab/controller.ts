@@ -6,13 +6,15 @@ import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import { prepareLuaArguments, prepareLuaLiteral } from '../../../runtime/lua_literal';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeSourceState, RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../services/quick_input/provider';
-import { openEditorTab } from '../../ui/tabs';
+import { openEditorTab, closeTab, findTabById } from '../../ui/tabs';
+import type { ActorLabTabId } from '../../ui/tab/id';
+import type { ActorLabViewport } from './viewport';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import type { EditorNavigationController } from '../resources/navigation';
 import { canOpenBehaviorInspectionSource } from '../behavior_lens/inspection_source';
@@ -37,10 +39,12 @@ export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
 	private navigationGeneration = 0;
+	private readonly unbindGuest: () => void;
+	private readonly unbindReview: () => void;
 	public readonly viewportPicker: ActorViewportPicker;
 	public readonly canInteract = (domain?: ResourceDomain) => domain === undefined ? this.execution.canExecute : this.execution.canExecuteIn(domain);
 	public constructor(
-		private readonly sources: RuntimeSourceState,
+		private readonly sources: RuntimeInstalledSourceState,
 		public readonly guest: SuspendedGuestSession,
 		private readonly cpu: CPU,
 		private readonly quickInput: QuickInputController,
@@ -48,16 +52,19 @@ export class ActorLabController {
 		private readonly navigation: EditorNavigationController,
 		private readonly execution: ActorExecutionService,
 		public readonly rewind: HostRewind,
+		private readonly authoringSources: RuntimeSourceState,
+		public readonly viewport: ActorLabViewport,
+		private readonly inputId: ActorLabTabId = 'actor-lab', private readonly title = 'ACTOR LAB',
 	) {
 		this.viewportPicker = new ActorViewportPicker(sources, guest);
-		guest.onDidInvalidate(reason => {
+		this.unbindGuest = guest.onDidInvalidate(reason => {
 			this.viewportPicker.invalidate(reason);
 			if (reason === 'heap-replaced') this.navigationGeneration++;
 			const input = this.current;
 			if (input === undefined) return;
 			input.invalidate(reason);
 		});
-		guest.onWillEndHistoryReview(() => {
+		this.unbindReview = guest.onWillEndHistoryReview(() => {
 			this.navigationGeneration++;
 			const input = this.current;
 			if (input !== undefined) {
@@ -68,10 +75,17 @@ export class ActorLabController {
 			}
 		});
 	}
+	public dispose(): void {
+		this.unbindGuest(); this.unbindReview();
+		if (this.current !== undefined) {
+			if (findTabById(this.current.id) === this.current) closeTab(this.panes, this.current.id);
+			else this.current.dispose();
+		}
+	}
 
 	public resolveInput(): ActorLabInput {
 		if (this.current === undefined) {
-			const input = new ActorLabInput();
+			const input = new ActorLabInput(this, this.inputId, this.title, this.inputId === 'actor-lab');
 			input.details = new ActorDetails(this.sources, this.guest);
 			this.projection = new ActorProjection(input, this.sources, this.guest);
 			input.onWillDispose(() => { this.current = undefined; });
@@ -273,7 +287,7 @@ export class ActorLabController {
 		this.refreshDetails(input);
 		input.detailsOpen = true;
 		const lifetime = inspector.show({ title: 'DETAILS', items: input.details!.items,
-			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
+			canOpenSource: item => canOpenBehaviorInspectionSource(this.authoringSources, item),
 			openSource: item => {
 				const source = item.source!;
 				this.navigation.focusChunkSourceForContext(source.resource.domain, source.resource.path, {

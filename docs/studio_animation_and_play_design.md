@@ -29,9 +29,10 @@ Stop performs bounded fixture cleanup; Reset captures current source and joins
 the old lifetime before constructing another world. Closing the transient tab
 revokes input/audio immediately and joins backend work before disposal.
 
-This is **not yet** the final `2025` transition/combat workflow. Target-bound
-Actor/FSM inspection, inline procedural definitions and coordinated curve/sequence
-authoring remain separate slices below. No exported-definition rewrite has been
+This is **not yet** the final `2025` transition/combat workflow. Inline
+procedural definitions and coordinated curve/sequence authoring remain
+separate slices below. Play's Actor/FSM inspection is implemented in the
+target-binding slice below. No exported-definition rewrite has been
 imposed on those carts to make the first editor appear complete.
 
 The compiled fixture mechanism is now separate from automatic case policy.
@@ -445,10 +446,10 @@ condition is on the already instrumented source hook; a machine without active
 source stops retains its uninstrumented executor. No hardware representation,
 guest instructions/cycles, history codec or mirrored C++ machine change is needed.
 
-Remaining acceptance work: bind Actor Lab and its source/operation/presentation
-owners to the chosen physical session, extend canonical procedural animation
-authoring, then perform the transition and combat redesign through visible
-Studio interaction. Do not present primary Actor Lab as inspection of Play.
+The physical Actor/FSM binding is implemented in the target-binding slice below.
+Remaining acceptance work: extend canonical procedural animation authoring,
+then perform the transition and combat redesign through visible Studio
+interaction. Do not present primary Actor Lab as inspection of Play.
 
 ### Installed code provenance before target-bound inspection
 
@@ -492,3 +493,76 @@ These are architecture checks, not visible Play Actor/FSM acceptance.
 Reference: VS Code's [session-bound debug source identity](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugSource.ts)
 keeps debug source identity separate from an ordinary file path. BMSX uses its
 own installed image provenance, not VS Code's URI/DAP or compatibility machinery.
+
+### Physical Actor/FSM view and operation binding
+
+**Play: Inspect Actors** opens the existing Actor Lab contribution against the
+captured Play session. Each input names its actual controller and target; the
+reusable pane binds to that input on attachment, not to the primary controller
+captured by its constructor. The primary Actor Lab remains a separate input.
+Play inspectors are transient and retire on Stop, Reset, close or fault. Closing
+an inspector alone does not close its Play fixture.
+
+The viewport binding names the actual presenter, input recipient, transport and
+completed-frame resource. It neither substitutes a Runtime nor invents a source
+registry. Actor choices, tree, FSM graph, follow, Details, watches and mutations
+use the same physical guest and admitted images as the displayed game. Source
+navigation separately checks the authored working copy against the captured
+callback text; a newer primary code installation cannot make the wrong source
+correspond to an older Play address. Stable callback/model versions reuse that
+comparison without repeatedly flattening unchanged documents.
+
+Actor operations use the existing guest-owned World rendezvous and debugger
+control plans. The session's ordinary host-frame path executes/settles those
+plans and temporarily excludes explicit mutations from gameplay history. It
+restarts history only after completion and owned GPU work have settled. Restore
+and close retire operation plans/borrows; Stop closes new operation admission
+before bounded fixture teardown. No second CPU loop, rollback or shadow world
+was added. The physical source debugger owns retained-stop/media correspondence;
+the primary document UI observes primary stop changes rather than being cleared
+by target-independent guest-call services.
+
+Inspection hold is target-specific. An unfocused paused Actor view holds only
+its displayed machine; focused game input or an explicit execution plan permits
+that target to run. The authoring hold requires the primary transport/recipient,
+so a live Play inspector cannot accidentally release the main cart.
+
+| Representation | TypeScript owner | C++/machine change |
+| --- | --- | --- |
+| Actor identity and live values | actual `SuspendedGuestSession`, typed guest membership | None |
+| Call admission/execution | session `ActorExecutionService`, World receipt, `SourceExecutionState` | Existing compiled guest API/instructions unchanged |
+| Input and game coordinates | attached input's actual recipient/presenter | ICU/presentation datapaths unchanged |
+| Accepted output | primary direct frame or Play's completed bitmap | No screenshot transport or native Studio facade |
+| Source address and document | admitted image provenance plus canonical working-copy correspondence | Symbol encoding unchanged |
+| Stop/reset lifetime | session plans/tasks and transient view/controller detachment | No machine reset policy change |
+
+Hot-path changes are in `PlayRuntimeSession.advancePlay` (existing debugger-plan
+boundaries), `runWorkbenchHostFrame` (once-per-frame target hold) and the active
+Actor pane (existing retained projection/bitmap draw). Game input controls are
+created on attachment, not repaint. Source-stop listeners notify on actual stop
+identity changes, not instruction misses. Callback correspondence is cached by
+admitted callback identity and document version. Idle primary machine/CPU
+execution acquires no new guest instructions, numeric conversions or per-sample
+input dispatch.
+
+Reference: VS Code's [debug view model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugViewModel.ts)
+keeps focused session/thread/frame identity explicit and binds capabilities to
+that actual target. BMSX preserves its own physical machine and view lifetimes,
+not VS Code's context-key/DAP machinery.
+
+Development checks: O0/O3 real compiled actor calls, rendezvous, source breakpoint
+pause/resume, close during a paused operation, unchanged primary state, retired
+plans and restarted history; actual callback/working-copy edit/Undo/reopen
+correspondence; the existing Actor projection/navigation tests. These 153
+checks pass, as do IDE/test/browser typechecks and the strict boundary audit.
+The primary real-cart Game/Actor input/Details/frame-navigation workflow also
+passes on software, WebGL2 and WebGPU.
+
+The visible `2025` Studio check uses only normal keyboard/pointer interaction:
+Play fixture, actual game input into the classroom, select `p3.director`, inspect
+and follow its actual FSM, shared previous/next frame controls, invoke the real
+Go to State action, resume/focus the preview and advance dialogue, then verify
+the separate main Game still shows the title. Reset and Stop retire the old
+Play Actors tab. Images and action log are under `/tmp/bmsx-play-visible` during
+development. This proves the target-bound interactive inspection path, not yet
+procedural transition/combat authoring or the final animation redesign.

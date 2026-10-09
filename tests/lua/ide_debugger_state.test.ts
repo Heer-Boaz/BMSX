@@ -88,6 +88,28 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 	};
 }
 
+test('physical source-stop transitions notify presentation without coupling guest calls to authoring state', () => {
+	const { runtime, state } = createDebuggerHarness('local n = 3\nn = n + 1\nreturn n', 0);
+	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [2]);
+	const stops: (typeof state.source.stop)[] = [], unbind = state.source.onDidChangeStop(stop => stops.push(stop));
+	runtime.machine.cpu.reset();
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	const retained = state.source.stop!;
+	assert.deepEqual(stops, [retained]);
+	state.source.install(state.sources.currentBlua32Media, state.breakpoints.bindings.pcs);
+	assert.equal(stops.length, 1, 'breakpoint binding updates are not a new source suspension');
+	assert.strictEqual(state.source.suspendStopForCall(), retained);
+	assert.deepEqual(stops, [retained, undefined]);
+	assert.equal(state.source.returnToStop(retained), true);
+	assert.deepEqual(stops, [retained, undefined, retained]);
+	state.source.install({ ...state.sources.currentBlua32Media }, state.breakpoints.bindings.pcs);
+	assert.equal(state.source.returnToStop(retained), false, 'installed-code correspondence belongs to the physical source debugger');
+	assert.deepEqual(stops, [retained, undefined, retained, undefined]);
+	unbind();
+	state.source.reset();
+	assert.equal(stops.length, 4);
+});
+
 for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${admission} evaluation never enters the CPU after asynchronous GPU admission`, async () => {
 	const { runtime, state } = createDebuggerHarness('return function() return 42 end', 0);
 	const cpu = runtime.machine.cpu;

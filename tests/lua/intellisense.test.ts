@@ -2,6 +2,8 @@ import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import { readRuntimeStackFrames, buildLuaStackFrames, createLuaSourceStackTraceFrame } from '../../ide/runtime/stack_trace';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { canOpenBehaviorInspectionSource } from '../../ide/workbench/contrib/behavior_lens/inspection_source';
+import type { BehaviorInspectionProperty } from '../../ide/workbench/contrib/behavior_lens/inspection';
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
 import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
 import type { ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
@@ -628,7 +630,7 @@ return {}`;
 		assert.deepEqual(cpu.captureRuntimeState(), before, 'readback changes no register, cell, heap or CPU state');
 	});
 
-	test(`suspended inspection reads stored key kinds and actual callback source at O${optLevel}`, () => {
+	test(`suspended inspection reads stored key kinds and actual callback source at O${optLevel}`, t => {
 		const source = `callback = function() return 7 end
 other_callback = function() return 8 end
 entries = { [1] = 'numeric', ['1'] = 'string', [true] = 'boolean', [callback] = 'function' }
@@ -643,6 +645,25 @@ halt_until_irq`;
 		assert.deepEqual(location.resource, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'cart.lua' });
 		assert.deepEqual(location.range.start, { line: 1, column: 12 });
 		assert.equal(location.installedSource, source);
+		t.after(() => editorTextModelService.clear());
+		const detail: BehaviorInspectionProperty = { label: 'callback', value: '', description: '', warning: false, source: location };
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		const model = editorTextModelService.retain(testLuaResource('cart.lua'), 'lua', source);
+		const changedSource = source.replace('return 7', 'return 77');
+		// A different installed authoring image cannot decide correspondence with this captured callback.
+		bridge.sources.systemInstalledBlua32Sources = new Map([['cart', changedSource]]);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: changedSource }]);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), false);
+		model.undo();
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		const textReads = t.mock.method(model.buffer, 'getText');
+		for (let update = 0; update < 1000; update++) assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		assert.equal(textReads.mock.callCount(), 0, 'unchanged source correspondence does not flatten the document on repaint');
+		editorTextModelService.clear();
+		const reopened = editorTextModelService.retain(testLuaResource('cart.lua'), 'lua', changedSource);
+		assert.notStrictEqual(reopened, model);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), false);
 		const correspondence = new RuntimeLuaFunctionSourceCache(bridge.sources, guest);
 		const cached = correspondence.update(callback)!;
 		assert.deepEqual(cached, location);

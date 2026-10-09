@@ -63,6 +63,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 		}
 	}
 	public override get showsGameFrame(): boolean { return true; }
+	public override get suspendsRuntime(): boolean { return false; }
 	public override get runtimeControlContext() { return this.session?.ready === true ? this.focusTarget : undefined; }
 	public override get runtimeTransport() { return this.session?.ready === true ? this.session.transport : undefined; }
 	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update(); }

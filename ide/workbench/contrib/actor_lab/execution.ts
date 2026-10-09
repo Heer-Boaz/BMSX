@@ -9,11 +9,10 @@ import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_que
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from '../../../runtime/debugger_state';
+import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type SourceExecutionState } from '../../../runtime/debugger_state';
 import { scheduleRuntimeGuestCall, type RuntimeGuestCall } from '../../../runtime/guest_call';
 import type { PreparedLuaLiteral } from '../../../runtime/lua_literal';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from './runtime';
 import { resolveActorTarget, type ActorTarget } from './target';
@@ -54,7 +53,7 @@ export class ActorExecutionService {
 	private readonly values: Value[] = [];
 	private readonly tree = new ActorRuntimeTree();
 	public constructor(private readonly runtime: Runtime, private readonly sources: RuntimeInstalledSourceState,
-		private readonly guest: SuspendedGuestSession, private readonly debuggerState: RuntimeDebuggerState,
+		private readonly guest: SuspendedGuestSession, private readonly debuggerState: SourceExecutionState,
 		private readonly fault: RuntimeFaultState, private readonly tasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl, private readonly rewind: HostRewind) {}
 
@@ -118,7 +117,7 @@ export class ActorExecutionService {
 			},
 			didEnter: () => { operation.invoked = true; },
 		}, () => {
-			clearExecutionStopHighlights(); this.execution.requestExecution(false);
+			this.execution.requestExecution(false);
 			operation.executionRevision = this.execution.revision; operation.status = 'running';
 		}, completed => {
 			if (operation.result !== undefined || operation.outcome !== undefined) return;
@@ -189,7 +188,7 @@ export class ActorExecutionService {
 		if (!paused && !this.canControl) throw new Error('Actor control is unavailable during recovery.');
 		operation.controlVersion++;
 		if (!paused && this.debuggerState.source.stop !== undefined) {
-			resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue); clearExecutionStopHighlights();
+			resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
 		} else this.debuggerState.plans.setControlSuspended(paused);
 		if (!paused) this.execution.requestExecution(false);
 		operation.executionRevision = this.execution.revision;

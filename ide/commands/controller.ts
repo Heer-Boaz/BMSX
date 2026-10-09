@@ -111,7 +111,7 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
-			case 'play.reveal': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
+			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				this.editor.play.execute(command); return;
 			case 'copy': case 'cut': case 'paste':
@@ -360,7 +360,7 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
-			case 'play.reveal': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
+			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;

@@ -159,7 +159,11 @@ export function runWorkbenchHostFrame(
 		}
 		input.guestInputRecipient = ide.editor.guestInputRecipient;
 		const playEnabled = ide.editor.isActive && hostMenuInput === HostMenuInput.Inactive;
-		ide.play.advance(hostDeltaMs, playEnabled);
+		const inspectedPlay = ide.play.current?.session, pane = ide.editor.editorPanes.activePane;
+		const holdPlay = inspectedPlay !== undefined && pane?.runtimeTransport === inspectedPlay.transport && pane.suspendsRuntime
+			&& !runtimeDebuggerExecutionRequested(inspectedPlay.debugger)
+			&& input.guestInputRecipient !== inspectedPlay.input.physical;
+		ide.play.advance(hostDeltaMs, playEnabled && !holdPlay);
 		const play = ide.play.current?.session;
 		if (play !== undefined) play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
 		audioOutput.device.select(play?.ready === true && playEnabled

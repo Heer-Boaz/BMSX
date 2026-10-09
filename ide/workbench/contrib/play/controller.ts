@@ -5,7 +5,9 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
-import type { PlayEvent, PlayService } from '../../services/play/service';
+import type { PlayEvent, PlayService, PlayHandle } from '../../services/play/service';
+import { ActorLabController } from '../actor_lab/controller';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ScenarioRunService } from '../../services/testing/scenario_runs';
 import { openHostError } from '../host_error/editor_input';
 import { openCompiledDebugSources } from '../debugger/compiled_sources';
@@ -14,11 +16,12 @@ import { PlayEditorInput } from './editor_input';
 /** Contribution commands select a captured session; no retargeting of authoring state. */
 export class PlayController {
 	private readonly unbind: () => void;
+	private actors: { readonly handle: PlayHandle; readonly controller: ActorLabController } | undefined;
 	public constructor(private readonly editor: CartEditor, public readonly service: PlayService,
-		private readonly runs: ScenarioRunService) {
+		private readonly runs: ScenarioRunService, private readonly sources: RuntimeSourceState) {
 		this.unbind = service.onDidChange(event => this.didChange(event));
 	}
-	public dispose(): void { this.unbind(); }
+	public dispose(): void { this.unbind(); this.actors?.controller.dispose(); this.actors = undefined; }
 	public start(module: ScenarioTestModule): void {
 		const handle = this.service.start(module), input = editorTabGroup.findById('play-session');
 		if (input !== undefined) { input.handle = handle; openEditorTab(this.editor.editorPanes, input); }
@@ -32,7 +35,7 @@ export class PlayController {
 			case 'play.reveal': case 'play.source': return true;
 			case 'play.reset': this.runs.refreshSources(); return !this.runs.active && this.currentModule() !== undefined;
 			case 'play.stop': return handle.state === 'preparing' || handle.state === 'initializing' || handle.state === 'setup' || handle.state === 'ready';
-			case 'play.breakpoints': return session?.ready === true;
+			case 'play.actors': case 'play.breakpoints': return session?.ready === true;
 			case 'play.continue': return session?.ready === true && session.debuggerExecution.canResume('continue');
 			case 'play.stepInto': return session?.ready === true && session.debuggerExecution.canResume('into');
 			case 'play.stepOver': return session?.ready === true && session.debuggerExecution.canResume('over');
@@ -44,6 +47,16 @@ export class PlayController {
 		const handle = this.service.current!;
 		switch (command) {
 			case 'play.reveal': openEditorTab(this.editor.editorPanes, editorTabGroup.findById('play-session')!); return;
+			case 'play.actors': {
+				if (this.actors === undefined) {
+					const session = handle.session!;
+					this.actors = { handle, controller: new ActorLabController(session, session.guest, session.target.runtime.machine.cpu,
+						this.editor.quickInput, this.editor.editorPanes, this.editor.navigation, session.actorExecution, session.rewind,
+						this.sources, { kind: 'offscreen', presenter: session.target.presenter, recipient: session.input.physical,
+							frames: session.frames, transport: session.transport }, `actor-lab:${handle.id}`, 'PLAY ACTORS') };
+				}
+				this.actors.controller.open(); return;
+			}
 			case 'play.stop': this.service.stop(handle); return;
 			case 'play.reset': {
 				this.runs.refreshSources();
@@ -67,6 +80,9 @@ export class PlayController {
 			.find(module => module.resource.path === handle.module.path && module.suite?.kind === 'integration');
 	}
 	private didChange(event: PlayEvent): void {
+		if (this.actors?.handle === event.handle && event.handle.session?.ready !== true) {
+			this.actors.controller.dispose(); this.actors = undefined;
+		}
 		const error = event.handle.failure ?? (event.handle.session?.failure?.kind === 'host' ? event.handle.session.failure : undefined);
 		if (event.state === 'failed' || event.state === 'faulted') {
 			if (error !== undefined) openHostError(this.editor.editorPanes,

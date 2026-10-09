@@ -24,7 +24,6 @@ import { BehaviorLensInputSerializer } from '../../../ide/workbench/contrib/beha
 import { SceneEditorInputSerializer } from '../../../ide/workbench/contrib/scene_editor/editor_serializer';
 import { ScenarioLabInputSerializer } from '../../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../../ide/workbench/contrib/resources/editor_serializer';
-import { ActorLabInput } from '../../../ide/workbench/contrib/actor_lab/editor_input';
 import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_input';
 
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
@@ -41,7 +40,7 @@ const serializers: EditorInputSerializers = {
 	scene_editor: new SceneEditorInputSerializer(null, null),
 	scenario_lab: new ScenarioLabInputSerializer(null),
 	resource_view: new ResourceViewerInputSerializer(null),
-	actor_lab: { serialize: () => '', deserialize: () => new ActorLabInput() },
+	actor_lab: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
 	game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 };
 editorViewState.font = new EditorFont('tiny');

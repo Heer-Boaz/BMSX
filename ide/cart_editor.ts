@@ -273,7 +273,7 @@ export class RuntimeCartEditor implements CartEditor {
 		return this.isActive && (this.actionPrompt.visible || this.quickInput.visible || this.contextMenu.visible
 			|| !this.debuggerState.plans.workbenchExecutionRequested
 			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)
-			&& this.editorPanes.activePane?.suspendsRuntime !== false
+			&& !(this.editorPanes.activePane?.runtimeTransport === this.commands.transport && this.editorPanes.activePane.suspendsRuntime === false)
 			&& inputFocus.target?.guestInput?.recipient !== this.input);
 	}
 	public readonly isAvailable: boolean;
@@ -319,6 +319,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
+	private readonly unbindSourceStop: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -453,7 +454,7 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
-			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu, presenter, input),
+			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input),
 			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
@@ -477,10 +478,11 @@ export class RuntimeCartEditor implements CartEditor {
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.animations = new AnimationEditorController(this.sources, this.editorPanes, this.navigation, this.quickInput);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
-			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
+			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind, sources,
+			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport });
 
 		const behaviorRegistrations = behaviorSources.registrations;
-		this.play = new PlayController(this, this.playSessions, scenarioRuns);
+		this.play = new PlayController(this, this.playSessions, scenarioRuns, sources);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
@@ -526,6 +528,9 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.unbindBreakpoints = debuggerState.breakpoints.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints));
+		this.unbindSourceStop = debuggerState.source.onDidChangeStop(stop => {
+			if (stop === undefined) clearExecutionStopHighlights();
+		});
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -742,6 +747,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
+		this.unbindSourceStop();
 		this.actionPrompt.dispose();
 		this.terminal.discard();
 		const evaluationDrained = this.luaEvaluation.shutdown();
@@ -749,6 +755,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.scenarioRuns.dispose();
 		await this.playSessions.dispose();
 		this.play.dispose();
+		this.actorLab.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
 		const executionDrained = this.hotResumes.shutdown();
