@@ -62,7 +62,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
-	'animation', 'animation.create', 'animation.addTrack', 'animation.addKey', 'animation.edit', 'animation.remove', 'animation.source',
+	'animation', 'animation.create', 'animation.addTrack', 'animation.addKey', 'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
 	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
@@ -194,7 +194,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.more':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.producerSource': case 'animation.more':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
@@ -439,7 +439,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.more':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.producerSource': case 'animation.more':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':

@@ -56,6 +56,10 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.controller.canAddKey(this.input), run: () => this.controller.addKey(this.input) });
 		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.controller.canRemove(this.input), run: () => this.controller.remove(this.input) });
 		this.focusTarget.registerCommand('animation.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
+		this.focusTarget.registerCommand('animation.producerSource', {
+			isEnabled: () => this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
+			run: () => this.controller.openProducerSource(this.input),
+		});
 		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {
 			const property = this.input.details.rows[this.input.details.selectionIndex]?.element;
 			if (property === undefined || !property.source.structural || !this.input.document!.syntaxComplete) return false;

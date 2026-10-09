@@ -1,6 +1,5 @@
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { resourceIdentityKey } from '../../../common/resource';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
@@ -13,7 +12,10 @@ import { AnimationKeyViewport } from './key_viewport';
 export type AnimationSourceSelection = { readonly path: string; readonly range: TrackedTextRange };
 export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; label: string; text: string };
 
+let nextInputId = 0;
+
 export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${string}`, 'animation'> {
+	public readonly definitionRange: TrackedTextRange | undefined;
 	public readonly sourceModels = new Map<string, EditorTextModel>();
 	public sourceRevision: symbol | undefined;
 	public version = 0;
@@ -29,8 +31,10 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public readonly actionBar = createWorkbenchActionBar('animation.title');
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
-	public constructor(public readonly workingCopy: EditorTextModel) {
-		super(`animation:${resourceIdentityKey(workingCopy.resource)}`, 'animation', `ANIM ${computeResourceTabTitle(workingCopy.resource)}`, true);
+	public constructor(public readonly workingCopy: EditorTextModel, definitionRange?: TrackedTextRange,
+		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource)) {
+		super(`animation:${nextInputId++}`, 'animation', `ANIM ${definitionLabel}`, true);
+		this.definitionRange = definitionRange === undefined ? undefined : { ...definitionRange };
 		this.sourceModels.set(workingCopy.resource.path, workingCopy);
 		this.publishModels();
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));

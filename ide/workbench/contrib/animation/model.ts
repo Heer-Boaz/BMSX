@@ -1,5 +1,6 @@
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSourceReader } from '../../../language/lua/source_reader';
 
 /** A written table, not the compiled program or a borrowed live instance. */
 export type AnimationTableSource = {
@@ -31,6 +32,7 @@ export type AnimationTrackSource = {
 };
 
 export type AnimationSourceDocument = {
+	readonly reader: LuaSourceReader;
 	readonly root: AnimationTableSource;
 	readonly tracksSource: AnimationTableSource | undefined;
 	readonly tracks: readonly AnimationTrackSource[];

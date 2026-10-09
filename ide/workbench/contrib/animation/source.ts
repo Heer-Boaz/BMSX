@@ -1,4 +1,4 @@
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/module_bindings';
@@ -7,18 +7,25 @@ import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
 import type { AnimationKeySource, AnimationSourceDocument, AnimationTableSource, AnimationTrackSource } from './model';
 
-/** The exported definition remains ordinary Lua; no runtime execution or inferred sample baking. */
-export function buildAnimationSourceDocument(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): AnimationSourceDocument | undefined {
+/** Native definition fields, not a runtime type test or a generated animation schema. */
+export function isAnimationDefinitionSource(table: LuaTableConstructorExpression): boolean {
+	return findNamedLuaTableField(table, 'tracks') !== null || findNamedLuaTableField(table, 'frames') !== null
+		|| findNamedLuaTableField(table, 'subsequences') !== null || findNamedLuaTableField(table, 'duration_ms') !== null
+		|| findNamedLuaTableField(table, 'duration_frames') !== null;
+}
+
+/** The selected written definition remains ordinary Lua; no execution or inferred sample baking. */
+export function buildAnimationSourceDocument(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot,
+	definition?: LuaTableConstructorExpression): AnimationSourceDocument | undefined {
 	const file = snapshot.getFileData(resource.path)!;
-	const exported = findLuaModuleExport(file.chunk);
-	if (exported === undefined) return undefined;
+	const expression = definition === undefined ? findLuaModuleExport(file.chunk)?.expressions[0] : definition;
+	if (expression === undefined) return undefined;
 	const reader = new LuaSourceReader(snapshot);
 	reader.files.add(file);
-	const root = readTable(reader, file, exported.expressions[0]);
-	if (root === undefined) return undefined;
+	const root = readTable(reader, file, expression);
+	if (root === undefined || !isAnimationDefinitionSource(root.table)) return undefined;
 	const field = findNamedLuaTableField(root.table, 'tracks');
-	if (field === null) return undefined;
-	const tracksSource = readTable(reader, root.file, field.value, root.structural);
+	const tracksSource = field === null ? undefined : readTable(reader, root.file, field.value, root.structural);
 	const tracks: AnimationTrackSource[] = [];
 	if (tracksSource !== undefined) for (const entry of tracksSource.table.fields) {
 		if (entry.kind !== LuaTableFieldKind.Array) continue;
@@ -45,7 +52,7 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 	}
 	const durationMs = findNamedLuaTableField(root.table, 'duration_ms');
 	const durationFrames = findNamedLuaTableField(root.table, 'duration_frames');
-	return { root, tracksSource, tracks, syntaxComplete: reader.syntaxComplete && file.syntaxError === null,
+	return { reader, root, tracksSource, tracks, syntaxComplete: reader.syntaxComplete && file.syntaxError === null,
 		durationMs: durationMs === null ? null : readNumber(reader, root.file, durationMs.value),
 		durationFrames: durationFrames === null ? null : readNumber(reader, root.file, durationFrames.value) };
 }

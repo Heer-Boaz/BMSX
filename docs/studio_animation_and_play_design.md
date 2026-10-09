@@ -5,8 +5,8 @@ specified here does not mean that its UI or execution path already exists.
 
 ## Implementation status
 
-The first source-authoring slice is implemented. **Animation** opens an exported
-Lua timeline definition; **New Timeline Definition** creates an ordinary Lua
+The source-authoring foundation is implemented. **Animation** opens exported or
+selected inline Lua timeline definitions; **New Timeline Definition** creates an ordinary Lua
 document through the existing resource service. Tracks, native-coordinate key
 selection/movement, field editing, insertion/removal and shared Undo/Redo/Save
 use the same working copies as Source. Imported tables retain their written
@@ -30,8 +30,8 @@ the old lifetime before constructing another world. Closing the transient tab
 revokes input/audio immediately and joins backend work before disposal.
 
 This is **not yet** the final `2025` transition/combat workflow. Inline
-procedural definitions and coordinated curve/sequence authoring remain
-separate slices below. Play's Actor/FSM inspection is implemented in the
+procedural definition selection/navigation is implemented below; coordinated
+curve/sequence authoring remains separate work. Play's Actor/FSM inspection is implemented in the
 target-binding slice below. No exported-definition rewrite has been
 imposed on those carts to make the first editor appear complete.
 
@@ -566,3 +566,55 @@ the separate main Game still shows the title. Reset and Stop retire the old
 Play Actors tab. Images and action log are under `/tmp/bmsx-play-visible` during
 development. This proves the target-bound interactive inspection path, not yet
 procedural transition/combat authoring or the final animation redesign.
+
+### Inline and procedural definition ownership
+
+The authoring view selects a **written definition**, not a file, program
+ID or live timeline. One Lua document can contain several definitions; its
+working copy still owns their text, history and persistence. Inline views track
+the selected table's text range through edits. Removing/replacing that range
+retires the projection; it must not silently select another definition.
+
+Discovery admits exported definitions, import-bound timeline-program producers
+and the native `timelines[*].def` fields of import-bound FSM registrations. It
+uses existing retained syntax and written-source queries, never the may-call
+solver or a same-named `define` heuristic. A dynamic receiver such as
+`self.timelines:define(...)` can instead be opened explicitly at its written
+definition in Source. That gesture selects source, not a claimed runtime type.
+
+`frames`, `tracks`, `subsequences` and authored durations are native definition
+fields. A procedural `frames` function is not an editable key array. Details
+retains the written expression; navigation to its written value source or single
+named definition opens the actual builder/initializer, including imported documents.
+The latter uses the language service's existing definition lookup, as in
+[TypeScript's Go to Definition](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/services/goToDefinition.ts),
+and is navigation evidence, not a claim about which value a member or call produces.
+It never grants structural edit authority or turns a call result into keys. Ambiguous
+or runtime-created values remain Source. No sampling, generated replacement
+tracks, global-to-literal substitution or new cart format is part of this slice.
+
+This follows Godot's selected animation-resource ownership and VS Code's
+resource/selection navigation, not their runtime reflection or compatibility
+machinery. The TypeScript/C++ hardware representations and hot-path callsites
+are unchanged. Discovery runs on command invocation; projection runs on source
+generation changes. Dynamic/mutated track or key producers remain visible in
+Details and navigate to Source; they are not hidden behind an empty key list.
+An unambiguous frames-only definition can receive an ordinary native `tracks`
+field without replacing its builder. Existing dynamic tracks are not overwritten.
+
+Development checks cover imported/FSM registration discovery, explicit dynamic
+receiver selection, range retirement/recovery, called-builder navigation without
+execution, retained idle projection and real frame-builder plus authored-track
+composition at O0/O3. The focused authoring/source/working-copy bundle passes
+100 checks; IDE/test typechecks, browser build and strict boundary audit pass.
+Those are development evidence, not a Studio-only game redesign.
+
+The visible `2025` Studio check opens the actual combat definitions and their
+original `timelinebuilders.lua` source, opens the inline transition at its Source
+cursor, edits a definition property and undoes it, and adds a native track to
+the existing combat intro before undoing that edit in its shared Source view.
+No cart source was exported/restructured to fit the editor, and no source edit
+was saved during this check. The screenshots/action log are under
+`/tmp/bmsx-play-visible/inline-animation-*` during development. This proves
+source-backed native definition authoring/navigation, not yet the final
+transition/combat redesign or coordinated curve/sequence authoring.

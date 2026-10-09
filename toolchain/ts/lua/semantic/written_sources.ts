@@ -76,11 +76,17 @@ export type LuaWrittenSourceInputs =
 	| { readonly kind: 'boundary'; readonly reason: 'call-result'; readonly call: CallValueEntry };
 
 /** A retained reachable source graph. Boundaries are not silently discarded origins. */
+export type LuaWrittenSourceBoundary = { readonly source: LuaWrittenSource } & (
+	| { readonly reason: Exclude<LuaSourceBoundary, 'call-result' | 'member-read'> }
+	| { readonly reason: 'member-read'; readonly name: string; readonly base: LuaWrittenSource }
+	| { readonly reason: 'call-result'; readonly call: CallValueEntry }
+);
+
 export type LuaWrittenSourceTrace = {
 	readonly root: LuaWrittenSource;
 	readonly sources: readonly LuaWrittenSource[];
 	readonly terminals: readonly LuaWrittenSource[];
-	readonly boundaries: readonly { readonly source: LuaWrittenSource; readonly reason: LuaSourceBoundary }[];
+	readonly boundaries: readonly LuaWrittenSourceBoundary[];
 };
 
 const TERMINAL: LuaWrittenSourceInputs = { kind: 'terminal' };
@@ -225,13 +231,17 @@ export class LuaWrittenSourceQuery {
 		if (trace !== undefined) return trace;
 		const sources: LuaWrittenSource[] = [root];
 		const terminals: LuaWrittenSource[] = [];
-		const boundaries: { source: LuaWrittenSource; reason: LuaSourceBoundary }[] = [];
+		const boundaries: LuaWrittenSourceBoundary[] = [];
 		const seen = new Set<LuaWrittenSource>(sources);
 		for (let cursor = 0; cursor < sources.length; cursor += 1) {
 			const source = sources[cursor];
 			const inputs = this.inputs(source);
 			if (inputs.kind === 'terminal') terminals.push(source);
-			else if (inputs.kind === 'boundary') boundaries.push({ source, reason: inputs.reason });
+			else if (inputs.kind === 'boundary') {
+				if (inputs.reason === 'call-result') boundaries.push({ source, reason: inputs.reason, call: inputs.call });
+				else if (inputs.reason === 'member-read') boundaries.push({ source, reason: inputs.reason, name: inputs.name, base: inputs.base });
+				else boundaries.push({ source, reason: inputs.reason });
+			}
 			else for (const input of inputs.sources) {
 				if (!seen.has(input)) {
 					seen.add(input);

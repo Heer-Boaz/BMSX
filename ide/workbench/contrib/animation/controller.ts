@@ -6,9 +6,14 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaNumberLiteral, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
-import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import type { RuntimeResource } from '../../../common/resource';
+import { resolveRuntimeResourceForContext, runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
+import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
+import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import type { EditorPanes } from '../../services/editor/editor_panes';
@@ -19,15 +24,75 @@ import { AnimationEditorInput, type AnimationSourceSelection } from './editor_in
 import { buildAnimationSourceDocument } from './source';
 import { projectAnimationDetails } from './details';
 import type { AnimationKeySource } from './model';
+import { animationDefinitionAtPosition, animationDefinitionAtRange, collectAnimationDefinitions, type AnimationDefinitionSource } from './definitions';
 
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
 	public constructor(private readonly sources: RuntimeSourceState, private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) {}
 
+	public open(): void {
+		const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
+		const snapshotFor = (domain: ResourceDomain): LuaSemanticWorkspaceSnapshot => {
+			let snapshot = snapshots.get(domain);
+			if (snapshot === undefined) {
+				const project = getOrCreateSemanticProject(editorTextModelService, domain);
+				project.synchronizeRuntimeSources(this.sources);
+				snapshot = project.getSnapshot(); snapshots.set(domain, snapshot);
+			}
+			return snapshot;
+		};
+		const active = editorTabGroup.activeTab;
+		if (active?.kind === 'code_editor' && active.workingCopy.mode === 'lua') {
+			const model = active.workingCopy, snapshot = snapshotFor(model.resource.domain), file = snapshot.getFileData(model.resource.path)!;
+			const table = animationDefinitionAtPosition(file, activeCodeEditor.view.cursorRow + 1, activeCodeEditor.view.cursorColumn + 1);
+			if (table !== undefined) {
+				this.openDefinition(model.resource.domain, { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` });
+				return;
+			}
+			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(model.resource); return; }
+		}
+		const choices: { label: string; description: string; detail: string; domain: ResourceDomain; definition: AnimationDefinitionSource }[] = [];
+		const admitted = new Map<ResourceDomain, Set<LuaTableConstructorExpression>>();
+		for (const resource of this.sources.luaResources) {
+			let seen = admitted.get(resource.domain);
+			if (seen === undefined) { seen = new Set(); admitted.set(resource.domain, seen); }
+			for (const definition of collectAnimationDefinitions(resource, snapshotFor(resource.domain))) {
+				if (seen.has(definition.table)) continue;
+				seen.add(definition.table);
+				const range = definition.file.chunk.locations.range(definition.table.span);
+				choices.push({ label: definition.label, description: definition.context === undefined ? definition.file.file : `${definition.context} / ${definition.file.file}`,
+					detail: `${resource.domain === -1 ? 'SYSTEM' : `SLOT ${resource.domain}`} / ${range.start.line}:${range.start.column}`,
+					domain: resource.domain, definition });
+			}
+		}
+		this.quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
+			const retire = () => this.quickInput.hide();
+			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
+			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+			for (const domain of snapshots.keys()) lifetime.add({ dispose: onDidChangeLuaSourceRegistry(runtimeLuaSourceRegistry(this.sources, domain)!, retire) });
+			return new TextQuickPickProvider(choices);
+		},
+			item => this.openDefinition(item.domain, item.definition));
+	}
+
+	public openDefinition(domain: ResourceDomain, definition: AnimationDefinitionSource): AnimationEditorInput {
+		const resource = resolveRuntimeResourceForContext(this.sources, domain, definition.file.file)!;
+		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+		const range = definition.file.chunk.locations.range(definition.table.span);
+		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
+			&& item.workingCopy === model && item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
+		if (input === undefined) {
+			input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, range), definition.label);
+			this.refresh(input);
+		}
+		openEditorTab(this.panes, input);
+		return input;
+	}
+
 	public openResource(resource: RuntimeResource): AnimationEditorInput {
-		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
-		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model);
+		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
 		if (input === undefined) { input = new AnimationEditorInput(model); this.refresh(input); }
 		openEditorTab(this.panes, input);
 		return input;
@@ -37,7 +102,7 @@ export class AnimationEditorController {
 		let model = input.sourceModels.get(file.file);
 		if (model === undefined) {
 			const resource = resolveRuntimeResourceForContext(this.sources, input.workingCopy.resource.domain, file.file)!;
-			model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			input.sourceModels.set(file.file, model);
 		}
 		return model;
@@ -47,6 +112,7 @@ export class AnimationEditorController {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind !== 'animation' || input.sourceModels.get(model.resource.path) !== model) continue;
 			input.invalidateProjection();
+			if (input.workingCopy === model && input.definitionRange !== undefined) mapTrackedTextRange(input.definitionRange, event.changes);
 			if (input.trackSelection?.path === model.resource.path) mapTrackedTextRange(input.trackSelection.range, event.changes);
 			if (input.keySelection?.path === model.resource.path) mapTrackedTextRange(input.keySelection.range, event.changes);
 		}
@@ -59,7 +125,10 @@ export class AnimationEditorController {
 		if (snapshot.revision === input.sourceRevision) return;
 		input.invalidateProjection();
 		input.sourceRevision = snapshot.revision;
-		input.document = buildAnimationSourceDocument(input.workingCopy.resource, snapshot);
+		const definition = input.definitionRange === undefined ? undefined
+			: animationDefinitionAtRange(snapshot.getFileData(input.workingCopy.resource.path)!, input.workingCopy.buffer, input.definitionRange);
+		input.document = input.definitionRange !== undefined && definition === undefined ? undefined
+			: buildAnimationSourceDocument(input.workingCopy.resource, snapshot, definition);
 		input.tracks.rows.length = 0;
 		input.trackIndex = -1; input.keyIndex = -1;
 		const document = input.document;
@@ -85,10 +154,9 @@ export class AnimationEditorController {
 		if (input.trackIndex === -1) input.trackSelection = undefined;
 		if (input.keyIndex === -1) input.keySelection = undefined;
 		input.tracks.selectionIndex = document === undefined ? -1 : input.trackIndex + 1;
-		input.publishModels();
 		this.refreshDetails(input);
 		input.keys.bind(document?.tracks[input.trackIndex], input.keyIndex, document);
-		input.status = document === undefined ? 'No exported timeline definition' : !document.syntaxComplete ? 'Incomplete source' : 'Authored Lua';
+		input.status = document === undefined ? 'Definition unavailable' : !document.syntaxComplete ? 'Incomplete source' : 'Authored Lua';
 		input.version += 1;
 	}
 
@@ -121,8 +189,14 @@ export class AnimationEditorController {
 		const document = input.document;
 		const track = document?.tracks[input.trackIndex];
 		const source = input.keyIndex >= 0 ? track!.keys[input.keyIndex].source : input.trackIndex >= 0 ? track?.source : document?.root;
-		projectAnimationDetails(input.details, source, source === undefined ? undefined : this.modelFor(input, source.file),
-			input.keyIndex >= 0 ? [] : input.trackIndex >= 0 ? ['keys'] : ['tracks']);
+		let excluded: readonly string[] = [];
+		if (input.keyIndex < 0) {
+			if (input.trackIndex >= 0) {
+				if (track?.keysSource?.structural === true && track.keysSource.array) excluded = ['keys'];
+			} else if (document?.tracksSource?.structural === true && document.tracksSource.array) excluded = ['tracks'];
+		}
+		projectAnimationDetails(input.details, source, file => this.modelFor(input, file), document?.reader, excluded);
+		input.publishModels();
 	}
 
 	public moveKey(input: AnimationEditorInput, key: AnimationKeySource, value: number): void {
@@ -136,21 +210,25 @@ export class AnimationEditorController {
 	}
 
 	public canAddTrack(input: AnimationEditorInput): boolean {
-		const source = input.document?.tracksSource;
-		return input.document?.syntaxComplete === true && source !== undefined && source.structural && source.array
-			&& !this.modelFor(input, source.file).readOnly;
+		const document = input.document;
+		if (document?.syntaxComplete !== true) return false;
+		const source = document.tracksSource;
+		if (source !== undefined) return source.structural && source.array && !this.modelFor(input, source.file).readOnly;
+		return document.root.structural && findNamedLuaTableField(document.root.table, 'tracks') === null
+			&& !this.modelFor(input, document.root.file).readOnly;
 	}
 	public addTrack(input: AnimationEditorInput): void {
-		const source = input.document!.tracksSource!;
+		const document = input.document!, source = document.tracksSource === undefined ? document.root : document.tracksSource;
 		this.quickInput.pick('VALUE TRACK', 'Interpolation', (_origin, lifetime) => {
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			return new TextQuickPickProvider(INTERPOLATIONS);
 		}, item => {
 			const prompt = this.quickInput.input('PROPERTY PATH', "Lua path, e.g. {'visual', 'offset_x'}", "{'x'}", async value => validateLuaTableFieldExpression(value), path => {
 				const tangent = item.value === 'cubic' ? ', arrive_tangent = 0, leave_tangent = 0' : '';
+				const track = `{ kind = 'value', interpolation = '${item.value}', path = ${path}, keys = { { time_ms = 0, value = 0${tangent} }, { time_ms = 100, value = 0${tangent} } } }`;
 				this.modelFor(input, source.file).pushEditOperations(createLuaTableFieldInsertionEdits(this.modelFor(input, source.file).buffer,
 					source.file.chunk, source.table, source.table.fields.length,
-					`{ kind = 'value', interpolation = '${item.value}', path = ${path}, keys = { { time_ms = 0, value = 0${tangent} }, { time_ms = 100, value = 0${tangent} } } }`));
+					document.tracksSource === undefined ? `tracks = { ${track} }` : track));
 				this.refresh(input);
 				this.selectTrack(input, input.document!.tracks.length);
 			});
@@ -197,6 +275,13 @@ export class AnimationEditorController {
 		const range = file === undefined || span === undefined ? undefined : file.chunk.locations.range(span);
 		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, file === undefined ? input.workingCopy.resource.path : file.file,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+	}
+
+	public openProducerSource(input: AnimationEditorInput): void {
+		const written = input.details.rows[input.details.selectionIndex].element.producer!.source;
+		const range = written.file.chunk.locations.range(written.expression.span);
+		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, written.file.file,
+			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 }
 

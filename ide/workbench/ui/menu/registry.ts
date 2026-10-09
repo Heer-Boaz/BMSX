@@ -92,6 +92,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'animation.edit' },
 		{ type: 'command', command: 'animation.remove' },
 		{ type: 'command', command: 'animation.source' },
+		{ type: 'command', command: 'animation.producerSource' },
 	],
 	'behaviorLens.graph.actions': [
 		{ type: 'command', command: 'behaviorLens.details' },

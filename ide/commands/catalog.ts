@@ -103,6 +103,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'animation.edit': { category: 'Animation', title: 'Edit Property', shortTitle: 'Edit' },
 	'animation.remove': { category: 'Animation', title: 'Remove Selection', shortTitle: 'Remove' },
 	'animation.source': { category: 'Animation', title: 'Open Source', shortTitle: 'Source' },
+	'animation.producerSource': { category: 'Animation', title: 'Open Producer Source', shortTitle: 'Producer' },
 	'animation.more': { category: 'Animation', title: 'Actions', shortTitle: '...' },
 	'behaviorLens.createEffect': { category: 'ActionEffect', title: 'New Effect' },
 	progression: { category: 'Progression', title: 'Open Program' },

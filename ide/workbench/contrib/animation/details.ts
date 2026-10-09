@@ -6,18 +6,22 @@ import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from '../../ui/p
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ui/tree_view';
 import type { AnimationTableSource } from './model';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSourceReader, LuaWrittenProducer } from '../../../language/lua/source_reader';
 
 export type AnimationProperty = WorkbenchPropertyElement & {
 	readonly source: AnimationTableSource;
 	readonly field: LuaTableField;
+	readonly producer: LuaWrittenProducer | undefined;
 };
 
 /** Flat Details for the selected definition, track or key; nested producer code stays Source. */
 export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationProperty>, source: AnimationTableSource | undefined,
-	model: EditorTextModel | undefined, excluded: readonly string[]): void {
+	resolveModel: (file: FileSemanticData) => EditorTextModel, reader: LuaSourceReader | undefined, excluded: readonly string[]): void {
 	tree.roots.length = 0;
 	tree.selectionIndex = -1;
 	if (source !== undefined) {
+		const model = resolveModel(source.file);
 		const fields = source.table.fields;
 		const lastNamed = new Map<string, LuaTableField>();
 		for (const field of fields) {
@@ -29,8 +33,10 @@ export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationPro
 			const name = staticLuaTableFieldName(field);
 			if (name !== null && (excluded.includes(name) || lastNamed.get(name) !== field)) continue;
 			const range = source.file.chunk.locations.range(field.span);
-			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${index + 1}]` : '[source key]' : name,
-				value: readLuaExpressionPreview(model!.buffer, source.file.chunk.locations, field.value),
+			const producer = reader!.producer(source.file, field.value);
+			if (producer !== undefined) resolveModel(producer.source.file);
+			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, producer, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${index + 1}]` : '[source key]' : name,
+				value: readLuaExpressionPreview(model.buffer, source.file.chunk.locations, field.value),
 				description: `${source.file.file}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 });
 		}
 	}

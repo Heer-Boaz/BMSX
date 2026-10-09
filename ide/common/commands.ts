@@ -125,7 +125,7 @@ export type EditorCommandId =
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.source' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
 	| 'tabs.scrollLeft' | 'tabs.scrollRight'
 	| 'progression.createProgram' | 'input.createBindings' | 'behaviorLens.createEffect' | 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.source' | 'aem.testEvent'
-	| 'animation.create' | 'animation.addTrack' | 'animation.addKey' | 'animation.edit' | 'animation.remove' | 'animation.source' | 'animation.more'
+	| 'animation.create' | 'animation.addTrack' | 'animation.addKey' | 'animation.edit' | 'animation.remove' | 'animation.source' | 'animation.producerSource' | 'animation.more'
 	| 'input.testActionString' | 'behaviorLens.testEffect'
 	| 'builds.start' | 'builds.jobs'
 	| 'server.connection'
