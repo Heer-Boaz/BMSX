@@ -1,7 +1,7 @@
 import { HostAudioDevice } from '../../hosts/common/audio_device';
 import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
-import { HostFrameSession } from '../../hosts/common/host_frame';
+import { HostFrameSession } from '../../hosts/common/frame_session';
 import { Input } from '../../hosts/common/input/manager';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { HostRewind } from '../../hosts/common/rewind';

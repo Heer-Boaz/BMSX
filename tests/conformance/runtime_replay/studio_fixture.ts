@@ -13,7 +13,7 @@ import type { RectBounds } from '../../../machine/ts/common/rect';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { HostAudioOutput, type AudioOutputPuller } from '../../../hosts/common/audio_output';
-import { HostFrameSession } from '../../../hosts/common/host_frame';
+import { HostFrameSession } from '../../../hosts/common/frame_session';
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
 import { Input } from '../../../hosts/common/input/manager';
 import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../../hosts/common/machine_runtime';

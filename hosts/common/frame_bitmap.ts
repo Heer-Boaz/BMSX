@@ -1,5 +1,5 @@
 import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
-import type { PublishedGameFrame } from './presentation_state';
+import type { PublishedGameFrame } from './image';
 
 /** A view's retained completed image and its matching physical position, never a framebuffer borrow. */
 export class FrameBitmap {

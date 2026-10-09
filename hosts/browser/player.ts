@@ -7,11 +7,8 @@ import {
 } from '../common/machine_runtime';
 import { HostAudioOutput } from '../common/audio_output';
 import { HostAudioDevice } from '../common/audio_device';
-import {
-	HostFrameRunResult,
-	HostFrameSession,
-	runHostFrame,
-} from '../common/host_frame';
+import { HostFrameRunResult, runHostFrame } from '../common/host_frame';
+import { HostFrameSession } from '../common/frame_session';
 import { HostOverlayMenu } from '../common/host_overlay_menu';
 import { RenderPresentationState } from '../common/presentation_state';
 import { SystemOutputLog } from '../common/system_output_log';

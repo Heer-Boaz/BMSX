@@ -1,15 +1,8 @@
 import { HostPauseReason } from '../../hosts/common/execution_control';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import {
-	beginHostFrame,
-	executeHostUpdate,
-	HostFrameAction,
-	HostFrameRunResult,
-	type HostFramePresentation,
-	type HostFrameSession,
-	prepareHostUpdate,
-	presentHostPresentation,
-} from '../../hosts/common/host_frame';
+import { beginHostFrame, HostFrameAction, HostFrameRunResult, type HostFramePresentation, prepareHostUpdate, presentHostPresentation } from '../../hosts/common/host_frame';
+import { executeHostUpdate } from '../../hosts/common/machine_step';
+import { type HostFrameSession } from '../../hosts/common/frame_session';
 import { HostMenuExecution, HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { Input } from '../../hosts/common/input/manager';
 import type { LogOutput } from '../../hosts/common/log';
@@ -176,7 +169,7 @@ export function runWorkbenchHostFrame(
 			session.rewind.service(collectHistory);
 			if (session.rewind.playing && !session.execution.executionBlocked() && ide.fault.hostFrameFailure === undefined) {
 				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
-				session.syncMachineOutput(runtime, input, audioOutput);
+				session.syncMachineOutput(runtime, audioOutput);
 			}
 		}
 		if (ide.debugger.stopPresentationPending) {
@@ -205,7 +198,7 @@ export function runWorkbenchHostFrame(
 		if (action === HostFrameAction.Execute) {
 			if (ide.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(ide.debugger);
 			ide.guest.invalidate();
-			executeHostUpdate(session, runtime, presenter, input, audioOutput, screen, hostDeltaMs);
+			executeHostUpdate(session, runtime, presenter, audioOutput, screen, hostDeltaMs);
 			systemOutput.flush(runtime, logOutput, ide.luaEvaluation.receiveOutput);
 			systemOutputDrained = true;
 			const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
@@ -283,6 +276,7 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 	}
+	input.setFrameDurationMs(runtime.timing.frameDurationMs);
 	ide.frameNavigation.afterHostFrame();
 	ide.debuggerExecution.afterHostFrame();
 	if (!systemOutputDrained) {

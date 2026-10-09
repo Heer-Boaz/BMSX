@@ -1,14 +1,7 @@
 import type { HostAudioOutput } from '../../../hosts/common/audio_output';
-import {
-	beginHostFrame,
-	executeHostMenuAction,
-	HostFrameAction,
-	HostFrameRunResult,
-	type HostFrameSession,
-	prepareHostUpdate,
-	presentHostPresentation,
-	syncAfterRuntimeUpdate,
-} from '../../../hosts/common/host_frame';
+import { beginHostFrame, executeHostMenuAction, HostFrameAction, HostFrameRunResult, prepareHostUpdate, presentHostPresentation } from '../../../hosts/common/host_frame';
+import { type HostFrameSession } from '../../../hosts/common/frame_session';
+import { syncAfterRuntimeUpdate } from '../../../hosts/common/machine_step';
 import { HostMenuInput, type HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
 import type { Input } from '../../../hosts/common/input/manager';
 import type { LogOutput } from '../../../hosts/common/log';
@@ -91,7 +84,6 @@ export function runCpuProfileHostFrame(
 		syncAfterRuntimeUpdate(
 			frameSession,
 			runtime,
-			input,
 			audioOutput,
 			screen,
 			previousTickSequence,
@@ -108,6 +100,7 @@ export function runCpuProfileHostFrame(
 		screen,
 		hostDeltaMs,
 	);
+	input.setFrameDurationMs(runtime.timing.frameDurationMs);
 	systemOutput.flush(runtime, logOutput);
 	return HostFrameRunResult.Continue;
 }

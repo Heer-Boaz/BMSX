@@ -13,11 +13,8 @@ import {
 	initializeMachineVideoPresenter,
 } from '../../../hosts/common/machine_runtime';
 import { HostAudioOutput } from '../../../hosts/common/audio_output';
-import {
-	HostFrameRunResult,
-	HostFrameSession,
-	runHostFrame,
-} from '../../../hosts/common/host_frame';
+import { HostFrameRunResult, runHostFrame } from '../../../hosts/common/host_frame';
+import { HostFrameSession } from '../../../hosts/common/frame_session';
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../../hosts/common/system_output_log';

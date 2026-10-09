@@ -284,6 +284,40 @@ audio transport pumping still runs once at host presentation. Device selection,
 mute transitions, reboot/reset and frequency changes are control boundaries;
 they must not allocate callbacks or poll a source registry per sample.
 
+### Session pacing and history
+
+The primary host polls physical devices and updates the UI input clock once.
+Session execution reuses the existing paced machine-update/frame-step functions
+without an `Input` manager parameter: output synchronization is a machine/audio
+boundary, not permission to retime the editor's keyboard handling. Only primary
+product composition updates `Input`'s frame duration. There is no no-op input
+manager or copied execution loop to conceal this distinction.
+
+A Play session owns an `OffscreenMachine`, `PlayFixture`, `PlayInput`,
+`HostExecutionControl`, `HostFrameSession`, `HostRewind`, `RuntimeTaskQueue` and
+completed-frame subscription. Setup/cleanup retain bounded fixture grants;
+Ready uses elapsed host time and physical video boundaries. History starts only
+after Ready, on that machine's checkpoint/input-journal owners. Closing first
+stops admission, then joins queued readbacks/history work before releasing the
+machine. Reset rebuilds a new session from explicitly captured source; it does
+not replace the authoring Runtime or silently install working-copy edits.
+
+| Representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Scheduler/cycles/video boundaries | existing Runtime/FrameScheduler | mirrored scheduler | Unchanged |
+| Elapsed-time pacing | one `HostFrameSession` per running physical target | native single player frame pacing | Reuse existing TS execution functions; no dormant native Studio session |
+| UI input clock | primary `Input` only | frontend physical input timing | Independent from secondary machine frequency |
+| Checkpoints/input journal | target's Runtime history | mirrored history | Unchanged, no host shadow world |
+| Async backend lifetime | session `RuntimeTaskQueue.join` before target disposal | existing native output/task lifetime | No callback may retain a released session |
+
+Hot-path callsites are the existing `executeHostUpdate`/
+`executeHostLogicalTick` -> Runtime frame scheduler -> physical devices, with
+`HostFrameSession.syncMachineOutput` synchronizing audio only. Primary input
+timing is updated at product frame completion, using the existing changed-value
+check in `Input.setFrameDurationMs`. Ready uses no fixture yields, fabricated
+test results or repeated source capture. History reconstruction remains hidden
+and publishes only the requested completed image through `OffscreenMachine`.
+
 ## Product gates
 
 1. Source edits preserve unrelated bytes/comments; imported documents share
@@ -298,3 +332,24 @@ they must not allocate callbacks or poll a source registry per sample.
    edits, direct model mutations, `page.evaluate`, clipboard injection or hidden
    target setup scripts presented as UI-only proof. Development harness coverage
    is reported separately from this acceptance evidence.
+
+### Session composition boundary
+
+`workbench/play_runtime.ts` is the physical composition owner: it constructs the
+execution/audio/history owners and schedules the actual offscreen presenter.
+Play contributions receive the `PlaySession` lifetime contract and factory;
+they do not construct a machine or import a host frame-loop/presentation owner.
+`frame_session.ts` and `machine_step.ts` own the reusable paced execution, while
+`host_frame.ts` retains primary input polling, host menus and product frame
+composition. There is no compatibility re-export or copied machine loop.
+`PublishedGameFrame` belongs to the image contract; the retained `FrameBitmap`
+is a view resource, not permission to invoke presentation policy.
+
+The real compiled O0/O3 checks exercise human ICU input, zero-elapsed pacing,
+held pause, exact video stepping, independent authoring state, target history
+review/branch, teardown after heap restore and deferred target disposal. Original
+host errors retain their identity; an already published physical fault blocks
+the next grant. The latter check stimulates the producer-side read-only fault
+latch, not a guest write or a claimed end-to-end firmware crash.
+These remain development checks: persistent Play UI and final `2025` authoring
+are not yet validated.

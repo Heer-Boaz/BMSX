@@ -14,7 +14,8 @@ for (const extension of ['.glsl', '.wgsl']) {
 async function main(): Promise<void> {
 	const [systemPath, cartPath, outputDirectory] = process.argv.slice(2);
 	const { initializeMachineRuntime, initializeMachineVideoPresenter } = await import('../../../hosts/common/machine_runtime');
-	const { HostFrameSession, runHostFrame } = await import('../../../hosts/common/host_frame');
+	const { runHostFrame } = await import('../../../hosts/common/host_frame');
+	const { HostFrameSession } = await import('../../../hosts/common/frame_session');
 	const { HostOverlayMenu } = await import('../../../hosts/common/host_overlay_menu');
 	const { HostRewind } = await import('../../../hosts/common/rewind');
 	const { RuntimeTaskQueue } = await import('../../../hosts/common/runtime_task_queue');

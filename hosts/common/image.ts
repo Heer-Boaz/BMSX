@@ -1,5 +1,8 @@
 import type { RgbaImage } from '../../machine/ts/render/image';
 
+/** Physical position of an accepted image; held repainting cannot change it. */
+export type PublishedGameFrame = { presentationSequence: number | undefined; cycles: number; videoTick: number };
+
 /** Host codec: owned display pixels to a PNG data URL. */
 export type PngImageEncoder = (image: RgbaImage) => Promise<string>;
 

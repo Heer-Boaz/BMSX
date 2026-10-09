@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { HostFrameSession, executeHostUpdate } from '../../hosts/common/host_frame';
+import { HostFrameSession } from '../../hosts/common/frame_session';
+import { executeHostUpdate } from '../../hosts/common/machine_step';
 import { HostPauseReason } from '../../hosts/common/execution_control';
-import { Input } from '../../hosts/common/input/manager';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { FrameNavigationOperation } from '../../ide/runtime/frame_navigation';
 import { resetRuntimeDebuggerExecution } from '../../ide/runtime/debugger_state';
@@ -20,7 +18,6 @@ async function fixture(t: TestContext) {
 	const f = createRuntimeInspectionFixture(runtime, createScenarioTestSourceState([]));
 	const { frameNavigation: navigation, rewind, tasks, execution, presenter, audio, presentation } = f;
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
-	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	let restores = 0;
 	runtime.onStateRestored = origin => { restores++; f.events.didRestore(origin); navigation.didRestore(origin); f.guest.invalidate('heap-replaced'); resetRuntimeDebuggerExecution(f.debuggerState); };
 	runtime.history.onWillResumeRecording = branched => { if (branched) f.events.beginTimeline(); };
@@ -29,7 +26,7 @@ async function fixture(t: TestContext) {
 	const frame = async () => {
 		rewind.service(true);
 		if (tasks.ready && !rewind.active && !execution.executionBlocked() && f.debuggerState.source.stop === undefined) {
-			executeHostUpdate(session, runtime, presenter, input, audio, presentation, 30000);
+			executeHostUpdate(session, runtime, presenter, audio, presentation, 30000);
 		}
 		presentation.presentPausedFrame(presenter, runtime, 100, 20);
 		if (runtime.history.checkpointPending && tasks.ready) rewind.service(true);

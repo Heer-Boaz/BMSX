@@ -23,7 +23,8 @@ async function main(): Promise<void> {
 			initializeMachineRuntime,
 			initializeMachineVideoPresenter,
 		},
-		{ HostFrameSession, runHostFrame },
+		{ runHostFrame },
+		{ HostFrameSession },
 		{ RenderPresentationState },
 		{ HostOverlayMenu },
 		{ HostAudioOutput },
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
 	] = await Promise.all([
 		import('../../../hosts/common/machine_runtime'),
 		import('../../../hosts/common/host_frame'),
+		import('../../../hosts/common/frame_session'),
 		import('../../../hosts/common/presentation_state'),
 		import('../../../hosts/common/host_overlay_menu'),
 		import('../../../hosts/common/audio_output'),

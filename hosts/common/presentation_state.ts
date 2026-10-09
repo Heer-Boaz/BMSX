@@ -5,11 +5,9 @@ import {
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { TickCompletion } from '../../machine/ts/machine/scheduler/frame';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import type { PublishedGameFrame } from './image';
 
 export type RenderPresentationMode = 'partial' | 'completed';
-
-/** Position of the accepted game image; a held repaint does not change it. */
-export type PublishedGameFrame = { presentationSequence: number | undefined; cycles: number; videoTick: number };
 
 type RenderPresentation = {
 	mode: RenderPresentationMode;
