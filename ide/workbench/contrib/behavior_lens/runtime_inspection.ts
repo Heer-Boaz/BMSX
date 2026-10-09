@@ -1,6 +1,6 @@
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { findActionEffectInstance, inspectActionEffectInstance, type ActionEffectInstance } from './action_effect_runtime';
@@ -31,7 +31,7 @@ export class BehaviorRuntimeInspection {
 	private readonly unbindHistoryReviewEnd: () => void;
 	private readonly properties: BehaviorRuntimeProperties;
 
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession,
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private selection: BehaviorRuntimeSelection | undefined) {
 		this.historical = rewind.active;
 		this.properties = new BehaviorRuntimeProperties(sources, guest);

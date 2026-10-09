@@ -1,10 +1,11 @@
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
-import { readTestDebugSource, type BuiltTestCartridge, type TestDebugSource } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { ResourceDomain } from '../common/resource';
 import { bindSourceBreakpoints, type SourceBreakpoint } from '../runtime/source_breakpoints';
 
-type DebugSource = { domain: ExecutionDomainId; module: string; image: Blua32ToolingImage; record: TestDebugSource; points: SourceBreakpoint[] };
+type DebugSource = { domain: ExecutionDomainId; module: string; image: Blua32ToolingImage; record: Blua32CompiledSource; points: SourceBreakpoint[] };
 
 /** Requests bind only to this derived test's immutable images, never the authoring gutter or working copy. */
 export class TestDebuggerSources {
@@ -30,7 +31,7 @@ export class TestDebuggerSources {
 	}
 	public read(source: string) {
 		const entry = this.get(source);
-		return { source, origin: 'compiled-test-images' as const, text: readTestDebugSource(entry.record), breakpoints: entry.points };
+		return { source, origin: 'compiled-test-images' as const, text: readBlua32CompiledSource(entry.record), breakpoints: entry.points };
 	}
 	public setBreakpoints(source: string, lines: readonly number[]): readonly SourceBreakpoint[] {
 		const entry = this.get(source), requested = [...new Set(lines)].sort((a, b) => a - b);

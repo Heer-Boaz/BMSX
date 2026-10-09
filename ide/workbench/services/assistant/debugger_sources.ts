@@ -1,8 +1,8 @@
 import { generateUuid } from '../../../common/uuid';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
-import { resolveRuntimeLuaSource } from '../../../runtime/sources';
 import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
+import { readBlua32CompiledSource } from '../../../../toolchain/ts/rompack/blua32_sources';
 import { StudioToolInputError } from './tool_input';
 
 type DebugSource = { resource: ResourceIdentity; modulePath: string; text: string; image: Blua32ToolingImage };
@@ -18,13 +18,11 @@ export class DebuggerSourceContext {
 		const result: { source: string; domain: ResourceDomain; path: string; symbols: boolean }[] = [];
 		this.sources.clear();
 		for (const domain of [-1, 0, 1] as const) {
-			const image = blua32ToolingImageForDomain(state.currentBlua32Media, domain);
+			const image = domain === -1 ? state.currentBlua32Media.system : state.currentBlua32Media.cartridgeSlots[domain];
 			if (image === null) continue;
-			const installed = domain === -1 ? state.systemInstalledBlua32Sources : state.cartridgeSlots[domain]!.installedBlua32Sources;
-			for (const [modulePath, text] of installed) {
-				const record = resolveRuntimeLuaSource(state, { domain, path: modulePath })!.record;
-				const resource = { domain, path: record.source_path }, source = `${this.id}/${this.serial++}`;
-				this.sources.set(source, { resource, modulePath, text, image });
+			for (const [modulePath, record] of image.sources) {
+				const resource = { domain, path: record.displayPath }, source = `${this.id}/${this.serial++}`;
+				this.sources.set(source, { resource, modulePath, text: readBlua32CompiledSource(record), image });
 				result.push({ source, ...resource, symbols: image.symbols !== null });
 			}
 		}

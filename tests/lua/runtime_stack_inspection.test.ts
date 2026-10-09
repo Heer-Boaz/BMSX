@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeRuntimeToolRequest } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
@@ -27,7 +27,7 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting 
 		source_path: 'stack_probe.lua', normalized_source_path: 'stack_probe.lua', module_path: 'stack_probe',
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	if (breakpoint !== undefined) {
 		f.debuggerState.breakpoints.set({ domain: -1, path: 'stack_probe.lua' }, [breakpoint]);

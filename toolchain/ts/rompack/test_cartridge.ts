@@ -38,6 +38,7 @@ import { applyBlua32LinkValues, type LinkedCartBlua32Image } from './blua32_link
 import { discoverGuestTestSuite, type GuestTestSuite } from './test_suite';
 import { scenarioTestAssetId, type ScenarioTestSource } from './scenario_test';
 import type { RomSourceLayer } from './source';
+import { compiledBlua32Sources, type Blua32CompiledSource } from './blua32_sources';
 
 export const TEST_EXECUTION_MODULE_PATH = 'testlib/execution';
 
@@ -54,19 +55,8 @@ export type TestCartridgeBuildOptions = {
 	optLevel: 0 | 1 | 2 | 3;
 };
 
-export type TestDebugSource = {
-	readonly displayPath: string;
-	content: { kind: 'text'; text: string } | { kind: 'utf8'; bytes: Uint8Array };
-};
-
-/** Decode immutable ROM source only when an inspector actually requests it. */
-export function readTestDebugSource(source: TestDebugSource): string {
-	if (source.content.kind === 'utf8') source.content = { kind: 'text', text: utf8FatalDecoder.decode(source.content.bytes) };
-	return source.content.text;
-}
-
-function romDebugSources(bytes: Uint8Array, entries: readonly RomAsset[]): ReadonlyMap<string, TestDebugSource> {
-	const sources = new Map<string, TestDebugSource>();
+function romDebugSources(bytes: Uint8Array, entries: readonly RomAsset[]): ReadonlyMap<string, Blua32CompiledSource> {
+	const sources = new Map<string, Blua32CompiledSource>();
 	for (const entry of entries) if (entry.type === 'lua') {
 		sources.set(toLuaModulePath(entry.source_path!), { displayPath: entry.source_path!,
 			content: { kind: 'utf8', bytes: bytes.subarray(entry.start, entry.end) } });
@@ -76,7 +66,7 @@ function romDebugSources(bytes: Uint8Array, entries: readonly RomAsset[]): Reado
 
 export type TestDebugImage = {
 	readonly image: Blua32ToolingImage;
-	readonly sources: ReadonlyMap<string, TestDebugSource>;
+	readonly sources: ReadonlyMap<string, Blua32CompiledSource>;
 };
 
 export type BuiltTestCartridge = {
@@ -255,8 +245,7 @@ export async function buildTestCartridge(
 			{ image: loadBlua32ToolingImage(parseSystemRomImage(options.systemRom), SYSTEM_ROM_BASE)!,
 				sources: romDebugSources(options.systemRom, systemIndex.entries) },
 			{ image: built.linked,
-				sources: new Map([...diagnosticSources].map(([module, source]) => [module,
-					{ displayPath: source.displayPath, content: { kind: 'text', text: source.source } }])) },
+				sources: compiledBlua32Sources(diagnosticSources) },
 			companion,
 		],
 		entryCodeAddress: built.entryCodeAddress,

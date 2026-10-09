@@ -1,6 +1,7 @@
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import type { BuiltTestCartridge, TestDebugSource } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import type { ResourceDomain } from '../common/resource';
 import { buildLuaStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFrame } from '../runtime/stack_trace';
@@ -9,7 +10,7 @@ import { buildLuaStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFram
 export class TestStack {
 	public readonly physical: readonly RuntimeStackFrame[];
 	public readonly frames: readonly RuntimeStackTraceFrame[];
-	public readonly sources: ReadonlyMap<RuntimeStackTraceFrame, TestDebugSource>;
+	public readonly sources: ReadonlyMap<RuntimeStackTraceFrame, Blua32CompiledSource>;
 
 	public constructor(public readonly thread: Thread, program: BuiltTestCartridge, sourceDomain: ResourceDomain,
 		public readonly origin: 'failed-thread' | 'quarantined-cpu' | 'stopped-thread') {
@@ -22,7 +23,7 @@ export class TestStack {
 					: frame.pc - (origin === 'failed-thread' && child === undefined ? INSTRUCTION_BYTES : 0) };
 		});
 		// buildLuaStackFrames adds frame identity to its callback result; retain source by location order.
-		const sourceRecords: TestDebugSource[] = [];
+		const sourceRecords: Blua32CompiledSource[] = [];
 		this.frames = buildLuaStackFrames(this.physical, (domain, module, line, column, functionName) => {
 			const source = program.debugImages[domain + 1]!.sources.get(module)!;
 			sourceRecords.push(source);
@@ -30,7 +31,7 @@ export class TestStack {
 			return { kind: 'source', resource: { domain: resourceDomain, path: source.displayPath },
 				workspacePath: source.displayPath, line, column, functionName };
 		});
-		const sources = new Map<RuntimeStackTraceFrame, TestDebugSource>();
+		const sources = new Map<RuntimeStackTraceFrame, Blua32CompiledSource>();
 		let index = 0;
 		for (const frame of this.frames) if (frame.kind === 'source') sources.set(frame, sourceRecords[index++]);
 		this.sources = sources;

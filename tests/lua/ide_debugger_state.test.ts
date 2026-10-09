@@ -1,3 +1,4 @@
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -77,7 +78,7 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = {
-		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports),
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)),
 		cartridgeSlots: [null, null],
 	};
 	return {

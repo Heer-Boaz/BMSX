@@ -16,13 +16,14 @@ import type { PlayEvidence } from './evidence';
 import type { PlayFixture, PlayFixtureState } from '../../../testing/play_fixture';
 import type { FixtureTarget } from '../../../testing/target';
 import type { PlayInput } from './input';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 
 export type PlaySessionFailure = { readonly kind: 'host'; readonly error: unknown }
 	| { readonly kind: 'machine'; readonly message: string; readonly cycles: number; readonly videoTick: number };
 export type PlaySessionState = PlayFixtureState | 'faulted' | 'closing';
 
 /** A concrete physical session admitted by composition, never a TestRun or a mutable editor world. */
-export interface PlaySession {
+export interface PlaySession extends RuntimeInstalledSourceState {
 	readonly target: FixtureTarget;
 	readonly input: PlayInput;
 	readonly program: BuiltTestCartridge;

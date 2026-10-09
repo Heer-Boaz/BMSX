@@ -8,7 +8,7 @@ import type { SourceExecutionOperation } from '../../ide/runtime/debugger_execut
 import { RuntimeDebuggerPlanResult } from '../../ide/runtime/debugger_plans';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { recordSupervisorFault } from '../../ide/runtime/fault_state';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { DebuggerSourceContext } from '../../ide/workbench/services/assistant/debugger_sources';
 import { decodeDebuggerToolRequest } from '../../ide/workbench/services/assistant/debugger_tool_protocol';
@@ -48,7 +48,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.systemInstalledBlua32Sources = new Map([['debugger_probe', source]]);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	const state = f.debuggerState, owner = f.debuggerExecution, cpu = runtime.machine.cpu;
 	cpu.reset(); f.execution.setPauseReason(HostPauseReason.Workbench, true);
@@ -106,10 +106,12 @@ test('breakpoints have real bindings, deterministic persistence and shared chang
 test('installed debug-source handles never read dirty source and expire with code installation', t => {
 	const f = fixture(t), sources = new DebuggerSourceContext(f.state);
 	f.sources.systemLuaSources.records[0].src = '-- dirty\n' + SOURCE;
+	f.sources.systemLuaSources.records[0].source_path = 'renamed.lua';
 	const handle = sources.list()[0].source;
 	assert.equal(sources.read(handle).text, SOURCE);
+	assert.equal(sources.read(handle).path, RESOURCE.path);
 	assert.equal(sources.setBreakpoints(handle, [8]).breakpoints[0].status, 'bound');
-	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(f.image.image, f.image.symbols, f.image.biosImports) };
+	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(f.image.image, f.image.symbols, f.image.biosImports, f.sources.currentBlua32Media.system!.sources) };
 	assert.throws(() => sources.read(handle), /expired/); assert.throws(() => sources.setBreakpoints(handle, []), /expired/);
 	assert.deepEqual([...f.state.breakpoints.get(RESOURCE)], [8]);
 	sources.dispose(); assert.throws(() => sources.read(handle), /does not belong/);

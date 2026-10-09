@@ -1,4 +1,5 @@
 import { LuaCaptureLayout } from '../../toolchain/ts/lua/compiler/capture_layout';
+import { compiledBlua32Sources } from '../../toolchain/ts/rompack/blua32_sources';
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -407,6 +408,7 @@ export function layoutBlua32MediaInstallation(
 			rebuilt.system!.linked.layout,
 			rebuilt.system!.linked.symbols,
 			rebuilt.system!.linked.biosImports,
+			compiledBlua32Sources(rebuilt.system!.diagnosticSources),
 		);
 	}
 	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
@@ -417,6 +419,7 @@ export function layoutBlua32MediaInstallation(
 		cartridgeImages[slot] = createBlua32SourceImage(
 			rebuilt.cartridgeSlots[slot]!.linked.layout,
 			rebuilt.cartridgeSlots[slot]!.linked.symbols,
+			compiledBlua32Sources(rebuilt.cartridgeSlots[slot]!.diagnosticSources), slot as 0 | 1,
 		);
 	}
 	return {

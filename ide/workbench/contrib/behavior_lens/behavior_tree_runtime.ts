@@ -1,6 +1,6 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { visitRuntimeComponents } from './runtime_components';
@@ -15,7 +15,7 @@ function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Tab
 }
 
 /** Actual components, not registered programs or authored registrations with matching ids. */
-export function readBehaviorTreeInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
+export function readBehaviorTreeInstances(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: BehaviorTreeInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/behaviour_tree/bt_component', component => {
 		items.push(behaviorTreeInstanceChoice(guest, component));
@@ -33,7 +33,7 @@ const EXECUTION_FIELDS = [
 
 /** This component's stored layout names its values, including nil slots. Never use programs_by_id. */
 export function inspectBehaviorTreeInstance(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, component: Table,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, component: Table,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(component, 'id'));

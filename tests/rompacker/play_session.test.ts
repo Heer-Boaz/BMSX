@@ -22,6 +22,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { GX_GPU_PCRTC_BGCOLOR_LOW, gxGpuPcrtcRegisterAddress } from '../../machine/ts/spec/gx/pcrtc';
 import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
+import { readRuntimeLuaModuleExport, runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache } from '../../ide/runtime/lua_inspection';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 
@@ -46,7 +47,7 @@ while true do
  halt_until_irq
 end`;
 
-async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME) {
+async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameSource = GAME, sourceDomain: 0 | 1 = 0) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-session-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
@@ -58,9 +59,9 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 		test: { sourcePath: PATH, source: scene }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new PlayInput(new InputChannel(input)));
-	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input);
+	const authoring = new OffscreenMachine(media.systemRom, sourceDomain === 0 ? [media.cartRom, null] : [null, media.cartRom], PSX_MACHINE_SPEC, input);
 	const logs: string[] = [], device = new HostAudioDevice(new DiscardingAudioSink());
-	const session = new PlayRuntimeSession(target, program, 0, device, { log(_level, message) { logs.push(message); } });
+	const session = new PlayRuntimeSession(target, program, sourceDomain, device, { log(_level, message) { logs.push(message); } });
 	t.after(async () => { await session.dispose(); authoring.dispose(); input.dispose(); });
 	const frame = async (elapsed = 1000 / 60) => { session.advance(elapsed); await session.tasks.join(); };
 	const settle = async (done: () => boolean) => {
@@ -76,6 +77,21 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
 	return { session, target, authoring, input, device, frame, settle, game, field, logs };
 }
+
+for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses admitted physical code and original resource provenance`, async t => {
+	const gameSource = GAME.replace('function irq(flags)', 'inspect_probe=function() return game.marker end\nfunction irq(flags)');
+	const f = await fixture(t, optLevel, SCENE, gameSource, 1), code = f.session, guest = f.session.guest;
+	const before = captureRuntimeMachineState(f.target.runtime);
+	const exported = readRuntimeLuaModuleExport(code, guest, 0, 'game');
+	assert.ok(exported.kind === 'value'); assert.strictEqual(exported.value, f.game());
+	const callback = guest.global('inspect_probe'), source = runtimeLuaFunctionSource(code, guest, callback)!;
+	assert.equal(source.executionDomain, 0);
+	assert.deepEqual(source.resource, { domain: 1, path: 'entry.lua' });
+	assert.equal(source.installedSource, gameSource);
+	const cache = new RuntimeLuaFunctionSourceCache(code, guest), cached = cache.update(callback);
+	for (let index = 0; index < 1000; index++) assert.strictEqual(cache.update(callback), cached);
+	assert.deepEqual(captureRuntimeMachineState(f.target.runtime), before, 'inspection grants no guest work or mutation');
+});
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play observations rebind compiled context roots after rewind without fake case results`, async t => {
 	const scene = `local game<const> = require('game')

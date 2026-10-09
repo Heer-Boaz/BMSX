@@ -27,6 +27,7 @@ import {
 	collectRomAssetSymbols,
 } from '../../toolchain/ts/rompack/asset_symbols';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 
 export type LuaSourceRecord = RomLuaAsset & {
 	base_src: string;
@@ -53,6 +54,15 @@ export type LuaSourceMatch = {
 	registry: LuaSourceRegistry;
 	record: LuaSourceRecord;
 };
+
+/** Capture written paths with their installed text; later working-copy renames do not change code provenance. */
+export function captureInstalledLuaSources(registry: LuaSourceRegistry): ReadonlyMap<string, Blua32CompiledSource> {
+	const sources = new Map<string, Blua32CompiledSource>();
+	for (const record of registry.records) if (record.program_module) sources.set(record.module_path, {
+		displayPath: record.source_path, content: { kind: 'text', text: record.src },
+	});
+	return sources;
+}
 
 type SourceChangeListener = (path: string | undefined) => void;
 const sourceChangeListeners = new WeakMap<LuaSourceRegistry, Set<SourceChangeListener>>();

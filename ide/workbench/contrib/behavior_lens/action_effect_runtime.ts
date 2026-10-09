@@ -1,7 +1,7 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { valueIsString } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { ACTION_EFFECT_FIELDS } from './action_effect_fields';
@@ -16,7 +16,7 @@ export type ActionEffectInstance = {
 };
 export type ActionEffectInstanceChoice = QuickPickItem & ActionEffectInstance;
 
-export function findActionEffectInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number, effectHashId: number): ActionEffectInstance | undefined {
+export function findActionEffectInstance(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number, effectHashId: number): ActionEffectInstance | undefined {
 	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', componentHashId);
 	if (component === undefined) return undefined;
 	let result: ActionEffectInstance | undefined;
@@ -33,7 +33,7 @@ function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Tab
 }
 
 /** The actual type index, not a source registration scan or a heap-wide discovery walk. */
-export function readActionEffectInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
+export function readActionEffectInstances(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: ActionEffectInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', component => {
 		guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, effect) => {
@@ -51,7 +51,7 @@ const INSTANCE_FIELDS = [
 
 /** One selected instance is formatted once. Paint/scroll never read the guest or evaluate a callback. */
 export function inspectActionEffectInstance(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstance,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstance,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	const parent = guest.readStringMember(choice.component, 'parent');
@@ -69,7 +69,7 @@ export function inspectActionEffectInstance(
 
 /** Shared property projection for a registry entry or an instance's own retained definition. */
 export function inspectActionEffectDefinition(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, definition: Table, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.text('LOADED DEFINITION', id,
 		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');

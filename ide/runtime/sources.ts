@@ -5,6 +5,7 @@ import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import {
 	buildLuaSources,
+	captureInstalledLuaSources,
 	registerLuaSourceRecord,
 	resolveLuaSourceRecord,
 	type LuaSourceMatch,
@@ -31,6 +32,7 @@ import {
 	type Blua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
+import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 
 
 export const enum Blua32GlobalRegisterFile {
@@ -40,6 +42,9 @@ export const enum Blua32GlobalRegisterFile {
 
 type Blua32SourceIndex = {
 	readonly globalRegisterFileByName: ReadonlyMap<string, Blua32GlobalRegisterFile>;
+	readonly sourceDomain: ResourceDomain;
+	/** Canonical module keys; records retain their written resource paths. */
+	readonly sources: ReadonlyMap<string, Blua32CompiledSource>;
 };
 
 export type Blua32SourceImage = Blua32ToolingImage & Blua32SourceIndex;
@@ -47,13 +52,17 @@ export type Blua32SystemSourceImage = Blua32SourceImage & {
 	readonly biosImports: Blua32BiosImports;
 };
 
-export type Blua32SourceMedia = {
-	readonly system: Blua32SystemSourceImage | null;
+/** Physical code and admitted source provenance; contains no editable document or registry. */
+export type Blua32InstalledMedia = {
+	readonly system: Blua32SourceImage | null;
 	readonly cartridgeSlots: readonly [
 		Blua32SourceImage | null,
 		Blua32SourceImage | null,
 	];
 };
+
+export type Blua32SourceMedia = Blua32InstalledMedia & { readonly system: Blua32SystemSourceImage | null };
+export type RuntimeInstalledSourceState = { readonly currentBlua32Media: Blua32InstalledMedia };
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
@@ -108,7 +117,7 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 	return sourceByPath;
 }
 
-function indexBlua32GlobalRegisterFiles(
+export function indexBlua32GlobalRegisterFiles(
 	symbols: Blua32SymbolsImage | null,
 ): ReadonlyMap<string, Blua32GlobalRegisterFile> {
 	const globalRegisterFileByName = new Map<string, Blua32GlobalRegisterFile>();
@@ -133,10 +142,13 @@ function indexBlua32GlobalRegisterFiles(
 export function createBlua32SourceImage(
 	layout: Blua32ImageLayout,
 	symbols: Blua32SymbolsImage | null,
+	sources: ReadonlyMap<string, Blua32CompiledSource>,
+	sourceDomain: ResourceDomain,
 ): Blua32SourceImage {
 	return {
 		layout,
 		symbols,
+		sources, sourceDomain,
 		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
 	};
 }
@@ -145,11 +157,13 @@ export function createBlua32SystemSourceImage(
 	layout: Blua32ImageLayout,
 	symbols: Blua32SymbolsImage | null,
 	biosImports: Blua32BiosImports,
+	sources: ReadonlyMap<string, Blua32CompiledSource>,
 ): Blua32SystemSourceImage {
 	return {
 		layout,
 		symbols,
 		biosImports,
+		sources, sourceDomain: SYSTEM_RESOURCE_DOMAIN,
 		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
 	};
 }
@@ -188,7 +202,7 @@ export function createRuntimeSourceState(
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 		};
 		cartridgeToolingImages[slot] = image
-			? createBlua32SourceImage(image.layout, image.symbols)
+			? createBlua32SourceImage(image.layout, image.symbols, captureInstalledLuaSources(cartLuaSources), slot)
 			: null;
 	}
 	const state: RuntimeSourceState = {
@@ -215,6 +229,7 @@ export function createRuntimeSourceState(
 					systemImage.layout,
 					systemImage.symbols,
 					loadBlua32BiosImports(systemLayer),
+					captureInstalledLuaSources(systemLuaSources),
 				)
 				: null,
 			cartridgeSlots: cartridgeToolingImages,

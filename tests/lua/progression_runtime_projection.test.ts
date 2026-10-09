@@ -1,3 +1,4 @@
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -41,8 +42,8 @@ function fixture(optLevel: 0 | 3) {
 		{sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() {return false;}, applyInputControllerVibrationEffect() {}});
 	const registry = (): LuaSourceRegistry => ({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: 'test', can_boot_from_source: false, revision: 0 });
 	const sources = createTestRuntimeSourceState(registry(), [registry(), null], 0);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports),
-		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols), null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.systemLuaSources)),
+		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.cartridgeSlots[0]!.luaSources), 0), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	runtime.machine.cpu.runUntilDepth(0, 1_000_000);
 	const guest = new SuspendedGuestSession(runtime);

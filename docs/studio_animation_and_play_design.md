@@ -449,3 +449,46 @@ Remaining acceptance work: bind Actor Lab and its source/operation/presentation
 owners to the chosen physical session, extend canonical procedural animation
 authoring, then perform the transition and combat redesign through visible
 Studio interaction. Do not present primary Actor Lab as inspection of Play.
+
+### Installed code provenance before target-bound inspection
+
+Runtime readers now depend on the installed code/source contract rather than
+requiring a writable authoring `RuntimeSourceState`. The actual Play session
+implements that contract with its admitted physical images; it does not create
+fake registries, working copies or authoring media. Actor/behavior readers,
+callback details and watches can consume this same owner without a runtime swap.
+Their UI controllers and mutation/presentation bindings still need the separate
+target-binding slice: this change alone does not expose Play's Actor Lab.
+
+| Representation | Primary authoring session | Interactive Play | C++ machine |
+| --- | --- | --- | --- |
+| Physical code domain/address | installed image and actual CPU call target | admitted image and actual CPU call target | Unchanged |
+| Written resource identity | path/domain captured at ROM load or code installation | captured original resource domain; physical cartridge may be remounted | No Studio source owner |
+| Source payload | admitted text retained independently from writable registries | shared compiled text or lazily decoded immutable ROM bytes | Diagnostic/image encoding unchanged |
+| Working copies | actual source registry/document services | None in the physical session | Not machine state |
+
+`Blua32CompiledSource` is the existing lazy source payload moved out of the
+test-specific builder into the central tooling owner. Image admission captures
+written paths and source content together; Hot Resume captures the compiler's
+diagnostic source map before installation. Source inspection no longer resolves
+a live closure through a mutable working-copy filename. A rename/edit does not
+change the code's source provenance, and physical execution domain is kept
+separate from the original authoring resource domain.
+
+The warmed callback cache compares actual call location and installed-media
+identity only. It no longer reads working-copy registries or their revisions
+per property update. A local Node 22 microbenchmark of one million cached
+updates (12 alternating measured batches after warmup) measured 63.37 ms before
+and 50.32 ms after this boundary change. This is one inspection-cache workload,
+not a whole-Studio performance claim. Source capture/indexing occurs at admission,
+not on host frames or CPU instructions; automatic test debugging gains no unused
+inspection-media index.
+
+O0/O3 development checks cover changed/renamed working copies, actual callback
+address changes, a Play cartridge remounted from resource domain 1 into physical
+domain 0, warmed source identity and no guest work/mutation during inspection.
+These are architecture checks, not visible Play Actor/FSM acceptance.
+
+Reference: VS Code's [session-bound debug source identity](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugSource.ts)
+keeps debug source identity separate from an ordinary file path. BMSX uses its
+own installed image provenance, not VS Code's URI/DAP or compatibility machinery.

@@ -1,18 +1,19 @@
 import { generateUuid } from '../common/uuid';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { readTestDebugSource, type BuiltTestCartridge, type TestDebugSource } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { ResourceDomain } from '../common/resource';
 import { InspectionValues } from '../runtime/inspection_values';
 import { runtimeLuaFrameScopes, type RuntimeLuaFrameScope } from '../runtime/lua_inspection';
-import { createBlua32SourceImage } from '../runtime/sources';
+import { indexBlua32GlobalRegisterFiles } from '../runtime/sources';
 import type { RuntimeStackFrame, RuntimeStackTraceFrame } from '../runtime/stack_trace';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
 import type { TestStack } from './stack';
 
 type FrameScope = { readonly kind: RuntimeLuaFrameScope['kind']; readonly status: RuntimeLuaFrameScope['status']; readonly reference?: string; readonly count?: number };
 type InspectedTestFrame = RuntimeStackTraceFrame & { readonly reference: string; readonly domain: ResourceDomain; readonly pc: number; readonly functionAddress: number };
-type FrameEntry = { frame: CallFrame; physical: RuntimeStackFrame; trace: InspectedTestFrame; source?: TestDebugSource; scopes?: readonly FrameScope[] };
+type FrameEntry = { frame: CallFrame; physical: RuntimeStackFrame; trace: InspectedTestFrame; source?: Blua32CompiledSource; scopes?: readonly FrameScope[] };
 
 /** Owns borrowed test stacks, frames and stored values for one attachment lifetime. */
 export abstract class TestInspection {
@@ -35,7 +36,7 @@ export abstract class TestInspection {
 			const authored: ResourceDomain = domain === -1 ? -1 : (domain ^ sourceDomain) as 0 | 1;
 			if (image.symbols === null) globals.push({ domain, sourceDomain: authored, status: 'symbols-unavailable' as const });
 			else {
-				const names = createBlua32SourceImage(image.layout, image.symbols).globalRegisterFileByName;
+				const names = indexBlua32GlobalRegisterFiles(image.symbols);
 				globals.push({ domain, sourceDomain: authored, status: 'available' as const, count: names.size, reference: this.values.globals(names) });
 			}
 		}
@@ -95,7 +96,7 @@ export abstract class TestInspection {
 		const entry = this.frame(reference);
 		if (entry.source === undefined) return { inspection: this.id, frame: reference, status: 'source-unmapped' as const };
 		return { inspection: this.id, frame: reference, status: 'available' as const, source: 'compiled-test-images' as const,
-			path: entry.source.displayPath, text: readTestDebugSource(entry.source) };
+			path: entry.source.displayPath, text: readBlua32CompiledSource(entry.source) };
 	}
 
 	public read(reference: string, start: number, count: number) {

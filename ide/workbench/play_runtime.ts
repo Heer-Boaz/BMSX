@@ -15,7 +15,7 @@ import { createSourceExecutionState, runtimeDebuggerExecutionRequested, type Sou
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { TestDebuggerSources } from '../testing/debugger_sources';
-import type { Blua32ToolingMedia } from '../../toolchain/ts/rompack/blua32_media';
+import { createBlua32SourceImage, type Blua32InstalledMedia } from '../runtime/sources';
 import { generateUuid } from '../common/uuid';
 import { RuntimeTransport } from '../runtime/transport';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
@@ -41,7 +41,7 @@ export class PlayRuntimeSession implements PlaySession {
 	public readonly navigation: RuntimeFrameNavigation;
 	public readonly transport: RuntimeTransport;
 	public readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
-	private readonly media: Blua32ToolingMedia;
+	public readonly currentBlua32Media: Blua32InstalledMedia;
 	private readonly fault = createRuntimeFaultState();
 	public failure: PlaySessionFailure | undefined;
 	private readonly systemOutput = new SystemOutputLog();
@@ -61,12 +61,16 @@ export class PlayRuntimeSession implements PlaySession {
 		this.tasks = new RuntimeTaskQueue(this.audio, target.presenter);
 		this.rewind = new HostRewind(runtime, target.presenter, target.presentation, this.tasks, this.audio, log);
 		this.frameSession = new HostFrameSession(runtime.timing.ufpsScaled, 0, this.rewind, this.execution);
-		this.media = { system: program.debugImages[0].image, cartridgeSlots: [program.debugImages[1].image,
-			program.debugImages[2] === null ? null : program.debugImages[2].image] };
+		const [system, cartridge, companion] = program.debugImages;
+		this.currentBlua32Media = {
+			system: createBlua32SourceImage(system.image.layout, system.image.symbols, system.sources, -1),
+			cartridgeSlots: [createBlua32SourceImage(cartridge.image.layout, cartridge.image.symbols, cartridge.sources, sourceDomain),
+				companion === null ? null : createBlua32SourceImage(companion.image.layout, companion.image.symbols, companion.sources, (sourceDomain ^ 1) as 0 | 1)],
+		};
 		this.debugSources = new TestDebuggerSources(generateUuid(), program, sourceDomain, () => {
-			if (this.ready) this.debugger.source.install(this.media, this.debugSources.pcs);
+			if (this.ready) this.debugger.source.install(this.currentBlua32Media, this.debugSources.pcs);
 		});
-		this.debugger = createSourceExecutionState(runtime, this.media, this.debugSources.pcs);
+		this.debugger = createSourceExecutionState(runtime, this.currentBlua32Media, this.debugSources.pcs);
 		this.navigation = new RuntimeFrameNavigation(runtime, this.execution, this.rewind, this.tasks, this.debugger, this.fault, this.guest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, this.execution, this.rewind,
 			this.tasks, this.fault, this.guest, this.navigation);
@@ -116,7 +120,7 @@ export class PlayRuntimeSession implements PlaySession {
 					this.target.runtime.frameScheduler.clearQueuedTime();
 					this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 					this.audio.restart(this.target.runtime.timing.ufpsScaled);
-					this.debugger.source.install(this.media, this.debugSources.pcs);
+					this.debugger.source.install(this.currentBlua32Media, this.debugSources.pcs);
 				}
 			} else if (this.fixture.state === 'ready') this.advancePlay(hostDeltaMs);
 			this.systemOutput.flush(this.target.runtime, this.log);

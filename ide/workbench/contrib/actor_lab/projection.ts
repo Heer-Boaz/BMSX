@@ -1,6 +1,6 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -11,7 +11,7 @@ import { resolveActorPath } from './target';
 export type ActorRow = { node: ActorNode; displayLabel: string };
 export type ActorChoice = QuickPickItem & { readonly domain: ResourceDomain; readonly hashId: number };
 
-export function readActorChoices(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): ActorChoice[] {
+export function readActorChoices(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): ActorChoice[] {
 	const actors = readRuntimeActors(sources, guest, domain), choices: ActorChoice[] = [];
 	if (actors.status !== 'available') return choices;
 	for (let i = 1; i <= actors.objects.arrayLength; i++) {
@@ -32,7 +32,7 @@ export class ActorProjection {
 	private revealStart = -1;
 	private revealEnd = -1;
 	private readonly activeRows: WorkbenchTreeNode<ActorRow>[] = [];
-	public constructor(private readonly input: ActorLabInput, private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public constructor(private readonly input: ActorLabInput, private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {}
 	public update(): boolean {
 		const { input, guest } = this;
 		const world = runtimeWorld(this.sources, guest, input.domain);

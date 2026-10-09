@@ -1,5 +1,5 @@
 import { runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache, type RuntimeLuaFunctionSource } from '../../../runtime/lua_inspection';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { BehaviorInspectionProperty } from './inspection';
 import { SuspendedValuePresentation } from '../../../runtime/value_presentation';
@@ -7,11 +7,11 @@ import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 
 /** Loaded values have no inferred authoring target. Only a mapped closure supplies Source. */
 export function inspectBehaviorRuntimeValue(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, label: string, value: SuspendedGuestValue, description: string,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, label: string, value: SuspendedGuestValue, description: string,
 ): BehaviorInspectionProperty {
 	const source = runtimeLuaFunctionSource(sources, guest, value);
 	return { label, value: source === undefined ? guest.formatStoredEntries(value)
-		: `CALL TARGET / ${source.resource.domain === -1 ? 'SYSTEM' : `CART ${source.resource.domain}`}\n${source.resource.path}:${source.range.start.line}:${source.range.start.column}`,
+		: `CALL TARGET / ${source.executionDomain === -1 ? 'SYSTEM' : `CART ${source.executionDomain}`}\n${source.resource.path}:${source.range.start.line}:${source.range.start.column}`,
 		description, warning: false, source };
 }
 
@@ -103,7 +103,7 @@ export class BehaviorRuntimeProperties {
 	private cursor = 0;
 	private compareChanges = false;
 
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession, private readonly filter?: RuntimePropertyFilter) {}
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession, private readonly filter?: RuntimePropertyFilter) {}
 	/** Compare only an owner's completed observation of the same runtime binding. */
 	public begin(compareChanges = false): void { this.cursor = 0; this.changed = false; this.compareChanges = compareChanges; }
 	public invalidate(): void {
@@ -142,7 +142,7 @@ export class BehaviorRuntimeProperties {
 			? (row.source ??= new RuntimeLuaFunctionSourceCache(this.sources, this.guest)).update(value) : undefined;
 		const text = source === undefined ? (row.value ??= new SuspendedValuePresentation(this.guest)).update(value)
 			: row.element.source === source ? row.element.value
-			: `CALL TARGET / ${source.resource.domain === -1 ? 'SYSTEM' : `CART ${source.resource.domain}`}\n${source.resource.path}:${source.range.start.line}:${source.range.start.column}`;
+			: `CALL TARGET / ${source.executionDomain === -1 ? 'SYSTEM' : `CART ${source.executionDomain}`}\n${source.resource.path}:${source.range.start.line}:${source.range.start.column}`;
 		if (descriptionValue !== undefined) {
 			const preview = (row.description ??= new SuspendedValuePresentation(this.guest, 'preview')).update(descriptionValue);
 			if (row.descriptionPrefix !== description || row.descriptionText !== preview) {

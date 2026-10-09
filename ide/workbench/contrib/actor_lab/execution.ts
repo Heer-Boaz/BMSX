@@ -6,7 +6,7 @@ import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from '../../../runtime/debugger_state';
@@ -53,7 +53,7 @@ export class ActorExecutionService {
 	private closing = false;
 	private readonly values: Value[] = [];
 	private readonly tree = new ActorRuntimeTree();
-	public constructor(private readonly runtime: Runtime, private readonly sources: RuntimeSourceState,
+	public constructor(private readonly runtime: Runtime, private readonly sources: RuntimeInstalledSourceState,
 		private readonly guest: SuspendedGuestSession, private readonly debuggerState: RuntimeDebuggerState,
 		private readonly fault: RuntimeFaultState, private readonly tasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl, private readonly rewind: HostRewind) {}

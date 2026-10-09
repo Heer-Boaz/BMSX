@@ -1,14 +1,14 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 
 export type BehaviorDefinitionChoice = QuickPickItem & { readonly definition: Table };
 
 /** Cartlib's existing registry, retained by its setter. This does not call that setter. */
-export function readBehaviorDefinitions(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string) {
+export function readBehaviorDefinitions(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string) {
 	const items: BehaviorDefinitionChoice[] = [];
 	const owner = readRuntimeLuaModuleExport(sources, guest, domain, modulePath);
 	if (owner.kind === 'unavailable' || owner.value === null) return { available: false, items };

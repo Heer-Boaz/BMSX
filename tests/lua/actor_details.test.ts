@@ -7,7 +7,7 @@ import { valueString } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { SuspendedGuestSession, type GuestInvalidationReason } from '../../ide/runtime/suspended_guest';
 import { ActorDetails, actorDetailsPropertiesEqual, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { inspectActorNode } from '../../ide/workbench/contrib/actor_lab/inspection';
@@ -96,7 +96,7 @@ function fixture() {
 		update_timestamp: 0, generated: false, program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;

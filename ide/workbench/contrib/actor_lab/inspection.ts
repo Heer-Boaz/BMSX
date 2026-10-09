@@ -1,5 +1,5 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { inspectActionEffectInstance } from '../behavior_lens/action_effect_runtime';
 import { inspectBehaviorTreeInstance } from '../behavior_lens/behavior_tree_runtime';
@@ -12,7 +12,7 @@ const ACTOR_FIELDS = ['id', 'definition_id', 'active', 'x', 'y', 'z', 'tags', 'd
 const TIMELINE_FIELDS = ['position_ms', 'head', 'playing', 'on_finished', 'bindings', 'program'] as const;
 
 export function inspectActorNode(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, node: ActorNode,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, node: ActorNode,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	const value = node.value!;

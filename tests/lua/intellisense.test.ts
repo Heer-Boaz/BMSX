@@ -1,3 +1,4 @@
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import { readRuntimeStackFrames, buildLuaStackFrames, createLuaSourceStackTraceFrame } from '../../ide/runtime/stack_trace';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -163,7 +164,7 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
 	sources.currentBlua32Media = {
-		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports),
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(systemLuaSources)),
 		cartridgeSlots: [null, null],
 	};
 	const bridge = { sources, suspendedGuest: new SuspendedGuestSession(runtime) };
@@ -646,6 +647,12 @@ halt_until_irq`;
 		const cached = correspondence.update(callback)!;
 		assert.deepEqual(cached, location);
 		for (let update = 0; update < 1000; update++) assert.strictEqual(correspondence.update(callback), cached);
+		// Working-copy edits/renames cannot replace the source admitted with this code.
+		const working = bridge.sources.systemLuaSources.records[0];
+		working.src = '-- edited after admission'; working.source_path = 'renamed.lua';
+		bridge.sources.systemLuaSources.revision++;
+		assert.strictEqual(correspondence.update(callback), cached);
+		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
 		const closure = callback as Closure, oldAddress = closure.functionAddress;
 		closure.functionAddress = (guest.global('other_callback') as Closure).functionAddress;

@@ -1,4 +1,4 @@
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, runtimeInspectionPropertiesEqual, type RuntimePropertyIdentity } from '../behavior_lens/runtime_properties';
 import { inspectActorNode } from './inspection';
@@ -47,7 +47,7 @@ export class ActorDetails {
 	private worldHashId: number | undefined;
 	private dirty = true;
 
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {
 		this.properties = new BehaviorRuntimeProperties(sources, guest);
 		this.watches = new ActorWatches(sources, guest);
 	}

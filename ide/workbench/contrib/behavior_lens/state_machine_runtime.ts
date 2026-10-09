@@ -1,6 +1,6 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
@@ -13,7 +13,7 @@ export type StateMachineInstanceChoice = QuickPickItem & StateMachineInstance;
 export type StateMachineStateChoice = QuickPickItem & { readonly state: Table };
 
 export function findStateMachineState(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
 	componentHashId: number, machineHashId: number, stateHashId: number,
 ): { machine: StateMachineInstance; state: Table } | undefined {
 	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/fsm/fsm_component', componentHashId);
@@ -42,7 +42,7 @@ function stateMachineStateChoice(guest: SuspendedGuestSession, state: Table): St
 		description: current === null ? '' : `CURRENT CHILD: ${guest.formatValue(current)}`, detail: '', state };
 }
 
-export function readStateMachineInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
+export function readStateMachineInstances(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: StateMachineInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/fsm/fsm_component', component => {
 		const machines = guest.readStringMember(component, '_machines') as Table;
@@ -90,7 +90,7 @@ const DEFINITION_FIELDS = [
 ] as const;
 
 export function inspectStateMachineState(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, machine: StateMachineInstance, state: Table,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, machine: StateMachineInstance, state: Table,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.field('instance', 'id', 'STATE INSTANCE', guest.readStringMember(state, 'id'));
@@ -107,7 +107,7 @@ export function inspectStateMachineState(
 }
 
 export function inspectStateMachineDefinition(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, properties = new BehaviorRuntimeProperties(sources, guest),
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, definition: Table, properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.field('definition', 'def_id', 'LOADED DEFINITION', guest.readStringMember(definition, 'def_id'),
 		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');

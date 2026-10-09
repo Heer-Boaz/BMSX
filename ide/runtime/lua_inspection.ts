@@ -1,5 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
+import { buildModuleExportSlotName, toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { blua32FunctionIndexAtAddress, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc, blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -13,7 +13,8 @@ import { sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_ra
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
-import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
+import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
+import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue, RuntimeFunctionLocationBuffer } from './suspended_guest';
 import type { RuntimeStackFrame } from './stack_trace';
 
@@ -108,7 +109,7 @@ const NOT_RUNTIME_VALUE: RuntimeLuaInspectionValue = { kind: 'unavailable', reas
 
 /** The compiler owns export-slot names; an installed slot is not evidence that its initializer ran. */
 export function readRuntimeLuaModuleExport(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string,
 ): RuntimeLuaInspectionValue {
 	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
 	if (image === null) return NOT_LOADED;
@@ -119,6 +120,7 @@ export function readRuntimeLuaModuleExport(
 }
 
 export type RuntimeLuaFunctionSource = {
+	readonly executionDomain: ResourceDomain;
 	readonly resource: ResourceIdentity;
 	readonly range: SourceRange;
 	readonly installedSource: string;
@@ -126,12 +128,12 @@ export type RuntimeLuaFunctionSource = {
 
 /** Read a module-scoped local retained by this closure, not a same-name local in a factory. */
 export function readRuntimeLuaModuleCapture(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
 	modulePath: string, closure: SuspendedGuestValue, name: string,
 ): RuntimeLuaInspectionValue {
 	const location = guest.linkedFunctionLocation(closure);
 	if (location === undefined || location.domain !== domain) return NOT_IN_SCOPE;
-	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, domain);
+	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
 	if (image === null || image.symbols === null) return NOT_LOADED;
 	const symbols = image.symbols;
 	const module = symbols.moduleFunctions.find(entry => entry.path === modulePath);
@@ -154,43 +156,36 @@ export function readRuntimeLuaModuleCapture(
 }
 
 /** A closure's current mapped call target, never its presumed allocation/registration site. */
-export function runtimeLuaFunctionSource(sources: RuntimeSourceState, guest: SuspendedGuestSession, value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
+export function runtimeLuaFunctionSource(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
 	const location = guest.linkedFunctionLocation(value);
 	if (location === undefined) return undefined;
 	const { domain, address } = location;
-	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, domain);
+	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
 	if (image === null || image.symbols === null) return undefined;
 	const index = blua32FunctionIndexAtAddress(image.layout, address);
 	if (index < 0) return undefined;
 	const definition = image.symbols.metadata.functionDefinitions[index];
 	if (definition === null) return undefined;
-	const record = resolveRuntimeLuaSource(sources, { domain, path: definition.path })!.record;
-	const installed = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]!.installedBlua32Sources;
-	return { resource: { domain, path: record.source_path }, range: { ...definition, path: record.source_path },
-		installedSource: installed.get(record.module_path)! };
+	const record = image.sources.get(toLuaModulePath(definition.path))!;
+	return { executionDomain: domain, resource: { domain: image.sourceDomain, path: record.displayPath }, range: { ...definition, path: record.displayPath },
+		installedSource: readBlua32CompiledSource(record) };
 }
 
 /** Current address/bus and installed metadata own correspondence, not closure allocation identity. */
 export class RuntimeLuaFunctionSourceCache {
 	private readonly location: RuntimeFunctionLocationBuffer = { domain: null, address: 0 };
-	private media: RuntimeSourceState['currentBlua32Media'] | undefined;
-	private installed: ReadonlyMap<string, string> | undefined;
-	private registry: RuntimeSourceState['systemLuaSources'] | undefined;
-	private registryRevision: number | undefined;
+	private media: RuntimeInstalledSourceState['currentBlua32Media'] | undefined;
 	private source: RuntimeLuaFunctionSource | undefined;
 
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {}
 	public invalidate(): void { this.media = undefined; }
 	public update(value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
 		const previousDomain = this.location.domain, previousAddress = this.location.address;
 		const location = this.guest.functionLocation(value, this.location);
 		if (location === undefined || location.domain === null) return undefined;
-		const { sources } = this, domain = location.domain;
-		const registry = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemLuaSources : sources.cartridgeSlots[domain]?.luaSources;
-		const installed = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]?.installedBlua32Sources;
-		if (previousDomain !== domain || previousAddress !== location.address || this.media !== sources.currentBlua32Media
-			|| this.installed !== installed || this.registry !== registry || this.registryRevision !== registry?.revision) {
-			this.media = sources.currentBlua32Media; this.installed = installed; this.registry = registry; this.registryRevision = registry?.revision;
+		const { sources } = this;
+		if (previousDomain !== location.domain || previousAddress !== location.address || this.media !== sources.currentBlua32Media) {
+			this.media = sources.currentBlua32Media;
 			this.source = runtimeLuaFunctionSource(sources, this.guest, value);
 		}
 		return this.source;

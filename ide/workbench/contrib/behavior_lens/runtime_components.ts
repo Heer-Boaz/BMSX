@@ -2,12 +2,12 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 
 /** Cartlib's retained type index. No guest call, heap scan, or source-registration discovery. */
 export function visitRuntimeComponents(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
 	modulePath: string, visit: (component: Table) => void,
 ): boolean {
 	const registry = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/registry');
@@ -24,7 +24,7 @@ export function visitRuntimeComponents(
 
 /** Reacquire a retained table identity through its owning cartlib type bucket. */
 export function findRuntimeComponent(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string, hashId: number,
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string, hashId: number,
 ): Table | undefined {
 	let result: Table | undefined;
 	visitRuntimeComponents(sources, guest, domain, modulePath, component => {

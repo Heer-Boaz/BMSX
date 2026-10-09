@@ -4,7 +4,7 @@ import type { Value } from '../../../../machine/ts/machine/cpu/value';
 import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 
 export type ActorNode = {
@@ -25,20 +25,20 @@ export type ActorNode = {
 	readonly path?: string;
 };
 
-export function runtimeWorld(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Table | undefined {
+export function runtimeWorld(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Table | undefined {
 	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
 	return world.kind === 'value' && world.value !== null ? world.value as Table : undefined;
 }
 
 /** The ordinary global registerfile is shared: mounted ROMs are not separate worlds. */
-export function readRuntimeActors(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
+export function readRuntimeActors(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const world = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/world/world');
 	if (world.kind === 'unavailable') return { domain, status: world.reason } as const;
 	if (world.value === null) return { domain, status: 'uninitialized' } as const;
 	return { domain, status: 'available', objects: guest.readStringMember(world.value, '_objects') as Table } as const;
 }
 
-export function findRuntimeActor(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Table | undefined {
+export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Table | undefined {
 	return findWorldActor(guest, runtimeWorld(sources, guest, domain), hashId);
 }
 
@@ -77,7 +77,7 @@ export class ActorRuntimeTree {
 	private activityChanged = false;
 	private borrowed = false;
 	private readonly kinds: number[] = [];
-	public update(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Table | undefined): boolean {
+	public update(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Table | undefined): boolean {
 		this.changed = false;
 		this.activityChanged = false;
 		this.borrowed = actor !== undefined;

@@ -1,3 +1,4 @@
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createBlua32SourceImage, createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -28,8 +29,8 @@ export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistor
 	});
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: '', can_boot_from_source: false, revision: 0 };
 	const sources = createTestRuntimeSourceState(registry, [registry, null], 0);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports),
-		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols), null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.systemLuaSources)),
+		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.cartridgeSlots[0]!.luaSources), 0), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	return { runtime, sources, cpu: runtime.machine.cpu };
 }

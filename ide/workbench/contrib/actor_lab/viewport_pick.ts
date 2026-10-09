@@ -3,7 +3,7 @@ import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../../../toolchain/ts/lua/module_path';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import { Blua32GlobalRegisterFile, type RuntimeSourceState } from '../../../runtime/sources';
+import { Blua32GlobalRegisterFile, type RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 
 const WORLD_EXPORT = buildModuleExportSlotName('cartlib/world/world', []);
@@ -18,7 +18,7 @@ export type ActorViewportHit = {
 export class ActorViewportPicker {
 	public readonly hit: ActorViewportHit = { domain: 0, hashId: 0, label: '', left: 0, top: 0, right: 0, bottom: 0 };
 	private domain: ResourceDomain | undefined;
-	private media: RuntimeSourceState['currentBlua32Media'] | undefined;
+	private media: RuntimeInstalledSourceState['currentBlua32Media'] | undefined;
 	private bound = false;
 	private worldRegisters: Blua32GlobalRegisterFile;
 	private fullDraw: SuspendedValueIdentity;
@@ -30,7 +30,7 @@ export class ActorViewportPicker {
 	private queriedRevision = -1;
 	private x = 0;
 	private y = 0;
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {}
 	public invalidate(reason: GuestInvalidationReason): void {
 		this.revision++;
 		if (reason !== 'execution') { this.media = undefined; this.hit.hashId = 0; this.labelHashId = 0; }

@@ -1,3 +1,4 @@
+import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -52,7 +53,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	const image = linkTestSystemBlua32(compiled), runtime = createTestRuntime(image.romBytes);
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: '', can_boot_from_source: false, revision: 0 };
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	runtime.machine.cpu.reset();
 	if (run) runtime.machine.cpu.runUntilDepth(0, 100_000);
 	const f = createRuntimeInspectionFixture(runtime, sources);

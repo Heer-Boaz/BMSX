@@ -1,5 +1,5 @@
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { BehaviorRuntimeProperties, type RuntimeInspectionProperty, type RuntimePropertyIdentity,
 	runtimePropertyIdentitiesEqual, RuntimePropertyIndex } from '../behavior_lens/runtime_properties';
@@ -64,7 +64,7 @@ export class ActorWatches {
 	private dirty = true;
 	private observationPending = false;
 	private membershipChanged = false;
-	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {}
 
 	public find(target: ActorTarget, property: RuntimePropertyIdentity): ActorPropertyWatch | undefined {
 		return this.pins.find(pin => !pin.retired && actorTargetsEqual(pin.target, target) && runtimePropertyIdentitiesEqual(pin.property, property));
