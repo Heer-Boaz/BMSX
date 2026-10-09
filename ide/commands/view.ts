@@ -12,6 +12,7 @@ import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
+import { buildAnimationSourceDocument } from '../workbench/contrib/animation/source';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { showOpenEditors } from '../workbench/services/editor/open_editors';
@@ -34,6 +35,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'behaviorLens.stateMachines':
 		case 'behaviorLens.behaviorTrees':
 		case 'aem':
+		case 'animation':
 		case 'progression':
 		case 'inputBindings':
 		case 'scenarioLab':
@@ -53,6 +55,9 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId): void {
 	switch (command) {
+		case 'animation': openSourceView(sources, editor.quickInput, { title: 'ANIMATIONS',
+			accepts: (resource, snapshot) => buildAnimationSourceDocument(resource, snapshot) !== undefined,
+			openResource: resource => editor.animations.openResource(resource) }); return;
 		case 'hostError': openHostError(editor.editorPanes, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
 		case 'events': openEventViewer(editor.editorPanes, editor.events); return;

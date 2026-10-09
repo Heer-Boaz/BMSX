@@ -1154,6 +1154,19 @@ Actor Lab embeds the completed native game image beside these controls, at the
 ordinary host display aspect. A seek changes guest state; drawing a new world
 image remains guest work, not an implicit host-side scene renderer.
 
+The Animation editor is a source projection, not a second playback engine.
+Its exported Lua timeline definitions and imported track/key tables retain their
+actual `EditorTextModel` owners. Native `time_ms`, `frame` and `u` coordinates
+are not guessed from video frequency or reconstructed from cooked programs.
+Pointer motion previews a retained gesture; physical release commits one targeted
+syntax edit through document history. Source changes, Escape and focus/capture
+loss cancel the gesture. Structural edits require a uniquely written, unmutated
+definition; procedural producers and callbacks remain source. Projection and
+layout are retained by source/font/geometry generation rather than rebuilt on
+idle frames. Editing source and scrubbing a live player remain distinct actions.
+See [animation and interactive scenario ownership](studio_animation_and_play_design.md)
+for implemented scope and the remaining isolated Play-session boundary.
+
 The Run menu exposes one checked Pause toggle, without a gameplay keyboard
 binding. Toggling it off explicitly takes over a reviewed position and releases
 only requested pause. It returns focus to the game unless an actual debugger

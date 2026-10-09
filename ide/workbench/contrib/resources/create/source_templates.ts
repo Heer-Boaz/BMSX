@@ -1,11 +1,18 @@
 import { quoteLuaString } from '../../../../../toolchain/ts/lua/syntax/string_literal';
 import { DEFAULT_NEW_LUA_RESOURCE_CONTENT } from '../../../../common/constants';
 
-export type NewLuaSourceKind = 'empty' | 'action_effect' | 'progression' | 'input';
+export type NewLuaSourceKind = 'animation' | 'empty' | 'action_effect' | 'progression' | 'input';
 
 /** Starting source, not a second authoring format or a runtime default. Cart code owns installation. */
 export function newLuaSource(kind: NewLuaSourceKind, relativePath: string): string {
 	if (kind === 'empty') return DEFAULT_NEW_LUA_RESOURCE_CONTENT;
+	if (kind === 'animation') return `-- Install this definition with the cart-owned timeline component.
+return {
+	frame_duration = 20,
+	duration_ms = 1000,
+	tracks = {},
+}
+`;
 	if (kind === 'action_effect') return `local actioneffects<const> = require('cartlib/actioneffects')
 local effect_id<const> = ${quoteLuaString(relativePath.slice(0, -4))}
 actioneffects.register_effect(effect_id, {

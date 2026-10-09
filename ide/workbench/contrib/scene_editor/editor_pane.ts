@@ -13,7 +13,7 @@ import { INTEGER_INPUT_FORMAT } from '../../../editor/ui/inline/integer_input';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_edits';
+import { createLuaTableFieldNumberEdits } from '../../../language/lua/source_edits';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
@@ -57,7 +57,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
-			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
+			this.input.workingCopy.pushEditOperations(createLuaTableFieldNumberEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
 		this.options = new SceneOptionEditor(this.focusTarget, () => this.update(), property => this.revealOption(property));

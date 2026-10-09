@@ -60,6 +60,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
+	'animation', 'animation.create', 'animation.addTrack', 'animation.addKey', 'animation.edit', 'animation.remove', 'animation.source',
 	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
@@ -167,6 +168,7 @@ export class IdeCommandController {
 			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
 			case 'behaviorLens.testEffect': { const input = getActiveTab()!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
 			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
+			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'animation'); return;
 			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'input'); return;
 			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'action_effect'); return;
 			case 'builds.start': void chooseBuild(this.editor); return;
@@ -200,6 +202,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.more':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
@@ -411,7 +414,7 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
 			case 'builds.start': return this.editor.builds !== undefined;
-			case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
+			case 'animation.create': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);
@@ -440,6 +443,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.more':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
@@ -538,7 +542,7 @@ export class IdeCommandController {
 				return input?.kind === 'behavior_lens' && input.view.presentation.kind === 'properties'
 					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
 			}
-			case 'progression': case 'inputBindings':
+			case 'animation': case 'progression': case 'inputBindings':
 			case 'scenarioLab':
 			case 'behaviorLens':
 			case 'behaviorLens.preview':

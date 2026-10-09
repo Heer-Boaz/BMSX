@@ -49,6 +49,7 @@ function showNewLuaFileInput(
 			if (editor.resourcePanel.isVisible()) editor.resourcePanel.refresh();
 			if (kind === 'action_effect') editor.behaviorLens.openDefinition(editor.behaviorLens.documents.registrations
 				.getRegistrations(created.domain).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!);
+			else if (kind === 'animation') editor.animations.openResource(created);
 			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(created, kind);
 			else openLuaCodeTab(editor.editorPanes, sources, created);
 		});

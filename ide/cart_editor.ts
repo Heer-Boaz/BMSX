@@ -1,3 +1,6 @@
+import { AnimationEditorController } from './workbench/contrib/animation/controller';
+import { AnimationEditorPane } from './workbench/contrib/animation/editor_pane';
+import { AnimationInputSerializer } from './workbench/contrib/animation/editor_serializer';
 import { HostErrorPane } from './workbench/contrib/host_error/editor_pane';
 import { RomInspectorPane } from './workbench/contrib/rom_inspector/editor_pane';
 import { CartMapController } from './workbench/contrib/cart_maps/controller';
@@ -217,6 +220,7 @@ export type CartEditor = {
 	readonly navigation: EditorNavigationController;
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
+	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
 	readonly quickInput: QuickInputController;
@@ -275,6 +279,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly navigation: EditorNavigationController;
 	public readonly cartMaps: CartMapController;
 	public readonly sceneEditor: SceneEditorController;
+	public readonly animations: AnimationEditorController;
 	public readonly actorLab: ActorLabController;
 	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture);
 	public readonly quickInput: QuickInputController;
@@ -415,6 +420,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu),
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
@@ -459,6 +465,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.cartMaps = new CartMapController(this.sources, this.editorPanes, this.quickInput);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
+		this.animations = new AnimationEditorController(this.sources, this.editorPanes, this.navigation, this.quickInput);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
 
@@ -484,6 +491,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.luaPrograms = new LuaProgramController(sources, guest, this.editorPanes, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
+			animation: new AnimationInputSerializer(sources, this.animations),
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
 			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.events) },
@@ -512,6 +520,7 @@ export class RuntimeCartEditor implements CartEditor {
 		});
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
+			this.animations.onDidChangeContent(model, event);
 			this.luaPrograms.onDidChangeContent(model, event);
 			this.behaviorLens.onDidChangeContent(model, event);
 			if (model.mode === 'lua') {

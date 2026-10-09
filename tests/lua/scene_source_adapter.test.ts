@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
 import { buildSceneSourceDocument, hasSceneSourceDefinitions } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
@@ -149,7 +149,7 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		const edits = createLuaTableFieldIntegerEdits(model.buffer, document.analysis.chunk.locations, object.position!.x, 65536);
+		const edits = createLuaTableFieldNumberEdits(model.buffer, document.analysis.chunk.locations, object.position!.x, 65536);
 		assert.notEqual(edits, null);
 		model.pushEditOperations(edits!);
 	}

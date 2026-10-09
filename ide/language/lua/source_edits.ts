@@ -101,14 +101,18 @@ export function readLuaExpressionPreview(buffer: TextBuffer, locations: LuaSourc
 
 /** Reads an authored literal accepted by the integer control, never evaluates Lua. */
 export function readLuaTableFieldInteger(field: LuaTableField): number | null {
-	const literal = numericFieldLiteral(field);
-	if (literal === null) return null;
-	const value = field.value.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+	const value = readLuaNumberLiteral(field.value);
+	if (value === null) return null;
 	return value === (value | 0) ? value : null;
 }
 
-function numericFieldLiteral(field: LuaTableField): LuaNumericLiteralExpression | null {
-	const expression = field.value;
+/** Literal syntax only: editor projections must not evaluate arbitrary Lua. */
+export function readLuaNumberLiteral(expression: LuaExpression): number | null {
+	const literal = numericLiteral(expression);
+	return literal === null ? null : expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+}
+
+function numericLiteral(expression: LuaExpression): LuaNumericLiteralExpression | null {
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) return expression;
 	if (expression.kind === LuaSyntaxKind.UnaryExpression
 		&& expression.operator === LuaUnaryOperator.Negate
@@ -124,14 +128,14 @@ function numericFieldLiteral(field: LuaTableField): LuaNumericLiteralExpression 
  * The field is the syntax boundary: replacing an arbitrary literal subtree
  * with a negative expression could change its parent's operator binding.
  */
-export function createLuaTableFieldIntegerEdits(
+export function createLuaTableFieldNumberEdits(
 	buffer: TextBuffer,
 	locations: LuaSourceLocations,
 	field: LuaTableField,
 	value: number,
 ): EditorTextEdit[] | null {
 	const expression = field.value;
-	const literal = numericFieldLiteral(field);
+	const literal = numericLiteral(expression);
 	if (literal === null) return null;
 	const previousValue = expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
 	if (value === previousValue) {
@@ -143,7 +147,7 @@ export function createLuaTableFieldIntegerEdits(
 	const literalSource = buffer.getTextRange(literalStart, literalEnd);
 	const negative = value < 0;
 	const magnitude = negative ? -value : value;
-	const digits = formatIntegerLiteral(magnitude, literalSource);
+	const digits = magnitude % 1 === 0 ? formatIntegerLiteral(magnitude, literalSource) : String(magnitude);
 	const edits: EditorTextEdit[] = [];
 	let replacement = digits;
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {

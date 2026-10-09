@@ -1,3 +1,4 @@
+import type { AnimationEditorInput } from '../../contrib/animation/editor_input';
 import type { HostErrorInput } from '../../contrib/host_error/editor_input';
 import type { RomInspectorInput } from '../../contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../contrib/cart_maps/editor_input';
@@ -18,6 +19,7 @@ import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
 export type EditorInput =
+	| AnimationEditorInput
 	| HostErrorInput
 	| RomInspectorInput
 	| EventViewerInput
