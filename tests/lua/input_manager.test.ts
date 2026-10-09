@@ -345,7 +345,7 @@ test('workbench capture separates gameplay samples from host and supervisor inpu
 	input.inputButton('keyboard:0', 'KeyA', true, 1, 1, 1);
 	input.inputButton(device.id, 'a', true, 1, 1, 2);
 	input.pollInput();
-	input.setGuestInputCaptured(true);
+	input.guestInputRecipient = null;
 	snapshot.keyWords.fill(0xffffffff);
 	snapshot.pointerButtons = 7;
 	snapshot.pointerXQ16 = 65536;
@@ -357,7 +357,7 @@ test('workbench capture separates gameplay samples from host and supervisor inpu
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Supervisor);
 	const usage = hidKeyUsageForCode('KeyA');
 	assert.notEqual(snapshot.keyWords[usage >>> 5] & (1 << (usage & 31)), 0);
-	input.setGuestInputCaptured(false);
+	input.guestInputRecipient = input;
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.notEqual(snapshot.keyWords[usage >>> 5] & (1 << (usage & 31)), 0);
 	input.dispose();

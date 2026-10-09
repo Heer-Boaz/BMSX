@@ -115,8 +115,8 @@ export async function runStudioActorFind(test: StudioFixture) {
 	test.setKey('ControlLeft', true); test.setKey('KeyF', true);
 	const usage = hidKeyUsageForCode('KeyF'), address = IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE, mask = 1 << (usage & 31);
 	await until(() => (runtime.machine.memory.readIoU32(address) & mask) !== 0, 'actor find: Ctrl+F reaches the preview guest ICU');
-	check(!picker.visible && inputFocus.target === previewFocus && previewFocus?.guestInputBounds === lab.previewBounds
-		&& !ide.editor.capturesGuestInput && inspector.visible,
+	check(!picker.visible && inputFocus.target === previewFocus && previewFocus?.guestInput?.bounds === lab.previewBounds
+		&& ide.editor.guestInputRecipient !== null && inspector.visible,
 		'local Find shortcut never steals ordinary game-preview input or closes Details');
 	test.setKey('ControlLeft', false); test.setKey('KeyF', false); await frame();
 	await press('ShiftLeft', 'F1');

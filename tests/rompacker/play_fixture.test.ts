@@ -16,6 +16,10 @@ import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } 
 import { valueToString } from '../../machine/ts/machine/cpu/value';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
+import { Input } from '../../hosts/common/input/manager';
+import { InputChannel } from '../../hosts/common/input/channel';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
 
 const GAME = `module<entry>
 local game<const> = require('game')
@@ -65,6 +69,36 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 	};
 	return { play, target, media, logs, captures, drain };
 }
+
+test('physical viewport routing reaches only the selected independent machine through its real ICU', async t => {
+	const f = await fixture(t, "return {kind='integration',tests={never=function() end}}", 0);
+	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), channel = new InputChannel(input);
+	const primary = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, input);
+	const secondary = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, channel);
+	t.after(() => { primary.dispose(); secondary.dispose(); channel.dispose(); input.dispose(); });
+	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); input.pollInput();
+	const advance = (target: typeof primary | typeof secondary) => {
+		const until = target.runtime.frameScheduler.lastTickSequence + 3;
+		for (let grant = 0; target.runtime.frameScheduler.lastTickSequence < until && grant < 1000; grant++) target.advanceGame(65536);
+		assert.equal(target.runtime.frameScheduler.lastTickSequence, until);
+	};
+	const samples = (target: typeof primary | typeof secondary) => {
+		const cpu = target.runtime.machine.cpu;
+		const game = cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))) as Table;
+		return game.getStringKey(cpu.stringPool.intern('down_samples')) as number;
+	};
+	input.guestInputRecipient = channel;
+	advance(primary); advance(secondary);
+	assert.equal(samples(primary), 0); assert.ok(samples(secondary) > 0);
+	const secondarySamples = samples(secondary);
+	input.guestInputRecipient = input;
+	advance(primary); advance(secondary);
+	assert.ok(samples(primary) > 0);
+	// Focus does not rewrite a previously latched MMIO sample: its pending IRQ
+	// still sees the old word once, then the normal ICU samples release it.
+	assert.equal(samples(secondary), secondarySamples + 1);
+	advance(secondary); assert.equal(samples(secondary), secondarySamples + 1);
+});
 
 for (const optLevel of [0, 3] as const) {
 	test(`O${optLevel}: Play admits only the shared fixture, persists independently and tears down on explicit Stop`, async t => {

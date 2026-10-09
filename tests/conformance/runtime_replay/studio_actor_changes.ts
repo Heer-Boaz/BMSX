@@ -74,7 +74,7 @@ actor_tool_ready = true`)
 		'switching actors does not compare unrelated coordinates or alter the pinned baseline');
 	await test.runMenuCommand('pause');
 	await click(lab.previewBounds);
-	check(inputFocus.target?.guestInputBounds === lab.previewBounds && !ide.editor.capturesGuestInput && inspector.visible,
+	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null && inspector.visible,
 		'ordinary embedded preview receives gameplay input beside retained Details');
 	test.setKey('KeyX', true);
 	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'x') === 10, 'actor changes: ordinary player action moves first actor from 9 to 10');
@@ -165,7 +165,7 @@ actor_tool_ready = true`)
 	for (const action of [1, 2]) {
 		const beforeValue = String(91 - action), afterValue = String(90 - action);
 		await runPaletteCommand('Run: Continue from Here'); await click(lab.previewBounds);
-		check(inputFocus.target?.guestInputBounds === lab.previewBounds && !ide.editor.capturesGuestInput,
+		check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null,
 			'component mutation is driven by ordinary guest input, not inspector writes');
 		await test.releaseGuestKey('KeyC');
 		test.setKey('KeyC', true);

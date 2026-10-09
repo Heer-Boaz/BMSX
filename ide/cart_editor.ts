@@ -1,3 +1,4 @@
+import type { InputRecipient } from '../hosts/common/input/channel';
 import { AnimationEditorController } from './workbench/contrib/animation/controller';
 import { AnimationEditorPane } from './workbench/contrib/animation/editor_pane';
 import { AnimationInputSerializer } from './workbench/contrib/animation/editor_serializer';
@@ -204,7 +205,7 @@ export type CartEditor = {
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
-	readonly capturesGuestInput: boolean;
+	readonly guestInputRecipient: InputRecipient | null;
 	readonly isAvailable: boolean;
 	readonly completion: EditorCompletionController;
 	readonly resourcePanel: ResourcePanelController;
@@ -257,8 +258,10 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly runtimeTimeline: RuntimeTimelineControl;
 	public readonly gamePanel: GamePanel;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
-	public get capturesGuestInput(): boolean {
-		return this.isActive && inputFocus.target?.guestInputBounds === undefined;
+	public get guestInputRecipient(): InputRecipient | null {
+		if (!this.isActive) return this.input;
+		const viewport = inputFocus.target?.guestInput;
+		return viewport === undefined ? null : viewport.recipient;
 	}
 	public get executionSuspended(): boolean {
 		// Automatic authoring hold only; explicit transport pause has a separate host owner.
@@ -266,7 +269,7 @@ export class RuntimeCartEditor implements CartEditor {
 			|| !this.debuggerState.plans.workbenchExecutionRequested
 			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)
 			&& this.editorPanes.activePane?.suspendsRuntime !== false
-			&& inputFocus.target?.guestInputBounds === undefined);
+			&& inputFocus.target?.guestInput?.recipient !== this.input);
 	}
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
@@ -424,7 +427,7 @@ export class RuntimeCartEditor implements CartEditor {
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
-			terminal: () => new TerminalPane(this.resourcePanel, this.terminal),
+			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
@@ -443,8 +446,8 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
-			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu, presenter),
-			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
+			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu, presenter, input),
+			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input),
 			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
 			scenario_lab: () => new ScenarioLabEditorPane(
@@ -453,7 +456,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 			),
 		});
-		this.gamePanel = new GamePanel(this.editorPanes, this.commands);
+		this.gamePanel = new GamePanel(this.editorPanes, this.commands, input);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorPanes, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
@@ -765,7 +768,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		editorRuntimeState.active = false;
 		setEditorFeedbackActive(false);
-		this.input.setGuestInputCaptured(false);
+		this.input.guestInputRecipient = this.input;
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
 		cancelWorkspaceAutosave();
 		try {

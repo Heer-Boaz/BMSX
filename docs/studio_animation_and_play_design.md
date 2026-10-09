@@ -44,8 +44,20 @@ compiled log yields (12 alternating measured runs per version after warmup):
 115.67 ms versus 116.50 ms median, the same 420,443 guest cycles and 5,003 grants.
 Guest heap use fell by six bytes because unused `cancel` is no longer eagerly
 interned. This is a specific admission workload measurement, not a general
-performance guarantee. Focused human input, persistent output, real-time pacing,
+performance guarantee. Persistent Play input handoff/output, real-time pacing,
 session inspection/history and the Studio-only `2025` acceptance remain open.
+
+Host focus now names a physical-input recipient, not merely game bounds. The
+primary player, a secondary session channel and the UI are exclusive recipients;
+secondary focus cannot release the author's workbench hold. Existing Game,
+Actor Lab and BIOS viewports all explicitly name the primary recipient. The
+primary BIOS/supervisor retains its own physical input and request line. The
+real two-machine ICU check also preserves a previously latched sample until
+the next sampling edge: focus does not rewrite MMIO. Existing Studio Game/Actor
+focus/transport workflows pass on software, WebGL2 and WebGPU. A Node 22 check
+of one million primary snapshots (12 alternating measured runs after warmup)
+measured 440.40 ms old / 432.64 ms new, with identical snapshots; this does not
+establish whole-game performance or an interactive test-scene viewport.
 
 ## Reference owners
 
@@ -149,6 +161,30 @@ fake a passing test nor keep an assertion coroutine running indefinitely.
 
 Any hardware/runtime changes require the TS/C++ representation table and the
 hot-path audit. None are required for the first source-authoring slice.
+
+### Input recipient boundary
+
+The next host slice replaces the primary game's capture boolean with an explicit
+physical-input recipient. A focused viewport carries both its bounds and its
+recipient; focusing a test viewport must not unblock the authoring machine.
+[Godot's SubViewportContainer](https://github.com/godotengine/godot/blob/master/scene/gui/subviewport_container.cpp)
+similarly routes input into the chosen viewport rather than treating any game
+rectangle as the primary scene. BMSX retains ICU sampling, not Godot's event API.
+
+| Representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Physical HID/pad/pointer state | host `Input` handlers | `LibretroInput` physical words | No guest representation change |
+| Focused recipient | primary `Input`, session `InputChannel`, or UI/null | one native player, no Studio/session focus | Explicit TS host routing only |
+| ICU sample | fixed snapshot arrays and raw words | mirrored `InputControllerSnapshot` | Unchanged |
+| Supervisor input/request | primary host/supervisor policy | libretro supervisor policy | Unchanged; no request leakage into secondary sessions |
+| Recorded input | Runtime-owned journal | mirrored Runtime journal | Unchanged; replay bypasses physical routing at the existing device observer |
+
+Hot-path callsites are `InputController.onVblankEdge` ->
+`Input.sampleInputControllerSnapshot` (primary) or
+`InputChannel.sampleInputControllerSnapshot` (session), and the shared physical
+snapshot writer/pad-remap scratch. Focus selection changes once per host frame
+after UI dispatch. No per-sample recipient lookup, event queue, array allocation,
+numeric encoding, Runtime replacement or native dormant session is required.
 
 ## Product gates
 

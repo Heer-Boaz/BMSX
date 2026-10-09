@@ -33,6 +33,7 @@ import {
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 import type { InputControllerPlayback } from './controller_playback';
+import type { InputRecipient } from './channel';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 const HOST_OVERLAY_KEYBOARD_SOURCE = 'keyboard:host-overlay';
@@ -144,7 +145,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
-	private guestInputCaptured = false;
+	/** The primary player by default; null means host UI, not another machine. */
+	public guestInputRecipient: InputRecipient | null = this;
 	private inputControllerPlayback: InputControllerPlayback | null = null;
 	public resetInput(deviceId?: string): void {
 		if (deviceId !== undefined) {
@@ -190,8 +192,12 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return this.playerInputs[index];
 	}
 
-	// disable-next-line single_line_method_pattern -- ICU output addresses a player port; Input resolves that port's current physical device.
 	public applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void {
+		if (this.guestInputRecipient === this) this.applyPhysicalVibrationEffect(padIndex, durationMs, intensity);
+	}
+
+	// disable-next-line single_line_method_pattern -- Routed ICU output addresses a player port; Input owns the physical device.
+	public applyPhysicalVibrationEffect(padIndex: number, durationMs: number, intensity: number): void {
 		this.getPlayerInput(padIndex + 1).applyInputControllerVibrationEffect(durationMs, intensity);
 	}
 
@@ -311,6 +317,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 * Disposes the input system by removing player inputs and event subscriptions.
 	 */
 	public dispose(): void {
+		this.guestInputRecipient = null;
 		// Remove all player inputs
 		this.playerInputs = [];
 		this.unsubscribeHostInput();
@@ -538,9 +545,6 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return device.vibrationInitialization;
 	}
 
-	/** Workbench input remains physical for the host/supervisor, but not gameplay. */
-	public setGuestInputCaptured(captured: boolean): void { this.guestInputCaptured = captured; }
-
 	public sampleInputControllerSnapshot(
 		snapshot: InputControllerSnapshot,
 		context: InputControllerSampleContext,
@@ -550,7 +554,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			this.inputControllerPlayback.writeInputControllerSnapshot(snapshot);
 			return;
 		}
-		const captured = context === InputControllerSampleContext.Normal && this.guestInputCaptured;
+		this.writePhysicalSnapshot(snapshot, context === InputControllerSampleContext.Normal && this.guestInputRecipient !== this);
+	}
+
+	/** One raw writer for primary/secondary recipients; capture preserves device capabilities. */
+	public writePhysicalSnapshot(snapshot: InputControllerSnapshot, captured: boolean): void {
 		if (captured) snapshot.keyWords.fill(0);
 		else this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;

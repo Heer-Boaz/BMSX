@@ -89,10 +89,10 @@ export async function runStudioActorPins(test: StudioFixture) {
 	check(lab.details!.watches.pins.length === 0 && inspector.visible && inspector.model.rows.every(row => row.element.watch === undefined),
 		'Unpin removes only the watch and keeps the selected actor Details open');
 	await click(lab.previewBounds);
-	check(inputFocus.target?.guestInputBounds === lab.previewBounds && !ide.editor.capturesGuestInput,
+	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null,
 		'property context commands do not steal ordinary game preview focus');
 	await press('ShiftLeft', 'F1');
-	check(inspector.visible && ide.editor.capturesGuestInput, 'releasing game input preserves the Details document');
+	check(inspector.visible && ide.editor.guestInputRecipient === null, 'releasing game input preserves the Details document');
 	await test.capture?.('pin-removed');
 	return { pins: 'pass', initial, advanced, firstActor };
 }

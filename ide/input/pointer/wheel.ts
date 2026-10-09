@@ -16,7 +16,7 @@ import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { inputFocus } from '../focus';
 
 export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerInput): void {
-	if (inputFocus.target?.guestInputBounds !== undefined) return;
+	if (inputFocus.target?.guestInput !== undefined) return;
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed) {
 		return;

@@ -1,3 +1,4 @@
+import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
@@ -15,12 +16,13 @@ import { GameInputControl } from './game_input';
 
 /** A large game viewport; transport commands share host execution and rewind. */
 export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInput> {
-	private readonly gameInput = new GameInputControl(this.focusTarget);
+	private readonly gameInput: GameInputControl;
 	private shownFrame = -1;
 	private frameLabel = '';
 	public constructor(resourcePanel: ResourcePanelController, commands: IdeCommandController,
-		private readonly runtime: Runtime) {
+		private readonly runtime: Runtime, recipient: InputRecipient) {
 		super(resourcePanel);
+		this.gameInput = new GameInputControl(this.focusTarget, recipient);
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('gameView.playback'), run: () => { commands.toggleGamePlayback(); } });
 		this.focusTarget.next = this.gameInput.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;

@@ -26,8 +26,8 @@ export function handleTextEditorPointerInput(
 		const gotoModifierActive = ctrlDown || metaDown;
 		const snapshot = readEditorPointerSnapshot(display, playerInput);
 		const focused = inputFocus.target;
-		if (focused?.guestInputBounds !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
-			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInputBounds))) {
+		if (focused?.guestInput !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
+			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInput.bounds))) {
 			focused.release();
 		}
 		const blockingModal = editor.actionPrompt.visible;

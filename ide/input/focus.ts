@@ -2,6 +2,9 @@ import type { ClipboardTarget } from '../../hosts/common/clipboard';
 import type { EditorCommandId } from '../common/commands';
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { RectBounds } from '../../machine/ts/common/rect';
+import type { InputRecipient } from '../../hosts/common/input/channel';
+
+export type GuestInputBinding = { bounds: Readonly<RectBounds>; readonly recipient: InputRecipient };
 
 export type FocusCommand = {
 	isEnabled(): boolean;
@@ -22,7 +25,7 @@ export class InputFocusTarget {
 	public canFocus: (() => boolean) | undefined;
 	public edit: InputEdit | undefined;
 	/** A focused embedded viewport routes physical input to the guest, not editor commands. */
-	public guestInputBounds: Readonly<RectBounds> | undefined;
+	public guestInput: GuestInputBinding | undefined;
 	public next: InputFocusTarget | null = null;
 	public previous: InputFocusTarget | null = null;
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();

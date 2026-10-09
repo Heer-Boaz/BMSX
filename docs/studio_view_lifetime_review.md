@@ -27,7 +27,9 @@ Focus is another operation, not a shortcut for any of those lifetimes.
 ## Verified: Workbench admission is not focus-owned transport
 
 `RuntimeCartEditor.executionSuspended` uses
-`inputFocus.target.guestInputBounds` to release the Workbench hold. This is
+`inputFocus.target.guestInput.recipient` to release the Workbench hold only for
+the primary game. The original bounds-only attachment has been replaced with
+an explicit recipient for independent interactive sessions. This is
 deliberate existing behavior, documented in the runtime-timeline contract and
 checked by the real game-input conformance workflow; it is not an isolated
 Terminal mistake. Restoring game focus can consequently change whether the
@@ -44,7 +46,7 @@ second flag/service.
 
 | Representation | Producer / owner | Meaning |
 | --- | --- | --- |
-| `guestInputBounds` | Embedded `GameInputControl` | Physical input destination, including while explicitly paused. |
+| `guestInput` bounds/recipient | Embedded `GameInputControl` | Physical input destination, including while explicitly paused; secondary focus does not unblock the authoring machine. |
 | `suspendsRuntime` / inspector `running` | Active pane and inspection lifetime | Permission to release the automatic authoring hold for live inspection; not actual playback state. |
 | `workbenchExecutionRequested` | Debugger/supervisor operation plan | An explicit operation may execute while Studio remains open. |
 | `executionSuspended` | `RuntimeCartEditor` | Composed Workbench hold, consumed by the host frame. |

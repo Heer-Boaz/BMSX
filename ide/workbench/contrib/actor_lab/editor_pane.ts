@@ -1,3 +1,4 @@
+import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -43,7 +44,7 @@ import type { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorViewportHit } from './viewport_pick';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
-	private readonly gameInput = new GameInputControl(this.focusTarget);
+	private readonly gameInput: GameInputControl;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly timelineSlider: WorkbenchSliderControl;
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
@@ -70,8 +71,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private boundGraph: ActorStateGraph | undefined;
 	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
 		private readonly commands: IdeCommandController, private readonly frameNavigation: RuntimeFrameNavigation,
-		private readonly contextMenu: ContextMenuController, private readonly presenter: VideoPresenter) {
+		private readonly contextMenu: ContextMenuController, private readonly presenter: VideoPresenter, recipient: InputRecipient) {
 		super(resourcePanel);
+		this.gameInput = new GameInputControl(this.focusTarget, recipient);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());

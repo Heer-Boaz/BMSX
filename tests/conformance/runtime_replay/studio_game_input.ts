@@ -24,13 +24,13 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const model = harness.getActiveEditorDocument().model, version = model.version;
 	const sourcePosition = cycles();
 	await press('F1');
-	check(cycles() === sourcePosition && ide.editor.capturesGuestInput, 'source focus holds gameplay and captures its input');
+	check(cycles() === sourcePosition && ide.editor.guestInputRecipient === null, 'source focus holds gameplay and captures its input');
 	await runPaletteCommand('View: Game');
 	const view = getActiveTab();
 	if (view.kind !== 'game_view') throw new Error('Game View required');
 	await click(view.frameBounds);
 	const focused = inputFocus.target;
-	check(focused?.guestInputBounds === view.frameBounds && !ide.editor.capturesGuestInput, 'click gives the actual viewport guest input');
+	check(focused?.guestInput?.bounds === view.frameBounds && ide.editor.guestInputRecipient !== null, 'click gives the actual viewport guest input');
 	await test.capture?.('game-focused');
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'Test controller',
 		vibrationInitialization: null, supportsVibration: false, setVibration() {} });
@@ -58,12 +58,12 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await until(() => guest.readStringMember(test.title(), 'selected_player_count') === 2,
 		'game input: controller changes the title menu through the cart input handlers');
 	await press('ShiftLeft', 'F1');
-	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput,
+	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,
 		'Shift+F1 returns input to Studio, not a game pause');
 	await press('Tab');
 	check(inputFocus.target === focused, 'workbench focus navigation can enter the viewport');
 	await click({ left: view.layout.left + 1, right: view.layout.left + 2, top: view.layout.top + 1, bottom: view.layout.top + 2 });
-	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput,
+	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,
 		'clicking letterbox chrome releases game focus');
 
 	harness.openLuaSource('cart.lua');
@@ -73,7 +73,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 		right: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2 + 1,
 		top: (view.layout.top + editorViewState.codeAreaBottom) / 2, bottom: (view.layout.top + editorViewState.codeAreaBottom) / 2 + 1 };
 	await click(panelCenter);
-	check(inputFocus.target?.guestInputBounds !== undefined && !ide.editor.executionSuspended && !ide.editor.capturesGuestInput,
+	check(inputFocus.target?.guestInput?.bounds !== undefined && !ide.editor.executionSuspended && ide.editor.guestInputRecipient !== null,
 		'focused side panel releases only the workbench hold and routes game input');
 	await test.capture?.('panel-focused');
 	await press('ShiftLeft', 'F1');
@@ -93,7 +93,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	ide.editor.gamePanel.close();
 	await frame();
 	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
-	check(inputFocus.target?.guestInputBounds === undefined && sample.keyWords.every(word => word === 0),
+	check(inputFocus.target?.guestInput?.bounds === undefined && sample.keyWords.every(word => word === 0),
 		'hiding a focused panel revokes guest input at the next host sampling boundary');
 	setKey('KeyZ', false);
 	await runPaletteCommand('View: Game');
@@ -119,7 +119,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const actor = getActiveTab();
 	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	await click(actor.previewBounds);
-	check(inputFocus.target?.guestInputBounds === actor.previewBounds && !ide.editor.executionSuspended,
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !ide.editor.executionSuspended,
 		'Actor Lab preview shares guest focus and releases the authoring hold');
 	setKey('KeyZ', true);
 	await until(() => (runtime.machine.memory.readIoU32(keyAddress) & keyMask) !== 0, 'Actor Lab keyboard reaches the real ICU');
@@ -128,7 +128,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('ShiftLeft', 'F1');
 	const actorHeld = cycles();
 	await frame(); await frame();
-	check(cycles() === actorHeld && ide.editor.capturesGuestInput, 'leaving Actor Lab game focus restores its authoring hold');
+	check(cycles() === actorHeld && ide.editor.guestInputRecipient === null, 'leaving Actor Lab game focus restores its authoring hold');
 	// A real rendered sprite, not a source fixture or a guessed collider rectangle.
 	const sprite = readRuntimeLuaModuleExport(ide.sources, guest, actor.domain, 'cartlib/component/sprite_component');
 	if (sprite.kind !== 'value') throw new Error('sprite datapath unavailable');
@@ -165,13 +165,13 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await test.capture?.('actor-hover');
 	await click(point, 1, 'pointer_secondary');
 	check(actor.actorHashId === pickHashId && actor.outline.rows[actor.outline.selectionIndex].element.node.hashId === pickHashId
-		&& !actor.running && ide.editor.capturesGuestInput && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+		&& !actor.running && ide.editor.guestInputRecipient === null && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
 		'inspection click reveals the same live actor through the existing tree without injecting game input');
 	await test.capture?.('actor-picked');
 	await runPaletteCommand('Actor Lab: Play / Pause');
 	test.movePointer(point);
 	for (let index = 0; index < 6; index++) await frame();
-	check(actor.running && cycles() > actorHeld && actor.actorHashId === pickHashId && inputFocus.target?.guestInputBounds === undefined,
+	check(actor.running && cycles() > actorHeld && actor.actorHashId === pickHashId && inputFocus.target?.guestInput?.bounds === undefined,
 		'hover while playing neither pauses the cart nor moves selection or game focus');
 	await test.capture?.('actor-hover-playing');
 	await click(point);
@@ -179,7 +179,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	test.setPointerButton('pointer_secondary', true);
 	await until(() => (runtime.machine.memory.readIoU32(IO_INP_POINTER_BUTTONS) & (1 << INP_POINTER_BUTTON_SECONDARY)) !== 0,
 		'hovered Actor Lab game focus still delivers its secondary button to HID');
-	check(actor.running && actor.actorHashId === focusedActor && inputFocus.target?.guestInputBounds === actor.previewBounds,
+	check(actor.running && actor.actorHashId === focusedActor && inputFocus.target?.guestInput?.bounds === actor.previewBounds,
 		'hover over a focused game does not intercept buttons or select an actor');
 	await test.capture?.('actor-hover-game-focused');
 	test.setPointerButton('pointer_secondary', false); await frame();
@@ -199,7 +199,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(actor.previewBounds.bottom < actor.detailsBounds.top, 'game and Details occupy separate visible surfaces');
 	await test.capture?.('actor-details-adjacent');
 	await click(actor.previewBounds);
-	check(inputFocus.target?.guestInputBounds === actor.previewBounds && !ide.editor.capturesGuestInput
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && ide.editor.guestInputRecipient !== null
 		&& inspector.visible && actor.details === details && JSON.stringify(actor.selectionPath) === selectedActorPath,
 		'visible Actor Lab preview takes game input without replacing Details or actor selection');
 	setKey('KeyZ', true);
@@ -245,7 +245,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(actorPane.showsGameFrame && !inspector.visible && !actor.detailsOpen,
 		'explicitly closing Details leaves the preview visible');
 	await press('ShiftLeft', 'Tab');
-	check(inputFocus.target?.guestInputBounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
 
 	// A real dirty document requests a decision; cancellation must not save or reboot it.
 	const saved = model.lastSavedSource, boot = ide.boots.latestOperation;
@@ -255,10 +255,10 @@ export async function runStudioGameInput(test: StudioFixture) {
 		'a command invoked over game focus transfers input to its confirmation dialog');
 	setKey('Escape', true);
 	for (let index = 0; index < 4; index++) await frame();
-	check(ide.editor.actionPrompt.visible && ide.editor.capturesGuestInput, 'held Escape stays owned by the modal');
+	check(ide.editor.actionPrompt.visible && ide.editor.guestInputRecipient === null, 'held Escape stays owned by the modal');
 	setKey('Escape', false);
 	await frame();
-	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === actor.previewBounds,
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInput?.bounds === actor.previewBounds,
 		'Escape release cancels and returns to the invoking viewport');
 	ide.editor.commands.execute('reboot');
 	const cancel = ide.editor.actionPrompt.view.buttons.find(button => button.choice === 'cancel')!;
@@ -271,13 +271,13 @@ export async function runStudioGameInput(test: StudioFixture) {
 		'holding Cancel cannot close the dialog or leak its click into the guest');
 	test.setPointerButton('pointer_primary', false);
 	await frame();
-	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === actor.previewBounds
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInput?.bounds === actor.previewBounds
 		&& model.dirty && model.lastSavedSource === saved && ide.boots.latestOperation === boot,
 		'Cancel release restores focus without saving or rebooting');
 	ide.editor.commands.execute('reboot');
 	harness.openLuaSource('cart.lua');
 	await frame();
-	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === undefined,
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInput?.bounds === undefined,
 		'editor replacement cancels modal focus instead of restoring a detached viewport');
 	model.undo();
 	await press('ControlRight', 'ShiftRight');

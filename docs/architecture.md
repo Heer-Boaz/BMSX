@@ -6172,17 +6172,21 @@ reattach their controls when options are supplied. See
 [view-lifetime review and remaining ownership slices](studio_view_lifetime_review.md).
 
 Game View, the Game panel and Actor Lab bind the shared `GameInputControl` to their
-retained scanout rectangle. Its concrete `InputFocusTarget.guestInputBounds`
-capability admits physical guest input; neither the active tab kind nor the
+retained scanout rectangle and physical recipient. Its concrete
+`InputFocusTarget.guestInput` attachment admits physical guest input; neither the active tab kind nor the
 workbench's visibility implies game focus. Clicking the image focuses it and
 forwards that click. Ordinary keys, controller input and wheel input then bypass
 IDE bindings. Clicking outside the image or Shift+F1 returns focus to Studio;
 only the focused viewport draws its focus border. Hiding a viewport or opening
 another editor revokes that focus through ordinary control lifetimes.
-`RuntimeCartEditor` derives capture policy from the concrete focus target. The
-host frame writes the existing capture latch once after input dispatch, before
-rewind/guest execution; focus events and activation do not maintain parallel
-copies of that policy. The retained `ActionPrompt` owns modal focus and gesture
+`RuntimeCartEditor` derives the recipient from the concrete focus target. The
+host frame selects the primary `Input`, a session `InputChannel`, or UI/null
+once after input dispatch, before rewind/guest execution. Secondary focus never
+releases the author's execution hold. Primary and secondary ICU sources use one
+physical snapshot writer without temporary arrays; unselected recipients retain
+device capabilities but receive no actions. Primary supervisor samples/request
+lines remain independent of session focus. Focus events and activation do not
+maintain parallel copies of this policy. The retained `ActionPrompt` owns modal focus and gesture
 capture; it resolves a decision on matching key/pointer release. The workspace
 command retains the source request and dirty-working-copy batch across that
 decision, not the dialog. Blur, replacement and disposal cancel the decision

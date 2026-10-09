@@ -21,15 +21,15 @@ export async function runStudioTerminal(test: StudioFixture) {
 	for (let index = 0; index < 20; index++) await frame();
 	await test.click({ left: terminal.layout.left + 1, right: terminal.layout.left + 2,
 		top: terminal.layout.top + 1, bottom: terminal.layout.top + 2 });
-	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput && ide.editor.terminal.active,
+	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null && ide.editor.terminal.active,
 		'clicking terminal chrome releases guest input without closing the physical shell');
 	await test.capture?.('bios-chrome-focused');
 	await test.runPaletteCommand('View: BIOS Terminal');
-	check(inputFocus.target?.guestInputBounds === terminal.frameBounds,
+	check(inputFocus.target?.guestInput?.bounds === terminal.frameBounds,
 		'reopening the terminal focuses its existing shell through the registered command');
 	await test.press('ShiftLeft', 'F1');
 	await test.click(terminal.frameBounds);
-	check(inputFocus.target?.guestInputBounds === terminal.frameBounds && !ide.editor.capturesGuestInput,
+	check(inputFocus.target?.guestInput?.bounds === terminal.frameBounds && ide.editor.guestInputRecipient !== null,
 		'clicking the actual terminal scanout restores guest keyboard input');
 	const command = async (text: string) => {
 		// Hold both edges across guest samples, just like the native HID conformance runner.
