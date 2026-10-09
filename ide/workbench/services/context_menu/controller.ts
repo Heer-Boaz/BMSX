@@ -48,9 +48,10 @@ export class ContextMenuController implements PointerCaptureTarget {
 		selectFirst = false): DisposableStore {
 		this.hide();
 		this.capture.cancel();
-		const returnFocus = this.focus.target;
-		this.focusTarget.commandContext = returnFocus === null ? this.focusTarget : returnFocus.commandContext;
+		const origin = this.focus.target;
 		this.focusTarget.focus();
+		const returnFocus = this.focus.resolveTarget(origin);
+		this.focusTarget.commandContext = returnFocus === null ? this.focusTarget : returnFocus.commandContext;
 		const disposables = new DisposableStore();
 		this.session = { commands, returnFocus, disposables };
 		this.model.setItems(items, x, y);

@@ -27,6 +27,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null) {
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
 			this.input!.hasFocus = true;

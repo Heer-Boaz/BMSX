@@ -14,6 +14,7 @@ export class GameInputControl {
 
 	public constructor(parent: InputFocusTarget) {
 		this.focusTarget = inputFocus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.focusTarget.guestInputBounds !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (player.getModifiers() === KeyModifier.shift && isKeyJustPressed('F1', player)) {
 				consumeIdeKey('F1', player);

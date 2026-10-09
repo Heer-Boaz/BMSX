@@ -53,6 +53,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		private readonly pointerHover: PointerHoverService, keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
 		this.scrollbarPointer = new ScrollbarPointerControl(capture);
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.inputValue !== null;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (this.gesture !== Gesture.None && isKeyJustPressed('Escape', input)) {
 				consumeIdeKey('Escape', input);

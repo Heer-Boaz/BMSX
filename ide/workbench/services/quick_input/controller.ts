@@ -80,10 +80,11 @@ export class QuickInputController implements PointerCaptureTarget {
 		// Retire the popup before retaining the invoking control for this session.
 		this.contextMenu.hide();
 		pointerCapture.cancel();
-		const returnFocus = inputFocus.target;
+		const origin = inputFocus.target;
 		// A provider observes the invoking control after its ordinary blur policy,
 		// never the previous popup's query or an unaccepted property draft.
 		this.field.focusTarget.focus();
+		const returnFocus = inputFocus.resolveTarget(origin);
 		const disposables = new DisposableStore();
 		const provider = provide(returnFocus, disposables);
 		this.session = { kind: 'pick', returnFocus, disposables, accept: index => accept(provider.items[index]) };
@@ -107,8 +108,9 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.hide();
 		this.contextMenu.hide();
 		pointerCapture.cancel();
-		const returnFocus = inputFocus.target;
+		const origin = inputFocus.target;
 		this.field.focusTarget.focus();
+		const returnFocus = inputFocus.resolveTarget(origin);
 		const session: QuickInputSession = {
 			kind: 'input', returnFocus, disposables: new DisposableStore(),
 			accept: async () => {

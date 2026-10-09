@@ -19,6 +19,7 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;
 	private inputValue: TInput | null = null;
+	protected get hasInput(): boolean { return this.inputValue !== null; }
 
 	public get input(): TInput {
 		return this.inputValue!;

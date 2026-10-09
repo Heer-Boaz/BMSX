@@ -42,6 +42,7 @@ export class WorkbenchSourceEditReview {
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, hover: PointerHoverService, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.visible;
 		this.pointer = new WorkbenchPropertyTreePointer(hover);
 		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
 		this.focusTarget.next = this.actionControl.focusTarget;

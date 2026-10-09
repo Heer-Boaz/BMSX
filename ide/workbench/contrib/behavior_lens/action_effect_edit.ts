@@ -57,6 +57,7 @@ export class ActionEffectPropertyEdit {
 				return behaviorSourceEditState.of(after);
 			});
 		});
+		this.control.field.focusTarget.canFocus = () => this.active;
 		this.control.field.focusTarget.next = parent;
 		this.control.field.focusTarget.previous = parent;
 		// ValueInput commits/cancels its draft first; then detach its source binding.

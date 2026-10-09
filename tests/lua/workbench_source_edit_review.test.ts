@@ -87,6 +87,23 @@ test('palette focus can return to the review, but source changes and writability
 	f.review.update(); assert.equal(f.review.visible, false);
 });
 
+test('source invalidation under a popup cannot resurrect the retired review or its toolbar', t => {
+	const f = fixture(t);
+	const popup = f.focus.createTarget();
+	for (const toolbar of [false, true]) {
+		f.show(); f.layout();
+		if (toolbar) assert.equal(f.focus.moveFocus(false), true);
+		const origin = f.focus.target;
+		popup.focus();
+		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- updated source\n' }]);
+		assert.equal(f.review.visible, false);
+		assert.equal(f.focus.target, popup);
+		f.focus.setTarget(origin);
+		assert.equal(f.focus.target, f.parent);
+		assert.equal(f.applied(), 0);
+	}
+});
+
 test('review lifetime owns external dependency cancellation and releases it before apply', t => {
 	const f = fixture(t);
 	const dependency = new EditorTextModel({ domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');

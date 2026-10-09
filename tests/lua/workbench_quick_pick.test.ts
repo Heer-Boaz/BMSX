@@ -26,6 +26,9 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import * as constants from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
+import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
+import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -42,6 +45,50 @@ function createPicker(t: TestContext): QuickInputController {
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
+
+test('popup origins and cancellation belong to the containing scope after an inline edit ends on blur', t => {
+	const picker = createPicker(t);
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const model = new EditorTextModel({ domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', 'return 20');
+	const parent = inputFocus.createTarget();
+	parent.registerCommand('undo', { isEnabled: () => model.history.canUndo(model), run: () => model.undo() });
+	const edit = new WorkbenchPropertyEdit<string>(parent, value => value);
+	t.after(() => { menu.dispose(); edit.dispose(); model.dispose(); });
+	const tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
+	const row = appendWorkbenchTreeNode<WorkbenchPropertyElement>(tree, null, { kind: 'property', label: 'value', value: '20', description: '', warning: false,
+		displayLabel: '', displayValue: '', displayValueLeft: 0 });
+	rebuildWorkbenchTreeRows(tree, row);
+	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), (text, start, end) => editorViewState.font.measure(text.slice(start, end)), 4, 25, 380, 260);
+	for (const surface of ['pick', 'input', 'context'] as const) for (const draft of ['20', '30', 'invalid']) {
+		const version = model.version;
+		edit.open({ model, tree, row,
+			parse: text => text === 'invalid' ? { error: 'Invalid expression' } : { value: text },
+			apply: text => model.pushEditOperations([{ offset: 7, deleteLength: 2, text }]),
+		}, '20');
+		selectAll(edit.control.field); insertValue(edit.control.field, draft);
+		if (surface === 'pick') picker.pick('Commands', 'Filter', (origin) => {
+			assert.equal(origin, parent, 'the provider observes the scope after ordinary blur has retired the cell');
+			return new TextQuickPickProvider(items);
+		}, () => assert.fail('cancelled pick accepted'));
+		else if (surface === 'input') picker.input('Value', 'Text', '', async value => value, () => assert.fail('cancelled input accepted'));
+		else {
+			menu.show(10, 10, [{ type: 'command', command: 'undo' }], {
+				isEnabled: command => inputFocus.getCommand(command)?.isEnabled() === true,
+				execute: () => assert.fail('cancelled menu accepted'),
+			});
+			assert.equal(menu.focusTarget.commandContext, parent, 'the popup keeps document commands, not a retired draft history');
+		}
+		assert.equal(edit.active, false);
+		assert.equal(model.buffer.getText(), draft === '30' ? 'return 30' : 'return 20');
+		assert.equal(model.version, version + (draft === '30' ? 1 : 0), 'valid blur publishes once; unchanged/invalid input does not edit source');
+		if (surface === 'context') menu.hide(); else picker.hide();
+		assert.equal(inputFocus.target, parent);
+		edit.control.field.focusTarget.focus();
+		assert.equal(inputFocus.target, parent, 'a retained but unattached cell cannot reacquire focus');
+		if (draft === '30') inputFocus.executeCommand('undo');
+		assert.equal(model.buffer.getText(), 'return 20');
+	}
+});
 
 test('source-bound quick input cancels its snapshot on content change and releases the subscription', t => {
 	const picker = createPicker(t);

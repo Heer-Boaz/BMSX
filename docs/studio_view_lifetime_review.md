@@ -94,6 +94,25 @@ only transfers focus to results. No property transaction, generic control
 facade, timer or new per-frame projection was introduced. VS Code likewise
 separates [filter changes from result acceptance](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/views/viewFilter.ts).
 
+## Corrected: popup return focus outlived a transient control's input
+
+Opening the command palette from an authored property commits/cancels its draft
+through ordinary blur and ends that inline edit. The palette retained the old
+field object anyway. Escape could refocus an invisible cell with no source
+binding; the next typed input/Enter reached its parser and threw. The same
+ownership gap allowed a popup to resurrect a dismissed inspector or source
+review, including its toolbar.
+
+Focus eligibility now comes directly from each shared control's existing input,
+inspection, image or source binding. The focus owner resolves a retired control
+to its containing scope. Quick input and context menus also capture their
+provider/command origin after blur has completed, not before the departing edit
+ends. Persistent fields still own their local history; command lookup does not
+inherit commands from a parent. There is no parallel attachment/visibility flag,
+per-frame eligibility scan, parser guard or new source/application path. This
+follows VS Code's [visible-ancestor focus restoration](https://github.com/microsoft/vscode/blob/main/src/vs/platform/quickinput/browser/quickInputController.ts)
+at the canvas focus owner rather than checking DOM state in feature files.
+
 ## Boundaries that must remain
 
 - Assistant and observed-conversation sessions outlive pane detachment; their
@@ -178,3 +197,21 @@ product runs HELP, REGS, LUA (`6 * 7` yielding `42`) and CONT. Those captures an
 the native AEM/source, offline reload and failed-save UI captures were viewed.
 No uncaught page errors occurred. Test typecheck, strict boundary audit and diff
 checks pass; these checks are not native-runtime parity or whole-engine proof.
+
+## Validation of transient focus lifetime
+
+The closed-field crash was reproduced with keyboard/pointer input in the actual
+standalone AEM editor. After the correction, palette cancellation, source
+Undo/Redo and starting/committing a fresh inline edit work without that fault.
+Those rebuilt product captures were viewed; no Studio API requests or uncaught
+page errors occurred. The focused existing suites pass (125 cases). Injecting
+the old property-edit or inspector-scroll owner into separate scratch test
+bundles makes their respective focus-lifetime cases fail at the expected
+operation, without changing production code.
+
+The full compiled Studio, game-input/pause/rewind and physical BIOS-terminal
+workflows pass on software, WebGL2 and WebGPU. Both standalone workspace cases
+pass, including offline canonical-source edits, Save/reload and real browser
+quota failure/retry. IDE/test typechecks, debug/release Studio builds, strict
+boundary audit (zero issues) and diff checks pass. This is an IDE focus-owner
+correction, not a native-runtime parity or whole-engine performance claim.

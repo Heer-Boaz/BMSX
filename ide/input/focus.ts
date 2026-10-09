@@ -18,6 +18,8 @@ export interface InputEdit {
 export class InputFocusTarget {
 	/** Explicit action context, not inheritance through the focus-return parent. */
 	public commandContext: InputFocusTarget = this;
+	/** Transient controls expose their actual attachment, not a second visibility flag. */
+	public canFocus: (() => boolean) | undefined;
 	public edit: InputEdit | undefined;
 	/** A focused embedded viewport routes physical input to the guest, not editor commands. */
 	public guestInputBounds: Readonly<RectBounds> | undefined;
@@ -105,6 +107,7 @@ export class InputFocusService {
 	}
 
 	public setTarget(target: InputFocusTarget | null): void {
+		target = this.resolveTarget(target);
 		const previous = this.targetValue;
 		if (previous === target) return;
 		// Like Godot's Viewport, detach before notifying the departing control.
@@ -112,6 +115,12 @@ export class InputFocusService {
 		if (previous !== null) previous.didBlur();
 		this.targetValue = target;
 		if (target !== null) target.didFocus();
+	}
+
+	/** A retired inline control returns to its containing focus scope. */
+	public resolveTarget(target: InputFocusTarget | null): InputFocusTarget | null {
+		while (target !== null && target.canFocus !== undefined && !target.canFocus()) target = target.parent;
+		return target;
 	}
 
 	public getCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): FocusCommand | undefined {

@@ -17,6 +17,7 @@ export class ImagePreviewOverlay {
 	private url: string | undefined;
 	public get visible(): boolean { return this.url !== undefined; }
 	public constructor(private readonly previews: ImagePreviewCache) {
+		this.focus.canFocus = () => this.visible;
 		this.focus.bindKeyboard(input => {
 			if (isKeyJustPressed('Escape', input) || isKeyJustPressed('Enter', input)) {
 				consumeIdeKey('Escape', input); consumeIdeKey('Enter', input); this.close();

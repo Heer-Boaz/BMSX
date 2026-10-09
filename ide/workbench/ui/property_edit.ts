@@ -33,6 +33,7 @@ export class WorkbenchPropertyEdit<T> {
 			this.close();
 			apply(value);
 		});
+		this.control.field.focusTarget.canFocus = () => this.active;
 		this.unbindBlur = this.control.field.focusTarget.onDidBlur(() => this.close());
 		this.control.field.focusTarget.previous = parent;
 		this.control.field.focusTarget.next = parent;

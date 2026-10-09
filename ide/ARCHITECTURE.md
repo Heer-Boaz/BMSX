@@ -31,6 +31,15 @@ Views without selection options perform no attachment work from `setOptions`.
 This follows VS Code's separate
 [`EditorPane` input/options/visibility operations](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPane.ts).
 
+Retained controls expose focus eligibility from their existing input, inspection
+or source binding. The shared focus owner resolves a retired control to its containing
+scope; retaining a target object does not retain its edit. Quick input and context
+menus capture their command origin after ordinary blur, which may accept/cancel
+and retire that edit. Persistent fields retain their own focus and local history.
+This follows VS Code's
+[visible-ancestor focus restoration](https://github.com/microsoft/vscode/blob/main/src/vs/platform/quickinput/browser/quickInputController.ts),
+without another visibility registry or a parser-side stale-binding fallback.
+
 Concrete pane updates publish inspector, inline value and review geometry.
 Hit testing and painting consume that retained geometry; painters do not reveal
 selections, change scroll position or measure value-input viewports. Composite

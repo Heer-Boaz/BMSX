@@ -20,6 +20,7 @@ export class WorkbenchScrollControl {
 		keyboard?: (input: PlayerInput) => boolean, scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {
 		this.pointer = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.input !== null;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (keyboard?.(input)) return;
 			this.handleKeyboard(input);

@@ -20,7 +20,13 @@ export abstract class WorkbenchViewEditorPane<
 	TInput extends WorkbenchViewInput,
 > extends EditorPane<TInput> {
 	protected readonly focusTarget = inputFocus.createTarget();
-	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly unbindKeyboard: () => void;
+
+	public constructor() {
+		super();
+		this.focusTarget.canFocus = () => this.hasInput;
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+	}
 
 	public focus(): void {
 		this.focusTarget.focus();

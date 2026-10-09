@@ -18,6 +18,7 @@ export class WorkbenchSliderControl implements PointerCaptureTarget {
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService, parent: InputFocusTarget,
 		private readonly changed: (value: number) => void, private readonly cancelled: () => void) {
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.focusTarget.commandContext = parent;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());

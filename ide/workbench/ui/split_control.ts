@@ -18,6 +18,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => this.handleKeyboard(player));
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 	}

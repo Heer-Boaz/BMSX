@@ -50,6 +50,23 @@ function fixture(t: TestContext) {
 		measured: () => measured, opened: () => opened, disposed: () => disposed };
 }
 
+test('a popup cannot restore inspector or toolbar focus after their inspection ends', t => {
+	const f = fixture(t);
+	const popup = f.focus.createTarget();
+	for (const toolbar of [false, true]) {
+		f.show(); f.layout();
+		if (toolbar) assert.equal(f.focus.moveFocus(false), true);
+		const origin = f.focus.target;
+		popup.focus();
+		f.inspector.hide();
+		assert.equal(f.focus.target, popup, 'retiring the inspection does not steal the popup focus');
+		f.focus.setTarget(origin);
+		assert.equal(f.focus.target, f.parent, 'both the inspector and its toolbar return to the containing scope');
+		f.press('ArrowDown');
+		assert.equal(f.inspector.visible, false);
+	}
+});
+
 test('inspector retains complete multiline text and exact pixel-row hit/reveal at tiny resolution with Problems', t => {
 	const f = fixture(t), model = f.inspector.model, view = model.viewport;
 	assert.deepEqual(model.rows[0].value, f.items[0].value.split('\n'));

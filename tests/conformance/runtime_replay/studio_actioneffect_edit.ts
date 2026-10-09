@@ -5,6 +5,7 @@ import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 import { PointerButton } from '../../../ide/input/pointer/buttons';
+import { inputFocus } from '../../../ide/input/focus';
 
 /** Independent source, real commands, value focus/draft history and workspace Save. */
 export async function testStudioActionEffectEdit(test: StudioFixture): Promise<void> {
@@ -48,6 +49,19 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	check(properties.tree.scroll === draftScroll && editor.control.viewport.end === draftEnd,
 		'effect: paint consumes the prepared draft without scrolling or relaying out its input');
 	await press('Escape');
+	const propertiesFocus = inputFocus.target;
+	await open(); await paste('20 + 1');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	check(!editor.active && model.buffer.getText() === ACTIONEFFECT_SOURCE.replace('period_ms = 20', 'period_ms = 20 + 1'),
+		'effect: opening the palette completes and retires the authored value cell');
+	await press('Escape');
+	check(inputFocus.target === propertiesFocus, 'effect: palette cancellation returns to properties, never the retired input');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === ACTIONEFFECT_SOURCE, 'effect: Undo after palette cancellation belongs to source history');
+	await open(); await paste('clock.');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('Escape');
+	check(!editor.active && inputFocus.target === propertiesFocus && model.buffer.getText() === ACTIONEFFECT_SOURCE,
+		'effect: invalid blur also retires the cell and keeps the source untouched');
 	let version = model.version;
 	await open(); await paste('20 * 3');
 	check(model.version === version && editor.control.pending, 'effect: typing is a draft, not source mutation');
