@@ -59,6 +59,20 @@ of one million primary snapshots (12 alternating measured runs after warmup)
 measured 440.40 ms old / 432.64 ms new, with identical snapshots; this does not
 establish whole-game performance or an interactive test-scene viewport.
 
+Completed offscreen frames now have an explicitly subscribed, retained bitmap
+resource. Pixel storage survives equal-size publications and no automatic test
+copies pixels unless it requests this resource. Actual software/WebGL2/WebGPU
+pixel checks cover first upload, an unaccepted producer mutation, revision update
+and resized texture bindings. This check caught and fixed a WebGL draw-binding
+error: uploads select their own texture unit, so the draw unit must be selected
+after upload admission. The permanent pixel check failed before that correction.
+Compiled O0/O3 fixture checks use real PCRTC writes to publish completed frames,
+not a no-draw tick relabelled as an image. A Node 22 copy-only measurement
+(ten measured batches of 5,000 publications after warmup) measured approximately
+3/47/202 microseconds per publication at 256x212/320x240/640x512, retaining storage.
+Those are local host-copy timings, not GPU upload cost or whole-game performance.
+This resource does not yet constitute a persistent Play session or its viewport.
+
 ## Reference owners
 
 - [Godot's animation track editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_track_editor.cpp)
@@ -185,6 +199,39 @@ Hot-path callsites are `InputController.onVblankEdge` ->
 snapshot writer/pad-remap scratch. Focus selection changes once per host frame
 after UI dispatch. No per-sample recipient lookup, event queue, array allocation,
 numeric encoding, Runtime replacement or native dormant session is required.
+
+### Completed-frame resource boundary
+
+An interactive offscreen target publishes retained RGBA8 pixels only after a
+completed presentation. A borrowed software framebuffer is not such a resource:
+partial rendering can overwrite it while a view is still displaying the previous
+completed state. One copy into retained host storage per accepted frame separates
+those lifetimes. It is neither screenshot encoding nor a guest readback. Targets
+without a frame consumer do not allocate or copy this storage.
+
+[Godot's ImageTexture](https://github.com/godotengine/godot/blob/master/scene/resources/image_texture.cpp)
+distinguishes updating an existing texture from replacing its storage. BMSX's
+host bitmap owner similarly publishes a revision. Repainting a held view does
+not upload again; a changed revision updates storage, and changed dimensions
+replace backend texture storage. Pixels and physical publication position travel
+together. Seek reconstruction does not publish intermediate states.
+
+| Representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Guest GPU words/VRAM | GX GPU and software datapath | mirrored GX GPU/datapath | Unchanged |
+| Completed physical position | `RenderPresentationState.gameFrame` | existing native presentation policy | No guest state or codec change |
+| Process-local bitmap | `HostBitmap`, host overlay only | no Studio bitmap resource | Explicit retained pixel revisions in TS host rendering |
+| Same-size texture update | WebGL `texSubImage2D`, WebGPU `writeTexture` | GLES2 `glTexSubImage2D` | Use existing upload boundaries; native datapath unchanged |
+| Resized storage | WebGL/WebGPU texture creation | existing GLES2 texture storage resize | Bitmap cache replaces its owned texture; no stale bindings |
+| Software view sampling | retained `HostBitmap.image` pixels | no native Studio view | Reads the same accepted revision as GPU-backed views |
+
+Hot-path callsites: `OffscreenMachine.present` publishes only a newly completed
+`gameFrame`; `HostBitmap.update` copies into retained storage; the WebGL/WebGPU
+host-overlay pipelines use `HostBitmapTextures.get` to upload changed revisions.
+The headless host-overlay bitmap path consumes retained pixels directly. The
+WebGL texture owner updates its existing metadata record rather than allocating
+one on each upload. No CPU, scheduler, VRAM, replay or C++ machine code changes
+are needed for this host-output slice.
 
 ## Product gates
 

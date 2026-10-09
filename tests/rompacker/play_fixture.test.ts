@@ -20,6 +20,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { InputChannel } from '../../hosts/common/input/channel';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import { GX_GPU_PCRTC_BGCOLOR_LOW, gxGpuPcrtcRegisterAddress } from '../../machine/ts/spec/gx/pcrtc';
 
 const GAME = `module<entry>
 local game<const> = require('game')
@@ -32,6 +33,7 @@ mem[0x08000064] = 1
 mem[0x08000008] = 4
 while true do
  game.updates = game.updates + 1
+ mem[${gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_BGCOLOR_LOW)}] = game.updates
  if game.receipt ~= nil then
   game.receipt.reached = true
   game.after_publication = game.after_publication + 1
@@ -125,18 +127,28 @@ return {kind='integration',
  tests={never=function() error('An interactive fixture must not run a case body') end},
 }`;
 		const f = await fixture(t, source, optLevel);
+		const frames = f.target.frameOutput;
 		const authoring = new OffscreenMachine(f.media.systemRom, [f.media.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 		t.after(() => authoring.dispose());
 		const original = captureRuntimeMachineState(authoring.runtime);
 		f.drain(); assert.equal(f.play.state, 'ready', JSON.stringify(f.play.failures.map(item => item.failure))); assert.deepEqual(f.logs, ['ready']);
 		assert.equal(f.captures.length, 1); assert.ok(f.captures[0].sequence! > 0);
 		assert.ok(f.target.backend.framebufferPixels.length > 0, 'the fixture capture presents actual target pixels');
+		assert.equal(frames.published.presentationSequence, f.captures[0].sequence);
+		assert.equal(frames.published.videoTick, f.target.runtime.frameScheduler.lastTickSequence);
+		assert.deepEqual(frames.bitmap!.image.pixels, f.target.backend.borrowPresentedPixels());
+		assert.notEqual(frames.bitmap!.image.pixels, f.target.backend.borrowPresentedPixels());
+		const pixels = frames.bitmap!.image.pixels, revision = frames.bitmap!.revision;
 		const ready = captureRuntimeMachineState(f.target.runtime);
 		for (let frame = 0; frame < 100; frame++) f.play.advance();
 		assert.deepEqual(captureRuntimeMachineState(f.target.runtime), ready, 'Ready owns no accelerated grants or automatic teardown');
 		const before = f.target.runtime.frameScheduler.lastTickSequence;
 		for (let grant = 0; f.target.runtime.frameScheduler.lastTickSequence < before + 3 && grant < 1000; grant++) f.target.advanceGame(65536);
 		assert.equal(f.target.runtime.frameScheduler.lastTickSequence, before + 3);
+		assert.equal(frames.bitmap!.revision, revision, 'execution is not itself image publication');
+		f.target.present();
+		assert.equal(frames.published.videoTick, before + 3);
+		assert.equal(frames.bitmap!.image.pixels, pixels, 'equal-size completed frames retain their pixel storage');
 		assert.equal(f.play.state, 'ready'); assert.equal(f.play.failures.length, 0);
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), original);
 		f.play.stop(); f.drain(); assert.equal(f.play.state, 'stopped');

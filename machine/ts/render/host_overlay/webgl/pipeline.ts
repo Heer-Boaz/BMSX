@@ -112,7 +112,11 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 
 	return {
 		gl,
-		bitmaps: new HostBitmapTextures(image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture, texture => backend.destroyTexture(texture)),
+		bitmaps: new HostBitmapTextures(
+			image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture,
+			(texture, image) => backend.updateTexture(texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
+			texture => backend.destroyTexture(texture),
+		),
 		program,
 		vao,
 		cornerBuffer,
@@ -180,8 +184,10 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
 		if (bitmap !== batch.bitmap) {
 			bitmap = batch.bitmap;
+			const texture = bitmap === undefined ? passState.frameTexture as WebGLTexture : state.bitmaps.get(bitmap);
+			// Uploads use their own texture unit. Bind the draw unit after resource admission.
 			backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);
-			backend.bindTexture2D(bitmap === undefined ? passState.frameTexture as WebGLTexture : state.bitmaps.get(bitmap));
+			backend.bindTexture2D(texture);
 		}
 		gl.scissor(clip.left, passState.height - clip.bottom, clip.right - clip.left, clip.bottom - clip.top);
 		bindInstanceStart(backend, state, batch.start);

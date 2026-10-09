@@ -8,6 +8,9 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
+/** Position of the accepted game image; a held repaint does not change it. */
+export type PublishedGameFrame = { presentationSequence: number | undefined; cycles: number; videoTick: number };
+
 type RenderPresentation = {
 	mode: RenderPresentationMode;
 	commitFrame: boolean;
@@ -15,7 +18,7 @@ type RenderPresentation = {
 
 export class RenderPresentationState {
 	/** Machine position when a completed image was published, not each held UI repaint. */
-	public readonly gameFrame = { presentationSequence: undefined as number | undefined, cycles: 0, videoTick: 0 };
+	public readonly gameFrame: PublishedGameFrame = { presentationSequence: undefined, cycles: 0, videoTick: 0 };
 	private pendingPresentation = false;
 	private restoredPresentationPending = false;
 	private presentationMode: RenderPresentationMode = 'completed';

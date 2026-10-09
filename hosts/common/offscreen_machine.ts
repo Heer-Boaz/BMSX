@@ -7,13 +7,15 @@ import { cartridgeMediaFromImages } from './cartridge_media';
 import { initializeMachineVideoPresenter } from './machine_runtime';
 import { OffscreenVideoOutput } from './offscreen_video_output';
 import { RenderPresentationState } from './presentation_state';
+import { FrameBitmap } from './frame_bitmap';
 
 /** Owns an independently clocked machine and its lazy offscreen output, with no test or UI policy. */
 export class OffscreenMachine<TInput extends InputControllerInputSource> {
 	public readonly runtime: Runtime;
-	private readonly presentation = new RenderPresentationState();
+	public readonly presentation = new RenderPresentationState();
 	private videoBackend: HeadlessGPUBackend | null = null;
 	private videoPresenter: VideoPresenter | null = null;
+	private frames: FrameBitmap | undefined;
 
 	public constructor(
 		systemRom: Uint8Array,
@@ -40,6 +42,12 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 		return this.videoPresenter;
 	}
 
+	/** Subscribe before admission; only subsequent completed frames are published. */
+	public get frameOutput(): FrameBitmap {
+		if (this.frames === undefined) this.frames = new FrameBitmap();
+		return this.frames;
+	}
+
 	public serviceBackend(): void {
 		const gpu = this.runtime.machine.gxGpu;
 		if (gpu.backendCommandDrainPending()) this.backend.executeGxGpuCommandDrain(gpu);
@@ -61,11 +69,18 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 		if (!this.presentation.pending || this.runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		const runtime = this.runtime;
 		this.serviceBackend();
-		return this.presentation.presentPending(this.presenter, runtime, runtime.machine.scheduler.nowCycles / runtime.timing.cpuCyclesPerMillisecond, 0);
+		const before = this.presentation.gameFrame.presentationSequence;
+		const presented = this.presentation.presentPending(this.presenter, runtime, runtime.machine.scheduler.nowCycles / runtime.timing.cpuCyclesPerMillisecond, 0);
+		if (this.frames !== undefined && this.presentation.gameFrame.presentationSequence !== before) {
+			const frame = this.backend.latestPresentedFrame!;
+			this.frames.publish(this.backend.borrowPresentedPixels(), frame.width, frame.height, this.presentation.gameFrame);
+		}
+		return presented;
 	}
 
 	public dispose(): void {
 		this.runtime.machine.cpu.setExecutionHook(null, 0, 0);
+		this.frames?.dispose();
 		this.videoPresenter?.dispose();
 	}
 }

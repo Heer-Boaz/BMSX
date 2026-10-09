@@ -818,8 +818,11 @@ Host drawing dispatch is not a machine or cross-host wire format.
 `Host2DRef` retains TS object references or C++ pointers, not serialized guest
 values. The complete `Host2DKind` enum and reference union therefore need not
 have identical members across products. In particular, Studio image previews
-own TS `HostBitmap` pixels and their backend texture lifetime; no native UI
-currently submits them. This does not require an unused C++ implementation or
+own TS `HostBitmap` pixels and their backend texture lifetime. Revisions update
+retained texture storage; held repaints do not upload. An offscreen frame consumer
+copies only accepted completed pixels into this resource, together with their
+physical publication position, not a borrowed in-progress framebuffer. No native UI
+currently submits host bitmaps. This does not require an unused C++ implementation or
 an exception for one enum member in the public-symbol comparator.
 
 Shared rendering data such as packed colors, submission geometry, clipping,

@@ -134,7 +134,8 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		bitmaps: new HostBitmapTextures(image => {
 			const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
 			return { texture, bindGroup: device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] }) };
-		}, entry => entry.texture.destroy()),
+		}, (entry, image) => backend.updateTexture(entry.texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
+		entry => entry.texture.destroy()),
 		bindGroup,
 		frameBindGroups: new WeakMap(),
 		uniformBuffer,

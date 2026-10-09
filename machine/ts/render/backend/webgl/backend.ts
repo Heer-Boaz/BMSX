@@ -155,17 +155,19 @@ export class WebGLBackend implements GPUBackend {
 
 	updateTexture(handle: WebGLTexture, data: Uint8Array, width: number, height: number, desc: TextureParams): void {
 		const gl = this.gl;
-		const info = this.texInfo.get(handle);
+		const info = this.texInfo.get(handle)!;
 		const srgb = desc.srgb;
 		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
 		this.bindTexture2DForUpload(handle, desc);
-		const needsRecreate = !info || info.w !== width || info.h !== height || info.srgb !== srgb;
+		const needsRecreate = info.w !== width || info.h !== height || info.srgb !== srgb;
 		if (needsRecreate) {
 			gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		} else {
 			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		}
-		this.texInfo.set(handle, { w: width, h: height, srgb });
+		info.w = width;
+		info.h = height;
+		info.srgb = srgb;
 		this.accountUpload('texture', width * height * 4);
 	}
 
