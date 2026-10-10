@@ -11,7 +11,7 @@ export function createWebGLBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: nu
 }
 
 export async function createBrowserBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: number): Promise<GPUBackend> {
-	const renderer = new URLSearchParams(window.location.search).get('renderer') || 'auto';
+	const renderer = canvas.dataset.renderer ?? (new URLSearchParams(window.location.search).get('renderer') || 'auto');
 	if (renderer === 'webgl2') {
 		return createWebGLBackend(canvas, gxGpuVramBytes);
 	}

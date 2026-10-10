@@ -3,7 +3,7 @@
 // substitutes device state. No diagnostic observer enters the production bundle.
 const panel = document.createElement('section');
 panel.id = 'gpu-diagnostics';
-panel.innerHTML = `<div><strong>BMSX iOS-diagnose v2 · multitouch-fix</strong></div>
+panel.innerHTML = `<div><strong>BMSX iOS-diagnose v3 · multitouch-fix</strong></div>
 <nav aria-label="Renderer"><a data-renderer="auto">Auto</a> · <a data-renderer="webgpu">WebGPU</a> · <a data-renderer="webgl2">WebGL2</a></nav>
 <div id="gpu-status">Renderer: nog niet gestart</div>
 <div id="gpu-progress"></div>
@@ -17,11 +17,11 @@ const progress = panel.querySelector('#gpu-progress');
 const summary = panel.querySelector('#gpu-summary');
 const messages = panel.querySelector('#gpu-messages');
 const details = panel.querySelector('details');
-const requested = new URL(location.href).searchParams.get('renderer') || 'auto';
+const gamescreen = document.getElementById('gamescreen');
+const requested = gamescreen.dataset.renderer;
+const root = gamescreen.dataset.diagnosticsRoot;
 for (const link of panel.querySelectorAll('[data-renderer]')) {
-	const url = new URL(location.href);
-	url.searchParams.set('renderer', link.dataset.renderer);
-	link.href = url.href;
+	link.href = link.dataset.renderer === 'webgl2' ? root : `${root}${link.dataset.renderer}/`;
 	if (link.dataset.renderer === requested) link.setAttribute('aria-current', 'page');
 }
 // Renderer-switch taps must not also unlock/start the game on the boot overlay.

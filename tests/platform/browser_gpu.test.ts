@@ -25,9 +25,10 @@ test('browser renderer selection respects explicit requests and reports native G
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
-		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" width="320" height="240"></canvas>',
-	}));
+	await page.route('http://localhost/renderer-test/**', route => {
+		const renderer = new URL(route.request().url()).pathname.split('/')[2];
+		return route.fulfill({ contentType: 'text/html', body: `<!doctype html><canvas id="gamescreen" ${renderer ? `data-renderer="${renderer}"` : ''} data-diagnostics-root="/renderer-test/" width="320" height="240"></canvas>` });
+	});
 	await page.addInitScript(() => {
 		(globalThis as any).adapterRequests = 0;
 		const requestAdapter = GPU.prototype.requestAdapter;
@@ -37,7 +38,7 @@ test('browser renderer selection respects explicit requests and reports native G
 		};
 	});
 	for (const requested of ['auto', 'webgpu', 'webgl2']) {
-		await page.goto(`http://localhost/renderer-test/?renderer=${requested}`);
+		await page.goto(`http://localhost/renderer-test/${requested}/`);
 		await page.addScriptTag({ type: 'module', content: diagnostics });
 		await page.addScriptTag({ content: backendBundle });
 		const backend = await page.evaluate(async () => {
@@ -47,6 +48,10 @@ test('browser renderer selection respects explicit requests and reports native G
 		});
 		assert.deepEqual(backend, { type: requested === 'webgl2' ? 'webgl2' : 'webgpu', requests: requested === 'webgl2' ? 0 : 1 });
 		assert.match(await page.locator('#gpu-status').innerText(), requested === 'webgl2' ? /WebGL2/ : /WebGPU/);
+		assert.equal(new URL(page.url()).search, '');
+		assert.deepEqual(await page.locator('#gpu-diagnostics nav a').evaluateAll(links => links.map(link => (link as HTMLAnchorElement).href)), [
+			'http://localhost/renderer-test/auto/', 'http://localhost/renderer-test/webgpu/', 'http://localhost/renderer-test/',
+		]);
 		await page.waitForFunction(() => document.getElementById('gpu-messages')!.textContent.includes('Gevraagd:'));
 		assert.match(await page.locator('#gpu-summary').innerText(), /^0 fouten/);
 		if (requested === 'webgpu') {
@@ -66,6 +71,12 @@ test('browser renderer selection respects explicit requests and reports native G
 			assert.equal(await page.locator('#gpu-diagnostics details').evaluate(element => (element as HTMLDetailsElement).open), true);
 		}
 	}
+	await page.goto('http://localhost/renderer-test/webgl2/?renderer=webgpu');
+	await page.addScriptTag({ content: backendBundle });
+	assert.deepEqual(await page.evaluate(async () => {
+		const backend = await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
+		return { type: backend.type, requests: (globalThis as any).adapterRequests };
+	}), { type: 'webgl2', requests: 0 }, 'fixed page selection does not depend on URL parameters');
 	await page.goto('http://localhost/renderer-test/?renderer=webgl');
 	await page.addScriptTag({ content: backendBundle });
 	await assert.rejects(page.evaluate(async () => {
@@ -83,10 +94,11 @@ test('diagnostic setup failures retain their stage, exception and location in th
 	const page = await browser.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
-		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
-	}));
-	await page.goto('http://localhost/renderer-test/?renderer=auto');
+	await page.route('http://localhost/renderer-test/**', route => {
+		const renderer = new URL(route.request().url()).pathname.split('/')[2];
+		return route.fulfill({ contentType: 'text/html', body: `<!doctype html><canvas id="gamescreen" data-renderer="${renderer}" data-diagnostics-root="/renderer-test/"></canvas>` });
+	});
+	await page.goto('http://localhost/renderer-test/auto/');
 	// Exercise an observer setup exception, not a repaired/alternate device.
 	await page.evaluate(() => Reflect.deleteProperty(globalThis, 'GPUQueue'));
 	await page.addScriptTag({ type: 'module', content: await readFile('scripts/render/diagnostics/browser_gpu.mjs', 'utf8') });
@@ -96,7 +108,7 @@ test('diagnostic setup failures retain their stage, exception and location in th
 	assert.doesNotMatch(await page.locator('#gpu-messages').innerText(), /Script error\./);
 	assert.equal(errors.length, 1);
 	assert.equal(await page.locator('#gpu-diagnostics details').evaluate(element => (element as HTMLDetailsElement).open), true);
-	await page.goto('http://localhost/renderer-test/?renderer=webgl2');
+	await page.goto('http://localhost/renderer-test/webgl2/');
 	await page.evaluate(() => Reflect.deleteProperty(globalThis, 'GPUQueue'));
 	await page.addScriptTag({ type: 'module', content: await readFile('scripts/render/diagnostics/browser_gpu.mjs', 'utf8') });
 	await page.addScriptTag({ content: backendBundle });

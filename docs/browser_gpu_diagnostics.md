@@ -2,11 +2,13 @@
 
 The diagnostic player is separate from the ordinary published games:
 
-- [Nemesis S](https://bmsx.boazpatel.com/ios-diagnostics/nemesis_s/?renderer=auto)
-- [Pietsona 2025](https://bmsx.boazpatel.com/ios-diagnostics/2025/?renderer=auto)
+- [Nemesis S](https://bmsx.boazpatel.com/ios/)
+- [Pietsona 2025](https://bmsx.boazpatel.com/ios/piet/)
 
-The panel selects `auto`, `webgpu`, or `webgl2` through the browser host's
-`renderer` URL parameter. Auto keeps ordinary capability selection. An explicit
+The short game links select WebGL2 directly. The panel's links select Auto or
+WebGPU through dedicated subpages, without URL parameters or redirects. Each
+page supplies its fixed renderer through the canvas's `data-renderer` attribute
+to the browser backend owner. Auto keeps ordinary capability selection. An explicit
 WebGPU request fails visibly if its API/adapter is unavailable; it never silently
 switches the requested renderer. No user-agent policy changes machine behavior.
 
@@ -26,12 +28,12 @@ and immutable media URLs. The output must be a new directory:
 
 ```sh
 npx tsx scripts/render/diagnostics/build_browser_gpu.ts \
-  --site .bmsx/hosting/azure-nemesis-name \
-  --out .bmsx/hosting/ios-diagnostics-v2
-diff -r .bmsx/hosting/azure-nemesis-name .bmsx/hosting/ios-diagnostics-v2
+  --site .bmsx/hosting/ios-diagnostics-v2 \
+  --out .bmsx/hosting/ios-diagnostics-v3-short
+diff -r .bmsx/hosting/ios-diagnostics-v2 .bmsx/hosting/ios-diagnostics-v3-short
 ```
 
-The only difference should be the added `ios-diagnostics` subtree. The builder
+The only difference should be the added `ios` subtree. The builder
 uses the ordinary browser-player build and its bundle-boundary assertion; it
 does not rebuild games or their paired BIOS. Deploy the complete output using
 the existing secret-safe Azure deployment procedure in `browser_hosting.md`.
@@ -75,6 +77,16 @@ An explicit WebGL2 page does not initialize GPU-only observers. A regression
 test exercises an actual setup exception and verifies its visible report; the
 same unsupported observer surface does not affect the explicit WebGL2 path.
 This improves diagnosis, not proof of an iPhone rendering fix.
+
+### Diagnostic version 3
+
+The iPhone user must type test URLs manually, so the temporary player now uses
+`/ios/` directly for Nemesis S with WebGL2. Tapping WebGPU opens `/ios/webgpu/`;
+Auto opens `/ios/auto/`. Pietsona uses the equivalent `/ios/piet/` subpages.
+All renderer links and manifest start URLs are query-free. Existing ordinary
+and version-2 diagnostic pages remain byte-identical to the published snapshot.
+Native tests cover page-selected renderers, their clean links, and precedence
+over any URL override. This is only a diagnostic usability change.
 
 Run the browser regressions and host typecheck:
 

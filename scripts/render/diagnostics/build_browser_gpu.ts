@@ -13,7 +13,7 @@ async function main(): Promise<void> {
 	const output = path.resolve(values.out);
 	if (source === output) throw new Error('The diagnostic output must be separate from the published-site snapshot.');
 	await cp(source, output, { recursive: true, force: false, errorOnExist: true });
-	const diagnostics = path.join(output, 'ios-diagnostics');
+	const diagnostics = path.join(output, 'ios');
 	await mkdir(diagnostics);
 	await buildBrowserPlayer({ debug: false, force: true });
 	await copyFile('dist/engine.js', path.join(diagnostics, 'engine.js'));
@@ -22,21 +22,26 @@ async function main(): Promise<void> {
 		outfile: path.join(diagnostics, 'gpu-diagnostics.js'),
 		bundle: true, platform: 'browser', format: 'iife', target: 'es2020', minify: true,
 	});
-	for (const game of ['nemesis_s', '2025']) {
+	for (const [game, root] of [['nemesis_s', 'ios'], ['2025', 'ios/piet']]) {
 		const gameSource = path.join(source, game);
-		const gameOutput = path.join(diagnostics, game);
-		await mkdir(gameOutput);
-		const html = (await readFile(path.join(gameSource, 'index.html'), 'utf8'))
-			// WebKit never mutes module-script errors. Both deferred modules execute
-			// in document order before the player's existing window-load entry.
-			.replace('<script src="engine.js">', '<script type="module" crossorigin="anonymous" src="../gpu-diagnostics.js?v=2"></script><script type="module" crossorigin="anonymous" src="../engine.js">');
-		await writeFile(path.join(gameOutput, 'index.html'), html);
-		await copyFile(path.join(gameSource, 'bmsx_icon.png'), path.join(gameOutput, 'bmsx_icon.png'));
-		const manifest = JSON.parse(await readFile(path.join(gameSource, 'manifest.webmanifest'), 'utf8'));
-		manifest.name += ' — iOS-diagnose';
-		manifest.short_name += ' diag';
-		manifest.start_url = './?renderer=auto';
-		await writeFile(path.join(gameOutput, 'manifest.webmanifest'), JSON.stringify(manifest));
+		const sourceHtml = await readFile(path.join(gameSource, 'index.html'), 'utf8');
+		const sourceManifest = await readFile(path.join(gameSource, 'manifest.webmanifest'), 'utf8');
+		for (const renderer of ['webgl2', 'webgpu', 'auto']) {
+			const gameOutput = path.join(output, root, renderer === 'webgl2' ? '' : renderer);
+			await mkdir(gameOutput, { recursive: true });
+			const html = sourceHtml
+				.replace('<canvas id="gamescreen"', `<canvas id="gamescreen" data-renderer="${renderer}" data-diagnostics-root="/${root}/"`)
+				// Ordered modules keep WebKit exceptions unmuted. The page itself
+				// selects its renderer; there are no query parameters or redirects.
+				.replace('<script src="engine.js">', '<script type="module" crossorigin="anonymous" src="/ios/gpu-diagnostics.js"></script><script type="module" crossorigin="anonymous" src="/ios/engine.js">');
+			await writeFile(path.join(gameOutput, 'index.html'), html);
+			await copyFile(path.join(gameSource, 'bmsx_icon.png'), path.join(gameOutput, 'bmsx_icon.png'));
+			const manifest = JSON.parse(sourceManifest);
+			manifest.name += ` — iOS-diagnose ${renderer}`;
+			manifest.short_name += ' diag';
+			manifest.start_url = './';
+			await writeFile(path.join(gameOutput, 'manifest.webmanifest'), JSON.stringify(manifest));
+		}
 	}
 	console.log(`Diagnostic site: ${output}`);
 }
