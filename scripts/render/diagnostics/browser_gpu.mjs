@@ -3,7 +3,7 @@
 // substitutes device state. No diagnostic observer enters the production bundle.
 const panel = document.createElement('section');
 panel.id = 'gpu-diagnostics';
-panel.innerHTML = `<div><strong>BMSX iOS-diagnose v1 · multitouch-fix</strong></div>
+panel.innerHTML = `<div><strong>BMSX iOS-diagnose v2 · multitouch-fix</strong></div>
 <nav aria-label="Renderer"><a data-renderer="auto">Auto</a> · <a data-renderer="webgpu">WebGPU</a> · <a data-renderer="webgl2">WebGL2</a></nav>
 <div id="gpu-status">Renderer: nog niet gestart</div>
 <div id="gpu-progress"></div>
@@ -34,6 +34,7 @@ let shaderCount = 0;
 let pipelineCount = 0;
 let submitCount = 0;
 let diagnosticsChanged = true;
+let setupPhase = 'foutmeldingen';
 const notes = [navigator.userAgent, `Gevraagd: ${requested}; WebGPU API: ${!!navigator.gpu}`];
 
 function report(message) {
@@ -44,14 +45,32 @@ function report(message) {
 	details.open = true;
 }
 
-window.addEventListener('error', event => report(`JavaScript: ${event.message}`));
-window.addEventListener('unhandledrejection', event => report(`Promise: ${event.reason}`));
+// Install display updates before any native API interception. If setup itself
+// throws, its real error must still appear instead of leaving a stale 0 counter.
+setInterval(() => {
+	progress.textContent = `Diagnose: ${setupPhase} · boot: ${document.body.classList.contains('game-started') ? 'gestart' : 'wacht'} · shaders ${shaderCount} · pipelines ${pipelineCount} · submits ${submitCount}`;
+	if (diagnosticsChanged) {
+		summary.textContent = `${errorCount} fouten — details`;
+		messages.textContent = notes.join('\n') + '\n' + [...errors].map(([message, count]) => `${count}× ${message}`).join('\n');
+		diagnosticsChanged = false;
+	}
+}, 1000);
+
+window.addEventListener('error', event => {
+	const stack = event.error?.stack;
+	report(`JavaScript (${setupPhase}): ${event.message}\n${event.filename}:${event.lineno}:${event.colno}${stack ? '\n' + stack : ''}`);
+});
+window.addEventListener('unhandledrejection', event => {
+	const reason = event.reason;
+	report(`Promise: ${String(reason)}${reason instanceof Error ? '\n' + reason.stack : ''}`);
+});
 const consoleError = console.error;
 console.error = function (...values) {
-	report(values.map(String).join(' '));
+	report(values.map(value => value instanceof Error ? `${String(value)}\n${value.stack}` : String(value)).join(' '));
 	consoleError.apply(this, values);
 };
 
+setupPhase = 'canvas';
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (kind, options) {
 	const context = getContext.call(this, kind, options);
@@ -67,7 +86,8 @@ HTMLCanvasElement.prototype.getContext = function (kind, options) {
 	return context;
 };
 
-if (navigator.gpu) {
+if (navigator.gpu && requested !== 'webgl2') {
+	setupPhase = 'GPUAdapter';
 	const requestDevice = GPUAdapter.prototype.requestDevice;
 	GPUAdapter.prototype.requestDevice = async function (descriptor) {
 		const device = await requestDevice.call(this, descriptor);
@@ -77,6 +97,7 @@ if (navigator.gpu) {
 		device.lost.then(info => report(`GPU device lost (${info.reason}): ${info.message}`));
 		return device;
 	};
+	setupPhase = 'GPUDevice';
 	const createShaderModule = GPUDevice.prototype.createShaderModule;
 	GPUDevice.prototype.createShaderModule = function (descriptor) {
 		const module = createShaderModule.call(this, descriptor);
@@ -98,19 +119,11 @@ if (navigator.gpu) {
 		});
 		return pipeline;
 	};
+	setupPhase = 'GPUQueue';
 	const submit = GPUQueue.prototype.submit;
 	GPUQueue.prototype.submit = function (commandBuffers) {
 		submitCount++;
 		return submit.call(this, commandBuffers);
 	};
 }
-
-// At most one DOM update per second; no per-frame logs, readbacks or error scopes.
-setInterval(() => {
-	progress.textContent = `Boot: ${document.body.classList.contains('game-started') ? 'gestart' : 'wacht'} · shaders ${shaderCount} · pipelines ${pipelineCount} · submits ${submitCount}`;
-	if (diagnosticsChanged) {
-		summary.textContent = `${errorCount} fouten — details`;
-		messages.textContent = notes.join('\n') + '\n' + [...errors].map(([message, count]) => `${count}× ${message}`).join('\n');
-		diagnosticsChanged = false;
-	}
-}, 1000);
+setupPhase = 'gereed';

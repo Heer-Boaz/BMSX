@@ -27,7 +27,9 @@ async function main(): Promise<void> {
 		const gameOutput = path.join(diagnostics, game);
 		await mkdir(gameOutput);
 		const html = (await readFile(path.join(gameSource, 'index.html'), 'utf8'))
-			.replace('<script src="engine.js">', '<script src="../gpu-diagnostics.js"></script><script src="../engine.js">');
+			// WebKit never mutes module-script errors. Both deferred modules execute
+			// in document order before the player's existing window-load entry.
+			.replace('<script src="engine.js">', '<script type="module" crossorigin="anonymous" src="../gpu-diagnostics.js?v=2"></script><script type="module" crossorigin="anonymous" src="../engine.js">');
 		await writeFile(path.join(gameOutput, 'index.html'), html);
 		await copyFile(path.join(gameSource, 'bmsx_icon.png'), path.join(gameOutput, 'bmsx_icon.png'));
 		const manifest = JSON.parse(await readFile(path.join(gameSource, 'manifest.webmanifest'), 'utf8'));

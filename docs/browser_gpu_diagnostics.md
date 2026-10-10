@@ -27,8 +27,8 @@ and immutable media URLs. The output must be a new directory:
 ```sh
 npx tsx scripts/render/diagnostics/build_browser_gpu.ts \
   --site .bmsx/hosting/azure-nemesis-name \
-  --out .bmsx/hosting/ios-diagnostics-v1
-diff -r .bmsx/hosting/azure-nemesis-name .bmsx/hosting/ios-diagnostics-v1
+  --out .bmsx/hosting/ios-diagnostics-v2
+diff -r .bmsx/hosting/azure-nemesis-name .bmsx/hosting/ios-diagnostics-v2
 ```
 
 The only difference should be the added `ios-diagnostics` subtree. The builder
@@ -57,6 +57,24 @@ and verify the diagnostic response's COOP/COEP headers.
   not yet reproduced locally, and no speculative machine/GPU patch was applied.
 - The reported startup delay was the game's hidden Konami intro, not an
   established startup performance defect; startup optimization is out of scope.
+- The user clarified that the noise and screen proportions do change. The
+  symptom is incorrect changing output, not an established frozen canvas.
+
+### Diagnostic version 2
+
+After the iPhone reported only `Script error. at :0:0`, the diagnostic page's
+scripts were changed to ordered modules. WebKit's
+[exception dispatcher](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/dom/ScriptExecutionContext.cpp)
+explicitly leaves module-script errors unmuted. The ordinary player pages and
+the diagnostic engine bytes are unchanged.
+
+The panel now starts updating **before** native API observers are installed,
+retains the setup stage, and includes exception locations/stacks. Previously, a
+setup exception could prevent its deferred error display from ever starting.
+An explicit WebGL2 page does not initialize GPU-only observers. A regression
+test exercises an actual setup exception and verifies its visible report; the
+same unsupported observer surface does not affect the explicit WebGL2 path.
+This improves diagnosis, not proof of an iPhone rendering fix.
 
 Run the browser regressions and host typecheck:
 
