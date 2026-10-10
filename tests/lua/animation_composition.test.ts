@@ -199,3 +199,24 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 	assert.equal(input.keys.unit, undefined, 'a neighboring millisecond lane does not grant this lane an axis');
 	assert.deepEqual(input.keys.positions, [null, null]);
 });
+
+test('animation recovery restores the native cursor after the document admits its axis', async t => {
+	t.after(() => { editorTabGroup.clear(); editorTextModelService.clear(); });
+	for (const unit of ['time_ms', 'frame', 'u'] as const) {
+		const source = `return {tracks={{kind='event',keys={{${unit}=0,event='start'},{${unit}=1,event='end'}}}}}`;
+		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
+		const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
+		const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+		const input = new AnimationEditorInput(model);
+		controller.refresh(input); controller.selectTrack(input, 1);
+		input.keys.setView(0.2, 0.8); input.keys.setCursor(0.625); input.keys.snap = false;
+		const serializer = new AnimationInputSerializer(sources, controller);
+		const restored = await serializer.deserialize(serializer.serialize(input));
+		assert.equal(restored.keys.unit, unit);
+		assert.equal(restored.keys.cursor, 0.625);
+		assert.equal(restored.keys.range.minimum, 0.2); assert.equal(restored.keys.range.maximum, 0.8);
+		assert.equal(restored.keys.snap, false);
+		assert.equal(restored.workingCopy, model); assert.equal(model.undo(), null);
+		restored.dispose(); input.dispose(); editorTextModelService.clear();
+	}
+});

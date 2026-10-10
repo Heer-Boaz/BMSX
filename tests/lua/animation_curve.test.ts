@@ -78,6 +78,44 @@ test('curve previews and view navigation do not mutate written keys or invent no
 	view.bind(dynamic.tracks[0], 0, dynamic); assert.equal(view.curve.available, false);
 });
 
+test('native steep slopes have bounded screen handles without changing their authored magnitude', () => {
+	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='cubic',keys={{time_ms=500,value=0,arrive_tangent=0,leave_tangent=12},{time_ms=501,value=1,arrive_tangent=0,leave_tangent=0}}}}}";
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
+	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+	const handle = view.curve.leaveHandle;
+	assert.ok(handle[3] > view.curve.bounds.top && handle[3] < view.curve.bounds.bottom, 'the selected slope must have a reachable hit target');
+	assert.ok(Math.hypot(handle[2] - handle[0], handle[3] - handle[1]) <= 32.0000000001);
+	assert.equal(view.curve.handleAt(handle[2], handle[3]), 'leave');
+	assert.equal(document.tracks[0].keys[0].leave!.value, 12);
+	assert.equal(view.curve.arriveHandle.length, 0, 'the first key has no incoming native segment');
+	view.select(1); view.curve.update(view);
+	assert.equal(view.curve.leaveHandle.length, 0, 'the final key has no outgoing native segment');
+});
+
+test('cubic display requires the slopes used by native segments, not unused endpoint fields', () => {
+	for (const [source, value] of [
+		["return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=0}}}}}", 43.75],
+		["return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=100,value=100,arrive_tangent=0},{time_ms=0,value=0,leave_tangent=2}}}}}", 43.75],
+		["return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=50,value=7}}}}}", 7],
+	] as const) {
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
+		assert.equal(view.curve.available, true);
+		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+		for (const optLevel of [0, 3] as const) {
+			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
+				local timelines=component.new({parent=owner}); timelines:define('curve',require('animation')); timelines:play('curve')
+				timelines:seek_time('curve',25); assert(owner.x==${value})
+			`, { optLevel, modules: [{ path: 'animation', source }] });
+			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		}
+	}
+	const missing = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0},{time_ms=1,value=1}}}}}", resource.path)))!;
+	const view = new AnimationKeyViewport(); view.bind(missing.tracks[0], 0, missing);
+	assert.equal(view.curve.available, false, 'a missing segment slope is not supplied by the editor');
+});
+
 test('curve fit includes the analytical Hermite and quadratic extrema', () => {
 	for (const [arrive, maximum] of [[0, 32 / 27], [-8, 2]]) {
 		const source = `return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=8},{time_ms=1,value=0,arrive_tangent=${arrive},leave_tangent=0}}}}}`;

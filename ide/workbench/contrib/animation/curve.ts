@@ -33,8 +33,12 @@ export class AnimationCurve {
 		this.available = track?.kind === 'value' && track.unit !== undefined && track.unit !== 'u'
 			&& (track.interpolation === 'linear' || track.interpolation === 'cubic' || track.interpolation === 'step')
 			&& keys.timeOrder.length === track.keys.length && track.keys.length > 0
-			&& track.keys.every(key => key.value?.value !== undefined && key.value.value !== null
-				&& (track.interpolation !== 'cubic' || key.arrive?.value !== undefined && key.arrive.value !== null && key.leave?.value !== undefined && key.leave.value !== null));
+			&& keys.timeOrder.every((index, ordered) => {
+				const key = track.keys[index];
+				return key.value?.value !== undefined && key.value.value !== null
+					&& (track.interpolation !== 'cubic' || (ordered === 0 || key.arrive?.value !== undefined && key.arrive.value !== null)
+						&& (ordered + 1 === keys.timeOrder.length || key.leave?.value !== undefined && key.leave.value !== null));
+			});
 		if (this.available) {
 			this.minimum = this.maximum = track!.keys[0].value!.value!;
 			for (let segment = 0; segment < keys.timeOrder.length; segment++) {
@@ -69,7 +73,7 @@ export class AnimationCurve {
 		}
 		return closest;
 	}
-	public handleAt(x: number, y: number): AnimationCurveField | undefined {
+	public handleAt(x: number, y: number): 'arrive' | 'leave' | undefined {
 		if (this.arriveHandle.length && Math.abs(x - this.arriveHandle[2]) < 6 && Math.abs(y - this.arriveHandle[3]) < 6) return 'arrive';
 		if (this.leaveHandle.length && Math.abs(x - this.leaveHandle[2]) < 6 && Math.abs(y - this.leaveHandle[3]) < 6) return 'leave';
 		return undefined;
@@ -114,9 +118,15 @@ export class AnimationCurve {
 		}
 		if (keys.selected < 0 || keys.track!.interpolation !== 'cubic') return;
 		const index = keys.selected, x = keys.xAt(keys.positionAt(index)), value = this.fieldValue(keys, index, 'value'), y = this.yAt(value);
-		const dx = 32, span = dx * (keys.range.maximum - keys.range.minimum) / (keys.range.bounds.right - keys.range.bounds.left - 6);
-		this.arriveHandle.push(x, y, x - dx, this.yAt(value - this.fieldValue(keys, index, 'arrive') * span));
-		this.leaveHandle.push(x, y, x + dx, this.yAt(value + this.fieldValue(keys, index, 'leave') * span));
+		const unitsPerPixel = (keys.range.maximum - keys.range.minimum) / (keys.range.bounds.right - keys.range.bounds.left - 6);
+		if (index !== order[0]) this.projectTangent(this.arriveHandle, x, y, -1, this.fieldValue(keys, index, 'arrive'), unitsPerPixel);
+		if (index !== last) this.projectTangent(this.leaveHandle, x, y, 1, this.fieldValue(keys, index, 'leave'), unitsPerPixel);
+	}
+	/** A slope owns a direction, not an arbitrary horizontal arm or a native handle length. */
+	private projectTangent(handle: number[], x: number, y: number, side: number, slope: number, unitsPerPixel: number): void {
+		const gradient = slope * unitsPerPixel / this.valueDelta(1);
+		const length = 32 / Math.hypot(1, gradient);
+		handle.push(x, y, x + side * length, y + side * gradient * length);
 	}
 	/** Fit native Hermite extrema once, rather than sampling every segment repeatedly. */
 	private includeSegmentExtrema(keys: AnimationKeyViewport, first: number, next: number): void {

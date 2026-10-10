@@ -8,11 +8,12 @@ import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../.
 import type { AnimationEditorController } from './controller';
 import type { AnimationEditorInput } from './editor_input';
 import type { AnimationKeySource } from './model';
-import type { AnimationCurveField } from './curve';
 import type { AnimationAuthoring } from './authoring';
 
 type KeyGesture = { readonly kind: 'key'; readonly key: AnimationKeySource; readonly start: number; readonly originX: number; value: number;
-	readonly originY: number; readonly field: AnimationCurveField | undefined; readonly startValue: number; fieldValue: number; readonly moveTime: boolean };
+	readonly originY: number; readonly field: 'value' | undefined; readonly startValue: number; fieldValue: number; readonly moveTime: boolean };
+type TangentGesture = { readonly kind: 'tangent'; readonly key: AnimationKeySource; readonly field: 'arrive' | 'leave';
+	readonly originX: number; readonly originY: number; readonly timeSpan: number; readonly startValue: number; fieldValue: number };
 type PanGesture = { readonly kind: 'pan'; readonly originX: number; readonly minimum: number; readonly maximum: number };
 
 const KEY_NAVIGATION = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
@@ -21,7 +22,7 @@ const KEY_NAVIGATION = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
 export class AnimationKeyControl implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private input: AnimationEditorInput | undefined;
-	private gesture: KeyGesture | PanGesture | undefined;
+	private gesture: KeyGesture | TangentGesture | PanGesture | undefined;
 	private unbindSource: (() => void) | undefined;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
@@ -77,8 +78,14 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 				if (moveTime || editValue) {
 					pointerCapture.capture(this);
 					const startValue = editValue ? key[field]!.value! : 0;
-					this.gesture = { kind: 'key', key, start: key.coordinate!.value!, value: key.coordinate!.value!, originX: snapshot.viewportX,
-						originY: snapshot.viewportY, field: editValue ? field : undefined, startValue, fieldValue: startValue, moveTime };
+					if (handle !== undefined) {
+						const geometry = handle === 'arrive' ? curve.arriveHandle : curve.leaveHandle;
+						const timeSpan = (geometry[2] - geometry[0]) * (input.keys.range.maximum - input.keys.range.minimum)
+							/ (input.keys.range.bounds.right - input.keys.range.bounds.left - 6);
+						this.gesture = { kind: 'tangent', key, field: handle, originX: snapshot.viewportX, originY: snapshot.viewportY,
+							timeSpan, startValue, fieldValue: startValue };
+					} else this.gesture = { kind: 'key', key, start: key.coordinate!.value!, value: key.coordinate!.value!, originX: snapshot.viewportX,
+						originY: snapshot.viewportY, field: editValue ? 'value' : undefined, startValue, fieldValue: startValue, moveTime };
 				}
 			}
 		}
@@ -91,6 +98,18 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			const shift = delta * (gesture.maximum - gesture.minimum) / (range.bounds.right - range.bounds.left - 6);
 			this.input!.keys.setView(gesture.minimum - shift, gesture.maximum - shift); return;
 		}
+		if (gesture.kind === 'tangent') {
+			const vertical = snapshot.viewportY - gesture.originY, curve = this.input!.keys.curve;
+			if (delta === 0 && vertical === 0) gesture.fieldValue = gesture.startValue;
+			else {
+				const unitsPerPixel = (range.maximum - range.minimum) / (range.bounds.right - range.bounds.left - 6);
+				const horizontal = gesture.timeSpan / unitsPerPixel + delta;
+				// The pointer stays on its native segment's side, with a one-pixel horizontal lever.
+				const span = (gesture.field === 'arrive' ? Math.min(-1, horizontal) : Math.max(1, horizontal)) * unitsPerPixel;
+				gesture.fieldValue = (gesture.startValue * gesture.timeSpan + curve.valueDelta(vertical)) / span;
+			}
+			curve.preview(gesture.field, gesture.fieldValue); return;
+		}
 		// Move from the grabbed key, not from an inverse-rounded pixel position.
 		// Clicking a fractional key (or a wide native range) is not a source edit.
 		if (gesture.moveTime) {
@@ -100,9 +119,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 		this.input!.keys.preview(gesture.value);
 		if (gesture.field !== undefined) {
 			const curve = this.input!.keys.curve;
-			const span = 32 * (range.maximum - range.minimum) / (range.bounds.right - range.bounds.left - 6);
-			const valueDelta = curve.valueDelta(snapshot.viewportY - gesture.originY);
-			gesture.fieldValue = gesture.startValue + (gesture.field === 'value' ? valueDelta : valueDelta / (gesture.field === 'arrive' ? -span : span));
+			gesture.fieldValue = gesture.startValue + curve.valueDelta(snapshot.viewportY - gesture.originY);
 			curve.preview(gesture.field, gesture.fieldValue);
 		}
 	}
@@ -111,6 +128,10 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 		const gesture = this.gesture!;
 		this.cancelPointer();
 		if (gesture.kind === 'pan') return;
+		if (gesture.kind === 'tangent') {
+			if (gesture.fieldValue !== gesture.startValue) this.authoring.editCurveKey(this.input!, gesture.key, undefined, gesture.field, gesture.fieldValue);
+			return;
+		}
 		if (gesture.field !== undefined) {
 			if (gesture.value !== gesture.start || gesture.fieldValue !== gesture.startValue) this.authoring.editCurveKey(this.input!, gesture.key,
 				gesture.moveTime ? gesture.value : undefined, gesture.field, gesture.fieldValue);

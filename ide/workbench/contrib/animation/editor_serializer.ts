@@ -41,9 +41,9 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 			input.sourceModels.set(resolved.model.resource.path, resolved.model);
 			if (!resolved.sameSource) sameSource = false;
 		}
-		if (sameSource) { input.trackSelection = state.track; input.keySelection = state.key; input.detailSelection = state.detail; input.tracks.scroll = state.scroll; input.keys.cursor = state.cursor; }
+		if (sameSource) { input.trackSelection = state.track; input.keySelection = state.key; input.detailSelection = state.detail; input.tracks.scroll = state.scroll; }
 		input.publishModels(); this.controller.refresh(input);
-		if (sameSource && state.view !== undefined) { input.keys.setView(state.view.minimum, state.view.maximum); input.keys.snap = state.view.snap; }
+		if (sameSource && state.view !== undefined) { input.keys.setView(state.view.minimum, state.view.maximum); input.keys.setCursor(state.cursor); input.keys.snap = state.view.snap; }
 		return input;
 	}
 }

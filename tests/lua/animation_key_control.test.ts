@@ -5,6 +5,7 @@ import { semanticSnapshot } from './semantic_test_harness';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationKeyControl } from '../../ide/workbench/contrib/animation/key_control';
+import { AnimationAuthoring } from '../../ide/workbench/contrib/animation/authoring';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_edits';
 import { inputFocus } from '../../ide/input/focus';
@@ -14,6 +15,8 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 test('key capture preserves grab offset and commits only a physical drop; click, source invalidation and focus loss do not edit', t => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100.25,value=1}}}}}";
@@ -110,5 +113,53 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 		assert.equal(input.keys.range.maximum - input.keys.range.minimum, maximum - minimum);
 		assert.equal(pointerCapture.active, false);
 		assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+	}
+});
+
+test('tangent direction uses both pointer axes and commits one native slope without moving its key', t => {
+	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=2,leave_tangent=0}}}}}";
+	for (const field of ['leave', 'arrive'] as const) {
+		const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		input.trackIndex = 0;
+		const keyIndex = field === 'leave' ? 0 : 1;
+		input.keys.bind(input.document.tracks[0], keyIndex, input.document);
+		const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
+		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+		const control = new AnimationKeyControl(parent, { selectKey(input, index) { input.keyIndex = index; input.keys.select(index); } }, authoring);
+		control.setInput(input); control.layout(0, 0, 806, 20);
+		input.keys.curve.layout(0, 30, 806, 230); input.keys.curve.update(input.keys);
+		const unbind = model.onDidChangeContent(() => input.invalidateProjection());
+		t.after(() => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+		const handle = field === 'leave' ? input.keys.curve.leaveHandle : input.keys.curve.arriveHandle;
+		const x = handle[2] + 1, y = handle[3] + 1, delta = handle[2] - handle[0];
+		const primary = PointerButton.Primary;
+		const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({ viewportX: x, viewportY: y,
+			valid: true, insideViewport: true, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up });
+		control.handlePointer(pointer(x, primary, primary));
+		pointerCapture.dispatch(pointer(x, 0, 0, primary), false, 0);
+		assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null, 'a click does not quantize a native slope');
+		control.handlePointer(pointer(x, primary, primary));
+		pointerCapture.dispatch(pointer(x + delta, primary), false, 0);
+		assert.ok(Math.abs(input.keys.curve.previewValue - 1) < 1e-12, 'a horizontal drag rotates the handle instead of doing nothing');
+		assert.equal(input.keys.dragValue, undefined, 'slope editing does not reorder the presentation index');
+		assert.equal(model.buffer.getText(), source);
+		pointerCapture.dispatch(pointer(x + delta, 0, 0, primary), false, 0);
+		const changed = model.buffer.getText();
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(changed, resource.path)))!;
+		assert.ok(Math.abs(document.tracks[0].keys[keyIndex][field]!.value! - 1) < 1e-12);
+		assert.equal(document.tracks[0].keys[keyIndex].coordinate!.value, keyIndex === 0 ? 0 : 100);
+		for (const optLevel of [0, 3] as const) {
+			const expected = field === 'leave' ? 20.3125 : 39.0625;
+			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
+				local timelines=component.new({parent=owner}); timelines:define('curve',require('animation')); timelines:play('curve')
+				timelines:seek_time('curve',25); local delta=owner.x-${expected}; assert(delta>-1e-12 and delta<1e-12)
+			`, { optLevel, modules: [{ path: 'animation', source: changed }] });
+			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		}
+		model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+		model.redo(); assert.equal(model.buffer.getText(), changed);
+		control.clearInput();
 	}
 });

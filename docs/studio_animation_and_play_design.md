@@ -960,3 +960,61 @@ typechecks, the browser Studio build, the strict architecture audit (zero issues
 and diff checks pass separately. No machine/cartlib/C++ or per-frame execution
 path changes. Evidence is retained in
 `.bmsx/authoring/animation-followup-2026-10-10/`.
+
+### Follow-up review: recovery and native slope controls (2026-10-10)
+
+Three further reproductions exposed real faults in the retained view owners:
+
+- Session recovery wrote the cursor before the selected native axis was admitted.
+  Binding then reset it to the extent start. The serializer now restores the
+  numeric viewport and cursor after document admission, using the existing
+  viewport owner. Source selections still precede projection. No second snapshot
+  format, stale-state fallback or source-history operation is introduced. This
+  follows VS Code's
+  [`TextFileEditor`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/editors/textFileEditor.ts)
+  ordering: install the model, then restore its view state.
+- A cubic tangent used a fixed horizontal arm, so steep native slopes put the
+  hit target far outside the curve pane. Horizontal pointer motion was ignored.
+  The curve now projects a bounded screen-length direction; a separate tangent
+  gesture uses both pointer axes and retains the initial grab offset. The native
+  value-per-time/frame slope remains the only authored quantity: no handle length,
+  coupled tangent mode, manufactured slope or runtime evaluator is added.
+  Godot's
+  [`CurveEdit`](https://github.com/godotengine/godot/blob/master/editor/scene/curve_editor_plugin.cpp)
+  provides the reference for direction-based dragging and normalized screen
+  handles. BMSX constrains the drag to its segment's side with a one-pixel
+  horizontal lever, without changing an untouched authored slope. Projection
+  runs only when geometry is dirty and reuses its retained arrays. Tangent
+  previews do not move the key or reorder the chronological presentation index.
+- Curve admission unnecessarily required both slopes on every cubic key. Native
+  segments consume only the first key's leave and the next key's arrive slope.
+  Admission now follows chronological segment order, including reversed authored
+  arrays and a single-key constant curve. Unused endpoint handles are absent;
+  missing slopes actually consumed by a segment still remain unresolved rather
+  than receiving editor defaults. The native cartlib source/writer is unchanged.
+
+Each reproduction failed before its correction. Recovery checks cover all three
+native axes. Separate compiler/CPU checks at O0 and O3 execute horizontal edits
+to both slope directions, reversed source order, omitted unused endpoint fields
+and the single-key curve. A physical drop is one source history operation;
+clicking without motion is not a write.
+
+Visible keyboard/pointer acceptance with `2025` loaded reproduced cursor `674`
+becoming `0` on reload, then verified `674` survives with the correction. The
+steep-slope hit target is now visibly reachable. Horizontal dragging changes only
+the slope in actual Source; Save, one Undo and one Redo retain the key's time.
+A later diagonal preview followed by Escape does not write on release. The same
+valid definition without unused endpoint slopes visibly acquires its curve after
+the rebuilt client reloads. No direct model writes, `page.evaluate`, clipboard
+injection or shell authoring drove this acceptance. Temporary Source/Animation
+tabs and their resource are removed afterward; original cart sources are untouched.
+
+The broad Lua suite passes 3,097 checks with one existing skip. IDE/test
+typechecks, the browser Studio build, strict architecture audit (zero issues) and
+diff checks pass separately. A Node 22.23.1 geometry-only run with two 20,000-key
+tracks, 51 visible keys each, a visible selected tangent and nine warmed batches
+measures median bind 0.24680 ms and viewport reprojection 0.02357 ms. This excludes
+source admission, drawing/GPU work and machine execution; it is not an end-to-end
+latency claim. No machine, cartlib, C++ or Play execution owner changed.
+Evidence is retained in
+`.bmsx/authoring/animation-state-and-handles-2026-10-10/`.
