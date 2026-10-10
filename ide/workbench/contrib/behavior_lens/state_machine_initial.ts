@@ -3,7 +3,7 @@ import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_liter
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaStringValueEdit, type LuaScalarLiteral } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../../language/lua/table_field_insertion';
 import type { BehaviorSourceRowKey } from './model';
 import { SourceTableIssue } from './source';
 import type { StateMachineSourceBody } from './state_machine_model';
@@ -47,6 +47,6 @@ export function stateMachineInitialTarget(view: BehaviorLensViewState): StateMac
 
 export function createStateMachineInitialEdits(buffer: TextBuffer, target: StateMachineInitialTarget): readonly EditorTextEdit[] {
 	return target.literal === undefined
-		? createLuaTableFieldInsertionEdits(buffer, target.owner.file.chunk, target.owner.table, 0, 'initial = ' + quoteLuaString(target.name))
+		? createLuaTableFieldsInsertionEdits(buffer, target.owner.file.chunk, target.owner.table, 0, ['initial = ' + quoteLuaString(target.name)])
 		: [createLuaStringValueEdit(buffer, target.owner.file.chunk.locations, target.literal, target.name)];
 }

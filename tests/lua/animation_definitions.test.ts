@@ -6,7 +6,7 @@ import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/
 import { semanticSnapshot } from './semantic_test_harness';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { luaSourceRangeToTextRange, readLuaNumberLiteral } from '../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';
 import { AnimationInputSerializer } from '../../ide/workbench/contrib/animation/editor_serializer';
@@ -132,8 +132,8 @@ test('a source-authored track extends a native frame builder without replacing i
 	assert.equal(frames.kind, LuaSyntaxKind.FunctionExpression);
 	const originalBuilder = model.buffer.getTextRange(luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(frames.span)).start,
 		luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(frames.span)).end);
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, file.chunk, document.root.table, document.root.table.fields.length,
-		"tracks = {{ kind = 'value', interpolation = 'linear', path = {'y'}, keys = {{ frame = 0, value = 10 }, { frame = 1, value = 20 }} }}"));
+	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, file.chunk, document.root.table, document.root.table.fields.length,
+		["tracks = {{ kind = 'value', interpolation = 'linear', path = {'y'}, keys = {{ frame = 0, value = 10 }, { frame = 1, value = 20 }} }}"]));
 	assert.ok(model.buffer.getText().includes(originalBuilder));
 	for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(`

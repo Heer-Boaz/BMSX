@@ -918,3 +918,45 @@ through the actual Studio MCP run/wait tools, including transition/combat
 fixture admission and native curve/sequence behavior. Local evidence is retained under
 `.bmsx/authoring/animation-review-2026-10-10/` (physical actions, screenshots,
 accepted source snapshots, before/after measurements and validation logs).
+
+### Follow-up review: coincident field admission (2026-10-10)
+
+The next source/gesture review reproduced a distinct missing-field failure:
+left-trimming a multiline child clip with neither `start_time_ms` nor
+`clip_in_ms` called the single-field insertion primitive twice against the same
+parse. A missing trailing separator was inserted twice, while separators between
+the new fields were absent. Sorting the combined edits did not fix this.
+
+The shared Lua placement owner now consumes one nonempty field-source batch at
+one gap. It resolves the original punctuation, comments and indentation once,
+joins the new siblings and returns at most two insertion edits. Animation gathers
+the missing transport fields into that batch alongside its literal replacements,
+then commits one resource history operation. All other callers pass explicit
+single-field batches to the same owner; no compatibility wrapper, reparse between
+fields, source rollback, formatter or guest evaluator is introduced. This follows
+the grouped placement pattern in TypeScript's
+[`ChangeTracker.insertNodesAfter`](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/textChanges.ts#L933-L936)
+and VS Code's existing document edit-stack ownership.
+
+The multiline clip reproduction failed before the correction and passes after
+it for LF/CRLF, commas/semicolons and present/absent trailing separators. Each
+result runs with its imported child on the native BLua CPU at O0 and O3, retains
+the same child time and has one content event and exact Undo/Redo. The structural
+corpus inserts a two-field batch at all 20,249 boundaries in 5,539 tables across
+355 tracked cartlib/BIOS/cart files; the complete resulting AST changes only by
+the requested fields. Original corpus sources are not modified.
+
+Visible acceptance creates a temporary multiline definition in Studio using
+normal keyboard input, trims the clip through its lane, saves and inspects its
+actual Source, then performs one Undo and Redo. The child comment remains in
+place and the two new fields have valid separators. Escape during a move and
+Undo during another captured move both cancel the preview; releasing afterward
+does not apply stale source edits. The existing gesture/focus/history owners
+therefore needed no extra guards or lifecycle wrapper. The original `2025`
+sources remain unchanged after temporary-resource cleanup.
+
+The broad Lua suite passes 3,093 checks with one existing skip. IDE/test
+typechecks, the browser Studio build, the strict architecture audit (zero issues)
+and diff checks pass separately. No machine/cartlib/C++ or per-frame execution
+path changes. Evidence is retained in
+`.bmsx/authoring/animation-followup-2026-10-10/`.

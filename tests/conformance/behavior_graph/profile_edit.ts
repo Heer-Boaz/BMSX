@@ -10,7 +10,7 @@ import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/beha
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
 import { behaviorTreeEditTarget, createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildRemovalEdits } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 
 Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 for (const siblings of [24, 1024]) {
@@ -59,14 +59,14 @@ for (const siblings of [24, 1024]) {
 	let copied = 0;
 	const duplicateConstructMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {
-			const edits = createLuaTableFieldInsertionEdits(model.buffer, parsed, member.table,
-				member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, parsed.locations.range(field.span)));
+			const edits = createLuaTableFieldsInsertionEdits(model.buffer, parsed, member.table,
+				member.table.fields.indexOf(field), [readLuaSourceRange(model.buffer, parsed.locations.range(field.span))]);
 			copied += edits[0].text.length;
 		}
 	}) * 10;
 	assert.ok(copied > 0);
-	const duplicateEdits = createLuaTableFieldInsertionEdits(model.buffer, parsed, member.table,
-		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, parsed.locations.range(field.span)));
+	const duplicateEdits = createLuaTableFieldsInsertionEdits(model.buffer, parsed, member.table,
+		member.table.fields.indexOf(field), [readLuaSourceRange(model.buffer, parsed.locations.range(field.span))]);
 	const duplicateApplyUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
 			model.pushEditOperations(duplicateEdits);

@@ -3,7 +3,7 @@ import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorLensViewState } from './view_model';
 import type { EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../../language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import { createLuaTableFieldTransfer } from '../../../language/lua/table_field_transfer';
 import type { BehaviorTreeTransferCheck } from './behavior_tree_transfer';
@@ -32,8 +32,8 @@ export function createBehaviorTreeChildRemovalEdits(buffer: TextBuffer, member: 
 /** Insert before the retained field: its tracked selection becomes the second occurrence. */
 export function createBehaviorTreeChildDuplicateEdits(buffer: TextBuffer, member: BehaviorTreeSourceMember): readonly EditorTextEdit[] {
 	const field = member.branch.entries[member.index].field;
-	return createLuaTableFieldInsertionEdits(buffer, member.file.chunk, member.table,
-		member.table.fields.indexOf(field), readLuaSourceRange(buffer, member.file.chunk.locations.range(field.span)));
+	return createLuaTableFieldsInsertionEdits(buffer, member.file.chunk, member.table,
+		member.table.fields.indexOf(field), [readLuaSourceRange(buffer, member.file.chunk.locations.range(field.span))]);
 }
 
 /** Array ranks are not lexical field indices: named metadata stays ordinary Lua. */

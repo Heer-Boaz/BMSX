@@ -29,16 +29,16 @@ export function validateLuaTableFieldExpression(text: string): string {
 }
 
 /**
- * Places one complete field source (no exterior trivia/separator) in a current
- * parser-owned table. The producer owns the new syntax and its interior bytes;
- * this owner supplies only insertion boundaries, punctuation and boundary layout.
+ * Places a nonempty batch of complete field sources (no exterior trivia/separator)
+ * in a current parser-owned table. The producer owns each field's interior bytes;
+ * this owner supplies sibling separators and boundary layout once for the batch.
  */
-export function createLuaTableFieldInsertionEdits(
+export function createLuaTableFieldsInsertionEdits(
 	buffer: TextBuffer,
 	chunk: LuaChunk,
 	table: LuaTableConstructorExpression,
 	index: number,
-	fieldSource: string,
+	fieldSources: readonly string[],
 ): EditorTextEdit[] {
 	const { locations, tokens } = chunk;
 	const fields = table.fields;
@@ -60,7 +60,7 @@ export function createLuaTableFieldInsertionEdits(
 		const indentation = lineStart ? extractIndentation(buffer.getLineContent(locations.range(fields[index].span).start.line - 1)) : '';
 		return [{
 			offset: locations.offset(anchor.unit, anchor.start), deleteLength: 0,
-			text: indentation + fieldSource + separator + (lineStart ? newline : ' '),
+			text: indentation + fieldSources.join(separator + (lineStart ? newline + indentation : ' ')) + separator + (lineStart ? newline : ' '),
 		}];
 	}
 
@@ -77,7 +77,7 @@ export function createLuaTableFieldInsertionEdits(
 		offset = locations.offset(anchor.unit, anchor.start);
 		const padding = reference === null
 			? buffer.getTextRange(offset, buffer.offsetAt(locations.range(table.span).end.line - 1, locations.range(table.span).end.column - 1)) : ' ';
-		text = padding + fieldSource + trailingSeparator;
+		text = padding + fieldSources.join(separator + ' ') + trailingSeparator;
 	} else {
 		const anchor = reference === null ? tokens.get(luaTokenLeadingTriviaStart(tokens, closeIndex)) : reference.endToken;
 		const position = locations.range(anchor).start;
@@ -86,7 +86,7 @@ export function createLuaTableFieldInsertionEdits(
 		const indentation = reference !== null && locations.range(fields[referenceIndex].span).start.line !== locations.range(table.span).start.line
 			? extractIndentation(buffer.getLineContent(locations.range(fields[referenceIndex].span).start.line - 1)) : parentIndentation + '\t';
 		const lineStart = position.column === 1;
-		text = (lineStart ? '' : newline) + indentation + fieldSource + trailingSeparator + newline + (lineStart ? '' : parentIndentation);
+		text = (lineStart ? '' : newline) + indentation + fieldSources.join(separator + newline + indentation) + trailingSeparator + newline + (lineStart ? '' : parentIndentation);
 	}
 	const edits: EditorTextEdit[] = [];
 	if (reference !== null && reference.separator === null) {

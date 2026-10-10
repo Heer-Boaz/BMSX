@@ -3,7 +3,7 @@ import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
 import { serializeLuaGrammar } from '../helpers/lua_syntax_snapshot';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
@@ -148,7 +148,7 @@ test('structural field edits consume retained syntax without relexing the docume
 	walkLuaAst(chunk, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) tables.push(node); });
 	const scan = context.mock.method(LuaLexer.prototype, 'scanTokens', () => { throw new Error('Structural edits must reuse retained tokens'); });
 	const recoveryScan = context.mock.method(LuaLexer.prototype, 'scanTokensWithRecovery', () => { throw new Error('Structural edits must reuse retained tokens'); });
-	assert.ok(createLuaTableFieldInsertionEdits(model.buffer, chunk, tables[0], 1, '3').length > 0);
+	assert.ok(createLuaTableFieldsInsertionEdits(model.buffer, chunk, tables[0], 1, ['3']).length > 0);
 	assert.ok(createLuaTableFieldMoveEdits(model.buffer, chunk, tables[0], 0, 1).length > 0);
 	assert.ok(createLuaTableFieldTransfer(model.buffer, chunk, tables[0].fields[0], tables[1], 0).edits.length > 0);
 	assert.equal(scan.mock.callCount(), 0);

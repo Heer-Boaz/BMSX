@@ -4,7 +4,7 @@ import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { countLeadingIndent, extractIndentation } from '../../ide/editor/text/indentation';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { runCompiledLua } from './cpu_test_harness';
@@ -23,11 +23,11 @@ function parseTable(source: string) {
 	return { table, chunk: parsed.chunk, locations: parsed.chunk.locations };
 }
 
-function insert(source: string, index: number, fieldSource: string) {
+function insert(source: string, index: number, ...fieldSources: string[]) {
 	const model = new EditorTextModel(resource, 'lua', source);
 	const { table, chunk, locations } = parseTable(source);
 	const fields = table.fields.map(field => readLuaSourceRange(model.buffer, locations.range(field.span)));
-	const edits = createLuaTableFieldInsertionEdits(model.buffer, chunk, table, index, fieldSource);
+	const edits = createLuaTableFieldsInsertionEdits(model.buffer, chunk, table, index, fieldSources);
 	assert.ok(edits.length >= 1 && edits.length <= 2 && edits.every(edit => edit.deleteLength === 0));
 	assert.equal(new Set(edits.map(edit => edit.offset)).size, edits.length, 'coincident punctuation belongs to one producer-ordered insertion');
 	let events = 0;
@@ -35,7 +35,7 @@ function insert(source: string, index: number, fieldSource: string) {
 	model.pushEditOperations(edits);
 	const result = model.buffer.getText();
 	const inserted = parseTable(result);
-	fields.splice(index, 0, fieldSource);
+	fields.splice(index, 0, ...fieldSources);
 	assert.deepEqual(inserted.table.fields.map(field => readLuaSourceRange(model.buffer, inserted.locations.range(field.span))), fields,
 		'insertion preserves every complete field interior exactly, in the requested order');
 	assert.equal(events, 1);
@@ -94,6 +94,26 @@ test('multiline insertion never copies sibling documentation, inline comments or
 	assert.equal(insert(source, 2, 'added = 7').result, header + first + second + '\tadded = 7,\r\n' + footer);
 });
 
+test('a batch owns its sibling separators once across table layouts and one Undo/Redo', () => {
+	const fields = ['start_time_ms = 25', 'clip_in_ms = 25', 'nested = {\n\tx = 7,\n}'];
+	const cases = [
+		'local values = {}',
+		'local values = {a=1; b=2}',
+		'local values = {a=1, b=2, }',
+		'local values = {\n\ta=1,\n\tb=2 -- retained comment\n}',
+		'local values = {\n\ta=1;\n\tb=2; -- retained comment\n\t-- footer\n}',
+		'local values = {\r\n\ta=1;\r\n\tb=2 -- retained comment\r\n}',
+	];
+	for (const source of cases) {
+		const { table } = parseTable(source);
+		for (let index = 0; index <= table.fields.length; index++) {
+			const { result, model } = insert(source, index, ...fields);
+			assert.deepEqual(runCompiledLua(result + '\nreturn values.start_time_ms, values.clip_in_ms, values.nested.x'), [25, 25, 7]);
+			model.dispose();
+		}
+	}
+});
+
 test('appending punctuation precedes comments and does not consume the closing brace into a line comment', () => {
 	const cases = [
 		['local values = {\n\ta=1 -- last\n}', 'local values = {\n\ta=1, -- last\n\tadded = 7\n}'],
@@ -150,7 +170,7 @@ test('repeated insertion reuses actual syntax and one history element per field 
 	const model = new EditorTextModel(resource, 'lua', original);
 	for (let index = 0; index < 12; index += 1) {
 		const { table, chunk } = parseTable(model.buffer.getText());
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, chunk, table, index, String(index + 1)));
+		model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, chunk, table, index, [String(index + 1)]));
 	}
 	const expected = 'local values = {\n' + Array.from({ length: 12 }, (_, index) => '\t' + (index + 1) + (index < 11 ? ',' : '') + '\n').join('') + '}';
 	assert.equal(model.buffer.getText(), expected);

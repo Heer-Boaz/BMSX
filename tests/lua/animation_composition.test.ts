@@ -78,6 +78,37 @@ test('multi-field curve and clip edits preserve independently authored field ord
 	}
 });
 
+test('a multiline clip trim inserts missing transport fields as one syntax batch', t => {
+	for (const separator of [',', ';']) for (const trailing of ['', separator]) for (const newline of ['\n', '\r\n']) {
+		const source = ['-- parent', 'return {subsequences={{', `\tduration_ms=100${separator}`,
+			`\tsequence=require('child')${trailing} -- child stays here`, '}}}'].join(newline);
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+		t.after(() => { input.dispose(); model.dispose(); });
+		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path), buildLuaFileSemanticData(child, 'child.lua')))!;
+		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+		let changes = 0; model.onDidChangeContent(() => changes++);
+		authoring.editClip(input, input.document.clips[0], 'start', 25, 75);
+		const changed = model.buffer.getText(), file = buildLuaFileSemanticData(changed, resource.path);
+		assert.equal(file.syntaxError, null);
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(file, buildLuaFileSemanticData(child, 'child.lua')))!;
+		assert.equal(document.clips[0].start!.value, 25);
+		assert.equal(document.clips[0].duration!.value, 75);
+		assert.equal(document.clips[0].clipIn!.value, 25);
+		assert.equal(changes, 1);
+		assert.ok(changed.includes('-- child stays here'));
+		for (const optLevel of [0, 3] as const) {
+			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
+				local owner={x=-1}; local timeline=component.new({parent=owner})
+				timeline:define('clip',require('parent')); timeline:play('clip')
+				timeline:seek_time('clip',50); assert(owner.x==50)
+			`, { optLevel, modules: [{ path: 'parent', source: changed }, { path: 'child', source: child }] });
+			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		}
+		model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+		model.redo(); assert.equal(model.buffer.getText(), changed);
+	}
+});
+
 test('sprite frame definitions are admitted by their imported factory and retain named/source array order', () => {
 	const source = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory({animation='idle',animations={idle={frames={'idle.1','idle.2'},frame_run=2},hit={frames={'hit.1'},frame_duration_ms=20}}})";
 	const file = buildLuaFileSemanticData(source, resource.path), snapshot = semanticSnapshot(file);

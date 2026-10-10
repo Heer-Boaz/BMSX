@@ -3,22 +3,21 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
-import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 
-// Run separately from the fast unit suite: every insertion boundary in every
+// Run separately from the fast unit suite: a field batch at every boundary in every
 // tracked cartlib/BIOS/cart Lua table, with a complete AST oracle for each edit.
 // node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/insertion.ts
 const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts'], { encoding: 'utf8' })
 	.trim().split('\n').filter(path => path.endsWith('.lua'));
-const fieldSource = '__bmsx_insert_probe = 7';
-const probe = parseLuaChunk(`local probe = {${fieldSource}}`, 'probe.lua').chunk!.body.get(0)!;
+const fieldSources = ['__bmsx_insert_probe = 7', '__bmsx_insert_second_probe = {8}'];
+const probe = parseLuaChunk(`local probe = {${fieldSources.join(',')}}`, 'probe.lua').chunk!.body.get(0)!;
 if (probe.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected probe assignment');
 const probeTable = probe.values[0];
 if (probeTable.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected probe table');
-const probeField = probeTable.fields[0];
 let insertions = 0;
 let tables = 0;
 let emptyTables = 0;
@@ -38,7 +37,7 @@ for (const path of paths) {
 		const range = original.chunk.locations.range(table.span);
 		for (let index = 0; index <= table.fields.length; index += 1) {
 			const label = `${path}: insert ${index} at table ${range.start.line}:${range.start.column}`;
-			const edits = createLuaTableFieldInsertionEdits(model.buffer, original.chunk, table, index, fieldSource);
+			const edits = createLuaTableFieldsInsertionEdits(model.buffer, original.chunk, table, index, fieldSources);
 			assert.ok(edits.length >= 1 && edits.length <= 2 && edits.every(edit => edit.deleteLength === 0), label);
 			assert.equal(new Set(edits.map(edit => edit.offset)).size, edits.length, label);
 			let changed = source;
@@ -50,7 +49,7 @@ for (const path of paths) {
 			const parsed = parseLuaChunk(changed, path);
 			assert.equal(parsed.syntaxError, null, label);
 			const fields = [...table.fields];
-			fields.splice(index, 0, probeField);
+			fields.splice(index, 0, ...probeTable.fields);
 			const expected = serializeLuaGrammar(original.chunk, new Map([[table, fields]]));
 			assert.equal(serializeLuaGrammar(parsed.chunk), expected, label);
 			insertions += 1;

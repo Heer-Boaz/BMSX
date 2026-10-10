@@ -1,7 +1,7 @@
 import { parseLuaExpressionSource } from '../../../../toolchain/ts/lua/analysis/parse';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { readLuaNumberLiteral, readLuaSourceRange, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits, validateLuaTableFieldExpression, formatLuaTableFieldSource } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits, validateLuaTableFieldExpression, formatLuaTableFieldSource } from '../../../language/lua/table_field_insertion';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
@@ -48,16 +48,18 @@ export class AnimationAuthoring {
 	}
 	public editClip(input: AnimationEditorInput, clip: AnimationClipSource, mode: 'move' | 'start' | 'end', start: number, duration: number): void {
 		const source = clip.source!, model = this.controller.modelFor(input, source.file), edits: EditorTextEdit[] = [];
+		const fields: string[] = [];
 		if (mode !== 'end') {
-			if (clip.start === undefined) edits.push(...createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, `start_time_ms = ${start}`));
+			if (clip.start === undefined) fields.push(`start_time_ms = ${start}`);
 			else edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, clip.start.field, start)!);
 		}
 		if (mode !== 'move') edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, clip.duration!.field, duration)!);
 		if (mode === 'start') {
 			const value = (clip.clipIn === undefined ? 0 : clip.clipIn.value!) + (start - (clip.start === undefined ? 0 : clip.start.value!)) * (clip.timeScale === undefined ? 1 : clip.timeScale.value!);
-			if (clip.clipIn === undefined) edits.push(...createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, `clip_in_ms = ${value}`));
+			if (clip.clipIn === undefined) fields.push(`clip_in_ms = ${value}`);
 			else edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, clip.clipIn.field, value)!);
 		}
+		if (fields.length > 0) edits.push(...createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, fields));
 		edits.sort((left, right) => left.offset - right.offset);
 		if (edits.length > 0) model.pushEditOperations(edits);
 	}
@@ -85,8 +87,8 @@ export class AnimationAuthoring {
 	private insertTrack(input: AnimationEditorInput, track: string): void {
 		const document = input.document!, source = document.tracksSource === undefined ? document.root : document.tracksSource;
 		const model = this.controller.modelFor(input, source.file);
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length,
-			document.tracksSource === undefined ? `tracks = { ${track} }` : track));
+		model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length,
+			[document.tracksSource === undefined ? `tracks = { ${track} }` : track]));
 		this.controller.refresh(input); this.controller.selectTrack(input, input.document!.tracks.length);
 	}
 
@@ -117,8 +119,8 @@ export class AnimationAuthoring {
 		const event = track.kind === 'event';
 		const lifetime = this.quickInput.input(event ? 'EVENT' : 'KEY VALUE', `${unit} = ${time}`, event ? "'animation.event'" : '0', async text => validateLuaTableFieldExpression(text), value => {
 			const tangents = track.interpolation === 'cubic' ? ', arrive_tangent = 0, leave_tangent = 0' : '';
-			this.controller.modelFor(input, source.file).pushEditOperations(createLuaTableFieldInsertionEdits(this.controller.modelFor(input, source.file).buffer,
-				source.file.chunk, source.table, source.table.fields.length, `{ ${unit} = ${time}, ${event ? "direction = 'forward', event" : 'value'} = ${value}${tangents} }`));
+			this.controller.modelFor(input, source.file).pushEditOperations(createLuaTableFieldsInsertionEdits(this.controller.modelFor(input, source.file).buffer,
+				source.file.chunk, source.table, source.table.fields.length, [`{ ${unit} = ${time}, ${event ? "direction = 'forward', event" : 'value'} = ${value}${tangents} }`]));
 			this.controller.refresh(input);
 			this.controller.selectKey(input, input.document!.tracks[input.trackIndex].keys.length - 1);
 		});
@@ -161,8 +163,8 @@ export class AnimationAuthoring {
 			async value => validateLuaTableFieldExpression(value), sequence => {
 				const clip = `{id = 'clip${document.clips.length + 1}', start_time_ms = 0, duration_ms = 100, sequence = ${sequence}}`;
 				const model = this.controller.modelFor(input, source.file);
-				model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length,
-					document.clipsSource === undefined ? `subsequences = { ${clip} }` : clip));
+				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length,
+					[document.clipsSource === undefined ? `subsequences = { ${clip} }` : clip]));
 				this.controller.refresh(input); this.controller.selectTrack(input, input.document!.tracks.length + input.document!.clips.length);
 			});
 		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
@@ -192,8 +194,8 @@ export class AnimationAuthoring {
 		const document = input.document!, source = document.framesSource === undefined ? document.root : document.framesSource;
 		const index = document.framesSource === undefined ? 0 : input.framesSelected && input.details.selectionIndex >= 0 ? input.details.selectionIndex + 1 : source.table.fields.length;
 		const model = this.controller.modelFor(input, source.file);
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, index,
-			document.framesSource === undefined ? `frames = { ${frame} }` : frame));
+		model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, index,
+			[document.framesSource === undefined ? `frames = { ${frame} }` : frame]));
 		this.controller.refresh(input); this.controller.selectTrack(input, input.tracks.rows.length - 1);
 		this.controller.selectProperty(input, index); input.keys.setCursor(index); input.keys.reveal(index, index + 1);
 	}
@@ -210,7 +212,7 @@ export class AnimationAuthoring {
 		}, name => {
 			const valuePrompt = this.quickInput.input(name, 'Lua value', 'nil', async value => validateLuaTableFieldExpression(value), value => {
 				const model = this.controller.modelFor(input, source.file);
-				model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, formatLuaTableFieldSource(name, value)));
+				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, [formatLuaTableFieldSource(name, value)]));
 			});
 			valuePrompt.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 		});
@@ -234,8 +236,8 @@ export class AnimationAuthoring {
 		const source = this.orderedSource(input)!, field = this.orderedField(input)!, model = this.controller.modelFor(input, source.file);
 		const index = source.table.fields.indexOf(field) + 1;
 		const selection = input.framesSelected ? 'frame' : input.clipIndex >= 0 ? 'clip' : input.keyIndex >= 0 ? 'key' : 'track', trackIndex = input.trackIndex;
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, index,
-			readLuaSourceRange(model.buffer, source.file.chunk.locations.range(field.span))));
+		model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, index,
+			[readLuaSourceRange(model.buffer, source.file.chunk.locations.range(field.span))]));
 		this.controller.refresh(input);
 		this.selectOrderedEntry(input, selection, index, trackIndex);
 	}

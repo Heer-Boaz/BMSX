@@ -211,13 +211,13 @@ reselects by a captured root/child index; its existing mapped source selection
 now suffices. The BT contribution uses that same primitive and history. Current
 costs and product evidence are in [the BT authoring slice](behavior_tree_authoring_design.md).
 
-## Field insertion contract (2026-09-08)
+## Field insertion contract (2026-09-08; batch admission 2026-10-10)
 
-The insertion primitive places **one already constructed complete field's
-source** at an explicit index in the current parser-owned table. It is a source
+The insertion primitive places **a nonempty batch of already constructed complete
+field sources** at one explicit index in the current parser-owned table. It is a source
 placement operation, not a prefab chooser, AST factory, fragment parser or
 live-instance command. Its producer supplies valid field syntax without exterior
-trivia/separator; the field's interior bytes remain unchanged. Future external
+trivia/separators; each field's interior bytes remain unchanged. Future external
 text/paste admission must use the language parser, not this primitive as a
 validation or repair layer. No invented spans or synthetic parser nodes.
 
@@ -235,6 +235,11 @@ JavaScript grammar, full-file formatter or defensive recovery paths.
 - The caller admits a current complete parse, the real parent table and an
   index in `0..fields.length`. This applies to all Lua field kinds, not a scene
   schema. Dynamic Lua is not evaluated or normalized.
+- Fields added at the same gap belong to one request. The placement owner
+  resolves that boundary once and supplies separators between the new fields.
+  Concatenating independent append edits from the same parse can insert the old
+  separator twice and omit separators between the new siblings. Sorting those
+  edits by offset does not repair their syntax ownership.
 - Insertion before a sibling precedes that sibling's owned leading trivia.
   Its documentation is not copied or transferred. A line-start insertion uses
   sibling indentation plus a newline; an inline insertion uses a separator
@@ -265,12 +270,12 @@ JavaScript grammar, full-file formatter or defensive recovery paths.
 
 | Callsite | Representation / cost |
 | --- | --- |
-| Explicit language insertion | Current buffer snapshot, actual table/index and complete field source; one opt-in lossless scan and bounded token/line queries; at most two insertion edits. |
+| Explicit language insertion | Current buffer snapshot, actual table/index and complete field-source batch; one opt-in lossless scan, boundary queries once and one join of the new fields; at most two insertion edits. |
 | Code-editor Enter | Existing leading spaces/tabs; shared text utility, no new editor or language state. |
 | Scene Editor stable update/render, compiler and guest runtime | No new callsite, metadata, trivia cache or frame work. |
 
 Gate: exact source/trivia tests, every insertion boundary in the real Lua corpus,
-unchanged AST except the new field, real BLua evaluation/array order, single
+unchanged AST except the new fields, real BLua evaluation/array order, single
 document history and a real Nemesis remove/reinsert/source-application trial.
 The latter invokes the language primitive on the actual working copy, then
 uses ordinary Studio input/Save/Hot Resume; it is **not proof of an Add UI**.

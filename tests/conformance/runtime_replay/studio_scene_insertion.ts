@@ -1,5 +1,5 @@
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -39,8 +39,8 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 		} else if (revision === 1) {
 			await selectMember(test, scene, 2);
 			// Explicit language operation under test; no synthetic Add command.
-			model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, scene.parsed,
-				scene.outline.roots[0].element.scene.objectsTable, 2, fieldSource));
+			model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, scene.parsed,
+				scene.outline.roots[0].element.scene.objectsTable, 2, [fieldSource]));
 			await frame();
 			const inserted = model.buffer.getText();
 			check(scene.outline.roots[0].children.length === 4 && scene.outline.selectionIndex === 4

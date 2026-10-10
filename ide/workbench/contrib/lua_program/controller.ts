@@ -6,7 +6,7 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
@@ -146,7 +146,7 @@ export class LuaProgramController {
 		if (entry !== undefined) {
 			const lifetime = this.quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
 				async text => validateLuaTableFieldExpression(text), value => model.pushEditOperations(
-					createLuaTableFieldInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, value)));
+					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])));
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			return;
 		}
@@ -165,7 +165,7 @@ export class LuaProgramController {
 					validateLuaTableFieldExpression(`{ ${text} }`);
 					return text;
 				}, value => model.pushEditOperations(
-					createLuaTableFieldInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, value)));
+					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])));
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 		});
 	}

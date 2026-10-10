@@ -8,7 +8,7 @@ import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animat
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 
 const resource = { domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
@@ -87,8 +87,8 @@ test('a key gesture is presentation only until one shared document edit, with na
 test('the creation template receives ordinary tracks through the shared table edit owner', () => {
 	const model = new EditorTextModel(resource, 'lua', newLuaSource('animation', resource.path));
 	const document = project(model.buffer.getText())!, tracks = document.tracksSource!;
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, tracks.file.chunk, tracks.table, 0,
-		"{kind='value',interpolation='step',path={'imgid'},keys={{time_ms=0,value='idle'},{time_ms=100,value='strike'}}}"));
+	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, tracks.file.chunk, tracks.table, 0,
+		["{kind='value',interpolation='step',path={'imgid'},keys={{time_ms=0,value='idle'},{time_ms=100,value='strike'}}}"]));
 	const authored = project(model.buffer.getText())!;
 	assert.equal(authored.tracks[0].interpolation, 'step');
 	assert.equal(authored.tracks[0].keys.length, 2);

@@ -12,7 +12,7 @@ import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramProperty } from '../../ide/workbench/contrib/lua_program/source';
 import { createWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaTableFieldInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../ide/language/lua/table_field_insertion';
 import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_edits';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -41,7 +41,7 @@ test('imported authored tables stay attached to their original shared models', (
 	assert.equal(property.file.file, 'spec.lua');
 	assert.ok(property.container!.structural);
 	const model = f.models.get('spec.lua')!, before = model.buffer.getText();
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, property.file.chunk, property.container!.table, property.container!.table.fields.length, 'apply_once = true'));
+	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, property.file.chunk, property.container!.table, property.container!.table.fields.length, ['apply_once = true']));
 	assert.ok(model.buffer.getText().includes('apply_once = true'));
 	model.history.undo(model);
 	assert.equal(model.buffer.getText(), before);
@@ -98,7 +98,7 @@ p.set('context', 'flag', true)
 assert(p.matches('context', filters[1]))`);
 	const property = f.tree.rows.find(row => row.element.path.length === 2 && row.element.path[0] === 'filters')!.element;
 	const target = property.table!, model = f.models.get(target.file.file)!;
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, target.file.chunk, target.table, 0, programEntryTemplate('progression', property)!));
+	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, 0, [programEntryTemplate('progression', property)!]));
 	const next = project(model.buffer.getText());
 	const condition = next.tree.rows.find(row => row.element.path.length === 3 && row.element.path[0] === 'filters')!.element;
 	const names = new Set(programFieldTemplates('progression', condition).map(item => item.name));
@@ -122,8 +122,8 @@ test('named field insertion preserves keyword and arbitrary string keys through 
 	for (const name of ['not', 'mode', 'effect.trigger', "quote'key"]) {
 		const f = project("local p=require('cartlib/progression'); p.compile_program({rules={},filters={},handlers={}})");
 		const root = f.tree.roots[0].element.table!, model = f.models.get(root.file.file)!;
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, root.file.chunk, root.table,
-			root.table.fields.length, formatLuaTableFieldSource(name, 'true')));
+		model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, root.file.chunk, root.table,
+			root.table.fields.length, [formatLuaTableFieldSource(name, 'true')]));
 		const next = project(model.buffer.getText());
 		assert.equal(next.occurrence.file.syntaxError, null);
 		const field = next.tree.rows.find(row => row.element.path.length === 1 && row.element.path[0] === name)!.element;
