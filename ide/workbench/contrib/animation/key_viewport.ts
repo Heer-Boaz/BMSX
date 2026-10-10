@@ -133,6 +133,10 @@ export class AnimationKeyViewport {
 		if (direction === 'Home') return order[0];
 		if (direction === 'End') return order[order.length - 1];
 		const index = this.selectedOrder;
+		if (index < 0) {
+			const adjacent = direction === 'ArrowLeft' ? this.timeIndex(this.cursor) - 1 : this.timeIndex(this.cursor, true);
+			return adjacent < 0 || adjacent >= order.length ? -1 : order[adjacent];
+		}
 		return order[Math.max(0, Math.min(order.length - 1, index + (direction === 'ArrowLeft' ? -1 : 1)))];
 	}
 	public xAt(value: number): number {

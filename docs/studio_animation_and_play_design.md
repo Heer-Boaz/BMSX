@@ -1018,3 +1018,63 @@ source admission, drawing/GPU work and machine execution; it is not an end-to-en
 latency claim. No machine, cartlib, C++ or Play execution owner changed.
 Evidence is retained in
 `.bmsx/authoring/animation-state-and-handles-2026-10-10/`.
+
+### Follow-up review: transient segment topology and cursor navigation (2026-10-10)
+
+Two more negative reproductions found faults in the retained curve/key owners:
+
+- Moving a cubic endpoint past another key changes which slopes its adjacent
+  segments consume. Admission still trusted the original source order, so a
+  valid definition with omitted unused endpoint slopes crashed during its drag
+  preview. Source admission now retains those endpoint-only exemptions; dirty
+  geometry compares them with the actual preview order before consuming segment
+  fields. This is two index comparisons, not a repeated track scan. The curve
+  and handles are absent while required slopes are unresolved; the native strip,
+  Details and Source remain usable. Returning the key restores the curve.
+  No exception handler, invented tangent, source rewrite or restriction on key
+  ordering is introduced. The projection follows the transient-neighbor pattern
+  in Godot's
+  [`AnimationBezierTrackEdit`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_bezier_editor.cpp),
+  using BMSX's existing retained chronological index rather than a per-draw map.
+- Without a selected key, both directional keys treated the cursor as an index
+  of -1 and clamped to the first authored key. Navigation now searches strictly
+  before/after the current native cursor using the existing binary bounds.
+  A missing directional neighbor leaves the cursor alone. Home/End and selected
+  coincident-key navigation retain their existing behavior. Godot's
+  [`go_to_nearest_keyframe`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_player_editor_plugin.cpp)
+  and Blender's
+  [`keyframe_jump_exec`](https://github.com/blender/blender/blob/main/source/blender/editors/screen/screen_ops.cc)
+  provide the current-time anchor reference; no epsilon, optional wrap or guest
+  seek is copied into this source editor.
+
+The behavioral reproductions failed before their corrections. Curve checks cover
+both endpoints, cancellation and the still-navigable native strip. Navigation
+checks cover all three native units, reversed authored order, equal-time keys,
+exact cursor matches and absent directional neighbors. Existing native O0/O3
+animation checks remain green; these two fixes change no playback owner.
+
+Visible keyboard/pointer acceptance with `2025` loaded reproduces the old host
+exception and wrong first-key jump. The rebuilt client previews a crossing from
+0 to 151 without crashing; moving back to 80 restores the curve. A physical drop
+changes only the original key's `time_ms` in actual Source, and one Undo restores
+0 and its curve. A separate crossing followed by Escape leaves the source
+untouched on release. A blank cursor at 155 has no next key and moves left to
+100; a blank cursor at 49 moves right to 100. No direct model writes, evaluation
+or clipboard injection drive this acceptance. The pointer driver separates down,
+move and release so its own sampling cannot miss the grabbed key.
+
+A drop can leave a partially authored cubic definition whose newly required
+slopes still need editing in Source/Details, or Undo. Hiding unresolved geometry
+does not make that definition executable or silently repair its native behavior.
+Temporary editors/resources are removed afterward; original cart sources remain
+unchanged.
+
+The broad Lua suite passes 3,099 checks with one existing skip; the focused
+animation suite passes 37 checks. IDE/test typechecks, the browser Studio build,
+strict architecture audit (zero issues) and diff checks pass separately. The
+same two-track, 20,000-keys-per-track geometry scope as the preceding review
+measures median bind 0.19415 ms and dirty viewport projection 0.01957 ms on
+Node 22.23.1 across nine warmed batches. Source admission, drawing/GPU work and
+machine execution are excluded; cross-run variance is not a speedup claim.
+No runtime, cartlib or C++ changes. Evidence is retained in
+`.bmsx/authoring/animation-deep-review-2026-10-10/`.

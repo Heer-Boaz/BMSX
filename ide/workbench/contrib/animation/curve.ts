@@ -23,14 +23,18 @@ export class AnimationCurve {
 	public revision = 0;
 	private geometryRevision = -1;
 	private track: AnimationTrackSource | undefined;
+	private sourceAvailable = false;
+	/** Unwritten slopes are usable only while their source keys remain endpoints. */
+	private unboundArrive = -1;
+	private unboundLeave = -1;
 
 	public bind(keys: AnimationKeyViewport): void {
 		const track = keys.track;
 		this.previewField = undefined;
 		this.revision++;
-		if (this.track === track) return;
+		if (this.track === track) { this.available = this.sourceAvailable; return; }
 		this.track = track;
-		this.available = track?.kind === 'value' && track.unit !== undefined && track.unit !== 'u'
+		this.sourceAvailable = this.available = track?.kind === 'value' && track.unit !== undefined && track.unit !== 'u'
 			&& (track.interpolation === 'linear' || track.interpolation === 'cubic' || track.interpolation === 'step')
 			&& keys.timeOrder.length === track.keys.length && track.keys.length > 0
 			&& keys.timeOrder.every((index, ordered) => {
@@ -39,7 +43,14 @@ export class AnimationCurve {
 					&& (track.interpolation !== 'cubic' || (ordered === 0 || key.arrive?.value !== undefined && key.arrive.value !== null)
 						&& (ordered + 1 === keys.timeOrder.length || key.leave?.value !== undefined && key.leave.value !== null));
 			});
-		if (this.available) {
+		this.unboundArrive = this.unboundLeave = -1;
+		if (this.sourceAvailable) {
+			if (track!.interpolation === 'cubic') {
+				const first = keys.timeOrder[0], last = keys.timeOrder[keys.timeOrder.length - 1];
+				const arrive = track!.keys[first].arrive?.value, leave = track!.keys[last].leave?.value;
+				if (arrive === undefined || arrive === null) this.unboundArrive = first;
+				if (leave === undefined || leave === null) this.unboundLeave = last;
+			}
 			this.minimum = this.maximum = track!.keys[0].value!.value!;
 			for (let segment = 0; segment < keys.timeOrder.length; segment++) {
 				const index = keys.timeOrder[segment], key = track!.keys[index];
@@ -83,8 +94,10 @@ export class AnimationCurve {
 		if (this.geometryRevision === revision) return;
 		this.geometryRevision = revision;
 		this.points.length = 0; this.markers.length = 0; this.arriveHandle.length = 0; this.leaveHandle.length = 0;
-		if (!this.available) return;
 		const order = keys.timeOrder;
+		this.available = this.sourceAvailable && (this.unboundArrive < 0 || this.unboundArrive === order[0])
+			&& (this.unboundLeave < 0 || this.unboundLeave === order[order.length - 1]);
+		if (!this.available) return;
 		if (keys.track!.interpolation !== 'step' && keys.range.minimum < keys.positionAt(order[0])) {
 			const y = this.yAt(this.fieldValue(keys, order[0], 'value'));
 			this.points.push(keys.xAt(keys.range.minimum), y, keys.xAt(Math.min(keys.range.maximum, keys.positionAt(order[0]))), y);

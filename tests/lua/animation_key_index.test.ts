@@ -9,6 +9,22 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 
 const resource = { domain: 0 as const, path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
 
+test('unselected key navigation searches from the current native cursor, without wrapping backwards', () => {
+	for (const unit of ['time_ms', 'frame', 'u'] as const) {
+		const source = `return {tracks={{kind='event',keys={{${unit}=100,event='a'},{${unit}=0,event='b'},{${unit}=50,event='c'},{${unit}=50,event='d'},{${unit}=200,event='e'}}}}}`;
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
+		for (const [cursor, before, after] of [[75, 3, 0], [50, 1, 0], [-1, -1, 1], [201, 4, -1]] as const) {
+			view.setCursor(cursor);
+			assert.equal(view.adjacentKey('ArrowLeft'), before);
+			assert.equal(view.adjacentKey('ArrowRight'), after);
+			assert.equal(view.cursor, cursor); assert.equal(view.selected, -1);
+		}
+		assert.equal(view.adjacentKey('Home'), 1); assert.equal(view.adjacentKey('End'), 4);
+		view.select(2); assert.equal(view.adjacentKey('ArrowRight'), 3, 'selected coincident keys remain separately navigable');
+	}
+});
+
 test('chronological lookup and crossing previews retain authored order and equal-time priority', () => {
 	const source = "return {tracks={{kind='event',keys={{time_ms=100,event='a'},{time_ms=0,event='b'},{time_ms=50,event='c'},{time_ms=50,event='d'},{time_ms=200,event='e'}}}}}";
 	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;

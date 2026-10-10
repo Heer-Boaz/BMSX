@@ -116,6 +116,24 @@ test('cubic display requires the slopes used by native segments, not unused endp
 	assert.equal(view.curve.available, false, 'a missing segment slope is not supplied by the editor');
 });
 
+test('moving an endpoint past its neighbor does not consume an unwritten slope during preview', () => {
+	const source = "return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=0}}}}}";
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	for (const [index, moved] of [[0, 150], [1, -50]] as const) {
+		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], index, document);
+		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+		assert.equal(view.curve.available, true);
+		view.preview(moved); view.update(); view.curve.update(view);
+		assert.equal(view.curve.available, false, 'the reordered segment requires slopes that were not authored');
+		assert.equal(view.curve.points.length, 0);
+		assert.equal(view.pixels.length, 2, 'the visible native key strip remains navigable');
+		view.cancel(); view.curve.update(view);
+		assert.equal(view.curve.available, true);
+		assert.ok(view.curve.points.length > 0);
+		assert.equal(document.tracks[0].keys[index].coordinate!.value, index === 0 ? 0 : 100);
+	}
+});
+
 test('curve fit includes the analytical Hermite and quadratic extrema', () => {
 	for (const [arrive, maximum] of [[0, 32 / 27], [-8, 2]]) {
 		const source = `return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=8},{time_ms=1,value=0,arrive_tangent=${arrive},leave_tangent=0}}}}}`;
