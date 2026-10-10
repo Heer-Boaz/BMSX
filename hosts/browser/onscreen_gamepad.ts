@@ -248,8 +248,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.bindPointerSurface(this.dpadElement, this.onDpadPointerDown, this.onDpadPointerMove);
 		this.bindPointerSurface(this.actionButtonsElement, this.onActionPointerDown, this.onActionPointerMove);
 		this.window.addEventListener('blur', this.reset);
-		this.window.addEventListener('focus', this.reset);
-		this.window.addEventListener('mouseout', this.reset);
+		this.window.addEventListener('pagehide', this.reset);
+		this.document.addEventListener('visibilitychange', this.onVisibilityChange);
 		this.reset();
 	}
 
@@ -300,18 +300,19 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		this.updatePointer(event.pointerId, this.hitTest(event.clientX, event.clientY, dpad));
+		this.updatePointer(event.pointerId, -1, this.hitTest(event.clientX, event.clientY, dpad));
 		(event.currentTarget as Element).setPointerCapture(event.pointerId);
 	}
 
 	private pointerMove(event: PointerEvent, dpad: boolean): void {
-		if (event.buttons === 0 && event.pressure === 0) {
+		const pointerIndex = this.pointerIndex(event.pointerId);
+		if (pointerIndex < 0) {
 			return;
 		}
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		this.updatePointer(event.pointerId, this.hitTest(event.clientX, event.clientY, dpad));
+		this.updatePointer(event.pointerId, pointerIndex, this.hitTest(event.clientX, event.clientY, dpad));
 	}
 
 	private readonly pointerUp = (event: PointerEvent): void => {
@@ -344,11 +345,10 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			: EMPTY_HIT;
 	}
 
-	private updatePointer(pointerId: number, hit: OnscreenHit): void {
-		const pointerIndex = this.pointerIndex(pointerId);
+	private updatePointer(pointerId: number, pointerIndex: number, hit: OnscreenHit): void {
 		const previousButtonMask = pointerIndex >= 0 ? this.pointerButtonMasks[pointerIndex] : 0;
 		const previousElementMask = pointerIndex >= 0 ? this.pointerElementMasks[pointerIndex] : 0;
-		if (previousButtonMask === hit.buttonMask && previousElementMask === hit.elementMask) {
+		if (pointerIndex >= 0 && previousButtonMask === hit.buttonMask && previousElementMask === hit.elementMask) {
 			return;
 		}
 		this.updateButtonCounts(previousButtonMask, hit.buttonMask);
@@ -455,6 +455,10 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			this.setElementActive(index, false);
 		}
 		this.updateDpadRing();
+	};
+
+	private readonly onVisibilityChange = (): void => {
+		if (this.document.hidden) this.reset();
 	};
 
 	private pointerIndex(pointerId: number): number {

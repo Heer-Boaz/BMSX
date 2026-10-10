@@ -4903,6 +4903,12 @@ profile belongs to the port, so changing the physical or onscreen device does
 not change that player's controls. Browser DOM, hit testing, control styling,
 and control layout remain in `hosts/browser`; the retained onscreen controller
 enters common input as an ordinary `GamepadDevice`, not as a DOM proxy contract.
+The onscreen controller retains each contact from `pointerdown` until that
+pointer's `pointerup`, `pointercancel`, or lost capture. Button/element reference
+counts combine contacts without releasing another finger's controls. Neither
+compatibility mouse boundary events, focus gain, nor touch pressure/button
+fields end a retained contact. Window blur, page hide, and document visibility
+loss end all contacts; a visible `visibilitychange` does not.
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed
