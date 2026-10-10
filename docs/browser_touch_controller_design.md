@@ -40,6 +40,16 @@ fixed. Unrelated packaging/hosting work in the checkout is outside this slice.
   case starts all contacts in one event; sequential cases cover d-pad+B and
   B+B, not the reported A-then-B case. These do not prove the real common-input
   or ICU boundary or UIKit/Safari multitouch behavior.
+- `BrowserVideoOutput.layout` currently subtracts both control-group widths
+  from the available landscape width. Its alternative layout mode scales
+  controls against the remaining canvas margins. Neither coupling belongs to
+  an overlay layout: controls must not reserve room or shrink when the game
+  image grows.
+- Canvas fitting also quantizes its scale in half-step increments and derives
+  available space from the largest of several browser dimensions, rather than
+  the currently visible player rectangle. Removing the control-width
+  subtraction alone therefore does not establish maximal, unclipped display
+  size or correct Safari-toolbar behavior.
 
 The scratch baseline and native trace are available at
 `.bmsx/hosting/ios-touch-architecture-evidence/current-svg-hit-feedback.mjs`
@@ -91,8 +101,8 @@ existing InputEventSink / GamepadDevice
 | --- | --- |
 | Existing `hosts/browser/input.ts` | Sole native Pointer Events producer and routing owner; normalize native protocol edges, capture the stable player surface, manage application lifecycle and gesture policy |
 | Existing `hosts/browser/onscreen_gamepad.ts` | DOM-free virtual-device model: fixed contact/control assignment, one stick owner, button contributions, aggregate raw button word and immediate existing-sink edge publication |
-| New `hosts/browser/onscreen_gamepad_view.ts` | Control presentation and layout; produce numeric hit geometry/transforms from the authored layout, retain DOM references, render model state |
-| Existing `hosts/browser/video_output.ts` | Canvas/viewport layout; pass numeric viewport/canvas measurements to the control view instead of accessing public DOM fields on a gamepad device |
+| New `hosts/browser/onscreen_gamepad_view.ts` | Control presentation and overlay layout; consume viewport/safe-area measurements, produce numeric hit geometry/transforms from the authored layout, retain DOM references, render model state |
+| Existing `hosts/browser/video_output.ts` | Player viewport measurements and canvas fitting; pass numeric viewport/safe-area measurements to the control view instead of accessing public DOM fields on a gamepad device; controls do not influence canvas fitting |
 | Existing `hosts/browser/boot.ts` | Compose these owners, initialize geometry before activating controls, and establish the ordinary common-input subscription |
 
 No extra touch service, generic event bus, facade or separate state wrapper is
@@ -221,6 +231,62 @@ normalization belongs in the hub, not in the gamepad model or a cart.
   renderer, animation-frame handle or generic event bus enters the model, and
   unchanged input does not schedule another render.
 
+### Overlay layout and independent scaling
+
+Controls overlay the game image; they do not occupy a reserved side panel or
+reduce the canvas fitting rectangle. This is now a required presentation
+contract, not an optional layout mode. [RetroArch overlays](https://docs.libretro.com/development/retroarch/input/overlay/#full-screen-vs-full-viewport-overlays)
+also distinguish screen-relative control placement from placement relative to
+the game viewport. BMSX chooses the player viewport for control placement.
+
+- The browser output measures the actually visible player rectangle, including
+  visual-viewport offsets and system safe-area insets. Browser toolbars and
+  hardware-obscured regions are not additional usable space just because the
+  screen or layout viewport reports a larger dimension. For an embedded player,
+  the rectangle is bounded by that player's own surface, not the whole window.
+- The canvas uses the largest uniform fit inside that available rectangle,
+  retaining the canonical BMSX presentation aspect ratio. No stretch, crop or
+  hidden rows/columns are introduced to fill a wide phone. Remaining letterbox
+  space is legitimate; controls may occupy it or overlap the image. Do not
+  retain the old half-step scale quantization in a renamed layout function.
+- Canvas CSS fitting does not change the framebuffer, GPU render target,
+  authored game coordinates, canonical display-aspect constants or the ordinary
+  `VideoOutput.setDisplaySize` / `measureDisplay` contract. GPU scanout and
+  filtering are unchanged; CSS pixel-art presentation remains the browser
+  output's responsibility, separate from control layout.
+- The control view consumes the same measured player viewport and safe area,
+  but computes its own size and anchors from an explicit orientation profile in
+  CSS-client units. Its scale never comes from canvas scale, framebuffer width,
+  device-pixel ratio or a letterbox margin. Changing display resolution alone
+  must not change the controls' CSS size or positions.
+- Each control group scales uniformly; circles stay circular, spacing scales
+  with that group and its numeric hit geometry uses exactly the same retained
+  transform. Profile sizing is bounded by usable viewport space and specifies
+  usable target sizes; artwork tuning must not invent a second hit-test scale.
+  Safe-area insets and authored thumb margins are distinct inputs.
+- Place the stick and action controls in opposing lower-side thumb zones,
+  inside the safe area. Orientation profiles may rearrange the action cluster
+  when needed; they do not squeeze the controls into spare canvas margins or
+  shrink the game to make room. Final profile dimensions are measured during
+  the presentation step, not inferred from framebuffer pixels.
+- Passive control decoration may be translucent over the game. Opacity,
+  filtering, stacking and pressed-tip movement never define the hit region.
+  Transparent space between activation shapes passes through to the underlying
+  canvas; there is no full-player overlay element that consumes all pointer
+  input. Genuine control hits take the existing controller route once, never
+  also the canvas route.
+- Layout publishes the view transforms and numeric input geometry together.
+  Safari toolbar changes, rotation and PWA layout use the same owner path;
+  existing contact assignments and independently retained direction bits obey
+  the preservation policy above. No movement-handler DOM measurements or
+  per-frame layout polling are introduced.
+
+Use the platform's CSS safe-area values and an ordinary edge-to-edge viewport
+configuration rather than device-model offsets. [WebKit's safe-area guidance](https://webkit.org/blog/7929/designing-websites-for-iphone-x/#respecting-the-safe-areas)
+explains why `viewport-fit=cover` and safe-area handling belong together. This
+does not add a viewport zoom lock or change the existing whole-player gesture
+policy.
+
 ## Representations and unchanged machine boundary
 
 | Boundary | Representation |
@@ -298,7 +364,8 @@ promise to observe a complete tap that happened between samples.
    VBlank. No machine change is needed to add this integration test.
 3. **New control presentation.** Only after the ownership gate passes, replace
    the sector-image pad with the visible fixed-base draggable tip and finalize
-   the control-group markup. No new input path is introduced for the new view.
+   the control-group markup and independent overlay layout. No new input path
+   is introduced for the new view.
 4. **Package and device validation.** Build ordinary players using existing
    host/package owners and the same immutable ROM artifacts. Publish only the
    normal game URLs; no more diagnosis versions or URI parameters. Real iPhone
@@ -334,6 +401,15 @@ Required tests cover:
   held state reaches ordinary ICU sampling without a guest timing workaround.
 - Resize/orientation/visual-viewport updates refresh geometry without button
   retargeting; zero repeated layout reads during warm input movement.
+- Canvas bounds with controls shown and hidden are identical at the same
+  viewport, and match the maximal aspect-preserving visible fit. Test portrait,
+  landscape, browser toolbars shown/hidden, PWA, safe-area insets and embedded
+  player bounds. No crop, stretched aspect ratio or stale viewport offset.
+- Change framebuffer/display resolution at a fixed viewport: control positions,
+  CSS sizes and hit targets stay unchanged. At every tested scale, native
+  center/edge presses match the retained geometry and control overlap never
+  duplicates canvas input. Verify the actual DOM bounds and screenshots, not
+  only a mathematical layout result.
 - Whole-player miss-taps and two-finger movement do not zoom; interactions
   outside a separately embedded player remain ordinary browser interactions.
 
