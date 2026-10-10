@@ -4,11 +4,14 @@ import type { AnimationTrackSource } from './model';
 import { formatNumber } from '../../../../machine/ts/common/number_format';
 
 export type AnimationCurveField = 'value' | 'arrive' | 'leave';
+const enum ResolvedFields { Value = 1, Arrive = 2, Leave = 4 }
 
 /** Display geometry for written scalar keys. Never a playback/evaluation owner. */
 export class AnimationCurve {
 	public readonly bounds = create_rect_bounds();
-	public readonly points: number[] = [];
+	/** Connected visible runs. Storage is retained across dirty projections. */
+	public readonly paths: number[][] = [];
+	public pathCount = 0;
 	/** Visible key indices and pixels are retained with the polyline, not recomputed during draw. */
 	public readonly markers: number[] = [];
 	public readonly arriveHandle: number[] = [];
@@ -23,44 +26,41 @@ export class AnimationCurve {
 	public revision = 0;
 	private geometryRevision = -1;
 	private track: AnimationTrackSource | undefined;
-	private sourceAvailable = false;
-	/** Unwritten slopes are usable only while their source keys remain endpoints. */
-	private unboundArrive = -1;
-	private unboundLeave = -1;
+	/** Resolution is a fact of authored source, not a track-wide playback grant. */
+	private readonly fields: number[] = [];
+	private topologyKnown = false;
 
 	public bind(keys: AnimationKeyViewport): void {
 		const track = keys.track;
 		this.previewField = undefined;
 		this.revision++;
-		if (this.track === track) { this.available = this.sourceAvailable; return; }
+		if (this.track === track) return;
 		this.track = track;
-		this.sourceAvailable = this.available = track?.kind === 'value' && track.unit !== undefined && track.unit !== 'u'
-			&& (track.interpolation === 'linear' || track.interpolation === 'cubic' || track.interpolation === 'step')
-			&& keys.timeOrder.length === track.keys.length && track.keys.length > 0
-			&& keys.timeOrder.every((index, ordered) => {
-				const key = track.keys[index];
-				return key.value?.value !== undefined && key.value.value !== null
-					&& (track.interpolation !== 'cubic' || (ordered === 0 || key.arrive?.value !== undefined && key.arrive.value !== null)
-						&& (ordered + 1 === keys.timeOrder.length || key.leave?.value !== undefined && key.leave.value !== null));
-			});
-		this.unboundArrive = this.unboundLeave = -1;
-		if (this.sourceAvailable) {
-			if (track!.interpolation === 'cubic') {
-				const first = keys.timeOrder[0], last = keys.timeOrder[keys.timeOrder.length - 1];
-				const arrive = track!.keys[first].arrive?.value, leave = track!.keys[last].leave?.value;
-				if (arrive === undefined || arrive === null) this.unboundArrive = first;
-				if (leave === undefined || leave === null) this.unboundLeave = last;
-			}
-			this.minimum = this.maximum = track!.keys[0].value!.value!;
-			for (let segment = 0; segment < keys.timeOrder.length; segment++) {
-				const index = keys.timeOrder[segment], key = track!.keys[index];
-				this.minimum = Math.min(this.minimum, key.value!.value!); this.maximum = Math.max(this.maximum, key.value!.value!);
-				if (track!.interpolation === 'cubic' && segment + 1 < keys.timeOrder.length) this.includeSegmentExtrema(keys, index, keys.timeOrder[segment + 1]);
-			}
-			const padding = this.maximum === this.minimum ? Math.max(1, Math.abs(this.minimum) * 0.1) : (this.maximum - this.minimum) * 0.2;
-			this.minimum -= padding; this.maximum += padding;
-			this.minimumLabel = formatNumber(this.minimum); this.maximumLabel = formatNumber(this.maximum);
+		this.available = false; this.fields.length = 0;
+		if (track?.kind !== 'value' || track.unit === undefined || track.unit === 'u'
+			|| track.interpolation !== 'linear' && track.interpolation !== 'cubic' && track.interpolation !== 'step') return;
+		this.topologyKnown = keys.timeOrder.length === track.keys.length;
+		for (const key of track.keys) {
+			let resolved = 0;
+			if (key.value !== undefined && key.value.value !== null) resolved |= ResolvedFields.Value;
+			if (key.arrive !== undefined && key.arrive.value !== null) resolved |= ResolvedFields.Arrive;
+			if (key.leave !== undefined && key.leave.value !== null) resolved |= ResolvedFields.Leave;
+			this.fields.push(resolved);
 		}
+		for (const index of keys.timeOrder) {
+			if ((this.fields[index] & ResolvedFields.Value) === 0) continue;
+			const value = track.keys[index].value!.value!;
+			if (!this.available) { this.minimum = this.maximum = value; this.available = true; }
+			else { this.minimum = Math.min(this.minimum, value); this.maximum = Math.max(this.maximum, value); }
+		}
+		if (!this.available) return;
+		if (this.topologyKnown && track.interpolation === 'cubic') for (let segment = 0; segment + 1 < keys.timeOrder.length; segment++) {
+			const first = keys.timeOrder[segment], next = keys.timeOrder[segment + 1];
+			if (this.segmentResolved(first, next)) this.includeSegmentExtrema(keys, first, next);
+		}
+		const padding = this.maximum === this.minimum ? Math.max(1, Math.abs(this.minimum) * 0.1) : (this.maximum - this.minimum) * 0.2;
+		this.minimum -= padding; this.maximum += padding;
+		this.minimumLabel = formatNumber(this.minimum); this.maximumLabel = formatNumber(this.maximum);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void {
 		if (this.bounds.left === left && this.bounds.top === top && this.bounds.right === right && this.bounds.bottom === bottom) return;
@@ -78,6 +78,7 @@ export class AnimationCurve {
 		const end = keys.timeIndex(keys.valueAt(x + 9, false), true);
 		for (let ordered = keys.timeIndex(keys.valueAt(x - 9, false)); ordered < end; ordered++) {
 			const index = keys.timeOrder[ordered];
+			if ((this.fields[index] & ResolvedFields.Value) === 0) continue;
 			const dx = keys.xAt(keys.positionAt(index)) - x, dy = this.yAt(this.fieldValue(keys, index, 'value')) - y;
 			const squared = dx * dx + dy * dy;
 			if (squared < distance) { closest = index; distance = squared; }
@@ -93,47 +94,63 @@ export class AnimationCurve {
 		const revision = this.revision + keys.revision;
 		if (this.geometryRevision === revision) return;
 		this.geometryRevision = revision;
-		this.points.length = 0; this.markers.length = 0; this.arriveHandle.length = 0; this.leaveHandle.length = 0;
+		this.pathCount = 0; this.markers.length = 0; this.arriveHandle.length = 0; this.leaveHandle.length = 0;
 		const order = keys.timeOrder;
-		this.available = this.sourceAvailable && (this.unboundArrive < 0 || this.unboundArrive === order[0])
-			&& (this.unboundLeave < 0 || this.unboundLeave === order[order.length - 1]);
 		if (!this.available) return;
-		if (keys.track!.interpolation !== 'step' && keys.range.minimum < keys.positionAt(order[0])) {
+		let path: number[] | undefined;
+		if (this.topologyKnown && (this.fields[order[0]] & ResolvedFields.Value) !== 0
+			&& keys.track!.interpolation !== 'step' && keys.range.minimum < keys.positionAt(order[0])) {
 			const y = this.yAt(this.fieldValue(keys, order[0], 'value'));
-			this.points.push(keys.xAt(keys.range.minimum), y, keys.xAt(Math.min(keys.range.maximum, keys.positionAt(order[0]))), y);
+			path = this.beginPath();
+			path.push(keys.xAt(keys.range.minimum), y, keys.xAt(Math.min(keys.range.maximum, keys.positionAt(order[0]))), y);
 		}
 		const endSegment = keys.timeIndex(keys.range.maximum, true);
 		for (let segment = Math.max(0, keys.timeIndex(keys.range.minimum) - 1); segment < endSegment; segment++) {
 			const index = order[segment], x = keys.positionAt(index);
-			if (x >= keys.range.minimum && x <= keys.range.maximum) {
+			if ((this.fields[index] & ResolvedFields.Value) !== 0 && x >= keys.range.minimum && x <= keys.range.maximum) {
 				const pixelX = keys.xAt(x), pixelY = this.yAt(this.fieldValue(keys, index, 'value'));
-				this.points.push(pixelX, pixelY); this.markers.push(index, pixelX, pixelY);
+				this.markers.push(index, pixelX, pixelY);
+				if (path !== undefined && keys.track!.interpolation === 'step') path.push(pixelX, pixelY);
 			}
-			if (segment + 1 >= order.length) continue;
+			if (!this.topologyKnown || segment + 1 >= order.length) continue;
 			const next = order[segment + 1], end = keys.positionAt(next), span = end - x;
-			if (span <= 0) continue; // Equal-time keys retain their ordered discontinuity.
+			if (span <= 0 || !this.segmentResolved(index, next)) { path = undefined; continue; }
 			const left = Math.max(x, keys.range.minimum), right = Math.min(end, keys.range.maximum);
 			if (right < left) continue;
+			if (path === undefined) path = this.beginPath();
 			if (keys.track!.interpolation === 'step') {
-				this.points.push(keys.xAt(left), this.yAt(this.fieldValue(keys, index, 'value')), keys.xAt(right), this.yAt(this.fieldValue(keys, index, 'value')));
+				path.push(keys.xAt(left), this.yAt(this.fieldValue(keys, index, 'value')), keys.xAt(right), this.yAt(this.fieldValue(keys, index, 'value')));
 			} else {
 				const count = Math.max(1, (Math.abs(keys.xAt(right) - keys.xAt(left)) / 4) | 0);
 				for (let sample = 0; sample <= count; sample++) {
 					const position = left + (right - left) * sample / count;
-					this.points.push(keys.xAt(position), this.yAt(this.segmentValue(keys, index, next, (position - x) / span)));
+					path.push(keys.xAt(position), this.yAt(this.segmentValue(keys, index, next, (position - x) / span)));
 				}
 			}
 		}
 		const last = order[order.length - 1];
-		if (keys.range.maximum > keys.positionAt(last)) {
+		if (this.topologyKnown && (this.fields[last] & ResolvedFields.Value) !== 0 && keys.range.maximum > keys.positionAt(last)) {
 			const y = this.yAt(this.fieldValue(keys, last, 'value'));
-			this.points.push(keys.xAt(Math.max(keys.range.minimum, keys.positionAt(last))), y, keys.xAt(keys.range.maximum), y);
+			if (path === undefined) path = this.beginPath();
+			path.push(keys.xAt(Math.max(keys.range.minimum, keys.positionAt(last))), y, keys.xAt(keys.range.maximum), y);
 		}
-		if (keys.selected < 0 || keys.track!.interpolation !== 'cubic') return;
+		if (!this.topologyKnown || keys.selected < 0 || (this.fields[keys.selected] & ResolvedFields.Value) === 0 || keys.track!.interpolation !== 'cubic') return;
 		const index = keys.selected, x = keys.xAt(keys.positionAt(index)), value = this.fieldValue(keys, index, 'value'), y = this.yAt(value);
 		const unitsPerPixel = (keys.range.maximum - keys.range.minimum) / (keys.range.bounds.right - keys.range.bounds.left - 6);
-		if (index !== order[0]) this.projectTangent(this.arriveHandle, x, y, -1, this.fieldValue(keys, index, 'arrive'), unitsPerPixel);
-		if (index !== last) this.projectTangent(this.leaveHandle, x, y, 1, this.fieldValue(keys, index, 'leave'), unitsPerPixel);
+		if (index !== order[0] && (this.fields[index] & ResolvedFields.Arrive) !== 0) this.projectTangent(this.arriveHandle, x, y, -1, this.fieldValue(keys, index, 'arrive'), unitsPerPixel);
+		if (index !== last && (this.fields[index] & ResolvedFields.Leave) !== 0) this.projectTangent(this.leaveHandle, x, y, 1, this.fieldValue(keys, index, 'leave'), unitsPerPixel);
+	}
+	private beginPath(): number[] {
+		if (this.pathCount === this.paths.length) this.paths.push([]);
+		const path = this.paths[this.pathCount++]; path.length = 0;
+		return path;
+	}
+	/** A segment consumes its native fields; unknown source expressions remain gaps. */
+	private segmentResolved(first: number, next: number): boolean {
+		if ((this.fields[first] & ResolvedFields.Value) === 0) return false;
+		if (this.track!.interpolation === 'step') return true;
+		if ((this.fields[next] & ResolvedFields.Value) === 0) return false;
+		return this.track!.interpolation !== 'cubic' || (this.fields[first] & ResolvedFields.Leave) !== 0 && (this.fields[next] & ResolvedFields.Arrive) !== 0;
 	}
 	/** A slope owns a direction, not an arbitrary horizontal arm or a native handle length. */
 	private projectTangent(handle: number[], x: number, y: number, side: number, slope: number, unitsPerPixel: number): void {

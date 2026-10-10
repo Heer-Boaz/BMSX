@@ -764,6 +764,12 @@ source application. Parser/unit tests do not substitute for that UI evidence.
   wheel zoom anchors at the pointer, middle-button drag pans, and **Frame All
   Keys** fits the authored extent. Arrow/Home/End navigation, capture loss and
   source edits do not accidentally commit a preview.
+- Written numeric keys remain visible and editable independently of segment
+  interpolation. An unresolved value or required slope breaks only its affected
+  curve run, not the editor. If a key position is unresolved, no chronological
+  neighbors or endpoint clamps are inferred; known-position numeric markers
+  still remain. The editor neither evaluates source expressions nor supplies
+  missing fields.
 - Subsequence lanes expose native move and left/right trim. Left trim updates
   `clip_in_ms` with the native `time_scale`, retaining the same child time at an
   unchanged parent position. **Open Child Sequence** follows the actual inline
@@ -1026,14 +1032,13 @@ Two more negative reproductions found faults in the retained curve/key owners:
 - Moving a cubic endpoint past another key changes which slopes its adjacent
   segments consume. Admission still trusted the original source order, so a
   valid definition with omitted unused endpoint slopes crashed during its drag
-  preview. Source admission now retains those endpoint-only exemptions; dirty
-  geometry compares them with the actual preview order before consuming segment
-  fields. This is two index comparisons, not a repeated track scan. The curve
-  and handles are absent while required slopes are unresolved; the native strip,
-  Details and Source remain usable. Returning the key restores the curve.
-  No exception handler, invented tangent, source rewrite or restriction on key
-  ordering is introduced. The projection follows the transient-neighbor pattern
-  in Godot's
+  preview. The initial correction in `1b57272ff` cached endpoint-only exemptions
+  and compared them with the actual preview order. It prevented the crash but
+  removed the entire curve and its handles while a required slope was unresolved.
+  That coarse suppression is superseded by the segment-local projection in the
+  following review. No exception handler, invented tangent, source rewrite or
+  restriction on key ordering was introduced. Actual preview neighbors follow
+  the pattern in Godot's
   [`AnimationBezierTrackEdit`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_bezier_editor.cpp),
   using BMSX's existing retained chronological index rather than a per-draw map.
 - Without a selected key, both directional keys treated the cursor as an index
@@ -1053,8 +1058,8 @@ checks cover all three native units, reversed authored order, equal-time keys,
 exact cursor matches and absent directional neighbors. Existing native O0/O3
 animation checks remain green; these two fixes change no playback owner.
 
-Visible keyboard/pointer acceptance with `2025` loaded reproduces the old host
-exception and wrong first-key jump. The rebuilt client previews a crossing from
+Visible keyboard/pointer acceptance for `1b57272ff` with `2025` loaded reproduces
+the old host exception and wrong first-key jump. The rebuilt client previews a crossing from
 0 to 151 without crashing; moving back to 80 restores the curve. A physical drop
 changes only the original key's `time_ms` in actual Source, and one Undo restores
 0 and its curve. A separate crossing followed by Escape leaves the source
@@ -1064,8 +1069,8 @@ or clipboard injection drive this acceptance. The pointer driver separates down,
 move and release so its own sampling cannot miss the grabbed key.
 
 A drop can leave a partially authored cubic definition whose newly required
-slopes still need editing in Source/Details, or Undo. Hiding unresolved geometry
-does not make that definition executable or silently repair its native behavior.
+slopes still need editing in Source/Details, or Undo. A display gap does not make
+that definition executable or silently repair its native behavior.
 Temporary editors/resources are removed afterward; original cart sources remain
 unchanged.
 
@@ -1078,3 +1083,65 @@ Node 22.23.1 across nine warmed batches. Source admission, drawing/GPU work and
 machine execution are excluded; cross-run variance is not a speedup claim.
 No runtime, cartlib or C++ changes. Evidence is retained in
 `.bmsx/authoring/animation-deep-review-2026-10-10/`.
+
+### Follow-up review: source resolution and independent curve runs (2026-10-10)
+
+The endpoint correction above was still a workaround: one newly required,
+unwritten tangent removed all scalar keys, handles and valid segments from the
+curve. A visible endpoint-crossing reproduction confirmed that behavior. Two
+behavioral negative controls also failed before this correction: partially
+resolved scalar fields removed known editable geometry, and an unresolved key
+position removed even the markers whose coordinates and values were known.
+
+`AnimationCurve` now retains source-field resolution once per source generation.
+It consumes the source model's numeric-or-unresolved representation directly;
+this is not validation of guest values or a playback admission rule. Numeric
+keys and written native slopes project independently of segment resolution.
+Segments consume exactly their native fields: a step needs its first value,
+linear needs both values, and cubic additionally needs first-leave and
+next-arrive slopes. These facts are checked against the actual transient order.
+Unresolved segments split connected runs; no line joins across them. Known
+positions alone do not grant adjacency when another key's position is unknown.
+
+Run arrays belong to the retained curve geometry and are reused across dirty
+projections. Fully resolved continuous curves remain one polyline call, rather
+than one call per key or segment. Only actual gaps require separate calls. Idle
+updates neither rewrite geometry nor allocate runs; visible projection remains
+bounded by the viewport's chronological index. Source selection does not rescan
+fields or refit an unchanged track. No renderer ABI, compatibility facade,
+exception fallback, synthesized slope or guest/runtime owner is added.
+
+The production references are Godot's
+[`AnimationBezierTrackEdit`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_bezier_editor.cpp)
+for transient neighboring keys and independent marker/handle drawing, and
+Blender's
+[`keyframes_draw.cc`](https://github.com/blender/blender/blob/main/source/blender/editors/animation/keyframes_draw.cc)
+for separate key and interpolation-block passes. This adapts their separation
+of editing markers from interpolation, not their animation formats, default
+handles or per-draw containers.
+
+Visible keyboard/pointer acceptance with `2025` loaded uses a temporary Lua
+resource authored through Studio Source. The old client removes the whole curve
+when the first cubic key crosses from 0 to 151; the rebuilt client retains all
+three keys, the known endpoint clamps and the valid 151-to-200 segment, with a
+gap only where the missing arrive slope is required. Physical release, Save and
+reopening preserve this view. A graph value edit beside the gap changes the
+actual Lua value without changing its time, and one Undo restores it. Explicit
+**Add Property** of `arrive_tangent = 0` closes the gap through ordinary source
+editing; one Undo restores the gap and another restores the original key time
+and complete curve. Escape during another crossing leaves the original source
+unchanged on release. No model injection, guest evaluation or clipboard drives
+these interactions. Temporary editors/resources are removed afterward; original
+cart sources remain unchanged.
+
+The broad Lua suite passes 3,101 checks with one existing skip; the focused
+animation suite passes 39 checks, including native O0/O3 interpolation. IDE/test
+typechecks, the browser Studio build, strict architecture audit (zero issues)
+and diff checks pass separately. Frozen idle geometry and repeated gap/open-run
+changes exercise retained storage without new path arrays. The existing
+geometry-only harness on Node 22.23.1, two 20,000-key tracks and 51 visible keys
+each measures median bind 0.19068 ms and dirty projection 0.02081 ms over nine
+warmed batches. This excludes source admission, drawing/GPU work and machine
+execution; it is neither an end-to-end latency claim nor a cross-run speedup
+claim. No runtime, cartlib, C++ or Play owner changed. Evidence is retained in
+`.bmsx/authoring/animation-segment-review-2026-10-10/`.

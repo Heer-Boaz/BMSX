@@ -82,7 +82,7 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		const zero = curve.yAt(0);
 		api.fill_rect(area.left, zero, area.right, zero + 1, 0, colors.COLOR_TAB_BORDER);
 		api.fill_rect(head, area.top, head + 1, area.bottom, 0, colors.COLOR_FOCUS_BORDER);
-		if (curve.points.length > 2) api.polyline(curve.points, 0, 0, 0, 1, text);
+		for (let run = 0; run < curve.pathCount; run++) api.polyline(curve.paths[run], 0, 0, 0, 1, text);
 		for (let marker = 0; marker < curve.markers.length; marker += 3) {
 			const index = curve.markers[marker], x = curve.markers[marker + 1], y = curve.markers[marker + 2];
 			api.fill_rect(x - 3, y - 3, x + 4, y + 4, 0, index === viewport.selected ? colors.COLOR_FOCUS_BORDER : text);

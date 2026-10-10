@@ -23,9 +23,9 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
 	assert.equal(view.extentMaximum, 200, 'same-unit lanes share the written extent');
 	// x=25 is an actual retained sample: width 800, first span 100, 100 samples.
-	const point = view.curve.points.indexOf(view.xAt(25));
+	const point = view.curve.paths[0].indexOf(view.xAt(25));
 	assert.notEqual(point, -1);
-	assert.equal(view.curve.points[point + 1], view.curve.yAt(43.75));
+	assert.equal(view.curve.paths[0][point + 1], view.curve.yAt(43.75));
 	for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component=require('cartlib/timeline/timeline_component')
@@ -53,9 +53,9 @@ test('a step channel has no authored value before its first key, as in the nativ
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230);
 	view.setView(0, 25); view.curve.update(view);
-	assert.equal(view.curve.points.length, 0, 'there is no first-value clamp for a native step channel');
+	assert.equal(view.curve.pathCount, 0, 'there is no first-value clamp for a native step channel');
 	view.setView(60, 90); view.curve.update(view);
-	assert.deepEqual(view.curve.points, [view.xAt(60), view.curve.yAt(10), view.xAt(90), view.curve.yAt(10)]);
+	assert.deepEqual(view.curve.paths[0], [view.xAt(60), view.curve.yAt(10), view.xAt(90), view.curve.yAt(10)]);
 });
 
 test('curve previews and view navigation do not mutate written keys or invent normalized tangents', () => {
@@ -69,9 +69,9 @@ test('curve previews and view navigation do not mutate written keys or invent no
 	const anchor = view.valueAt(103); view.zoom(103, 0.5); assert.equal(view.valueAt(103), anchor);
 	view.fit(); assert.equal(view.range.maximum, 200);
 	view.setView(300, 400); view.curve.update(view);
-	assert.deepEqual(view.curve.points, [view.xAt(300), view.curve.yAt(100), view.xAt(400), view.curve.yAt(100)], 'the native last-value clamp remains visible beyond the written keys');
+	assert.deepEqual(view.curve.paths[0], [view.xAt(300), view.curve.yAt(100), view.xAt(400), view.curve.yAt(100)], 'the native last-value clamp remains visible beyond the written keys');
 	view.setView(-100, -1); view.curve.update(view);
-	assert.deepEqual(view.curve.points, [view.xAt(-100), view.curve.yAt(0), view.xAt(-1), view.curve.yAt(0)]);
+	assert.deepEqual(view.curve.paths[0], [view.xAt(-100), view.curve.yAt(0), view.xAt(-1), view.curve.yAt(0)]);
 	view.fit();
 	view.bind(document.tracks[1], 0, document); assert.equal(view.range.maximum, 200);
 	const dynamic = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{u=0,value=0,arrive_tangent=0,leave_tangent=0}}}}}", resource.path)))!;
@@ -113,7 +113,9 @@ test('cubic display requires the slopes used by native segments, not unused endp
 	}
 	const missing = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0},{time_ms=1,value=1}}}}}", resource.path)))!;
 	const view = new AnimationKeyViewport(); view.bind(missing.tracks[0], 0, missing);
-	assert.equal(view.curve.available, false, 'a missing segment slope is not supplied by the editor');
+	assert.equal(view.curve.available, true, 'known values remain editable without a supplied slope');
+	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+	assert.equal(view.curve.pathCount, 0); assert.equal(view.curve.markers.length, 6);
 });
 
 test('moving an endpoint past its neighbor does not consume an unwritten slope during preview', () => {
@@ -121,15 +123,21 @@ test('moving an endpoint past its neighbor does not consume an unwritten slope d
 	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 	for (const [index, moved] of [[0, 150], [1, -50]] as const) {
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], index, document);
-		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.setView(-100, 200); view.curve.update(view);
 		assert.equal(view.curve.available, true);
 		view.preview(moved); view.update(); view.curve.update(view);
-		assert.equal(view.curve.available, false, 'the reordered segment requires slopes that were not authored');
-		assert.equal(view.curve.points.length, 0);
-		assert.equal(view.pixels.length, 2, 'the visible native key strip remains navigable');
+		assert.equal(view.curve.available, true, 'a reordered unresolved segment does not remove its keys');
+		assert.equal(view.curve.markers.length, 6);
+		assert.equal(view.curve.pathCount, 2);
+		const neighbor = document.tracks[0].keys[1 - index].coordinate!.value!;
+		for (let run = 0; run < view.curve.pathCount; run++) {
+			const path = view.curve.paths[run];
+			assert.ok(path[path.length - 2] <= view.xAt(Math.min(moved, neighbor)) || path[0] >= view.xAt(Math.max(moved, neighbor)), 'no drawn run crosses the unresolved segment');
+		}
+		assert.equal(view.pixels.length, 4, 'the visible native key strip remains navigable');
 		view.cancel(); view.curve.update(view);
 		assert.equal(view.curve.available, true);
-		assert.ok(view.curve.points.length > 0);
+		assert.ok(view.curve.paths[0].length > 0);
 		assert.equal(document.tracks[0].keys[index].coordinate!.value, index === 0 ? 0 : 100);
 	}
 });
@@ -142,6 +150,49 @@ test('curve fit includes the analytical Hermite and quadratic extrema', () => {
 		assert.ok(Math.abs(view.curve.minimum + maximum * 0.2) < 1e-12);
 		assert.ok(Math.abs(view.curve.maximum - maximum * 1.2) < 1e-12);
 	}
+});
+
+test('known scalar keys and segments remain editable around unresolved source fields', () => {
+	for (const interpolation of ['linear', 'cubic', 'step'] as const) {
+		const keys = interpolation === 'cubic'
+			? '{time_ms=0,value=0,arrive_tangent=0,leave_tangent=1},{time_ms=100,value=100,arrive_tangent=1,leave_tangent=0},{time_ms=200,value=25,arrive_tangent=unknown,leave_tangent=0},{time_ms=300,value=75,arrive_tangent=0}'
+			: '{time_ms=0,value=0},{time_ms=100,value=100},{time_ms=200,value=unknown},{time_ms=300,value=75},{time_ms=400,value=80}';
+		const source = `return {tracks={{kind='value',interpolation='${interpolation}',keys={${keys}}}}}`;
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 1, document);
+		assert.equal(view.curve.available, true, 'one unresolved field does not remove the scalar editor');
+		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
+		assert.equal(view.curve.pathCount, 2);
+		assert.equal(view.curve.markers.length, 12);
+		const first = view.curve.paths[0], second = view.curve.paths[1];
+		assert.equal(first[first.length - 2], view.xAt(interpolation === 'step' ? 200 : 100));
+		assert.equal(second[0], view.xAt(interpolation === 'cubic' ? 200 : 300));
+		assert.equal(view.curve.keyAt(view, view.xAt(100), view.curve.yAt(100)), 1);
+		if (interpolation === 'cubic') {
+			assert.ok(view.curve.leaveHandle.length > 0, 'a written slope remains editable even when its neighbor slope is unresolved');
+			view.select(2); view.setView(-100, 400); Object.freeze(view.curve.paths);
+			for (let iteration = 0; iteration < 40; iteration++) {
+				view.preview(-50); view.curve.update(view);
+				assert.equal(view.curve.pathCount, 1, 'the unresolved arrive field is unused after this key becomes the first');
+				view.cancel(); view.curve.update(view);
+				assert.equal(view.curve.pathCount, 2);
+			}
+			assert.equal(view.curve.paths[0], first); assert.equal(view.curve.paths[1], second);
+			assert.equal(document.tracks[0].keys[2].arrive!.value, null, 'the editor does not replace the unresolved expression');
+		}
+	}
+});
+
+test('unresolved key positions do not acquire inferred segment neighbors or endpoint clamps', () => {
+	const source = "return {tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=unknown,value=50},{time_ms=100,value=100}}}}}";
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
+	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.setView(-50, 150);
+	view.curve.update(view);
+	assert.equal(view.curve.available, true);
+	assert.equal(view.curve.markers.length, 6);
+	assert.equal(view.curve.pathCount, 0, 'an unknown key time prevents inferring chronological adjacency');
+	assert.equal(view.curve.keyAt(view, view.xAt(100), view.curve.yAt(100)), 2);
 });
 
 test('source bounds are retained across selection and recalculated for a new source generation', () => {
@@ -193,7 +244,7 @@ test('the curve commits time and value as one native source edit and idle geomet
 	input.keys.bind(changed.tracks[0], 1, changed);
 	input.keys.range.layout(0, 0, 806, 20); input.keys.curve.layout(0, 30, 806, 230);
 	input.keys.update(); input.keys.curve.update(input.keys);
-	Object.freeze(input.keys.pixels); Object.freeze(input.keys.curve.points); Object.freeze(input.keys.curve.markers);
+	Object.freeze(input.keys.pixels); Object.freeze(input.keys.curve.paths); for (const path of input.keys.curve.paths) Object.freeze(path); Object.freeze(input.keys.curve.markers);
 	for (let index = 0; index < 1000; index++) { input.keys.update(); input.keys.curve.update(input.keys); }
 	model.undo(); assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null, 'time and value are one shared history operation');
