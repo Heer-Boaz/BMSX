@@ -1,115 +1,47 @@
-# Isolated browser GPU diagnosis
+# iPhone browser rendering and touch input
 
-The diagnostic player is separate from the ordinary published games:
+## Normal player
 
-- [Nemesis S](https://bmsx.boazpatel.com/ios/)
-- [Pietsona 2025](https://bmsx.boazpatel.com/ios/piet/)
+The fixes belong to the ordinary players:
 
-The short game links use Auto, which prefers WebGPU when the browser supplies
-an adapter. The panel's links select WebGPU or WebGL2 explicitly through
-dedicated subpages, without URL parameters or redirects. Each
-page supplies its fixed renderer through the canvas's `data-renderer` attribute
-to the browser backend owner. Auto keeps ordinary capability selection. An explicit
-WebGPU request fails visibly if its API/adapter is unavailable; it never silently
-switches the requested renderer. No user-agent policy changes machine behavior.
+- [Nemesis S](https://bmsx.boazpatel.com/nemesis_s/)
+- [Pietsona 2025](https://bmsx.boazpatel.com/2025/)
 
-`scripts/render/diagnostics/browser_gpu.mjs` runs before the player **only on
-these pages**. It displays the actual canvas renderer, shader compilation errors,
-pipeline validation errors, uncaptured GPU errors, device loss, WebGL context
-loss, and JavaScript/boot errors. Native arguments and returned objects are
-unchanged. Pipeline error scopes and compilation queries run at creation, not
-per frame. Queue submits only increment a retained counter; the panel updates
-once per second. There is no frame readback or rendering fallback. Zero reported
-API errors do not establish pixel correctness.
+`hosts/browser/backend.ts` selects WebGPU whenever the browser supplies its API
+and an adapter. WebGL2 is selected only when that capability is absent, before
+initializing a device. A WebGPU device/context error propagates; it does not
+trigger a renderer retry. There are no user-agent exceptions, URL parameters,
+page attributes, diagnostic observers, or browser-specific machine semantics
+in this path. The temporary diagnosis scripts have been retired. Previously
+published temporary pages are historical snapshots, not a production dependency.
 
-## Build without changing ordinary pages
+## Verified causes and owner fixes
 
-Use an exact snapshot of the current deployed site, including its configuration
-and immutable media URLs. The output must be a new directory:
+- **Rendering:** The iPhone reported `Vertex library failed creation` for all
+  seven primitive/upload pipelines, while CPU/audio continued and scanout still
+  displayed power-on VRAM. Their producer supplied fragment-only overrides to
+  the vertex entry point and a vertex-only override to the fragment entry point.
+  The producer now emits the exact constant sets used by each stage once at
+  resource bootstrap. It neither scans/filters shader source nor probes browser
+  identity. Raw VRAM, register words, command execution and timing are unchanged.
+- **Multitouch:** A bubbling compatibility `mouseout` cleared every contact.
+  `BrowserOnscreenGamepad` now retains each `pointerId` until its own end/cancel
+  or lost capture, retaining reference counts for shared buttons. Only actual
+  page blur/hide/hidden transitions clear all contacts. Pressure/buttons zero
+  does not terminate an existing contact; hovering pointers cannot create one.
+  This was reproduced with native browser touches against the old published
+  player, and the corrected owner is covered by native-contact regressions.
+- **Startup:** The reported delay was the game's unseen Konami intro. There is
+  no established startup performance defect and no speculative startup patch.
 
-```sh
-npx tsx scripts/render/diagnostics/build_browser_gpu.ts \
-  --site .bmsx/hosting/ios-diagnostics-v2 \
-  --out .bmsx/hosting/ios-diagnostics-v3-short
-diff -r .bmsx/hosting/ios-diagnostics-v2 .bmsx/hosting/ios-diagnostics-v3-short
-```
-
-The only difference should be the added `ios` subtree. The builder
-uses the ordinary browser-player build and its bundle-boundary assertion; it
-does not rebuild games or their paired BIOS. Deploy the complete output using
-the existing secret-safe Azure deployment procedure in `browser_hosting.md`.
-After deployment, compare the ordinary HTML and engine bytes with the snapshot
-and verify the diagnostic response's COOP/COEP headers.
-
-## Findings and verification (2026-10-10)
-
-- The old onscreen controller reset **every** contact on a bubbling compatibility
-  `mouseout`. This was reproduced in the real published player with native
-  touch contacts. Each pointer now remains owned until its own end/cancel/lost
-  capture; only page focus/visibility loss clears all contacts. Retained contacts
-  also move when touch pressure/buttons are zero, and can start in a control gap.
-- The regression test fails against the old owner at the `mouseout` assertion
-  and passes against the fix. Tests cover combined d-pad/actions, overlapping
-  action contacts, per-pointer cancellation, hover exclusion, empty-surface
-  starts, and page lifecycle cancellation.
-- Native GPU tests cover explicit renderer selection and actual shader/pipeline
-  errors reaching the visible panel.
-- Published diagnostic Nemesis S renders its Konami intro in Chromium WebGPU
-  and WebGL2. Linux WebKit WebGL2 also renders it. **None of these establishes
-  iPhone/Metal correctness.** The subsequent real-iPhone screenshots show
-  readable Nemesis S and Pietsona output with WebGL2, but seven failed WebGPU
-  vertex pipelines followed by `encoder state is not valid`.
-- The reported startup delay was the game's hidden Konami intro, not an
-  established startup performance defect; startup optimization is out of scope.
-- The user clarified that the noise and screen proportions do change. The
-  symptom is incorrect changing output, not an established frozen canvas.
-
-### Diagnostic version 2
-
-After the iPhone reported only `Script error. at :0:0`, the diagnostic page's
-scripts were changed to ordered modules. WebKit's
-[exception dispatcher](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/dom/ScriptExecutionContext.cpp)
-explicitly leaves module-script errors unmuted. The ordinary player pages and
-the diagnostic engine bytes are unchanged.
-
-The panel now starts updating **before** native API observers are installed,
-retains the setup stage, and includes exception locations/stacks. Previously, a
-setup exception could prevent its deferred error display from ever starting.
-An explicit WebGL2 page does not initialize GPU-only observers. A regression
-test exercises an actual setup exception and verifies its visible report; the
-same unsupported observer surface does not affect the explicit WebGL2 path.
-This improves diagnosis, not proof of an iPhone rendering fix.
-
-### Diagnostic version 3
-
-The iPhone user must type test URLs manually, so the temporary player initially
-used `/ios/` directly for Nemesis S with WebGL2. Tapping WebGPU opened
-`/ios/webgpu/`; Auto opened `/ios/auto/`. Pietsona used equivalent `/ios/piet/`
-subpages. After real-iPhone confirmation of the WebGPU fix, the short game links
-use Auto by default. WebGL2 now has an explicit `/webgl2/` subpage; the previously
-published `/auto/` links remain valid.
-All renderer links and manifest start URLs are query-free. Existing ordinary
-and version-2 diagnostic pages remain byte-identical to the published snapshot.
-Native tests cover page-selected renderers, their clean links, and precedence
-over any URL override. This is only a diagnostic usability change.
-
-## WebGPU stage specialization
-
-The iPhone reports `Vertex library failed creation` for exactly the seven
-primitive/transfer pipelines. Before the fix, their shared `createPipeline`
-supplied all three VRAM overrides to both entry points. Vertex entry points use
-only the X/Y address periods; fragment entry points use only the X period and
-physical row mask. Scanout and readback already supply constants only to their fragment stage
-and do not produce these errors.
-
-WebKit's [unused-override regression and fix](https://github.com/WebKit/WebKit/commit/8acb03441a23a4a938d81df76ebc630d7e66013f)
-identify this exact failure mechanism: its library preparation rejected a
-module override unused by the selected entry point, although WebGPU permits it.
-WebKit's [render-pipeline owner](https://github.com/WebKit/WebKit/blob/main/Source/WebGPU/WebGPU/RenderPipeline.mm)
-reports the observed vertex-library error when that preparation returns an
-invalid library. This is not an optional WebGPU feature: the browser owner calls
-`requestDevice()` without required features or limits. The upstream fix does
-not establish which Safari releases contain it.
+References studied before implementation:
+[WebKit unused-override regression and fix](https://github.com/WebKit/WebKit/commit/8acb03441a23a4a938d81df76ebc630d7e66013f),
+[Three.js WebGPU-first capability selection](https://github.com/mrdoob/three.js/blob/dev/src/renderers/webgpu/WebGPURenderer.js),
+and [RetroArch per-contact browser input](https://github.com/libretro/RetroArch/blob/master/input/drivers/rwebinput_input.c).
+WebGPU allows declared overrides unused by an entry point; the WebKit bug
+rejected them. Stage-specific descriptors avoid that ambiguity without a
+fallback, reflection layer, hardware change, or platform exception. No optional
+WebGPU features or limits are requested.
 
 ### Representation audit before the renderer edit
 
@@ -144,40 +76,40 @@ The affected pipelines' hot-path consumers remain unchanged:
 - `uploadGxGpuVramSnapshot`, `serviceGxGpuReadback`, and `scanoutGxGpuVram ->
   scanoutProgressiveGxGpuVram / scanoutInterlacedGxGpuVram`.
 
-### Verification of the stage split
+## Verification and publication
 
-The native-browser regression fails against the old owner because a vertex
-descriptor contains the fragment-only row mask. It passes with the stage split
-for both 1 MiB and 2 MiB installed VRAM, checking all seven vertex/fragment
-constant sets and native compilation of the real render-pass library. The five
-GPU/input regressions, browser/scripts typechecks and browser-player build pass.
+The stage-contract test checks all seven pipelines and the native render-pass
+bootstrap with 1 MiB and 2 MiB installed VRAM. The ordinary backend regression
+rejects the former diagnostic URL/page override policy. Native device failure
+is tested as a propagated error with no attempt to create WebGL2. Separate
+capability tests cover an absent WebGPU API and an unavailable adapter.
 
-Local and published Chromium WebGPU and WebGL2 render Nemesis S's Konami intro
-and Pietsona's intro with zero reported GPU or JavaScript errors. Captured
-native descriptors contain the expected constants; the WebGPU request has no
-optional features.
-This is render smoke evidence, not full pixel parity or iPhone/Metal proof.
-Publishing the stage split retained the temporary pages' URLs and UI and
-replaced only `/ios/engine.js`; the ordinary game HTML and engines remained
-byte-identical.
-The iPhone user subsequently confirmed that the corrected WebGPU path works.
-The temporary pages now use ordinary WebGPU-first automatic selection by
-default, instead of the forced WebGL2 comparison mode. The renderer-selection
-owner and machine behavior are unchanged.
-Local and published short game pages select WebGPU without a renderer-switch
-tap in Chromium, with zero reported errors. The explicit WebGL2 comparison
-pages still work; the default-selection update leaves all engine bytes intact.
+The iPhone user confirmed that the stage-specific WebGPU fix works. Chromium
+WebGPU/WebGL2 render smoke tests do not establish full pixel parity, iPhone
+performance, or a separate Home Screen lifecycle test. Native touch tests cover
+combined d-pad/actions, overlapping contacts, independent release/cancellation,
+compatibility mouse events, pressure-zero movement, control gaps and page loss.
 
-Run the browser regressions and host typecheck:
+On 2026-10-10 the ordinary `/nemesis_s/` and `/2025/` players were repackaged and
+published. Local and public native-browser checks selected WebGPU automatically
+and WebGL2 when the test removed the WebGPU capability. Both games rendered
+without JavaScript/GPU errors and retained d-pad/B contacts independently.
+Public bytes match the new package receipts and isolation headers are retained.
+Only each ordinary engine and its receipt changed: HTML, manifests, icons,
+immutable media URLs and historical temporary pages stayed byte-identical.
+Evidence is in `.bmsx/hosting/ios-owner-fix-evidence/` (ignored local output).
+
+Build the browser-player product and repackage the **same** published immutable
+cart/BIOS artifacts through `scripts/products/deploy_builder.ts`. That owner
+writes the matching host-byte receipt; do not overwrite an engine while leaving
+its package receipt stale. Media URLs, ROM bytes, manifests and app identity do
+not need to change. Deploy using the existing secret-safe Azure procedure.
 
 ```sh
 node --import tsx --test tests/platform/browser_gpu.test.ts \
   tests/platform/browser_onscreen_gamepad.test.ts
 npx tsc -p hosts/browser/tsconfig.json --noEmit
+npx tsc -p scripts/tsconfig.json --noEmit
+npm run build:product:browser-player -- --force
 git diff --check
 ```
-
-Reference implementations studied before editing:
-[RetroArch contact ownership](https://github.com/libretro/RetroArch/blob/master/input/drivers/rwebinput_input.c),
-[Three.js backend selection](https://github.com/mrdoob/three.js/blob/dev/src/renderers/webgpu/WebGPURenderer.js),
-and [Three.js shader/pipeline diagnostics](https://github.com/mrdoob/three.js/blob/dev/src/renderers/webgpu/utils/WebGPUPipelineUtils.js).

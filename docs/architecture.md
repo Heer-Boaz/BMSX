@@ -554,6 +554,13 @@ Studio and source-aware profiling explicitly call `rompack/tooling/media.ts`
 above that machine initialization boundary. Ordinary browser and Node players
 therefore neither allocate authoring layers nor link their decoder graph.
 
+Browser graphics initialization belongs to `hosts/browser/backend.ts`. It
+selects WebGPU when the browser supplies its API and an adapter; otherwise it
+selects WebGL2 before device initialization. Native device/context errors
+propagate rather than retrying a different renderer. Renderer selection has no
+user-agent, URL-parameter, or page-attribute policy, and production players do
+not install diagnostic observers around native GPU objects.
+
 Deployable artifact construction is owned by `scripts/products/`. Browser
 player, browser Studio, Node player, Node tooling, machine-library, and
 libretro builds are independently invokable product targets; there is no

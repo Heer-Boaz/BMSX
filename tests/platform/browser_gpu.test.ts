@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test, { before } from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
@@ -30,7 +29,7 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
-		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" data-renderer="webgpu" width="320" height="240"></canvas>',
+		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" width="320" height="240"></canvas>',
 	}));
 	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
 		await page.goto('http://localhost/renderer-test/webgpu/');
@@ -79,113 +78,60 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 	assert.deepEqual(errors, []);
 });
 
-test('browser renderer selection respects explicit requests and reports native GPU diagnostics', async t => {
-	const diagnostics = await readFile('scripts/render/diagnostics/browser_gpu.mjs', 'utf8');
+test('the browser selects WebGPU from its capabilities, not URL or page overrides', async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
 	t.after(() => browser.close());
 	const page = await browser.newPage();
-	const errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => {
-		const renderer = new URL(route.request().url()).pathname.split('/')[2];
-		return route.fulfill({ contentType: 'text/html', body: `<!doctype html><canvas id="gamescreen" ${renderer ? `data-renderer="${renderer}"` : ''} data-diagnostics-root="/renderer-test/" width="320" height="240"></canvas>` });
-	});
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
+		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" data-renderer="webgl2"></canvas>',
+	}));
 	await page.addInitScript(() => {
-		(globalThis as any).adapterRequests = 0;
-		const requestAdapter = GPU.prototype.requestAdapter;
-		GPU.prototype.requestAdapter = function (options) {
-			(globalThis as any).adapterRequests++;
-			return requestAdapter.call(this, options);
+		(globalThis as any).canvasContexts = [];
+		const getContext = HTMLCanvasElement.prototype.getContext;
+		HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
+			(globalThis as any).canvasContexts.push(kind);
+			return getContext.call(this, kind, ...args);
 		};
 	});
-	for (const requested of ['auto', 'webgpu', 'webgl2']) {
-		await page.goto(`http://localhost/renderer-test/${requested}/`);
-		await page.addScriptTag({ type: 'module', content: diagnostics });
-		await page.addScriptTag({ content: backendBundle });
-		const backend = await page.evaluate(async () => {
-			const backend = await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
-			(globalThis as any).selectedBackend = backend;
-			return { type: backend.type, requests: (globalThis as any).adapterRequests };
-		});
-		assert.deepEqual(backend, { type: requested === 'webgl2' ? 'webgl2' : 'webgpu', requests: requested === 'webgl2' ? 0 : 1 });
-		assert.match(await page.locator('#gpu-status').innerText(), requested === 'webgl2' ? /WebGL2/ : /WebGPU/);
-		assert.equal(new URL(page.url()).search, '');
-		assert.deepEqual(await page.locator('#gpu-diagnostics nav a').evaluateAll(links => links.map(link => (link as HTMLAnchorElement).href)), [
-			'http://localhost/renderer-test/', 'http://localhost/renderer-test/webgpu/', 'http://localhost/renderer-test/webgl2/',
-		]);
-		assert.equal(await page.locator('#gpu-diagnostics nav a[aria-current]').getAttribute('data-renderer'), requested);
-		await page.waitForFunction(() => document.getElementById('gpu-messages')!.textContent.includes('Gevraagd:'));
-		assert.match(await page.locator('#gpu-summary').innerText(), /^0 fouten/);
-		if (requested === 'webgpu') {
-			// Real native compilation/validation errors must reach the visible panel.
-			await page.evaluate(() => {
-				const device: GPUDevice = (globalThis as any).selectedBackend.device;
-				const module = device.createShaderModule({ label: 'diagnostic-bad-shader', code: 'not valid WGSL' });
-				device.createRenderPipeline({
-					label: 'diagnostic-bad-pipeline', layout: 'auto',
-					vertex: { module, entryPoint: 'main' }, primitive: { topology: 'triangle-list' },
-				});
-			});
-			await page.waitForFunction(() => {
-				const messages = document.getElementById('gpu-messages')!.textContent;
-				return messages.includes('diagnostic-bad-shader') && messages.includes('diagnostic-bad-pipeline');
-			});
-			assert.equal(await page.locator('#gpu-diagnostics details').evaluate(element => (element as HTMLDetailsElement).open), true);
-		}
-	}
-	await page.goto('http://localhost/renderer-test/webgl2/?renderer=webgpu');
+	await page.goto('http://localhost/renderer-test/?renderer=webgl2');
 	await page.addScriptTag({ content: backendBundle });
 	assert.deepEqual(await page.evaluate(async () => {
 		const backend = await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
-		return { type: backend.type, requests: (globalThis as any).adapterRequests };
-	}), { type: 'webgl2', requests: 0 }, 'fixed page selection does not depend on URL parameters');
-	await page.goto('http://localhost/renderer-test/?renderer=webgl');
-	await page.addScriptTag({ content: backendBundle });
-	await assert.rejects(page.evaluate(async () => {
-		await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
-	}), /Unknown browser renderer: webgl/);
-	assert.deepEqual(errors, []);
+		return { type: backend.type, contexts: (globalThis as any).canvasContexts };
+	}), { type: 'webgpu', contexts: ['webgpu'] });
 });
 
-test('diagnostic setup failures retain their stage, exception and location in the visible panel', async t => {
+test('WebGPU initialization failure is reported without retrying another renderer', async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
 		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
 	] });
 	t.after(() => browser.close());
 	const page = await browser.newPage();
-	const errors: string[] = [];
-	page.on('pageerror', error => errors.push(error.message));
-	await page.route('http://localhost/renderer-test/**', route => {
-		const renderer = new URL(route.request().url()).pathname.split('/')[2];
-		return route.fulfill({ contentType: 'text/html', body: `<!doctype html><canvas id="gamescreen" data-renderer="${renderer}" data-diagnostics-root="/renderer-test/"></canvas>` });
-	});
-	await page.goto('http://localhost/renderer-test/auto/');
-	// Exercise an observer setup exception, not a repaired/alternate device.
-	await page.evaluate(() => Reflect.deleteProperty(globalThis, 'GPUQueue'));
-	await page.addScriptTag({ type: 'module', content: await readFile('scripts/render/diagnostics/browser_gpu.mjs', 'utf8') });
-	await page.waitForFunction(() => document.getElementById('gpu-messages')!.textContent.includes('JavaScript (GPUQueue)'));
-	assert.match(await page.locator('#gpu-progress').innerText(), /Diagnose: GPUQueue/);
-	assert.match(await page.locator('#gpu-messages').innerText(), /TypeError|GPUQueue/);
-	assert.doesNotMatch(await page.locator('#gpu-messages').innerText(), /Script error\./);
-	assert.equal(errors.length, 1);
-	assert.equal(await page.locator('#gpu-diagnostics details').evaluate(element => (element as HTMLDetailsElement).open), true);
-	await page.goto('http://localhost/renderer-test/webgl2/');
-	await page.evaluate(() => Reflect.deleteProperty(globalThis, 'GPUQueue'));
-	await page.addScriptTag({ type: 'module', content: await readFile('scripts/render/diagnostics/browser_gpu.mjs', 'utf8') });
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
+		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
+	}));
+	await page.goto('http://localhost/renderer-test/');
 	await page.addScriptTag({ content: backendBundle });
-	assert.equal(await page.evaluate(async () => {
-		return (await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024)).type;
-	}), 'webgl2');
-	await page.waitForFunction(() => document.getElementById('gpu-messages')!.textContent.includes('Gevraagd:'));
-	assert.match(await page.locator('#gpu-summary').innerText(), /^0 fouten/);
-	assert.equal(errors.length, 1, 'explicit WebGL2 does not initialize GPU-only observers');
+	await page.evaluate(() => {
+		(globalThis as any).canvasContexts = [];
+		const getContext = HTMLCanvasElement.prototype.getContext;
+		HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
+			(globalThis as any).canvasContexts.push(kind);
+			return getContext.call(this, kind, ...args);
+		};
+		GPUAdapter.prototype.requestDevice = async function () { throw new Error('Native device initialization failed'); };
+	});
+	await assert.rejects(page.evaluate(async () => {
+		await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
+	}), /Native device initialization failed/);
+	assert.deepEqual(await page.evaluate(() => (globalThis as any).canvasContexts), []);
 });
 
-test('an explicit WebGPU request never silently selects WebGL2 when the capability is absent', async t => {
+test('browsers without a WebGPU API or adapter select WebGL2 before initialization', async t => {
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
 	const page = await browser.newPage();
@@ -193,18 +139,12 @@ test('an explicit WebGPU request never silently selects WebGL2 when the capabili
 		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen"></canvas>',
 	}));
 	await page.addInitScript(() => Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }));
-	await page.goto('http://localhost/renderer-test/?renderer=webgpu');
-	await page.addScriptTag({ content: backendBundle });
-	await assert.rejects(page.evaluate(async () => {
-		await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
-	}), /WebGPU is not available/);
-	await page.evaluate("Object.defineProperty(navigator, 'gpu', { value: { async requestAdapter() { return null; } } })");
-	await assert.rejects(page.evaluate(async () => {
-		await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024);
-	}), /Unable to obtain the requested WebGPU adapter/);
-	await page.goto('http://localhost/renderer-test/');
-	await page.addScriptTag({ content: backendBundle });
-	assert.equal(await page.evaluate(async () => {
-		return (await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024)).type;
-	}), 'webgl2');
+	for (const available of [false, true]) {
+		await page.goto('http://localhost/renderer-test/');
+		await page.addScriptTag({ content: backendBundle });
+		if (available) await page.evaluate("Object.defineProperty(navigator, 'gpu', { value: { async requestAdapter() { return null; } } })");
+		assert.equal(await page.evaluate(async () => {
+			return (await (globalThis as any).backendTest.createBrowserBackend(document.getElementById('gamescreen'), 2 * 1024 * 1024)).type;
+		}), 'webgl2');
+	}
 });

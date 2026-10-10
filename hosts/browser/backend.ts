@@ -11,21 +11,12 @@ export function createWebGLBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: nu
 }
 
 export async function createBrowserBackend(canvas: HTMLCanvasElement, gxGpuVramBytes: number): Promise<GPUBackend> {
-	const renderer = canvas.dataset.renderer ?? (new URLSearchParams(window.location.search).get('renderer') || 'auto');
-	if (renderer === 'webgl2') {
-		return createWebGLBackend(canvas, gxGpuVramBytes);
-	}
-	if (renderer !== 'auto' && renderer !== 'webgpu') {
-		throw new Error(`Unknown browser renderer: ${renderer}`);
-	}
 	const gpu = navigator.gpu;
 	if (!gpu) {
-		if (renderer === 'webgpu') throw new Error('WebGPU is not available in this browser.');
 		return createWebGLBackend(canvas, gxGpuVramBytes);
 	}
 	const adapter = await gpu.requestAdapter();
 	if (!adapter) {
-		if (renderer === 'webgpu') throw new Error('Unable to obtain the requested WebGPU adapter.');
 		return createWebGLBackend(canvas, gxGpuVramBytes);
 	}
 	return createWebGPUBackend(canvas, adapter, gxGpuVramBytes);
