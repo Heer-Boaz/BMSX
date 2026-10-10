@@ -1,30 +1,45 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
 
+const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick }
+
 const ACTIONS = [
-	{ id: 'a_knop', buttons: 1 << InputControllerGamepadButtonBit.A },
-	{ id: 'b_knop', buttons: 1 << InputControllerGamepadButtonBit.B },
-	{ id: 'x_knop', buttons: 1 << InputControllerGamepadButtonBit.X },
-	{ id: 'y_knop', buttons: 1 << InputControllerGamepadButtonBit.Y },
-	{ id: 'select_knop', buttons: 1 << InputControllerGamepadButtonBit.Select },
-	{ id: 'start_knop', buttons: 1 << InputControllerGamepadButtonBit.Start },
-	{ id: 'ls_knop', buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
-	{ id: 'rs_knop', buttons: 1 << InputControllerGamepadButtonBit.RightStick },
+	{ id: 'a_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.A },
+	{ id: 'b_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.B },
+	{ id: 'x_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.X },
+	{ id: 'y_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.Y },
+	{ id: 'select_knop', surface: ActionSurfaceIndex.Select, buttons: 1 << InputControllerGamepadButtonBit.Select },
+	{ id: 'start_knop', surface: ActionSurfaceIndex.Start, buttons: 1 << InputControllerGamepadButtonBit.Start },
+	{ id: 'ls_knop', surface: ActionSurfaceIndex.LeftStick, buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
+	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
 ] as const;
 
-const LANDSCAPE_PROFILE = { margin: 16, referenceSide: 360, stickSize: 136, actionScale: 1 };
-const PORTRAIT_PROFILE = { margin: 16, referenceSide: 390, stickSize: 144, actionScale: 1.08 };
+const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
+const COMPACT_PROFILE = { margin: 16, bottom: 16, stickSize: 128 };
+const LANDSCAPE_PROFILE = { margin: 32, bottom: 32, stickSize: 144 };
+const PORTRAIT_PROFILE = { margin: 24, bottom: 32, stickSize: 144 };
+const MIN_ACTION_SCALE = 44 / 52;
+const UTILITY_SIZE = 44;
+const UTILITY_PITCH = 56;
+const UTILITY_TOP = 16;
+
+interface ActionSurface {
+	element: HTMLElement;
+	artworkWidth: number;
+	artworkHeight: number;
+	left: number;
+	top: number;
+	scale: number;
+}
 
 /** Passive controller artwork and its authored numerical layout. */
 export class BrowserOnscreenGamepadView {
 	private readonly stickSurface: HTMLElement;
-	private readonly actionSurface: HTMLElement;
+	private readonly actionSurfaces: ActionSurface[] = [];
 	private readonly stickBase: SVGCircleElement;
 	private readonly stickTip: SVGCircleElement;
 	private readonly stickArtworkWidth: number;
 	private readonly stickArtworkHeight: number;
-	private readonly actionArtworkWidth: number;
-	private readonly actionArtworkHeight: number;
 	private readonly nominalStickX: number;
 	private readonly nominalStickY: number;
 	private readonly nominalStickRadius: number;
@@ -53,15 +68,19 @@ export class BrowserOnscreenGamepadView {
 		private readonly model: BrowserOnscreenGamepad,
 	) {
 		this.stickSurface = document.getElementById('d-pad-controls');
-		this.actionSurface = document.getElementById('button-controls');
 		this.stickBase = document.getElementById('d-pad-base') as unknown as SVGCircleElement;
 		this.stickTip = document.getElementById('d-pad-tip') as unknown as SVGCircleElement;
 		const stickArtwork = document.getElementById('d-pad-svg') as unknown as SVGSVGElement;
-		const actionArtwork = document.getElementById('action-buttons-svg') as unknown as SVGSVGElement;
 		this.stickArtworkWidth = stickArtwork.viewBox.baseVal.width;
 		this.stickArtworkHeight = stickArtwork.viewBox.baseVal.height;
-		this.actionArtworkWidth = actionArtwork.viewBox.baseVal.width;
-		this.actionArtworkHeight = actionArtwork.viewBox.baseVal.height;
+		for (const id of ACTION_SURFACES) {
+			const element = document.getElementById(id);
+			const artwork = element.firstElementChild as SVGSVGElement;
+			this.actionSurfaces.push({
+				element, artworkWidth: artwork.viewBox.baseVal.width, artworkHeight: artwork.viewBox.baseVal.height,
+				left: 0, top: 0, scale: 1,
+			});
+		}
 		this.nominalStickX = this.stickBase.cx.baseVal.value;
 		this.nominalStickY = this.stickBase.cy.baseVal.value;
 		this.nominalStickRadius = this.stickBase.r.baseVal.value;
@@ -87,45 +106,53 @@ export class BrowserOnscreenGamepadView {
 		this.layoutTop = top;
 		this.layoutWidth = width;
 		this.layoutHeight = height;
-		const profile = width >= height ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
+		const landscape = width >= height;
+		const compact = landscape ? width < 640 || height < 280 : width < 360;
+		const profile = compact ? COMPACT_PROFILE : landscape ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
 		const availableWidth = Math.max(0, width - profile.margin * 2);
-		const availableHeight = Math.max(0, height - profile.margin * 2);
-		const viewportScale = Math.min(1.2, Math.min(width, height) / profile.referenceSide);
+		const availableHeight = Math.max(0, height - profile.bottom - UTILITY_TOP);
+		const viewportScale = Math.min(1.15, Math.max(MIN_ACTION_SCALE, Math.min(width, height) / 390));
 		const stickScale = Math.min(
 			profile.stickSize / this.stickArtworkWidth * viewportScale,
 			availableWidth / this.stickArtworkWidth,
 			availableHeight / this.stickArtworkHeight,
 		);
-		const actionScale = Math.min(
-			profile.actionScale * viewportScale,
-			availableWidth / this.actionArtworkWidth,
-			availableHeight / this.actionArtworkHeight,
+		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
+		const faceScale = Math.min(
+			viewportScale,
+			availableWidth / faceSurface.artworkWidth,
+			availableHeight / faceSurface.artworkHeight,
 		);
 		const stickLeft = left + profile.margin;
-		const stickTop = top + height - profile.margin - this.stickArtworkHeight * stickScale;
-		const actionLeft = left + width - profile.margin - this.actionArtworkWidth * actionScale;
-		const actionTop = top + height - profile.margin - this.actionArtworkHeight * actionScale;
+		const stickTop = top + height - profile.bottom - this.stickArtworkHeight * stickScale;
 		this.stickSurface.style.left = `${stickLeft}px`;
 		this.stickSurface.style.top = `${stickTop}px`;
 		this.stickSurface.style.transform = `scale(${stickScale})`;
-		this.actionSurface.style.left = `${actionLeft}px`;
-		this.actionSurface.style.top = `${actionTop}px`;
-		this.actionSurface.style.transform = `scale(${actionScale})`;
+		this.placeActionSurface(ActionSurfaceIndex.Face,
+			left + width - profile.margin - faceSurface.artworkWidth * faceScale,
+			top + height - profile.bottom - faceSurface.artworkHeight * faceScale, faceScale);
+		const utilityTop = top + UTILITY_TOP;
+		const utilityLeft = left + profile.margin;
+		const utilityRight = left + width - profile.margin - UTILITY_SIZE;
+		this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft + UTILITY_PITCH, utilityTop, 1);
+		this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight - UTILITY_PITCH, utilityTop, 1);
+		this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, 1);
+		this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, 1);
 		const geometry = this.geometry;
 		geometry.stickX = stickLeft + this.nominalStickX * stickScale;
 		geometry.stickY = stickTop + this.nominalStickY * stickScale;
 		geometry.stickRadius = this.nominalStickRadius * stickScale;
 		geometry.stickDeadzoneRadius = this.nominalDeadzoneRadius * stickScale;
 		for (let index = 0; index < this.actions.length; index += 1) {
+			const surface = this.actionSurfaces[ACTIONS[index].surface];
 			const nominal = this.nominalActions[index];
 			const action = this.actions[index];
-			action.x = actionLeft + nominal.x * actionScale;
-			action.y = actionTop + nominal.y * actionScale;
-			action.radius = nominal.radius * actionScale;
+			action.x = surface.left + nominal.x * surface.scale;
+			action.y = surface.top + nominal.y * surface.scale;
+			action.radius = nominal.radius * surface.scale;
 		}
 		this.model.setGeometry(geometry);
 		this.stickSurface.hidden = false;
-		this.actionSurface.hidden = false;
 	}
 
 	public dispose(): void {
@@ -133,7 +160,18 @@ export class BrowserOnscreenGamepadView {
 		if (this.animationFrameId) this.window.cancelAnimationFrame(this.animationFrameId);
 		this.animationFrameId = 0;
 		this.stickSurface.hidden = true;
-		this.actionSurface.hidden = true;
+		for (const surface of this.actionSurfaces) surface.element.hidden = true;
+	}
+
+	private placeActionSurface(index: ActionSurfaceIndex, left: number, top: number, scale: number): void {
+		const surface = this.actionSurfaces[index];
+		surface.left = left;
+		surface.top = top;
+		surface.scale = scale;
+		surface.element.style.left = `${left}px`;
+		surface.element.style.top = `${top}px`;
+		surface.element.style.transform = `scale(${scale})`;
+		surface.element.hidden = false;
 	}
 
 	private readonly scheduleRender = (): void => {

@@ -494,3 +494,105 @@ the public pages as well. The library and historical `/ios/` diagnostics remain
 byte-identical. No new test URL or query parameter is required. The shared
 published engine SHA-256 is
 `24fd46a01dbf37b44a51dfb6cc1993e2a2610b523441ce5ad4beebf12075e877`.
+
+## Polished default presentation, 2026-10-11
+
+This follow-up is a passive layout/artwork slice, not another input architecture
+rewrite. The user chose a finished default before a layout editor. All eight
+physical controls stay available. Per-game visibility, editable layouts and a
+Studio-specific arrangement remain separate future work; this slice adds no
+preferences, persistence, guest mappings or settings UI.
+
+### References inspected before implementation
+
+- [Apple's touch-control guidance](https://developer.apple.com/design/human-interface-guidelines/game-controls#Touch-controls)
+  separates frequent thumb actions from upper secondary/menu controls, respects
+  safe areas and calls for visible feedback beyond the covering finger. Its
+  native 44-point target guidance informs our explicit 44-CSS-pixel browser
+  baseline; these units are not a universal physical-size equivalence.
+- [RetroArch's production RetroPad overlay](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/flat/retropad.cfg#L92-L140)
+  separates the movement region, action diamond and auxiliary controls.
+  [Neo-retropad](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/neo-retropad-clear.cfg#L133-L177)
+  also provides orientation-aware authored layouts. Its automatic combination
+  zones are not adopted: one contact must not unexpectedly acquire two buttons.
+- Historical official Roblox production code,
+  [TouchJump](https://github.com/Roblox/Core-Scripts/blob/425d2d641bdc4b6c1104a9d5f6c53c9ea758c5cb/PlayerScripts/StarterPlayerScripts_NewStructure/RobloxPlayerScript/ControlScript/TouchJump.lua#L147-L185)
+  and [DynamicThumbstick](https://github.com/Roblox/Core-Scripts/blob/425d2d641bdc4b6c1104a9d5f6c53c9ea758c5cb/PlayerScripts/StarterPlayerScripts_NewStructure/RobloxPlayerScript/ControlScript/DynamicThumbstick.lua#L234-L295),
+  informs distinct phone/tablet sizing, lower thumb zones and clear active
+  feedback. It is archived 2018 code, not a claim about today's Roblox controls.
+  Floating-stick acquisition and framework input loops are not copied.
+
+### Authored default and ownership
+
+- ABXY alone occupy the right thumb diamond. Nominal A/B diameters are 60,
+  X/Y diameters 52; diagonal center spacing is `52 * sqrt(2)`. Start/Select and
+  LS/RS are independent 44-pixel utility surfaces at the safe upper corners,
+  with a 12-pixel target gap within each pair.
+- The fixed stick remains at the lower left, with a bounded visible tip and
+  subtle direction marks. Its technical deadzone is not painted. Dark outer
+  edges, light inner rings and translucent discs remain distinct on light or
+  dark scenes. Pressed fill/ring changes do not translate or scale hit targets;
+  generic guest button labels remain unchanged rather than inventing cart
+  action icons.
+- Scale follows the CSS safe player rectangle, clamped between `44 / 52` and
+  `1.15` for ordinary supported phone/tablet sizes. Compact portrait widths
+  below 360, and landscape widths below 640 or usable heights below 280,
+  use 16-pixel margins/bottom clearance and a nominal 128-pixel stick. Other
+  portraits use margin 24/bottom 32 and landscapes margin 32/bottom 32, both
+  with a nominal 144-pixel stick. Utility targets are not shrunk with the face
+  diamond. Available-space fitting still governs smaller rectangles.
+- `BrowserOnscreenGamepadView` owns each surface's retained numeric CSS-client
+  transform. The same transform publishes its SVG circle centers/radii to the
+  existing contact model, including nonzero player offsets. Artwork never
+  becomes an event target. No new input producer, per-move DOM measurement or
+  settings facade is introduced.
+- Contact leases, raw physical bits, source edges and ordinary frame sampling
+  are unchanged. The existing Select host-modifier policy is unchanged too.
+  Canvas fitting remains the largest permitted half-step with exact 4:3 aspect;
+  controls reserve no canvas area and do not follow ROM resolution or DPR.
+
+### Validation gates
+
+The ergonomics integration test uses the actual template/CSS/view/video owner,
+trusted Chromium contacts and real common input. It measures the circles, not
+only sparse SVG wrapper rectangles. Supported profiles include compact
+320x568/568x320 phones, 390x844/844x390 with simulated safe insets, 393x852 and
+430x932 in both orientations, reduced-height landscape, wide 640x240/852x239,
+the 279/280 profile boundary, a tablet and an offset embedded player.
+Insets are fixture inputs, not measurements of a specific iPhone/Safari version.
+
+The gate requires circular targets at least 44 CSS pixels, at least 8 pixels
+between every contact region and at least 12 pixels of painted safe-edge
+clearance. Labels must fit inside their targets. All eight centers must publish
+only their own physical bit; native A+B+stick must retain independent releases
+and outside-area movement. Press feedback cannot move targets. Framebuffer
+widths 320/256/321/257 must leave every control transform unchanged.
+
+A wide/short layout audit found Y overlapping Start at 640x240 before the height
+profile criterion was added. The owner layout, not the contact classifier, was
+corrected; those shapes now have separate acquisitions. No overlap exceptions
+or input remapping were added.
+
+Visual evidence is under `.bmsx/hosting/touch-controller-ergonomics-evidence/`
+(bright/dark, resting/paired, DPR2 layout fixtures) and
+`.bmsx/hosting/ergonomic-controls-evidence/` (actual ordinary game packages).
+Desktop geometry, native delivery and screenshot review are evidence for these
+surfaces; final two-thumb comfort and Safari/PWA multitouch still require the
+actual iPhone. No perfect NTE equivalence or physical-device validation is
+claimed from desktop emulation.
+
+The final combined browser/controller, pointer-cancel, editor-edge, GPU and
+existing media/package bundle passes 59 tests. Browser, Node, scripts and tests
+typechecks and the browser-player product build pass. The final 15-profile
+matrix measures minimum targets of 44 pixels, minimum contact gap about 9.93
+pixels and minimum painted safe clearance about 13.29 pixels. Both actual
+ordinary packages pass mobile Chromium WebGPU/audio/native A+B+stick checks and
+Linux WPE WebKit WebGL2/audio/trusted single-touch checks. Those WebKit checks
+still do not exercise native multi-contact delivery on iOS.
+
+The polished ordinary `/nemesis_s/` and `/2025/` packages are published on the
+existing managed site. Public HTML and engine bytes match their package receipts,
+retain COOP/COEP, and pass the native mobile Chromium/WebGPU/audio smoke against
+the live pages. The library, `/ios/` and historical diagnostics are unchanged;
+there is no new test URL or query parameter. Shared published engine SHA-256:
+`e27a46cd72310e8140b1b8429d26a58b2d81e7d8d2bce0bee8fd5909d006dab2`.

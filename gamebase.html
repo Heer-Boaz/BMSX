@@ -28,31 +28,69 @@
 			<div id="hidor"></div>
 			<div id="loading" class="coloring">Loading...</div>
 			<div id="extra-message" class="coloring" hidden></div>
-			<div id="d-pad-controls" aria-hidden="true" hidden>
+			<div id="d-pad-controls" class="control-surface" aria-hidden="true" hidden>
 				<svg id="d-pad-svg" viewBox="0 0 100 100" width="100" height="100">
+					<circle class="control-bezel" cx="50" cy="50" r="51" />
 					<circle id="d-pad-base" cx="50" cy="50" r="50" data-touched="false" />
 					<circle id="d-pad-deadzone" cx="50" cy="50" r="9" />
+					<path class="stick-guides" d="M50 7v4 M89 50h4 M50 89v4 M7 50h4" />
 					<circle id="d-pad-tip" cx="50" cy="50" r="18" />
 				</svg>
 			</div>
-			<div id="button-controls" aria-hidden="true" hidden>
-				<svg id="action-buttons-svg" viewBox="0 0 180 190" width="180" height="190">
-					<circle id="ls_knop" class="action-button auxiliary orange" cx="20" cy="20" r="18" data-touched="false" />
-					<text id="ls_knop_text" x="20" y="20" class="action-label auxiliary-label">LS</text>
-					<circle id="rs_knop" class="action-button auxiliary purple" cx="64" cy="20" r="18" data-touched="false" />
-					<text id="rs_knop_text" x="64" y="20" class="action-label auxiliary-label">RS</text>
-					<circle id="y_knop" class="action-button green" cx="104" cy="56" r="24" data-touched="false" />
-					<text id="y_knop_text" x="104" y="56" class="action-label">Y</text>
-					<circle id="x_knop" class="action-button pink" cx="68" cy="92" r="24" data-touched="false" />
-					<text id="x_knop_text" x="68" y="92" class="action-label">X</text>
-					<circle id="b_knop" class="action-button red" cx="140" cy="92" r="24" data-touched="false" />
-					<text id="b_knop_text" x="140" y="92" class="action-label">B</text>
-					<circle id="a_knop" class="action-button blue" cx="104" cy="128" r="24" data-touched="false" />
-					<text id="a_knop_text" x="104" y="128" class="action-label">A</text>
-					<circle id="select_knop" class="action-button auxiliary yellow" cx="20" cy="144" r="18" data-touched="false" />
-					<text id="select_knop_text" x="20" y="144" class="action-label auxiliary-label">SE</text>
-					<circle id="start_knop" class="action-button auxiliary light-blue" cx="56" cy="168" r="18" data-touched="false" />
-					<text id="start_knop_text" x="56" y="168" class="action-label auxiliary-label">ST</text>
+			<div id="button-controls" class="control-surface" aria-hidden="true" hidden>
+				<svg id="action-buttons-svg" viewBox="0 0 208 208" width="208" height="208">
+					<g class="face-control green">
+						<circle class="control-bezel" cx="104" cy="52" r="27" />
+						<circle id="y_knop" class="action-button" cx="104" cy="52" r="26" data-touched="false" />
+						<text id="y_knop_text" x="104" y="51" class="action-label">Y</text>
+						<circle class="action-accent" cx="104" cy="68" r="2" />
+					</g>
+					<g class="face-control pink">
+						<circle class="control-bezel" cx="52" cy="104" r="27" />
+						<circle id="x_knop" class="action-button" cx="52" cy="104" r="26" data-touched="false" />
+						<text id="x_knop_text" x="52" y="103" class="action-label">X</text>
+						<circle class="action-accent" cx="52" cy="120" r="2" />
+					</g>
+					<g class="face-control red">
+						<circle class="control-bezel" cx="156" cy="104" r="31" />
+						<circle id="b_knop" class="action-button primary-action" cx="156" cy="104" r="30" data-touched="false" />
+						<text id="b_knop_text" x="156" y="103" class="action-label">B</text>
+						<circle class="action-accent" cx="156" cy="122" r="2" />
+					</g>
+					<g class="face-control blue">
+						<circle class="control-bezel" cx="104" cy="156" r="31" />
+						<circle id="a_knop" class="action-button primary-action" cx="104" cy="156" r="30" data-touched="false" />
+						<text id="a_knop_text" x="104" y="155" class="action-label">A</text>
+						<circle class="action-accent" cx="104" cy="174" r="2" />
+					</g>
+				</svg>
+			</div>
+			<div id="ls-controls" class="control-surface utility-surface" aria-hidden="true" hidden>
+				<svg viewBox="0 0 44 44" width="44" height="44">
+					<circle class="control-bezel" cx="22" cy="22" r="23" />
+					<circle id="ls_knop" class="action-button auxiliary" cx="22" cy="22" r="22" data-touched="false" />
+					<text id="ls_knop_text" x="22" y="22" class="action-label auxiliary-label">LS</text>
+				</svg>
+			</div>
+			<div id="select-controls" class="control-surface utility-surface" aria-hidden="true" hidden>
+				<svg viewBox="0 0 44 44" width="44" height="44">
+					<circle class="control-bezel" cx="22" cy="22" r="23" />
+					<circle id="select_knop" class="action-button auxiliary" cx="22" cy="22" r="22" data-touched="false" />
+					<text id="select_knop_text" x="22" y="22" class="action-label menu-label">SELECT</text>
+				</svg>
+			</div>
+			<div id="start-controls" class="control-surface utility-surface" aria-hidden="true" hidden>
+				<svg viewBox="0 0 44 44" width="44" height="44">
+					<circle class="control-bezel" cx="22" cy="22" r="23" />
+					<circle id="start_knop" class="action-button auxiliary" cx="22" cy="22" r="22" data-touched="false" />
+					<text id="start_knop_text" x="22" y="22" class="action-label menu-label">START</text>
+				</svg>
+			</div>
+			<div id="rs-controls" class="control-surface utility-surface" aria-hidden="true" hidden>
+				<svg viewBox="0 0 44 44" width="44" height="44">
+					<circle class="control-bezel" cx="22" cy="22" r="23" />
+					<circle id="rs_knop" class="action-button auxiliary" cx="22" cy="22" r="22" data-touched="false" />
+					<text id="rs_knop_text" x="22" y="22" class="action-label auxiliary-label">RS</text>
 				</svg>
 			</div>
 			<div id="gameContainer">
