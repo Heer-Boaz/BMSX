@@ -48,10 +48,15 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 			if (row.track?.kind === 'tag') api.fill_rect(geometry.cells[cell], middle, geometry.cells[cell + 1], middle + 1, 0, text);
 			else api.blit_rect(geometry.cells[cell], top + 3, geometry.cells[cell + 1], top + layout.rowHeight - 3, 0, text);
 		}
+		let selectedDot = -1;
 		for (let dot = 0; dot < geometry.dots.length; dot += 2) {
+			if (geometry.index === list.selectionIndex && geometry.dots[dot + 1] === input.keyIndex) { selectedDot = dot; continue; }
 			const x = geometry.dots[dot];
-			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0,
-				geometry.index === list.selectionIndex && geometry.dots[dot + 1] === input.keyIndex ? colors.COLOR_FOCUS_BORDER : text);
+			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, text);
+		}
+		if (selectedDot >= 0) {
+			const x = geometry.dots[selectedDot];
+			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, colors.COLOR_FOCUS_BORDER);
 		}
 	}
 	api.popClipRect();
@@ -62,10 +67,16 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		api.pushClipRect(keyBounds.left, keyBounds.top, keyBounds.right, keyBounds.bottom);
 		const cursorX = viewport.xAt(viewport.cursor);
 		api.fill_rect(cursorX, keyBounds.top, cursorX + 1, keyBounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
+		let selectedPixel = -1;
 		for (let pixel = 0; pixel < viewport.pixels.length; pixel += 2) {
-			const index = viewport.pixels[pixel], x = viewport.pixels[pixel + 1], selected = index === viewport.selected;
-			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT : text);
-			if (selected) api.blit_rect(x - 4, middle - 5, x + 4, middle + 5, 0, colors.COLOR_FOCUS_BORDER);
+			if (viewport.pixels[pixel] === viewport.selected) { selectedPixel = pixel; continue; }
+			const x = viewport.pixels[pixel + 1];
+			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, text);
+		}
+		if (selectedPixel >= 0) {
+			const x = viewport.pixels[selectedPixel + 1];
+			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+			api.blit_rect(x - 4, middle - 5, x + 4, middle + 5, 0, colors.COLOR_FOCUS_BORDER);
 		}
 		api.popClipRect();
 		drawEditorText(font, viewport.startLabel, keyBounds.left, keyBounds.bottom + 2, 0, text);
@@ -83,15 +94,21 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		api.fill_rect(area.left, zero, area.right, zero + 1, 0, colors.COLOR_TAB_BORDER);
 		api.fill_rect(head, area.top, head + 1, area.bottom, 0, colors.COLOR_FOCUS_BORDER);
 		for (let run = 0; run < curve.pathCount; run++) api.polyline(curve.paths[run], 0, 0, 0, 1, text);
-		for (let marker = 0; marker < curve.markers.length; marker += 3) {
-			const index = curve.markers[marker], x = curve.markers[marker + 1], y = curve.markers[marker + 2];
-			api.fill_rect(x - 3, y - 3, x + 4, y + 4, 0, index === viewport.selected ? colors.COLOR_FOCUS_BORDER : text);
-		}
 		for (let side = 0; side < 2; side++) {
 			const handle = side === 0 ? curve.arriveHandle : curve.leaveHandle;
 			if (!handle.length) continue;
 			api.polyline(handle, 0, 0, 0, 1, colors.COLOR_STATUS_TEXT);
 			api.blit_rect(handle[2] - 3, handle[3] - 3, handle[2] + 4, handle[3] + 4, 0, colors.COLOR_FOCUS_BORDER);
+		}
+		let selectedMarker = -1;
+		for (let marker = 0; marker < curve.markers.length; marker += 3) {
+			if (curve.markers[marker] === viewport.selected) { selectedMarker = marker; continue; }
+			const x = curve.markers[marker + 1], y = curve.markers[marker + 2];
+			api.fill_rect(x - 3, y - 3, x + 4, y + 4, 0, text);
+		}
+		if (selectedMarker >= 0) {
+			const x = curve.markers[selectedMarker + 1], y = curve.markers[selectedMarker + 2];
+			api.fill_rect(x - 3, y - 3, x + 4, y + 4, 0, colors.COLOR_FOCUS_BORDER);
 		}
 		api.popClipRect();
 		api.blit_rect(area.left, area.top, area.right, area.bottom, 0, keysFocused ? colors.COLOR_FOCUS_BORDER : colors.COLOR_TAB_BORDER);

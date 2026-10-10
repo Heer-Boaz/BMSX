@@ -764,6 +764,10 @@ source application. Parser/unit tests do not substitute for that UI evidence.
   wheel zoom anchors at the pointer, middle-button drag pans, and **Frame All
   Keys** fits the authored extent. Arrow/Home/End navigation, capture loss and
   source edits do not accidentally commit a preview.
+- Coincident-key picking retains the selected authored occurrence on an exact
+  distance tie; a nearer key still wins. Selected markers draw above other keys,
+  and keys above tangent handles. Overview picking preserves the current lane's
+  key until the hit is resolved, rather than reselecting and resetting that lane.
 - Written numeric keys remain visible and editable independently of segment
   interpolation. An unresolved value or required slope breaks only its affected
   curve run, not the editor. If a key position is unresolved, no chronological
@@ -1145,3 +1149,51 @@ warmed batches. This excludes source admission, drawing/GPU work and machine
 execution; it is neither an end-to-end latency claim nor a cross-run speedup
 claim. No runtime, cartlib, C++ or Play owner changed. Evidence is retained in
 `.bmsx/authoring/animation-segment-review-2026-10-10/`.
+
+### Follow-up review: key identity and matching draw/pick order (2026-10-10)
+
+Three negative reproductions found source-editing faults: equal-time/value
+picking replaced the selected occurrence with the first authored key; a tangent
+endpoint intercepted a key click; overview picking reset the current lane before
+resolving its key. Corrections belong to the existing key viewport, curve,
+gesture and lane owners, not a selection restore or a source-array reorder.
+
+Blender's production
+[`graph_draw.cc`](https://github.com/blender/blender/blob/main/source/blender/editors/space_graph/graph_draw.cc)
+draws handles behind keys and unselected keys before selected keys. Its
+[`graph_select.cc`](https://github.com/blender/blender/blob/main/source/blender/editors/space_graph/graph_select.cc)
+also makes overlapping-key preference explicit. BMSX retains the actual nearest
+hit, using its selected occurrence only on an equal-distance tie. The existing
+bounded geometry loops draw the selected marker last without another traversal,
+new collections or extra draw commands; picking follows the same layering.
+
+Visible keyboard/pointer acceptance with `2025` loaded reproduces the wrong Lua
+key changing from 100 to 150, then verifies only the selected `later` occurrence
+changes after rebuilding. A coincident tangent/key click selects that key; its
+drag changes time from 41 to 60 without changing slopes. Save and Undo are
+verified in actual Source. A separate before/after overview click changes
+`later` to `earlier` on the old client and retains `later` on the rebuilt client.
+No model injection, evaluation or clipboard drove these selection cases.
+Temporary editors/resources are removed; original cart sources remain unchanged.
+
+The focused animation suite passes 42 checks; the broad Lua suite passes 3,104
+with one existing skip. IDE/test typechecks, the browser Studio build, strict
+architecture audit (zero issues) and diff checks pass. An alternating warmed
+Node 22.23.1 comparison with two 20,000-key tracks and 51 visible keys each keeps
+255 commands and the retained overlay stream in both versions. Actual production
+drawing plus pooled command encoding measures median 0.02151 ms before and
+0.02193 ms after, excluding source admission, layout, GPU and machine execution.
+This is a scoped overhead check, not an end-to-end or universal performance claim.
+No runtime, cartlib, C++ or Play owner changed. Evidence is retained in
+`.bmsx/authoring/animation-boundaries-review-2026-10-10/`.
+
+An independent input-owner defect was exposed while typing the temporary source
+under load: the code editor and inline fields enumerate per-frame key states,
+not ordered text events, and decode Shift from the later frame state. Typed text
+can therefore be reordered, merged or misdecoded. This is not repaired with a
+slower typing rate, sorting, or an Animation-only input hook. Its separate owner
+redesign must follow native text/composition events, focused controls and shared
+editing history; VS Code's
+[`textAreaEditContextInput.ts`](https://github.com/microsoft/vscode/blob/main/src/vs/editor/browser/controller/editContext/textArea/textAreaEditContextInput.ts)
+separates keybindings from native input/composition for precisely that boundary.
+The selection fixes above do not claim to fix that platform-wide input defect.

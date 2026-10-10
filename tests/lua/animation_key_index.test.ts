@@ -9,6 +9,26 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 
 const resource = { domain: 0 as const, path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
 
+test('coincident key picking keeps the selected authored occurrence without overriding a nearer key', () => {
+	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0},{time_ms=51,value=1}}}}}";
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
+	view.range.layout(0, 0, 106, 20); view.curve.layout(0, 30, 106, 142); view.curve.update(view);
+	const x = view.xAt(50), y = view.curve.yAt(0);
+	assert.equal(view.keyAt(x), 0); assert.equal(view.curve.keyAt(view, x, y), 0);
+	view.select(1);
+	assert.equal(view.keyAt(x), 1); assert.equal(view.curve.keyAt(view, x, y), 1);
+	assert.equal(view.keyAt(view.xAt(51)), 2);
+	assert.equal(view.curve.keyAt(view, view.xAt(51), view.curve.yAt(1)), 2);
+	view.preview(51); view.curve.preview('value', 1);
+	assert.equal(view.keyAt(view.xAt(51)), 1);
+	assert.equal(view.curve.keyAt(view, view.xAt(51), view.curve.yAt(1)), 1);
+	view.cancel(); view.select(0);
+	assert.equal(view.keyAt(x), 0); assert.equal(view.curve.keyAt(view, x, y), 0);
+	assert.equal(document.tracks[0].keys[1].coordinate!.value, 50);
+	assert.equal(document.tracks[0].keys[1].value!.value, 0);
+});
+
 test('unselected key navigation searches from the current native cursor, without wrapping backwards', () => {
 	for (const unit of ['time_ms', 'frame', 'u'] as const) {
 		const source = `return {tracks={{kind='event',keys={{${unit}=100,event='a'},{${unit}=0,event='b'},{${unit}=50,event='c'},{${unit}=50,event='d'},{${unit}=200,event='e'}}}}}`;

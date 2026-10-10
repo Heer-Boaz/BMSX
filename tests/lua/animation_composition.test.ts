@@ -7,6 +7,7 @@ import { animationDefinitionFamily, collectAnimationDefinitions } from '../../id
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationAuthoring } from '../../ide/workbench/contrib/animation/authoring';
 import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';
+import { AnimationLaneControl } from '../../ide/workbench/contrib/animation/lane_control';
 import { AnimationInputSerializer } from '../../ide/workbench/contrib/animation/editor_serializer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -18,9 +19,32 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { ANIMATION_TRACK_TEMPLATES } from '../../ide/workbench/contrib/animation/track_templates';
+import { inputFocus } from '../../ide/input/focus';
+import { PointerButton } from '../../ide/input/pointer/buttons';
 
 const resource = { domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
+
+test('overview key picking does not clear the active occurrence before resolving a hit', t => {
+	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0}}},{kind='event',keys={{time_ms=25,event='other'}}}}}";
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
+	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+	const input = new AnimationEditorInput(model);
+	input.tracks.layout.contentTop = 0; input.tracks.layout.rowHeight = 20; input.tracks.layout.visibleRowCount = 3;
+	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1);
+	input.overview.layout(0, 0, 106, 60); input.keys.range.layout(0, 0, 106, 20);
+	const focus = inputFocus.createTarget(); focus.bindKeyboard(() => {});
+	const control = new AnimationLaneControl(focus, controller); control.setInput(input);
+	t.after(() => { control.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
+	const pointer = { viewportX: input.keys.xAt(50), viewportY: 30, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	control.handlePointer(pointer);
+	assert.equal(input.keys.selected, 1); assert.equal(input.keyIndex, 1);
+	control.handlePointer({ ...pointer, viewportX: input.keys.xAt(25), viewportY: 50 });
+	assert.equal(input.trackIndex, 1); assert.equal(input.keys.selected, 0);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+});
 
 test('clip trim edits the written parent once, preserves child time and imported ownership at O0/O3', () => {
 	const source = "-- untouched\nreturn {duration_ms=100,subsequences={{duration_ms=100,sequence=require('child')}}}\n";

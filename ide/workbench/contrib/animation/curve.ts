@@ -81,7 +81,7 @@ export class AnimationCurve {
 			if ((this.fields[index] & ResolvedFields.Value) === 0) continue;
 			const dx = keys.xAt(keys.positionAt(index)) - x, dy = this.yAt(this.fieldValue(keys, index, 'value')) - y;
 			const squared = dx * dx + dy * dy;
-			if (squared < distance) { closest = index; distance = squared; }
+			if (squared < distance || closest >= 0 && squared === distance && index === keys.selected) { closest = index; distance = squared; }
 		}
 		return closest;
 	}

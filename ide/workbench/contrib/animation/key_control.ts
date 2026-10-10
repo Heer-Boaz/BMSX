@@ -66,8 +66,10 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			if (input.keys.track === undefined) {
 				input.keys.setCursor(input.keys.valueAt(snapshot.viewportX)); return true;
 			}
-			const handle = inCurve ? curve.handleAt(snapshot.viewportX, snapshot.viewportY) : undefined;
-			const index = handle !== undefined ? input.keys.selected : inCurve ? curve.keyAt(input.keys, snapshot.viewportX, snapshot.viewportY) : input.keys.keyAt(snapshot.viewportX);
+			const hitKey = inCurve ? curve.keyAt(input.keys, snapshot.viewportX, snapshot.viewportY) : input.keys.keyAt(snapshot.viewportX);
+			// Keys are drawn above handles; picking follows that same order.
+			const handle = inCurve && hitKey < 0 ? curve.handleAt(snapshot.viewportX, snapshot.viewportY) : undefined;
+			const index = handle === undefined ? hitKey : input.keys.selected;
 			this.controller.selectKey(input, index);
 			if (index < 0) input.keys.setCursor(input.keys.valueAt(snapshot.viewportX));
 			else {

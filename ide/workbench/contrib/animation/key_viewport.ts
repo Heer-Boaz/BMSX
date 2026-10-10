@@ -149,7 +149,7 @@ export class AnimationKeyViewport {
 		for (let ordered = this.timeIndex(this.valueAt(x - 7, false)); ordered < end; ordered++) {
 			const index = this.timeOrder[ordered], value = this.positionAt(index);
 			const delta = Math.abs(this.xAt(value) - x);
-			if (delta < distance) { distance = delta; selected = index; }
+			if (delta < distance || selected >= 0 && delta === distance && index === this.selected) { distance = delta; selected = index; }
 		}
 		return selected;
 	}

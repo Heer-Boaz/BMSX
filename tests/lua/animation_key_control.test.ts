@@ -18,6 +18,29 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
+test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
+	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
+	const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	input.trackIndex = 0;
+	input.keys.bind(input.document.tracks[0], 0, input.document);
+	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
+	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+	const control = new AnimationKeyControl(parent, { selectKey(input, index) { input.keyIndex = index; input.keys.select(index); } }, authoring);
+	control.setInput(input); control.layout(0, 0, 106, 20); input.keys.curve.layout(0, 30, 106, 142); input.keys.curve.update(input.keys);
+	t.after(() => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	const x = input.keys.xAt(32), y = input.keys.curve.yAt(0);
+	assert.deepEqual(input.keys.curve.leaveHandle.slice(2), [x, y]);
+	assert.equal(input.keys.curve.keyAt(input.keys, x, y), 1);
+	const pointer: PointerSnapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	control.handlePointer(pointer);
+	assert.equal(input.keys.selected, 1);
+	pointerCapture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+});
+
 test('key capture preserves grab offset and commits only a physical drop; click, source invalidation and focus loss do not edit', t => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100.25,value=1}}}}}";
 	const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
