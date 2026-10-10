@@ -390,13 +390,14 @@ function createPipeline(
 	targetFormat: GPUTextureFormat,
 	vertexEntryPoint: string,
 	fragmentEntryPoint: string,
-	shaderConstants: Record<string, number>,
+	vertexConstants: Record<string, number>,
+	fragmentConstants: Record<string, number>,
 ): GPURenderPipeline {
 	return device.createRenderPipeline({
 		label,
 		layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-		vertex: { module, entryPoint: vertexEntryPoint, constants: shaderConstants, buffers: [vertexBuffer] },
-		fragment: { module, entryPoint: fragmentEntryPoint, constants: shaderConstants, targets: [{ format: targetFormat }] },
+		vertex: { module, entryPoint: vertexEntryPoint, constants: vertexConstants, buffers: [vertexBuffer] },
+		fragment: { module, entryPoint: fragmentEntryPoint, constants: fragmentConstants, targets: [{ format: targetFormat }] },
 		primitive: { topology: 'triangle-list' },
 	});
 }
@@ -469,9 +470,13 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const dynamicUniformOffsets = new Uint32Array(1);
 	const scanoutClearColor: GPUColorDict = { r: 0, g: 0, b: 0, a: 0 };
 	const scanoutBlendConstant: GPUColorDict = { r: 0, g: 0, b: 0, a: 0 };
-	const vramShaderConstants = {
+	// Specialize each stage only with the overrides its entry points use.
+	const vramVertexConstants = {
 		gxGpuVramXAddressPeriod: GX_GPU_VRAM_X_ADDRESS_PERIOD,
 		gxGpuVramYAddressPeriod: GX_GPU_VRAM_Y_ADDRESS_PERIOD,
+	};
+	const vramFragmentConstants = {
+		gxGpuVramXAddressPeriod: GX_GPU_VRAM_X_ADDRESS_PERIOD,
 		gxGpuVramTextureRowMask: backend.gxGpuVramTextureRowMask,
 	};
 	const readbackShaderConstants = {
@@ -517,7 +522,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 0, offset: 0, format: 'float32x2' },
 			{ shaderLocation: 1, offset: 2 * 4, format: 'float32x4' },
 		],
-	}, 'rgba8unorm', 'vs_main', 'fs_main', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_main', 'fs_main', vramVertexConstants, vramFragmentConstants);
 	const fixedSolidPipeline = createPipeline(device, 'gx_gpu_fixed_solid', solidModule, primitiveLayout, {
 		arrayStride: GX_GPU_FIXED_SOLID_VERTEX_FLOATS * 4,
 		attributes: [
@@ -526,7 +531,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 2, offset: 5 * 4, format: 'uint32x3' },
 			{ shaderLocation: 3, offset: 8 * 4, format: 'uint32x3' },
 		],
-	}, 'rgba8unorm', 'vs_fixed', 'fs_fixed', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_fixed', 'fs_fixed', vramVertexConstants, vramFragmentConstants);
 	const linePipeline = createPipeline(device, 'gx_gpu_line', lineModule, primitiveLayout, {
 		arrayStride: GX_GPU_LINE_VERTEX_FLOATS * 4,
 		attributes: [
@@ -536,7 +541,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 3, offset: 6 * 4, format: 'float32x3' },
 			{ shaderLocation: 4, offset: 9 * 4, format: 'float32x3' },
 		],
-	}, 'rgba8unorm', 'vs_main', 'fs_main', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_main', 'fs_main', vramVertexConstants, vramFragmentConstants);
 	const texturedPipeline = createPipeline(device, 'gx_gpu_textured', texturedModule, primitiveLayout, {
 		arrayStride: GX_GPU_TEXTURED_VERTEX_FLOATS * 4,
 		attributes: [
@@ -547,7 +552,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 4, offset: 9 * 4, format: 'uint32x2' },
 			{ shaderLocation: 5, offset: GX_GPU_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET * 4, format: 'uint16x4' },
 		],
-	}, 'rgba8unorm', 'vs_main', 'fs_main', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_main', 'fs_main', vramVertexConstants, vramFragmentConstants);
 	const fixedTexturedPipeline = createPipeline(device, 'gx_gpu_fixed_textured', texturedModule, primitiveLayout, {
 		arrayStride: GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS * 4,
 		attributes: [
@@ -560,21 +565,21 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 6, offset: 14 * 4, format: 'uint32x3' },
 			{ shaderLocation: 7, offset: GX_GPU_FIXED_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET * 4, format: 'uint16x4' },
 		],
-	}, 'rgba8unorm', 'vs_fixed', 'fs_fixed', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_fixed', 'fs_fixed', vramVertexConstants, vramFragmentConstants);
 	const transferPipeline = createPipeline(device, 'gx_gpu_transfer', transferModule, transferLayout, {
 		arrayStride: GX_GPU_TRANSFER_VERTEX_FLOATS * 4,
 		attributes: [
 			{ shaderLocation: 0, offset: 0, format: 'float32x2' },
 			{ shaderLocation: 1, offset: 2 * 4, format: 'float32x2' },
 		],
-	}, 'rgba8unorm', 'vs_main', 'fs_main', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_main', 'fs_main', vramVertexConstants, vramFragmentConstants);
 	const cpuUploadPipeline = createPipeline(device, 'gx_gpu_cpu_upload', transferModule, transferLayout, {
 		arrayStride: GX_GPU_TRANSFER_VERTEX_FLOATS * 4,
 		attributes: [
 			{ shaderLocation: 0, offset: 0, format: 'float32x2' },
 			{ shaderLocation: 1, offset: 2 * 4, format: 'float32x2' },
 		],
-	}, 'rgba8unorm', 'vs_main', 'fs_cpu_upload', vramShaderConstants);
+	}, 'rgba8unorm', 'vs_main', 'fs_cpu_upload', vramVertexConstants, vramFragmentConstants);
 	const sourceBlend: GPUBlendState = {
 		color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
 		alpha: { srcFactor: 'one', dstFactor: 'zero', operation: 'add' },

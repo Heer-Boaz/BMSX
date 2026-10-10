@@ -8,11 +8,75 @@ import { chromium } from 'playwright';
 let backendBundle: string;
 before(async () => {
 	const bundle = await build({
-		stdin: { contents: "export { createBrowserBackend } from './hosts/browser/backend';", resolveDir: process.cwd() },
-		bundle: true, platform: 'browser', format: 'iife', globalName: 'backendTest', write: false,
+		stdin: { contents: `
+			export { createBrowserBackend } from './hosts/browser/backend';
+			export { BrowserVideoOutput } from './hosts/browser/video_output';
+			export { VideoPresenter } from './machine/ts/render/video_presenter';
+			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
+		`, resolveDir: process.cwd() },
+		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
 		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	backendBundle = bundle.outputFiles[0].text;
+});
+
+test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
+		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	const errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
+		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" data-renderer="webgpu" width="320" height="240"></canvas>',
+	}));
+	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
+		await page.goto('http://localhost/renderer-test/webgpu/');
+		await page.addScriptTag({ content: backendBundle });
+		assert.deepEqual(errors, []);
+		const result = await page.evaluate(async vramBytes => {
+			const { createBrowserBackend, BrowserVideoOutput, VideoPresenter, RenderPassLibrary } = (globalThis as any).backendTest;
+			const canvas = document.getElementById('gamescreen');
+			const backend = await createBrowserBackend(canvas, vramBytes);
+			const device: GPUDevice = backend.device;
+			const pipelines: { label: string; vertex: Record<string, GPUPipelineConstantValue>; fragment: Record<string, GPUPipelineConstantValue> }[] = [];
+			const gpuErrors: string[] = [];
+			device.addEventListener('uncapturederror', event => gpuErrors.push(event.error.message));
+			const createRenderPipeline = device.createRenderPipeline;
+			device.createRenderPipeline = function (descriptor) {
+				pipelines.push({ label: descriptor.label, vertex: descriptor.vertex.constants, fragment: descriptor.fragment?.constants });
+				return createRenderPipeline.call(this, descriptor);
+			};
+			device.pushErrorScope('validation');
+			const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null), backend, 320, 240);
+			const library = new RenderPassLibrary(backend, presenter);
+			await device.queue.onSubmittedWorkDone();
+			const validationError = await device.popErrorScope();
+			library.dispose();
+			device.destroy();
+			return { pipelines, validationError: validationError?.message, gpuErrors };
+		}, vramBytes);
+		assert.equal(result.validationError, undefined, 'native GX and presentation pipelines compile successfully');
+		assert.deepEqual(result.gpuErrors, []);
+		for (const label of [
+			'gx_gpu_solid', 'gx_gpu_fixed_solid', 'gx_gpu_line', 'gx_gpu_textured',
+			'gx_gpu_fixed_textured', 'gx_gpu_transfer', 'gx_gpu_cpu_upload',
+		]) {
+			const pipeline = result.pipelines.find(pipeline => pipeline.label === label);
+			assert.ok(pipeline, `${label} is created by the real pass bootstrap`);
+			assert.deepEqual(pipeline.vertex, {
+				gxGpuVramXAddressPeriod: 1024,
+				gxGpuVramYAddressPeriod: 1024,
+			}, `${label} vertex stage has no fragment-only overrides`);
+			assert.deepEqual(pipeline.fragment, {
+				gxGpuVramXAddressPeriod: 1024,
+				gxGpuVramTextureRowMask: vramBytes / 2048 - 1,
+			}, `${label} fragment stage has no vertex-only overrides`);
+		}
+	}
+	assert.deepEqual(errors, []);
 });
 
 test('browser renderer selection respects explicit requests and reports native GPU diagnostics', async t => {

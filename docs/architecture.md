@@ -4552,6 +4552,14 @@ interface, while rendered output validates behavior. WebGL2 and WebGPU require
 the same capture comparison in a real browser before accelerated parity is
 claimed for those backends.
 
+WebGPU pipeline specialization belongs to the backend's resource bootstrap.
+Each vertex/fragment descriptor receives only the overrides used by that
+stage's entry point: GX raster/transfer vertices use the logical X/Y address
+periods, while their fragments use the X period and installed VRAM row mask.
+The backend emits those dictionaries once; no per-draw shader reflection,
+constant filtering, browser-specific hardware semantics, or renderer fallback
+is involved.
+
 CRT postprocessing and RGB565/MSX10 output quantization are host presentation,
 not runtime or machine state. Parity captures disable these effects, including
 `bmsx_crt_noise`, so they prove machine pixel output rather than host decoration.

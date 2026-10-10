@@ -55,8 +55,9 @@ and verify the diagnostic response's COOP/COEP headers.
   errors reaching the visible panel.
 - Published diagnostic Nemesis S renders its Konami intro in Chromium WebGPU
   and WebGL2. Linux WebKit WebGL2 also renders it. **None of these establishes
-  iPhone/Metal correctness.** The iPhone's persistent power-on VRAM picture is
-  not yet reproduced locally, and no speculative machine/GPU patch was applied.
+  iPhone/Metal correctness.** The subsequent real-iPhone screenshots show
+  readable Nemesis S and Pietsona output with WebGL2, but seven failed WebGPU
+  vertex pipelines followed by `encoder state is not valid`.
 - The reported startup delay was the game's hidden Konami intro, not an
   established startup performance defect; startup optimization is out of scope.
 - The user clarified that the noise and screen proportions do change. The
@@ -87,6 +88,74 @@ All renderer links and manifest start URLs are query-free. Existing ordinary
 and version-2 diagnostic pages remain byte-identical to the published snapshot.
 Native tests cover page-selected renderers, their clean links, and precedence
 over any URL override. This is only a diagnostic usability change.
+
+## WebGPU stage specialization
+
+The iPhone reports `Vertex library failed creation` for exactly the seven
+primitive/transfer pipelines. Before the fix, their shared `createPipeline`
+supplied all three VRAM overrides to both entry points. Vertex entry points use
+only the X/Y address periods; fragment entry points use only the X period and
+physical row mask. Scanout and readback already supply constants only to their fragment stage
+and do not produce these errors.
+
+WebKit's [unused-override regression and fix](https://github.com/WebKit/WebKit/commit/8acb03441a23a4a938d81df76ebc630d7e66013f)
+identify this exact failure mechanism: its library preparation rejected a
+module override unused by the selected entry point, although WebGPU permits it.
+WebKit's [render-pipeline owner](https://github.com/WebKit/WebKit/blob/main/Source/WebGPU/WebGPU/RenderPipeline.mm)
+reports the observed vertex-library error when that preparation returns an
+invalid library. This is not an optional WebGPU feature: the browser owner calls
+`requestDevice()` without required features or limits. The upstream fix does
+not establish which Safari releases contain it.
+
+### Representation audit before the renderer edit
+
+| Data | TypeScript / WebGPU | C++ / GLES2 / software | Change |
+| --- | --- | --- | --- |
+| Logical X/Y address periods | Central `spec/gx/vram` constants, both 1024; WGSL `u32` overrides | Mirrored constants; GLES2 shader defines | None; vertex stage receives X/Y, fragment stage receives X only |
+| Installed VRAM row mask | Backend-owned `gxGpuVramTextureRows - 1`; WGSL `i32` or `u32` override | Backend-owned installed rows; GLES2 defines and integer addressing | None; supplied only to fragment addressing |
+| VRAM contents | Raw 16-bit words; byte pairs in RG of retained `rgba8unorm`, CPU upload `rg8unorm` | Software raw `u16`; GLES2 retained RGBA4 nibble packing | None |
+| GP0 command payload | `Uint32Array` words and shared `Uint8Array` byte view | Raw `u32` command buffer | None |
+| Submitted vertices and attribute planes | `Float32Array` positions; shared `Uint32Array` color/UV planes | Float positions and raw integer attributes | None |
+
+C++ has no WebGPU backend. GLES2 supplies shared preprocessor definitions to
+its shader compiler, which ignores unused definitions rather than specializing
+a WebGPU entry point. Software has no shader specialization. Neither requires a
+mirrored change; no hardware register, word encoding, or datapath changes.
+
+Only the cold `bootstrapGxGpuPass -> createPipeline` calls change:
+`gx_gpu_solid`, `gx_gpu_fixed_solid`, `gx_gpu_line`, `gx_gpu_textured`,
+`gx_gpu_fixed_textured`, `gx_gpu_transfer`, and `gx_gpu_cpu_upload`.
+Their producer now emits two stage-specific constant dictionaries once, shared
+by the seven creation calls.
+There is no shader-source scanning, runtime filtering, new feature probe,
+user-agent policy, or renderer fallback.
+
+The affected pipelines' hot-path consumers remain unchanged:
+
+- `executeGxGpuVramCommands -> executeNewGxGpuCommands`;
+- `uploadCpuToVram -> uploadCpuToVramPayload / renderTransferCommands`;
+- `copyVramToVram -> copyVramToVramArea / renderTransferCommands`;
+- `renderVramVertices -> drawVramVertices`, `renderReadVramSolidQuad`,
+  `renderLineVertices`, `renderTexturedVertices`, and `renderTexturedCommand`;
+- `uploadGxGpuVramSnapshot`, `serviceGxGpuReadback`, and `scanoutGxGpuVram ->
+  scanoutProgressiveGxGpuVram / scanoutInterlacedGxGpuVram`.
+
+### Verification of the stage split
+
+The native-browser regression fails against the old owner because a vertex
+descriptor contains the fragment-only row mask. It passes with the stage split
+for both 1 MiB and 2 MiB installed VRAM, checking all seven vertex/fragment
+constant sets and native compilation of the real render-pass library. The five
+GPU/input regressions, browser/scripts typechecks and browser-player build pass.
+
+Local and published Chromium WebGPU and WebGL2 render Nemesis S's Konami intro
+and Pietsona's intro with zero reported GPU or JavaScript errors. Captured
+native descriptors contain the expected constants; the WebGPU request has no
+optional features.
+This is render smoke evidence, not full pixel parity or iPhone/Metal proof.
+The existing temporary pages retain their URLs and UI. Updating them replaces
+only `/ios/engine.js`; the ordinary game HTML and engines remain byte-identical.
+Real-iPhone confirmation of the corrected WebGPU path is still required.
 
 Run the browser regressions and host typecheck:
 
