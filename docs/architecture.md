@@ -4924,6 +4924,18 @@ counts combine contacts without releasing another finger's controls. Neither
 compatibility mouse boundary events, focus gain, nor touch pressure/button
 fields end a retained contact. Window blur, page hide, and document visibility
 loss end all contacts; a visible `visibilitychange` does not.
+Aggregate onscreen button edges are published directly to the subscribed common
+input sink using the host clock, just like keyboard events. They are not diffed
+from a per-frame snapshot; physical browser gamepads still use their native
+polled API. Focus gain does not reset the common sink while contacts remain
+held. The page's explicit player surface contains the canvas, controls and
+empty space, so a control miss stays inside the same `touch-action: none`
+region. The browser input hub cancels native touch defaults through non-passive
+listeners on that surface, not on the document or window. Native
+touch listeners do not produce input: Pointer Events remain the sole contact
+producer. Page zoom outside the player is not disabled through viewport limits,
+global root-style mutations or global gesture handlers. ICU sampling and its raw
+words are unchanged.
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed

@@ -1,4 +1,5 @@
 import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
+import type { HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import type { BGamepadButton } from '../common/input/models';
 
@@ -220,12 +221,12 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	private readonly pointerButtonMasks: number[] = [];
 	private readonly pointerElementMasks: number[] = [];
 	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
+	private sink: InputEventSink;
 	private activeButtons = 0;
 	private activeElements = 0;
-	private publishedButtons = 0;
 	private nextPressId = 1;
 
-	public constructor(document: Document, window: Window) {
+	public constructor(document: Document, window: Window, private readonly clock: HostClock) {
 		this.document = document;
 		this.window = window;
 		this.dpadElement = this.requireHtmlElement('d-pad-controls');
@@ -257,8 +258,15 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		navigator.vibrate(durationMs * intensity);
 	}
 
-	public poll(time: number, sink: InputEventSink): void {
-		const changedButtons = (this.activeButtons ^ this.publishedButtons) >>> 0;
+	public subscribe(sink: InputEventSink): () => void {
+		this.sink = sink;
+		return () => { this.sink = null; };
+	}
+
+	private publishButtonChanges(previousButtons: number): void {
+		const changedButtons = (this.activeButtons ^ previousButtons) >>> 0;
+		if (changedButtons === 0) return;
+		const time = this.clock.now();
 		for (let index = 0; index < GAMEPAD_BUTTON_IDS.length; index += 1) {
 			const mask = 1 << index;
 			if ((changedButtons & mask) === 0) {
@@ -268,7 +276,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			if (down) {
 				this.pressIds[index] = this.nextPressId++;
 			}
-			sink.inputButton(
+			this.sink.inputButton(
 				this.id,
 				GAMEPAD_BUTTON_IDS[index],
 				down,
@@ -277,7 +285,6 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 				this.pressIds[index],
 			);
 		}
-		this.publishedButtons = this.activeButtons;
 	}
 
 	private readonly onDpadPointerDown = (event: PointerEvent): void => {
@@ -365,6 +372,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	}
 
 	private updateButtonCounts(previousMask: number, nextMask: number): void {
+		const previousButtons = this.activeButtons;
 		const released = (previousMask & ~nextMask) >>> 0;
 		const pressed = (nextMask & ~previousMask) >>> 0;
 		for (let index = 0; index < GAMEPAD_BUTTON_IDS.length; index += 1) {
@@ -384,6 +392,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 				}
 			}
 		}
+		this.publishButtonChanges(previousButtons);
 	}
 
 	private updateElementCounts(previousMask: number, nextMask: number): void {
@@ -444,6 +453,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	}
 
 	private readonly reset = (): void => {
+		const previousButtons = this.activeButtons;
 		this.buttonCounts.fill(0);
 		this.elementCounts.fill(0);
 		this.pointerIds.length = 0;
@@ -451,6 +461,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.pointerElementMasks.length = 0;
 		this.activeButtons = 0;
 		this.activeElements = 0;
+		this.publishButtonChanges(previousButtons);
 		for (let index = 0; index < ONSCREEN_ELEMENT_IDS.length; index += 1) {
 			this.setElementActive(index, false);
 		}

@@ -150,6 +150,7 @@ export class BrowserInputHub implements InputSource {
 
 	constructor(
 		surface: HTMLElement,
+		gestureSurface: HTMLElement,
 		clock: HostClock,
 		onscreenGamepad: BrowserOnscreenGamepad,
 		private readonly supervisorRequestKeyCode: string,
@@ -166,8 +167,7 @@ export class BrowserInputHub implements InputSource {
 
 		window.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
 		window.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
-		window.addEventListener('blur', this.onWindowFocusChange, { passive: true });
-		window.addEventListener('focus', this.onWindowFocusChange, { passive: true });
+		window.addEventListener('blur', this.onWindowBlur, { passive: true });
 		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
 		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
 		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
@@ -176,6 +176,9 @@ export class BrowserInputHub implements InputSource {
 		surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
 		surface.addEventListener('lostpointercapture', this.onPointerCancel, { passive: false });
 		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
+		gestureSurface.addEventListener('touchstart', this.onTouchGesture, { passive: false });
+		gestureSurface.addEventListener('touchmove', this.onTouchGesture, { passive: false });
+		gestureSurface.addEventListener('touchend', this.onTouchGesture, { passive: false });
 
 		window.addEventListener('gamepadconnected', this.onGamepadConnected);
 		window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
@@ -184,7 +187,9 @@ export class BrowserInputHub implements InputSource {
 
 	subscribe(sink: InputEventSink): () => void {
 		this.sink = sink;
+		const unsubscribeOnscreen = this.onscreenGamepad?.subscribe(sink);
 		return () => {
+			unsubscribeOnscreen?.();
 			this.sink = null;
 		};
 	}
@@ -194,9 +199,6 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	poll(time: number): void {
-		if (this.onscreenGamepad) {
-			this.onscreenGamepad.poll(time, this.sink);
-		}
 		const pads = navigator.getGamepads();
 		for (let index = 0; index < this.gamepads.length; index += 1) {
 			const device = this.gamepads[index];
@@ -213,6 +215,11 @@ export class BrowserInputHub implements InputSource {
 
 	/** Host controls may admit native clipboard events without injecting a guest key. */
 	setNativeClipboardEnabled(enabled: ((action: ClipboardAction) => boolean) | undefined): void { this.nativeClipboardEnabled = enabled; }
+
+	/** Browser gestures belong to the entire player surface, including control misses. */
+	private readonly onTouchGesture = (event: TouchEvent): void => {
+		if (event.cancelable) event.preventDefault();
+	};
 
 	private onKeyDown = (event: KeyboardEvent) => {
 		const action = clipboardAction(event.code, event.ctrlKey, event.metaKey, event.shiftKey, event.altKey);
@@ -267,7 +274,7 @@ export class BrowserInputHub implements InputSource {
 		this.sink.inputButton('keyboard:0', event.code, false, 0, now, pressId);
 	};
 
-	private onWindowFocusChange = () => {
+	private onWindowBlur = () => {
 		this.nativeClipboardKeys.clear();
 		const supervisorRequestLineHigh = this.activeKeyPressIds.has(this.supervisorRequestKeyCode);
 		this.activeKeyPressIds.clear();

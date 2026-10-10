@@ -304,6 +304,12 @@ html {
 	touch-action: manipulation;
 }
 
+#player-surface {
+	position: fixed;
+	inset: 0;
+	touch-action: none;
+}
+
 #gameContainer {
 	position: relative;
 }

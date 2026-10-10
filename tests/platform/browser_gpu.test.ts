@@ -91,10 +91,12 @@ test('the browser selects WebGPU from its capabilities, not URL or page override
 	await page.addInitScript(() => {
 		(globalThis as any).canvasContexts = [];
 		const getContext = HTMLCanvasElement.prototype.getContext;
-		HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
-			(globalThis as any).canvasContexts.push(kind);
-			return getContext.call(this, kind, ...args);
-		};
+		Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+			value(kind: string, ...args: unknown[]) {
+				(globalThis as any).canvasContexts.push(kind);
+				return Reflect.apply(getContext, this, [kind, ...args]);
+			},
+		});
 	});
 	await page.goto('http://localhost/renderer-test/?renderer=webgl2');
 	await page.addScriptTag({ content: backendBundle });
@@ -119,10 +121,12 @@ test('WebGPU initialization failure is reported without retrying another rendere
 	await page.evaluate(() => {
 		(globalThis as any).canvasContexts = [];
 		const getContext = HTMLCanvasElement.prototype.getContext;
-		HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
-			(globalThis as any).canvasContexts.push(kind);
-			return getContext.call(this, kind, ...args);
-		};
+		Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+			value(kind: string, ...args: unknown[]) {
+				(globalThis as any).canvasContexts.push(kind);
+				return Reflect.apply(getContext, this, [kind, ...args]);
+			},
+		});
 		GPUAdapter.prototype.requestDevice = async function () { throw new Error('Native device initialization failed'); };
 	});
 	await assert.rejects(page.evaluate(async () => {

@@ -75,7 +75,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	}
 	backend.resizePresentationTarget(WIDTH, HEIGHT);
 	const clock = new VirtualHeadlessClock();
-	const input = new Input(clock, new BrowserInputHub(canvas, clock, null, 'F12'), -1);
+	const input = new Input(clock, new BrowserInputHub(canvas, canvas, clock, null, 'F12'), -1);
 	const player = input.getPlayerInput(1);
 	// A reset, non-executing machine supplies real GX output. No ROM packer or cart fixture.
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes), input, PSX_MACHINE_SPEC);

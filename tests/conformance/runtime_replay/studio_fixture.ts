@@ -67,7 +67,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const bios = new Uint8Array(await (await fetch('/bios.rom')).arrayBuffer());
 	const cart = new Uint8Array(await (await fetch('/cart.rom')).arrayBuffer());
 	const clock = new VirtualHeadlessClock();
-	const browserInput = nativeClipboard ? new BrowserInputHub(canvas, clock, null, HOST_SUPERVISOR_KEY_CODE) : undefined;
+	const browserInput = nativeClipboard ? new BrowserInputHub(canvas, canvas, clock, null, HOST_SUPERVISOR_KEY_CODE) : undefined;
 	const input = new Input(clock, browserInput ?? new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(bios, [cart, null], PSX_MACHINE_SPEC, input);
 	const display = new BrowserVideoOutput(canvas, null);

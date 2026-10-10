@@ -6,7 +6,7 @@
 		@@BMSX_PRODUCT_CONFIGURATION@@
 		<title>#title</title>
 		<meta name="viewport"
-			content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no">
+			content="width=device-width,initial-scale=1.0">
 		<meta name="mobile-web-app-capable" content="yes">
 		<meta name="mobile-web-app-status-bar-style" content="black">
 		<meta name="mobile-web-app-title" content="#title">
@@ -23,7 +23,7 @@
 	</head>
 
 	<body data-default-rom="@@BMSX_DEFAULT_ROM@@" data-system-rom="@@BMSX_SYSTEM_ROM@@">
-		<div>
+		<div id="player-surface">
 			<img id="msx" class="hidden" src="@@BMSX_LOGO@@" alt="MSX" hidden>
 			<div id="hidor"></div>
 			<div id="loading" class="coloring">Loading...</div>

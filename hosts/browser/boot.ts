@@ -67,10 +67,11 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	const clock = new BrowserHostClock();
 	const frames = new BrowserFrameLoop();
 	const onscreenGamepad = enableOnscreenGamepad
-		? new BrowserOnscreenGamepad(gamescreen.ownerDocument, window)
+		? new BrowserOnscreenGamepad(gamescreen.ownerDocument, window, clock)
 		: null;
 	const inputHub = new BrowserInputHub(
 		gamescreen,
+		document.getElementById('player-surface'),
 		clock,
 		onscreenGamepad,
 		HOST_SUPERVISOR_KEY_CODE,
@@ -236,7 +237,6 @@ async function awaitPressedAnyKey(): Promise<void> {
 			cleanup();
 			void resumeAudio(audioState).then(() => {
 				if (event.type === 'touchend') {
-					document.documentElement.style.touchAction = 'none';
 					enableOnscreenGamepad = true;
 				}
 				resolve();
