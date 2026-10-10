@@ -74,6 +74,13 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		}
 	}
 	backend.resizePresentationTarget(WIDTH, HEIGHT);
+	const nativePointer = { id: 0, chords: [] as number[][], captureLosses: 0 };
+	// Observe the native protocol before the source's fixed capture-phase consumer.
+	window.addEventListener('pointerdown', event => { nativePointer.id = event.pointerId; }, true);
+	window.addEventListener('pointermove', event => {
+		if (event.button !== -1) nativePointer.chords.push([event.button, event.buttons]);
+	}, true);
+	canvas.addEventListener('lostpointercapture', () => { nativePointer.captureLosses += 1; }, true);
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new BrowserInputHub(canvas, canvas, clock, null, 'F12'), -1);
 	const player = input.getPlayerInput(1);
@@ -167,7 +174,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
-		view, otherView: second, player, font, move, button, key, step, panes, pane, inputs, group, connection,
+		view, otherView: second, player, font, move, button, key, step, panes, pane, inputs, group, connection, nativePointer,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

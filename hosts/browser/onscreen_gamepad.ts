@@ -1,204 +1,37 @@
 import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
 import type { HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
-import type { BGamepadButton } from '../common/input/models';
+import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 
-const enum OnscreenElement {
-	DpadUp,
-	DpadUpRight,
-	DpadRight,
-	DpadDownRight,
-	DpadDown,
-	DpadDownLeft,
-	DpadLeft,
-	DpadUpLeft,
-	ActionA,
-	ActionB,
-	ActionX,
-	ActionY,
-	ActionLeftStick,
-	ActionRightStick,
-	ActionSelect,
-	ActionStart,
+export interface OnscreenActionGeometry {
+	x: number;
+	y: number;
+	radius: number;
+	buttons: number;
 }
 
-interface OnscreenHit {
-	readonly elementMask: number;
-	readonly buttonMask: number;
+/** CSS-client geometry produced once by the control view's layout owner. */
+export interface OnscreenGamepadGeometry {
+	stickX: number;
+	stickY: number;
+	stickRadius: number;
+	stickDeadzoneRadius: number;
+	actions: readonly OnscreenActionGeometry[];
 }
 
-function gamepadButtonMask(button: BGamepadButton): number {
-	return 1 << GAMEPAD_BUTTON_IDS.indexOf(button);
+const enum ContactControl {
+	Action,
+	Stick,
+	OccupiedStick,
 }
 
-const EMPTY_HIT: OnscreenHit = { elementMask: 0, buttonMask: 0 };
-const DPAD_UP_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadUp)
-		| (1 << OnscreenElement.DpadUpLeft)
-		| (1 << OnscreenElement.DpadUpRight),
-	buttonMask: gamepadButtonMask('up'),
-};
-const DPAD_UP_RIGHT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadUpRight)
-		| (1 << OnscreenElement.DpadUp)
-		| (1 << OnscreenElement.DpadRight),
-	buttonMask: gamepadButtonMask('up') | gamepadButtonMask('right'),
-};
-const DPAD_RIGHT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadRight)
-		| (1 << OnscreenElement.DpadUpRight)
-		| (1 << OnscreenElement.DpadDownRight),
-	buttonMask: gamepadButtonMask('right'),
-};
-const DPAD_DOWN_RIGHT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadDownRight)
-		| (1 << OnscreenElement.DpadDown)
-		| (1 << OnscreenElement.DpadRight),
-	buttonMask: gamepadButtonMask('right') | gamepadButtonMask('down'),
-};
-const DPAD_DOWN_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadDown)
-		| (1 << OnscreenElement.DpadDownLeft)
-		| (1 << OnscreenElement.DpadDownRight),
-	buttonMask: gamepadButtonMask('down'),
-};
-const DPAD_DOWN_LEFT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadDownLeft)
-		| (1 << OnscreenElement.DpadDown)
-		| (1 << OnscreenElement.DpadLeft),
-	buttonMask: gamepadButtonMask('down') | gamepadButtonMask('left'),
-};
-const DPAD_LEFT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadLeft)
-		| (1 << OnscreenElement.DpadUpLeft)
-		| (1 << OnscreenElement.DpadDownLeft),
-	buttonMask: gamepadButtonMask('left'),
-};
-const DPAD_UP_LEFT_HIT: OnscreenHit = {
-	elementMask:
-		(1 << OnscreenElement.DpadUpLeft)
-		| (1 << OnscreenElement.DpadUp)
-		| (1 << OnscreenElement.DpadLeft),
-	buttonMask: gamepadButtonMask('left') | gamepadButtonMask('up'),
-};
-const ACTION_A_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionA,
-	buttonMask: gamepadButtonMask('a'),
-};
-const ACTION_B_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionB,
-	buttonMask: gamepadButtonMask('b'),
-};
-const ACTION_X_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionX,
-	buttonMask: gamepadButtonMask('x'),
-};
-const ACTION_Y_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionY,
-	buttonMask: gamepadButtonMask('y'),
-};
-const ACTION_LEFT_STICK_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionLeftStick,
-	buttonMask: gamepadButtonMask('ls'),
-};
-const ACTION_RIGHT_STICK_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionRightStick,
-	buttonMask: gamepadButtonMask('rs'),
-};
-const ACTION_SELECT_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionSelect,
-	buttonMask: gamepadButtonMask('select'),
-};
-const ACTION_START_HIT: OnscreenHit = {
-	elementMask: 1 << OnscreenElement.ActionStart,
-	buttonMask: gamepadButtonMask('start'),
-};
+const UP = 1 << InputControllerGamepadButtonBit.Up;
+const DOWN = 1 << InputControllerGamepadButtonBit.Down;
+const LEFT = 1 << InputControllerGamepadButtonBit.Left;
+const RIGHT = 1 << InputControllerGamepadButtonBit.Right;
+const DIAGONAL_SLOPE = Math.SQRT2 - 1;
 
-const ONSCREEN_ELEMENT_IDS = [
-	'd-pad-u',
-	'd-pad-ru',
-	'd-pad-r',
-	'd-pad-rd',
-	'd-pad-d',
-	'd-pad-ld',
-	'd-pad-l',
-	'd-pad-lu',
-	'a_knop',
-	'b_knop',
-	'x_knop',
-	'y_knop',
-	'ls_knop',
-	'rs_knop',
-	'select_knop',
-	'start_knop',
-] as const;
-const DPAD_ELEMENT_COUNT = OnscreenElement.DpadUpLeft + 1;
-
-function dpadHit(elementId: string): OnscreenHit {
-	switch (elementId) {
-		case 'd-pad-u': return DPAD_UP_HIT;
-		case 'd-pad-ru': return DPAD_UP_RIGHT_HIT;
-		case 'd-pad-r': return DPAD_RIGHT_HIT;
-		case 'd-pad-rd': return DPAD_DOWN_RIGHT_HIT;
-		case 'd-pad-d': return DPAD_DOWN_HIT;
-		case 'd-pad-ld': return DPAD_DOWN_LEFT_HIT;
-		case 'd-pad-l': return DPAD_LEFT_HIT;
-		case 'd-pad-lu': return DPAD_UP_LEFT_HIT;
-		default: return EMPTY_HIT;
-	}
-}
-
-function actionHit(elementId: string): OnscreenHit {
-	switch (elementId) {
-		case 'a_knop':
-		case 'a_knop_text':
-			return ACTION_A_HIT;
-		case 'b_knop':
-		case 'b_knop_text':
-			return ACTION_B_HIT;
-		case 'x_knop':
-		case 'x_knop_text':
-			return ACTION_X_HIT;
-		case 'y_knop':
-		case 'y_knop_text':
-			return ACTION_Y_HIT;
-		case 'ls_knop':
-		case 'ls_knop_text':
-			return ACTION_LEFT_STICK_HIT;
-		case 'rs_knop':
-		case 'rs_knop_text':
-			return ACTION_RIGHT_STICK_HIT;
-		case 'select_knop':
-		case 'select_knop_text':
-			return ACTION_SELECT_HIT;
-		case 'start_knop':
-		case 'start_knop_text':
-			return ACTION_START_HIT;
-		default:
-			return EMPTY_HIT;
-	}
-}
-
-function removeDpadClasses(target: Element): void {
-	for (let index = target.classList.length - 1; index >= 0; index -= 1) {
-		const className = target.classList.item(index);
-		if (className && className.indexOf('d-pad-') === 0) {
-			target.classList.remove(className);
-		}
-	}
-}
-
-/**
- * Browser-owned virtual gamepad. DOM pointer state is retained here and
- * published through the same GamepadDevice boundary as physical controllers.
- */
+/** Contact-owned virtual device. Native routing and presentation have separate owners. */
 export class BrowserOnscreenGamepad implements GamepadDevice {
 	public static readonly GAMEPAD_INDEX = 0x7ffffffe;
 	public readonly id = `gamepad:${BrowserOnscreenGamepad.GAMEPAD_INDEX}`;
@@ -206,319 +39,229 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public readonly gamepadIndex = BrowserOnscreenGamepad.GAMEPAD_INDEX;
 	public readonly label = 'TOUCH';
 	public readonly vibrationInitialization = null;
-	public readonly supportsVibration = navigator.vibrate != null;
-	public readonly dpadElement: HTMLElement;
-	public readonly actionButtonsElement: HTMLElement;
+	public readonly supportsVibration: boolean;
 
-	private readonly document: Document;
-	private readonly window: Window;
-	private readonly elements: Element[] = [];
-	private readonly textElements: Array<Element | null> = [];
-	private readonly dpadRing: Element;
-	private readonly buttonCounts = new Uint8Array(GAMEPAD_BUTTON_IDS.length);
-	private readonly elementCounts = new Uint8Array(ONSCREEN_ELEMENT_IDS.length);
-	private readonly pointerIds: number[] = [];
-	private readonly pointerButtonMasks: number[] = [];
-	private readonly pointerElementMasks: number[] = [];
-	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
+	private geometry: OnscreenGamepadGeometry;
 	private sink: InputEventSink;
-	private activeButtons = 0;
-	private activeElements = 0;
+	private viewListener: (() => void) | null = null;
+	private readonly contactIds: number[] = [];
+	private readonly contactControls: ContactControl[] = [];
+	private readonly contactAssignments: number[] = [];
+	private readonly contactContributions: number[] = [];
+	private contactCount = 0;
+	private stickContactIndex = -1;
+	private readonly buttonCounts = new Uint32Array(GAMEPAD_BUTTON_IDS.length);
+	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
 	private nextPressId = 1;
+	private activeButtons = 0;
+	private tipX = 0;
+	private tipY = 0;
+	private tipActive = false;
 
-	public constructor(document: Document, window: Window, private readonly clock: HostClock) {
-		this.document = document;
-		this.window = window;
-		this.dpadElement = this.requireHtmlElement('d-pad-controls');
-		this.actionButtonsElement = this.requireHtmlElement('button-controls');
-		this.dpadRing = this.requireElement('d-pad-omheining');
-		this.dpadRing.setAttribute('pointer-events', 'none');
-		const dpadImages = this.dpadElement.querySelectorAll<SVGImageElement>('.d-pad-image');
-		for (let index = 0; index < dpadImages.length; index += 1) {
-			dpadImages[index].style.pointerEvents = 'none';
-		}
-		for (let index = 0; index < ONSCREEN_ELEMENT_IDS.length; index += 1) {
-			const id = ONSCREEN_ELEMENT_IDS[index];
-			this.elements[index] = this.requireElement(id);
-			this.textElements[index] = index < DPAD_ELEMENT_COUNT
-				? null
-				: this.requireElement(`${id}_text`);
-		}
-		this.configureSurface(this.dpadElement);
-		this.configureSurface(this.actionButtonsElement);
-		this.bindPointerSurface(this.dpadElement, this.onDpadPointerDown, this.onDpadPointerMove);
-		this.bindPointerSurface(this.actionButtonsElement, this.onActionPointerDown, this.onActionPointerMove);
-		this.window.addEventListener('blur', this.reset);
-		this.window.addEventListener('pagehide', this.reset);
-		this.document.addEventListener('visibilitychange', this.onVisibilityChange);
-		this.reset();
+	public constructor(
+		private readonly clock: HostClock,
+		private readonly vibrate: ((durationMs: number) => void) | null = null,
+	) {
+		this.supportsVibration = vibrate !== null;
+	}
+
+	public get buttons(): number { return this.activeButtons; }
+	public get stickX(): number { return this.tipX; }
+	public get stickY(): number { return this.tipY; }
+	public get stickActive(): boolean { return this.tipActive; }
+
+	public setGeometry(geometry: OnscreenGamepadGeometry): void {
+		this.geometry = geometry;
 	}
 
 	public setVibration(durationMs: number, intensity: number): void {
-		navigator.vibrate(durationMs * intensity);
+		this.vibrate?.(durationMs * intensity);
 	}
 
 	public subscribe(sink: InputEventSink): () => void {
 		this.sink = sink;
-		return () => { this.sink = null; };
+		return () => {
+			this.cancelContacts();
+			this.sink = null;
+		};
 	}
 
-	private publishButtonChanges(previousButtons: number): void {
-		const changedButtons = (this.activeButtons ^ previousButtons) >>> 0;
-		if (changedButtons === 0) return;
-		const time = this.clock.now();
-		for (let index = 0; index < GAMEPAD_BUTTON_IDS.length; index += 1) {
-			const mask = 1 << index;
-			if ((changedButtons & mask) === 0) {
-				continue;
+	/** A view observes numerical state; it owns its own render scheduling. */
+	public subscribeView(listener: () => void): () => void {
+		this.viewListener = listener;
+		return () => { this.viewListener = null; };
+	}
+
+	public beginContact(id: number, x: number, y: number, active: boolean): boolean {
+		const geometry = this.geometry;
+		let assignment = 0;
+		for (let index = 0; index < geometry.actions.length; index += 1) {
+			const action = geometry.actions[index];
+			const dx = x - action.x;
+			const dy = y - action.y;
+			if (dx * dx + dy * dy <= action.radius * action.radius) {
+				assignment |= action.buttons;
 			}
-			const down = (this.activeButtons & mask) !== 0;
-			if (down) {
-				this.pressIds[index] = this.nextPressId++;
-			}
-			this.sink.inputButton(
-				this.id,
-				GAMEPAD_BUTTON_IDS[index],
-				down,
-				down ? 1 : 0,
-				time,
-				this.pressIds[index],
-			);
 		}
-	}
-
-	private readonly onDpadPointerDown = (event: PointerEvent): void => {
-		this.pointerDown(event, true);
-	};
-
-	private readonly onActionPointerDown = (event: PointerEvent): void => {
-		this.pointerDown(event, false);
-	};
-
-	private readonly onDpadPointerMove = (event: PointerEvent): void => {
-		this.pointerMove(event, true);
-	};
-
-	private readonly onActionPointerMove = (event: PointerEvent): void => {
-		this.pointerMove(event, false);
-	};
-
-	private pointerDown(event: PointerEvent, dpad: boolean): void {
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		this.updatePointer(event.pointerId, -1, this.hitTest(event.clientX, event.clientY, dpad));
-		(event.currentTarget as Element).setPointerCapture(event.pointerId);
-	}
-
-	private pointerMove(event: PointerEvent, dpad: boolean): void {
-		const pointerIndex = this.pointerIndex(event.pointerId);
-		if (pointerIndex < 0) {
-			return;
-		}
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		this.updatePointer(event.pointerId, pointerIndex, this.hitTest(event.clientX, event.clientY, dpad));
-	}
-
-	private readonly pointerUp = (event: PointerEvent): void => {
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		const pointerIndex = this.pointerIndex(event.pointerId);
-		if (pointerIndex >= 0) {
-			this.updateButtonCounts(this.pointerButtonMasks[pointerIndex], 0);
-			this.updateElementCounts(this.pointerElementMasks[pointerIndex], 0);
-			const last = this.pointerIds.length - 1;
-			this.pointerIds[pointerIndex] = this.pointerIds[last];
-			this.pointerButtonMasks[pointerIndex] = this.pointerButtonMasks[last];
-			this.pointerElementMasks[pointerIndex] = this.pointerElementMasks[last];
-			this.pointerIds.length = last;
-			this.pointerButtonMasks.length = last;
-			this.pointerElementMasks.length = last;
-		}
-		this.updateDpadRing();
-		const surface = event.currentTarget as Element;
-		if (surface.hasPointerCapture(event.pointerId)) {
-			surface.releasePointerCapture(event.pointerId);
-		}
-	};
-
-	private hitTest(clientX: number, clientY: number, dpad: boolean): OnscreenHit {
-		const element = this.document.elementFromPoint(clientX, clientY);
-		return element
-			? (dpad ? dpadHit(element.id) : actionHit(element.id))
-			: EMPTY_HIT;
-	}
-
-	private updatePointer(pointerId: number, pointerIndex: number, hit: OnscreenHit): void {
-		const previousButtonMask = pointerIndex >= 0 ? this.pointerButtonMasks[pointerIndex] : 0;
-		const previousElementMask = pointerIndex >= 0 ? this.pointerElementMasks[pointerIndex] : 0;
-		if (pointerIndex >= 0 && previousButtonMask === hit.buttonMask && previousElementMask === hit.elementMask) {
-			return;
-		}
-		this.updateButtonCounts(previousButtonMask, hit.buttonMask);
-		this.updateElementCounts(previousElementMask, hit.elementMask);
-		if (pointerIndex >= 0) {
-			this.pointerButtonMasks[pointerIndex] = hit.buttonMask;
-			this.pointerElementMasks[pointerIndex] = hit.elementMask;
+		let control: ContactControl;
+		if (assignment !== 0) {
+			control = ContactControl.Action;
 		} else {
-			this.pointerIds.push(pointerId);
-			this.pointerButtonMasks.push(hit.buttonMask);
-			this.pointerElementMasks.push(hit.elementMask);
+			const dx = x - geometry.stickX;
+			const dy = y - geometry.stickY;
+			if (dx * dx + dy * dy > geometry.stickRadius * geometry.stickRadius) {
+				return false;
+			}
+			control = this.stickContactIndex < 0 ? ContactControl.Stick : ContactControl.OccupiedStick;
 		}
-		this.updateDpadRing();
-	}
-
-	private updateButtonCounts(previousMask: number, nextMask: number): void {
 		const previousButtons = this.activeButtons;
-		const released = (previousMask & ~nextMask) >>> 0;
-		const pressed = (nextMask & ~previousMask) >>> 0;
-		for (let index = 0; index < GAMEPAD_BUTTON_IDS.length; index += 1) {
-			const mask = 1 << index;
-			if ((released & mask) !== 0) {
-				const count = this.buttonCounts[index] - 1;
-				this.buttonCounts[index] = count;
-				if (count === 0) {
-					this.activeButtons = (this.activeButtons & ~mask) >>> 0;
-				}
-			}
-			if ((pressed & mask) !== 0) {
-				const count = this.buttonCounts[index] + 1;
-				this.buttonCounts[index] = count;
-				if (count === 1) {
-					this.activeButtons = (this.activeButtons | mask) >>> 0;
-				}
-			}
+		const previousX = this.tipX;
+		const previousY = this.tipY;
+		const previousActive = this.tipActive;
+		const index = this.contactCount++;
+		// Retain the high-water storage; ending a contact does not truncate these arrays.
+		this.contactIds[index] = id;
+		this.contactControls[index] = control;
+		this.contactAssignments[index] = assignment;
+		this.contactContributions[index] = 0;
+		if (control === ContactControl.Stick) {
+			this.stickContactIndex = index;
+			this.updateStick(index, x, y, active);
+		} else if (control === ContactControl.Action) {
+			this.setContribution(index, active ? assignment : 0);
 		}
-		this.publishButtonChanges(previousButtons);
+		this.publishChanges(previousButtons, previousX, previousY, previousActive);
+		return true;
 	}
 
-	private updateElementCounts(previousMask: number, nextMask: number): void {
-		const released = previousMask & ~nextMask;
-		const pressed = nextMask & ~previousMask;
-		for (let index = 0; index < ONSCREEN_ELEMENT_IDS.length; index += 1) {
-			const mask = 1 << index;
-			if ((released & mask) !== 0) {
-				const count = this.elementCounts[index] - 1;
-				this.elementCounts[index] = count;
-				if (count === 0) {
-					this.activeElements &= ~mask;
-					this.setElementActive(index, false);
-				}
-			}
-			if ((pressed & mask) !== 0) {
-				const count = this.elementCounts[index] + 1;
-				this.elementCounts[index] = count;
-				if (count === 1) {
-					this.activeElements |= mask;
-					this.setElementActive(index, true);
-				}
-			}
-		}
+	/** Native hover routing queries ownership without mutating a retained controller lease. */
+	public ownsContact(id: number): boolean {
+		return this.contactIndex(id) >= 0;
 	}
 
-	private setElementActive(index: number, active: boolean): void {
-		const element = this.elements[index];
-		const textElement = this.textElements[index];
-		if (active) {
-			element.classList.add('druk');
-			element.classList.remove('los');
-			element.setAttribute('data-touched', 'true');
-			if (textElement) {
-				textElement.classList.add('druk');
-				textElement.classList.remove('los');
-				textElement.setAttribute('data-touched', 'true');
-			}
-			return;
-		}
-		element.classList.remove('druk');
-		element.classList.add('los');
-		element.setAttribute('data-touched', 'false');
-		if (textElement) {
-			textElement.classList.remove('druk');
-			textElement.classList.add('los');
-			textElement.setAttribute('data-touched', 'false');
-		}
-	}
-
-	private updateDpadRing(): void {
-		removeDpadClasses(this.dpadRing);
-		for (let index = 0; index < DPAD_ELEMENT_COUNT; index += 1) {
-			if ((this.activeElements & (1 << index)) !== 0) {
-				this.dpadRing.classList.add(ONSCREEN_ELEMENT_IDS[index]);
-			}
-		}
-	}
-
-	private readonly reset = (): void => {
+	public moveContact(id: number, x: number, y: number, active: boolean): boolean {
+		const index = this.contactIndex(id);
+		if (index < 0) return false;
 		const previousButtons = this.activeButtons;
+		const previousX = this.tipX;
+		const previousY = this.tipY;
+		const previousActive = this.tipActive;
+		const control = this.contactControls[index];
+		if (control === ContactControl.Stick) {
+			this.updateStick(index, x, y, active);
+		} else if (control === ContactControl.Action) {
+			this.setContribution(index, active ? this.contactAssignments[index] : 0);
+		}
+		this.publishChanges(previousButtons, previousX, previousY, previousActive);
+		return true;
+	}
+
+	public endContact(id: number): boolean {
+		const index = this.contactIndex(id);
+		if (index < 0) return false;
+		const previousButtons = this.activeButtons;
+		const previousX = this.tipX;
+		const previousY = this.tipY;
+		const previousActive = this.tipActive;
+		this.setContribution(index, 0);
+		if (index === this.stickContactIndex) {
+			this.stickContactIndex = -1;
+			this.tipX = 0;
+			this.tipY = 0;
+			this.tipActive = false;
+		}
+		const last = --this.contactCount;
+		if (index !== last) {
+			this.contactIds[index] = this.contactIds[last];
+			this.contactControls[index] = this.contactControls[last];
+			this.contactAssignments[index] = this.contactAssignments[last];
+			this.contactContributions[index] = this.contactContributions[last];
+			if (last === this.stickContactIndex) this.stickContactIndex = index;
+		}
+		this.publishChanges(previousButtons, previousX, previousY, previousActive);
+		return true;
+	}
+
+	public cancelContacts(): void {
+		const previousButtons = this.activeButtons;
+		const previousX = this.tipX;
+		const previousY = this.tipY;
+		const previousActive = this.tipActive;
+		this.contactCount = 0;
+		this.stickContactIndex = -1;
 		this.buttonCounts.fill(0);
-		this.elementCounts.fill(0);
-		this.pointerIds.length = 0;
-		this.pointerButtonMasks.length = 0;
-		this.pointerElementMasks.length = 0;
 		this.activeButtons = 0;
-		this.activeElements = 0;
-		this.publishButtonChanges(previousButtons);
-		for (let index = 0; index < ONSCREEN_ELEMENT_IDS.length; index += 1) {
-			this.setElementActive(index, false);
-		}
-		this.updateDpadRing();
-	};
+		this.tipX = 0;
+		this.tipY = 0;
+		this.tipActive = false;
+		this.publishChanges(previousButtons, previousX, previousY, previousActive);
+	}
 
-	private readonly onVisibilityChange = (): void => {
-		if (this.document.hidden) this.reset();
-	};
-
-	private pointerIndex(pointerId: number): number {
-		for (let index = 0; index < this.pointerIds.length; index += 1) {
-			if (this.pointerIds[index] === pointerId) {
-				return index;
-			}
+	private contactIndex(id: number): number {
+		for (let index = 0; index < this.contactCount; index += 1) {
+			if (this.contactIds[index] === id) return index;
 		}
 		return -1;
 	}
 
-	private bindPointerSurface(
-		surface: HTMLElement,
-		pointerDown: (event: PointerEvent) => void,
-		pointerMove: (event: PointerEvent) => void,
-	): void {
-		surface.addEventListener('pointerdown', pointerDown, { passive: false });
-		surface.addEventListener('pointermove', pointerMove, { passive: false });
-		surface.addEventListener('pointerup', this.pointerUp, { passive: false });
-		surface.addEventListener('pointercancel', this.pointerUp, { passive: false });
-		surface.addEventListener('lostpointercapture', this.pointerUp, { passive: false });
-	}
-
-	private configureSurface(surface: HTMLElement): void {
-		surface.style.touchAction = 'none';
-		surface.style.pointerEvents = 'auto';
-		surface.style.userSelect = 'none';
-		surface.style.setProperty('-webkit-touch-callout', 'none');
-		surface.style.setProperty('-webkit-tap-highlight-color', 'transparent');
-		surface.style.setProperty('-ms-touch-action', 'none');
-		surface.hidden = false;
-		surface.setAttribute('aria-hidden', 'false');
-		surface.classList.remove('hidden');
-		surface.removeAttribute('hidden');
-	}
-
-	private requireHtmlElement(id: string): HTMLElement {
-		const element = this.document.getElementById(id);
-		if (!(element instanceof HTMLElement)) {
-			throw new Error(`[BrowserOnscreenGamepad] Element '#${id}' is not an HTMLElement.`);
+	private setContribution(index: number, buttons: number): void {
+		const previous = this.contactContributions[index];
+		const changed = previous ^ buttons;
+		if (changed === 0) return;
+		this.contactContributions[index] = buttons;
+		for (let bit = 0; bit < GAMEPAD_BUTTON_IDS.length; bit += 1) {
+			const mask = 1 << bit;
+			if ((changed & mask) === 0) continue;
+			if ((buttons & mask) !== 0) {
+				this.buttonCounts[bit] += 1;
+				if (this.buttonCounts[bit] === 1) this.activeButtons = (this.activeButtons | mask) >>> 0;
+			} else {
+				this.buttonCounts[bit] -= 1;
+				if (this.buttonCounts[bit] === 0) this.activeButtons = (this.activeButtons & ~mask) >>> 0;
+			}
 		}
-		return element;
 	}
 
-	private requireElement(id: string): Element {
-		const element = this.document.getElementById(id);
-		if (!element) {
-			throw new Error(`[BrowserOnscreenGamepad] Element '#${id}' was not found.`);
+	private updateStick(index: number, x: number, y: number, active: boolean): void {
+		this.tipActive = active;
+		if (!active) {
+			this.tipX = 0;
+			this.tipY = 0;
+			this.setContribution(index, 0);
+			return;
 		}
-		return element;
+		const geometry = this.geometry;
+		const dx = x - geometry.stickX;
+		const dy = y - geometry.stickY;
+		const distanceSquared = dx * dx + dy * dy;
+		let buttons = 0;
+		if (distanceSquared > geometry.stickDeadzoneRadius * geometry.stickDeadzoneRadius) {
+			const ax = Math.abs(dx);
+			const ay = Math.abs(dy);
+			if (ax >= ay * DIAGONAL_SLOPE) buttons |= dx < 0 ? LEFT : RIGHT;
+			if (ay >= ax * DIAGONAL_SLOPE) buttons |= dy < 0 ? UP : DOWN;
+		}
+		const radius = geometry.stickRadius;
+		const divisor = distanceSquared > radius * radius ? Math.sqrt(distanceSquared) : radius;
+		this.tipX = dx / divisor;
+		this.tipY = dy / divisor;
+		this.setContribution(index, buttons);
+	}
+
+	private publishChanges(previousButtons: number, previousX: number, previousY: number, previousActive: boolean): void {
+		const changedButtons = this.activeButtons ^ previousButtons;
+		if (changedButtons !== 0) {
+			const time = this.clock.now();
+			for (let bit = 0; bit < GAMEPAD_BUTTON_IDS.length; bit += 1) {
+				const mask = 1 << bit;
+				if ((changedButtons & mask) === 0) continue;
+				const down = (this.activeButtons & mask) !== 0;
+				if (down) this.pressIds[bit] = this.nextPressId++;
+				this.sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[bit], down, down ? 1 : 0, time, this.pressIds[bit]);
+			}
+		}
+		if (changedButtons !== 0 || this.tipX !== previousX || this.tipY !== previousY || this.tipActive !== previousActive) {
+			this.viewListener?.();
+		}
 	}
 }

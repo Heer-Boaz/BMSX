@@ -188,6 +188,31 @@ export class PointerInput implements PointerInputHandler {
 		}
 	}
 
+	/** Native cancellation ends named contributions, not a UI drop or another button's lease. */
+	public cancelButtons(buttons: number, timestamp: number): void {
+		for (let bit = 0; bit < POINTER_BUTTON_CODE_COUNT; bit += 1) {
+			if ((buttons & (1 << bit)) === 0) continue;
+			const state = this.buttonStates[POINTER_DEFAULT_CODES[bit]];
+			state.pressed = false;
+			state.justpressed = false;
+			state.justreleased = false;
+			state.waspressed = false;
+			state.wasreleased = false;
+			state.repeatpressed = false;
+			state.repeatcount = 0;
+			state.consumed = false;
+			state.presstime = null;
+			state.timestamp = timestamp;
+			state.pressedAtMs = 0;
+			state.releasedAtMs = 0;
+			state.pressId = 0;
+			state.value = 0;
+		}
+		this.inputControllerButtons = (this.inputControllerButtons & ~buttons) >>> 0;
+		this.pendingButtonPressEdges = (this.pendingButtonPressEdges & ~buttons) >>> 0;
+		this.pendingButtonReleaseEdges = (this.pendingButtonReleaseEdges & ~buttons) >>> 0;
+	}
+
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
 		const current = getPressedState(this.buttonStates, code);
 		const dx = this.lastPositionValid ? (x - this.lastPositionX) : 0;

@@ -48,7 +48,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		await build({ entryPoints: [resolve(import.meta.dirname, session ? 'browser_studio_session.ts' : studio ? 'browser_studio.ts' : 'browser_runner.ts')], bundle: true,
 			platform: 'browser', format: 'esm', target: 'es2020', outfile: join(directory, 'test.js'),
 			tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
-		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
+		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
 		await copyFile(bios, join(directory, 'bios.rom'));
 		if (preload) {
 			const built = spawnSync('npx', ['tsx', resolve(import.meta.dirname, 'preload_cartridge.ts'), directory, resolve(bios)], { stdio: 'inherit' });

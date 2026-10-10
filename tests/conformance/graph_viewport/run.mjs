@@ -31,7 +31,7 @@ try {
 			response.writeHead(404); response.end();
 		} else {
 			response.setHeader('Content-Type', 'text/html');
-			response.end('<!doctype html><link rel="icon" href="data:,"><style>body{margin:0}canvas{image-rendering:pixelated}</style><canvas></canvas>');
+			response.end('<!doctype html><link rel="icon" href="data:,"><style>body{margin:0}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas></canvas></div>');
 		}
 	});
 	await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

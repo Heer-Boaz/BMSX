@@ -32,15 +32,6 @@ const BROWSER_STUDIO_SOURCE_ROOTS = [
 
 const BROWSER_IMAGE_PATHS = [
 	'./rom/bmsx.png',
-	'./rom/d-pad-neutral.png',
-	'./rom/d-pad-u.png',
-	'./rom/d-pad-ru.png',
-	'./rom/d-pad-r.png',
-	'./rom/d-pad-rd.png',
-	'./rom/d-pad-d.png',
-	'./rom/d-pad-ld.png',
-	'./rom/d-pad-l.png',
-	'./rom/d-pad-lu.png',
 ] as const;
 
 type BrowserProductBuildOptions = {
@@ -207,15 +198,6 @@ function renderBrowserPage(
 		'@@BMSX_DEFAULT_ROM@@': defaultRom,
 		'@@BMSX_SYSTEM_ROM@@': systemRom,
 		'@@BMSX_LOGO@@': `${imagePrefix}${inputs.images['./rom/bmsx.png']}`,
-		'@@DPAD_D@@': `${imagePrefix}${inputs.images['./rom/d-pad-d.png']}`,
-		'@@DPAD_L@@': `${imagePrefix}${inputs.images['./rom/d-pad-l.png']}`,
-		'@@DPAD_LD@@': `${imagePrefix}${inputs.images['./rom/d-pad-ld.png']}`,
-		'@@DPAD_LU@@': `${imagePrefix}${inputs.images['./rom/d-pad-lu.png']}`,
-		'@@DPAD_NEUTRAL@@': `${imagePrefix}${inputs.images['./rom/d-pad-neutral.png']}`,
-		'@@DPAD_R@@': `${imagePrefix}${inputs.images['./rom/d-pad-r.png']}`,
-		'@@DPAD_RD@@': `${imagePrefix}${inputs.images['./rom/d-pad-rd.png']}`,
-		'@@DPAD_RU@@': `${imagePrefix}${inputs.images['./rom/d-pad-ru.png']}`,
-		'@@DPAD_U@@': `${imagePrefix}${inputs.images['./rom/d-pad-u.png']}`,
 	});
 }
 

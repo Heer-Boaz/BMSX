@@ -9,6 +9,7 @@ export type InputEvt =
 	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime }
 	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }
 	| { type: 'disconnect'; deviceId: string; timestamp: MonoTime }
+	| { type: 'cancel-pointer-buttons'; deviceId: string; buttons: number; timestamp: MonoTime }
 	| { type: 'reset'; deviceId?: string };
 
 export interface VibrationInitialization {
@@ -38,6 +39,8 @@ export type InputDevice = GamepadDevice | NonGamepadDevice;
 export interface InputEventSink {
 	/** No device selects the entire host; a device reset cancels only that logical input device. */
 	resetInput(deviceId?: string): void;
+	/** Cancel only these canonical pointer-button bits, without physical release edges. */
+	cancelPointerButtons(deviceId: string, buttons: number, timestamp: MonoTime): void;
 	setSupervisorRequestLine(down: boolean): void;
 	connectInputDevice(device: InputDevice): void;
 	disconnectInputDevice(deviceId: string): void;

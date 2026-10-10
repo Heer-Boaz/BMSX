@@ -4,17 +4,25 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 
-test('onscreen gamepad retains each contact until that pointer ends or the page loses focus', async t => {
+test('native browser contacts reach the real common input and ICU without DOM-target feedback', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	let controls = template.slice(template.indexOf('<button id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
-	for (const direction of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
-		const name = direction === 'neutral' ? 'DPAD_NEUTRAL' : `DPAD_${direction.toUpperCase()}`;
-		const image = await readFile(`rom/d-pad-${direction}.png`);
-		controls = controls.replace(`@@${name}@@`, `data:image/png;base64,${image.toString('base64')}`);
-	}
+	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await build({
-		stdin: { contents: "export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad'; export { BrowserVideoOutput } from './hosts/browser/video_output'; export { BrowserInputHub } from './hosts/browser/input'; export { BrowserHostClock } from './hosts/browser/timing';", resolveDir: process.cwd() },
-		bundle: true, platform: 'browser', format: 'iife', globalName: 'onscreen', write: false,
+		stdin: {
+			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
+export { BrowserVideoOutput } from './hosts/browser/video_output';
+export { BrowserInputHub } from './hosts/browser/input';
+export { BrowserHostClock } from './hosts/browser/timing';
+export { Input } from './hosts/common/input/manager';
+export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
+export { Memory } from './machine/ts/machine/memory/memory';
+export { InputController } from './machine/ts/machine/devices/input/controller';
+export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
+export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_POINTER_BUTTONS } from './machine/ts/spec/bmsx/io';`,
+			resolveDir: process.cwd(),
+		},
+		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
 		tsconfig: 'tsconfig.base.json',
 	});
 	const browser = await chromium.launch();
@@ -22,238 +30,445 @@ test('onscreen gamepad retains each contact until that pointer ends or the page 
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240"></canvas></div><button id="outside-player" style="position:fixed;left:420px;top:20px;width:30px;height:20px">Outside</button>`);
+	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas><div id="capture-other"></div></div><button id="outside-player" style="position:fixed;z-index:10;left:420px;top:20px;width:30px;height:20px">Outside</button>`);
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });
 	await page.evaluate(() => {
-		const clock = new (globalThis as any).onscreen.BrowserHostClock();
-		const pad = new (globalThis as any).onscreen.BrowserOnscreenGamepad(document, window, clock);
-		const hub = new (globalThis as any).onscreen.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');
-		const video = new (globalThis as any).onscreen.BrowserVideoOutput(document.getElementById('gamescreen'), pad);
-		video.setDisplaySize(320, 240);
-		const buttons = new Set<string>();
-		const transitions: Array<{ code: string; down: boolean; pressId: number }> = [];
-		const sink = {
-			resetInput() { buttons.clear(); },
-			inputButton(_device: string, code: string, down: boolean, _value: number, _time: number, pressId: number) {
-				if (down) buttons.add(code); else buttons.delete(code);
-				transitions.push({ code, down, pressId });
-			},
-		};
-		hub.subscribe(sink);
-		const pointerIds: number[] = [];
-		const nativeTouches: Array<{ type: string; controls: boolean; player: boolean; prevented: boolean; trusted: boolean }> = [];
-		window.addEventListener('pointerdown', event => pointerIds.push(event.pointerId), true);
+		const api = (globalThis as any).fixture;
+		const clock = new api.BrowserHostClock();
+		const pad = new api.BrowserOnscreenGamepad(clock);
+		const view = new api.BrowserOnscreenGamepadView(document, window, pad);
+		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+		const video = new api.BrowserVideoOutput(canvas, view);
+		video.refreshLayout();
+		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
+		const pointerEvents: Array<{ type: string; id: number; target: string; trusted: boolean }> = [];
+		const nativeTouches: Array<{ type: string; player: boolean; prevented: boolean; trusted: boolean }> = [];
+		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
+			window.addEventListener(type, event => {
+				const pointer = event as PointerEvent;
+				pointerEvents.push({ type, id: pointer.pointerId, target: (pointer.target as Element).id, trusted: pointer.isTrusted });
+			}, true);
+		}
 		for (const type of ['touchstart', 'touchmove', 'touchend']) {
 			window.addEventListener(type, event => nativeTouches.push({
-				type, controls: !!(event.target as Element).closest('#d-pad-controls, #button-controls'),
-				player: !!(event.target as Element).closest('#player-surface'),
+				type, player: !!(event.target as Element).closest('#player-surface'),
 				prevented: event.defaultPrevented, trusted: event.isTrusted,
 			}));
 		}
+		const edges: Array<{ device: string; code: string; down: boolean; pressId: number }> = [];
+		let input = new api.Input(clock, hub, pad.gamepadIndex);
+		const inputButton = input.inputButton;
+		Object.defineProperty(input, 'inputButton', {
+			value(device: string, code: string, down: boolean, value: number, time: number, pressId: number) {
+				edges.push({ device, code, down, pressId });
+				inputButton.call(input, device, code, down, value, time, pressId);
+			},
+		});
+		const snapshot = api.createInputControllerSnapshot();
+		const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
+		const supervisorPort = { supervisorContextActive() { return false; }, requestSupervisorLineEdge() {} };
+		let controller = new api.InputController(memory, input, supervisorPort);
+		controller.reset();
+		let cycle = 0;
 		(globalThis as any).touchTest = {
-			pointerIds, nativeTouches,
+			pad, view, video, hub, edges, pointerEvents, nativeTouches,
 			poll() {
-				hub.poll(performance.now());
-				return { buttons: [...buttons].sort(), transitions: transitions.splice(0) };
+				input.pollInput();
+				input.sampleInputControllerSnapshot(snapshot, 0);
+				memory.writeMappedWord(api.IO_INP_CTRL, api.INP_CTRL_ARM);
+				controller.onVblankEdge(++cycle);
+				const primary = input.getPlayerInput(1).inputHandlers.pointer.getButtonState('pointer_primary');
+				return {
+					buttons: pad.buttons, snapshot: snapshot.pads[0].buttons,
+					mmio: memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_BUTTONS_OFFSET),
+					pointer: snapshot.pointerButtons, pointerMmio: memory.readIoU32(api.IO_INP_POINTER_BUTTONS),
+					position: [snapshot.pointerXQ16, snapshot.pointerYQ16],
+					pointerState: { pressed: primary.pressed, justreleased: primary.justreleased, wasreleased: primary.wasreleased },
+					stick: [pad.stickX, pad.stickY, pad.stickActive],
+					visuals: ['a_knop', 'b_knop', 'x_knop', 'y_knop'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
+					edges: edges.splice(0),
+				};
+			},
+			disposeInput() { input.dispose(); },
+			subscribeInput() {
+				input = new api.Input(clock, hub, pad.gamepadIndex);
+				controller = new api.InputController(memory, input, supervisorPort);
+				controller.reset();
 			},
 		};
 	});
 	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 	const cdp = await page.context().newCDPSession(page);
 	const points = await page.evaluate(() => {
-		const dpad = document.getElementById('d-pad-svg')!.getBoundingClientRect();
-		const surface = document.getElementById('d-pad-controls')!.getBoundingClientRect();
-		const action = document.getElementById('button-controls')!.getBoundingClientRect();
+		const coordinates = { center(id: string, finger: number) {
+			const rect = document.getElementById(id)!.getBoundingClientRect();
+			return { id: finger, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+		} };
+		const base = document.getElementById('d-pad-base')!.getBoundingClientRect();
+		const a = document.getElementById('a_knop')!.getBoundingClientRect();
+		const canvas = document.getElementById('gamescreen')!.getBoundingClientRect();
 		return {
-			left: { id: 1, x: dpad.left + dpad.width * 0.15, y: dpad.top + dpad.height * 0.5 },
-			up: { id: 1, x: dpad.left + dpad.width * 0.5, y: dpad.top + dpad.height * 0.15 },
-			gap: { id: 1, x: surface.left + surface.width * 0.5, y: surface.top + surface.height * 0.25 },
-			b: { id: 2, x: action.left + action.width * 0.8, y: action.top + action.height * 0.5 },
-			b2: { id: 3, x: action.left + action.width * 0.75, y: action.top + action.height * 0.5 },
-			a: { id: 3, x: action.left + action.width * 0.5, y: action.top + action.height * 140 / 220 },
-			x: { id: 4, x: action.left + action.width * 0.2, y: action.top + action.height * 0.5 },
-			y: { id: 5, x: action.left + action.width * 0.5, y: action.top + action.height * 80 / 220 },
+			a: coordinates.center('a_knop', 1), b: coordinates.center('b_knop', 2), x: coordinates.center('x_knop', 3), y: coordinates.center('y_knop', 4),
+			a2: { id: 5, x: a.left + a.width * 0.6, y: a.top + a.height * 0.5 },
+			aEdge: { id: 1, x: a.left + a.width * 0.5, y: a.top + a.height * 0.025 },
+			stick: coordinates.center('d-pad-base', 6),
+			left: { id: 6, x: base.left + base.width * 0.15, y: base.top + base.height * 0.5 },
+			canvas: { id: 7, x: canvas.left + canvas.width * 0.5, y: canvas.top + canvas.height * 0.5 },
+			canvas2: { id: 8, x: canvas.left + canvas.width * 0.55, y: canvas.top + canvas.height * 0.5 },
+			miss: { id: 9, x: 430, y: 5 },
 		};
 	});
 	const poll = () => page.evaluate(() => (globalThis as any).touchTest.poll());
-	await t.test('native gestures are cancelled on controls and missed controls, not outside the player', async () => {
-		await page.touchscreen.tap(points.b.x, points.b.y);
-		const control = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
-		assert.deepEqual(control.map((event: any) => [event.type, event.controls, event.prevented, event.trusted]), [
-			['touchstart', true, true, true], ['touchend', true, true, true],
-		]);
-		await page.touchscreen.tap(430, 5);
-		const miss = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
-		assert.deepEqual(miss.map((event: any) => [event.type, event.controls, event.player, event.prevented, event.trusted]), [
-			['touchstart', false, true, true, true], ['touchend', false, true, true, true],
-		]);
+	const activeTouchIds = new Set<number>();
+	const touch = async (type: 'touchStart' | 'touchEnd' | 'touchMove' | 'touchCancel', touchPoints: Array<{ id: number; x: number; y: number; force?: number }>) => {
+		await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+		if (type === 'touchStart') for (const point of touchPoints) activeTouchIds.add(point.id);
+		else if (type === 'touchCancel' || (type === 'touchEnd' && touchPoints.length === 0)) activeTouchIds.clear();
+		else if (type === 'touchEnd') for (const point of touchPoints) activeTouchIds.delete(point.id);
+	};
+	t.afterEach(async () => {
+		if (activeTouchIds.size !== 0) await touch('touchEnd', []);
+		await poll();
+	});
+	const assertWord = async (word: number, pointer = 0) => {
+		const state = await poll();
+		assert.equal(state.buttons, word, 'model word');
+		assert.equal(state.snapshot, word, 'real common-input snapshot');
+		assert.equal(state.mmio, word, 'real armed ICU MMIO');
+		assert.equal(state.pointer, pointer, 'canvas contribution');
+		assert.equal(state.pointerMmio, pointer, 'real ICU pointer MMIO');
+		return state;
+	};
+
+	await t.test('sequential A+B preserve either first-held button and either release order', async () => {
+		for (const first of [points.a, points.b]) {
+			const second = first === points.a ? points.b : points.a;
+			for (const releaseFirst of [points.a, points.b]) {
+				await touch('touchStart', [first]);
+				await assertWord(first === points.a ? 1 : 2);
+				await touch('touchStart', [first, second]);
+				await assertWord(3);
+				await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+				assert.deepEqual((await poll()).visuals.slice(0, 2), ['true', 'true']);
+				await touch('touchEnd', [releaseFirst]);
+				await assertWord(releaseFirst === points.a ? 2 : 1);
+				await touch('touchEnd', []);
+				await assertWord(0);
+			}
+		}
+	});
+
+	await t.test('near-edge action movement cannot release through pressed artwork hit changes', async () => {
+		await touch('touchStart', [points.aEdge]);
+		await assertWord(1);
+		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+		await touch('touchMove', [{ ...points.aEdge, y: points.aEdge.y + 0.1 }]);
+		await assertWord(1);
+		await touch('touchMove', [{ ...points.aEdge, y: points.aEdge.y + 0.2, force: 0 }]);
+		await assertWord(1);
+		await touch('touchMove', [{ ...points.aEdge, x: points.canvas.x, y: points.canvas.y }]);
+		await assertWord(1);
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
+	await t.test('two native contacts on A aggregate until the last contact ends', async () => {
+		await touch('touchStart', [points.a]);
+		await poll();
+		await touch('touchStart', [points.a, points.a2]);
+		const added = await assertWord(1);
+		assert.equal(added.edges.length, 0);
+		await touch('touchEnd', [points.a]);
+		const retained = await assertWord(1);
+		assert.equal(retained.edges.length, 0);
+		await touch('touchEnd', []);
+		const released = await assertWord(0);
+		assert.deepEqual(released.edges.map((edge: any) => [edge.code, edge.down]), [['a', false]]);
+	});
+
+	await t.test('sequential stick+A+B+X+Y and outside-area stick dragging preserve every owner', async () => {
+		const active = [points.left];
+		await touch('touchStart', active);
+		await assertWord(0x4000);
+		for (const action of [points.a, points.b, points.x, points.y]) {
+			active.push(action);
+			await touch('touchStart', active);
+		}
+		await assertWord(0x400f);
+		active[0] = { ...points.left, x: points.canvas.x, y: points.stick.y };
+		await touch('touchMove', active);
+		const outside = await assertWord(0x800f);
+		assert.ok(Math.abs(outside.stick[0] - 1) < 0.0001);
+		assert.ok(Math.abs(outside.stick[1]) < 0.0001);
+		assert.equal(outside.stick[2], true);
+		active[0] = points.stick;
+		await touch('touchMove', active);
+		const neutral = (await assertWord(0xf)).stick;
+		assert.ok(Math.abs(neutral[0]) < 0.0001);
+		assert.ok(Math.abs(neutral[1]) < 0.0001);
+		assert.equal(neutral[2], true);
+		await touch('touchEnd', [points.stick]);
+		await assertWord(0xf);
+		await touch('touchEnd', []);
+		assert.deepEqual((await assertWord(0)).stick, [0, 0, false]);
+	});
+
+	await t.test('miss and busy-stick contacts never acquire a different control on movement', async () => {
+		await touch('touchStart', [points.miss]);
+		await touch('touchMove', [{ ...points.miss, x: points.a.x, y: points.a.y }]);
+		await assertWord(0);
+		await touch('touchEnd', []);
+		const busy = { ...points.stick, id: 10 };
+		await touch('touchStart', [points.left]);
+		await touch('touchStart', [points.left, busy]);
+		await assertWord(0x4000);
+		await touch('touchEnd', [points.left]);
+		await assertWord(0);
+		await touch('touchMove', [{ ...busy, x: points.a.x, y: points.a.y }]);
+		await assertWord(0);
+		await touch('touchEnd', []);
+	});
+
+	await t.test('capture transfer and pointerleave do not end the retained contact', async () => {
+		await page.evaluate(() => { (globalThis as any).touchTest.pointerEvents.length = 0; });
+		await touch('touchStart', [points.a]);
+		await touch('touchMove', [{ ...points.a, x: points.a.x + 0.1 }]);
+		await assertWord(1);
+		await page.evaluate(() => {
+			const probe = (globalThis as any).touchTest;
+			const id = probe.pointerEvents.find((event: any) => event.type === 'pointerdown').id;
+			document.getElementById('capture-other')!.setPointerCapture(id);
+		});
+		await touch('touchMove', [{ ...points.a, x: points.a.x + 0.2 }]);
+		await assertWord(1);
+		const lost = await page.evaluate(() => (globalThis as any).touchTest.pointerEvents.filter((event: any) => event.type === 'lostpointercapture'));
+		assert.ok(lost.some((event: any) => event.target === 'player-surface' && event.trusted));
+		await page.evaluate(() => {
+			const id = (globalThis as any).touchTest.pointerEvents.find((event: any) => event.type === 'pointerdown').id;
+			window.dispatchEvent(new PointerEvent('pointerleave', { pointerId: id, pointerType: 'touch' }));
+			window.dispatchEvent(new MouseEvent('mouseout'));
+		});
+		await assertWord(1);
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
+	await t.test('native cancellation clears contacts and synthetic per-ID cancel preserves the other owner', async () => {
+		await page.evaluate(() => { (globalThis as any).touchTest.pointerEvents.length = 0; });
+		await touch('touchStart', [points.a]);
+		await touch('touchStart', [points.a, points.b]);
+		await assertWord(3);
+		await page.evaluate(() => {
+			const id = (globalThis as any).touchTest.pointerEvents.find((event: any) => event.type === 'pointerdown').id;
+			window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch' }));
+		});
+		await assertWord(2);
+		await touch('touchCancel', []);
+		await assertWord(0);
+	});
+
+	await t.test('canvas contacts aggregate independently of the controller and canvas hover remains pointer input', async () => {
+		await touch('touchStart', [points.canvas]);
+		await assertWord(0, 1);
+		await touch('touchStart', [points.canvas, points.canvas2]);
+		await assertWord(0, 1);
+		await touch('touchStart', [points.canvas, points.canvas2, points.a]);
+		await assertWord(1, 1);
+		await touch('touchEnd', [points.canvas]);
+		await assertWord(1, 1);
+		await touch('touchEnd', [points.canvas2]);
+		await assertWord(1, 0);
+		await touch('touchEnd', []);
+		await assertWord(0);
+		await page.mouse.move(400, 100);
+		const hover = await assertWord(0);
+		assert.deepEqual(hover.position, [400 * 65536, 100 * 65536]);
+	});
+
+	await t.test('per-ID canvas cancellation preserves other owners and never produces a graph-drop release', async () => {
+		await page.evaluate(() => { (globalThis as any).touchTest.pointerEvents.length = 0; });
+		await touch('touchStart', [points.canvas]);
+		await touch('touchStart', [points.canvas, points.canvas2]);
+		await touch('touchStart', [points.canvas, points.canvas2, points.a]);
+		const held = await assertWord(1, 1);
+		await page.evaluate(() => {
+			const id = (globalThis as any).touchTest.pointerEvents.filter((event: any) => event.type === 'pointerdown')[0].id;
+			window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch' }));
+		});
+		const firstCancelled = await assertWord(1, 1);
+		assert.deepEqual(firstCancelled.pointerState, { pressed: true, justreleased: false, wasreleased: held.pointerState.wasreleased });
+		assert.deepEqual(firstCancelled.position, held.position);
+		await page.evaluate(() => {
+			const id = (globalThis as any).touchTest.pointerEvents.filter((event: any) => event.type === 'pointerdown')[1].id;
+			window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch' }));
+		});
+		const lastCancelled = await assertWord(1, 0);
+		assert.deepEqual(lastCancelled.pointerState, { pressed: false, justreleased: false, wasreleased: false });
+		assert.deepEqual(lastCancelled.position, held.position);
+		assert.ok(lastCancelled.edges.every((edge: any) => edge.device !== 'pointer:0'), 'cancel is not an ordinary button-up');
+		await touch('touchCancel', []);
+		await assertWord(0);
+	});
+
+	await t.test('native mouse chording gates contribution without releasing or retargeting the lease', async () => {
+		await page.mouse.move(points.a.x, points.a.y);
+		await page.mouse.down({ button: 'right' });
+		await assertWord(0);
+		await page.mouse.down({ button: 'left' });
+		await assertWord(1);
+		await page.mouse.move(points.b.x, points.b.y);
+		await assertWord(1);
+		await page.mouse.up({ button: 'left' });
+		await assertWord(0);
+		await page.mouse.down({ button: 'left' });
+		await assertWord(1);
+		await page.mouse.up({ button: 'right' });
+		await assertWord(1);
+		await page.mouse.up({ button: 'left' });
+		await assertWord(0);
+		await page.mouse.move(points.b.x, points.b.y);
+		await page.mouse.down({ button: 'left' });
+		await page.mouse.down({ button: 'right' });
+		await assertWord(2);
+		await page.mouse.up({ button: 'left' });
+		await assertWord(0);
+		await page.mouse.up({ button: 'right' });
+		await assertWord(0);
+	});
+
+	await t.test('native pen chording uses primary button edges, not pressure as release', async () => {
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', x: points.a.x, y: points.a.y, buttons: 0 });
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', x: points.a.x, y: points.a.y, button: 'right', buttons: 2, force: 0 });
+		await assertWord(0);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', x: points.a.x, y: points.a.y, button: 'left', buttons: 3, force: 0.5 });
+		await assertWord(1);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', x: points.b.x, y: points.b.y, buttons: 3, force: 0 });
+		await assertWord(1);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 2, force: 0 });
+		await assertWord(0);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 3, force: 0.5 });
+		await assertWord(1);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'right', buttons: 1, force: 0.5 });
+		await assertWord(1);
+		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 0, force: 0 });
+		await assertWord(0);
+	});
+
+	await t.test('warm action movement performs no hit tests, layout reads, selectors or presentation writes', async () => {
+		await touch('touchStart', [points.a]);
+		await assertWord(1);
+		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+		await page.evaluate(() => {
+			const probe = (globalThis as any).touchTest;
+			probe.warmReads = 0;
+			probe.warmWrites = 0;
+			probe.warmSpies = [
+				{ target: Document.prototype, name: 'elementFromPoint' },
+				{ target: Element.prototype, name: 'getBoundingClientRect' },
+				{ target: SVGGraphicsElement.prototype, name: 'getScreenCTM' },
+				{ target: Document.prototype, name: 'querySelector' },
+				{ target: Document.prototype, name: 'querySelectorAll' },
+				{ target: Element.prototype, name: 'querySelector' },
+				{ target: Element.prototype, name: 'querySelectorAll' },
+			];
+			for (const spy of probe.warmSpies) {
+				spy.original = Object.getOwnPropertyDescriptor(spy.target, spy.name);
+				Object.defineProperty(spy.target, spy.name, {
+					...spy.original,
+					value(...args: any[]) {
+						probe.warmReads += 1;
+						return Reflect.apply(spy.original.value, this, args);
+					},
+				});
+			}
+			probe.warmObserver = new MutationObserver(records => { probe.warmWrites += records.length; });
+			probe.warmObserver.observe(document.getElementById('button-controls'), { attributes: true, subtree: true });
+			probe.warmObserver.observe(document.getElementById('d-pad-controls'), { attributes: true, subtree: true });
+		});
+		for (let move = 0; move < 24; move += 1) {
+			await touch('touchMove', [{ ...points.a, x: points.a.x - move * 4, y: points.a.y - move }]);
+		}
+		const measured = await page.evaluate(() => {
+			const probe = (globalThis as any).touchTest;
+			probe.warmObserver.disconnect();
+			for (const spy of probe.warmSpies) Object.defineProperty(spy.target, spy.name, spy.original);
+			return { reads: probe.warmReads, writes: probe.warmWrites, buttons: probe.pad.buttons };
+		});
+		assert.deepEqual(measured, { reads: 0, writes: 0, buttons: 1 });
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
+	await t.test('focus gain and layout preserve held assignments; real source lifecycle events cancel them', async () => {
+		await touch('touchStart', [points.a]);
+		await page.evaluate(() => {
+			window.dispatchEvent(new Event('focus'));
+			document.getElementById('outside-player')!.focus();
+			(globalThis as any).touchTest.video.setDisplaySize(256, 192);
+			(globalThis as any).touchTest.video.refreshLayout();
+		});
+		await assertWord(1);
+		await touch('touchMove', [{ ...points.a, x: points.a.x + 0.1 }]);
+		await assertWord(1);
+		await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+		await assertWord(0);
+		await touch('touchEnd', []);
+		await page.evaluate(() => {
+			(globalThis as any).touchTest.video.setDisplaySize(320, 240);
+			(globalThis as any).touchTest.video.refreshLayout();
+		});
+		await touch('touchStart', [points.b]);
+		await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+		await assertWord(0);
+		await touch('touchEnd', []);
+	});
+
+	await t.test('whole-player gestures include misses without blocking outside-player touch defaults', async () => {
+		await page.evaluate(() => { (globalThis as any).touchTest.nativeTouches.length = 0; });
+		const scale = await page.evaluate(() => visualViewport!.scale);
+		await touch('touchStart', [points.left]);
+		await touch('touchStart', [points.left, points.b]);
+		for (const distance of [8, 16, 8, 0]) {
+			await touch('touchMove', [{ ...points.left, x: points.left.x - distance }, { ...points.b, x: points.b.x + distance }]);
+			await assertWord(0x4002);
+			assert.equal(await page.evaluate(() => visualViewport!.scale), scale);
+		}
+		await touch('touchEnd', []);
+		await page.touchscreen.tap(points.miss.x, points.miss.y);
+		const inside = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
+		assert.ok(inside.length > 4);
+		assert.ok(inside.every((event: any) => event.player && event.prevented && event.trusted));
 		await page.touchscreen.tap(430, 30);
 		const outside = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
-		assert.deepEqual(outside.map((event: any) => [event.type, event.controls, event.prevented, event.trusted]), [
-			['touchstart', false, false, true], ['touchend', false, false, true],
+		assert.deepEqual(outside.map((event: any) => [event.player, event.prevented, event.trusted]), [[false, false, true], [false, false, true]]);
+		await poll();
+	});
+
+	await t.test('fast native taps publish every source edge without stretching guest samples', async () => {
+		for (let tap = 0; tap < 3; tap += 1) await page.touchscreen.tap(points.b.x, points.b.y);
+		const state = await assertWord(0);
+		assert.deepEqual(state.edges.map((edge: any) => [edge.device, edge.code, edge.down]), [
+			['gamepad:2147483646', 'b', true], ['gamepad:2147483646', 'b', false],
+			['gamepad:2147483646', 'b', true], ['gamepad:2147483646', 'b', false],
+			['gamepad:2147483646', 'b', true], ['gamepad:2147483646', 'b', false],
 		]);
+		for (let pair = 0; pair < 3; pair += 1) assert.equal(state.edges[pair * 2].pressId, state.edges[pair * 2 + 1].pressId);
+		assert.equal(new Set(state.edges.filter((edge: any) => edge.down).map((edge: any) => edge.pressId)).size, 3);
 	});
-	await poll();
-	await t.test('double and triple taps publish every press and release without a frame poll', async () => {
-		const initialScale = await page.evaluate(() => visualViewport!.scale);
-		for (let tap = 0; tap < 3; tap++) await page.touchscreen.tap(points.b.x, points.b.y);
-		const taps = await poll();
-		assert.deepEqual(taps.buttons, []);
-		assert.deepEqual(taps.transitions.map((event: any) => [event.code, event.down]), [
-			['b', true], ['b', false], ['b', true], ['b', false], ['b', true], ['b', false],
-		]);
-		for (let press = 0; press < 3; press++) assert.equal(taps.transitions[press * 2].pressId, taps.transitions[press * 2 + 1].pressId);
-		assert.equal(new Set(taps.transitions.filter((event: any) => event.down).map((event: any) => event.pressId)).size, 3);
-		assert.equal(await page.evaluate(() => visualViewport!.scale), initialScale);
+
+	await t.test('source unsubscribe cancels before disconnect, removes listeners and permits a fresh source lifetime', async () => {
+		await touch('touchStart', [points.a]);
+		await assertWord(1);
+		await page.evaluate(() => (globalThis as any).touchTest.disposeInput());
+		assert.equal(await page.evaluate(() => (globalThis as any).touchTest.pad.buttons), 0);
+		await touch('touchEnd', []);
+		await page.touchscreen.tap(points.b.x, points.b.y);
+		assert.equal(await page.evaluate(() => (globalThis as any).touchTest.pad.buttons), 0);
+		await page.evaluate(() => (globalThis as any).touchTest.subscribeInput());
+		await touch('touchStart', [points.b]);
+		await assertWord(2);
+		await touch('touchEnd', []);
+		await assertWord(0);
 	});
-	await t.test('four action buttons and the d-pad retain all five contacts independently', async () => {
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left, points.b, points.a, points.x, points.y] });
-		assert.deepEqual((await poll()).buttons, ['a', 'b', 'left', 'x', 'y']);
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [points.left] });
-		const remaining = await poll();
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-		assert.deepEqual(remaining.buttons, ['a', 'b', 'x', 'y']);
-		assert.deepEqual((await poll()).buttons, []);
-	});
-	await t.test('moving the d-pad and action contacts apart does not start a zoom gesture', async () => {
-		await page.evaluate(() => { (globalThis as any).touchTest.nativeTouches.length = 0; });
-		const initialScale = await page.evaluate(() => visualViewport!.scale);
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left] });
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left, points.b] });
-		assert.deepEqual((await poll()).buttons, ['b', 'left']);
-		for (const distance of [8, 16, 8, 0]) {
-			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [
-				{ ...points.left, x: points.left.x - distance },
-				{ ...points.b, x: points.b.x + distance },
-			] });
-			assert.deepEqual((await poll()).buttons, ['b', 'left']);
-			assert.equal(await page.evaluate(() => visualViewport!.scale), initialScale);
-		}
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [points.left] });
-		const remaining = await poll();
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-		assert.deepEqual(remaining.buttons, ['b']);
-		assert.deepEqual((await poll()).buttons, []);
-		const native = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
-		assert.ok(native.some((event: any) => event.type === 'touchmove'));
-		assert.ok(native.every((event: any) => event.controls && event.prevented && event.trusted));
-		assert.equal(await page.evaluate(() => visualViewport!.scale), initialScale);
-	});
-	await t.test('a second finger missing a control does not release the held button or enable zoom', async () => {
-		await page.evaluate(() => { (globalThis as any).touchTest.nativeTouches.length = 0; });
-		const initialScale = await page.evaluate(() => visualViewport!.scale);
-		const miss = { id: 10, x: 430, y: 5 };
-		for (const [control, button] of [[points.left, 'left'], [points.b, 'b']] as const) {
-			for (const order of [[miss, control], [control, miss]]) {
-				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [order[0]] });
-				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: order });
-				assert.deepEqual((await poll()).buttons, [button]);
-				await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [
-					{ ...control, x: control.x + 8 }, { ...miss, x: miss.x - 16 },
-				] });
-				assert.deepEqual((await poll()).buttons, [button]);
-				assert.equal(await page.evaluate(() => visualViewport!.scale), initialScale);
-				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [miss] });
-				const remaining = await poll();
-				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-				assert.deepEqual(remaining.buttons, [button]);
-				assert.deepEqual((await poll()).buttons, []);
-			}
-		}
-		const native = await page.evaluate(() => (globalThis as any).touchTest.nativeTouches.splice(0));
-		assert.ok(native.some((event: any) => !event.controls));
-		assert.ok(native.every((event: any) => event.player && event.prevented && event.trusted));
-		assert.equal(await page.evaluate(() => visualViewport!.scale), initialScale);
-	});
-	await page.evaluate(() => { (globalThis as any).touchTest.pointerIds.length = 0; });
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left] });
-	const leftPress = await poll();
-	assert.deepEqual(leftPress.buttons, ['left']);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left, points.b] });
-	const both = await poll();
-	assert.deepEqual(both.buttons, ['b', 'left']);
-	assert.deepEqual(both.transitions.map((event: any) => [event.code, event.down]), [['b', true]]);
-
-	// Compatibility mouse boundary events do not own either touch contact.
-	await page.evaluate(() => document.getElementById('d-pad-l')!.dispatchEvent(new MouseEvent('mouseout', {
-		bubbles: true, relatedTarget: document.getElementById('b_knop'),
-	})));
-	assert.deepEqual((await poll()).buttons, ['b', 'left']);
-
-	// Position belongs to the retained pointer, even if the browser reports no pressure/buttons.
-	await page.evaluate(point => {
-		document.getElementById('d-pad-controls')!.dispatchEvent(new PointerEvent('pointermove', {
-			bubbles: true, pointerId: (globalThis as any).touchTest.pointerIds[0], pointerType: 'touch',
-			clientX: point.x, clientY: point.y, buttons: 0, pressure: 0,
-		}));
-	}, points.up);
-	assert.deepEqual((await poll()).buttons, ['b', 'up']);
-
-	// An unrelated hovering pointer cannot create a button press.
-	await page.evaluate(point => {
-		document.getElementById('button-controls')!.dispatchEvent(new PointerEvent('pointermove', {
-			bubbles: true, pointerId: 900, pointerType: 'pen', clientX: point.x, clientY: point.y,
-			buttons: 1, pressure: 0.5,
-		}));
-	}, { x: points.b.x - 60, y: points.b.y });
-	assert.deepEqual((await poll()).buttons, ['b', 'up']);
-
-	// Cancelling one captured pointer preserves every other held button.
-	await page.evaluate(() => document.getElementById('d-pad-controls')!.dispatchEvent(new PointerEvent('pointercancel', {
-		bubbles: true, pointerId: (globalThis as any).touchTest.pointerIds[0], pointerType: 'touch',
-	})));
-	assert.deepEqual((await poll()).buttons, ['b']);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	assert.deepEqual((await poll()).buttons, []);
-
-	// Two fingers on one action retain it until the last pointer is released.
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.b] });
-	const bPress = await poll();
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.b, points.b2] });
-	assert.deepEqual((await poll()).transitions, []);
-	// Release one contact while the other remains physically held.
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [points.b2] });
-	assert.deepEqual((await poll()).buttons, ['b']);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	const bRelease = await poll();
-	assert.deepEqual(bRelease.buttons, []);
-	assert.equal(bRelease.transitions[0].pressId, bPress.transitions[0].pressId);
-
-	// Starting in an empty part of a control surface still owns the captured contact.
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.gap] });
-	assert.deepEqual((await poll()).buttons, []);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [points.up] });
-	assert.deepEqual((await poll()).buttons, ['up']);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	assert.deepEqual((await poll()).buttons, []);
-
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left, points.b] });
-	assert.deepEqual((await poll()).buttons, ['b', 'left']);
-	await page.evaluate(() => {
-		window.dispatchEvent(new Event('focus'));
-		document.dispatchEvent(new Event('visibilitychange'));
-	});
-	assert.deepEqual((await poll()).buttons, ['b', 'left']);
-	await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-	assert.deepEqual((await poll()).buttons, []);
-	await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-	assert.deepEqual((await poll()).buttons, []);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	assert.deepEqual((await poll()).buttons, []);
-	for (const lifecycle of ['pagehide', 'hidden']) {
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points.left, points.b] });
-		assert.deepEqual((await poll()).buttons, ['b', 'left']);
-		await page.evaluate(lifecycle => {
-			if (lifecycle === 'pagehide') {
-				window.dispatchEvent(new PageTransitionEvent('pagehide'));
-			} else {
-				Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-				document.dispatchEvent(new Event('visibilitychange'));
-			}
-		}, lifecycle);
-		assert.deepEqual((await poll()).buttons, []);
-		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-		assert.deepEqual((await poll()).buttons, []);
-	}
 	assert.deepEqual(errors, []);
 });

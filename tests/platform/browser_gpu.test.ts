@@ -29,7 +29,7 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
-		contentType: 'text/html', body: '<!doctype html><canvas id="gamescreen" width="320" height="240"></canvas>',
+		contentType: 'text/html', body: '<!doctype html><style>#player-surface{position:fixed;inset:0}</style><div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>',
 	}));
 	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
 		await page.goto('http://localhost/renderer-test/webgpu/');

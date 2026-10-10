@@ -8,6 +8,7 @@ import { WorkerStreamingAudioSink } from './worker_audio';
 import { BrowserInputHub } from './input';
 import { ConsoleLogOutput } from '../common/log';
 import { BrowserOnscreenGamepad } from './onscreen_gamepad';
+import { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 import { BrowserFrameLoop, BrowserHostClock } from './timing';
 import { BrowserVideoOutput } from './video_output';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
@@ -67,8 +68,13 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	const clock = new BrowserHostClock();
 	const frames = new BrowserFrameLoop();
 	const onscreenGamepad = enableOnscreenGamepad
-		? new BrowserOnscreenGamepad(gamescreen.ownerDocument, window, clock)
+		? new BrowserOnscreenGamepad(clock, navigator.vibrate ? navigator.vibrate.bind(navigator) : null)
 		: null;
+	const controlView = onscreenGamepad
+		? new BrowserOnscreenGamepadView(gamescreen.ownerDocument, window, onscreenGamepad)
+		: null;
+	const videoOutput = new BrowserVideoOutput(gamescreen, controlView);
+	videoOutput.refreshLayout();
 	const inputHub = new BrowserInputHub(
 		gamescreen,
 		document.getElementById('player-surface'),
@@ -82,7 +88,6 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 		onscreenGamepad ? onscreenGamepad.gamepadIndex : startingGamepadIndex,
 	);
 	inputHub.setKeyboardCapture(input.shouldCaptureKey);
-	const videoOutput = new BrowserVideoOutput(gamescreen, onscreenGamepad);
 	const videoBackend = await createBrowserBackend(
 		gamescreen,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,

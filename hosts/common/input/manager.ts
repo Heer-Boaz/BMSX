@@ -169,6 +169,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		}
 	}
 
+	public cancelPointerButtons(deviceId: string, buttons: number, timestamp: number): void {
+		const pointer = this.deviceBindings.get(deviceId)!.handler as PointerInput;
+		pointer.cancelButtons(buttons, timestamp);
+	}
+
 	public debugHotkeysPaused = false;
 	private hostSupervisorRequestLine = false;
 	private controlSupervisorRequestLine = false;

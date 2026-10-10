@@ -1,14 +1,16 @@
 # Browser touch-controller ownership
 
-Date: 2026-10-10. Baseline: `master`, `7a5914025`.
+Date: 2026-10-10. Baseline: `master`, `7a5914025`. Implementation: 2026-10-11.
 
-**Status: architecture decision and implementation gates, not an implemented
-player change.** Establish the input owners before replacing the visible
-controls. The working whole-player zoom policy is retained. This document does
-not claim that the remaining iPhone A+B failure has been causally identified or
-fixed. Unrelated packaging/hosting work in the checkout is outside this slice.
+**Status: implemented; automated and real-player desktop validation passed.**
+The DOM-free contact owner replaces presentation-dependent input, while the
+working whole-player zoom policy is retained. The findings below describe the
+pre-change baseline, not the redesigned player. Neither local tests nor desktop
+browser emulation prove the exact iPhone failure or establish the final
+Safari/PWA device gate.
+Unrelated packaging/hosting work in the checkout is outside this source slice.
 
-## Findings against the live owners
+## Findings against the pre-change live owners
 
 - `hosts/browser/onscreen_gamepad.ts` already retains separate pointer IDs and
   per-button reference counts. Replacing these with another collection is not
@@ -160,6 +162,17 @@ pointer button stays down while another canvas contact contributes it. Publish
 only aggregate edges to the same `pointer:0` device. Its single pointer position
 is the latest routed canvas event/hover position; the machine gains no multitouch
 coordinate ABI. Controller IDs never contribute to that device.
+
+A true canvas `pointercancel` is not an ordinary up: the existing IDE pointer
+capture owner commits a drop on a release edge and cancels it on lost logical
+input. The host contract therefore has explicit
+`cancelPointerButtons(deviceId, buttons, timestamp)` with the existing canonical
+pointer-bit mask. The source removes only the canceled ID's contributions and
+cancels only aggregate bits that reach zero. `PointerInput` clears those bits
+and their pending edges without resetting position, other buttons or keyboard
+input. Ordinary up still publishes a release edge. Its routed ICU snapshot
+changes at the unchanged frame poll; no guest/MMIO representation is added.
+Headless event routing consumes the same explicit cancellation operation.
 
 The shared native HTML action-cluster button role is removed when the view is
 replaced. A multi-control surface is not one HTML activation button. This is a
@@ -314,7 +327,9 @@ The existing common-input/machine path remains:
 GamepadInput.writeInputControllerPadSnapshot ->
 Input.sampleInputControllerSnapshot -> InputController.onVblankEdge ->
 InputControllerRegisterFile.latchSnapshot/mirror`.
-Only browser owners change. No TS/C++ machine behavior, BIOS, cartlib, game
+The controller redesign stays in browser owners. Common host pointer input also
+gains the explicit partial-cancellation operation described above; it does not
+change the gamepad sampling path. No TS/C++ machine behavior, BIOS, cartlib, game
 action mapping, ICU FIFO, tap stretching or sampling-frequency change is needed.
 
 Button references aggregate contributions. Only zero-to-nonzero and
@@ -423,3 +438,59 @@ events for delivery/routing. Chromium native multitouch and Linux WebKit smoke
 tests must be labeled as such. They do not establish UIKit/Safari multitouch or
 prove the exact cause of the reported iPhone sequence. No release claim is made
 until the redesigned player is confirmed on the actual device.
+
+## Implementation and validation, 2026-10-11
+
+- `onscreen_gamepad.ts` owns numerical contact assignments and reference-counted
+  button contributions. The native hub owns acquisition, delivery and source
+  lifetime. `onscreen_gamepad_view.ts` owns passive SVG presentation and its
+  retained CSS-client geometry; `video_output.ts` owns visible safe bounds and
+  canvas fitting. Controls never reserve canvas width or derive their scale
+  from the framebuffer. The obsolete nine directional image inputs are gone.
+- The controller suite passes 27 checks, including 16 native Chromium cases:
+  sequential A+B in either order, five contacts, independent releases,
+  outside-area stick movement, capture transfer, cancellation, native mouse/pen
+  chords, gestures, short taps and source teardown. These use the real common
+  input snapshot and armed ICU registers, not a button-Set substitute. Native
+  floating-point tip coordinates allow transport precision; raw words remain
+  exact. The pure suite also checks 300 contributors to one button.
+- Layout tests exercise portrait/landscape, viewport offsets, safe-area and
+  embedded bounds, half-step thresholds, and odd framebuffer widths 321/257.
+  Framebuffer-only changes leave control geometry and presentation untouched.
+- Five partial-pointer-cancel tests and three editor pointer-edge regressions
+  pass. Native graph viewport/pane tests pass on software, WebGL2 and WebGPU,
+  including actual capture loss retaining pan and explicitly injected physical
+  cancellation not committing an editor drop.
+- Browser, Node and scripts typechecks, GPU capability/pipeline tests, existing
+  media/package tests and the browser-player product build pass. WebGPU remains
+  capability-selected first; this slice adds no renderer retry or override.
+- Both paired ordinary game packages boot in mobile Chromium with native touch
+  startup, WebGPU, running AudioWorklets and observed nonzero PCM. Trusted A+B
+  plus stick, outside-area dragging, independent A release and portrait resize
+  pass without zoom or console errors. Screenshots show the actual game, not a
+  layout-only dummy canvas. The system/game ROM artifacts remain unchanged.
+- Linux WPE WebKit 2359 also boots both ordinary packages, renders the actual
+  game, delivers trusted single-touch startup/control taps and fits both
+  orientations without errors or zoom. Its absent WebGPU capability naturally
+  selects WebGL2. This is not native WebKit multitouch or iOS Safari/PWA proof.
+- Warm native action-move tests observe no hit tests, layout reads, selectors or
+  presentation writes. A separate 2,000-trusted-move profile through the hub,
+  model and real common input averages 14.3 microseconds per handler on this
+  desktop Chromium setup. This excludes game execution; its CDP/IPC wall time
+  is not handler latency, and whole-browser heap deltas are not a proof of zero
+  allocations. No mobile performance claim follows from the model benchmarks.
+
+Local evidence is under `.bmsx/hosting/contact-owned-controls-evidence/`:
+`local-player-smoke.json`, `live-player-smoke.json`, WebKit smoke evidence,
+actual-game screenshots, `native-route-profile.json`, model benchmark JSON and
+`graph-final/`. These are local test artifacts, not
+another public diagnostics URL. Real iPhone Safari/PWA confirmation remains
+the outstanding acceptance check.
+
+The ordinary `/nemesis_s/` and `/2025/` packages were published to the existing
+managed site. Public responses match the packaged HTML/engine digests and retain
+COOP/COEP; the mobile Chromium native-touch/WebGPU/audio smoke passes against
+the public pages as well. The library and historical `/ios/` diagnostics remain
+byte-identical. No new test URL or query parameter is required. The shared
+published engine SHA-256 is
+`24fd46a01dbf37b44a51dfb6cc1993e2a2610b523441ce5ad4beebf12075e877`.

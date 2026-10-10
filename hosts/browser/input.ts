@@ -16,6 +16,10 @@ import { sonyGamepadProductId } from './sony_gamepad_hid';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
+const POINTER_NATIVE_BUTTON_MASKS = [1, 4, 2, 8, 16] as const;
+const POINTER_BUTTON_CODES = [
+	'pointer_primary', 'pointer_aux', 'pointer_secondary', 'pointer_back', 'pointer_forward',
+] as const;
 
 class GamepadDevice implements HostGamepadDevice {
 	readonly id: string;
@@ -145,16 +149,22 @@ export class BrowserInputHub implements InputSource {
 	private nextPressId = 1;
 	private readonly activeKeyPressIds = new Map<string, number>();
 	private readonly activePointerIds: number[] = [];
-	private readonly activePointerButtons: number[] = [];
-	private readonly activePointerPressIds: number[] = [];
+	private readonly activePointerButtonMasks: number[] = [];
+	private activePointerCount = 0;
+	private readonly pointerButtonCounts = new Uint32Array(POINTER_BUTTON_CODES.length);
+	private readonly pointerPressIds = new Float64Array(POINTER_BUTTON_CODES.length);
+	private readonly ownerDocument: Document;
+	private readonly ownerWindow: Window;
 
 	constructor(
-		surface: HTMLElement,
-		gestureSurface: HTMLElement,
+		private readonly surface: HTMLElement,
+		private readonly gestureSurface: HTMLElement,
 		clock: HostClock,
 		onscreenGamepad: BrowserOnscreenGamepad,
 		private readonly supervisorRequestKeyCode: string,
 	) {
+		this.ownerDocument = surface.ownerDocument;
+		this.ownerWindow = this.ownerDocument.defaultView;
 		this.clock = clock;
 		this.onscreenGamepad = onscreenGamepad;
 		this.devicesList = [
@@ -164,37 +174,65 @@ export class BrowserInputHub implements InputSource {
 		if (onscreenGamepad) {
 			this.devicesList.push(onscreenGamepad);
 		}
-
-		window.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
-		window.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
-		window.addEventListener('blur', this.onWindowBlur, { passive: true });
-		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
-		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
-		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
-		surface.addEventListener('wheel', this.onWheel, { passive: false });
-		surface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
-		surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
-		surface.addEventListener('lostpointercapture', this.onPointerCancel, { passive: false });
-		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
-		gestureSurface.addEventListener('touchstart', this.onTouchGesture, { passive: false });
-		gestureSurface.addEventListener('touchmove', this.onTouchGesture, { passive: false });
-		gestureSurface.addEventListener('touchend', this.onTouchGesture, { passive: false });
-
-		window.addEventListener('gamepadconnected', this.onGamepadConnected);
-		window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
-		this.scanInitialGamepads();
 	}
 
 	subscribe(sink: InputEventSink): () => void {
 		this.sink = sink;
 		const unsubscribeOnscreen = this.onscreenGamepad?.subscribe(sink);
+		const ownerWindow = this.ownerWindow;
+		const ownerDocument = this.ownerDocument;
+		const surface = this.surface;
+		const gestureSurface = this.gestureSurface;
+		ownerWindow.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
+		ownerWindow.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
+		ownerWindow.addEventListener('blur', this.cancelInput, { passive: true });
+		ownerWindow.addEventListener('pagehide', this.cancelInput, { passive: true });
+		ownerDocument.addEventListener('visibilitychange', this.onVisibilityChange);
+		gestureSurface.addEventListener('pointerdown', this.onPointerDown, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointermove', this.onPointerMove, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointerup', this.onPointerUp, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointercancel', this.onPointerCancel, { passive: false, capture: true });
+		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
+		surface.addEventListener('wheel', this.onWheel, { passive: false });
+		gestureSurface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
+		gestureSurface.addEventListener('touchstart', this.onTouchGesture, { passive: false });
+		gestureSurface.addEventListener('touchmove', this.onTouchGesture, { passive: false });
+		gestureSurface.addEventListener('touchend', this.onTouchGesture, { passive: false });
+		ownerWindow.addEventListener('gamepadconnected', this.onGamepadConnected);
+		ownerWindow.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
 		return () => {
+			ownerWindow.removeEventListener('keydown', this.onKeyDown, true);
+			ownerWindow.removeEventListener('keyup', this.onKeyUp, true);
+			ownerWindow.removeEventListener('blur', this.cancelInput);
+			ownerWindow.removeEventListener('pagehide', this.cancelInput);
+			ownerDocument.removeEventListener('visibilitychange', this.onVisibilityChange);
+			gestureSurface.removeEventListener('pointerdown', this.onPointerDown, true);
+			ownerWindow.removeEventListener('pointermove', this.onPointerMove, true);
+			ownerWindow.removeEventListener('pointerup', this.onPointerUp, true);
+			ownerWindow.removeEventListener('pointercancel', this.onPointerCancel, true);
+			surface.removeEventListener('pointerleave', this.onPointerLeave);
+			surface.removeEventListener('wheel', this.onWheel);
+			gestureSurface.removeEventListener('contextmenu', this.onContextMenu);
+			gestureSurface.removeEventListener('touchstart', this.onTouchGesture);
+			gestureSurface.removeEventListener('touchmove', this.onTouchGesture);
+			gestureSurface.removeEventListener('touchend', this.onTouchGesture);
+			ownerWindow.removeEventListener('gamepadconnected', this.onGamepadConnected);
+			ownerWindow.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
+			this.cancelInput();
 			unsubscribeOnscreen?.();
+			for (const device of this.gamepads) {
+				if (device) {
+					device.disconnect();
+					this.devicesList.splice(this.devicesList.indexOf(device), 1);
+				}
+			}
+			this.gamepads.length = 0;
 			this.sink = null;
 		};
 	}
 
 	devices(): InputDevice[] {
+		this.scanInitialGamepads();
 		return this.devicesList;
 	}
 
@@ -274,95 +312,131 @@ export class BrowserInputHub implements InputSource {
 		this.sink.inputButton('keyboard:0', event.code, false, 0, now, pressId);
 	};
 
-	private onWindowBlur = () => {
+	private readonly cancelInput = (): void => {
+		this.onscreenGamepad?.cancelContacts();
 		this.nativeClipboardKeys.clear();
 		const supervisorRequestLineHigh = this.activeKeyPressIds.has(this.supervisorRequestKeyCode);
 		this.activeKeyPressIds.clear();
-		this.activePointerIds.length = 0;
-		this.activePointerButtons.length = 0;
-		this.activePointerPressIds.length = 0;
-		if (supervisorRequestLineHigh) {
-			this.sink.setSupervisorRequestLine(false);
+		for (let index = 0; index < this.activePointerCount; index += 1) {
+			const id = this.activePointerIds[index];
+			if (this.surface.hasPointerCapture(id)) this.surface.releasePointerCapture(id);
 		}
+		this.activePointerCount = 0;
+		this.pointerButtonCounts.fill(0);
+		if (supervisorRequestLineHigh) this.sink.setSupervisorRequestLine(false);
 		this.sink.resetInput();
 	};
 
-	private onPointerDown = (event: PointerEvent) => {
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		(event.currentTarget as Element).setPointerCapture(event.pointerId);
-		const now = this.clock.now();
-		this.updatePointerButton(event, true, now);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+	private readonly onVisibilityChange = (): void => {
+		if (this.ownerDocument.hidden) this.cancelInput();
 	};
 
-	private onPointerUp = (event: PointerEvent) => {
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		const now = this.clock.now();
-		this.updatePointerButton(event, false, now);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
-	};
-
-	private onPointerCancel = (event: PointerEvent) => {
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-		// Implicit capture loss follows a normal pointerup too; that press is already gone.
-		if (this.activePointerIds.indexOf(event.pointerId) < 0) return;
-		this.activePointerIds.length = 0;
-		this.activePointerButtons.length = 0;
-		this.activePointerPressIds.length = 0;
-		this.sink.resetInput('pointer:0');
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, this.clock.now());
-	};
-
-	/** DOM button changes include chord edges delivered as pointermove, not only down/up. */
-	private updatePointerButton(event: PointerEvent, down: boolean, now: number): void {
-		let pressId: number;
-		if (down) {
-			pressId = this.nextPressId++;
-			this.activePointerIds.push(event.pointerId);
-			this.activePointerButtons.push(event.button);
-			this.activePointerPressIds.push(pressId);
-		} else {
-			const index = this.activePointerIndex(event.pointerId, event.button);
-			// A press that started outside our surface has no owned release/gesture.
-			if (index < 0) return;
-			pressId = this.activePointerPressIds[index];
-			const last = this.activePointerIds.length - 1;
-			this.activePointerIds[index] = this.activePointerIds[last];
-			this.activePointerButtons[index] = this.activePointerButtons[last];
-			this.activePointerPressIds[index] = this.activePointerPressIds[last];
-			this.activePointerIds.length = last;
-			this.activePointerButtons.length = last;
-			this.activePointerPressIds.length = last;
+	private readonly onPointerDown = (event: PointerEvent): void => {
+		const active = event.pointerType === 'touch' || (event.buttons & 1) !== 0;
+		if (this.onscreenGamepad?.beginContact(event.pointerId, event.clientX, event.clientY, active)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.gestureSurface.setPointerCapture(event.pointerId);
+			return;
 		}
-		this.sink.inputButton('pointer:0', pointerButton(event.button), down, down ? 1 : 0, now, pressId);
+		if (!this.surface.contains(event.target as Node)) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		const index = this.activePointerCount++;
+		const buttons = event.pointerType === 'touch' ? 1 : event.buttons;
+		this.activePointerIds[index] = event.pointerId;
+		this.activePointerButtonMasks[index] = buttons;
+		this.surface.setPointerCapture(event.pointerId);
+		const now = this.clock.now();
+		this.updateCanvasButtons(0, buttons, now, false);
+		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+	};
+
+	private readonly onPointerUp = (event: PointerEvent): void => {
+		if (this.onscreenGamepad?.endContact(event.pointerId)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		this.endCanvasPointer(event, false);
+	};
+
+	private readonly onPointerCancel = (event: PointerEvent): void => {
+		if (this.onscreenGamepad?.endContact(event.pointerId)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		this.endCanvasPointer(event, true);
+	};
+
+	/** Canvas contacts contribute independently to one normalized logical pointer. */
+	private updateCanvasButtons(previous: number, buttons: number, now: number, cancelled: boolean): void {
+		const changed = previous ^ buttons;
+		if (changed === 0) return;
+		let cancelledButtons = 0;
+		for (let bit = 0; bit < POINTER_BUTTON_CODES.length; bit += 1) {
+			const mask = POINTER_NATIVE_BUTTON_MASKS[bit];
+			if ((changed & mask) === 0) continue;
+			if ((buttons & mask) !== 0) {
+				this.pointerButtonCounts[bit] += 1;
+				if (this.pointerButtonCounts[bit] === 1) {
+					const pressId = this.nextPressId++;
+					this.pointerPressIds[bit] = pressId;
+					this.sink.inputButton('pointer:0', POINTER_BUTTON_CODES[bit], true, 1, now, pressId);
+				}
+			} else {
+				this.pointerButtonCounts[bit] -= 1;
+				if (this.pointerButtonCounts[bit] === 0) {
+					if (cancelled) cancelledButtons |= 1 << bit;
+					else this.sink.inputButton('pointer:0', POINTER_BUTTON_CODES[bit], false, 0, now, this.pointerPressIds[bit]);
+				}
+			}
+		}
+		if (cancelledButtons !== 0) this.sink.cancelPointerButtons('pointer:0', cancelledButtons, now);
 	}
 
-	private activePointerIndex(pointerId: number, button: number): number {
-		for (let index = 0; index < this.activePointerIds.length; index += 1) {
-			if (this.activePointerIds[index] === pointerId
-				&& this.activePointerButtons[index] === button) {
-				return index;
-			}
+	private activePointerIndex(pointerId: number): number {
+		for (let index = 0; index < this.activePointerCount; index += 1) {
+			if (this.activePointerIds[index] === pointerId) return index;
 		}
 		return -1;
 	}
 
-	private onPointerMove = (event: PointerEvent) => {
-		if (event.pointerType !== 'mouse') {
-			event.preventDefault();
-		}
+	private endCanvasPointer(event: PointerEvent, cancelled: boolean): void {
+		const index = this.activePointerIndex(event.pointerId);
+		if (index < 0) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
 		const now = this.clock.now();
-		if (event.button !== -1) {
-			const mask = 1 << (event.button === 1 ? 2 : event.button === 2 ? 1 : event.button);
-			this.updatePointerButton(event, (event.buttons & mask) !== 0, now);
+		this.updateCanvasButtons(this.activePointerButtonMasks[index], 0, now, cancelled);
+		const last = --this.activePointerCount;
+		this.activePointerIds[index] = this.activePointerIds[last];
+		this.activePointerButtonMasks[index] = this.activePointerButtonMasks[last];
+		if (!cancelled) this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+	}
+
+	private readonly onPointerMove = (event: PointerEvent): void => {
+		const active = event.pointerType === 'touch' || (event.buttons & 1) !== 0;
+		if (this.onscreenGamepad?.moveContact(event.pointerId, event.clientX, event.clientY, active)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
 		}
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		const index = this.activePointerIndex(event.pointerId);
+		if (index >= 0) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			const now = this.clock.now();
+			const buttons = event.pointerType === 'touch' ? 1 : event.buttons;
+			this.updateCanvasButtons(this.activePointerButtonMasks[index], buttons, now, false);
+			this.activePointerButtonMasks[index] = buttons;
+			this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+			return;
+		}
+		if (event.pointerType !== 'touch' && event.buttons === 0 && this.surface.contains(event.target as Node)) {
+			this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, this.clock.now());
+		}
 	};
 
 	private onWheel = (event: WheelEvent) => {
@@ -380,6 +454,8 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private onPointerLeave = (event: PointerEvent) => {
+		if (event.pointerType === 'touch' || this.onscreenGamepad?.ownsContact(event.pointerId)) return;
+		if (event.buttons !== 0 && this.activePointerIndex(event.pointerId) < 0) return;
 		const now = this.clock.now();
 		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
 	};
@@ -418,13 +494,4 @@ export class BrowserInputHub implements InputSource {
 	private shouldBlockBrowserShortcut(_event: KeyboardEvent): boolean {
 		return true;
 	}
-}
-
-function pointerButton(button: number): string {
-	if (button < 0) return 'pointer_primary';
-	if (button === 0) return 'pointer_primary';
-	if (button === 1) return 'pointer_aux';
-	if (button === 2) return 'pointer_secondary';
-	if (button === 3) return 'pointer_back';
-	return 'pointer_forward';
 }

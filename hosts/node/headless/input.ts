@@ -23,6 +23,9 @@ export class HeadlessInputHub implements InputSource, InputEventWriter {
 
 	public post(event: InputEvt): void {
 		switch (event.type) {
+			case 'cancel-pointer-buttons':
+				this.sink.cancelPointerButtons(event.deviceId, event.buttons, event.timestamp);
+				return;
 			case 'reset':
 				this.sink.resetInput(event.deviceId);
 				return;
