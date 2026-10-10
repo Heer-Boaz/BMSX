@@ -10,25 +10,30 @@ type AnimationSnapshot = {
 	readonly source: TextFileModelSnapshot;
 	readonly definition: TrackedTextRange | undefined;
 	readonly label: string;
+	readonly consumer: string | undefined;
 	readonly dependencies: readonly TextFileModelSnapshot[];
 	readonly track: AnimationSourceSelection | undefined;
 	readonly key: AnimationSourceSelection | undefined;
+	readonly detail: AnimationSourceSelection | undefined;
 	readonly scroll: number;
 	readonly cursor: number;
+	/** Source-only selections have no numeric viewport to persist. */
+	readonly view?: { readonly minimum: number; readonly maximum: number; readonly snap: boolean };
 };
 
 export class AnimationInputSerializer implements EditorInputSerializer<AnimationEditorInput> {
 	public constructor(private readonly sources: RuntimeSourceState, private readonly controller: AnimationEditorController) {}
 	public serialize(input: AnimationEditorInput): string {
-		const state: AnimationSnapshot = { source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel,
+		const state: AnimationSnapshot = { source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel, consumer: input.consumerPath,
 			dependencies: input.getWorkingCopies().filter(model => model !== input.workingCopy).map(captureTextFileModel),
-			track: input.trackSelection, key: input.keySelection, scroll: input.tracks.scroll, cursor: input.keys.cursor };
+			track: input.trackSelection, key: input.keySelection, detail: input.detailSelection, scroll: input.tracks.scroll, cursor: input.keys.cursor,
+			view: input.keys.unit === undefined ? undefined : { minimum: input.keys.range.minimum, maximum: input.keys.range.maximum, snap: input.keys.snap } };
 		return JSON.stringify(state);
 	}
 	public async deserialize(value: string): Promise<AnimationEditorInput> {
 		const state: AnimationSnapshot = JSON.parse(value);
 		const primary = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, state.source);
-		const input = new AnimationEditorInput(primary.model, state.definition, state.label);
+		const input = new AnimationEditorInput(primary.model, state.definition, state.label, state.consumer);
 		if (!primary.sameSource && input.definitionRange !== undefined) input.definitionRange.end = input.definitionRange.start;
 		let sameSource = primary.sameSource;
 		for (const dependency of state.dependencies) {
@@ -36,8 +41,9 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 			input.sourceModels.set(resolved.model.resource.path, resolved.model);
 			if (!resolved.sameSource) sameSource = false;
 		}
-		if (sameSource) { input.trackSelection = state.track; input.keySelection = state.key; input.tracks.scroll = state.scroll; input.keys.cursor = state.cursor; }
+		if (sameSource) { input.trackSelection = state.track; input.keySelection = state.key; input.detailSelection = state.detail; input.tracks.scroll = state.scroll; input.keys.cursor = state.cursor; }
 		input.publishModels(); this.controller.refresh(input);
+		if (sameSource && state.view !== undefined) { input.keys.setView(state.view.minimum, state.view.maximum); input.keys.snap = state.view.snap; }
 		return input;
 	}
 }

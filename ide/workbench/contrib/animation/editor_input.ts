@@ -5,12 +5,14 @@ import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
 import type { WorkbenchListState } from '../../ui/list_view';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
-import type { AnimationSourceDocument, AnimationTrackSource } from './model';
+import type { AnimationSourceDocument, AnimationTrackSource, AnimationClipSource, AnimationTableSource } from './model';
 import type { AnimationProperty } from './details';
 import { AnimationKeyViewport } from './key_viewport';
+import { AnimationOverview } from './overview';
+import { AnimationFramePreview } from './frame_preview';
 
 export type AnimationSourceSelection = { readonly path: string; readonly range: TrackedTextRange };
-export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; label: string; text: string };
+export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; readonly clip: AnimationClipSource | undefined; readonly frames: boolean; label: string; text: string };
 
 let nextInputId = 0;
 
@@ -22,17 +24,24 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public document: AnimationSourceDocument | undefined;
 	public trackSelection: AnimationSourceSelection | undefined;
 	public keySelection: AnimationSourceSelection | undefined;
+	public detailSelection: AnimationSourceSelection | undefined;
 	public trackIndex = -1;
 	public keyIndex = -1;
+	public clipIndex = -1;
+	public clipPreview: { readonly index: number; start: number; duration: number } | undefined;
+	public framesSelected = false;
+	public selectedSource: AnimationTableSource | undefined;
 	public readonly tracks: WorkbenchListState<AnimationTrackRow> = { rows: [], selectionIndex: 0, hoverIndex: -1, scroll: 0,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0 } };
 	public readonly details = createWorkbenchPropertyTree<AnimationProperty>();
 	public readonly keys = new AnimationKeyViewport();
+	public readonly overview = new AnimationOverview();
+	public readonly framePreview = new AnimationFramePreview();
 	public readonly actionBar = createWorkbenchActionBar('animation.title');
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
 	public constructor(public readonly workingCopy: EditorTextModel, definitionRange?: TrackedTextRange,
-		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource)) {
+		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource), public readonly consumerPath?: string) {
 		super(`animation:${nextInputId++}`, 'animation', `ANIM ${definitionLabel}`, true);
 		this.definitionRange = definitionRange === undefined ? undefined : { ...definitionRange };
 		this.sourceModels.set(workingCopy.resource.path, workingCopy);
@@ -42,5 +51,5 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }
 	public invalidateProjection(): void { for (const listener of this.projectionListeners) listener(); }
 	public onDidInvalidateProjection(listener: () => void): () => void { this.projectionListeners.add(listener); return () => this.projectionListeners.delete(listener); }
-	public override dispose(): void { this.invalidateProjection(); this.projectionListeners.clear(); super.dispose(); }
+	public override dispose(): void { this.invalidateProjection(); this.projectionListeners.clear(); this.framePreview.dispose(); super.dispose(); }
 }

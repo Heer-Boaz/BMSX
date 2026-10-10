@@ -167,7 +167,7 @@ test('independent inline views share real documents/history and retire stale ses
 	const unbind = editorTextModelService.onDidChangeContent((model, event) => controller.onDidChangeContent(model, event));
 	t.after(() => { unbind(); editorTabGroup.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.refresh(other);
-	assert.equal(controller.canAddTrack(input), true);
+	assert.equal(controller.authoring.canAddTrack(input), true);
 	assert.notEqual(input.id, other.id);
 	assert.equal(input.workingCopy, other.workingCopy);
 	const revision = input.version, document = input.document;

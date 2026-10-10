@@ -11,6 +11,31 @@ import { luaSourceRangeMatchesTextRange } from '../../../language/lua/source_edi
 import { collectBehaviorRegistrations } from '../behavior_lens/registrations';
 import { collectNamedFields } from '../behavior_lens/source';
 import { isAnimationDefinitionSource } from './source';
+import type { AnimationFamily } from './model';
+import type { AnimationTableSource } from './model';
+
+/** Source context, not persisted editor state, owns which native factory consumes a frame array. */
+export function animationDefinitionFamily(reader: LuaSourceReader, entry: FileSemanticData, root: AnimationTableSource): AnimationFamily {
+	for (let pass = 0; pass < (entry === root.file ? 1 : 2); pass++) {
+		const file = pass === 0 ? entry : root.file;
+		for (const call of file.callSites) {
+			const target = getLuaModuleAliasTarget(file, call.call.callee);
+			if (target === null || call.expression.method !== null
+				|| !reader.snapshot.symbolResolver.moduleImports.matchesImport(target, { module: 'cartlib/component/sprite_animation_component', memberPath: ['factory'] })) continue;
+			const expression = call.expression.arguments[0];
+			if (expression === undefined) continue;
+			const written = reader.expression(file, expression);
+			if (written?.expression === root.table) return 'sprite';
+			if (written?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
+			const animations = findNamedLuaTableField(written.expression, 'animations');
+			const named = animations === null ? undefined : reader.expression(written.file, animations.value);
+			if (named?.expression.kind === LuaSyntaxKind.TableConstructorExpression) for (const field of named.expression.fields) {
+				if (reader.expression(named.file, field.value)?.expression === root.table) return 'sprite';
+			}
+		}
+	}
+	return 'timeline';
+}
 
 /** The actual table owner, independent of its exported name or registration ID. */
 export type AnimationDefinitionSource = {
@@ -18,6 +43,8 @@ export type AnimationDefinitionSource = {
 	readonly table: LuaTableConstructorExpression;
 	readonly label: string;
 	readonly context?: string;
+	/** Source of the consuming native factory, including imported configuration tables. */
+	readonly consumer?: FileSemanticData;
 };
 
 /** Invocation-only catalog; registered programs are not resolved through live objects. */
@@ -25,13 +52,15 @@ export function collectAnimationDefinitions(resource: ResourceIdentity, snapshot
 	const file = snapshot.getFileData(resource.path)!;
 	const reader = new LuaSourceReader(snapshot);
 	const result: AnimationDefinitionSource[] = [];
-	const definitions = new Set<LuaTableConstructorExpression>();
-	const append = (file: FileSemanticData, expression: LuaExpression, label: string, context?: string): void => {
+	const definitions = new Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>();
+	const append = (file: FileSemanticData, expression: LuaExpression, label: string, context?: string, consumer?: FileSemanticData): void => {
 		const written = reader.expression(file, expression);
-		if (written?.expression.kind !== LuaSyntaxKind.TableConstructorExpression
-			|| !isAnimationDefinitionSource(written.expression) || definitions.has(written.expression)) return;
-		definitions.add(written.expression);
-		result.push({ file: written.file, table: written.expression, label, context });
+		if (written?.expression.kind !== LuaSyntaxKind.TableConstructorExpression || !isAnimationDefinitionSource(written.expression)) return;
+		let consumers = definitions.get(written.expression);
+		if (consumers === undefined) { consumers = new Set(); definitions.set(written.expression, consumers); }
+		if (consumers.has(consumer)) return;
+		consumers.add(consumer);
+		result.push({ file: written.file, table: written.expression, label, context, consumer });
 	};
 	const exported = findLuaModuleExport(file.chunk)?.expressions[0];
 	if (exported !== undefined) append(file, exported, resource.path);
@@ -39,6 +68,19 @@ export function collectAnimationDefinitions(resource: ResourceIdentity, snapshot
 		const target = getLuaModuleAliasTarget(file, call.call.callee);
 		if (target === null) continue;
 		const imports = snapshot.symbolResolver.moduleImports;
+		if (call.expression.method === null && imports.matchesImport(target, { module: 'cartlib/component/sprite_animation_component', memberPath: ['factory'] })) {
+			const expression = call.expression.arguments[0];
+			if (expression === undefined) continue;
+			const written = reader.expression(file, expression);
+			if (written?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
+			append(written.file, written.expression, `${resource.path}:${file.chunk.locations.range(call.expression.span).start.line}`, undefined, file);
+			const animations = findNamedLuaTableField(written.expression, 'animations');
+			const named = animations === null ? undefined : reader.expression(written.file, animations.value);
+			if (named?.expression.kind === LuaSyntaxKind.TableConstructorExpression) for (const entry of collectNamedFields(named.expression)) {
+				append(named.file, entry.field.value, entry.name === null ? entry.authoredKeyLabel : entry.name, resource.path, file);
+			}
+			continue;
+		}
 		const argument = call.expression.method === null && imports.matchesImport(target, { module: 'cartlib/timeline/program', memberPath: ['compile'] }) ? 0
 			: imports.matchesImport(target, { module: 'cartlib/timeline/timeline_component', memberPath: ['define'] }) ? call.expression.method === null ? 2 : 1 : -1;
 		if (argument < 0 || call.expression.arguments[argument] === undefined) continue;

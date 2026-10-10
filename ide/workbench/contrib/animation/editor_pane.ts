@@ -1,5 +1,6 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { inputFocus } from '../../../input/focus';
@@ -17,6 +18,8 @@ import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_vie
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
+import { WorkbenchImageControl } from '../../ui/image_control';
+import type { HostBitmap } from '../../../../machine/ts/render/host_overlay/bitmap';
 import { workbenchListRowIndexAtPosition, scrollWorkbenchList, revealWorkbenchListSelection } from '../../ui/list_view';
 import { navigateWorkbenchTree } from '../../ui/tree_view';
 import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
@@ -26,6 +29,7 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AnimationEditorController } from './controller';
 import type { AnimationEditorInput } from './editor_input';
 import { AnimationKeyControl } from './key_control';
+import { AnimationLaneControl } from './lane_control';
 import { layoutAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 
@@ -38,23 +42,36 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private readonly detailsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(this.detailsFocus, value => value.edit.text);
 	private readonly keys: AnimationKeyControl;
+	private readonly lanes: AnimationLaneControl;
+	private readonly image = new WorkbenchImageControl(inputFocus, pointerCapture, this.focusTarget);
+	private imageBitmap: HostBitmap | undefined;
 	private readonly unbindDetailsKeyboard: () => void;
 	private unbindProjection: (() => void) | undefined;
 	private version = -1;
 	private font: typeof editorViewState.font | undefined;
 	private keyTrack: AnimationTrackSource | undefined;
-	private hasKeys = false;
+	private keyRevision = -1;
 	private left = 0; private top = 0; private right = 0; private bottom = 0;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController) {
 		super(resources);
-		this.keys = new AnimationKeyControl(this.focusTarget, controller);
+		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
+		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
-		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.controller.canAddTrack(this.input), run: () => this.controller.addTrack(this.input) });
-		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.controller.canAddKey(this.input), run: () => this.controller.addKey(this.input) });
-		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.controller.canRemove(this.input), run: () => this.controller.remove(this.input) });
+		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });
+		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input) });
+		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input) });
+		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input) });
+		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input) });
+		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
+		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
+		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });
+		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.input) });
+		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
+		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
+		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
 		this.focusTarget.registerCommand('animation.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
 		this.focusTarget.registerCommand('animation.producerSource', {
 			isEnabled: () => this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
@@ -75,20 +92,22 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
 		});
 		this.focusTarget.next = this.keys.focusTarget; this.keys.focusTarget.previous = this.focusTarget;
-		this.keys.focusTarget.next = this.detailsFocus; this.detailsFocus.previous = this.keys.focusTarget;
+		this.keys.focusTarget.next = this.image.focusTarget; this.image.focusTarget.previous = this.keys.focusTarget;
+		this.image.focusTarget.next = this.detailsFocus; this.detailsFocus.previous = this.image.focusTarget;
 		this.detailsFocus.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.detailsFocus;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 	}
 	protected override activate(): void {
-		super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input);
+		super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input); this.lanes.setInput(this.input);
 		this.unbindProjection = this.input.onDidInvalidateProjection(() => this.edit.close()); this.version = -1; this.update();
 	}
 	public override clearInput(): void {
-		this.unbindProjection?.(); this.unbindProjection = undefined; this.edit.close(); this.keys.clearInput(); this.actions.clearInput();
+		this.unbindProjection?.(); this.unbindProjection = undefined; this.edit.close(); this.keys.clearInput(); this.lanes.clearInput(); this.actions.clearInput();
+		this.image.clearInput(); this.imageBitmap = undefined;
 		this.propertyPointer.clear(); this.detailsFocus.release(); super.clearInput();
 	}
 	public override dispose(): void {
-		this.unbindProjection?.(); this.keys.dispose(); this.actions.dispose(); this.edit.dispose(); this.unbindDetailsKeyboard();
+		this.unbindProjection?.(); this.keys.dispose(); this.lanes.dispose(); this.image.dispose(); this.actions.dispose(); this.edit.dispose(); this.unbindDetailsKeyboard();
 		this.propertyPointer.clear(); super.dispose();
 	}
 	private editProperty(): void {
@@ -102,18 +121,32 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	public override update(): void {
 		this.controller.refresh(this.input);
 		const bounds = this.contentBounds;
-		const hasKeys = this.input.keys.track !== undefined;
-		if (this.version !== this.input.version || this.hasKeys !== hasKeys || this.font !== editorViewState.font || this.left !== bounds.left || this.top !== bounds.top || this.right !== bounds.right || this.bottom !== bounds.bottom) {
+		if (this.version !== this.input.version || this.font !== editorViewState.font || this.left !== bounds.left || this.top !== bounds.top || this.right !== bounds.right || this.bottom !== bounds.bottom) {
+			this.lanes.cancelPointer();
 			layoutAnimationEditor(this.input, bounds, this.keys);
 			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
 			this.keyTrack = this.input.keys.track;
-			this.hasKeys = hasKeys;
 			this.version = this.input.version; this.font = editorViewState.font;
 			this.left = bounds.left; this.top = bounds.top; this.right = bounds.right; this.bottom = bounds.bottom;
 		}
 		if (this.keyTrack !== this.input.keys.track) {
 			this.keyTrack = this.input.keys.track;
 			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
+		}
+		if (this.keyRevision !== this.input.keys.revision) {
+			this.keyRevision = this.input.keys.revision;
+			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
+		}
+		this.input.keys.update(); this.input.keys.curve.update(this.input.keys);
+		this.input.overview.update(this.input);
+		const preview = this.input.framePreview;
+		if (preview.bitmap !== this.imageBitmap) {
+			this.imageBitmap = preview.bitmap;
+			if (preview.bitmap === undefined) this.image.clearInput(); else this.image.setInput(preview.view);
+		}
+		if (preview.bitmap !== undefined) {
+			const area = this.input.keys.curve.bounds;
+			preview.view.layout(area.left, area.top + editorViewState.font.lineHeight + 4, area.right, area.bottom);
 		}
 		const details = this.input.details.layout;
 		layoutWorkbenchPropertyTree(this.input.details, editorViewState.font.renderFont(), measureTextRange,
@@ -123,26 +156,29 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); if (this.edit.active) this.edit.draw(); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(player: PlayerInput): void {
+		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.lanes.cancelPointer(); return; }
 		for (const [key, delta] of TRACK_NAVIGATION) {
 			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
 			consumeIdeKey(key, player);
+			this.keys.cancelPointer(); this.lanes.cancelPointer();
 			const list = this.input.tracks, index = Math.max(0, Math.min(list.rows.length - 1, list.selectionIndex + delta));
 			if (list.rows.length !== 0) { this.controller.selectTrack(this.input, index); revealWorkbenchListSelection(list); }
 			return;
 		}
-		if (isKeyJustPressed('Delete', player)) { consumeIdeKey('Delete', player); this.commands.execute('animation.remove'); }
+		if (isKeyJustPressed('Delete', player)) { consumeIdeKey('Delete', player); this.lanes.cancelPointer(); this.commands.execute('animation.remove'); }
 	}
 	private handleDetailsKeyboard(player: PlayerInput): void {
 		for (const [key, command] of DETAILS_NAVIGATION) {
-			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); return; }
+			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); return; }
 		}
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit'); }
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot)) return true;
+		if (this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
+		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot) || this.lanes.handlePointer(snapshot)) return true;
 		const result = this.propertyPointer.handle(this.input.details, snapshot, justPressed, now);
 		if (result !== WorkbenchPropertyPointerResult.Outside) {
-			if (justPressed) this.detailsFocus.focus();
+			if (justPressed) { this.detailsFocus.focus(); this.controller.selectProperty(this.input, this.input.details.selectionIndex); }
 			if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit');
 			return true;
 		}
@@ -153,7 +189,15 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, player: PlayerInput): void {
 		if (pointer === null) return;
+		if (this.imageBitmap !== undefined && this.image.handleWheel(pointer, direction * steps * 16, -direction * steps, player.getModifiers())) {
+			player.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
+		}
 		const list = this.input.tracks, details = this.input.details;
+		if (this.input.keys.unit !== undefined && (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.overview.bounds)
+			|| point_in_rect(pointer.viewportX, pointer.viewportY, this.input.keys.range.bounds) || point_in_rect(pointer.viewportX, pointer.viewportY, this.input.keys.curve.bounds))) {
+			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.input.keys.zoom(pointer.viewportX, direction > 0 ? 1.25 : 0.8);
+			player.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
+		}
 		if (workbenchListRowIndexAtPosition(list, pointer.viewportX, pointer.viewportY) !== -1) scrollWorkbenchList(list, direction * steps * 3);
 		else if (workbenchListRowIndexAtPosition(details, pointer.viewportX, pointer.viewportY) !== -1) scrollWorkbenchList(details, direction * steps * 3);
 		else return;

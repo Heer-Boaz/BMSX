@@ -23,17 +23,45 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 	}
 	api.popClipRect();
 	const viewport = input.keys, keyBounds = viewport.range.bounds;
+	const overview = input.overview.bounds;
+	api.pushClipRect(overview.left, overview.top, overview.right, overview.bottom);
+	const head = viewport.xAt(viewport.cursor);
+	if (viewport.unit !== undefined) api.fill_rect(head, overview.top, head + 1, overview.bottom, 0, colors.COLOR_FOCUS_BORDER);
+	for (const geometry of input.overview.lanes) {
+		const row = list.rows[geometry.index], top = geometry.top;
+		api.fill_rect(overview.left, top + layout.rowHeight - 1, overview.right, top + layout.rowHeight, 0, colors.COLOR_TAB_BORDER);
+		if (row.clip !== undefined) {
+			const preview = input.clipPreview?.index === geometry.index - input.document!.tracks.length - 1 ? input.clipPreview : undefined;
+			const start = preview === undefined ? row.clip.start === undefined ? 0 : row.clip.start.value : preview.start;
+			const duration = preview === undefined ? row.clip.duration?.value : preview.duration;
+			if (viewport.unit !== 'time_ms' || start === null || duration === undefined || duration === null) {
+				drawEditorText(font, 'ms / Source', overview.left + 4, top + 2, 0, colors.COLOR_STATUS_TEXT);
+			} else {
+				const left = viewport.xAt(start), right = viewport.xAt(start + duration);
+				api.fill_rect(Math.min(left, right), top + 3, Math.max(left, right), top + layout.rowHeight - 3, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+				api.blit_rect(Math.min(left, right), top + 3, Math.max(left, right), top + layout.rowHeight - 3, 0, colors.COLOR_FOCUS_BORDER);
+			}
+		}
+		if (geometry.label !== '') drawEditorText(font, geometry.label, overview.left + 4, top + 2, 0, colors.COLOR_STATUS_TEXT);
+		for (let cell = 0; cell < geometry.cells.length; cell += 2) api.blit_rect(geometry.cells[cell], top + 3, geometry.cells[cell + 1], top + layout.rowHeight - 3, 0, text);
+		const middle = top + (layout.rowHeight >> 1);
+		if (row.track?.kind === 'tag' && geometry.dots.length === 4) api.fill_rect(geometry.dots[0], middle, geometry.dots[2], middle + 1, 0, text);
+		for (let dot = 0; dot < geometry.dots.length; dot += 2) {
+			const x = geometry.dots[dot];
+			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0,
+				geometry.index === list.selectionIndex && geometry.dots[dot + 1] === input.keyIndex ? colors.COLOR_FOCUS_BORDER : text);
+		}
+	}
+	api.popClipRect();
 	drawEditorText(font, viewport.caption, keyBounds.left, keyBounds.top - layout.rowHeight, 0, text);
-	if (viewport.track !== undefined) {
+	if (viewport.unit !== undefined) {
 		const middle = Math.round((keyBounds.top + keyBounds.bottom) / 2);
 		api.fill_rect(keyBounds.left + 3, middle, keyBounds.right - 3, middle + 1, 0, colors.COLOR_STATUS_TEXT);
 		api.pushClipRect(keyBounds.left, keyBounds.top, keyBounds.right, keyBounds.bottom);
 		const cursorX = viewport.xAt(viewport.cursor);
 		api.fill_rect(cursorX, keyBounds.top, cursorX + 1, keyBounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
-		for (let index = 0; index < viewport.positions.length; index++) {
-			const value = index === viewport.selected && viewport.dragValue !== undefined ? viewport.dragValue : viewport.positions[index];
-			if (value === null) continue;
-			const x = viewport.xAt(value), selected = index === viewport.selected;
+		for (let pixel = 0; pixel < viewport.pixels.length; pixel += 2) {
+			const index = viewport.pixels[pixel], x = viewport.pixels[pixel + 1], selected = index === viewport.selected;
 			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0, selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT : text);
 			if (selected) api.blit_rect(x - 4, middle - 5, x + 4, middle + 5, 0, colors.COLOR_FOCUS_BORDER);
 		}
@@ -42,6 +70,45 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		drawEditorText(font, viewport.endLabel, keyBounds.right - viewport.endLabelWidth, keyBounds.bottom + 2, 0, text);
 		drawEditorText(font, viewport.selectionLabel, keyBounds.left + 4, keyBounds.bottom + layout.rowHeight + 2, 0, text);
 		if (keysFocused) api.blit_rect(keyBounds.left - 1, keyBounds.top - 1, keyBounds.right, keyBounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
+	}
+	const curve = viewport.curve;
+	if (curve.available) {
+		const area = curve.bounds;
+		api.pushClipRect(area.left, area.top, area.right, area.bottom);
+		drawEditorText(font, curve.maximumLabel, area.left + 4, area.top + 2, 0, colors.COLOR_STATUS_TEXT);
+		drawEditorText(font, curve.minimumLabel, area.left + 4, area.bottom - font.lineHeight - 2, 0, colors.COLOR_STATUS_TEXT);
+		const zero = curve.yAt(0);
+		api.fill_rect(area.left, zero, area.right, zero + 1, 0, colors.COLOR_TAB_BORDER);
+		api.fill_rect(head, area.top, head + 1, area.bottom, 0, colors.COLOR_FOCUS_BORDER);
+		if (curve.points.length > 2) api.polyline(curve.points, 0, 0, 0, 1, text);
+		for (let marker = 0; marker < curve.markers.length; marker += 3) {
+			const index = curve.markers[marker], x = curve.markers[marker + 1], y = curve.markers[marker + 2];
+			api.fill_rect(x - 3, y - 3, x + 4, y + 4, 0, index === viewport.selected ? colors.COLOR_FOCUS_BORDER : text);
+		}
+		for (let side = 0; side < 2; side++) {
+			const handle = side === 0 ? curve.arriveHandle : curve.leaveHandle;
+			if (!handle.length) continue;
+			api.polyline(handle, 0, 0, 0, 1, colors.COLOR_STATUS_TEXT);
+			api.blit_rect(handle[2] - 3, handle[3] - 3, handle[2] + 4, handle[3] + 4, 0, colors.COLOR_FOCUS_BORDER);
+		}
+		api.popClipRect();
+		api.blit_rect(area.left, area.top, area.right, area.bottom, 0, keysFocused ? colors.COLOR_FOCUS_BORDER : colors.COLOR_TAB_BORDER);
+	}
+	const preview = input.framePreview;
+	if (preview.label !== '') {
+		const area = curve.bounds;
+		api.pushClipRect(area.left, area.top, area.right, area.bottom);
+		drawEditorText(font, preview.label, area.left + 4, area.top + 2, 0, text);
+		api.popClipRect();
+		if (preview.bitmap !== undefined) {
+			const view = preview.view, imageBounds = view.bounds;
+			api.pushClipRect(imageBounds.left, imageBounds.top, imageBounds.right, imageBounds.bottom);
+			api.pushTransform(view.transform);
+			api.drawBitmap(preview.bitmap, 0, 0, preview.bitmap.image.width, preview.bitmap.image.height);
+			api.popTransform(); api.popClipRect();
+			view.horizontal.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+			view.vertical.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		}
 	}
 	drawWorkbenchPropertyTree(input.details);
 }

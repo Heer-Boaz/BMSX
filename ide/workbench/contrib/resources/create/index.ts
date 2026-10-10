@@ -1,3 +1,6 @@
+import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
+import { editorTextModelService } from '../../../../editor/model/model_service';
+import { collectAnimationDefinitions } from '../../animation/definitions';
 import type { CartEditor } from '../../../../cart_editor';
 import type { HostClock } from '../../../../../hosts/common/clock';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
@@ -50,6 +53,11 @@ function showNewLuaFileInput(
 			if (kind === 'action_effect') editor.behaviorLens.openDefinition(editor.behaviorLens.documents.registrations
 				.getRegistrations(created.domain).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!);
 			else if (kind === 'animation') editor.animations.openResource(created);
+			else if (kind === 'sprite_animation') {
+				const project = getOrCreateSemanticProject(editorTextModelService, created.domain);
+				project.synchronizeRuntimeSources(sources);
+				editor.animations.openDefinition(created.domain, collectAnimationDefinitions(created, project.getSnapshot())[0]);
+			}
 			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(created, kind);
 			else openLuaCodeTab(editor.editorPanes, sources, created);
 		});

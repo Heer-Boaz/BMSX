@@ -62,7 +62,10 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
-	'animation', 'animation.create', 'animation.addTrack', 'animation.addKey', 'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
+	'animation', 'animation.create', 'animation.createSprite', 'animation.addTrack', 'animation.addKey',
+	'animation.addClip', 'animation.addFrame', 'animation.addProperty', 'animation.openClip',
+	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
+	'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
 	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
@@ -160,6 +163,7 @@ export class IdeCommandController {
 			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
 			case 'behaviorLens.testEffect': { const input = getActiveTab()!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
 			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
+			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'sprite_animation'); return;
 			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'animation'); return;
 			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'input'); return;
 			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'action_effect'); return;
@@ -194,7 +198,10 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.producerSource': case 'animation.more':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
+			case 'animation.source': case 'animation.producerSource': case 'animation.more':
+			case 'animation.addClip': case 'animation.addFrame': case 'animation.addProperty': case 'animation.openClip':
+			case 'animation.duplicate': case 'animation.earlier': case 'animation.later': case 'animation.fit': case 'animation.snap':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
@@ -410,7 +417,7 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
 			case 'builds.start': return this.editor.builds !== undefined;
-			case 'animation.create': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
+			case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);
@@ -439,7 +446,10 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove': case 'animation.source': case 'animation.producerSource': case 'animation.more':
+			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
+			case 'animation.source': case 'animation.producerSource': case 'animation.more':
+			case 'animation.addClip': case 'animation.addFrame': case 'animation.addProperty': case 'animation.openClip':
+			case 'animation.duplicate': case 'animation.earlier': case 'animation.later': case 'animation.fit': case 'animation.snap':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':

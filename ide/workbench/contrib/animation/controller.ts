@@ -3,8 +3,7 @@ import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaNumberLiteral, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
+import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResourceForContext, runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
 import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
@@ -12,7 +11,6 @@ import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_m
 import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
@@ -23,13 +21,15 @@ import type { EditorNavigationController } from '../resources/navigation';
 import { AnimationEditorInput, type AnimationSourceSelection } from './editor_input';
 import { buildAnimationSourceDocument } from './source';
 import { projectAnimationDetails } from './details';
-import type { AnimationKeySource } from './model';
-import { animationDefinitionAtPosition, animationDefinitionAtRange, collectAnimationDefinitions, type AnimationDefinitionSource } from './definitions';
+import { animationDefinitionAtPosition, animationDefinitionAtRange, animationDefinitionFamily, collectAnimationDefinitions, type AnimationDefinitionSource } from './definitions';
+import { AnimationAuthoring } from './authoring';
+import { revealWorkbenchListSelection } from '../../ui/list_view';
 
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
+	public readonly authoring: AnimationAuthoring;
 	public constructor(private readonly sources: RuntimeSourceState, private readonly panes: EditorPanes,
-		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) {}
+		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) { this.authoring = new AnimationAuthoring(this, quickInput, sources); }
 
 	public open(): void {
 		const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
@@ -47,19 +47,22 @@ export class AnimationEditorController {
 			const model = active.workingCopy, snapshot = snapshotFor(model.resource.domain), file = snapshot.getFileData(model.resource.path)!;
 			const table = animationDefinitionAtPosition(file, activeCodeEditor.view.cursorRow + 1, activeCodeEditor.view.cursorColumn + 1);
 			if (table !== undefined) {
-				this.openDefinition(model.resource.domain, { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` });
+				const registered = collectAnimationDefinitions(model.resource, snapshot).find(item => item.table === table);
+				this.openDefinition(model.resource.domain, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered);
 				return;
 			}
 			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(model.resource); return; }
 		}
 		const choices: { label: string; description: string; detail: string; domain: ResourceDomain; definition: AnimationDefinitionSource }[] = [];
-		const admitted = new Map<ResourceDomain, Set<LuaTableConstructorExpression>>();
+		const admitted = new Map<ResourceDomain, Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>>();
 		for (const resource of this.sources.luaResources) {
 			let seen = admitted.get(resource.domain);
-			if (seen === undefined) { seen = new Set(); admitted.set(resource.domain, seen); }
+			if (seen === undefined) { seen = new Map(); admitted.set(resource.domain, seen); }
 			for (const definition of collectAnimationDefinitions(resource, snapshotFor(resource.domain))) {
-				if (seen.has(definition.table)) continue;
-				seen.add(definition.table);
+				let consumers = seen.get(definition.table);
+				if (consumers === undefined) { consumers = new Set(); seen.set(definition.table, consumers); }
+				if (consumers.has(definition.consumer)) continue;
+				consumers.add(definition.consumer);
 				const range = definition.file.chunk.locations.range(definition.table.span);
 				choices.push({ label: definition.label, description: definition.context === undefined ? definition.file.file : `${definition.context} / ${definition.file.file}`,
 					detail: `${resource.domain === -1 ? 'SYSTEM' : `SLOT ${resource.domain}`} / ${range.start.line}:${range.start.column}`,
@@ -81,9 +84,10 @@ export class AnimationEditorController {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const range = definition.file.chunk.locations.range(definition.table.span);
 		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
-			&& item.workingCopy === model && item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
+			&& item.workingCopy === model && item.consumerPath === definition.consumer?.file && item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
 		if (input === undefined) {
-			input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, range), definition.label);
+			input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file);
+			if (definition.consumer !== undefined) this.modelFor(input, definition.consumer);
 			this.refresh(input);
 		}
 		openEditorTab(this.panes, input);
@@ -115,6 +119,7 @@ export class AnimationEditorController {
 			if (input.workingCopy === model && input.definitionRange !== undefined) mapTrackedTextRange(input.definitionRange, event.changes);
 			if (input.trackSelection?.path === model.resource.path) mapTrackedTextRange(input.trackSelection.range, event.changes);
 			if (input.keySelection?.path === model.resource.path) mapTrackedTextRange(input.keySelection.range, event.changes);
+			if (input.detailSelection?.path === model.resource.path) mapTrackedTextRange(input.detailSelection.range, event.changes);
 		}
 	}
 
@@ -122,19 +127,26 @@ export class AnimationEditorController {
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.domain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
-		if (snapshot.revision === input.sourceRevision) return;
+		if (snapshot.revision === input.sourceRevision) {
+			input.framePreview.update(input.framesSelected ? input.document : undefined, input.details.selectionIndex, input.workingCopy.resource.domain, this.sources);
+			return;
+		}
 		input.invalidateProjection();
 		input.sourceRevision = snapshot.revision;
 		const definition = input.definitionRange === undefined ? undefined
 			: animationDefinitionAtRange(snapshot.getFileData(input.workingCopy.resource.path)!, input.workingCopy.buffer, input.definitionRange);
 		input.document = input.definitionRange !== undefined && definition === undefined ? undefined
 			: buildAnimationSourceDocument(input.workingCopy.resource, snapshot, definition);
+		if (input.document !== undefined) {
+			const family = animationDefinitionFamily(input.document.reader, snapshot.getFileData(input.consumerPath ?? input.workingCopy.resource.path)!, input.document.root);
+			if (family !== input.document.family) input.document = { ...input.document, family };
+		}
 		input.tracks.rows.length = 0;
-		input.trackIndex = -1; input.keyIndex = -1;
+		input.trackIndex = -1; input.keyIndex = -1; input.clipIndex = -1; input.framesSelected = false;
 		const document = input.document;
 		if (document !== undefined) {
 			this.modelFor(input, document.root.file);
-			input.tracks.rows.push({ track: undefined, label: 'Animation', text: '' });
+			input.tracks.rows.push({ track: undefined, clip: undefined, frames: false, label: 'Animation', text: '' });
 			if (document.tracksSource !== undefined) this.modelFor(input, document.tracksSource.file);
 			for (let index = 0; index < document.tracks.length; index++) {
 				const track = document.tracks[index];
@@ -148,15 +160,32 @@ export class AnimationEditorController {
 					if (index === input.trackIndex && this.matches(input.keySelection, owner, key.file, key.field)) input.keyIndex = keyIndex;
 					if (key.source !== undefined) this.modelFor(input, key.source.file);
 				}
-				input.tracks.rows.push({ track, label: track.label, text: '' });
+				input.tracks.rows.push({ track, clip: undefined, frames: false, label: track.label, text: '' });
+			}
+			if (document.clipsSource !== undefined) this.modelFor(input, document.clipsSource.file);
+			for (let index = 0; index < document.clips.length; index++) {
+				const clip = document.clips[index];
+				if (this.matches(input.trackSelection, this.modelFor(input, clip.file), clip.file, clip.field)) input.clipIndex = index;
+				if (clip.source !== undefined) this.modelFor(input, clip.source.file);
+				if (clip.sequence !== undefined) this.modelFor(input, clip.sequence.file);
+				input.tracks.rows.push({ track: undefined, clip, frames: false, label: clip.label, text: '' });
+			}
+			if (document.framesField !== undefined) {
+				input.framesSelected = this.matches(input.trackSelection, this.modelFor(input, document.root.file), document.root.file, document.framesField);
+				if (document.framesSource !== undefined) this.modelFor(input, document.framesSource.file);
+				input.tracks.rows.push({ track: undefined, clip: undefined, frames: true, label: 'Frames', text: '' });
 			}
 		}
-		if (input.trackIndex === -1) input.trackSelection = undefined;
+		if (input.trackIndex === -1 && input.clipIndex === -1 && !input.framesSelected) input.trackSelection = undefined;
 		if (input.keyIndex === -1) input.keySelection = undefined;
-		input.tracks.selectionIndex = document === undefined ? -1 : input.trackIndex + 1;
-		this.refreshDetails(input);
-		input.keys.bind(document?.tracks[input.trackIndex], input.keyIndex, document);
+		input.tracks.selectionIndex = document === undefined ? -1 : input.framesSelected ? input.tracks.rows.length - 1 : input.clipIndex >= 0 ? document.tracks.length + 1 + input.clipIndex : input.trackIndex + 1;
+		this.refreshDetails(input, true);
+		const track = document?.tracks[input.trackIndex];
+		const unit = track !== undefined ? track.unit : input.clipIndex >= 0 ? 'time_ms' : input.framesSelected ? 'frame'
+			: document?.tracks.find(track => track.unit !== undefined)?.unit ?? (document !== undefined && document.clips.length > 0 ? 'time_ms' : document?.framesSource?.array ? 'frame' : undefined);
+		input.keys.bind(track, input.keyIndex, document, unit);
 		input.status = document === undefined ? 'Definition unavailable' : !document.syntaxComplete ? 'Incomplete source' : 'Authored Lua';
+		input.framePreview.update(input.framesSelected ? document : undefined, input.details.selectionIndex, input.workingCopy.resource.domain, this.sources);
 		input.version += 1;
 	}
 
@@ -166,14 +195,20 @@ export class AnimationEditorController {
 	}
 
 	public selectTrack(input: AnimationEditorInput, rowIndex: number): void {
-		const track = input.tracks.rows[rowIndex]?.track;
-		input.trackIndex = rowIndex - 1;
+		const row = input.tracks.rows[rowIndex], track = row.track, clip = row.clip, document = input.document!;
+		input.trackIndex = track === undefined ? -1 : rowIndex - 1;
+		input.clipIndex = clip === undefined ? -1 : rowIndex - document.tracks.length - 1;
+		input.framesSelected = row.frames;
 		input.tracks.selectionIndex = rowIndex;
-		input.trackSelection = track === undefined ? undefined : { path: track.file.file,
-			range: luaSourceRangeToTextRange(this.modelFor(input, track.file).buffer, track.file.chunk.locations.range(track.field.span)) };
+		const selection = track ?? clip;
+		const file = row.frames ? document.root.file : selection?.file;
+		const field = row.frames ? document.framesField : selection?.field;
+		input.trackSelection = file === undefined ? undefined : { path: file.file,
+			range: luaSourceRangeToTextRange(this.modelFor(input, file).buffer, file.chunk.locations.range(field!.span)) };
 		input.keySelection = undefined; input.keyIndex = -1;
-		input.keys.bind(track, -1, input.document);
+		input.keys.bind(track, -1, input.document, clip !== undefined ? 'time_ms' : row.frames ? 'frame' : track === undefined ? input.keys.unit : track.unit);
 		this.refreshDetails(input);
+		revealWorkbenchListSelection(input.tracks);
 	}
 
 	public selectKey(input: AnimationEditorInput, index: number): void {
@@ -182,99 +217,57 @@ export class AnimationEditorController {
 		input.keySelection = index < 0 ? undefined : { path: key.file.file,
 			range: luaSourceRangeToTextRange(this.modelFor(input, key.file).buffer, key.file.chunk.locations.range(key.field.span)) };
 		input.keys.select(index);
+		const position = input.keys.positions[index];
+		if (position !== undefined && position !== null) input.keys.reveal(position);
 		this.refreshDetails(input);
 	}
+	public selectProperty(input: AnimationEditorInput, index: number): void {
+		input.details.selectionIndex = index;
+		const property = input.details.rows[index]?.element;
+		input.detailSelection = property === undefined ? undefined : { path: property.source.file.file,
+			range: luaSourceRangeToTextRange(this.modelFor(input, property.source.file).buffer, property.source.file.chunk.locations.range(property.field.span)) };
+		revealWorkbenchListSelection(input.details);
+	}
 
-	private refreshDetails(input: AnimationEditorInput): void {
+	private refreshDetails(input: AnimationEditorInput, retainSelection = false): void {
 		const document = input.document;
 		const track = document?.tracks[input.trackIndex];
-		const source = input.keyIndex >= 0 ? track!.keys[input.keyIndex].source : input.trackIndex >= 0 ? track?.source : document?.root;
-		let excluded: readonly string[] = [];
+		const source = input.framesSelected ? document?.framesSource : input.clipIndex >= 0 ? document?.clips[input.clipIndex].source
+			: input.keyIndex >= 0 ? track!.keys[input.keyIndex].source : input.trackIndex >= 0 ? track?.source : document?.root;
+		input.selectedSource = source;
+		const excluded: string[] = [];
 		if (input.keyIndex < 0) {
 			if (input.trackIndex >= 0) {
-				if (track?.keysSource?.structural === true && track.keysSource.array) excluded = ['keys'];
-			} else if (document?.tracksSource?.structural === true && document.tracksSource.array) excluded = ['tracks'];
+				if (track?.keysSource?.structural === true && track.keysSource.array) excluded.push('keys');
+			} else if (input.clipIndex < 0 && !input.framesSelected) {
+				if (document?.tracksSource?.array) excluded.push('tracks');
+				if (document?.clipsSource?.array) excluded.push('subsequences');
+				if (document?.framesSource?.array) excluded.push('frames');
+			}
 		}
-		projectAnimationDetails(input.details, source, file => this.modelFor(input, file), document?.reader, excluded);
+		projectAnimationDetails(input.details, input.framesSelected && source === undefined ? document?.root : source, file => this.modelFor(input, file), document?.reader, excluded);
+		if (retainSelection) {
+			for (let index = 0; index < input.details.rows.length; index++) {
+				const property = input.details.rows[index].element;
+				if (this.matches(input.detailSelection, this.modelFor(input, property.source.file), property.source.file, property.field)) { input.details.selectionIndex = index; break; }
+			}
+			if (input.details.selectionIndex < 0) input.detailSelection = undefined;
+		} else input.detailSelection = undefined;
 		input.publishModels();
 	}
 
-	public moveKey(input: AnimationEditorInput, key: AnimationKeySource, value: number): void {
-		const source = key.source!;
-		const model = this.modelFor(input, source.file);
-		model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, key.coordinate!.field, value)!);
-	}
-	public canMoveKey(input: AnimationEditorInput, key: AnimationKeySource): boolean {
-		return input.document?.syntaxComplete === true && key.source?.structural === true && key.coordinate !== undefined && readLuaNumberLiteral(key.coordinate.field.value) !== null
-			&& !this.modelFor(input, key.source.file).readOnly && input.keys.range.maximum > input.keys.range.minimum;
-	}
-
-	public canAddTrack(input: AnimationEditorInput): boolean {
-		const document = input.document;
-		if (document?.syntaxComplete !== true) return false;
-		const source = document.tracksSource;
-		if (source !== undefined) return source.structural && source.array && !this.modelFor(input, source.file).readOnly;
-		return document.root.structural && findNamedLuaTableField(document.root.table, 'tracks') === null
-			&& !this.modelFor(input, document.root.file).readOnly;
-	}
-	public addTrack(input: AnimationEditorInput): void {
-		const document = input.document!, source = document.tracksSource === undefined ? document.root : document.tracksSource;
-		this.quickInput.pick('VALUE TRACK', 'Interpolation', (_origin, lifetime) => {
-			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
-			return new TextQuickPickProvider(INTERPOLATIONS);
-		}, item => {
-			const prompt = this.quickInput.input('PROPERTY PATH', "Lua path, e.g. {'visual', 'offset_x'}", "{'x'}", async value => validateLuaTableFieldExpression(value), path => {
-				const tangent = item.value === 'cubic' ? ', arrive_tangent = 0, leave_tangent = 0' : '';
-				const track = `{ kind = 'value', interpolation = '${item.value}', path = ${path}, keys = { { time_ms = 0, value = 0${tangent} }, { time_ms = 100, value = 0${tangent} } } }`;
-				this.modelFor(input, source.file).pushEditOperations(createLuaTableFieldInsertionEdits(this.modelFor(input, source.file).buffer,
-					source.file.chunk, source.table, source.table.fields.length,
-					document.tracksSource === undefined ? `tracks = { ${track} }` : track));
-				this.refresh(input);
-				this.selectTrack(input, input.document!.tracks.length);
-			});
-			prompt.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
-		});
-	}
-
-	public canAddKey(input: AnimationEditorInput): boolean {
-		const track = input.document?.tracks[input.trackIndex];
-		return input.document?.syntaxComplete === true && track?.kind === 'value' && track.unit !== undefined && track.keysSource?.structural === true
-			&& track.keysSource.array && !this.modelFor(input, track.keysSource.file).readOnly;
-	}
-	public addKey(input: AnimationEditorInput): void {
-		const track = input.document!.tracks[input.trackIndex], source = track.keysSource!;
-		const time = input.keys.cursor;
-		const lifetime = this.quickInput.input('KEY VALUE', `${track.unit} = ${time}`, '0', async text => validateLuaTableFieldExpression(text), value => {
-			const tangents = track.interpolation === 'cubic' ? ', arrive_tangent = 0, leave_tangent = 0' : '';
-			this.modelFor(input, source.file).pushEditOperations(createLuaTableFieldInsertionEdits(this.modelFor(input, source.file).buffer,
-				source.file.chunk, source.table, source.table.fields.length, `{ ${track.unit} = ${time}, value = ${value}${tangents} }`));
-			this.refresh(input);
-			this.selectKey(input, input.document!.tracks[input.trackIndex].keys.length - 1);
-		});
-		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
-	}
-	public canRemove(input: AnimationEditorInput): boolean {
-		const track = input.document?.tracks[input.trackIndex];
-		const source = input.keyIndex >= 0 ? track?.keysSource : input.document?.tracksSource;
-		return input.document?.syntaxComplete === true && track !== undefined && source?.structural === true && (input.keyIndex < 0 || track.kind !== 'value' || track.keys.length > 1)
-			&& !this.modelFor(input, source.file).readOnly;
-	}
-	public remove(input: AnimationEditorInput): void {
-		const track = input.document!.tracks[input.trackIndex];
-		const key = track.keys[input.keyIndex];
-		const source = input.keyIndex >= 0 ? track.keysSource! : input.document!.tracksSource!;
-		const field = input.keyIndex >= 0 ? key.field : track.field;
-		this.modelFor(input, source.file).pushEditOperations(createLuaTableFieldRemovalEdits(this.modelFor(input, source.file).buffer,
-			source.file.chunk.locations, source.file.chunk.tokens, field));
-	}
 	public openSource(input: AnimationEditorInput): void {
-		const track = input.document?.tracks[input.trackIndex], key = track?.keys[input.keyIndex];
+		const track = input.document?.tracks[input.trackIndex], key = track?.keys[input.keyIndex], clip = input.document?.clips[input.clipIndex];
 		const property = input.details.rows[input.details.selectionIndex]?.element;
-		const file = property?.source.file ?? key?.file ?? track?.file ?? input.document?.root.file;
-		const span = property?.field.span ?? key?.field.span ?? track?.field.span ?? input.document?.root.table.span;
+		const file = property?.source.file ?? key?.file ?? track?.file ?? clip?.file ?? input.document?.root.file;
+		const span = property?.field.span ?? key?.field.span ?? track?.field.span ?? clip?.field.span ?? input.document?.root.table.span;
 		const range = file === undefined || span === undefined ? undefined : file.chunk.locations.range(span);
 		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, file === undefined ? input.workingCopy.resource.path : file.file,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+	}
+	public openClip(input: AnimationEditorInput): void {
+		const source = input.document!.clips[input.clipIndex].sequence!;
+		this.openDefinition(input.workingCopy.resource.domain, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
 	}
 
 	public openProducerSource(input: AnimationEditorInput): void {
@@ -284,9 +277,3 @@ export class AnimationEditorController {
 			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 }
-
-const INTERPOLATIONS = [
-	{ label: 'Linear', description: '', detail: 'Linear value segments', value: 'linear' },
-	{ label: 'Cubic', description: '', detail: 'Hermite segments with arrive and leave tangents', value: 'cubic' },
-	{ label: 'Step', description: '', detail: 'Discrete values, including image and sprite frame changes', value: 'step' },
-];

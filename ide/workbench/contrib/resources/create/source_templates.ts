@@ -1,11 +1,19 @@
 import { quoteLuaString } from '../../../../../toolchain/ts/lua/syntax/string_literal';
 import { DEFAULT_NEW_LUA_RESOURCE_CONTENT } from '../../../../common/constants';
 
-export type NewLuaSourceKind = 'animation' | 'empty' | 'action_effect' | 'progression' | 'input';
+export type NewLuaSourceKind = 'animation' | 'sprite_animation' | 'empty' | 'action_effect' | 'progression' | 'input';
 
 /** Starting source, not a second authoring format or a runtime default. Cart code owns installation. */
 export function newLuaSource(kind: NewLuaSourceKind, relativePath: string): string {
 	if (kind === 'empty') return DEFAULT_NEW_LUA_RESOURCE_CONTENT;
+	if (kind === 'sprite_animation') return `local sprite_animation<const> = require('cartlib/component/sprite_animation_component')
+-- Add image IDs, then install this factory in the cart-owned prefab.
+return sprite_animation.factory({
+	frames = {},
+	frame_run = 1,
+	loop = true,
+})
+`;
 	if (kind === 'animation') return `-- Install this definition with the cart-owned timeline component.
 return {
 	frame_duration = 20,

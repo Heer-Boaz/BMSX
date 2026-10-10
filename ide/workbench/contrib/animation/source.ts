@@ -5,7 +5,7 @@ import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/modul
 import type { ResourceIdentity } from '../../../common/resource';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
-import type { AnimationKeySource, AnimationSourceDocument, AnimationTableSource, AnimationTrackSource } from './model';
+import type { AnimationKeySource, AnimationSourceDocument, AnimationTableSource, AnimationTrackSource, AnimationClipSource, AnimationFrameSource } from './model';
 
 /** Native definition fields, not a runtime type test or a generated animation schema. */
 export function isAnimationDefinitionSource(table: LuaTableConstructorExpression): boolean {
@@ -37,7 +37,17 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 			if (keyField.kind !== LuaTableFieldKind.Array) continue;
 			const key = readTable(reader, keysSource.file, keyField.value, keysSource.structural);
 			keys.push({ file: keysSource.file, field: keyField, source: key,
-				coordinate: key === undefined ? undefined : readCoordinate(reader, key) });
+				coordinate: key === undefined ? undefined : readCoordinate(reader, key),
+				value: key === undefined ? undefined : readNumberField(reader, key, 'value'),
+				arrive: key === undefined ? undefined : readNumberField(reader, key, 'arrive_tangent'),
+				leave: key === undefined ? undefined : readNumberField(reader, key, 'leave_tangent') });
+		}
+		if (source !== undefined && readStringField(reader, source, 'kind') === 'tag') for (const name of ['start', 'end']) {
+			const field = findNamedLuaTableField(source.table, name);
+			if (field === null) continue;
+			const position = readTable(reader, source.file, field.value, source.structural);
+			keys.push({ file: source.file, field, source: position, coordinate: position === undefined ? undefined : readCoordinate(reader, position),
+				value: undefined, arrive: undefined, leave: undefined });
 		}
 		// A native axis is available only when every written key shares it. Mixed
 		// frame/u and event domains remain Source, not estimated converted samples.
@@ -47,12 +57,36 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 		const interpolation = source === undefined ? undefined : readStringField(reader, source, 'interpolation');
 		const binding = source === undefined ? undefined : readStringField(reader, source, 'binding');
 		const path = source === undefined ? undefined : readPath(reader, source);
+		const name = source === undefined ? undefined : readStringField(reader, source, 'name');
 		tracks.push({ file: tracksSource.file, field: entry, source, keysSource, keys, unit, kind, interpolation,
-			label: source === undefined ? `Track ${tracks.length + 1} / source` : `${binding === undefined ? 'target' : binding}${path === undefined ? '' : `.${path}`} / ${kind === undefined ? 'source' : kind}` });
+			label: source === undefined ? `Track ${tracks.length + 1} / source` : `${name ?? (binding === undefined ? 'target' : binding)}${path === undefined ? '' : `.${path}`} / ${kind === undefined ? 'source' : kind}` });
 	}
 	const durationMs = findNamedLuaTableField(root.table, 'duration_ms');
 	const durationFrames = findNamedLuaTableField(root.table, 'duration_frames');
-	return { reader, root, tracksSource, tracks, syntaxComplete: reader.syntaxComplete && file.syntaxError === null,
+	const clipsField = findNamedLuaTableField(root.table, 'subsequences');
+	const clipsSource = clipsField === null ? undefined : readTable(reader, root.file, clipsField.value, root.structural);
+	const clips: AnimationClipSource[] = [];
+	if (clipsSource !== undefined) for (const entry of clipsSource.table.fields) {
+		if (entry.kind !== LuaTableFieldKind.Array) continue;
+		const source = readTable(reader, clipsSource.file, entry.value, clipsSource.structural);
+		const sequence = source === undefined ? null : findNamedLuaTableField(source.table, 'sequence');
+		clips.push({ file: clipsSource.file, field: entry, source,
+			sequence: sequence === null ? undefined : readTable(reader, source!.file, sequence.value, source!.structural),
+			start: source === undefined ? undefined : readNumberField(reader, source, 'start_time_ms'),
+			duration: source === undefined ? undefined : readNumberField(reader, source, 'duration_ms'),
+			clipIn: source === undefined ? undefined : readNumberField(reader, source, 'clip_in_ms'),
+			timeScale: source === undefined ? undefined : readNumberField(reader, source, 'time_scale'),
+			label: source === undefined ? `Clip ${clips.length + 1} / source` : readStringField(reader, source, 'id') ?? `Clip ${clips.length + 1}` });
+	}
+	const framesField = findNamedLuaTableField(root.table, 'frames');
+	const framesSource = framesField === null ? undefined : readTable(reader, root.file, framesField.value, root.structural);
+	const frames: AnimationFrameSource[] = [];
+	if (framesSource?.array) for (const field of framesSource.table.fields) {
+		const value = reader.expression(framesSource.file, field.value)?.expression;
+		frames.push({ field, image: value?.kind === LuaSyntaxKind.StringLiteralExpression ? value.value : undefined });
+	}
+	return { family: 'timeline', reader, root, tracksSource, tracks, clipsSource, clips, framesField: framesField === null ? undefined : framesField, framesSource, frames,
+		syntaxComplete: reader.syntaxComplete && file.syntaxError === null,
 		durationMs: durationMs === null ? null : readNumber(reader, root.file, durationMs.value),
 		durationFrames: durationFrames === null ? null : readNumber(reader, root.file, durationFrames.value) };
 }
@@ -81,6 +115,11 @@ function readCoordinate(reader: LuaSourceReader, source: AnimationTableSource): 
 function readNumber(reader: LuaSourceReader, file: FileSemanticData, expression: LuaExpression): number | null {
 	const value = reader.expression(file, expression)?.expression;
 	return value === undefined ? null : readLuaNumberLiteral(value);
+}
+
+function readNumberField(reader: LuaSourceReader, source: AnimationTableSource, name: string): AnimationKeySource['value'] {
+	const field = findNamedLuaTableField(source.table, name);
+	return field === null ? undefined : { field, value: readNumber(reader, source.file, field.value) };
 }
 
 function readStringField(reader: LuaSourceReader, source: AnimationTableSource, name: string): string | undefined {

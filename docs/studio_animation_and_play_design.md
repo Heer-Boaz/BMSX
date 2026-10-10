@@ -5,13 +5,17 @@ specified here does not mean that its UI or execution path already exists.
 
 ## Implementation status
 
-The source-authoring foundation is implemented. **Animation** opens exported or
-selected inline Lua timeline definitions; **New Timeline Definition** creates an ordinary Lua
-document through the existing resource service. Tracks, native-coordinate key
-selection/movement, field editing, insertion/removal and shared Undo/Redo/Save
-use the same working copies as Source. Imported tables retain their written
-document owners. Neither opening this editor nor moving its cursor plays a
-timeline or advances a machine.
+The native Animation editor is implemented: coordinated track lanes, linear /
+step / Hermite scalar curves, native tangent handles, child clips, sprite frame
+sequences and event/tag/wave/sample track authoring. **Animation** opens exported,
+inline or imported definitions. **New Timeline Definition** and **New Sprite
+Frame Sequence** create ordinary Lua through the existing resource service.
+Editing, ordering, duplication and Undo/Redo/Save use the same working copies as
+Source. Imported tables retain their written owners and actual consuming factory
+context. Opening the editor or moving its cursor does not play an animation or
+advance a machine. Procedural producers remain navigable/editable Source, not
+invented baked keys. The completion record below separates visible acceptance
+from development-harness and performance evidence.
 
 The visible browser check used ordinary keyboard/pointer interaction in Studio
 with `2025` loaded: resource creation, track creation, key selection/drag/cancel,
@@ -29,12 +33,12 @@ Stop performs bounded fixture cleanup; Reset captures current source and joins
 the old lifetime before constructing another world. Closing the transient tab
 revokes input/audio immediately and joins backend work before disposal.
 
-The basic `2025` transition/combat workflow is now visibly exercised end to
-end: authored fixtures, source-backed edits, Save, physical Reset, matching
-video frames and target-bound Actor/FSM inspection. The acceptance record below
-distinguishes that workflow from coordinated curve/sequence authoring, which
-remains separate work. Procedural animation remains procedural; no exported-
-definition rewrite has been imposed on the cart to fit the editor.
+The `2025` transition/combat workflow is visibly exercised end to end: authored
+fixtures, source-backed edits, Save, physical Reset, matching video frames and
+target-bound Actor/FSM inspection. The completion slice also exercises native
+curve/sequence editing and a timeline event reaching the existing AEM rule and
+physical APU. No exported-definition rewrite has been imposed on the cart to
+fit the editor.
 
 The compiled fixture mechanism is now separate from automatic case policy.
 `GuestFixture` owns physical admission and phase calls; `FixtureOperations`
@@ -177,10 +181,11 @@ timeline by looking at a live table.
 - Source projection/layout happens on source/font/bounds changes. No Lua parse,
   graph solve, temporary key arrays or source writes occur per idle host frame.
 
-Subsequent slices add coordinated track overview, curve handles, subsequences,
-sprite-sequence authoring and composition. They extend these owners rather than
-introducing a parallel animation format. Procedural builders remain procedural;
-producer parameters can be edited, generated samples cannot become source.
+The completion slice adds coordinated track overview, curve handles,
+subsequences, sprite-sequence authoring and composition. It extends these owners
+rather than introducing a parallel animation format. Procedural builders remain
+procedural; producer parameters can be edited, generated samples cannot become
+source.
 
 ## Interactive scenario slice
 
@@ -363,8 +368,9 @@ host errors retain their identity; an already published physical fault blocks
 the next grant. The latter check stimulates the producer-side read-only fault
 latch, not a guest write or a claimed end-to-end firmware crash.
 These remain development checks, separate from the visible Play checks below.
-The later acceptance record validates procedural transition edits and a native
-combat value track; it does not validate coordinated curve/sequence authoring.
+The initial acceptance record validates procedural transition edits and a native
+combat value track. The completion record adds coordinated curve/sequence
+authoring and event/audio composition without changing physical transport.
 
 ### Physical transport and source execution
 
@@ -712,7 +718,125 @@ not a claim that every piece of project discovery occurred solely inside Studio.
 Separate development validation: the combined focused bundle passes 402 checks;
 IDE/test typechecks and the strict boundary audit pass. The earlier physical
 audio and three-backend checks remain harness evidence, not proof of new audio
-authoring in this browser session. Coordinated curve handles, sequence overview
-and the complete effects/audio composition acceptance gate remain open. They
-must extend the existing source/resource owners, not bake procedural samples
-or introduce a second animation format.
+authoring in that initial browser session. At that point coordinated curve
+handles, sequence overview and effects/audio composition remained open. The
+completion slice below closes those editor/acceptance gates through the same
+source/resource owners, without baking procedural samples or adding a format.
+
+### Completion slice: authored lanes, curves and composition (2026-10-10)
+
+Reference implementation inspected before changes: Godot's
+[`animation_track_editor.cpp`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_track_editor.cpp)
+and [`animation_bezier_editor.cpp`](https://github.com/godotengine/godot/blob/master/editor/animation/animation_bezier_editor.cpp).
+Their shared time axis, retained editor projection, preview-only drag and single
+resource undo action are the applicable patterns. BMSX uses native Hermite slopes,
+not Godot's Bezier resource representation.
+
+Ownership for completion:
+
+| Surface | Owner / representation | Runtime changes |
+| --- | --- | --- |
+| Coordinated lanes | Animation source projection, authored order, native coordinate units | None |
+| Scalar curves | Written numeric values and native arrive/leave slopes; retained display geometry | None |
+| Clip composition | Written `subsequences`, child `sequence` producers and binding maps | None |
+| Frame sequences | Written `frames` arrays; callback-produced frames remain Source | None |
+| Events, tags and waves | Existing native track definitions, ordinary Lua payloads/callbacks | None |
+| Audition/input/history | Existing independent Scenario Lab Play target | None |
+| Save / apply / undo | Shared resource working copies and existing installed-source pipeline | None |
+
+An unknown duration, mutated table or procedural producer does not grant editable
+baked data. Frame, millisecond and normalized coordinates are not guessed from a
+host frame rate. Only lanes in the same native unit share the axis. Presentation
+ordering never changes writer/effect evaluation order. Keys and tangents borrow
+one source generation, preview without document writes, cancel on source/focus
+retirement and commit one shared text-history operation on physical release.
+
+Completion acceptance includes visible curve/tangent edit, cancellation and undo;
+multiple aligned lanes and view navigation; native child clips and frame sequence
+editing; event/effect/audio composition; real `2025` transition/combat Play and
+source application. Parser/unit tests do not substitute for that UI evidence.
+
+### Editing and navigation
+
+- The selected scalar lane has a retained curve and key strip on the same native
+  axis as its neighboring lanes. Pointer drag edits time/value together, or a
+  native arrive/leave slope. Empty-space click chooses an insertion cursor;
+  wheel zoom anchors at the pointer, middle-button drag pans, and **Frame All
+  Keys** fits the authored extent. Arrow/Home/End navigation, capture loss and
+  source edits do not accidentally commit a preview.
+- Subsequence lanes expose native move and left/right trim. Left trim updates
+  `clip_in_ms` with the native `time_scale`, retaining the same child time at an
+  unchanged parent position. **Open Child Sequence** follows the actual inline
+  or imported source. Binding maps remain ordinary editable Lua fields.
+- Frame cells retain authored order. **Add Frame**, duplication and earlier /
+  later moves operate on the shared source array and select the resulting
+  occurrence. Sprite image choices come from the mounted ROM directory; the
+  selected frame uses the shared image decoder, zoom/pan and retained bitmap.
+  Timeline frame values remain native Lua values, not sprite-image records.
+- Track creation offers the native linear, cubic, step, event, tag, wave and
+  sample forms. Details edits native paths, payloads, bindings and parameters;
+  Source/Producer navigation handles multiline or procedural callbacks. Sprite
+  factories do not get timeline-only toolbar actions. Less frequent commands
+  stay in the shared action menu/palette, not permanent transport buttons.
+- Units never borrow semantics from a neighboring lane. Mixed/unknown domains
+  remain Source after a working-copy change. Normalized cubic slopes without a
+  known native frame domain are editable as source fields, not graphed with a
+  fabricated scale. Wave/sample callbacks and frame builders execute only in
+  the guest. These are explicit source-backed boundaries, not fallback data.
+
+### Completion acceptance and negative control
+
+The ordinary Studio browser session created temporary timeline, sprite and
+composition-probe files through the resource/Source UI. Keyboard/pointer input
+then exercised cubic time/value drag, native tangent drag, preview cancellation,
+Undo, aligned event/tag/wave lanes, child move/trim/navigation, sprite image
+selection, ordering/duplication and Undo/Save. Reload recovered factory context,
+frame selection and zoom; frame-axis keyboard navigation and the actual packed
+sprite preview were checked in the rendered low-resolution UI.
+
+In the real `2025` combat definition, Animation added a cubic track for
+`maya_b.sprite_component.draw_scale_x`, with keys `(0 ms, 1.35)` and
+`(336 ms, 0.65)`, plus a `combat.results` event at `96 ms` and an activity tag.
+The existing procedural frame builder remained intact. Explicit Save/Reset
+captured these working copies into the independent Play machine. At the same
+physical video frame 10, the portrait visibly differs from the baseline; the
+target-bound Actor component reads `draw_scale_x = 1.07449`. A real next/previous
+frame round trip returns to that physical position.
+
+The UI-authored integration probe reuses the combat fixture's setup. It was run
+through the actual Studio MCP tools (`studio_start_test_run`, event-driven
+`studio_wait_test_run`, `studio_read_test_result` and `studio_reveal_test_run`),
+not an external emulator harness. Its physical guest execution passes at tick 32:
+the event fires once, the native cubic reaches `0.65`, and the APU music source
+is the `m17` asset selected by the existing `combat.results` AEM rule. Source
+inspection confirms that rule; this is event-map composition, not a new host
+audio evaluator or an assertion about a listener's subjective audio experience.
+
+Undo/Save restored the original combat bytes. The same Studio probe then fails
+at the expected missing-event assertion, demonstrating that the earlier pass
+actually depended on the authored timeline change. All temporary probes are
+removed after acceptance; no artistic experiment or failing suite is shipped.
+The reusable original transition/combat fixtures remain unchanged.
+After cleanup, all 12 original `2025` Scenario Lab cases pass through the Studio
+tools, including scene scanout, timeline composition and both reusable fixtures.
+
+Local ignored evidence is retained in
+`.bmsx/authoring/animation-completion-2026-10-10/`: physical `actions.jsonl`,
+the input driver, `tools.jsonl`, accepted Lua snapshots, validation logs and
+`completion-*`, `native-tangent-*`, `clip-native-*` and `sprite-*` screenshots.
+No direct model writes, `page.evaluate`, clipboard injection or shell source
+edits drove authoring. Shell reads were used for implementation diagnosis and
+confirmation that the original artwork was restored.
+
+Separate development checks execute source-preserving cubic/clip/template edits
+through the native guest compiler/CPU at O0 and O3, verify one-drop/one-Undo and
+source-generation retirement, and cover factory recovery and selected-occurrence
+tracking. Retained key/curve arrays accept no idle projection writes. A local
+Node 22.23.1 geometry-only measurement with 20,000 authored cubic keys, a
+51-key visible interval and nine warmed batches measured a median 0.01844 ms
+per viewport reprojection. This excludes source admission, painting and the
+other lanes; it is not a whole-Studio or whole-game performance claim.
+The final focused development bundle passes 319 checks; IDE/test typechecks,
+the browser Studio build, strict architecture-boundary audit (zero issues) and
+`git diff --check` pass separately. No machine, cartlib or C++ code changed in
+this completion slice.
