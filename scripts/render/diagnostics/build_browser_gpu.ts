@@ -26,8 +26,8 @@ async function main(): Promise<void> {
 		const gameSource = path.join(source, game);
 		const sourceHtml = await readFile(path.join(gameSource, 'index.html'), 'utf8');
 		const sourceManifest = await readFile(path.join(gameSource, 'manifest.webmanifest'), 'utf8');
-		for (const renderer of ['webgl2', 'webgpu', 'auto']) {
-			const gameOutput = path.join(output, root, renderer === 'webgl2' ? '' : renderer);
+		for (const renderer of ['auto', 'webgpu', 'webgl2']) {
+			const gameOutput = path.join(output, root, renderer === 'auto' ? '' : renderer);
 			await mkdir(gameOutput, { recursive: true });
 			const html = sourceHtml
 				.replace('<canvas id="gamescreen"', `<canvas id="gamescreen" data-renderer="${renderer}" data-diagnostics-root="/${root}/"`)

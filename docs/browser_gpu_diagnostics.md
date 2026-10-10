@@ -5,8 +5,9 @@ The diagnostic player is separate from the ordinary published games:
 - [Nemesis S](https://bmsx.boazpatel.com/ios/)
 - [Pietsona 2025](https://bmsx.boazpatel.com/ios/piet/)
 
-The short game links select WebGL2 directly. The panel's links select Auto or
-WebGPU through dedicated subpages, without URL parameters or redirects. Each
+The short game links use Auto, which prefers WebGPU when the browser supplies
+an adapter. The panel's links select WebGPU or WebGL2 explicitly through
+dedicated subpages, without URL parameters or redirects. Each
 page supplies its fixed renderer through the canvas's `data-renderer` attribute
 to the browser backend owner. Auto keeps ordinary capability selection. An explicit
 WebGPU request fails visibly if its API/adapter is unavailable; it never silently
@@ -81,9 +82,12 @@ This improves diagnosis, not proof of an iPhone rendering fix.
 
 ### Diagnostic version 3
 
-The iPhone user must type test URLs manually, so the temporary player now uses
-`/ios/` directly for Nemesis S with WebGL2. Tapping WebGPU opens `/ios/webgpu/`;
-Auto opens `/ios/auto/`. Pietsona uses the equivalent `/ios/piet/` subpages.
+The iPhone user must type test URLs manually, so the temporary player initially
+used `/ios/` directly for Nemesis S with WebGL2. Tapping WebGPU opened
+`/ios/webgpu/`; Auto opened `/ios/auto/`. Pietsona used equivalent `/ios/piet/`
+subpages. After real-iPhone confirmation of the WebGPU fix, the short game links
+use Auto by default. WebGL2 now has an explicit `/webgl2/` subpage; the previously
+published `/auto/` links remain valid.
 All renderer links and manifest start URLs are query-free. Existing ordinary
 and version-2 diagnostic pages remain byte-identical to the published snapshot.
 Native tests cover page-selected renderers, their clean links, and precedence
@@ -153,9 +157,16 @@ and Pietsona's intro with zero reported GPU or JavaScript errors. Captured
 native descriptors contain the expected constants; the WebGPU request has no
 optional features.
 This is render smoke evidence, not full pixel parity or iPhone/Metal proof.
-The existing temporary pages retain their URLs and UI. Updating them replaces
-only `/ios/engine.js`; the ordinary game HTML and engines remain byte-identical.
-Real-iPhone confirmation of the corrected WebGPU path is still required.
+Publishing the stage split retained the temporary pages' URLs and UI and
+replaced only `/ios/engine.js`; the ordinary game HTML and engines remained
+byte-identical.
+The iPhone user subsequently confirmed that the corrected WebGPU path works.
+The temporary pages now use ordinary WebGPU-first automatic selection by
+default, instead of the forced WebGL2 comparison mode. The renderer-selection
+owner and machine behavior are unchanged.
+Local and published short game pages select WebGPU without a renderer-switch
+tap in Chromium, with zero reported errors. The explicit WebGL2 comparison
+pages still work; the default-selection update leaves all engine bytes intact.
 
 Run the browser regressions and host typecheck:
 

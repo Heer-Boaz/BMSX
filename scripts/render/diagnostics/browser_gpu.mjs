@@ -21,7 +21,7 @@ const gamescreen = document.getElementById('gamescreen');
 const requested = gamescreen.dataset.renderer;
 const root = gamescreen.dataset.diagnosticsRoot;
 for (const link of panel.querySelectorAll('[data-renderer]')) {
-	link.href = link.dataset.renderer === 'webgl2' ? root : `${root}${link.dataset.renderer}/`;
+	link.href = link.dataset.renderer === 'auto' ? root : `${root}${link.dataset.renderer}/`;
 	if (link.dataset.renderer === requested) link.setAttribute('aria-current', 'page');
 }
 // Renderer-switch taps must not also unlock/start the game on the boot overlay.

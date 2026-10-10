@@ -114,8 +114,9 @@ test('browser renderer selection respects explicit requests and reports native G
 		assert.match(await page.locator('#gpu-status').innerText(), requested === 'webgl2' ? /WebGL2/ : /WebGPU/);
 		assert.equal(new URL(page.url()).search, '');
 		assert.deepEqual(await page.locator('#gpu-diagnostics nav a').evaluateAll(links => links.map(link => (link as HTMLAnchorElement).href)), [
-			'http://localhost/renderer-test/auto/', 'http://localhost/renderer-test/webgpu/', 'http://localhost/renderer-test/',
+			'http://localhost/renderer-test/', 'http://localhost/renderer-test/webgpu/', 'http://localhost/renderer-test/webgl2/',
 		]);
+		assert.equal(await page.locator('#gpu-diagnostics nav a[aria-current]').getAttribute('data-renderer'), requested);
 		await page.waitForFunction(() => document.getElementById('gpu-messages')!.textContent.includes('Gevraagd:'));
 		assert.match(await page.locator('#gpu-summary').innerText(), /^0 fouten/);
 		if (requested === 'webgpu') {
