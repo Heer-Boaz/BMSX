@@ -45,11 +45,11 @@ fixed. Unrelated packaging/hosting work in the checkout is outside this slice.
   controls against the remaining canvas margins. Neither coupling belongs to
   an overlay layout: controls must not reserve room or shrink when the game
   image grows.
-- Canvas fitting also quantizes its scale in half-step increments and derives
-  available space from the largest of several browser dimensions, rather than
-  the currently visible player rectangle. Removing the control-width
-  subtraction alone therefore does not establish maximal, unclipped display
-  size or correct Safari-toolbar behavior.
+- Canvas fitting deliberately rounds its scale down to a multiple of `0.5`.
+  Integer and half-integer presentation scaling are retained, not treated as an
+  architecture defect. Separately, available space currently comes from the
+  largest of several browser dimensions rather than the visible player
+  rectangle. Correcting viewport measurements must not change the scale grid.
 
 The scratch baseline and native trace are available at
 `.bmsx/hosting/ios-touch-architecture-evidence/current-svg-hit-feedback.mjs`
@@ -244,11 +244,14 @@ the game viewport. BMSX chooses the player viewport for control placement.
   hardware-obscured regions are not additional usable space just because the
   screen or layout viewport reports a larger dimension. For an embedded player,
   the rectangle is bounded by that player's own surface, not the whole window.
-- The canvas uses the largest uniform fit inside that available rectangle,
-  retaining the canonical BMSX presentation aspect ratio. No stretch, crop or
-  hidden rows/columns are introduced to fill a wide phone. Remaining letterbox
-  space is legitimate; controls may occupy it or overlap the image. Do not
-  retain the old half-step scale quantization in a renamed layout function.
+- The canvas uses the largest fitting scale on the existing `0.5` grid:
+  integer and half-integer scales, not arbitrary fractional fitting. Retain
+  the canonical BMSX presentation aspect ratio, scale-selection rule and
+  existing CSS dimension publication. Removing reserved control space changes
+  the available rectangle, not the permitted scale steps. Remaining slack and
+  letterbox space are legitimate; they are not reasons to stretch or crop the
+  image or add a freely scaled mode. Controls may occupy that space or overlap
+  the image.
 - Canvas CSS fitting does not change the framebuffer, GPU render target,
   authored game coordinates, canonical display-aspect constants or the ordinary
   `VideoOutput.setDisplaySize` / `measureDisplay` contract. GPU scanout and
@@ -402,7 +405,9 @@ Required tests cover:
 - Resize/orientation/visual-viewport updates refresh geometry without button
   retargeting; zero repeated layout reads during warm input movement.
 - Canvas bounds with controls shown and hidden are identical at the same
-  viewport, and match the maximal aspect-preserving visible fit. Test portrait,
+  viewport, and match the largest fitting permitted half-step scale. Test
+  immediately below, at and above integer/half-integer scale thresholds: unused
+  room must not produce an arbitrary fractional scale. Also test portrait,
   landscape, browser toolbars shown/hidden, PWA, safe-area insets and embedded
   player bounds. No crop, stretched aspect ratio or stale viewport offset.
 - Change framebuffer/display resolution at a fixed viewport: control positions,
