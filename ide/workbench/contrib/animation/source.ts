@@ -5,6 +5,7 @@ import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/modul
 import type { ResourceIdentity } from '../../../common/resource';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
+import { indexAnimationKeys } from './key_index';
 import type { AnimationKeySource, AnimationSourceDocument, AnimationTableSource, AnimationTrackSource, AnimationClipSource, AnimationFrameSource } from './model';
 
 /** Native definition fields, not a runtime type test or a generated animation schema. */
@@ -58,7 +59,7 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 		const binding = source === undefined ? undefined : readStringField(reader, source, 'binding');
 		const path = source === undefined ? undefined : readPath(reader, source);
 		const name = source === undefined ? undefined : readStringField(reader, source, 'name');
-		tracks.push({ file: tracksSource.file, field: entry, source, keysSource, keys, unit, kind, interpolation,
+		tracks.push({ file: tracksSource.file, field: entry, source, keysSource, keys, keyIndex: indexAnimationKeys(keys, unit), unit, kind, interpolation,
 			label: source === undefined ? `Track ${tracks.length + 1} / source` : `${name ?? (binding === undefined ? 'target' : binding)}${path === undefined ? '' : `.${path}`} / ${kind === undefined ? 'source' : kind}` });
 	}
 	const durationMs = findNamedLuaTableField(root.table, 'duration_ms');

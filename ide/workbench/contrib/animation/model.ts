@@ -1,6 +1,7 @@
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceReader } from '../../../language/lua/source_reader';
+import type { AnimationKeyIndex } from './key_index';
 
 /** A written table, not the compiled program or a borrowed live instance. */
 export type AnimationTableSource = {
@@ -30,6 +31,7 @@ export type AnimationTrackSource = {
 	readonly source: AnimationTableSource | undefined;
 	readonly keysSource: AnimationTableSource | undefined;
 	readonly keys: readonly AnimationKeySource[];
+	readonly keyIndex: AnimationKeyIndex;
 	readonly unit: AnimationKeyUnit | undefined;
 	readonly label: string;
 	readonly kind: string | undefined;

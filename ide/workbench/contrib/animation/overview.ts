@@ -1,6 +1,7 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { AnimationEditorInput } from './editor_input';
 import type { AnimationSourceDocument } from './model';
+import { animationKeyTimeIndex } from './key_index';
 
 type AnimationLaneGeometry = { index: number; top: number; readonly dots: number[]; readonly cells: number[]; label: string };
 
@@ -38,9 +39,17 @@ export class AnimationOverview {
 			} else if (row.track !== undefined) {
 				const track = row.track;
 				if (track.unit === undefined || track.unit !== keys.unit) geometry.label = track.unit === undefined ? 'Source' : track.unit;
-				else for (let key = 0; key < track.keys.length; key++) {
-					const position = track === keys.track && key === keys.selected && keys.dragValue !== undefined ? keys.dragValue : track.keys[key].coordinate!.value;
-					if (position !== null && position >= keys.range.minimum && position <= keys.range.maximum) geometry.dots.push(keys.xAt(position), key);
+				else {
+					const selected = track === keys.track, { positions } = track.keyIndex, order = selected ? keys.timeOrder : track.keyIndex.order;
+					const start = selected ? keys.timeIndex(keys.range.minimum) : animationKeyTimeIndex(positions, order, keys.range.minimum);
+					const end = selected ? keys.timeIndex(keys.range.maximum, true) : animationKeyTimeIndex(positions, order, keys.range.maximum, true);
+					for (let ordered = start; ordered < end; ordered++) {
+						const index = order[ordered], position = selected ? keys.positionAt(index) : positions[index]!;
+						geometry.dots.push(keys.xAt(position), index);
+					}
+					if (track.kind === 'tag' && positions.length === 2 && positions[0] !== null && positions[1] !== null) {
+						geometry.cells.push(keys.xAt(selected ? keys.positionAt(0) : positions[0]), keys.xAt(selected ? keys.positionAt(1) : positions[1]));
+					}
 				}
 			}
 		}

@@ -1,5 +1,6 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { AnimationKeyViewport } from './key_viewport';
+import type { AnimationTrackSource } from './model';
 import { formatNumber } from '../../../../machine/ts/common/number_format';
 
 export type AnimationCurveField = 'value' | 'arrive' | 'leave';
@@ -21,10 +22,14 @@ export class AnimationCurve {
 	public previewValue = 0;
 	public revision = 0;
 	private geometryRevision = -1;
+	private track: AnimationTrackSource | undefined;
 
 	public bind(keys: AnimationKeyViewport): void {
 		const track = keys.track;
 		this.previewField = undefined;
+		this.revision++;
+		if (this.track === track) return;
+		this.track = track;
 		this.available = track?.kind === 'value' && track.unit !== undefined && track.unit !== 'u'
 			&& (track.interpolation === 'linear' || track.interpolation === 'cubic' || track.interpolation === 'step')
 			&& keys.timeOrder.length === track.keys.length && track.keys.length > 0
@@ -35,16 +40,12 @@ export class AnimationCurve {
 			for (let segment = 0; segment < keys.timeOrder.length; segment++) {
 				const index = keys.timeOrder[segment], key = track!.keys[index];
 				this.minimum = Math.min(this.minimum, key.value!.value!); this.maximum = Math.max(this.maximum, key.value!.value!);
-				if (track!.interpolation === 'cubic' && segment + 1 < keys.timeOrder.length) for (let sample = 1; sample < 32; sample++) {
-					const value = this.segmentValue(keys, index, keys.timeOrder[segment + 1], sample / 32);
-					this.minimum = Math.min(this.minimum, value); this.maximum = Math.max(this.maximum, value);
-				}
+				if (track!.interpolation === 'cubic' && segment + 1 < keys.timeOrder.length) this.includeSegmentExtrema(keys, index, keys.timeOrder[segment + 1]);
 			}
 			const padding = this.maximum === this.minimum ? Math.max(1, Math.abs(this.minimum) * 0.1) : (this.maximum - this.minimum) * 0.2;
 			this.minimum -= padding; this.maximum += padding;
 			this.minimumLabel = formatNumber(this.minimum); this.maximumLabel = formatNumber(this.maximum);
 		}
-		this.revision++;
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void {
 		if (this.bounds.left === left && this.bounds.top === top && this.bounds.right === right && this.bounds.bottom === bottom) return;
@@ -80,7 +81,7 @@ export class AnimationCurve {
 		this.points.length = 0; this.markers.length = 0; this.arriveHandle.length = 0; this.leaveHandle.length = 0;
 		if (!this.available) return;
 		const order = keys.timeOrder;
-		if (keys.range.minimum < keys.positionAt(order[0])) {
+		if (keys.track!.interpolation !== 'step' && keys.range.minimum < keys.positionAt(order[0])) {
 			const y = this.yAt(this.fieldValue(keys, order[0], 'value'));
 			this.points.push(keys.xAt(keys.range.minimum), y, keys.xAt(Math.min(keys.range.maximum, keys.positionAt(order[0]))), y);
 		}
@@ -116,6 +117,30 @@ export class AnimationCurve {
 		const dx = 32, span = dx * (keys.range.maximum - keys.range.minimum) / (keys.range.bounds.right - keys.range.bounds.left - 6);
 		this.arriveHandle.push(x, y, x - dx, this.yAt(value - this.fieldValue(keys, index, 'arrive') * span));
 		this.leaveHandle.push(x, y, x + dx, this.yAt(value + this.fieldValue(keys, index, 'leave') * span));
+	}
+	/** Fit native Hermite extrema once, rather than sampling every segment repeatedly. */
+	private includeSegmentExtrema(keys: AnimationKeyViewport, first: number, next: number): void {
+		const a = this.fieldValue(keys, first, 'value'), b = this.fieldValue(keys, next, 'value');
+		const span = keys.positionAt(next) - keys.positionAt(first);
+		const leave = this.fieldValue(keys, first, 'leave') * span, arrive = this.fieldValue(keys, next, 'arrive') * span;
+		const cubic = 2 * a - 2 * b + leave + arrive, quadratic = -3 * a + 3 * b - 2 * leave - arrive;
+		let firstRoot: number, secondRoot: number;
+		if (cubic === 0) {
+			if (quadratic === 0) return;
+			firstRoot = secondRoot = -leave / (2 * quadratic);
+		} else {
+			const discriminant = quadratic * quadratic - 3 * cubic * leave;
+			if (discriminant < 0) return;
+			const root = Math.sqrt(discriminant);
+			firstRoot = (-quadratic - root) / (3 * cubic); secondRoot = (-quadratic + root) / (3 * cubic);
+		}
+		for (let index = 0; index < (firstRoot === secondRoot ? 1 : 2); index++) {
+			const u = index === 0 ? firstRoot : secondRoot;
+			if (u > 0 && u < 1) {
+				const value = this.segmentValue(keys, first, next, u);
+				this.minimum = Math.min(this.minimum, value); this.maximum = Math.max(this.maximum, value);
+			}
+		}
 	}
 	private segmentValue(keys: AnimationKeyViewport, first: number, next: number, u: number): number {
 		const a = this.fieldValue(keys, first, 'value'), b = this.fieldValue(keys, next, 'value');

@@ -43,9 +43,11 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 			}
 		}
 		if (geometry.label !== '') drawEditorText(font, geometry.label, overview.left + 4, top + 2, 0, colors.COLOR_STATUS_TEXT);
-		for (let cell = 0; cell < geometry.cells.length; cell += 2) api.blit_rect(geometry.cells[cell], top + 3, geometry.cells[cell + 1], top + layout.rowHeight - 3, 0, text);
 		const middle = top + (layout.rowHeight >> 1);
-		if (row.track?.kind === 'tag' && geometry.dots.length === 4) api.fill_rect(geometry.dots[0], middle, geometry.dots[2], middle + 1, 0, text);
+		for (let cell = 0; cell < geometry.cells.length; cell += 2) {
+			if (row.track?.kind === 'tag') api.fill_rect(geometry.cells[cell], middle, geometry.cells[cell + 1], middle + 1, 0, text);
+			else api.blit_rect(geometry.cells[cell], top + 3, geometry.cells[cell + 1], top + layout.rowHeight - 3, 0, text);
+		}
 		for (let dot = 0; dot < geometry.dots.length; dot += 2) {
 			const x = geometry.dots[dot];
 			api.fill_rect(x - 2, middle - 3, x + 3, middle + 4, 0,

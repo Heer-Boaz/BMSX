@@ -14,7 +14,7 @@ export class AnimationFramePreview {
 	private rom: Uint8Array | undefined;
 	private readonly texture: RomTextureDecodeCache = {};
 	public update(document: AnimationSourceDocument | undefined, index: number, domain: ResourceDomain, sources: RuntimeSourceState): void {
-		const image = document?.frames[index]?.image;
+		const image = document?.family === 'sprite' ? document.frames[index]?.image : undefined;
 		if (image === undefined) {
 			if (this.image !== undefined) { this.bitmap?.dispose(); this.bitmap = undefined; this.image = undefined; this.label = ''; }
 			return;

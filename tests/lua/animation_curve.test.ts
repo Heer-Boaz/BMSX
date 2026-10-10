@@ -38,6 +38,26 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 	}
 });
 
+test('a step channel has no authored value before its first key, as in the native runtime', () => {
+	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='step',path={'x'},keys={{time_ms=50,value=10},{time_ms=100,value=20}}}}}";
+	for (const optLevel of [0, 3] as const) {
+		const { cpu } = createCartlibProgramHarness(`
+			local component=require('cartlib/timeline/timeline_component'); local owner={x=17}
+			local timeline=component.new({parent=owner}); timeline:define('step',require('animation')); timeline:play('step')
+			timeline:seek_time('step',25); assert(owner.x==17)
+			timeline:seek_time('step',75); assert(owner.x==10)
+		`, { optLevel, modules: [{ path: 'animation', source }] });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	}
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
+	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230);
+	view.setView(0, 25); view.curve.update(view);
+	assert.equal(view.curve.points.length, 0, 'there is no first-value clamp for a native step channel');
+	view.setView(60, 90); view.curve.update(view);
+	assert.deepEqual(view.curve.points, [view.xAt(60), view.curve.yAt(10), view.xAt(90), view.curve.yAt(10)]);
+});
+
 test('curve previews and view navigation do not mutate written keys or invent normalized tangents', () => {
 	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document); view.range.layout(0, 0, 206, 20);
@@ -56,6 +76,54 @@ test('curve previews and view navigation do not mutate written keys or invent no
 	view.bind(document.tracks[1], 0, document); assert.equal(view.range.maximum, 200);
 	const dynamic = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{u=0,value=0,arrive_tangent=0,leave_tangent=0}}}}}", resource.path)))!;
 	view.bind(dynamic.tracks[0], 0, dynamic); assert.equal(view.curve.available, false);
+});
+
+test('curve fit includes the analytical Hermite and quadratic extrema', () => {
+	for (const [arrive, maximum] of [[0, 32 / 27], [-8, 2]]) {
+		const source = `return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=8},{time_ms=1,value=0,arrive_tangent=${arrive},leave_tangent=0}}}}}`;
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
+		assert.ok(Math.abs(view.curve.minimum + maximum * 0.2) < 1e-12);
+		assert.ok(Math.abs(view.curve.maximum - maximum * 1.2) < 1e-12);
+	}
+});
+
+test('source bounds are retained across selection and recalculated for a new source generation', () => {
+	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const track = document.tracks[0], firstValue = track.keys[0].value!, value = firstValue.value;
+	let reads = 0;
+	Object.defineProperty(firstValue, 'value', { get() { reads++; return value; } });
+	const view = new AnimationKeyViewport(); view.bind(track, 0, document);
+	assert.ok(reads > 0);
+	reads = 0;
+	view.bind(track, 1, document);
+	assert.equal(reads, 0, 'changing selection must not refit the same authored curve');
+	const previousMaximum = view.curve.maximum;
+	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source.replace('value=100', 'value=200'), resource.path)))!;
+	view.bind(changed.tracks[0], 1, changed);
+	assert.ok(view.curve.maximum > previousMaximum);
+});
+
+test('negative authored values and slopes survive graphical editing and source reprojection', () => {
+	const source = `local first = -25; local slope = -8
+return {tracks={{kind='value',interpolation='cubic',keys={
+	{time_ms=first,value=-2,arrive_tangent=slope,leave_tangent=-4},
+	{time_ms=1,value=0,arrive_tangent=-8,leave_tangent=0}}}}}`;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const key = input.document.tracks[0].keys[0];
+	assert.equal(key.coordinate!.value, -25);
+	assert.equal(key.arrive!.value, -8);
+	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+	assert.equal(authoring.canEditCurveField(input, key, 'arrive'), false, 'an alias is readable, not a literal field to overwrite');
+	assert.equal(authoring.canEditCurveField(input, key, 'value'), true);
+	authoring.editCurveKey(input, key, undefined, 'value', -3);
+	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)))!;
+	assert.equal(changed.tracks[0].keys[0].value!.value, -3);
+	input.keys.bind(changed.tracks[0], 0, changed);
+	assert.equal(input.keys.curve.available, true);
+	model.undo(); assert.equal(model.buffer.getText(), source);
+	input.dispose(); model.dispose();
 });
 
 test('the curve commits time and value as one native source edit and idle geometry does no projection work', () => {

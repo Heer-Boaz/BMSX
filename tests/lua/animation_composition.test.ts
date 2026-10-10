@@ -50,6 +50,34 @@ test('clip trim edits the written parent once, preserves child time and imported
 	input.dispose(); model.dispose();
 });
 
+test('multi-field curve and clip edits preserve independently authored field order and one Undo', () => {
+	const cases = [
+		"-- curve comment\nreturn {tracks={{kind='value',interpolation='linear',path={'x'},keys={{value=1,time_ms=2}}}}}",
+		"-- clip comment\nreturn {subsequences={{clip_in_ms=0,duration_ms=100,start_time_ms=0,sequence={duration_ms=100,tracks={}}}}}",
+	];
+	for (let index = 0; index < cases.length; index++) {
+		const source = cases[index], model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+		if (index === 0) authoring.editCurveKey(input, input.document.tracks[0].keys[0], 1200, 'value', 2000);
+		else authoring.editClip(input, input.document.clips[0], 'start', 25, 75);
+		const file = buildLuaFileSemanticData(model.buffer.getText(), resource.path);
+		assert.equal(file.syntaxError, null, 'an edit may not depend on native fields being written in a particular order');
+		const document = buildAnimationSourceDocument(resource, semanticSnapshot(file))!;
+		if (index === 0) {
+			assert.equal(document.tracks[0].keys[0].coordinate!.value, 1200);
+			assert.equal(document.tracks[0].keys[0].value!.value, 2000);
+		} else {
+			assert.equal(document.clips[0].start!.value, 25);
+			assert.equal(document.clips[0].duration!.value, 75);
+			assert.equal(document.clips[0].clipIn!.value, 25);
+		}
+		model.undo(); assert.equal(model.buffer.getText(), source);
+		assert.equal(model.undo(), null);
+		input.dispose(); model.dispose();
+	}
+});
+
 test('sprite frame definitions are admitted by their imported factory and retain named/source array order', () => {
 	const source = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory({animation='idle',animations={idle={frames={'idle.1','idle.2'},frame_run=2},hit={frames={'hit.1'},frame_duration_ms=20}}})";
 	const file = buildLuaFileSemanticData(source, resource.path), snapshot = semanticSnapshot(file);

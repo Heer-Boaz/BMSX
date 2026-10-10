@@ -36,6 +36,7 @@ export class AnimationAuthoring {
 		const source = key.source!, model = this.controller.modelFor(input, source.file), edits: EditorTextEdit[] = [];
 		if (position !== undefined) edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, key.coordinate!.field, position)!);
 		edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, key[field]!.field, value)!);
+		edits.sort((left, right) => left.offset - right.offset);
 		if (edits.length > 0) model.pushEditOperations(edits);
 	}
 	public canEditClip(input: AnimationEditorInput, clip: AnimationClipSource, mode: 'move' | 'start' | 'end'): boolean {
@@ -57,6 +58,7 @@ export class AnimationAuthoring {
 			if (clip.clipIn === undefined) edits.push(...createLuaTableFieldInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, `clip_in_ms = ${value}`));
 			else edits.push(...createLuaTableFieldNumberEdits(model.buffer, source.file.chunk.locations, clip.clipIn.field, value)!);
 		}
+		edits.sort((left, right) => left.offset - right.offset);
 		if (edits.length > 0) model.pushEditOperations(edits);
 	}
 

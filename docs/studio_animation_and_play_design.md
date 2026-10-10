@@ -840,3 +840,81 @@ The final focused development bundle passes 319 checks; IDE/test typechecks,
 the browser Studio build, strict architecture-boundary audit (zero issues) and
 `git diff --check` pass separately. No machine, cartlib or C++ code changed in
 this completion slice.
+
+### Post-completion ownership and performance review (2026-10-10)
+
+The review revisited Godot's track/Bezier editors and VS Code's resource edit
+stack before changing the existing source, gesture and geometry owners. It
+reproduced faults rather than treating every architectural suspicion as fact:
+
+- Combined curve/clip edits were assembled in field-name order, while the shared
+  text model consumes ascending source offsets. Independently authored field
+  order could therefore corrupt Lua. The Animation edit producer now orders the
+  edits; the shared model's contract and one-release/one-Undo ownership stay
+  unchanged. No write/restore transaction or runtime rollback is introduced.
+- Negative values/slopes became unresolved after projection. The written-source
+  owner now retains a signed numeric literal as its actual authored terminal,
+  including aliases. Other unary/computed expressions stay unresolved; the
+  may-value solver is unchanged. Literal fields remain editable; an alias is
+  readable but is not overwritten by a graphical literal edit.
+- A step lane previously displayed its first value before the first key, unlike
+  the native timeline. That un-authored clamp is removed. Linear/Hermite native
+  endpoint behavior remains unchanged. Curve fitting uses the analytical
+  Hermite derivative extrema rather than 32 arbitrary samples per segment.
+- Track overview zoom/pan rescanned every key, and binding re-sorted the same
+  source. Each admitted track now owns an immutable chronological index. The
+  selected viewport borrows its positions and retains a mutable presentation
+  order for gesture preview only. Overview/hit queries use binary bounds and
+  visit visible keys. Curve bounds are retained until the source track changes.
+  Equal-time priority and authored writer order are not rewritten.
+- A tag vanished if both boundaries were outside the zoomed viewport. Its native
+  interval is projected independently of endpoint markers and clipped by the
+  existing overview render boundary.
+- Changing from millisecond to frame coordinates kept the old cursor's numeric
+  value. A new native axis now admits its cursor at its own extent start. Switching
+  between lanes in the same unit retains the shared cursor, without converting or
+  clamping authored coordinates.
+- An arbitrary timeline string matching an image ID could acquire a sprite
+  bitmap. Image preview now requires the existing proven sprite-factory source
+  context; ordinary native frame values do not become asset references.
+
+Source working-copy participation deliberately still has input lifetime, not
+current syntax-node lifetime. Removing an import or breaking syntax must not
+remove that resource from shared Undo/Save. No pruning facade or guest animation
+evaluator was added. Machine, cartlib, C++ and the Play session owners are unchanged.
+
+The source-order and step reproductions failed before their fixes. The signed
+literal/alias and negative-curve reproductions likewise failed before changing
+the shared source owner. Separate native compiler/CPU checks cover step behavior
+and authored curve/clip execution at O0/O3. Indexed lookup checks retain frozen
+source arrays and count visible-coordinate reads, rather than asserting UI text.
+
+The local Node 22.23.1 comparison uses two 20,000-key tracks, 51 visible keys per
+track and nine warmed batches. Median bind time fell from 18.57773 ms to
+0.19155 ms; key-strip/curve/all-visible-overview reprojection fell from
+0.38332 ms to 0.02098 ms. Source admission, paint/GPU work and machine execution
+are excluded. This is a measured authoring workload, not a whole-Studio latency
+guarantee or a claim that every operation is independent of total source size.
+
+The broad Lua development suite passes 3,091 checks, with one existing skipped
+check. Its old map-pane fixture initially failed because it installed a font but
+not the corresponding inline-field metrics. The fixture now uses the normal font
+configuration owner; no production fallback was added. IDE/test typechecks,
+the browser Studio build and the strict boundary audit pass separately.
+
+Visible review uses an ordinary Studio browser session with `2025` loaded. A
+temporary resource is created and edited through keyboard/pointer input only;
+negative curve/time edits and reordered clip trims survive Save/reprojection,
+and each is undone once through shared Source history. The rendered step lane
+has no line before its first key, and the zoomed tag spans the viewport even
+with both endpoints offscreen. The same packed `maya_b` string is visibly an
+ordinary frame value without factory context and a real decoded sprite with
+the native sprite factory. Removing that factory call, without replacing the
+written frames table, revokes the bitmap in the same open editor. The final
+browser build also visibly changes a `500 ms` cursor to frame `0` when switching
+native axes. All temporary resources are closed and removed after acceptance;
+the original `2025` sources are unchanged. Its 12 Scenario Lab cases then pass
+through the actual Studio MCP run/wait tools, including transition/combat
+fixture admission and native curve/sequence behavior. Local evidence is retained under
+`.bmsx/authoring/animation-review-2026-10-10/` (physical actions, screenshots,
+accepted source snapshots, before/after measurements and validation logs).

@@ -2,6 +2,7 @@ import { WorkbenchSlider } from '../../ui/slider';
 import type { AnimationKeyUnit, AnimationSourceDocument, AnimationTrackSource } from './model';
 import { formatNumber } from '../../../../machine/ts/common/number_format';
 import { AnimationCurve } from './curve';
+import { animationKeyTimeIndex, EMPTY_ANIMATION_KEY_INDEX } from './key_index';
 
 /** Native coordinate mapping and retained dots. This is neither animation playback nor machine rewind. */
 export class AnimationKeyViewport {
@@ -13,10 +14,11 @@ export class AnimationKeyViewport {
 	public snap = true;
 	public track: AnimationTrackSource | undefined;
 	public unit: AnimationKeyUnit | undefined;
-	public positions: (number | null)[] = [];
+	public positions: readonly (number | null)[] = EMPTY_ANIMATION_KEY_INDEX.positions;
 	public readonly timeOrder: number[] = [];
 	public readonly pixels: number[] = [];
 	private projectedRevision = -1;
+	private selectedOrder = -1;
 	public selected = -1;
 	public caption = '';
 	public startLabel = '';
@@ -30,7 +32,7 @@ export class AnimationKeyViewport {
 		const previousUnit = this.unit;
 		this.track = track;
 		this.unit = unit;
-		this.positions.length = 0;
+		this.positions = track === undefined ? EMPTY_ANIMATION_KEY_INDEX.positions : track.keyIndex.positions;
 		this.timeOrder.length = 0;
 		this.selected = selected;
 		this.dragValue = undefined;
@@ -39,8 +41,9 @@ export class AnimationKeyViewport {
 		if (duration !== undefined && duration !== null) high = duration;
 		if (unit !== undefined) for (const lane of document!.tracks) {
 			if (lane.unit !== unit) continue;
-			for (const key of lane.keys) if (key.coordinate?.value !== undefined && key.coordinate.value !== null) {
-				low = Math.min(low, key.coordinate.value); high = Math.max(high, key.coordinate.value);
+			const { positions, order } = lane.keyIndex;
+			if (order.length > 0) {
+				low = Math.min(low, positions[order[0]]!); high = Math.max(high, positions[order[order.length - 1]]!);
 			}
 		}
 		if (unit === 'time_ms') for (const clip of document!.clips) {
@@ -50,17 +53,10 @@ export class AnimationKeyViewport {
 			}
 		}
 		if (unit === 'frame' && document?.framesSource?.array) high = Math.max(high, document.framesSource.table.fields.length);
-		if (track !== undefined) for (let index = 0; index < track.keys.length; index++) {
-			const position = track.unit === undefined ? undefined : track.keys[index].coordinate?.value;
-			this.positions.push(position === undefined ? null : position);
-			if (position !== undefined && position !== null) {
-				low = Math.min(low, position); high = Math.max(high, position);
-				this.timeOrder.push(index);
-			}
-		}
-		this.timeOrder.sort((left, right) => this.positions[left]! - this.positions[right]! || left - right);
+		if (track !== undefined) for (const index of track.keyIndex.order) this.timeOrder.push(index);
+		this.selectedOrder = this.timeOrder.indexOf(selected);
 		this.extentMinimum = low; this.extentMaximum = high === low ? low + 1 : high;
-		if (previousUnit !== unit || previousUnit === undefined) this.fit();
+		if (previousUnit !== unit || previousUnit === undefined) { this.cursor = low; this.fit(); }
 		this.caption = unit === undefined ? 'Source' : unit === 'time_ms' ? 'ms' : unit === 'frame' ? 'frame' : 'u';
 		this.curve.bind(this);
 		this.revision++;
@@ -91,12 +87,7 @@ export class AnimationKeyViewport {
 	public positionAt(index: number): number { return index === this.selected && this.dragValue !== undefined ? this.dragValue : this.positions[index]!; }
 	/** Insertion position in the presentation order; authored array order is untouched. */
 	public timeIndex(position: number, afterEquals = false): number {
-		let left = 0, right = this.timeOrder.length;
-		while (left < right) {
-			const middle = (left + right) >>> 1, value = this.positionAt(this.timeOrder[middle]);
-			if (value < position || afterEquals && value === position) left = middle + 1; else right = middle;
-		}
-		return left;
+		return animationKeyTimeIndex(this.positions, this.timeOrder, position, afterEquals, this.selected, this.dragValue);
 	}
 	public update(): void {
 		if (this.projectedRevision === this.revision) return;
@@ -110,6 +101,7 @@ export class AnimationKeyViewport {
 
 	public select(index: number): void {
 		this.selected = index; this.dragValue = undefined;
+		this.selectedOrder = this.timeOrder.indexOf(index);
 		const position = this.positions[index];
 		if (position !== undefined && position !== null) this.cursor = position;
 		this.updateSelectionLabel();
@@ -119,7 +111,7 @@ export class AnimationKeyViewport {
 	public cancel(): void { if (this.dragValue !== undefined) { this.dragValue = undefined; this.orderSelectedKey(); this.updateSelectionLabel(); this.revision++; } this.curve.cancel(); }
 	private orderSelectedKey(): void {
 		const order = this.timeOrder, value = this.positionAt(this.selected);
-		let index = order.indexOf(this.selected);
+		let index = this.selectedOrder;
 		if (index < 0) return;
 		while (index > 0 && (this.positionAt(order[index - 1]) > value || this.positionAt(order[index - 1]) === value && order[index - 1] > this.selected)) {
 			order[index] = order[index - 1]; order[--index] = this.selected;
@@ -127,6 +119,7 @@ export class AnimationKeyViewport {
 		while (index + 1 < order.length && (this.positionAt(order[index + 1]) < value || this.positionAt(order[index + 1]) === value && order[index + 1] < this.selected)) {
 			order[index] = order[index + 1]; order[++index] = this.selected;
 		}
+		this.selectedOrder = index;
 	}
 	private updateSelectionLabel(): void {
 		const key = this.track?.keys[this.selected];
@@ -139,7 +132,7 @@ export class AnimationKeyViewport {
 		if (order.length === 0) return -1;
 		if (direction === 'Home') return order[0];
 		if (direction === 'End') return order[order.length - 1];
-		const index = order.indexOf(this.selected);
+		const index = this.selectedOrder;
 		return order[Math.max(0, Math.min(order.length - 1, index + (direction === 'ArrowLeft' ? -1 : 1)))];
 	}
 	public xAt(value: number): number {

@@ -1,5 +1,5 @@
 import type { HashLookup } from '../../collections/hash_map';
-import { isMultiReturnExpression, LuaSyntaxKind, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
+import { isMultiReturnExpression, LuaSyntaxKind, LuaUnaryOperator, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
 import { LuaCompletion } from '../analysis/completion';
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { declarationValueSource, NIL_VALUE_SOURCE, readLuaExpressionSource, unknownValueSource, type CallValueEntry, type DeclarationValueEntry, type FunctionReturnValueEntry, type FunctionValueFlowEntry, type ModuleValueEntry, type OwnedValueID, type SemanticValueSource, type ValueAssignmentEntry } from './value_graph';
@@ -315,7 +315,13 @@ export class LuaWrittenSourceQuery {
 		}
 		const root = value.root;
 		switch (root.kind) {
-			case 'unknown': return UNKNOWN;
+			case 'unknown': {
+				// A signed numeric literal has unary syntax, but is still one authored
+				// value occurrence. Other computations remain unknown; no Lua is evaluated.
+				const expression = writtenSourceExpression(source);
+				return expression?.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Negate
+					&& expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression ? TERMINAL : UNKNOWN;
+			}
 			case 'literal': return TERMINAL;
 			case 'declaration': {
 				const declaration = this.symbols.get(root.declId)!;

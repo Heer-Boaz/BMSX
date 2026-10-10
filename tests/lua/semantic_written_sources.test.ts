@@ -117,6 +117,28 @@ return third`);
 	}
 });
 
+test('signed numeric syntax remains a written terminal through aliases without evaluating expressions', () => {
+	const { file, query } = sourceQuery(`local value = -8
+local alias = value
+return -4, alias, -value, 1 + 2`);
+	const result = file.chunk.body.get(2)! as LuaReturnStatement;
+	const direct = query.trace(query.expression(file, result.expressions[0]));
+	const aliased = query.trace(query.expression(file, result.expressions[1]));
+	assert.equal(direct.boundaries.length, 0);
+	assert.equal(aliased.boundaries.length, 0);
+	assert.deepEqual(writtenLines(aliased.terminals), [1]);
+	assert.equal(writtenSourceExpression(direct.terminals[0]), result.expressions[0]);
+	const declaration = file.chunk.body.get(0)!;
+	assert.ok(declaration.kind === LuaSyntaxKind.LocalAssignmentStatement);
+	assert.equal(writtenSourceExpression(aliased.terminals[0]), declaration.values[0]);
+	assert.equal(direct.terminals[0].value.root.kind, 'unknown', 'written syntax does not change may-value arithmetic semantics');
+	for (const expression of result.expressions.slice(2)) {
+		const trace = query.trace(query.expression(file, expression));
+		assert.equal(trace.terminals.length, 0);
+		assert.equal(trace.boundaries[0].reason, 'unknown-value');
+	}
+});
+
 test('equal writes, compound unknowns and nil padding retain their actual occurrences', () => {
 	const source = `local value, extra = 1
 value = 1

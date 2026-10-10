@@ -51,6 +51,12 @@ The Lens must not infer those guarantees from a one-element source result.
 - Expression uses, declaration writes, formal/receiver entry inputs and expression
   transfers are distinct nodes. Each retains its actual file and binder entry.
   Reassigning a parameter or `self` does not erase its incoming input.
+- A unary minus directly on a numeric literal is one written value occurrence,
+  including through ordinary declaration aliases. The source trace retains the
+  signed AST and does not evaluate arithmetic or alter the may-value solver's
+  unknown unary result. Negation of a name, calls and other computed expressions
+  remain boundaries. This lets source editors read authored negative numbers
+  without adding their own literal/provenance bypasses.
 - Global storage contributions include all declaring files. This does not merge
   same-named locals or property paths, select lifecycle writers by name, or execute
   a function body. A captured write retains its body owner even when uncalled.

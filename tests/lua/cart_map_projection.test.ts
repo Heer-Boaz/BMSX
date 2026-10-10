@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { EditorFont } from '../../ide/editor/ui/view/font';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
@@ -22,8 +23,7 @@ const SOURCE = [
 ].join('\n');
 
 function fixture(source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
-	editorViewState.font = new EditorFont('tiny');
-	editorViewState.lineHeight = 6;
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
 	const model = new EditorTextModel({ domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
