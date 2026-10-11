@@ -49,8 +49,8 @@ export async function loadBrowserMedia(systemRomPath: string, defaultRom: string
 	if (!romUrl) throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
 	const slot1Url = getRomFromUrlParameter(1);
 	const [systemRom, slot0Rom, slot1Rom] = await Promise.all([
-		fetchBuffer(systemRomPath), fetchBuffer(`./${romUrl}`),
-		slot1Url ? fetchBuffer(`./${slot1Url}`) : Promise.resolve(null),
+		fetchBuffer(systemRomPath), fetchBuffer(romUrl),
+		slot1Url ? fetchBuffer(slot1Url) : Promise.resolve(null),
 	]);
 	return { systemRom, cartridgeSlots: [slot0Rom, slot1Rom] };
 }
@@ -276,11 +276,7 @@ function setLoaderText(text: string): void {
 }
 
 async function fetchBuffer(url: string): Promise<Uint8Array> {
-	const response = await fetch(url, {
-		headers: {
-			'Cache-Control': 'no-cache',
-		},
-	});
+	const response = await fetch(url, { cache: 'no-cache' });
 	if (!response.ok) {
 		throw new Error(`Failed to fetch ROM from "${url}".`);
 	}

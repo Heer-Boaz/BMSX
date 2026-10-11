@@ -5,8 +5,8 @@ export const STUDIO_CONFIGURATION_ELEMENT = '<meta id="bmsx-studio-configuration
 export const STANDALONE_STUDIO_CONFIGURATION: StudioConfiguration = { workspace: { kind: 'browser' } };
 
 export const STUDIO_PAGES = [
-	{ debug: false, page: 'studio.html', template: 'studio.template.html' },
-	{ debug: true, page: 'studio.debug.html', template: 'studio.debug.template.html' },
+	{ debug: false, page: 'studio.html', template: 'studio.template.html', manifest: 'studio.webmanifest' },
+	{ debug: true, page: 'studio.debug.html', template: 'studio.debug.template.html', manifest: 'studio.debug.webmanifest' },
 ] as const;
 
 /** Only the product template contains this slot; values occupy a quoted HTML attribute. */

@@ -118,7 +118,7 @@ async function main(): Promise<void> {
 				`Browser Studio → ${pc.white(`dist/${javascriptProductFilename('browser-studio', debug)}`)}`,
 			);
 			ui.ok(`Browser Studio loader → ${pc.white(debug ? 'dist/studio.debug.html' : 'dist/studio.html')}`);
-			ui.ok(`Browser manifest → ${pc.white('dist/manifest.webmanifest')}`);
+			ui.ok(`Browser Studio manifest → ${pc.white(debug ? 'dist/studio.debug.webmanifest' : 'dist/studio.webmanifest')}`);
 			break;
 		}
 		case 'node-cli-player': {

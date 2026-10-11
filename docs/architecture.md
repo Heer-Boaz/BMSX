@@ -5382,6 +5382,13 @@ not a reach into application state. UI, HTTP and both assistant transports use
 that owner. It creates the canonical empty-cart entry/manifest in an exclusively
 new directory; compilation, publication and opening a machine remain separate.
 Browser startup consumes selected ROM bytes independently of their transport.
+Player media locations are browser URLs: relative package paths and absolute
+cross-origin URLs reach Fetch unchanged. HTTP cache policy belongs to Fetch's
+`cache` option, not an application request header that creates a CORS preflight.
+The browser packager may export the paired system/cart artifact to a separate
+media directory and write its public URLs into the player's HTML attributes.
+The player origin owns COOP/COEP for shared-memory audio; a separate media origin
+must allow CORS reads. This split does not change machine media or audio state.
 Opening a published artifact fetches its paired system/cart media with existing
 session admission, then uses `BootService.start('installed')`: source recovery is
 not permission to rebuild an explicitly selected artifact. Ordinary startup and

@@ -4,7 +4,8 @@
 	"display": "standalone",
 	"orientation": "landscape",
 	"background_color": "#2020ff",
-	"start_url": "/index.html",
-	"scope": "/",
-	"theme_color": "#2020ff"
+	"start_url": "#start_url",
+	"scope": "./",
+	"theme_color": "#2020ff",
+	"icons": [{ "src": "bmsx_icon.png", "type": "image/png" }]
 }

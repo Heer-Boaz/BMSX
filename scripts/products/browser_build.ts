@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 
 import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
+import { PLAYER_CARTRIDGE_SLOT, PLAYER_MANIFEST, PLAYER_SYSTEM_ROM_SLOT, PLAYER_TITLE_SLOT } from './player_page';
 import { productNeedsRebuild } from './rebuild';
 import { javascriptProductFilename } from './targets';
 import { renderStudioPage, STANDALONE_STUDIO_CONFIGURATION, STUDIO_CONFIGURATION_ELEMENT, STUDIO_PAGES } from './studio_page';
@@ -184,6 +185,7 @@ function renderBrowserPage(
 		images: Readonly<Record<string, string>>;
 	},
 	title: string,
+	manifest: string,
 	scriptFilename: string,
 	defaultRom: string,
 	systemRom: string,
@@ -194,6 +196,7 @@ function renderBrowserPage(
 		'@@BMSX_PRODUCT_CONFIGURATION@@': configuration,
 		'/*#css*/': inputs.css,
 		'#title': title,
+		'@@BMSX_MANIFEST@@': manifest,
 		'#browserhostjs': scriptFilename,
 		'@@BMSX_DEFAULT_ROM@@': defaultRom,
 		'@@BMSX_SYSTEM_ROM@@': systemRom,
@@ -201,12 +204,14 @@ function renderBrowserPage(
 	});
 }
 
-async function writeBrowserManifest(title: string, shortName: string): Promise<void> {
+/** Each installable page owns its manifest; start_url is relative to the manifest, so a package works in any folder. */
+async function writeBrowserManifest(file: string, title: string, shortName: string, startUrl: string): Promise<void> {
 	const manifestTemplate = await readFile('./rom/manifest.json', 'utf8');
 	const manifest = manifestTemplate
 		.replace('#title', title)
-		.replace('#short_name', shortName);
-	await writeFile('./dist/manifest.webmanifest', manifest);
+		.replace('#short_name', shortName)
+		.replace('#start_url', startUrl);
+	await writeFile(`./dist/${file}`, manifest);
 }
 
 export async function buildBrowserPlayerPackage(options: BrowserPackageOptions): Promise<void> {
@@ -217,6 +222,7 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 	const html = renderBrowserPage(
 		inputs,
 		options.title,
+		PLAYER_MANIFEST,
 		javascriptProductFilename('browser-player', options.debug),
 		defaultRom,
 		`system/bmsx-bios${options.debug ? '.debug' : ''}.rom`,
@@ -224,11 +230,12 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 	);
 	await writeFile('./dist/index.html', html);
 	// A host product supplies its own ready-to-package page; deployment never rebuilds the host.
+	// The package names it after its cartridge, so the template keeps the title as a slot.
 	await writeFile(`./dist/player${options.debug ? '.debug' : ''}.template.html`, renderBrowserPage(
-		inputs, options.title, javascriptProductFilename('browser-player', options.debug), '{{BMSX_CARTRIDGE}}', '{{BMSX_SYSTEM_ROM}}', '',
+		inputs, PLAYER_TITLE_SLOT, PLAYER_MANIFEST, javascriptProductFilename('browser-player', options.debug), PLAYER_CARTRIDGE_SLOT, PLAYER_SYSTEM_ROM_SLOT, '',
 	));
 	await copyFile('./rom/bmsx.png', './dist/bmsx_icon.png');
-	await writeBrowserManifest(options.title, options.shortName);
+	await writeBrowserManifest(PLAYER_MANIFEST, options.title, options.shortName, './');
 }
 
 export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
@@ -237,6 +244,7 @@ export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 	const template = renderBrowserPage(
 		inputs,
 		'BMSX',
+		product.manifest,
 		javascriptProductFilename('browser-studio', debug),
 		'',
 		`system/bmsx-bios${debug ? '.debug' : ''}.rom`,
@@ -245,6 +253,6 @@ export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 	await Promise.all([
 		writeFile(`./dist/${product.template}`, template),
 		writeFile(`./dist/${product.page}`, renderStudioPage(template, STANDALONE_STUDIO_CONFIGURATION)),
-		writeBrowserManifest('BMSX', 'BMSX'),
+		writeBrowserManifest(product.manifest, 'BMSX Studio', 'Studio', product.page),
 	]);
 }
