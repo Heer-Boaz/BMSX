@@ -1,11 +1,9 @@
 {
 	"routes": [
-		{ "route": "/ios/auto/index.html", "redirect": "/ios/", "statusCode": 302 },
-		{ "route": "/ios/webgpu/index.html", "redirect": "/ios/", "statusCode": 302 },
-		{ "route": "/ios/webgl2/index.html", "redirect": "/ios/", "statusCode": 302 },
-		{ "route": "/ios/piet/auto/index.html", "redirect": "/ios/piet/", "statusCode": 302 },
-		{ "route": "/ios/piet/webgpu/index.html", "redirect": "/ios/piet/", "statusCode": 302 },
-		{ "route": "/ios/piet/webgl2/index.html", "redirect": "/ios/piet/", "statusCode": 302 }
+		{ "route": "/ios/index.html", "redirect": "/nemesis_s/ios/", "statusCode": 302 },
+		{ "route": "/ios/auto/index.html", "redirect": "/nemesis_s/ios/", "statusCode": 302 },
+		{ "route": "/ios/webgpu/index.html", "redirect": "/nemesis_s/ios/", "statusCode": 302 },
+		{ "route": "/ios/webgl2/index.html", "redirect": "/nemesis_s/ios/", "statusCode": 302 }
 	],
 	"globalHeaders": {
 		"Cross-Origin-Opener-Policy": "same-origin",

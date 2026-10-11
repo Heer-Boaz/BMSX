@@ -788,3 +788,22 @@ held-contact snapshots. This evidence remains explicitly Linux-only.
 These results do not establish iPhone A+B correctness or physical thumb comfort.
 The remaining device-specific release needs the actual iPhone event sequence;
 there is deliberately no cancellation suppression or transport workaround.
+
+## Per-game trace publication, 2026-10-12
+
+Tracing now lives directly under each game: `/2025/ios/` and
+`/nemesis_s/ios/`. Both are actual static player packages with relative
+engine/trace/manifest URLs, the same engine bytes and paired immutable media
+as their ordinary game. Slash, no-slash and `index.html` forms use ordinary
+Azure directory normalization. `/ios/piet/` and its renderer subpaths are
+removed, not retained as aliases. The previously shared Nemesis `/ios/` link
+and its renderer subpaths redirect to `/nemesis_s/ios/`. No wildcard fallback
+or new runtime input behavior is involved.
+
+Focused routing/nested-package tests, the tests typecheck and release player
+build pass. Public checks verify all six suffix forms, correct HTML/asset and
+receipt digests, unchanged engine/trace bytes, four exact legacy redirects and
+the intended missing Piet routes. Actual public Chromium launch from the
+reported `/2025/ios` URL and the Nemesis suffix loads the correct paired ROMs,
+visible trace, WebGPU and non-silent running audio without errors. Evidence:
+`.bmsx/hosting/ios-suffix-routing-evidence/`.

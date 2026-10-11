@@ -60,7 +60,7 @@ async function fixture(t: TestContext) {
 
 test('input trace is an explicit package asset loaded before the same selected engine', async t => {
 	const { root, args } = await fixture(t);
-	const ordinary = join(root, 'ordinary'), diagnostic = join(root, 'ios');
+	const ordinary = join(root, 'ordinary'), diagnostic = join(ordinary, 'ios');
 	await run(process.execPath, [...args, '--output-dir', ordinary]);
 	await run(process.execPath, [...args, '--output-dir', diagnostic, '--input-trace']);
 	assert.ok(!(await readdir(ordinary)).includes(PLAYER_INPUT_TRACE_SCRIPT));
