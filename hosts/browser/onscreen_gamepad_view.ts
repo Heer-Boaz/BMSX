@@ -15,12 +15,13 @@ const ACTIONS = [
 ] as const;
 
 const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
-const COMPACT_PROFILE = { margin: 16, bottom: 16, stickSize: 128 };
-const LANDSCAPE_PROFILE = { margin: 32, bottom: 32, stickSize: 144 };
-const PORTRAIT_PROFILE = { margin: 24, bottom: 32, stickSize: 144 };
-const MIN_ACTION_SCALE = 44 / 52;
-const UTILITY_SIZE = 44;
-const UTILITY_PITCH = 56;
+const COMPACT_PROFILE = { margin: 20, bottom: 24 };
+const SMALL_PLAYER_PROFILE = { margin: 16, bottom: 16 };
+const LANDSCAPE_PROFILE = { margin: 32, bottom: 32 };
+const PORTRAIT_PROFILE = { margin: 24, bottom: 32 };
+const STICK_SIZE = 180;
+const CONTROL_GAP = 12;
+const UTILITY_SIZE = 52;
 const UTILITY_TOP = 16;
 
 interface ActionSurface {
@@ -107,41 +108,66 @@ export class BrowserOnscreenGamepadView {
 		this.layoutWidth = width;
 		this.layoutHeight = height;
 		const landscape = width >= height;
-		const compact = landscape ? width < 640 || height < 280 : width < 360;
-		const profile = compact ? COMPACT_PROFILE : landscape ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
-		const availableWidth = Math.max(0, width - profile.margin * 2);
-		const availableHeight = Math.max(0, height - profile.bottom - UTILITY_TOP);
-		const viewportScale = Math.min(1.15, Math.max(MIN_ACTION_SCALE, Math.min(width, height) / 390));
-		const stickScale = Math.min(
-			profile.stickSize / this.stickArtworkWidth * viewportScale,
-			availableWidth / this.stickArtworkWidth,
-			availableHeight / this.stickArtworkHeight,
-		);
+		const smallPlayer = landscape ? width < 568 || height < 239 : height < 568;
+		const compact = width < 360 || landscape && width < 640;
+		const shortLandscape = landscape && height < 320;
+		const profile = smallPlayer ? SMALL_PLAYER_PROFILE : compact ? COMPACT_PROFILE : landscape ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
+		const margin = shortLandscape ? 20 : profile.margin;
+		const viewportScale = smallPlayer
+			? Math.min(1, width / 568, height / 239)
+			: Math.min(1.1, Math.max(1, Math.min(width, height) / 390));
+		const stickScale = STICK_SIZE / this.stickArtworkWidth * viewportScale;
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
-		const faceScale = Math.min(
-			viewportScale,
-			availableWidth / faceSurface.artworkWidth,
-			availableHeight / faceSurface.artworkHeight,
-		);
-		const stickLeft = left + profile.margin;
-		const stickTop = top + height - profile.bottom - this.stickArtworkHeight * stickScale;
+		const faceScale = viewportScale;
+		const stickLeft = left + margin;
+		const stickTop = top + height - (shortLandscape ? 20 : profile.bottom) - this.stickArtworkHeight * stickScale;
+		const stickX = stickLeft + this.nominalStickX * stickScale;
+		const stickY = stickTop + this.nominalStickY * stickScale;
+		const stickRadius = this.nominalStickRadius * stickScale;
+		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
+		let faceTop = top + height - (shortLandscape ? 16 : profile.bottom) - faceSurface.artworkHeight * faceScale;
+		if (!landscape) {
+			// Keep full-size thumb targets: lift the face diamond, never shrink it into the stick.
+			let lift = 0;
+			for (let index = 0; index < 4; index += 1) {
+				const action = this.nominalActions[index];
+				const dx = faceLeft + action.x * faceScale - stickX;
+				const separation = stickRadius + action.radius * faceScale + CONTROL_GAP;
+				if (dx * dx < separation * separation) {
+					lift = Math.max(lift, faceTop + action.y * faceScale - stickY + Math.sqrt(separation * separation - dx * dx));
+				}
+			}
+			faceTop -= lift;
+		}
 		this.stickSurface.style.left = `${stickLeft}px`;
 		this.stickSurface.style.top = `${stickTop}px`;
 		this.stickSurface.style.transform = `scale(${stickScale})`;
-		this.placeActionSurface(ActionSurfaceIndex.Face,
-			left + width - profile.margin - faceSurface.artworkWidth * faceScale,
-			top + height - profile.bottom - faceSurface.artworkHeight * faceScale, faceScale);
+		this.placeActionSurface(ActionSurfaceIndex.Face, faceLeft, faceTop, faceScale);
+		const utilitySize = smallPlayer ? 44 : UTILITY_SIZE;
+		const utilityPitch = utilitySize + CONTROL_GAP;
+		const utilityScale = utilitySize / this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
 		const utilityTop = top + UTILITY_TOP;
-		const utilityLeft = left + profile.margin;
-		const utilityRight = left + width - profile.margin - UTILITY_SIZE;
-		this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft + UTILITY_PITCH, utilityTop, 1);
-		this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight - UTILITY_PITCH, utilityTop, 1);
-		this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, 1);
-		this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, 1);
+		if (shortLandscape) {
+			// Browser chrome can leave a short player; the center has room for a two-row utility bank.
+			const utilityCenter = (stickX + stickRadius + faceLeft) / 2;
+			const utilityLeft = utilityCenter - utilityPitch / 2 - utilitySize / 2;
+			const utilityRight = utilityLeft + utilityPitch;
+			this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft, utilityTop + utilityPitch, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight, utilityTop + utilityPitch, utilityScale);
+		} else {
+			const utilityLeft = left + margin;
+			const utilityRight = left + width - margin - utilitySize;
+			this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft + utilityPitch, utilityTop, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight - utilityPitch, utilityTop, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, utilityScale);
+		}
 		const geometry = this.geometry;
-		geometry.stickX = stickLeft + this.nominalStickX * stickScale;
-		geometry.stickY = stickTop + this.nominalStickY * stickScale;
-		geometry.stickRadius = this.nominalStickRadius * stickScale;
+		geometry.stickX = stickX;
+		geometry.stickY = stickY;
+		geometry.stickRadius = stickRadius;
 		geometry.stickDeadzoneRadius = this.nominalDeadzoneRadius * stickScale;
 		for (let index = 0; index < this.actions.length; index += 1) {
 			const surface = this.actionSurfaces[ACTIONS[index].surface];

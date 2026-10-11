@@ -20,7 +20,14 @@ const actions = [
 const profiles: readonly {
 	name: string; width: number; height: number; insets: readonly number[]; screenshot: boolean;
 	player?: { left: number; top: number; width: number; height: number };
+	smallPlayer?: boolean;
 }[] = [
+	{ name: 'small-player-320', width: 320, height: 240, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
+	{ name: 'small-player-319', width: 319, height: 239, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
+	{ name: 'square-player', width: 430, height: 430, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
+	{ name: 'small-landscape-width-boundary-below', width: 567, height: 239, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
+	{ name: 'small-landscape-height-boundary-below', width: 568, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
+	{ name: 'small-wide-landscape-height-boundary-below', width: 852, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
 	{ name: 'compact-portrait', width: 320, height: 568, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'compact-landscape', width: 568, height: 320, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'phone14-portrait-safe', width: 390, height: 844, insets: [47, 0, 34, 0], screenshot: true },
@@ -31,15 +38,17 @@ const profiles: readonly {
 	{ name: 'large-landscape-safe', width: 932, height: 430, insets: [0, 47, 21, 47], screenshot: false },
 	{ name: 'browser-landscape-safe', width: 844, height: 320, insets: [0, 47, 21, 47], screenshot: true },
 	{ name: 'short-landscape-640', width: 640, height: 240, insets: [0, 0, 0, 0], screenshot: true },
+	{ name: 'short-landscape-568', width: 568, height: 239, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'short-landscape-852', width: 852, height: 239, insets: [0, 0, 0, 0], screenshot: true },
-	{ name: 'compact-height-threshold-below', width: 852, height: 279, insets: [0, 0, 0, 0], screenshot: false },
-	{ name: 'compact-height-threshold-at', width: 852, height: 280, insets: [0, 0, 0, 0], screenshot: false },
+	{ name: 'utility-layout-threshold-below', width: 852, height: 319, insets: [0, 0, 0, 0], screenshot: false },
+	{ name: 'utility-layout-threshold-at', width: 852, height: 320, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'tablet-landscape', width: 1024, height: 768, insets: [0, 0, 20, 0], screenshot: true },
 	{ name: 'embedded-player-offset', width: 1024, height: 768, insets: [0, 0, 0, 0], screenshot: true,
 		player: { left: 92, top: 40, width: 840, height: 650 } },
 ] as const;
 
-test('default touch controls remain readable, separated and fully usable across CSS phone layouts', async t => {
+// Geometry and native desktop input contracts, not proof of hand comfort or iPhone multitouch.
+test('generic gamepad geometry preserves equal faces, full-size phone targets and separate acquisitions', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await build({
@@ -52,7 +61,7 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/touch-controller-ergonomics-evidence';
+	const evidenceDirectory = '.bmsx/hosting/gamepad-target-geometry-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -182,7 +191,18 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const safe = { left: player.left + profile.insets[3], top: player.top + profile.insets[0],
 				right: player.left + player.width - profile.insets[1], bottom: player.top + player.height - profile.insets[2] };
 			const circles = resting.circles;
+			const faceDiameter = circles[1].bounds.width;
+			const scale = profile.smallPlayer ? Math.min(1, player.width / 568, player.height / 239) : Math.min(1.1, Math.max(1, Math.min(safe.right - safe.left, safe.bottom - safe.top) / 390));
+			assert.ok(Math.abs(faceDiameter - 80 * scale) < 0.0001, profile.smallPlayer ? 'explicit smaller-player profile fits equally scaled face targets' : 'phone face targets are 80-88 CSS px, not accessibility-minimum-sized targets');
+			for (const circle of circles.slice(1, 5)) {
+				assert.ok(Math.abs(circle.bounds.width - faceDiameter) < 0.0001, `${circle.id} has the same target diameter as every other face button`);
+				assert.equal(circle.presentation.fill, circles[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
+				assert.equal(circle.presentation.stroke, circles[1].presentation.stroke);
+			}
+			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'stick follows the same authored CSS-client scale as the face group');
+			for (const circle of circles.slice(5)) assert.ok(Math.abs(circle.bounds.width - (profile.smallPlayer ? 44 : 52)) < 0.0001, `${circle.id} has its authored utility diameter`);
 			const gaps: number[] = [];
+			const minimumGap = profile.smallPlayer ? 8 * scale : 8;
 			for (let index = 0; index < circles.length; index += 1) {
 				const circle = circles[index];
 				assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} stays circular`);
@@ -190,12 +210,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(circle.painted.top >= safe.top + 12 - 0.0001, `${circle.id} top paint clearance`);
 				assert.ok(circle.painted.right <= safe.right - 12 + 0.0001, `${circle.id} right paint clearance`);
 				assert.ok(circle.painted.bottom <= safe.bottom - 12 + 0.0001, `${circle.id} bottom paint clearance`);
-				if (index !== 0) assert.ok(circle.bounds.width >= 44 - 0.0001, `${circle.id} has a 44px or larger contact target`);
 				for (let other = index + 1; other < circles.length; other += 1) {
 					const next = circles[other];
 					const gap = Math.hypot(circle.x - next.x, circle.y - next.y) - circle.radius - next.radius;
 					gaps.push(gap);
-					assert.ok(gap >= 8 - 0.0001, `${circle.id}/${next.id} circular contact regions have an 8px gap`);
+					assert.ok(gap >= minimumGap - 0.0001, `${circle.id}/${next.id} contact regions retain their profile's separation`);
 				}
 			}
 			for (const group of resting.groups) {
@@ -214,6 +233,13 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					}
 				}
 			}
+			const stickCenter = { id: 6, x: circles[0].x, y: circles[0].y };
+			await touch('touchStart', [stickCenter]);
+			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0, stickActive: true }, 'stick center acquires a stick lease, never an overlapping action');
+			await touch('touchMove', [{ ...stickCenter, x: stickCenter.x + circles[0].radius * 0.7 }]);
+			const rightWord = 1 << InputControllerGamepadButtonBit.Right;
+			assert.deepEqual(await poll(), { buttons: rightWord, physicalButtons: rightWord, sampledButtons: rightWord, stickActive: true });
+			await touch('touchEnd', []);
 			evidence.push({ profile: profile.name, safe, geometry: resting, minimumContactGap: Math.min(...gaps) });
 			for (const framebufferWidth of [256, 321, 257, 320]) {
 				await page.evaluate(width => {

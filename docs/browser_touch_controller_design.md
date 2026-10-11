@@ -2,7 +2,10 @@
 
 Date: 2026-10-10. Baseline: `master`, `7a5914025`. Implementation: 2026-10-11.
 
-**Status: implemented; automated and real-player desktop validation passed.**
+**Status: contact owners implemented; iPhone acceptance has failed.**
+The user still reports that a second face-button contact releases the first.
+Desktop tests passing do not resolve that report. The initial presentation also
+used unequal, undersized face targets and is superseded below.
 The DOM-free contact owner replaces presentation-dependent input, while the
 working whole-player zoom policy is retained. The findings below describe the
 pre-change baseline, not the redesigned player. Neither local tests nor desktop
@@ -596,3 +599,88 @@ retain COOP/COEP, and pass the native mobile Chromium/WebGPU/audio smoke against
 the live pages. The library, `/ios/` and historical diagnostics are unchanged;
 there is no new test URL or query parameter. Shared published engine SHA-256:
 `e27a46cd72310e8140b1b8429d26a58b2d81e7d8d2bce0bee8fd5909d006dab2`.
+
+## Generic gamepad targets, 2026-10-11
+
+The preceding presentation is not an accepted ergonomic baseline. A generic
+gamepad cannot infer that A/B are primary game actions and X/Y are secondary.
+NTE screenshots can inform translucent overlays and stick feedback, but their
+game-specific action hierarchy is not the button model for this emulator.
+Accessibility minimum target sizes do not establish gameplay comfort.
+
+Before this correction, [PPSSPP's production gamepad](https://github.com/hrydgard/ppsspp/blob/dcbfa7d3ee293b370de0b14487686ffc91ab2ee9/UI/GamepadEmu.cpp#L988-L995)
+was inspected: all four face controls share one round artwork, scale and center
+configuration, with diamond offsets. Its [portrait layout](https://github.com/hrydgard/ppsspp/blob/dcbfa7d3ee293b370de0b14487686ffc91ab2ee9/UI/GamepadEmu.cpp#L817-L832)
+lifts the action cluster instead of making those controls smaller. These are
+ownership/layout precedents, not prescribed browser CSS dimensions.
+
+- All four face targets now have the same 80-CSS-pixel nominal diameter and
+  identical idle/pressed treatment. The stick acquisition diameter is 180 and
+  menu/stick-click utility targets are 52. The CSS-client scale is 1 to 1.1;
+  supported small phones no longer reduce these controls to a 44-pixel floor.
+  These are explicit authored defaults following the size feedback, not a
+  claim of measured two-thumb comfort.
+- In portrait the view computes the vertical lift required to separate the
+  full-size stick from every face circle by 12 pixels. It does not shrink the
+  stick/diamond or reserve space by shrinking the game image.
+- In landscape below 320 usable CSS pixels high, the four utilities form a
+  two-row bank in the corridor between the stick and face group. This permits
+  239-pixel-high browser players to retain full-size targets without overlapping
+  acquisitions. Safe-area and embedded-player offsets remain owner inputs.
+- Smaller embedded players (landscape narrower than 568 or shorter than 239,
+  portrait shorter than 568) use an explicit compact layout: the stick and four
+  faces share one reduced scale, with 44-pixel utilities. This is not the
+  full-size phone profile or a claim of comfortable gameplay in a 320x240 pane.
+  Compact acquisition shapes must still remain separate; layout cannot map the
+  stick center to an overlapping action just to preserve large nominal sizes.
+- The existing native-contact routing, frame polling, raw guest button bits,
+  whole-player gesture policy, WebGPU selection and half-step 4:3 canvas fitting
+  are unchanged by this presentation correction. A transport rewrite is not a
+  substitute for identifying the reported iPhone release event.
+
+The revised geometry test explicitly requires equal 80-88-pixel face targets,
+180-198-pixel stick acquisition and 52-pixel utilities, alongside the existing
+circle separation, painted safe-edge clearance, stable framebuffer-independent
+layout and native Chromium delivery checks. It includes 568x239, both sides
+of the utility-layout threshold and 320x240/319x239/430x430 small-player cases.
+Compact-player gaps scale with the face group; ordinary phones retain at least
+8 pixels between circles. Test names no longer claim full gameplay
+usability. Current visual evidence is under
+`.bmsx/hosting/gamepad-target-geometry-evidence/`.
+
+### Validation and unresolved iPhone input
+
+The final combined bundle passes 66 tests, including 22 geometry profiles and
+native stick-center acquisition in every profile. Browser, Node, scripts and
+tests typechecks and the browser-player product build pass. Both ordinary
+packages pass actual mobile Chromium WebGPU/audio/A+B+stick and Linux WPE
+WebKit WebGL2/audio-state/trusted single-touch checks. Screenshots of actual
+games were reviewed in both orientations. Local package evidence is under
+`.bmsx/hosting/equal-gamepad-controls-evidence/`.
+
+The input audit did not identify a justified model, polling or transport fix:
+native up/cancel, application deactivation and teardown are the only current
+release paths for held action leases. Chromium's sequential A then B test emits
+only B's new down; there is no incidental movement of A keeping it alive.
+The installed WPE backend does expose native touch injection, contrary to the
+earlier transport assumption, but [its implementation](https://github.com/microsoft/playwright/blob/d9f2fd3e2232ace8e317a84eda6cb86e25bcf49c/browser_patches/webkit/patches/bootstrap.diff)
+assigns the same state to all supplied points and cannot represent stationary
+held touches alongside a changed contact. Changed-contact injection exercises
+trusted pointer leases through the real common input and armed ICU successfully;
+it is not faithful UIKit secondary-pointer/touch-snapshot evidence. Native
+traces are under `.bmsx/hosting/webkit-native-multitouch-investigation/`.
+
+Actual iPhone A+B release remains unresolved. A useful device trace must include
+TouchEvent identifiers/full and changed contact sets, PointerEvent identifiers,
+primary flags/up/cancel, application lifecycle events and button state around
+the second down. Neither a transport switch based on production precedent nor
+another passing desktop suite establishes the missing cause. No such speculative
+input change is included in this slice.
+
+The ordinary `/nemesis_s/` and `/2025/` packages are published to the existing
+site; public HTML/engine digests match their exact package receipts and retain
+COOP/COEP. The library and historical `/ios/` diagnostics remain unchanged, not
+another version of the new contact owners; a future native device trace must
+run the current player owners, not silently use that older diagnostics engine.
+Shared published engine SHA-256:
+`02783ca1d14bcac0a8014c8acef956ecf11a73b6d5f12f7ea9a70b177a861de3`.
