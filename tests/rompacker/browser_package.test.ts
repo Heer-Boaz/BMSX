@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { decodeHTML } from 'entities';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
-import { PLAYER_MANIFEST, renderPlayerPage } from '../../scripts/products/player_page';
+import { PLAYER_INPUT_TRACE_SCRIPT, PLAYER_MANIFEST, renderPlayerPage } from '../../scripts/products/player_page';
 import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 
@@ -51,9 +51,26 @@ async function fixture(t: TestContext) {
 	await writeFile(join(host, 'bmsx_icon.png'), Buffer.from([9]));
 	await writeFile(join(host, PLAYER_MANIFEST), JSON.stringify({ name: 'BMSX', short_name: 'BMSX', start_url: './', scope: './' }));
 	await writeFile(join(host, 'player.template.html'), '<title>{{BMSX_TITLE}}</title><body data-default-rom="{{BMSX_CARTRIDGE}}" data-system-rom="{{BMSX_SYSTEM_ROM}}">');
+	await writeFile(join(host, 'player.input-trace.template.html'), '<title>{{BMSX_TITLE}}</title><body data-default-rom="{{BMSX_CARTRIDGE}}" data-system-rom="{{BMSX_SYSTEM_ROM}}"><div id="player-surface"></div>'
+		+ `<script src="${PLAYER_INPUT_TRACE_SCRIPT}" crossorigin="anonymous"></script><script src="engine.js" crossorigin="anonymous"></script>`);
+	await writeFile(join(host, PLAYER_INPUT_TRACE_SCRIPT), '/* selected early input observer */');
 	const args = ['--import', 'tsx', 'scripts/products/deploy_builder.ts', '--artifact', id, '--store-dir', store, '--host-dir', host];
 	return { root, id, args, title, cart, system };
 }
+
+test('input trace is an explicit package asset loaded before the same selected engine', async t => {
+	const { root, args } = await fixture(t);
+	const ordinary = join(root, 'ordinary'), diagnostic = join(root, 'ios');
+	await run(process.execPath, [...args, '--output-dir', ordinary]);
+	await run(process.execPath, [...args, '--output-dir', diagnostic, '--input-trace']);
+	assert.ok(!(await readdir(ordinary)).includes(PLAYER_INPUT_TRACE_SCRIPT));
+	assert.equal(await readFile(join(diagnostic, 'engine.js'), 'utf8'), await readFile(join(ordinary, 'engine.js'), 'utf8'));
+	const page = await readFile(join(diagnostic, 'index.html'), 'utf8');
+	assert.ok(page.indexOf(`src="${PLAYER_INPUT_TRACE_SCRIPT}"`) < page.indexOf('src="engine.js"'));
+	const receipt = JSON.parse(await readFile(join(diagnostic, 'package.json'), 'utf8'));
+	const traceAsset = receipt.host.find((asset: { file: string }) => asset.file === PLAYER_INPUT_TRACE_SCRIPT);
+	assert.equal(traceAsset.digest, createHash('sha256').update(await readFile(join(diagnostic, PLAYER_INPUT_TRACE_SCRIPT))).digest('hex'));
+});
 
 test('player slots escape titles and URL attributes in one pass', () => {
 	const page = renderPlayerPage('<title>{{BMSX_TITLE}}</title><body data-default-rom="{{BMSX_CARTRIDGE}}" data-system-rom="{{BMSX_SYSTEM_ROM}}">',

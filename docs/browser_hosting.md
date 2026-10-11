@@ -108,6 +108,34 @@ on the player and CORS (but no OPTIONS support) on the media origin. It checks
 absolute/default/query-selected URLs, both cartridge slots, relative subfolder
 URLs, response failures and preservation of the exact fetched bytes.
 
+## Native-input tracing on the existing `/ios/` page
+
+The player product also builds a separate `input-trace.js` and
+`player.input-trace.template.html`. Package that variant with
+`deploy:browser --input-trace`, using the same selected player engine and paired
+media artifact as the ordinary page. The diagnostic script is a classic,
+anonymous-CORS script after the player DOM and immediately before the engine;
+it installs native capture listeners and error reporting before input starts.
+The ordinary player does not load this script or create a trace UI.
+
+Publish this package at `/ios/` (Nemesis S), with `/ios/piet/` for 2025. No
+query parameter, Safari console input, alternate controller or renderer is
+required. The collapsible trace panel lives outside the player's gesture
+surface. It records native pointer/touch/capture/lifecycle events and the real
+input owner's before/after button words. Trace export is available in the page,
+without clipboard permissions. This is observation of the current owners, not
+a second input producer or a speculative workaround for iPhone multitouch.
+
+The 2026-10-11 publication replaces the stale `/ios/` engine with this package.
+The ordinary `/nemesis_s/`, `/2025/`, `/ios/` and `/ios/piet/` use identical
+engine bytes. Legacy `/ios/{auto,webgpu,webgl2}/` and the corresponding
+`/ios/piet/` subpaths redirect to their current canonical trace page, not an
+older renderer-specific engine. Public receipt digests, ROM bytes/CORS,
+COOP/COEP and the six redirects were verified after deployment. Public
+Chromium player checks pass on all four pages with WebGPU, non-silent running
+audio, native simultaneous controls and no errors. This is not an actual
+iPhone acceptance test; the iPhone A+B release remains under diagnosis.
+
 ## Initial publication, 2026-10-10
 
 Site: <https://yellow-bush-029c8b803.2.azurestaticapps.net/>. The `/2025/` and

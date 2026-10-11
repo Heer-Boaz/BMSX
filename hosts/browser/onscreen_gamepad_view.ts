@@ -16,13 +16,14 @@ const ACTIONS = [
 
 const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
 const COMPACT_PROFILE = { margin: 20, bottom: 24 };
-const SMALL_PLAYER_PROFILE = { margin: 16, bottom: 16 };
+const SMALL_PLAYER_PROFILE = { margin: 20, bottom: 20 };
 const LANDSCAPE_PROFILE = { margin: 32, bottom: 32 };
 const PORTRAIT_PROFILE = { margin: 24, bottom: 32 };
 const STICK_SIZE = 180;
 const CONTROL_GAP = 12;
 const UTILITY_SIZE = 52;
-const UTILITY_TOP = 16;
+const PORTRAIT_FACE_LIFT = 144;
+const NARROW_PORTRAIT_FACE_LIFT = 208;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -112,57 +113,56 @@ export class BrowserOnscreenGamepadView {
 		const compact = width < 360 || landscape && width < 640;
 		const shortLandscape = landscape && height < 320;
 		const profile = smallPlayer ? SMALL_PLAYER_PROFILE : compact ? COMPACT_PROFILE : landscape ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
-		const margin = shortLandscape ? 20 : profile.margin;
 		const viewportScale = smallPlayer
 			? Math.min(1, width / 568, height / 239)
 			: Math.min(1.1, Math.max(1, Math.min(width, height) / 390));
+		const margin = smallPlayer ? profile.margin * viewportScale : shortLandscape ? 20 : profile.margin;
+		const stickBottom = smallPlayer ? profile.bottom * viewportScale : shortLandscape ? 20 : profile.bottom;
+		const faceBottom = smallPlayer ? 16 * viewportScale : shortLandscape ? 16 : profile.bottom;
 		const stickScale = STICK_SIZE / this.stickArtworkWidth * viewportScale;
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
 		const faceScale = viewportScale;
 		const stickLeft = left + margin;
-		const stickTop = top + height - (shortLandscape ? 20 : profile.bottom) - this.stickArtworkHeight * stickScale;
+		const stickTop = top + height - stickBottom - this.stickArtworkHeight * stickScale;
 		const stickX = stickLeft + this.nominalStickX * stickScale;
 		const stickY = stickTop + this.nominalStickY * stickScale;
 		const stickRadius = this.nominalStickRadius * stickScale;
 		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
-		let faceTop = top + height - (shortLandscape ? 16 : profile.bottom) - faceSurface.artworkHeight * faceScale;
-		if (!landscape) {
-			// Keep full-size thumb targets: lift the face diamond, never shrink it into the stick.
-			let lift = 0;
-			for (let index = 0; index < 4; index += 1) {
-				const action = this.nominalActions[index];
-				const dx = faceLeft + action.x * faceScale - stickX;
-				const separation = stickRadius + action.radius * faceScale + CONTROL_GAP;
-				if (dx * dx < separation * separation) {
-					lift = Math.max(lift, faceTop + action.y * faceScale - stickY + Math.sqrt(separation * separation - dx * dx));
-				}
-			}
-			faceTop -= lift;
-		}
+		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
+		const faceCenterY = landscape
+			? top + height - faceBottom - faceSurface.artworkHeight * faceScale / 2
+			: stickY - (width < 380 ? NARROW_PORTRAIT_FACE_LIFT : PORTRAIT_FACE_LIFT) * viewportScale;
+		const faceTop = faceCenterY - faceSurface.artworkHeight * faceScale / 2;
 		this.stickSurface.style.left = `${stickLeft}px`;
 		this.stickSurface.style.top = `${stickTop}px`;
 		this.stickSurface.style.transform = `scale(${stickScale})`;
 		this.placeActionSurface(ActionSurfaceIndex.Face, faceLeft, faceTop, faceScale);
-		const utilitySize = smallPlayer ? 44 : UTILITY_SIZE;
-		const utilityPitch = utilitySize + CONTROL_GAP;
+		// Lemuroid/PadKit's primary/secondary grouping: secondary controls follow
+		// their own hand, not the viewport top or a shared central packing area.
+		const utilitySize = UTILITY_SIZE * (smallPlayer ? viewportScale : 1);
+		const utilityRadius = utilitySize / 2;
 		const utilityScale = utilitySize / this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
-		const utilityTop = top + UTILITY_TOP;
-		if (shortLandscape) {
-			// Browser chrome can leave a short player; the center has room for a two-row utility bank.
-			const utilityCenter = (stickX + stickRadius + faceLeft) / 2;
-			const utilityLeft = utilityCenter - utilityPitch / 2 - utilitySize / 2;
-			const utilityRight = utilityLeft + utilityPitch;
-			this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft, utilityTop + utilityPitch, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight, utilityTop + utilityPitch, utilityScale);
+		if (landscape) {
+			// Inward arcs also fit the short visual viewport left by Safari chrome.
+			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
+				stickX + 100 * viewportScale - utilityRadius, stickY - 80 * viewportScale - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Select,
+				stickX + 128 * viewportScale - utilityRadius, stickY + 10 * viewportScale - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightStick,
+				faceCenterX - 100 * viewportScale - utilityRadius, faceCenterY - 70 * viewportScale - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Start,
+				faceCenterX - 140 * viewportScale - utilityRadius, faceCenterY + 20 * viewportScale - utilityRadius, utilityScale);
 		} else {
-			const utilityLeft = left + margin;
-			const utilityRight = left + width - margin - utilitySize;
-			this.placeActionSurface(ActionSurfaceIndex.Select, utilityLeft + utilityPitch, utilityTop, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Start, utilityRight - utilityPitch, utilityTop, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.LeftStick, utilityLeft, utilityTop, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightStick, utilityRight, utilityTop, utilityScale);
+			const leftUtilityY = stickY - stickRadius - utilityRadius - CONTROL_GAP * viewportScale;
+			const rightUtilityY = faceTop - utilityRadius - CONTROL_GAP * viewportScale;
+			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
+				stickX - 64 * viewportScale - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Select,
+				stickX - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightStick,
+				faceCenterX + 78 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
+			this.placeActionSurface(ActionSurfaceIndex.Start,
+				faceCenterX + 14 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
 		}
 		const geometry = this.geometry;
 		geometry.stickX = stickX;

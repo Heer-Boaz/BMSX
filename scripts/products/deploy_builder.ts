@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { parseCartridgePackage } from '../../machine/ts/rompack/image';
 import { RomArtifactStore } from '../rompacker/artifacts';
 import { createCliUi } from '../lib/cli_ui';
-import { PLAYER_MANIFEST, renderPlayerManifest, renderPlayerPage } from './player_page';
+import { PLAYER_INPUT_TRACE_SCRIPT, PLAYER_MANIFEST, renderPlayerManifest, renderPlayerPage } from './player_page';
 import { javascriptProductFilename } from './targets';
 
 const ui = createCliUi({ bannerTitle: 'BMSX PACKAGE', labelWidth: 14 });
@@ -15,11 +15,13 @@ async function main(): Promise<void> {
 	const { values } = parseArgs({ options: {
 		artifact: { type: 'string' }, 'host-dir': { type: 'string' }, 'output-dir': { type: 'string' },
 		'media-base-url': { type: 'string' }, 'media-output-dir': { type: 'string' },
+		'input-trace': { type: 'boolean', default: false },
 		'store-dir': { type: 'string', default: './.bmsx/builds' }, help: { type: 'boolean', short: 'h' },
 	} });
 	if (values.help) {
 		ui.writeOut('Usage: deploy:browser --artifact <id> --host-dir <built-player-dir> --output-dir <new-export-dir> [--store-dir <dir>]\n'
 			+ '  --media-base-url <https://host/path/> --media-output-dir <dir>  Export media separately and use its public URLs.\n');
+		ui.writeOut('  --input-trace  Package the built native-input trace page and its early diagnostic script.\n');
 		return;
 	}
 	if (values.artifact === undefined || !/^[0-9a-f]{64}$/.test(values.artifact) || values['host-dir'] === undefined || values['output-dir'] === undefined) throw new Error('Specify --artifact <id>, --host-dir and --output-dir. Packaging never builds missing inputs.');
@@ -34,9 +36,10 @@ async function main(): Promise<void> {
 	const mediaOutput = values['media-output-dir'] === undefined ? stage : resolve(values['media-output-dir']);
 	const systemRomUrl = mediaBaseUrl === undefined ? systemRom : new URL(systemRom, mediaBaseUrl).href;
 	const cartRomUrl = mediaBaseUrl === undefined ? cartRom : new URL(cartRom, mediaBaseUrl).href;
-	const script = javascriptProductFilename('browser-player', debug), template = `player${debug ? '.debug' : ''}.template.html`;
+	const script = javascriptProductFilename('browser-player', debug), template = `player${values['input-trace'] ? '.input-trace' : ''}${debug ? '.debug' : ''}.template.html`;
 	// Retain selected host bytes before writing anything to the output. All are part of the package receipt.
-	const hostFiles = await Promise.all([script, template, PLAYER_MANIFEST, 'bmsx_icon.png'].map(async file => ({ file, bytes: await readFile(join(host, file)) })));
+	const hostFiles = await Promise.all([script, template, PLAYER_MANIFEST, 'bmsx_icon.png',
+		...(values['input-trace'] ? [PLAYER_INPUT_TRACE_SCRIPT] : [])].map(async file => ({ file, bytes: await readFile(join(host, file)) })));
 	await mkdir(stage, { recursive: true });
 	try {
 		await store.export(artifact, mediaOutput);

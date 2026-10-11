@@ -4,7 +4,7 @@ import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 
 import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
-import { PLAYER_CARTRIDGE_SLOT, PLAYER_MANIFEST, PLAYER_SYSTEM_ROM_SLOT, PLAYER_TITLE_SLOT } from './player_page';
+import { PLAYER_CARTRIDGE_SLOT, PLAYER_INPUT_TRACE_SCRIPT, PLAYER_MANIFEST, PLAYER_SYSTEM_ROM_SLOT, PLAYER_TITLE_SLOT } from './player_page';
 import { productNeedsRebuild } from './rebuild';
 import { javascriptProductFilename } from './targets';
 import { renderStudioPage, STANDALONE_STUDIO_CONFIGURATION, STUDIO_CONFIGURATION_ELEMENT, STUDIO_PAGES } from './studio_page';
@@ -104,7 +104,9 @@ export async function buildMachineRuntime(options: BrowserProductBuildOptions): 
 export async function buildBrowserPlayer(options: BrowserProductBuildOptions): Promise<void> {
 	const filename = javascriptProductFilename('browser-player', options.debug);
 	const distPath = `./dist/${filename}`;
-	if (!options.force && !await productNeedsRebuild(distPath, BROWSER_PLAYER_SOURCE_ROOTS)) {
+	const tracePath = `./dist/${PLAYER_INPUT_TRACE_SCRIPT}`;
+	if (!options.force && !await productNeedsRebuild(distPath, BROWSER_PLAYER_SOURCE_ROOTS)
+		&& !await productNeedsRebuild(tracePath, BROWSER_PLAYER_SOURCE_ROOTS)) {
 		return;
 	}
 
@@ -113,6 +115,8 @@ export async function buildBrowserPlayer(options: BrowserProductBuildOptions): P
 	const inputs = await buildBrowserBundle('./hosts/browser/player.ts', romPath, options.debug, 'iife');
 	assertPlayerBundleBoundary('Browser player', inputs);
 	await copyFile(romPath, distPath);
+	// Diagnostics are a separate, explicitly selected page asset, never part of the ordinary player startup.
+	await buildBrowserBundle('./hosts/browser/input_trace_bootstrap.ts', tracePath, options.debug, 'iife');
 }
 
 export async function buildBrowserStudio(options: BrowserProductBuildOptions): Promise<void> {
@@ -190,10 +194,12 @@ function renderBrowserPage(
 	defaultRom: string,
 	systemRom: string,
 	configuration: string,
+	beforeHostScript = '',
 ): string {
 	const imagePrefix = 'data:image/png;base64,';
 	return applyTemplateValues(inputs.html, {
 		'@@BMSX_PRODUCT_CONFIGURATION@@': configuration,
+		'@@BMSX_BEFORE_HOST_SCRIPT@@': beforeHostScript,
 		'/*#css*/': inputs.css,
 		'#title': title,
 		'@@BMSX_MANIFEST@@': manifest,
@@ -233,6 +239,10 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 	// The package names it after its cartridge, so the template keeps the title as a slot.
 	await writeFile(`./dist/player${options.debug ? '.debug' : ''}.template.html`, renderBrowserPage(
 		inputs, PLAYER_TITLE_SLOT, PLAYER_MANIFEST, javascriptProductFilename('browser-player', options.debug), PLAYER_CARTRIDGE_SLOT, PLAYER_SYSTEM_ROM_SLOT, '',
+	));
+	await writeFile(`./dist/player.input-trace${options.debug ? '.debug' : ''}.template.html`, renderBrowserPage(
+		inputs, PLAYER_TITLE_SLOT, PLAYER_MANIFEST, javascriptProductFilename('browser-player', options.debug), PLAYER_CARTRIDGE_SLOT, PLAYER_SYSTEM_ROM_SLOT, '',
+		`<script src="${PLAYER_INPUT_TRACE_SCRIPT}" crossorigin="anonymous"></script>`,
 	));
 	await copyFile('./rom/bmsx.png', './dist/bmsx_icon.png');
 	await writeBrowserManifest(PLAYER_MANIFEST, options.title, options.shortName, './');

@@ -16,6 +16,7 @@ import { createBrowserBackend } from './backend';
 import type { HostAudioSink } from '../common/audio_output';
 import type { LogOutput } from '../common/log';
 import type { GPUBackend } from '../../machine/ts/render/backend/backend';
+import type {} from './input_trace_contract';
 
 const audioState: BootAudioState = {
 	sndcontext: null,
@@ -82,11 +83,16 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 		onscreenGamepad,
 		HOST_SUPERVISOR_KEY_CODE,
 	);
+	if (window.bmsxInputTrace) {
+		window.bmsxInputTrace.setController(onscreenGamepad);
+		inputHub.setTraceObserver(window.bmsxInputTrace);
+	}
 	const input = new Input(
 		clock,
 		inputHub,
 		onscreenGamepad ? onscreenGamepad.gamepadIndex : startingGamepadIndex,
 	);
+	window.bmsxInputTrace?.setCommonGamepad(input.getPlayerInput(1).inputHandlers.gamepad);
 	inputHub.setKeyboardCapture(input.shouldCaptureKey);
 	const videoBackend = await createBrowserBackend(
 		gamescreen,
@@ -114,6 +120,7 @@ export function completeBrowserBoot(): void {
 	document.getElementById('loading').remove();
 	document.getElementById('extra-message').remove();
 	document.body.classList.add('game-started');
+	window.bmsxInputTrace?.setStatus('Spel gestart');
 }
 
 async function showCartridgeBoot(loadedRom: Uint8Array | null, debug: boolean): Promise<void> {
@@ -158,6 +165,7 @@ function replaceBmsxImageWithRomLabel(romLabelUrl: string): void {
 }
 
 export function showBrowserBootError(error: unknown): void {
+	window.bmsxInputTrace?.bootError(error);
 	console.error(error);
 	bootAnimationComplete = true;
 	document.getElementById('loading').hidden = false;

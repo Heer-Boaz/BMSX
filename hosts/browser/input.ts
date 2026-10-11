@@ -8,6 +8,7 @@ import {
 import { type HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import type { BrowserOnscreenGamepad } from './onscreen_gamepad';
+import type { BrowserInputTraceObserver, BrowserInputTraceRoute, BrowserInputResetReason } from './input_trace_contract';
 import {
 	createGamepadHaptics,
 	type GamepadHaptics,
@@ -155,6 +156,7 @@ export class BrowserInputHub implements InputSource {
 	private readonly pointerPressIds = new Float64Array(POINTER_BUTTON_CODES.length);
 	private readonly ownerDocument: Document;
 	private readonly ownerWindow: Window;
+	private traceObserver: BrowserInputTraceObserver | null = null;
 
 	constructor(
 		private readonly surface: HTMLElement,
@@ -176,6 +178,11 @@ export class BrowserInputHub implements InputSource {
 		}
 	}
 
+	/** Diagnostic callbacks are selected once; ordinary input handlers have no tracing work. */
+	setTraceObserver(observer: BrowserInputTraceObserver): void {
+		this.traceObserver = observer;
+	}
+
 	subscribe(sink: InputEventSink): () => void {
 		this.sink = sink;
 		const unsubscribeOnscreen = this.onscreenGamepad?.subscribe(sink);
@@ -183,15 +190,25 @@ export class BrowserInputHub implements InputSource {
 		const ownerDocument = this.ownerDocument;
 		const surface = this.surface;
 		const gestureSurface = this.gestureSurface;
+		const trace = this.traceObserver;
+		const pointerDown = trace ? this.observePointerRouting(trace, this.onPointerDown) : this.onPointerDown;
+		const pointerMove = trace ? this.observePointerRouting(trace, this.onPointerMove) : this.onPointerMove;
+		const pointerUp = trace ? this.observePointerRouting(trace, this.onPointerUp) : this.onPointerUp;
+		const pointerCancel = trace ? this.observePointerRouting(trace, this.onPointerCancel) : this.onPointerCancel;
+		const blur = trace ? () => this.observeInputReset(trace, 'blur') : this.cancelInput;
+		const pagehide = trace ? () => this.observeInputReset(trace, 'pagehide') : this.cancelInput;
+		const visibility = trace ? () => {
+			if (ownerDocument.hidden) this.observeInputReset(trace, 'hidden');
+		} : this.onVisibilityChange;
 		ownerWindow.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
 		ownerWindow.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
-		ownerWindow.addEventListener('blur', this.cancelInput, { passive: true });
-		ownerWindow.addEventListener('pagehide', this.cancelInput, { passive: true });
-		ownerDocument.addEventListener('visibilitychange', this.onVisibilityChange);
-		gestureSurface.addEventListener('pointerdown', this.onPointerDown, { passive: false, capture: true });
-		ownerWindow.addEventListener('pointermove', this.onPointerMove, { passive: false, capture: true });
-		ownerWindow.addEventListener('pointerup', this.onPointerUp, { passive: false, capture: true });
-		ownerWindow.addEventListener('pointercancel', this.onPointerCancel, { passive: false, capture: true });
+		ownerWindow.addEventListener('blur', blur, { passive: true });
+		ownerWindow.addEventListener('pagehide', pagehide, { passive: true });
+		ownerDocument.addEventListener('visibilitychange', visibility);
+		gestureSurface.addEventListener('pointerdown', pointerDown, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointermove', pointerMove, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointerup', pointerUp, { passive: false, capture: true });
+		ownerWindow.addEventListener('pointercancel', pointerCancel, { passive: false, capture: true });
 		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
 		surface.addEventListener('wheel', this.onWheel, { passive: false });
 		gestureSurface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
@@ -203,13 +220,13 @@ export class BrowserInputHub implements InputSource {
 		return () => {
 			ownerWindow.removeEventListener('keydown', this.onKeyDown, true);
 			ownerWindow.removeEventListener('keyup', this.onKeyUp, true);
-			ownerWindow.removeEventListener('blur', this.cancelInput);
-			ownerWindow.removeEventListener('pagehide', this.cancelInput);
-			ownerDocument.removeEventListener('visibilitychange', this.onVisibilityChange);
-			gestureSurface.removeEventListener('pointerdown', this.onPointerDown, true);
-			ownerWindow.removeEventListener('pointermove', this.onPointerMove, true);
-			ownerWindow.removeEventListener('pointerup', this.onPointerUp, true);
-			ownerWindow.removeEventListener('pointercancel', this.onPointerCancel, true);
+			ownerWindow.removeEventListener('blur', blur);
+			ownerWindow.removeEventListener('pagehide', pagehide);
+			ownerDocument.removeEventListener('visibilitychange', visibility);
+			gestureSurface.removeEventListener('pointerdown', pointerDown, true);
+			ownerWindow.removeEventListener('pointermove', pointerMove, true);
+			ownerWindow.removeEventListener('pointerup', pointerUp, true);
+			ownerWindow.removeEventListener('pointercancel', pointerCancel, true);
 			surface.removeEventListener('pointerleave', this.onPointerLeave);
 			surface.removeEventListener('wheel', this.onWheel);
 			gestureSurface.removeEventListener('contextmenu', this.onContextMenu);
@@ -218,7 +235,8 @@ export class BrowserInputHub implements InputSource {
 			gestureSurface.removeEventListener('touchend', this.onTouchGesture);
 			ownerWindow.removeEventListener('gamepadconnected', this.onGamepadConnected);
 			ownerWindow.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
-			this.cancelInput();
+			if (trace) this.observeInputReset(trace, 'teardown');
+			else this.cancelInput();
 			unsubscribeOnscreen?.();
 			for (const device of this.gamepads) {
 				if (device) {
@@ -229,6 +247,40 @@ export class BrowserInputHub implements InputSource {
 			this.gamepads.length = 0;
 			this.sink = null;
 		};
+	}
+
+	private observePointerRouting(observer: BrowserInputTraceObserver, handler: (event: PointerEvent) => void): (event: PointerEvent) => void {
+		return event => {
+			const before = this.onscreenGamepad ? this.onscreenGamepad.buttons : 0;
+			const commonBefore = observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1;
+			let route: BrowserInputTraceRoute = this.onscreenGamepad?.ownsContact(event.pointerId)
+				? 'controller' : this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
+			let completed = false;
+			try {
+				handler(event);
+				completed = true;
+			} finally {
+				if (event.type === 'pointerdown') {
+					route = this.onscreenGamepad?.ownsContact(event.pointerId)
+						? 'controller' : this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
+				}
+				observer.pointerRouted(event, route, before, this.onscreenGamepad ? this.onscreenGamepad.buttons : 0,
+					commonBefore, observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1, completed);
+			}
+		};
+	}
+
+	private observeInputReset(observer: BrowserInputTraceObserver, reason: BrowserInputResetReason): void {
+		const before = this.onscreenGamepad ? this.onscreenGamepad.buttons : 0;
+		const commonBefore = observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1;
+		let completed = false;
+		try {
+			this.cancelInput();
+			completed = true;
+		} finally {
+			observer.inputReset(reason, before, this.onscreenGamepad ? this.onscreenGamepad.buttons : 0,
+				commonBefore, observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1, completed);
+		}
 	}
 
 	devices(): InputDevice[] {

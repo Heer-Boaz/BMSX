@@ -1,6 +1,7 @@
 import { escapeUTF8 } from 'entities';
 
 export const PLAYER_MANIFEST = 'manifest.webmanifest';
+export const PLAYER_INPUT_TRACE_SCRIPT = 'input-trace.js';
 /** Only the player template contains this slot; packaging fills it from the cartridge title. */
 export const PLAYER_TITLE_SLOT = '{{BMSX_TITLE}}';
 export const PLAYER_CARTRIDGE_SLOT = '{{BMSX_CARTRIDGE}}';

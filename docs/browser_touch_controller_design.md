@@ -610,7 +610,7 @@ Accessibility minimum target sizes do not establish gameplay comfort.
 
 Before this correction, [PPSSPP's production gamepad](https://github.com/hrydgard/ppsspp/blob/dcbfa7d3ee293b370de0b14487686ffc91ab2ee9/UI/GamepadEmu.cpp#L988-L995)
 was inspected: all four face controls share one round artwork, scale and center
-configuration, with diamond offsets. Its [portrait layout](https://github.com/hrydgard/ppsspp/blob/dcbfa7d3ee293b370de0b14487686ffc91ab2ee9/UI/GamepadEmu.cpp#L817-L832)
+configuration, with diamond offsets. Its [portrait layout](https://github.com/hrydgard/ppsspp/blob/dcbfa7d3ee293b370de0b14487686ffc91ab2ee9/UI/GamepadEmu.cpp#L842-L890)
 lifts the action cluster instead of making those controls smaller. These are
 ownership/layout precedents, not prescribed browser CSS dimensions.
 
@@ -684,3 +684,107 @@ another version of the new contact owners; a future native device trace must
 run the current player owners, not silently use that older diagnostics engine.
 Shared published engine SHA-256:
 `02783ca1d14bcac0a8014c8acef956ecf11a73b6d5f12f7ea9a70b177a861de3`.
+
+## Hand-relative gamepad groups and current-owner trace, 2026-10-11
+
+The previous top-edge utilities and short-landscape center bank are superseded.
+Circle separation alone was an insufficient acceptance criterion: controls also
+need to belong to the hand operating them. The d-pad's contact ownership and
+artwork are retained; there is no guest-input or video-fitting redesign.
+
+### Production reference and ownership
+
+The reference is the complete [Lemuroid PSX layout](https://github.com/Swordfish90/Lemuroid/blob/93e321d08f3dc0776bb0545da975d2cd7cd1f78f/lemuroid-touchinput/src/main/java/com/swordfish/touchinput/radial/layouts/PSX.kt),
+not a game-specific NTE action hierarchy. Its left and right primary controls
+own their [secondary controls](https://github.com/Swordfish90/Lemuroid/blob/93e321d08f3dc0776bb0545da975d2cd7cd1f78f/lemuroid-touchinput/src/main/java/com/swordfish/touchinput/radial/layouts/shared/Controls.kt)
+and [bottom-relative group layout](https://github.com/Swordfish90/Lemuroid/blob/93e321d08f3dc0776bb0545da975d2cd7cd1f78f/lemuroid-touchinput/src/main/java/com/swordfish/touchinput/radial/layouts/BaseLayout.kt).
+Its matched PadKit dependency computes one size for the [four face anchors](https://github.com/Swordfish90/PadKit/blob/708908b28e31a2bda3db275fe964daa7a697816b/lib/src/commonMain/kotlin/gg/padkit/anchors/PrimaryAnchors.kt)
+and positions [secondary dials around their primary group](https://github.com/Swordfish90/PadKit/blob/708908b28e31a2bda3db275fe964daa7a697816b/lib/src/commonMain/kotlin/gg/padkit/layouts/radial/secondarydials/LayoutRadialSecondaryDialGeometry.kt).
+These principles are adopted with BMSX's own SVG artwork, dimensions and bit
+assignments, not copied GPL implementation code or a claim of physical comfort.
+
+- `BrowserOnscreenGamepadView` owns the authored CSS-client layout and publishes
+  the same circle geometry to acquisition. LS/Select belong to the stick group;
+  RS/Start belong to the four-face group. Utilities are hand-relative, never an
+  independent viewport-top row or central bank. Landscape secondary controls
+  sit inward alongside their own primary, including short browser viewports.
+- A/B/X/Y retain the same nominal size and diamond. LS and RS still mean the
+  existing LeftStick/RightStick bits, not newly invented shoulder-button bits.
+- Normal phone profiles retain the 180px stick, 80px face targets and 52px
+  utilities. Portrait uses an authored stagger: the face-group center is 144px
+  above the stick center, or 208px for widths below 380px. Utilities sit just
+  above their own group. Embedded players below phone dimensions scale the
+  whole group together; their smaller targets are not a phone-ergonomics claim.
+- `BrowserVideoOutput` still owns safe-area/visual-viewport measurements and
+  maximum fitting 4:3 presentation on the half-step scale grid. Controls overlay
+  the independently fitted game image; no control strip reduces the canvas.
+- `BrowserInputHub`, the contact model and common frame polling retain their
+  input behavior. A layout change is not evidence of an iPhone transport fix.
+
+### Native trace is observation, not another input path
+
+The previously published `/ios/` contained an older engine and only GPU
+instrumentation. It never implemented the native touch trace described in the
+preceding section. The replacement package uses the exact same current engine
+and paired media as its ordinary game page, with an explicitly selected early
+`input-trace.js`. The panel exists before engine initialization and lies outside
+`#player-surface`; it can be operated without the controller consuming its taps.
+
+`input_trace.ts` owns native observation, `input_trace_buffer.ts` the bounded
+record store, and `input_trace_view.ts` presentation/export. Native listeners are
+installed before the hub's capture listeners. Diagnostic-only hub callbacks
+bracket the real handlers, including exceptions, and record model/common raw
+words, route and completion. Normal subscriptions select the original handlers
+without per-event trace branches; the common poll path is untouched.
+
+This follows [WebKit's dispatch bracketing](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/inspector/agents/InspectorTimelineAgent.cpp#L278-L292)
+and [Perfetto's explicit bounded-buffer policy](https://perfetto.dev/docs/concepts/buffers):
+2048 reused rows and contact arrays, an explicit overwrite count, freeze/resume,
+and error text retained independently of the rotating event window. Formatting
+is on 500ms diagnostic UI refresh or export, not native input delivery. TouchEvent full
+and changed identifiers are observational only. Pointer IDs, primary flags,
+capture, up/cancel, blur/pagehide/visibility resets and early errors/rejections
+are visible or downloadable without URL parameters or clipboard permissions.
+
+The iPhone A+B release remains an open device-specific diagnosis. Neither the
+malformed WPE full-snapshot injection nor passing Chromium A+B justifies
+changing pointer leases, ignoring cancellation or switching input transports.
+The new trace removes the missing-observability/publication problem; it does not
+pretend to identify an event sequence that has not yet been observed on iOS.
+
+### Validation and publication
+
+The focused suite passes 71 tests, including 26 geometry profiles, held-input
+viewport transitions, native Chromium A+B+stick delivery, independent releases,
+all reset reasons, trace freezing/export and partial routing exceptions. Browser,
+node-host, scripts and tests typechecks and the release player build pass.
+Reviewed screenshots cover actual games in both orientations, bright/dark
+fixtures, narrow portrait and short Safari-sized landscape viewports. Geometry
+checks cover own-hand offsets and separation, not merely on-screen bounds.
+
+The ordinary `/nemesis_s/` and `/2025/` and the current-owner `/ios/` and
+`/ios/piet/` are published. All four share engine SHA-256
+`0076b39ae33016a844712ad8a8e7b663e29dbea5a34dec288d7178d39783fd98`.
+Public bytes match package receipts; paired immutable ROMs, CORS and COOP/COEP
+are verified. The library index and historical `/ios-diagnostics/` are retained;
+old `/ios/` renderer subpaths redirect to the corresponding current trace page.
+Actual public Chromium checks show WebGPU, running non-silent AudioWorklets,
+trusted A+B+stick with independent releases, no browser errors and the visible
+trace observing the same model/common owners. Local evidence is under
+`.bmsx/hosting/hand-group-controls-evidence/` and
+`.bmsx/hosting/hand-group-gamepad-evidence/`.
+
+Actual local Linux WPE WebKit checks also pass on all four current packages in
+both orientations: trusted changed-contact A+B injection, independent releases,
+visible trace/export UI, WebGL2, running audio, 4:3, viewport scale 1, no errors
+or failed requests. Diagnostic model/common words follow `0 -> 1 -> 3 -> 2 -> 0`.
+A separate real-HTTP-origin WPE exception probe confirms that an unsuccessful
+native route retains partial words, `completed=false` and the original error's
+source/line/stack. Its earlier `about:blank`/evaluation fixture produced the
+browser-sanitized `Script error.` instead; that is not proof of trace failure.
+The WPE injector's changed-contact/primary semantics are not faithful UIKit
+held-contact snapshots. This evidence remains explicitly Linux-only.
+
+These results do not establish iPhone A+B correctness or physical thumb comfort.
+The remaining device-specific release needs the actual iPhone event sequence;
+there is deliberately no cancellation suppression or transport workaround.
