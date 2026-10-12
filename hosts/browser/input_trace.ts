@@ -80,6 +80,8 @@ export class BrowserInputTrace implements BrowserInputDiagnostics {
 		record.prevented = event.defaultPrevented;
 		record.x = event.clientX;
 		record.y = event.clientY;
+		record.width = event.width;
+		record.height = event.height;
 		record.nativeButtons = event.buttons;
 		record.pressure = event.pressure;
 		record.target = event.target instanceof Element ? event.target.id : '';

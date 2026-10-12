@@ -1,5 +1,5 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
+import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenDirectionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick }
 
@@ -14,12 +14,19 @@ const ACTIONS = [
 	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
 ] as const;
 
+const DIRECTIONS = [
+	{ id: 'd-pad-up', buttons: 1 << InputControllerGamepadButtonBit.Up },
+	{ id: 'd-pad-right', buttons: 1 << InputControllerGamepadButtonBit.Right },
+	{ id: 'd-pad-down', buttons: 1 << InputControllerGamepadButtonBit.Down },
+	{ id: 'd-pad-left', buttons: 1 << InputControllerGamepadButtonBit.Left },
+] as const;
+
 const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
 const COMPACT_PROFILE = { margin: 20, bottom: 24 };
 const SMALL_PLAYER_PROFILE = { margin: 20, bottom: 20 };
 const LANDSCAPE_PROFILE = { margin: 32, bottom: 32 };
 const PORTRAIT_PROFILE = { margin: 24, bottom: 32 };
-const STICK_SIZE = 180;
+const PAD_SIZE = 180;
 const CONTROL_GAP = 12;
 const UTILITY_SIZE = 52;
 const PORTRAIT_FACE_LIFT = 144;
@@ -36,29 +43,25 @@ interface ActionSurface {
 
 /** Passive controller artwork and its authored numerical layout. */
 export class BrowserOnscreenGamepadView {
-	private readonly stickSurface: HTMLElement;
+	private readonly padSurface: HTMLElement;
 	private readonly actionSurfaces: ActionSurface[] = [];
-	private readonly stickBase: SVGCircleElement;
-	private readonly stickTip: SVGCircleElement;
-	private readonly stickArtworkWidth: number;
-	private readonly stickArtworkHeight: number;
-	private readonly nominalStickX: number;
-	private readonly nominalStickY: number;
-	private readonly nominalStickRadius: number;
-	private readonly nominalDeadzoneRadius: number;
-	private readonly tipTravel: number;
+	private readonly padArtworkWidth: number;
+	private readonly padArtworkHeight: number;
+	private readonly nominalPadX: number;
+	private readonly nominalPadY: number;
+	private readonly nominalPadRadius: number;
+	private readonly directionRects: SVGRectElement[] = [];
+	private readonly nominalDirections: OnscreenDirectionGeometry[] = [];
+	private readonly directions: OnscreenDirectionGeometry[] = [];
 	private readonly circles: SVGCircleElement[] = [];
 	private readonly nominalActions: OnscreenActionGeometry[] = [];
 	private readonly actions: OnscreenActionGeometry[] = [];
 	private readonly geometry: OnscreenGamepadGeometry = {
-		stickX: 0, stickY: 0, stickRadius: 0, stickDeadzoneRadius: 0, actions: this.actions,
+		padX: 0, padY: 0, padRadius: 0, directions: this.directions, actions: this.actions,
 	};
 	private readonly unsubscribeView: () => void;
 	private animationFrameId = 0;
 	private renderedButtons = 0;
-	private renderedStickX = 0;
-	private renderedStickY = 0;
-	private renderedStickActive = false;
 	private layoutLeft = 0;
 	private layoutTop = 0;
 	private layoutWidth = -1;
@@ -69,12 +72,10 @@ export class BrowserOnscreenGamepadView {
 		private readonly window: Window,
 		private readonly model: BrowserOnscreenGamepad,
 	) {
-		this.stickSurface = document.getElementById('d-pad-controls');
-		this.stickBase = document.getElementById('d-pad-base') as unknown as SVGCircleElement;
-		this.stickTip = document.getElementById('d-pad-tip') as unknown as SVGCircleElement;
-		const stickArtwork = document.getElementById('d-pad-svg') as unknown as SVGSVGElement;
-		this.stickArtworkWidth = stickArtwork.viewBox.baseVal.width;
-		this.stickArtworkHeight = stickArtwork.viewBox.baseVal.height;
+		this.padSurface = document.getElementById('d-pad-controls');
+		const padArtwork = document.getElementById('d-pad-svg') as unknown as SVGSVGElement;
+		this.padArtworkWidth = padArtwork.viewBox.baseVal.width;
+		this.padArtworkHeight = padArtwork.viewBox.baseVal.height;
 		for (const id of ACTION_SURFACES) {
 			const element = document.getElementById(id);
 			const artwork = element.firstElementChild as SVGSVGElement;
@@ -83,12 +84,20 @@ export class BrowserOnscreenGamepadView {
 				left: 0, top: 0, scale: 1,
 			});
 		}
-		this.nominalStickX = this.stickBase.cx.baseVal.value;
-		this.nominalStickY = this.stickBase.cy.baseVal.value;
-		this.nominalStickRadius = this.stickBase.r.baseVal.value;
-		const deadzone = document.getElementById('d-pad-deadzone') as unknown as SVGCircleElement;
-		this.nominalDeadzoneRadius = deadzone.r.baseVal.value;
-		this.tipTravel = this.nominalStickRadius - this.stickTip.r.baseVal.value - 2;
+		this.nominalPadX = this.padArtworkWidth / 2;
+		this.nominalPadY = this.padArtworkHeight / 2;
+		this.nominalPadRadius = this.padArtworkWidth / 2;
+		for (const direction of DIRECTIONS) {
+			const rect = document.getElementById(direction.id) as unknown as SVGRectElement;
+			this.directionRects.push(rect);
+			this.nominalDirections.push({
+				x: rect.x.baseVal.value + rect.width.baseVal.value / 2,
+				y: rect.y.baseVal.value + rect.height.baseVal.value / 2,
+				halfWidth: rect.width.baseVal.value / 2, halfHeight: rect.height.baseVal.value / 2,
+				buttons: direction.buttons,
+			});
+			this.directions.push({ x: 0, y: 0, halfWidth: 0, halfHeight: 0, buttons: direction.buttons });
+		}
 		for (const action of ACTIONS) {
 			const circle = document.getElementById(action.id) as unknown as SVGCircleElement;
 			this.circles.push(circle);
@@ -117,25 +126,25 @@ export class BrowserOnscreenGamepadView {
 			? Math.min(1, width / 568, height / 239)
 			: Math.min(1.1, Math.max(1, Math.min(width, height) / 390));
 		const margin = smallPlayer ? profile.margin * viewportScale : shortLandscape ? 20 : profile.margin;
-		const stickBottom = smallPlayer ? profile.bottom * viewportScale : shortLandscape ? 20 : profile.bottom;
+		const padBottom = smallPlayer ? profile.bottom * viewportScale : shortLandscape ? 20 : profile.bottom;
 		const faceBottom = smallPlayer ? 16 * viewportScale : shortLandscape ? 16 : profile.bottom;
-		const stickScale = STICK_SIZE / this.stickArtworkWidth * viewportScale;
+		const padScale = PAD_SIZE / this.padArtworkWidth * viewportScale;
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
 		const faceScale = viewportScale;
-		const stickLeft = left + margin;
-		const stickTop = top + height - stickBottom - this.stickArtworkHeight * stickScale;
-		const stickX = stickLeft + this.nominalStickX * stickScale;
-		const stickY = stickTop + this.nominalStickY * stickScale;
-		const stickRadius = this.nominalStickRadius * stickScale;
+		const padLeft = left + margin;
+		const padTop = top + height - padBottom - this.padArtworkHeight * padScale;
+		const padX = padLeft + this.nominalPadX * padScale;
+		const padY = padTop + this.nominalPadY * padScale;
+		const padRadius = this.nominalPadRadius * padScale;
 		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
 		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
 		const faceCenterY = landscape
 			? top + height - faceBottom - faceSurface.artworkHeight * faceScale / 2
-			: stickY - (width < 380 ? NARROW_PORTRAIT_FACE_LIFT : PORTRAIT_FACE_LIFT) * viewportScale;
+			: padY - (width < 380 ? NARROW_PORTRAIT_FACE_LIFT : PORTRAIT_FACE_LIFT) * viewportScale;
 		const faceTop = faceCenterY - faceSurface.artworkHeight * faceScale / 2;
-		this.stickSurface.style.left = `${stickLeft}px`;
-		this.stickSurface.style.top = `${stickTop}px`;
-		this.stickSurface.style.transform = `scale(${stickScale})`;
+		this.padSurface.style.left = `${padLeft}px`;
+		this.padSurface.style.top = `${padTop}px`;
+		this.padSurface.style.transform = `scale(${padScale})`;
 		this.placeActionSurface(ActionSurfaceIndex.Face, faceLeft, faceTop, faceScale);
 		// Lemuroid/PadKit's primary/secondary grouping: secondary controls follow
 		// their own hand, not the viewport top or a shared central packing area.
@@ -145,30 +154,37 @@ export class BrowserOnscreenGamepadView {
 		if (landscape) {
 			// Inward arcs also fit the short visual viewport left by Safari chrome.
 			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
-				stickX + 100 * viewportScale - utilityRadius, stickY - 80 * viewportScale - utilityRadius, utilityScale);
+				padX + 100 * viewportScale - utilityRadius, padY - 80 * viewportScale - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.Select,
-				stickX + 128 * viewportScale - utilityRadius, stickY + 10 * viewportScale - utilityRadius, utilityScale);
+				padX + 128 * viewportScale - utilityRadius, padY + 10 * viewportScale - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.RightStick,
 				faceCenterX - 100 * viewportScale - utilityRadius, faceCenterY - 70 * viewportScale - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.Start,
 				faceCenterX - 140 * viewportScale - utilityRadius, faceCenterY + 20 * viewportScale - utilityRadius, utilityScale);
 		} else {
-			const leftUtilityY = stickY - stickRadius - utilityRadius - CONTROL_GAP * viewportScale;
+			const leftUtilityY = padY - padRadius - utilityRadius - CONTROL_GAP * viewportScale;
 			const rightUtilityY = faceTop - utilityRadius - CONTROL_GAP * viewportScale;
 			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
-				stickX - 64 * viewportScale - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
+				padX - 64 * viewportScale - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.Select,
-				stickX - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
+				padX - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.RightStick,
 				faceCenterX + 78 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
 			this.placeActionSurface(ActionSurfaceIndex.Start,
 				faceCenterX + 14 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
 		}
 		const geometry = this.geometry;
-		geometry.stickX = stickX;
-		geometry.stickY = stickY;
-		geometry.stickRadius = stickRadius;
-		geometry.stickDeadzoneRadius = this.nominalDeadzoneRadius * stickScale;
+		geometry.padX = padX;
+		geometry.padY = padY;
+		geometry.padRadius = padRadius;
+		for (let index = 0; index < this.directions.length; index += 1) {
+			const nominal = this.nominalDirections[index];
+			const direction = this.directions[index];
+			direction.x = padLeft + nominal.x * padScale;
+			direction.y = padTop + nominal.y * padScale;
+			direction.halfWidth = nominal.halfWidth * padScale;
+			direction.halfHeight = nominal.halfHeight * padScale;
+		}
 		for (let index = 0; index < this.actions.length; index += 1) {
 			const surface = this.actionSurfaces[ACTIONS[index].surface];
 			const nominal = this.nominalActions[index];
@@ -178,14 +194,14 @@ export class BrowserOnscreenGamepadView {
 			action.radius = nominal.radius * surface.scale;
 		}
 		this.model.setGeometry(geometry);
-		this.stickSurface.hidden = false;
+		this.padSurface.hidden = false;
 	}
 
 	public dispose(): void {
 		this.unsubscribeView();
 		if (this.animationFrameId) this.window.cancelAnimationFrame(this.animationFrameId);
 		this.animationFrameId = 0;
-		this.stickSurface.hidden = true;
+		this.padSurface.hidden = true;
 		for (const surface of this.actionSurfaces) surface.element.hidden = true;
 	}
 
@@ -216,19 +232,13 @@ export class BrowserOnscreenGamepadView {
 					this.circles[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
 				}
 			}
+			for (let index = 0; index < DIRECTIONS.length; index += 1) {
+				const mask = DIRECTIONS[index].buttons;
+				if ((changedButtons & mask) !== 0) {
+					this.directionRects[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
+				}
+			}
 		}
 		this.renderedButtons = buttons;
-		const active = model.stickActive;
-		if (active !== this.renderedStickActive) {
-			this.stickBase.setAttribute('data-touched', active ? 'true' : 'false');
-			this.renderedStickActive = active;
-		}
-		const x = model.stickX;
-		const y = model.stickY;
-		if (x !== this.renderedStickX || y !== this.renderedStickY) {
-			this.stickTip.setAttribute('transform', `translate(${x * this.tipTravel} ${y * this.tipTravel})`);
-			this.renderedStickX = x;
-			this.renderedStickY = y;
-		}
 	};
 }

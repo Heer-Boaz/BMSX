@@ -4919,8 +4919,25 @@ not change that player's controls. Browser DOM, hit testing, control styling,
 and control layout remain in `hosts/browser`; the retained onscreen controller
 enters common input as an ordinary `GamepadDevice`, not as a DOM proxy contract.
 The onscreen controller retains each contact from `pointerdown` until that
-pointer's `pointerup`, `pointercancel`, or lost capture. Button/element reference
-counts combine contacts without releasing another finger's controls. Neither
+pointer's `pointerup` or `pointercancel`. The browser input hub converts native
+touch contact dimensions into CSS-client half-extents once per down/move.
+Reported dimensions are consumed directly; the Pointer Events unavailable
+`1x1` contact uses an authored `28x28` CSS-pixel envelope. Mouse/pen remain point
+contacts. Pressure is not a size estimate, and Touch Events are not a second
+producer. The numerical controller recomputes each contact's contribution
+against every circular action button and finite rectangular D-pad direction.
+A thumb can overlap adjacent buttons; direction changes and diagonal rolling
+publish raw digital bits immediately, with no analog origin, moving tip,
+exclusive first-finger owner or initial-button assignment.
+
+Per-button reference counts combine contacts without releasing another
+finger's controls. A neutral D-pad contact can acquire the controller route.
+Leaving every virtual button releases its contribution, not its capture/route;
+returning or sliding between controller buttons needs no new down. A
+canvas-started contact remains canvas input. Layout changes resample retained
+scalar contacts once and publish the resulting aggregate edges, not false
+intermediate edges between fingers. This is host interaction policy, not a
+machine-runtime or mirrored ICU change. Neither
 compatibility mouse boundary events, focus gain, nor touch pressure/button
 fields end a retained contact. Window blur, page hide, and document visibility
 loss end all contacts; a visible `visibilitychange` does not.

@@ -29,7 +29,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		(globalThis as any).layoutProbe = {
 			pad, view, video,
 			measure() {
-				return ['gamescreen', 'd-pad-controls', 'button-controls', 'd-pad-base', 'a_knop', 'b_knop'].map(id => {
+				return ['gamescreen', 'd-pad-controls', 'button-controls', 'd-pad-svg', 'a_knop', 'b_knop'].map(id => {
 					const bounds = document.getElementById(id)!.getBoundingClientRect();
 					return { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
 				});
@@ -89,20 +89,21 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		probe.video.setDisplaySize(320, 240);
 		probe.video.refreshLayout();
 		const a = document.getElementById('a_knop')!.getBoundingClientRect();
-		probe.pad.beginContact(1, a.left + a.width / 2, a.top + a.height / 2, true);
+		probe.pad.beginContact(1, a.left + a.width / 2, a.top + a.height / 2, 14, 14, true);
 	});
 	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 	const before = await measure();
 	await page.setViewportSize({ width: 393, height: 852 });
 	await page.evaluate(() => (globalThis as any).layoutProbe.video.refreshLayout());
-	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 1);
+	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 0, 'a stationary contact follows moved geometry rather than its initial action label');
 	const after = await measure();
 	assert.notDeepEqual(after[4], before[4], 'orientation updates nominal action geometry');
 	await page.evaluate(() => {
 		const probe = (globalThis as any).layoutProbe;
 		const b = document.getElementById('b_knop')!.getBoundingClientRect();
-		probe.pad.moveContact(1, b.left + b.width / 2, b.top + b.height / 2, true);
-		probe.pad.beginContact(2, b.left + b.width / 2, b.top + b.height / 2, true);
+		probe.pad.moveContact(1, b.left + b.width / 2, b.top + b.height / 2, 14, 14, true);
+		const a = document.getElementById('a_knop')!.getBoundingClientRect();
+		probe.pad.beginContact(2, a.left + a.width / 2, a.top + a.height / 2, 14, 14, true);
 	});
 	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 3);
 	await page.evaluate(() => {

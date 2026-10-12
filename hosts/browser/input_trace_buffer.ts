@@ -15,6 +15,8 @@ export class BrowserInputTraceRecord {
 	prevented = false;
 	x = 0;
 	y = 0;
+	width = 0;
+	height = 0;
 	nativeButtons = 0;
 	pressure = 0;
 	target = '';
@@ -69,6 +71,8 @@ export class BrowserInputTraceBuffer {
 		record.prevented = false;
 		record.x = 0;
 		record.y = 0;
+		record.width = 0;
+		record.height = 0;
 		record.nativeButtons = 0;
 		record.pressure = 0;
 		record.target = '';

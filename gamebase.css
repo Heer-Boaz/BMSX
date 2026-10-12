@@ -26,42 +26,33 @@
 	stroke-width: 3;
 }
 
-#d-pad-base {
-	fill: rgba(15, 22, 30, 0.32);
-	stroke: rgba(232, 240, 247, 0.52);
-	stroke-width: 1;
-}
-
-#d-pad-base[data-touched="true"] {
-	fill: rgba(27, 42, 55, 0.5);
-	stroke: rgba(234, 248, 255, 0.96);
-	stroke-width: 1.5;
-}
-
-#d-pad-deadzone { visibility: hidden; }
-
-.stick-guides {
-	fill: none;
-	stroke: rgba(235, 244, 250, 0.48);
-	stroke-width: 1.5;
-	stroke-linecap: round;
-}
-
-#d-pad-tip {
-	fill: rgba(207, 222, 234, 0.65);
-	stroke: rgba(12, 21, 31, 0.65);
-	stroke-width: 2;
-}
-
-#d-pad-base[data-touched="true"] ~ #d-pad-tip {
-	fill: rgba(224, 246, 255, 0.94);
-	stroke: rgba(46, 100, 127, 0.92);
-}
-
-.action-button {
+.action-button,
+.direction-button {
 	fill: rgba(15, 22, 30, 0.64);
 	stroke: rgba(232, 240, 247, 0.7);
 	stroke-width: 1.25;
+}
+
+.direction-button[data-touched="true"] {
+	fill: rgba(30, 74, 98, 0.9);
+	stroke: #e2f7ff;
+	stroke-width: 2;
+}
+
+.direction-arrow {
+	fill: none;
+	stroke: rgba(243, 247, 250, 0.88);
+	stroke-width: 2.5;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.direction-button[data-touched="true"] ~ .direction-arrow { stroke: #fff; }
+
+.direction-hub {
+	fill: rgba(15, 22, 30, 0.4);
+	stroke: rgba(232, 240, 247, 0.35);
+	stroke-width: 1;
 }
 
 .action-button[data-touched="true"] {

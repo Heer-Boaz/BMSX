@@ -17,6 +17,9 @@ import { sonyGamepadProductId } from './sony_gamepad_hid';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
+// Pointer Events report 1x1 when contact geometry is unavailable. This authored
+// 28px touch envelope bridges adjacent gamepad buttons without enlarging mouse/pen input.
+const ESTIMATED_TOUCH_HALF_SIZE = 14;
 const POINTER_NATIVE_BUTTON_MASKS = [1, 4, 2, 8, 16] as const;
 const POINTER_BUTTON_CODES = [
 	'pointer_primary', 'pointer_aux', 'pointer_secondary', 'pointer_back', 'pointer_forward',
@@ -384,12 +387,18 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private readonly onPointerDown = (event: PointerEvent): void => {
-		const active = event.pointerType === 'touch' || (event.buttons & 1) !== 0;
-		if (this.onscreenGamepad?.beginContact(event.pointerId, event.clientX, event.clientY, active)) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			this.gestureSurface.setPointerCapture(event.pointerId);
-			return;
+		const touch = event.pointerType === 'touch';
+		const active = touch || (event.buttons & 1) !== 0;
+		if (this.onscreenGamepad) {
+			const estimated = touch && event.width === 1 && event.height === 1;
+			const halfWidth = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.width / 2 : 0;
+			const halfHeight = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.height / 2 : 0;
+			if (this.onscreenGamepad.beginContact(event.pointerId, event.clientX, event.clientY, halfWidth, halfHeight, active)) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				this.gestureSurface.setPointerCapture(event.pointerId);
+				return;
+			}
 		}
 		if (!this.surface.contains(event.target as Node)) return;
 		event.preventDefault();
@@ -469,11 +478,17 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	private readonly onPointerMove = (event: PointerEvent): void => {
-		const active = event.pointerType === 'touch' || (event.buttons & 1) !== 0;
-		if (this.onscreenGamepad?.moveContact(event.pointerId, event.clientX, event.clientY, active)) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			return;
+		const touch = event.pointerType === 'touch';
+		const active = touch || (event.buttons & 1) !== 0;
+		if (this.onscreenGamepad) {
+			const estimated = touch && event.width === 1 && event.height === 1;
+			const halfWidth = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.width / 2 : 0;
+			const halfHeight = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.height / 2 : 0;
+			if (this.onscreenGamepad.moveContact(event.pointerId, event.clientX, event.clientY, halfWidth, halfHeight, active)) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				return;
+			}
 		}
 		const index = this.activePointerIndex(event.pointerId);
 		if (index >= 0) {

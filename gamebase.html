@@ -30,11 +30,27 @@
 			<div id="extra-message" class="coloring" hidden></div>
 			<div id="d-pad-controls" class="control-surface" aria-hidden="true" hidden>
 				<svg id="d-pad-svg" viewBox="0 0 100 100" width="100" height="100">
-					<circle class="control-bezel" cx="50" cy="50" r="51" />
-					<circle id="d-pad-base" cx="50" cy="50" r="50" data-touched="false" />
-					<circle id="d-pad-deadzone" cx="50" cy="50" r="9" />
-					<path class="stick-guides" d="M50 7v4 M89 50h4 M50 89v4 M7 50h4" />
-					<circle id="d-pad-tip" cx="50" cy="50" r="18" />
+					<g class="direction-control">
+						<rect class="control-bezel" x="35" y="5" width="30" height="29" rx="4" />
+						<rect id="d-pad-up" class="direction-button" x="35" y="5" width="30" height="29" rx="4" data-touched="false" />
+						<path class="direction-arrow" d="M44 22l6-6 6 6" />
+					</g>
+					<g class="direction-control">
+						<rect class="control-bezel" x="66" y="35" width="29" height="30" rx="4" />
+						<rect id="d-pad-right" class="direction-button" x="66" y="35" width="29" height="30" rx="4" data-touched="false" />
+						<path class="direction-arrow" d="M78 44l6 6-6 6" />
+					</g>
+					<g class="direction-control">
+						<rect class="control-bezel" x="35" y="66" width="30" height="29" rx="4" />
+						<rect id="d-pad-down" class="direction-button" x="35" y="66" width="30" height="29" rx="4" data-touched="false" />
+						<path class="direction-arrow" d="M44 78l6 6 6-6" />
+					</g>
+					<g class="direction-control">
+						<rect class="control-bezel" x="5" y="35" width="29" height="30" rx="4" />
+						<rect id="d-pad-left" class="direction-button" x="5" y="35" width="29" height="30" rx="4" data-touched="false" />
+						<path class="direction-arrow" d="M22 44l-6 6 6 6" />
+					</g>
+					<circle class="direction-hub" cx="50" cy="50" r="7" />
 				</svg>
 			</div>
 			<div id="button-controls" class="control-surface" aria-hidden="true" hidden>

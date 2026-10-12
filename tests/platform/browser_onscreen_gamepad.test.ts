@@ -84,7 +84,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					pointer: snapshot.pointerButtons, pointerMmio: memory.readIoU32(api.IO_INP_POINTER_BUTTONS),
 					position: [snapshot.pointerXQ16, snapshot.pointerYQ16],
 					pointerState: { pressed: primary.pressed, justreleased: primary.justreleased, wasreleased: primary.wasreleased },
-					stick: [pad.stickX, pad.stickY, pad.stickActive],
+					directions: ['d-pad-up', 'd-pad-right', 'd-pad-down', 'd-pad-left'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
 					visuals: ['a_knop', 'b_knop', 'x_knop', 'y_knop'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
 					edges: edges.splice(0),
 				};
@@ -104,15 +104,16 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			const rect = document.getElementById(id)!.getBoundingClientRect();
 			return { id: finger, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 		} };
-		const base = document.getElementById('d-pad-base')!.getBoundingClientRect();
+		const base = document.getElementById('d-pad-svg')!.getBoundingClientRect();
 		const a = document.getElementById('a_knop')!.getBoundingClientRect();
 		const canvas = document.getElementById('gamescreen')!.getBoundingClientRect();
 		return {
 			a: coordinates.center('a_knop', 1), b: coordinates.center('b_knop', 2), x: coordinates.center('x_knop', 3), y: coordinates.center('y_knop', 4),
 			a2: { id: 5, x: a.left + a.width * 0.6, y: a.top + a.height * 0.5 },
 			aEdge: { id: 1, x: a.left + a.width * 0.5, y: a.top + a.height * 0.025 },
-			stick: coordinates.center('d-pad-base', 6),
-			left: { id: 6, x: base.left + base.width * 0.15, y: base.top + base.height * 0.5 },
+			pad: coordinates.center('d-pad-svg', 6),
+			left: coordinates.center('d-pad-left', 6), right: coordinates.center('d-pad-right', 6), up: coordinates.center('d-pad-up', 6),
+			upRight: { id: 6, x: base.left + base.width * 0.64, y: base.top + base.height * 0.36, radiusX: 14, radiusY: 14 },
 			canvas: { id: 7, x: canvas.left + canvas.width * 0.5, y: canvas.top + canvas.height * 0.5 },
 			canvas2: { id: 8, x: canvas.left + canvas.width * 0.55, y: canvas.top + canvas.height * 0.5 },
 			miss: { id: 9, x: 430, y: 5 },
@@ -120,7 +121,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 	});
 	const poll = () => page.evaluate(() => (globalThis as any).touchTest.poll());
 	const activeTouchIds = new Set<number>();
-	const touch = async (type: 'touchStart' | 'touchEnd' | 'touchMove' | 'touchCancel', touchPoints: Array<{ id: number; x: number; y: number; force?: number }>) => {
+	const touch = async (type: 'touchStart' | 'touchEnd' | 'touchMove' | 'touchCancel', touchPoints: Array<{ id: number; x: number; y: number; force?: number; radiusX?: number; radiusY?: number }>) => {
 		await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 		if (type === 'touchStart') for (const point of touchPoints) activeTouchIds.add(point.id);
 		else if (type === 'touchCancel' || (type === 'touchEnd' && touchPoints.length === 0)) activeTouchIds.clear();
@@ -158,7 +159,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		}
 	});
 
-	await t.test('near-edge action movement cannot release through pressed artwork hit changes', async () => {
+	await t.test('action movement follows physical contact, not pressed artwork or its initial assignment', async () => {
 		await touch('touchStart', [points.aEdge]);
 		await assertWord(1);
 		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
@@ -167,6 +168,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await touch('touchMove', [{ ...points.aEdge, y: points.aEdge.y + 0.2, force: 0 }]);
 		await assertWord(1);
 		await touch('touchMove', [{ ...points.aEdge, x: points.canvas.x, y: points.canvas.y }]);
+		await assertWord(0);
+		await touch('touchMove', [{ ...points.b, id: points.aEdge.id }]);
+		await assertWord(2);
+		await touch('touchMove', [points.a]);
 		await assertWord(1);
 		await touch('touchEnd', []);
 		await assertWord(0);
@@ -186,7 +191,26 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		assert.deepEqual(released.edges.map((edge: any) => [edge.code, edge.down]), [['a', false]]);
 	});
 
-	await t.test('sequential stick+A+B+X+Y and outside-area stick dragging preserve every owner', async () => {
+	await t.test('digital D-pad capture supports immediate direction changes, rolling and re-entry', async () => {
+		await touch('touchStart', [points.pad]);
+		await assertWord(0);
+		await touch('touchMove', [points.right]);
+		await assertWord(0x8000);
+		await touch('touchMove', [points.up]);
+		await assertWord(0x1000, 0); // One native move, no center traversal or analog settling.
+		await touch('touchMove', [points.upRight]);
+		await assertWord(0x9000);
+		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+		assert.deepEqual((await poll()).directions, ['true', 'true', 'false', 'false']);
+		await touch('touchMove', [{ ...points.pad, x: points.canvas.x, y: points.canvas.y }]);
+		await assertWord(0);
+		await touch('touchMove', [points.left]);
+		await assertWord(0x4000);
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
+	await t.test('D-pad and A+B+X+Y fingers remain independent when one leaves every button', async () => {
 		const active = [points.left];
 		await touch('touchStart', active);
 		await assertWord(0x4000);
@@ -195,37 +219,34 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			await touch('touchStart', active);
 		}
 		await assertWord(0x400f);
-		active[0] = { ...points.left, x: points.canvas.x, y: points.stick.y };
+		active[0] = { ...points.left, x: points.canvas.x, y: points.pad.y };
 		await touch('touchMove', active);
-		const outside = await assertWord(0x800f);
-		assert.ok(Math.abs(outside.stick[0] - 1) < 0.0001);
-		assert.ok(Math.abs(outside.stick[1]) < 0.0001);
-		assert.equal(outside.stick[2], true);
-		active[0] = points.stick;
+		await assertWord(0xf);
+		active[0] = points.pad;
 		await touch('touchMove', active);
-		const neutral = (await assertWord(0xf)).stick;
-		assert.ok(Math.abs(neutral[0]) < 0.0001);
-		assert.ok(Math.abs(neutral[1]) < 0.0001);
-		assert.equal(neutral[2], true);
-		await touch('touchEnd', [points.stick]);
+		await assertWord(0xf);
+		active[0] = points.left;
+		await touch('touchMove', active);
+		await assertWord(0x400f);
+		await touch('touchEnd', [points.left]);
 		await assertWord(0xf);
 		await touch('touchEnd', []);
-		assert.deepEqual((await assertWord(0)).stick, [0, 0, false]);
+		await assertWord(0);
 	});
 
-	await t.test('miss and busy-stick contacts never acquire a different control on movement', async () => {
+	await t.test('misses stay outside the controller while every acquired finger can slide between virtual buttons', async () => {
 		await touch('touchStart', [points.miss]);
 		await touch('touchMove', [{ ...points.miss, x: points.a.x, y: points.a.y }]);
 		await assertWord(0);
 		await touch('touchEnd', []);
-		const busy = { ...points.stick, id: 10 };
+		const second = { ...points.pad, id: 10 };
 		await touch('touchStart', [points.left]);
-		await touch('touchStart', [points.left, busy]);
+		await touch('touchStart', [points.left, second]);
 		await assertWord(0x4000);
 		await touch('touchEnd', [points.left]);
 		await assertWord(0);
-		await touch('touchMove', [{ ...busy, x: points.a.x, y: points.a.y }]);
-		await assertWord(0);
+		await touch('touchMove', [{ ...second, x: points.a.x, y: points.a.y }]);
+		await assertWord(1);
 		await touch('touchEnd', []);
 	});
 
@@ -310,20 +331,20 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await assertWord(0);
 	});
 
-	await t.test('native mouse chording gates contribution without releasing or retargeting the lease', async () => {
+	await t.test('native mouse chording gates a point contact while movement updates its live buttons', async () => {
 		await page.mouse.move(points.a.x, points.a.y);
 		await page.mouse.down({ button: 'right' });
 		await assertWord(0);
 		await page.mouse.down({ button: 'left' });
 		await assertWord(1);
 		await page.mouse.move(points.b.x, points.b.y);
-		await assertWord(1);
+		await assertWord(2);
 		await page.mouse.up({ button: 'left' });
 		await assertWord(0);
 		await page.mouse.down({ button: 'left' });
-		await assertWord(1);
+		await assertWord(2);
 		await page.mouse.up({ button: 'right' });
-		await assertWord(1);
+		await assertWord(2);
 		await page.mouse.up({ button: 'left' });
 		await assertWord(0);
 		await page.mouse.move(points.b.x, points.b.y);
@@ -343,18 +364,18 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', x: points.a.x, y: points.a.y, button: 'left', buttons: 3, force: 0.5 });
 		await assertWord(1);
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', x: points.b.x, y: points.b.y, buttons: 3, force: 0 });
-		await assertWord(1);
+		await assertWord(2);
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 2, force: 0 });
 		await assertWord(0);
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 3, force: 0.5 });
-		await assertWord(1);
+		await assertWord(2);
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'right', buttons: 1, force: 0.5 });
-		await assertWord(1);
+		await assertWord(2);
 		await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', x: points.b.x, y: points.b.y, button: 'left', buttons: 0, force: 0 });
 		await assertWord(0);
 	});
 
-	await t.test('warm action movement performs no hit tests, layout reads, selectors or presentation writes', async () => {
+	await t.test('warm numerical contact movement performs no DOM hit tests, layout reads or unchanged presentation writes', async () => {
 		await touch('touchStart', [points.a]);
 		await assertWord(1);
 		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -386,7 +407,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			probe.warmObserver.observe(document.getElementById('d-pad-controls'), { attributes: true, subtree: true });
 		});
 		for (let move = 0; move < 24; move += 1) {
-			await touch('touchMove', [{ ...points.a, x: points.a.x - move * 4, y: points.a.y - move }]);
+			await touch('touchMove', [{ ...points.a, x: points.a.x - move * 0.1, y: points.a.y - move * 0.025 }]);
 		}
 		const measured = await page.evaluate(() => {
 			const probe = (globalThis as any).touchTest;
@@ -399,7 +420,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await assertWord(0);
 	});
 
-	await t.test('focus gain and layout preserve held assignments; real source lifecycle events cancel them', async () => {
+	await t.test('focus gain and framebuffer fitting preserve contact geometry; real source lifecycle events cancel contacts', async () => {
 		await touch('touchStart', [points.a]);
 		await page.evaluate(() => {
 			window.dispatchEvent(new Event('focus'));

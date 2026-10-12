@@ -46,6 +46,7 @@ const profiles: readonly {
 	{ name: 'short-landscape-852', width: 852, height: 239, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'landscape-height-profile-boundary-below', width: 852, height: 319, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'landscape-height-profile-boundary-at', width: 852, height: 320, insets: [0, 0, 0, 0], screenshot: false },
+	{ name: 'tablet-portrait', width: 768, height: 1024, insets: [24, 0, 20, 0], screenshot: true },
 	{ name: 'tablet-landscape', width: 1024, height: 768, insets: [0, 0, 20, 0], screenshot: true },
 	{ name: 'embedded-player-offset', width: 1024, height: 768, insets: [0, 0, 0, 0], screenshot: true,
 		player: { left: 92, top: 40, width: 840, height: 650 } },
@@ -97,7 +98,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			poll() {
 				input.pollInput();
 				input.sampleInputControllerSnapshot(snapshot, 0);
-				return { buttons: model.buttons, physicalButtons: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), sampledButtons: snapshot.pads[0].buttons, stickActive: model.stickActive };
+				return { buttons: model.buttons, physicalButtons: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), sampledButtons: snapshot.pads[0].buttons };
 			},
 			measure() {
 				const read = {
@@ -117,9 +118,26 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						};
 					},
 				};
-				const tipBounds = document.getElementById('d-pad-tip')!.getBoundingClientRect();
+				const padBounds = document.getElementById('d-pad-svg')!.getBoundingClientRect();
+				const directions = ['up', 'right', 'down', 'left'].map(name => {
+					const rect = document.getElementById('d-pad-' + name) as unknown as SVGRectElement;
+					const bounds = rect.getBoundingClientRect();
+					const style = getComputedStyle(rect);
+					return { name, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2,
+						width: bounds.width, height: bounds.height, left: bounds.left, top: bounds.top,
+						right: bounds.right, bottom: bounds.bottom, touched: rect.getAttribute('data-touched'), fill: style.fill };
+				});
+				const pad = { id: 'd-pad-svg', x: padBounds.left + padBounds.width / 2,
+					y: padBounds.top + padBounds.height / 2, radius: padBounds.width / 2,
+					bounds: { left: padBounds.left, top: padBounds.top, width: padBounds.width, height: padBounds.height },
+					painted: { left: Math.min(...directions.map(direction => direction.left)) - 3 * padBounds.width / 200,
+						top: Math.min(...directions.map(direction => direction.top)) - 3 * padBounds.width / 200,
+						right: Math.max(...directions.map(direction => direction.right)) + 3 * padBounds.width / 200,
+						bottom: Math.max(...directions.map(direction => direction.bottom)) + 3 * padBounds.width / 200 },
+				};
 				return {
-					circles: ['d-pad-base', ...actionIds].map(id => read.circle(id)),
+					circles: [pad, ...actionIds.map(id => read.circle(id))],
+					directions,
 					labels: actionIds.map(id => {
 						const label = document.getElementById(id + '_text')!;
 						const bounds = label.getBoundingClientRect();
@@ -133,7 +151,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						return { id, hidden: element.hidden, pointerEvents: getComputedStyle(element).pointerEvents,
 							bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height } };
 					}),
-					tip: { x: tipBounds.left + tipBounds.width / 2, y: tipBounds.top + tipBounds.height / 2, radius: tipBounds.width / 2 },
 				};
 			},
 			background(kind: string) {
@@ -159,7 +176,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	await page.evaluate(() => document.fonts.ready);
 	const cdp = await page.context().newCDPSession(page);
 	let touchActive = false;
-	const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Array<{ id: number; x: number; y: number }>) => {
+	const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Array<{ id: number; x: number; y: number; radiusX?: number; radiusY?: number }>) => {
 		await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 		if (type === 'touchStart') touchActive = true;
 		else if (type === 'touchEnd' && touchPoints.length === 0) touchActive = false;
@@ -207,17 +224,17 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.equal(circle.presentation.fill, circles[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
 				assert.equal(circle.presentation.stroke, circles[1].presentation.stroke);
 			}
-			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'stick follows the same authored CSS-client scale as the face group');
+			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'pad follows the same authored CSS-client scale as the face group');
 			const utilityDiameter = 52 * (profile.smallPlayer ? scale : 1);
 			for (const circle of circles.slice(5)) assert.ok(Math.abs(circle.bounds.width - utilityDiameter) < 0.0001,
 				`${circle.id} follows the authored secondary scale, including the whole compact hand group`);
-			const stick = circles[0];
+			const pad = circles[0];
 			const faceCenter = { x: (circles[1].x + circles[4].x) / 2, y: (circles[1].y + circles[4].y) / 2 };
 			const landscape = safe.right - safe.left >= safe.bottom - safe.top;
 			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
 			for (const index of [5, 6, 7, 8]) {
 				const circle = circles[index];
-				const primary = index === 5 || index === 7 ? stick : faceCenter;
+				const primary = index === 5 || index === 7 ? pad : faceCenter;
 				const dx = circle.x - primary.x;
 				const dy = circle.y - primary.y;
 				assert.ok(Math.hypot(dx, dy) <= (landscape ? 144 : 168) * scale + 0.0001,
@@ -237,30 +254,30 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				}
 			} else {
 				const faceLift = safe.right - safe.left < 380 ? 208 : 144;
-				assert.ok(Math.abs(stick.y - faceCenter.y - faceLift * scale) < coordinateTolerance,
+				assert.ok(Math.abs(pad.y - faceCenter.y - faceLift * scale) < coordinateTolerance,
 					'portrait uses an authored stagger, not incremental collision packing');
-				assert.ok(Math.abs(circles[5].x - stick.x) < coordinateTolerance);
-				assert.ok(Math.abs(circles[5].y - (stick.y - stick.radius - utilityDiameter / 2 - 12 * scale)) < coordinateTolerance,
+				assert.ok(Math.abs(circles[5].x - pad.x) < coordinateTolerance);
+				assert.ok(Math.abs(circles[5].y - (pad.y - pad.radius - utilityDiameter / 2 - 12 * scale)) < coordinateTolerance,
 					'left portrait secondary row is immediately above the left primary dial');
 				assert.ok(Math.abs(circles[6].y - (faceCenter.y - 104 * scale - utilityDiameter / 2 - 12 * scale)) < coordinateTolerance,
 					'right portrait secondary row is immediately above the right primary dial');
 			}
-			const approvedStickCenters: Record<string, readonly number[]> = {
+			const approvedPadCenters: Record<string, readonly number[]> = {
 				'phone14-portrait-safe': [114, 688], 'phone14-landscape-safe': [169, 247],
 				'browser-landscape-safe': [157, 189], 'browser-landscape-300-safe': [157, 169],
 				'browser-landscape-280-safe': [157, 149],
 			};
-			if (profile.name in approvedStickCenters) {
-				assert.ok(Math.abs(stick.x - approvedStickCenters[profile.name][0]) < 0.0001);
-				assert.ok(Math.abs(stick.y - approvedStickCenters[profile.name][1]) < 0.0001,
-					'approved phone stick placement is unchanged');
+			if (profile.name in approvedPadCenters) {
+				assert.ok(Math.abs(pad.x - approvedPadCenters[profile.name][0]) < 0.0001);
+				assert.ok(Math.abs(pad.y - approvedPadCenters[profile.name][1]) < 0.0001,
+					'approved phone pad placement is unchanged');
 			}
 			const gaps: number[] = [];
 			const minimumGap = profile.smallPlayer ? 8 * scale : 8;
 			const paintClearance = 12 * (profile.smallPlayer ? scale : 1);
 			for (let index = 0; index < circles.length; index += 1) {
 				const circle = circles[index];
-				assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} stays circular`);
+				assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} keeps uniform CSS-client scaling`);
 				assert.ok(circle.painted.left >= safe.left + paintClearance - 0.0001, `${circle.id} left paint clearance`);
 				assert.ok(circle.painted.top >= safe.top + paintClearance - 0.0001, `${circle.id} top paint clearance`);
 				assert.ok(circle.painted.right <= safe.right - paintClearance + 0.0001, `${circle.id} right paint clearance`);
@@ -269,7 +286,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					const next = circles[other];
 					const gap = Math.hypot(circle.x - next.x, circle.y - next.y) - circle.radius - next.radius;
 					gaps.push(gap);
-					assert.ok(gap >= minimumGap - 0.0001, `${circle.id}/${next.id} contact regions retain their profile's separation`);
+					assert.ok(gap >= minimumGap - 0.0001, `${circle.id}/${next.id} primary and button geometry retain their authored separation`);
 				}
 			}
 			for (const group of resting.groups) {
@@ -288,12 +305,35 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					}
 				}
 			}
-			const stickCenter = { id: 6, x: circles[0].x, y: circles[0].y };
-			await touch('touchStart', [stickCenter]);
-			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0, stickActive: true }, 'stick center acquires a stick lease, never an overlapping action');
-			await touch('touchMove', [{ ...stickCenter, x: stickCenter.x + circles[0].radius * 0.7 }]);
-			const rightWord = 1 << InputControllerGamepadButtonBit.Right;
-			assert.deepEqual(await poll(), { buttons: rightWord, physicalButtons: rightWord, sampledButtons: rightWord, stickActive: true });
+			const padCenter = { id: 6, x: circles[0].x, y: circles[0].y };
+			await touch('touchStart', [padCenter]);
+			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0 },
+				'neutral center acquires a controller lease without pressing a direction');
+			const [up, right, down, left] = resting.directions;
+			const masks = { up: 1 << InputControllerGamepadButtonBit.Up, right: 1 << InputControllerGamepadButtonBit.Right,
+				down: 1 << InputControllerGamepadButtonBit.Down, left: 1 << InputControllerGamepadButtonBit.Left };
+			const rolls = [
+				{ x: right.x, y: right.y, mask: masks.right },
+				{ x: (up.right + right.left) / 2, y: (up.bottom + right.top) / 2, mask: masks.up | masks.right },
+				{ x: up.x, y: up.y, mask: masks.up },
+				{ x: (up.left + left.right) / 2, y: (up.bottom + left.top) / 2, mask: masks.up | masks.left },
+				{ x: left.x, y: left.y, mask: masks.left },
+				{ x: (down.left + left.right) / 2, y: (down.top + left.bottom) / 2, mask: masks.down | masks.left },
+				{ x: down.x, y: down.y, mask: masks.down },
+				{ x: (down.right + right.left) / 2, y: (down.top + right.bottom) / 2, mask: masks.down | masks.right },
+				{ x: right.x, y: right.y, mask: masks.right },
+			];
+			for (const roll of rolls) {
+				await touch('touchMove', [{ ...padCenter, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
+				assert.deepEqual(await poll(), { buttons: roll.mask, physicalButtons: roll.mask, sampledButtons: roll.mask },
+					'digital rolling updates immediately without a center excursion or finger lift');
+				await settle();
+				const rolled = await measure();
+				assert.deepEqual(rolled.directions.map((direction: any) => direction.touched),
+					[masks.up, masks.right, masks.down, masks.left].map(mask => (mask & roll.mask) !== 0 ? 'true' : 'false'));
+				assert.deepEqual(rolled.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })),
+					resting.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })), 'direction highlights never move their regions');
+			}
 			await touch('touchEnd', []);
 			evidence.push({ profile: profile.name, safe, geometry: resting, minimumContactGap: Math.min(...gaps), secondaryOffsets });
 			for (const framebufferWidth of [256, 321, 257, 320]) {
@@ -310,7 +350,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				await touch('touchStart', [{ id: 1, x: circle.x, y: circle.y }]);
 				// SELECT remains the existing host-control modifier; contact geometry does not change routing policy.
 				const sampledButtons = actions[index].id === 'select_knop' ? 0 : actions[index].buttons;
-				assert.deepEqual(await poll(), { buttons: actions[index].buttons, physicalButtons: actions[index].buttons, sampledButtons, stickActive: false }, `${actions[index].label} native center has its own exact physical bit`);
+				assert.deepEqual(await poll(), { buttons: actions[index].buttons, physicalButtons: actions[index].buttons, sampledButtons }, `${actions[index].label} native center has its own exact physical bit`);
 				await settle();
 				const pressed = await measure();
 				assert.equal(pressed.circles[index + 1].presentation.touched, 'true');
@@ -320,33 +360,67 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.equal((await poll()).sampledButtons, 0);
 				await settle();
 			}
+			const thumb = { id: 1, x: circles[1].x, y: circles[1].y, radiusX: 14, radiusY: 14 };
+			await touch('touchStart', [thumb]);
+			assert.equal((await poll()).sampledButtons, 1);
+			const bridge = { ...thumb, x: (circles[1].x + circles[2].x) / 2, y: (circles[1].y + circles[2].y) / 2 };
+			await touch('touchMove', [bridge]);
+			assert.equal((await poll()).sampledButtons, 3, 'one reported thumb footprint bridges adjacent A and B');
+			await settle();
+			assert.deepEqual((await measure()).circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
+			const directionThumb = { id: 2, x: rolls[1].x, y: rolls[1].y, radiusX: 14, radiusY: 14 };
+			await touch('touchStart', [bridge, directionThumb]);
+			assert.equal((await poll()).sampledButtons, 3 | masks.up | masks.right, 'a second thumb independently rolls a diagonal while the first presses two faces');
+			await touch('touchEnd', [directionThumb]);
+			assert.equal((await poll()).sampledButtons, 3, 'lifting the directional thumb leaves both face contributions held');
+			await touch('touchMove', [{ ...thumb, x: circles[2].x, y: circles[2].y }]);
+			assert.equal((await poll()).sampledButtons, 2, 'rolling onto B releases A without releasing the thumb');
+			await touch('touchEnd', []);
+			assert.equal((await poll()).sampledButtons, 0);
 			await page.evaluate(() => (globalThis as any).ergonomicsProbe.background('bright'));
 			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-bright-rest.png` });
-			if (profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe') {
+			if (profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe' || profile.name === 'tablet-portrait' || profile.name === 'tablet-landscape') {
 				for (const background of ['dark', 'bright']) {
 					await page.evaluate(kind => (globalThis as any).ergonomicsProbe.background(kind), background);
+					for (const [name, roll] of [['up-right', rolls[1]], ['down-left', rolls[5]]] as const) {
+						await touch('touchStart', [{ id: 1, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
+						assert.equal((await poll()).sampledButtons, roll.mask);
+						await settle();
+						await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-${name}.png` });
+						await touch('touchEnd', []);
+						await settle();
+					}
+					await touch('touchStart', [bridge]);
+					await settle();
+					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-thumb-chord.png` });
+					await touch('touchEnd', []);
+					await settle();
 					const base = circles[0];
 					const a = { id: 1, x: circles[1].x, y: circles[1].y };
 					const b = { id: 2, x: circles[2].x, y: circles[2].y };
-					const stick = { id: 3, x: base.x - base.radius * 0.7, y: base.y };
+					const pad = { id: 3, x: base.x - base.radius * 0.7, y: base.y };
 					await touch('touchStart', [a]);
 					await touch('touchStart', [a, b]);
-					await touch('touchStart', [a, b, stick]);
+					await touch('touchStart', [a, b, pad]);
 					assert.equal((await poll()).sampledButtons, 0x4003);
 					await settle();
 					const paired = await measure();
-					assert.deepEqual(paired.circles.slice(0, 3).map((circle: any) => circle.presentation.touched), ['true', 'true', 'true']);
+					assert.deepEqual(paired.circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
+					assert.equal(paired.directions[3].touched, 'true');
 					assert.notEqual(paired.circles[1].presentation.fill, circles[1].presentation.fill);
 					assert.notEqual(paired.circles[2].presentation.stroke, circles[2].presentation.stroke);
 					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-paired.png` });
 					const scale = await page.evaluate(() => visualViewport!.scale);
-					await touch('touchMove', [a, b, { ...stick, x: -40 }]);
-					assert.equal((await poll()).sampledButtons, 0x4003, 'stick contact survives outside the whole player');
+					await touch('touchMove', [a, b, { ...pad, x: -40 }]);
+					assert.equal((await poll()).sampledButtons, 3, 'leaving every finite direction region releases only the directional contribution');
+					assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true, 'controller retains the native lease for reentry');
 					assert.equal(await page.evaluate(() => visualViewport!.scale), scale);
 					await settle();
 					const dragged = await measure();
-					assert.ok(Math.hypot(dragged.tip.x - base.x, dragged.tip.y - base.y) + dragged.tip.radius < base.radius, 'visible tip remains clamped inside the base');
+					assert.ok(dragged.directions.every((direction: any) => direction.touched === 'false'), 'four fixed arms have no moving or clamped tip');
 					assert.deepEqual(dragged.circles.map((circle: any) => circle.bounds), circles.map((circle: any) => circle.bounds));
+					await touch('touchMove', [a, b, pad]);
+					assert.equal((await poll()).sampledButtons, 0x4003, 'reentry restores the held contact contribution');
 					await touch('touchEnd', [a]);
 					assert.equal((await poll()).sampledButtons, 0x4002);
 					await settle();
@@ -359,7 +433,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 		});
 	}
-	await t.test('live browser-chrome height changes retain local groups and held action', async () => {
+	await t.test('live browser-chrome height changes resample held contacts against stable local groups', async () => {
 		await page.setViewportSize({ width: 844, height: 390 });
 		await page.evaluate(() => {
 			const style = document.getElementById('player-surface')!.style;
@@ -373,10 +447,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		});
 		await settle();
 		const initial = await measure();
-		await touch('touchStart', [{ id: 1, x: initial.circles[1].x, y: initial.circles[1].y }]);
+		await touch('touchStart', [{ id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 }]);
 		const expected = [{ id: 'select_knop', x: 128, y: 10 }, { id: 'start_knop', x: -140, y: 20 },
 			{ id: 'ls_knop', x: 100, y: -80 }, { id: 'rs_knop', x: -100, y: -70 }];
-		for (const height of [341, 340, 320, 300, 280, 390]) {
+		for (const [height, expectedWord] of [[341, 1], [340, 1], [320, 1], [300, 0], [280, 0], [390, 1]]) {
 			await page.setViewportSize({ width: 844, height });
 			await page.evaluate(height => {
 				document.getElementById('player-surface')!.style.height = `${height}px`;
@@ -384,20 +458,24 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}, height);
 			await settle();
 			const current = await measure();
-			const stick = current.circles[0];
+			const pad = current.circles[0];
 			const faceCenter = { x: (current.circles[1].x + current.circles[4].x) / 2,
 				y: (current.circles[1].y + current.circles[4].y) / 2 };
 			for (let index = 0; index < expected.length; index += 1) {
 				const circle = current.circles[index + 5];
-				const primary = index === 0 || index === 2 ? stick : faceCenter;
+				const primary = index === 0 || index === 2 ? pad : faceCenter;
 				assert.equal(circle.id, expected[index].id);
 				assert.ok(Math.abs(circle.x - primary.x - expected[index].x) < 1 / 32);
 				assert.ok(Math.abs(circle.y - primary.y - expected[index].y) < 1 / 32,
 					`${circle.id} remains attached to its own hand at ${height}px browser height`);
 			}
-			assert.deepEqual(await poll(), { buttons: 1, physicalButtons: 1, sampledButtons: 1, stickActive: false },
-				'layout publication does not release the held action');
-			assert.equal(current.circles[1].presentation.touched, 'true');
+			const word = await poll();
+			assert.equal(word.buttons, expectedWord, `stationary reported 28px thumb follows actual button overlap at ${height}px viewport height`);
+			assert.equal(word.physicalButtons, word.buttons);
+			assert.equal(word.sampledButtons, word.buttons);
+			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true,
+				'geometry movement changes physical overlap but retains the contact lease');
+			assert.equal(current.circles[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
 			await page.screenshot({ path: `${evidenceDirectory}/chrome-transition-${height}-held.png` });
 		}
 		await touch('touchEnd', []);

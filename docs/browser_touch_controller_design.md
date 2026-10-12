@@ -1,5 +1,101 @@
 # Browser touch-controller ownership
 
+## Current contact-area controls, 2026-10-13
+
+Native contacts own a controller route, not an individual button or exclusive
+stick. The contact model recomputes a live bitmask on down/move across all
+circular action buttons and four finite rectangular D-pad arms. Each contact
+contributes independently through the existing per-button counts; a finger
+leaving or lifting cannot release another finger's contribution.
+
+`BrowserInputHub` is still the sole native input producer. Pointer Events
+[contact dimensions](https://www.w3.org/TR/pointerevents3/#dom-pointerevent-width)
+are CSS-pixel extents. Touch dimensions are converted once to scalar half-width
+and half-height; the documented unavailable `1x1` report uses an authored
+`28x28` CSS-pixel envelope. Supplied geometry is not clamped up to that estimate.
+Mouse/pen remain point contacts. No pressure-derived sizing, UA selection,
+TouchEvent identity fusion, per-event footprint objects or per-frame hit tests
+are introduced. The trace records native width/height alongside the raw words.
+
+The footprint is an explicitly approximate axis-aligned contact envelope, not
+an exact measured or rotated thumb ellipse. Current [iOS WebKit](https://github.com/WebKit/WebKit/blob/a59a58f0bdd9e2adb12d49b64c28cb6c45a0fdac/Source/WebKit/Shared/ios/NativeWebTouchEventIOS.mm#L93-L116)
+uses UIKit's major radius for both axes, and its [Pointer Events conversion](https://github.com/WebKit/WebKit/blob/a59a58f0bdd9e2adb12d49b64c28cb6c45a0fdac/Source/WebCore/dom/ios/PointerEventIOS.cpp#L113-L118)
+exposes the doubled radii. This is source evidence, not measurement of a
+particular iPhone's contact area or event delivery.
+
+The D-pad is four fixed directional buttons and a neutral center, not an analog
+stick. Direct absolute contact with an arm changes direction immediately;
+rolling between adjacent arms can overlap both and publish a diagonal. There
+is no drag origin, normalization, angular stick sector, moving tip, exclusive
+first finger, smoothing or extra sampling delay. Blank outer corners are not
+painted as active buttons. The neutral gap exceeds the estimated thumb extent
+on supported phone/tablet profiles. Unusually large reported contact envelopes
+flow deterministically to every intersecting bit; there is no axis-cleaning
+or cancellation suppression.
+
+Neutral-pad down can acquire the controller. Leaving all virtual buttons
+releases the contact's bits but retains its pointer lease until up/cancel;
+re-entry and action-to-direction sliding need no new down. This deliberately
+supersedes the former outside-stick direction retention and fixed action
+assignment. A canvas-started contact stays canvas input. Viewport changes
+resample the retained scalar contacts once and publish only the final aggregate
+edges, rather than pinning the initial button or resetting all input.
+
+The view publishes geometry from its matching SVG rectangles/circles and draws
+raw digital bits. The approved hand-relative layout, equal face buttons,
+independent game image, 4:3 aspect and integer/half-integer fitting remain.
+Common input polling, press IDs, snapshot cadence and the raw ICU contract
+are unchanged; no mirrored machine or C++ implementation is edited.
+
+Production precedents studied before implementation are [RetroArch's multi-hit
+contact scan](https://github.com/libretro/RetroArch/blob/d2f24d32b976c782bca19ec4e6edfbd828a02101/input/input_driver.c#L5721-L5764),
+[PPSSPP's independent moving contacts](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L176)
+and [PadKit's fixed direction states](https://github.com/Swordfish90/PadKit/blob/708908b28e31a2bda3db275fe964daa7a697816b/lib/src/commonMain/kotlin/gg/padkit/ui/DefaultCrossForeground.kt#L43-L137).
+These establish live multi-button contributions and separate digital controls;
+none is misrepresented as a measured browser-thumb implementation.
+
+### Current validation
+
+The focused suite passes 96 tests, including native Chromium footprint sizing,
+single-thumb chords/slides, every digital diagonal, independent finger counts,
+layout resampling, immediate raw common-input/armed-ICU words, cancellation,
+trace export and 27 layout profiles. Browser, node-host, scripts and tests
+typechecks and the release build pass. Warm contacts read no DOM geometry;
+identical numerical samples skip repeated hit testing. Reused storage and the
+model-only microbenchmark are recorded without browser latency claims.
+
+Actual local game pages pass Chromium checks in both phone orientations and
+both tablet orientations, with one-thumb A+B plus Up+Right simultaneously,
+correct independent releases, WebGPU, 4:3/half-step fitting and non-silent
+running audio. Local WPE WebKit checks pass all four current packages across
+16 phone/tablet profiles (240 native input steps), including digital sliding,
+independent A+B and source/model/common trace agreement, without errors.
+WPE's injector hardcodes a `2x2` contact and cannot prove measured-area behavior
+or UIKit delivery. Chromium's CDP suppresses radius-only events at unchanged
+coordinates; that owner contract is explicitly covered by a synthetic event on
+a natively acquired pointer, not misreported as native hardware evidence.
+
+Evidence: `.bmsx/hosting/contact-controls-evidence/` and
+`.bmsx/hosting/hand-group-gamepad-evidence/`. This does not establish actual
+iPhone comfort or resolution of the prior device-specific A+B release report.
+
+The ordinary `/nemesis_s/`, `/2025/` and their `/ios/` suffix packages are
+published with shared engine SHA-256
+`479e426e97892198e492ac829600daca7374cd4684332402402b2f6ab077ef24`.
+Public bytes match their package receipts; existing game media, library index,
+COOP/COEP and exact legacy redirects are retained. Public Chromium repeats the
+paired single-thumb chord plus digital diagonal, independent releases and
+slide/re-entry checks on all four routes and a tablet profile in both
+orientations, with WebGPU, running non-silent audio and no errors.
+
+## Historical designs and validation
+
+**Everything below records earlier designs. Fixed action assignments, occupied
+stick leases, analog tips, angular sectors and their old test expectations are
+superseded by the current contact-area contract above.** Prior device reports
+and evidence remain historical; desktop success still does not prove iPhone
+acceptance.
+
 Date: 2026-10-10. Baseline: `master`, `7a5914025`. Implementation: 2026-10-11.
 
 **Status: contact owners implemented; iPhone acceptance has failed.**

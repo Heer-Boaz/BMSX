@@ -9,6 +9,8 @@ test('input trace reuses bounded records and preserves errors after overwrite an
 	const first = buffer.reserve('pointerdown', 'native', 1);
 	const ids = first.touchIds;
 	first.pointerId = 8;
+	first.width = 36;
+	first.height = 28;
 	first.touchCount = 2;
 	first.touchIds[0] = 4;
 	buffer.recordError('javascript', 2, 'Vertex error');
@@ -17,6 +19,8 @@ test('input trace reuses bounded records and preserves errors after overwrite an
 	assert.equal(reused.touchIds, ids);
 	assert.equal(reused.touchCount, 0);
 	assert.equal(reused.pointerId, -1);
+	assert.equal(reused.width, 0);
+	assert.equal(reused.height, 0);
 	assert.equal(buffer.count, 2);
 	assert.equal(buffer.total, 3);
 	assert.equal(buffer.overwritten, 1);
@@ -74,7 +78,7 @@ export { Input } from './hosts/common/input/manager';`,
 		const trace = window.bmsxInputTrace as any;
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
-		pad.setGeometry({ stickX: 140, stickY: 260, stickRadius: 80, stickDeadzoneRadius: 15,
+		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, directions: [],
 			actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] });
 		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);
@@ -95,7 +99,7 @@ export { Input } from './hosts/common/input/manager';`,
 			const row = trace.buffer.get(index);
 			records.push({ sequence: row.sequence, kind: row.kind, phase: row.phase, id: row.pointerId, primary: row.primary,
 				before: row.before, after: row.after, commonBefore: row.commonBefore, commonAfter: row.commonAfter,
-				trusted: row.trusted, prevented: row.prevented, route: row.route,
+				trusted: row.trusted, prevented: row.prevented, route: row.route, width: row.width, height: row.height,
 				full: Array.from(row.touchIds.subarray(0, row.touchCount)), changed: Array.from(row.changedTouchIds.subarray(0, row.changedTouchCount)) });
 		}
 		return { model: pad.buttons, common: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), records };
@@ -105,6 +109,7 @@ export { Input } from './hosts/common/input/manager';`,
 	const downs = sequence.records.filter(row => row.kind === 'pointerdown' && row.phase === 'route');
 	assert.deepEqual(downs.map(row => [row.before, row.after, row.commonBefore, row.commonAfter, row.route]), [[0, 1, 0, 1, 'controller'], [1, 3, 1, 3, 'controller']]);
 	assert.ok(downs.every(row => row.trusted && row.prevented));
+	assert.ok(downs.every(row => row.width > 0 && row.height > 0));
 	assert.equal(downs[1].primary, false);
 	for (const down of downs) {
 		assert.ok(sequence.records.some(row => row.phase === 'native' && row.kind === 'pointerdown' && row.id === down.id && row.sequence < down.sequence), 'early window capture survives owner stopImmediatePropagation');
