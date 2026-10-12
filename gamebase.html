@@ -30,27 +30,22 @@
 			<div id="extra-message" class="coloring" hidden></div>
 			<div id="d-pad-controls" class="control-surface" aria-hidden="true" hidden>
 				<svg id="d-pad-svg" viewBox="0 0 100 100" width="100" height="100">
-					<g class="direction-control">
-						<rect class="control-bezel" x="35" y="5" width="30" height="29" rx="4" />
-						<rect id="d-pad-up" class="direction-button" x="35" y="5" width="30" height="29" rx="4" data-touched="false" />
-						<path class="direction-arrow" d="M44 22l6-6 6 6" />
+					<!-- Numerical acquisition geometry remains independent of the restored artwork. -->
+					<g visibility="hidden">
+						<rect id="d-pad-up" x="35" y="5" width="30" height="29" />
+						<rect id="d-pad-right" x="66" y="35" width="29" height="30" />
+						<rect id="d-pad-down" x="35" y="66" width="30" height="29" />
+						<rect id="d-pad-left" x="5" y="35" width="29" height="30" />
 					</g>
-					<g class="direction-control">
-						<rect class="control-bezel" x="66" y="35" width="29" height="30" rx="4" />
-						<rect id="d-pad-right" class="direction-button" x="66" y="35" width="29" height="30" rx="4" data-touched="false" />
-						<path class="direction-arrow" d="M78 44l6 6-6 6" />
-					</g>
-					<g class="direction-control">
-						<rect class="control-bezel" x="35" y="66" width="30" height="29" rx="4" />
-						<rect id="d-pad-down" class="direction-button" x="35" y="66" width="30" height="29" rx="4" data-touched="false" />
-						<path class="direction-arrow" d="M44 78l6 6 6-6" />
-					</g>
-					<g class="direction-control">
-						<rect class="control-bezel" x="5" y="35" width="29" height="30" rx="4" />
-						<rect id="d-pad-left" class="direction-button" x="5" y="35" width="29" height="30" rx="4" data-touched="false" />
-						<path class="direction-arrow" d="M22 44l-6 6 6 6" />
-					</g>
-					<circle class="direction-hub" cx="50" cy="50" r="7" />
+					<image id="svgimg-d-pad-neutral" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_NEUTRAL@@" data-active="true" />
+					<image id="svgimg-d-pad-u" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_U@@" data-active="false" />
+					<image id="svgimg-d-pad-ru" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_RU@@" data-active="false" />
+					<image id="svgimg-d-pad-r" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_R@@" data-active="false" />
+					<image id="svgimg-d-pad-rd" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_RD@@" data-active="false" />
+					<image id="svgimg-d-pad-d" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_D@@" data-active="false" />
+					<image id="svgimg-d-pad-ld" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_LD@@" data-active="false" />
+					<image id="svgimg-d-pad-l" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_L@@" data-active="false" />
+					<image id="svgimg-d-pad-lu" class="d-pad-image" x="0" y="0" width="100" height="100" href="@@DPAD_LU@@" data-active="false" />
 				</svg>
 			</div>
 			<div id="button-controls" class="control-surface" aria-hidden="true" hidden>

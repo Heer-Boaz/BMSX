@@ -84,7 +84,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					pointer: snapshot.pointerButtons, pointerMmio: memory.readIoU32(api.IO_INP_POINTER_BUTTONS),
 					position: [snapshot.pointerXQ16, snapshot.pointerYQ16],
 					pointerState: { pressed: primary.pressed, justreleased: primary.justreleased, wasreleased: primary.wasreleased },
-					directions: ['d-pad-up', 'd-pad-right', 'd-pad-down', 'd-pad-left'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
+					padImage: document.querySelector('.d-pad-image[data-active="true"]')!.id,
 					visuals: ['a_knop', 'b_knop', 'x_knop', 'y_knop'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
 					edges: edges.splice(0),
 				};
@@ -201,7 +201,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await touch('touchMove', [points.upRight]);
 		await assertWord(0x9000);
 		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
-		assert.deepEqual((await poll()).directions, ['true', 'true', 'false', 'false']);
+		assert.equal((await poll()).padImage, 'svgimg-d-pad-ru');
 		await touch('touchMove', [{ ...points.pad, x: points.canvas.x, y: points.canvas.y }]);
 		await assertWord(0);
 		await touch('touchMove', [points.left]);

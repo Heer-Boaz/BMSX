@@ -2,6 +2,35 @@
 
 ## Current contact-area controls, 2026-10-13
 
+### Temporary artwork restoration
+
+At the user's request, the D-pad again displays the original nine
+`rom/d-pad-*.png` images. The browser product embeds them in both player and
+Studio pages; the passive view switches existing image layers rather than
+loading or assigning image URLs during input. Position, scale, contact
+geometry, the other buttons and the input owners are unchanged. Opposing
+directions balance only the disc's displayed tilt; every raw direction bit
+still reaches common input and the ICU unchanged.
+
+Restoration checks pass 117 focused tests, browser/scripts/tests typechecks
+and the release player build. All nine PNGs are byte-identical in player,
+trace and Studio page variants; all 16 direction masks preserve sampled input
+and leave geometry unchanged. Actual game pages were inspected in Chromium
+and WPE WebKit, including phone/tablet orientations. These are desktop browser
+checks, not new physical-iPhone acceptance. The ordinary and `/ios/` suffix
+pages are published with engine SHA-256
+`e5667eea837bdbe0830501321e0c0db473e790ddcc83d6defedca1505053c05b`;
+public bytes match the package receipts. Evidence:
+`.bmsx/hosting/old-dpad-artwork-evidence/`.
+
+This is an appearance-only restoration, not approval of the contact design.
+The subsequent adversarial review reproduced gaps while rolling around the
+outer D-pad, contact spill into SELECT, missing neutral face-cluster
+acquisition and false chords from rectangular contact envelopes. The earlier
+selected-path tests below did not establish general correctness. Those input
+issues remain open; the restored round artwork does not fix their geometry.
+Evidence: `.bmsx/hosting/contact-controls-evidence/adversarial-contact-owner.json`.
+
 Native contacts own a controller route, not an individual button or exclusive
 stick. The contact model recomputes a live bitmask on down/move across all
 circular action buttons and four finite rectangular D-pad arms. Each contact
@@ -41,8 +70,8 @@ assignment. A canvas-started contact stays canvas input. Viewport changes
 resample the retained scalar contacts once and publish only the final aggregate
 edges, rather than pinning the initial button or resetting all input.
 
-The view publishes geometry from its matching SVG rectangles/circles and draws
-raw digital bits. The approved hand-relative layout, equal face buttons,
+The view publishes the unchanged numerical SVG rectangles/circles and projects
+the raw direction bits onto the original disc images. The hand-relative layout, equal face buttons,
 independent game image, 4:3 aspect and integer/half-integer fitting remain.
 Common input polling, press IDs, snapshot cadence and the raw ICU contract
 are unchanged; no mirrored machine or C++ implementation is edited.
@@ -54,7 +83,7 @@ and [PadKit's fixed direction states](https://github.com/Swordfish90/PadKit/blob
 These establish live multi-button contributions and separate digital controls;
 none is misrepresented as a measured browser-thumb implementation.
 
-### Current validation
+### Contact implementation validation before the adversarial review
 
 The focused suite passes 96 tests, including native Chromium footprint sizing,
 single-thumb chords/slides, every digital diagonal, independent finger counts,

@@ -21,6 +21,11 @@ const DIRECTIONS = [
 	{ id: 'd-pad-left', buttons: 1 << InputControllerGamepadButtonBit.Left },
 ] as const;
 
+const DIRECTION_BUTTONS = (1 << InputControllerGamepadButtonBit.Up) | (1 << InputControllerGamepadButtonBit.Right)
+	| (1 << InputControllerGamepadButtonBit.Down) | (1 << InputControllerGamepadButtonBit.Left);
+// Artwork rows for the signed direction axes: up, neutral, down.
+const PAD_IMAGES = ['lu', 'u', 'ru', 'l', 'neutral', 'r', 'ld', 'd', 'rd'] as const;
+
 const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
 const COMPACT_PROFILE = { margin: 20, bottom: 24 };
 const SMALL_PLAYER_PROFILE = { margin: 20, bottom: 20 };
@@ -50,7 +55,7 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalPadX: number;
 	private readonly nominalPadY: number;
 	private readonly nominalPadRadius: number;
-	private readonly directionRects: SVGRectElement[] = [];
+	private readonly padImages: SVGImageElement[] = [];
 	private readonly nominalDirections: OnscreenDirectionGeometry[] = [];
 	private readonly directions: OnscreenDirectionGeometry[] = [];
 	private readonly circles: SVGCircleElement[] = [];
@@ -62,6 +67,7 @@ export class BrowserOnscreenGamepadView {
 	private readonly unsubscribeView: () => void;
 	private animationFrameId = 0;
 	private renderedButtons = 0;
+	private renderedPadImage = 4;
 	private layoutLeft = 0;
 	private layoutTop = 0;
 	private layoutWidth = -1;
@@ -87,9 +93,11 @@ export class BrowserOnscreenGamepadView {
 		this.nominalPadX = this.padArtworkWidth / 2;
 		this.nominalPadY = this.padArtworkHeight / 2;
 		this.nominalPadRadius = this.padArtworkWidth / 2;
+		for (const direction of PAD_IMAGES) {
+			this.padImages.push(document.getElementById(`svgimg-d-pad-${direction}`) as unknown as SVGImageElement);
+		}
 		for (const direction of DIRECTIONS) {
 			const rect = document.getElementById(direction.id) as unknown as SVGRectElement;
-			this.directionRects.push(rect);
 			this.nominalDirections.push({
 				x: rect.x.baseVal.value + rect.width.baseVal.value / 2,
 				y: rect.y.baseVal.value + rect.height.baseVal.value / 2,
@@ -232,10 +240,15 @@ export class BrowserOnscreenGamepadView {
 					this.circles[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
 				}
 			}
-			for (let index = 0; index < DIRECTIONS.length; index += 1) {
-				const mask = DIRECTIONS[index].buttons;
-				if ((changedButtons & mask) !== 0) {
-					this.directionRects[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
+			if ((changedButtons & DIRECTION_BUTTONS) !== 0) {
+				// Opposing presses balance the disc's visual tilt, not the raw input bits.
+				const x = ((buttons >>> InputControllerGamepadButtonBit.Right) & 1) - ((buttons >>> InputControllerGamepadButtonBit.Left) & 1);
+				const y = ((buttons >>> InputControllerGamepadButtonBit.Down) & 1) - ((buttons >>> InputControllerGamepadButtonBit.Up) & 1);
+				const image = (y + 1) * 3 + x + 1;
+				if (image !== this.renderedPadImage) {
+					this.padImages[this.renderedPadImage].setAttribute('data-active', 'false');
+					this.padImages[image].setAttribute('data-active', 'true');
+					this.renderedPadImage = image;
 				}
 			}
 		}

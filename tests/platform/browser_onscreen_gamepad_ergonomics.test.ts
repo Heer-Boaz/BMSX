@@ -55,7 +55,11 @@ const profiles: readonly {
 // Geometry and native desktop input contracts, not proof of hand comfort or iPhone multitouch.
 test('generic gamepad places equal faces and secondary controls in authored hand groups', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	let controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
+		const bytes = await readFile(`rom/d-pad-${name}.png`);
+		controls = controls.replace(`@@DPAD_${name.toUpperCase()}@@`, `data:image/png;base64,${bytes.toString('base64')}`);
+	}
 	const bundle = await build({
 		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
@@ -122,22 +126,19 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const directions = ['up', 'right', 'down', 'left'].map(name => {
 					const rect = document.getElementById('d-pad-' + name) as unknown as SVGRectElement;
 					const bounds = rect.getBoundingClientRect();
-					const style = getComputedStyle(rect);
 					return { name, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2,
 						width: bounds.width, height: bounds.height, left: bounds.left, top: bounds.top,
-						right: bounds.right, bottom: bounds.bottom, touched: rect.getAttribute('data-touched'), fill: style.fill };
+						right: bounds.right, bottom: bounds.bottom };
 				});
 				const pad = { id: 'd-pad-svg', x: padBounds.left + padBounds.width / 2,
 					y: padBounds.top + padBounds.height / 2, radius: padBounds.width / 2,
 					bounds: { left: padBounds.left, top: padBounds.top, width: padBounds.width, height: padBounds.height },
-					painted: { left: Math.min(...directions.map(direction => direction.left)) - 3 * padBounds.width / 200,
-						top: Math.min(...directions.map(direction => direction.top)) - 3 * padBounds.width / 200,
-						right: Math.max(...directions.map(direction => direction.right)) + 3 * padBounds.width / 200,
-						bottom: Math.max(...directions.map(direction => direction.bottom)) + 3 * padBounds.width / 200 },
+					painted: { left: padBounds.left, top: padBounds.top, right: padBounds.right, bottom: padBounds.bottom },
 				};
 				return {
 					circles: [pad, ...actionIds.map(id => read.circle(id))],
 					directions,
+					padImage: document.querySelector('.d-pad-image[data-active="true"]')!.id,
 					labels: actionIds.map(id => {
 						const label = document.getElementById(id + '_text')!;
 						const bounds = label.getBoundingClientRect();
@@ -313,15 +314,15 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const masks = { up: 1 << InputControllerGamepadButtonBit.Up, right: 1 << InputControllerGamepadButtonBit.Right,
 				down: 1 << InputControllerGamepadButtonBit.Down, left: 1 << InputControllerGamepadButtonBit.Left };
 			const rolls = [
-				{ x: right.x, y: right.y, mask: masks.right },
-				{ x: (up.right + right.left) / 2, y: (up.bottom + right.top) / 2, mask: masks.up | masks.right },
-				{ x: up.x, y: up.y, mask: masks.up },
-				{ x: (up.left + left.right) / 2, y: (up.bottom + left.top) / 2, mask: masks.up | masks.left },
-				{ x: left.x, y: left.y, mask: masks.left },
-				{ x: (down.left + left.right) / 2, y: (down.top + left.bottom) / 2, mask: masks.down | masks.left },
-				{ x: down.x, y: down.y, mask: masks.down },
-				{ x: (down.right + right.left) / 2, y: (down.top + right.bottom) / 2, mask: masks.down | masks.right },
-				{ x: right.x, y: right.y, mask: masks.right },
+				{ x: right.x, y: right.y, mask: masks.right, image: 'r' },
+				{ x: (up.right + right.left) / 2, y: (up.bottom + right.top) / 2, mask: masks.up | masks.right, image: 'ru' },
+				{ x: up.x, y: up.y, mask: masks.up, image: 'u' },
+				{ x: (up.left + left.right) / 2, y: (up.bottom + left.top) / 2, mask: masks.up | masks.left, image: 'lu' },
+				{ x: left.x, y: left.y, mask: masks.left, image: 'l' },
+				{ x: (down.left + left.right) / 2, y: (down.top + left.bottom) / 2, mask: masks.down | masks.left, image: 'ld' },
+				{ x: down.x, y: down.y, mask: masks.down, image: 'd' },
+				{ x: (down.right + right.left) / 2, y: (down.top + right.bottom) / 2, mask: masks.down | masks.right, image: 'rd' },
+				{ x: right.x, y: right.y, mask: masks.right, image: 'r' },
 			];
 			for (const roll of rolls) {
 				await touch('touchMove', [{ ...padCenter, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
@@ -329,10 +330,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'digital rolling updates immediately without a center excursion or finger lift');
 				await settle();
 				const rolled = await measure();
-				assert.deepEqual(rolled.directions.map((direction: any) => direction.touched),
-					[masks.up, masks.right, masks.down, masks.left].map(mask => (mask & roll.mask) !== 0 ? 'true' : 'false'));
+				assert.equal(rolled.padImage, `svgimg-d-pad-${roll.image}`);
 				assert.deepEqual(rolled.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })),
-					resting.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })), 'direction highlights never move their regions');
+					resting.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })), 'artwork state changes never move the retained numerical direction regions');
 			}
 			await touch('touchEnd', []);
 			evidence.push({ profile: profile.name, safe, geometry: resting, minimumContactGap: Math.min(...gaps), secondaryOffsets });
@@ -406,7 +406,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					await settle();
 					const paired = await measure();
 					assert.deepEqual(paired.circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
-					assert.equal(paired.directions[3].touched, 'true');
+					assert.equal(paired.padImage, 'svgimg-d-pad-l');
 					assert.notEqual(paired.circles[1].presentation.fill, circles[1].presentation.fill);
 					assert.notEqual(paired.circles[2].presentation.stroke, circles[2].presentation.stroke);
 					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-paired.png` });
@@ -417,7 +417,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					assert.equal(await page.evaluate(() => visualViewport!.scale), scale);
 					await settle();
 					const dragged = await measure();
-					assert.ok(dragged.directions.every((direction: any) => direction.touched === 'false'), 'four fixed arms have no moving or clamped tip');
+					assert.equal(dragged.padImage, 'svgimg-d-pad-neutral', 'artwork returns to neutral without a moving or clamped tip');
 					assert.deepEqual(dragged.circles.map((circle: any) => circle.bounds), circles.map((circle: any) => circle.bounds));
 					await touch('touchMove', [a, b, pad]);
 					assert.equal((await poll()).sampledButtons, 0x4003, 'reentry restores the held contact contribution');

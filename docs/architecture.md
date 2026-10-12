@@ -4929,6 +4929,10 @@ against every circular action button and finite rectangular D-pad direction.
 A thumb can overlap adjacent buttons; direction changes and diagonal rolling
 publish raw digital bits immediately, with no analog origin, moving tip,
 exclusive first-finger owner or initial-button assignment.
+The passive D-pad view uses the original nine disc images, embedded by the
+shared browser product page builder. Opposing raw direction bits balance only
+the displayed tilt; the view never rewrites controller words. Artwork changes
+do not change numerical acquisition geometry or control layout.
 
 Per-button reference counts combine contacts without releasing another
 finger's controls. A neutral D-pad contact can acquire the controller route.

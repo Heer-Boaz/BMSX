@@ -26,34 +26,14 @@
 	stroke-width: 3;
 }
 
-.action-button,
-.direction-button {
+.action-button {
 	fill: rgba(15, 22, 30, 0.64);
 	stroke: rgba(232, 240, 247, 0.7);
 	stroke-width: 1.25;
 }
 
-.direction-button[data-touched="true"] {
-	fill: rgba(30, 74, 98, 0.9);
-	stroke: #e2f7ff;
-	stroke-width: 2;
-}
-
-.direction-arrow {
-	fill: none;
-	stroke: rgba(243, 247, 250, 0.88);
-	stroke-width: 2.5;
-	stroke-linecap: round;
-	stroke-linejoin: round;
-}
-
-.direction-button[data-touched="true"] ~ .direction-arrow { stroke: #fff; }
-
-.direction-hub {
-	fill: rgba(15, 22, 30, 0.4);
-	stroke: rgba(232, 240, 247, 0.35);
-	stroke-width: 1;
-}
+.d-pad-image { visibility: hidden; }
+.d-pad-image[data-active="true"] { visibility: visible; }
 
 .action-button[data-touched="true"] {
 	fill: rgba(30, 74, 98, 0.9);
