@@ -139,6 +139,8 @@ export class HostUiInput {
 	public gamepadButtonPressed(player: number, button: InputControllerGamepadButtonBit): boolean { return (this.buttons[player + 1] & (1 << button)) !== 0; }
 	public gamepadButtonJustPressed(player: number, button: InputControllerGamepadButtonBit): boolean { return (this.pressedEdges[player + 1] & (1 << button)) !== 0; }
 	public gamepadButtonRepeatEdge(player: number, button: InputControllerGamepadButtonBit): boolean { return (this.repeatEdges[player + 1] & (1 << button)) !== 0; }
+	public get pointerJustPressed(): boolean { return this.pointerPressed; }
+	public get pointerHeld(): boolean { return this.pointerDown; }
 
 	public activatePointer(target: number): boolean {
 		if (this.pointerPressed) this.pointerTarget = target;

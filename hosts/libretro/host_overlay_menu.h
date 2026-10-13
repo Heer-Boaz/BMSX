@@ -66,7 +66,6 @@ private:
 	void rebuildText(VideoPresenter& presenter);
 	bool tickPointerInput();
 	i32 selectPointerTargetAt(i32 x, i32 y);
-	OnScreenKeyboardCommand onScreenKeyboardCommand() const;
 	HostUiInput uiInput;
 
 	HostRewindTimeline timeline;

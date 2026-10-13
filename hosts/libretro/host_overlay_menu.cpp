@@ -62,23 +62,22 @@ constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 struct OnScreenKeyboardCommandBinding {
 	InputControllerGamepadButtonBit button;
 	OnScreenKeyboardCommand command;
-	bool repeat;
 	bool requiresSelect;
 };
 
 constexpr auto kOnScreenKeyboardCommandBindings = std::to_array<OnScreenKeyboardCommandBinding>({
-	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Delete, false, true},
-	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Home, true, true},
-	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::End, true, true},
-	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Space, true, false},
-	{InputControllerGamepadButtonBit::X, OnScreenKeyboardCommand::Backspace, true, false},
-	{InputControllerGamepadButtonBit::Y, OnScreenKeyboardCommand::Shift, false, false},
-	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Left, true, false},
-	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::Right, true, false},
-	{InputControllerGamepadButtonBit::LeftTrigger, OnScreenKeyboardCommand::Home, true, false},
-	{InputControllerGamepadButtonBit::RightTrigger, OnScreenKeyboardCommand::End, true, false},
-	{InputControllerGamepadButtonBit::Start, OnScreenKeyboardCommand::Enter, false, false},
-	{InputControllerGamepadButtonBit::A, OnScreenKeyboardCommand::Activate, false, false},
+	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Delete, true},
+	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Home, true},
+	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::End, true},
+	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Space, false},
+	{InputControllerGamepadButtonBit::X, OnScreenKeyboardCommand::Backspace, false},
+	{InputControllerGamepadButtonBit::Y, OnScreenKeyboardCommand::Shift, false},
+	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Left, false},
+	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::Right, false},
+	{InputControllerGamepadButtonBit::LeftTrigger, OnScreenKeyboardCommand::Home, false},
+	{InputControllerGamepadButtonBit::RightTrigger, OnScreenKeyboardCommand::End, false},
+	{InputControllerGamepadButtonBit::Start, OnScreenKeyboardCommand::Enter, false},
+	{InputControllerGamepadButtonBit::A, OnScreenKeyboardCommand::Activate, false},
 });
 
 constexpr u32 menuKeyboardButtons = (1u << static_cast<u32>(InputControllerGamepadButtonBit::Up))
@@ -316,15 +315,25 @@ HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& inpu
 	if (m_page == Page::Closed) return HostMenuInput::Inactive;
 	if (m_page == Page::Rewind) return tickTimelineInput(runtime, input, rewind);
 	if (m_page == Page::Keyboard) {
-		m_keyboard.releasePulse(input);
-		if (tickPointerInput()) m_keyboard.activate(input);
-		else {
-			if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Up)) m_keyboard.moveVertical(-1);
-			if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Down)) m_keyboard.moveVertical(1);
-			if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Left)) m_keyboard.moveHorizontal(-1);
-			if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Right)) m_keyboard.moveHorizontal(1);
-			const auto command = onScreenKeyboardCommand();
-			if (command != OnScreenKeyboardCommand::None) m_keyboard.command(input, command);
+		if (!uiInput.pointerHeld()) m_keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+		const i32 pointerKey = uiInput.pointerValid && uiInput.pointerChanged
+			? m_keyboard.selectAt(uiInput.pointerX, uiInput.pointerY) : -1;
+		if (uiInput.pointerJustPressed() && pointerKey >= 0) m_keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
+		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Up)) m_keyboard.moveVertical(-1);
+		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Down)) m_keyboard.moveVertical(1);
+		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Left)) m_keyboard.moveHorizontal(-1);
+		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Right)) m_keyboard.moveHorizontal(1);
+		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+			const size_t sourceBase = player * INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
+			for (u8 button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; ++button) {
+				if (!uiInput.gamepadButtonPressed(player, static_cast<InputControllerGamepadButtonBit>(button))) m_keyboard.releaseSource(input, sourceBase + button);
+			}
+			for (const auto& binding : kOnScreenKeyboardCommandBindings) {
+				if (uiInput.gamepadButtonJustPressed(player, binding.button)
+					&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select) == binding.requiresSelect) {
+					m_keyboard.command(input, sourceBase + static_cast<size_t>(binding.button), binding.command);
+				}
+			}
 		}
 		return HostMenuInput::Inactive;
 	}
@@ -555,7 +564,7 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 	m_page = next;
 	const u8 sources = next == Page::Closed ? HostUiInputSource::None
 		: next == Page::Keyboard ? HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Pointer
-			: HostUiInputSource::Gamepad | HostUiInputSource::Keyboard | HostUiInputSource::Pointer;
+			: HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Keyboard | HostUiInputSource::Pointer;
 	uiInput.reset(sources, menuKeyboardButtons);
 	if (next == Page::Keyboard) input.setExclusiveGamepadHostShortcut(InputControllerGamepadButtonBit::X);
 	else input.clearExclusiveGamepadHostShortcut();
@@ -577,18 +586,6 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 	}
 }
 
-OnScreenKeyboardCommand HostOverlayMenu::onScreenKeyboardCommand() const {
-	for (const auto& binding : kOnScreenKeyboardCommandBindings) {
-		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
-			if (uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select) != binding.requiresSelect) continue;
-			const bool active = binding.repeat
-				? uiInput.gamepadButtonRepeatEdge(player, binding.button)
-				: uiInput.gamepadButtonJustPressed(player, binding.button);
-			if (active) return binding.command;
-		}
-	}
-	return OnScreenKeyboardCommand::None;
-}
 
 void HostOverlayMenu::changeSelected(VideoPresenter& presenter, i32 direction) {
 	if (kOptions[static_cast<size_t>(m_selected)].valueCount == 0) {

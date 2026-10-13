@@ -16,6 +16,7 @@ import { createBrowserBackend } from './backend';
 import type { HostAudioSink } from '../common/audio_output';
 import type { LogOutput } from '../common/log';
 import type { GPUBackend } from '../../machine/ts/render/backend/backend';
+import type { HostMenuValueOption } from '../common/host_overlay_menu';
 import type {} from './input_trace_contract';
 
 const audioState: BootAudioState = {
@@ -38,6 +39,7 @@ export interface BrowserStartup {
 	videoOutput: BrowserVideoOutput;
 	videoBackend: GPUBackend;
 	logOutput: LogOutput;
+	menuOptions: readonly HostMenuValueOption[];
 }
 
 export type BrowserBootMedia = {
@@ -74,6 +76,15 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	const controlView = onscreenGamepad
 		? new BrowserOnscreenGamepadView(gamescreen.ownerDocument, window, onscreenGamepad)
 		: null;
+	const menuOptions: HostMenuValueOption[] = [];
+	if (onscreenGamepad) {
+		menuOptions.push({
+			kind: 'value', label: 'TOUCH CONTROL',
+			values: [{ label: 'D-PAD' }, { label: 'LEFT STICK' }],
+			getIndex: () => onscreenGamepad.directionalMode === 'dpad' ? 0 : 1,
+			setIndex: index => onscreenGamepad.setDirectionalMode(index === 0 ? 'dpad' : 'stick'),
+		});
+	}
 	const videoOutput = new BrowserVideoOutput(gamescreen, controlView);
 	videoOutput.refreshLayout();
 	const inputHub = new BrowserInputHub(
@@ -110,6 +121,7 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 		videoOutput,
 		videoBackend,
 		logOutput: new ConsoleLogOutput(),
+		menuOptions,
 	};
 }
 

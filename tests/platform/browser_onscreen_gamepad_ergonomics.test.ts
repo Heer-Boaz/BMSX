@@ -118,10 +118,12 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						const scale = element.getScreenCTM()!.a;
 						const edge = Number.parseFloat(getComputedStyle(bezel).strokeWidth) * scale / 2;
 						const style = getComputedStyle(element);
+						const transform = element.getScreenCTM()!;
 						return {
 							id, x: geometry.x, y: geometry.y, radius: geometry.radius,
 							outline: geometry.outline ? { ...geometry.outline } : undefined,
 							tag: element.tagName,
+							transform: { a: transform.a, d: transform.d, e: transform.e, f: transform.f },
 							bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
 							painted: { left: bezelBounds.left - edge, top: bezelBounds.top - edge, right: bezelBounds.right + edge, bottom: bezelBounds.bottom + edge },
 							presentation: { fill: style.fill, stroke: style.stroke, touched: element.getAttribute('data-touched') },
@@ -209,7 +211,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const samples = await page.evaluate(candidates => {
 			const artwork = document.getElementById('controller-viewport')!;
 			const textAndAccents = [...artwork.querySelectorAll('text, .action-accent')].map(element => element.getBoundingClientRect());
-			const outlines = [...artwork.querySelectorAll('path, circle')].filter(element => !element.classList.contains('action-accent')) as SVGGeometryElement[];
+			const outlines = [...artwork.querySelectorAll('path, circle')].filter(element =>
+				!element.classList.contains('action-accent') && getComputedStyle(element).visibility !== 'hidden'
+				&& element.getBoundingClientRect().width > 0) as SVGGeometryElement[];
 			return candidates.filter(sample => {
 				if (textAndAccents.some(rect => sample.x >= rect.left - 3 && sample.x <= rect.right + 3 && sample.y >= rect.top - 3 && sample.y <= rect.bottom + 3)) return false;
 				return outlines.every(outline => [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3]].every(([dx, dy]) => {
@@ -264,7 +268,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const width = safe.right - safe.left;
 			const height = safe.bottom - safe.top;
 			const landscape = width >= height;
-			const scale = landscape ? Math.min(1.1, width / 568, height / 360) : Math.min(1.1, (width - 36) / 388, height / 568);
+			const scale = landscape ? Math.min(1.1, width / 568, height / 300) : Math.min(1.1, (width - 36) / 388, height / 500);
 			// Browser CSS positions use a subpixel layout grid; transformed SVG
 			// dimensions preserve the authored uniform scaling more precisely.
 			const coordinateTolerance = 1 / 32;
@@ -286,10 +290,26 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			assert.ok(select.y > pad.y && start.y > faceCenter.y, 'menu controls lie below the main hand row');
 			assert.ok(ls.x < select.x && rs.x > start.x, 'stick clicks remain separate from the centered menu controls');
 			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
+			for (const [bumper, trigger, primary] of [[lb, lt, pad], [rb, rt, faceCenter]]) {
+				assert.ok(Math.abs(bumper.x + bumper.outline.centerX - primary.x) < coordinateTolerance
+					&& Math.abs(trigger.x + trigger.outline.centerX - primary.x) < coordinateTolerance,
+					'both adjacent shoulders share the same horizontal center as their primary control');
+				assert.ok(Math.abs(bumper.y + bumper.outline.centerY - primary.y) < coordinateTolerance
+					&& Math.abs(trigger.y + trigger.outline.centerY - primary.y) < coordinateTolerance,
+					'bumpers and triggers follow one circle, not vertically stacked concentric rings');
+				assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
+				assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
+				assert.ok(Math.abs(bumper.y - trigger.y) < coordinateTolerance, 'the paired label centers share one hand row');
+				assert.ok(Math.abs(bumper.x - trigger.x) > coordinateTolerance, 'the paired controls are side by side, not above each other');
+			}
 			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
 			for (const shoulder of [lb, rb, lt, rt]) {
 				assert.equal(shoulder.tag, 'path', `${shoulder.id} uses a physical shoulder outline, not a circular target`);
 				assert.ok(shoulder.outline, `${shoulder.id} publishes its real rounded outline to input`);
+				assert.equal(shoulder.transform.a, 1, 'integer SVG viewport dimensions retain the exact authored contact scale');
+				assert.equal(shoulder.transform.d, 1);
+				assert.ok(Math.abs(shoulder.transform.e - shoulder.x - shoulder.outline.left) < coordinateTolerance);
+				assert.ok(Math.abs(shoulder.transform.f - shoulder.y - shoulder.outline.top) < coordinateTolerance);
 				assert.ok(shoulder.bounds.width > shoulder.bounds.height, `${shoulder.id} remains horizontally oriented despite real curvature`);
 				assert.ok(shoulder.outline.radius > shoulder.outline.halfWidth, `${shoulder.id} is a bent band with a real concave inner edge`);
 				assert.equal(shoulder.presentation.fill, 'none', 'shoulder backgrounds are fully transparent');
@@ -306,7 +326,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(resting.deckTop !== null);
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
-				assert.ok(lt.y < lb.y && rt.y < rb.y, 'triggers occupy a distinct outer arc, not a merged shoulder row');
 				assert.ok(lb.y < pad.y - pad.radius && rb.y < faceCenter.y - 104 * scale,
 					'the shoulder bands remain above rather than over the primary button targets');
 			}
@@ -322,8 +341,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					}
 				}
 			}
-			assert.deepEqual(await page.evaluate(samples => (globalThis as any).ergonomicsProbe.fills(samples), fillSamples), expectedFills,
-				'every shoulder SVG enclosed outline consumes the same independently measured finite arc and rounded ends');
+			const actualFills = await page.evaluate(samples => (globalThis as any).ergonomicsProbe.fills(samples), fillSamples);
+			for (let sample = 0; sample < fillSamples.length; sample += 1) {
+				assert.equal(actualFills[sample], expectedFills[sample],
+					`SVG and independent finite arc agree at ${JSON.stringify(fillSamples[sample])}`);
+			}
 			const gaps: number[] = [];
 			const paintClearance = 0;
 			for (let index = 0; index < targets.length; index += 1) {

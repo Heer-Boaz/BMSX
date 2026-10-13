@@ -104,10 +104,18 @@ constexpr std::array<KeyDefinition, HostOnScreenKeyboard::KeyCount> kKeys{{
 	{">", hid_key_usage::ArrowRight, 1, kNoModifier},
 }};
 
+constexpr auto kForwardedUsages = [] {
+	std::array<u8, HostOnScreenKeyboard::ForwardedKeyCount> usages{};
+	for (size_t key = 0; key < kKeys.size(); ++key) usages[key] = kKeys[key].usage;
+	usages[HostOnScreenKeyboard::KeyCount] = hid_key_usage::Home;
+	usages[HostOnScreenKeyboard::KeyCount + 1u] = hid_key_usage::End;
+	return usages;
+}();
+
 constexpr std::array<u8, 256> makeKeyIndexByUsage() {
 	std::array<u8, 256> indices{};
-	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
-		indices[kKeys[index].usage] = static_cast<u8>(index + 1u);
+	for (size_t index = 0u; index < kForwardedUsages.size(); index += 1u) {
+		indices[kForwardedUsages[index]] = static_cast<u8>(index + 1u);
 	}
 	return indices;
 }
@@ -150,6 +158,7 @@ constexpr u32 kTitleColor = 0xff5bc6ffu;
 } // namespace
 
 HostOnScreenKeyboard::HostOnScreenKeyboard() {
+	m_source_keys.fill(-1);
 	m_panel_rect.kind = RectRenderKind::Fill;
 	m_panel_rect.color = kPanelColor;
 	m_panel_rect.layer = Layer2D::IDE;
@@ -202,7 +211,7 @@ void HostOnScreenKeyboard::open() {
 }
 
 void HostOnScreenKeyboard::close(LibretroInput& input) {
-	releasePulse(input);
+	for (size_t source = 0; source < SourceCount; ++source) releaseSource(input, source);
 	if (m_modifier_states[static_cast<size_t>(kModifierShift)]) {
 		setShift(input, false);
 	}
@@ -216,19 +225,24 @@ void HostOnScreenKeyboard::close(LibretroInput& input) {
 	updateKeyColors();
 }
 
-void HostOnScreenKeyboard::releasePulse(LibretroInput& input) {
-	const i32 pulseKey = m_pulse_key;
-	if (m_pulse_usage >= 0) {
-		input.setVirtualKeyboardKey(static_cast<u8>(m_pulse_usage), false);
-		m_pulse_usage = -1;
+void HostOnScreenKeyboard::releaseSource(LibretroInput& input, size_t source) {
+	const i16 key = m_source_keys[source];
+	if (key < 0) return;
+	m_source_keys[source] = -1;
+	if (--m_key_counts[static_cast<size_t>(key)] == 0u) input.setVirtualKeyboardKey(kForwardedUsages[static_cast<size_t>(key)], false);
+	const u8 modifiers = m_source_modifiers[source];
+	m_source_modifiers[source] = 0u;
+	bool shiftEnded = false;
+	for (size_t modifier = 0; modifier < ModifierCount; ++modifier) {
+		if ((modifiers & (1u << modifier)) == 0u) continue;
+		m_modifier_counts[modifier] -= 1u;
+		if (m_modifier_counts[modifier] != 0u) continue;
+		if (modifier == static_cast<size_t>(kModifierShift) && m_modifier_states[modifier]) {
+			setShift(input, false);
+			shiftEnded = true;
+		} else if (!m_modifier_states[modifier]) input.setVirtualKeyboardKey(kModifierUsages[modifier], false);
 	}
-	m_pulse_key = -1;
-	if (m_release_shift_after_pulse) {
-		m_release_shift_after_pulse = false;
-		setShift(input, false);
-	} else if (pulseKey >= 0) {
-		updateKeyColors();
-	}
+	if (!shiftEnded) updateKeyColors();
 }
 
 void HostOnScreenKeyboard::moveHorizontal(i32 direction) {
@@ -256,7 +270,7 @@ void HostOnScreenKeyboard::moveVertical(i32 direction) {
 	updateKeyColors();
 }
 
-void HostOnScreenKeyboard::activate(LibretroInput& input) {
+void HostOnScreenKeyboard::activate(LibretroInput& input, size_t source) {
 	const KeyDefinition& key = kKeys[static_cast<size_t>(m_selected_key)];
 	if (key.modifier != kNoModifier) {
 		if (key.modifier == kModifierShift) {
@@ -266,48 +280,48 @@ void HostOnScreenKeyboard::activate(LibretroInput& input) {
 		const size_t modifier = static_cast<size_t>(key.modifier);
 		const bool down = !m_modifier_states[modifier];
 		m_modifier_states[modifier] = down;
-		input.setVirtualKeyboardKey(key.usage, down);
+		if (m_modifier_counts[modifier] == 0u) input.setVirtualKeyboardKey(key.usage, down);
 		updateKeyColors();
 		return;
 	}
-	pulseKey(input, key.usage);
+	pressKey(input, source, key.usage);
 }
 
 void HostOnScreenKeyboard::command(
-		LibretroInput& input,
+		LibretroInput& input, size_t source,
 		OnScreenKeyboardCommand command) {
 	switch (command) {
 		case OnScreenKeyboardCommand::None:
 			return;
 		case OnScreenKeyboardCommand::Activate:
-			activate(input);
+			activate(input, source);
 			return;
 		case OnScreenKeyboardCommand::Backspace:
-			pulseKey(input, hid_key_usage::Backspace);
+			pressKey(input, source, hid_key_usage::Backspace);
 			return;
 		case OnScreenKeyboardCommand::Delete:
-			pulseKey(input, hid_key_usage::Delete);
+			pressKey(input, source, hid_key_usage::Delete);
 			return;
 		case OnScreenKeyboardCommand::Space:
-			pulseKey(input, hid_key_usage::Space);
+			pressKey(input, source, hid_key_usage::Space);
 			return;
 		case OnScreenKeyboardCommand::Shift:
 			setShift(input, !m_modifier_states[static_cast<size_t>(kModifierShift)]);
 			return;
 		case OnScreenKeyboardCommand::Left:
-			pulseKey(input, hid_key_usage::ArrowLeft);
+			pressKey(input, source, hid_key_usage::ArrowLeft);
 			return;
 		case OnScreenKeyboardCommand::Right:
-			pulseKey(input, hid_key_usage::ArrowRight);
+			pressKey(input, source, hid_key_usage::ArrowRight);
 			return;
 		case OnScreenKeyboardCommand::Home:
-			pulseKey(input, hid_key_usage::Home);
+			pressKey(input, source, hid_key_usage::Home);
 			return;
 		case OnScreenKeyboardCommand::End:
-			pulseKey(input, hid_key_usage::End);
+			pressKey(input, source, hid_key_usage::End);
 			return;
 		case OnScreenKeyboardCommand::Enter:
-			pulseKey(input, hid_key_usage::Enter);
+			pressKey(input, source, hid_key_usage::Enter);
 			return;
 	}
 }
@@ -364,7 +378,7 @@ i32 HostOnScreenKeyboard::keyCenterUnits(i32 rowIndex, i32 keyIndex) const {
 void HostOnScreenKeyboard::updateKeyColors() {
 	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
 		const i32 modifier = kKeys[index].modifier;
-		m_key_rects[index].color = static_cast<i32>(index) == m_pulse_key
+		m_key_rects[index].color = m_key_counts[index] != 0u
 			? kPressedKeyColor
 			: static_cast<i32>(index) == m_selected_key
 			? kSelectedKeyColor
@@ -374,19 +388,27 @@ void HostOnScreenKeyboard::updateKeyColors() {
 	}
 }
 
-void HostOnScreenKeyboard::pulseKey(LibretroInput& input, u8 usage) {
-	input.setVirtualKeyboardKey(usage, true);
-	m_pulse_usage = usage;
-	m_pulse_key = static_cast<i32>(kKeyIndexByUsage[usage]) - 1;
-	m_release_shift_after_pulse = m_modifier_states[static_cast<size_t>(kModifierShift)];
-	if (m_pulse_key >= 0) {
-		updateKeyColors();
+void HostOnScreenKeyboard::pressKey(LibretroInput& input, size_t source, u8 usage) {
+	const size_t key = static_cast<size_t>(kKeyIndexByUsage[usage] - 1u);
+	m_source_keys[source] = static_cast<i16>(key);
+	u8 modifiers = 0u;
+	for (size_t modifier = 0; modifier < ModifierCount; ++modifier) {
+		if (m_modifier_states[modifier]) {
+			modifiers |= 1u << modifier;
+			m_modifier_counts[modifier] += 1u;
+		}
 	}
+	m_source_modifiers[source] = modifiers;
+	if (++m_key_counts[key] == 1u) input.setVirtualKeyboardKey(usage, true);
+	updateKeyColors();
 }
 
 void HostOnScreenKeyboard::setShift(LibretroInput& input, bool down) {
+	const size_t modifier = static_cast<size_t>(kModifierShift);
+	const bool previous = m_modifier_states[modifier] || m_modifier_counts[modifier] != 0u;
 	m_modifier_states[static_cast<size_t>(kModifierShift)] = down;
-	input.setVirtualKeyboardKey(hid_key_usage::ShiftLeft, down);
+	const bool pressed = down || m_modifier_counts[modifier] != 0u;
+	if (previous != pressed) input.setVirtualKeyboardKey(hid_key_usage::ShiftLeft, pressed);
 	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
 		const KeyDefinition& key = kKeys[index];
 		const char* label = down && key.shiftLabel != nullptr

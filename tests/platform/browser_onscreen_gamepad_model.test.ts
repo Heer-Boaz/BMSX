@@ -8,7 +8,7 @@ import { InputController } from '../../machine/ts/machine/devices/input/controll
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import type { SystemController } from '../../machine/ts/machine/devices/system/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } from '../../machine/ts/spec/bmsx/io';
+import { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_PAD_LX_OFFSET, IO_INP_PAD_LY_OFFSET } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { RoundedCircularArc } from '../../hosts/browser/touch_geometry';
 
@@ -36,14 +36,36 @@ function createFixture() {
 	const pad = new BrowserOnscreenGamepad(clock);
 	pad.setGeometry(geometry);
 	const edges: Array<{ code: string; down: boolean; value: number; time: number; pressId: number }> = [];
+	const axes: Array<{ code: string; x: number; y: number; time: number }> = [];
 	const sink: InputEventSink = {
 		inputButton(_device, code, down, value, time, pressId) { edges.push({ code, down, value, time, pressId }); },
-		inputAxis1() {}, inputAxis2() {}, cancelPointerButtons() {}, resetInput() {}, setSupervisorRequestLine() {}, connectInputDevice() {}, disconnectInputDevice() {},
+		inputAxis2(_device, code, x, y, time) { axes.push({ code, x, y, time }); },
+		inputAxis1() {}, cancelPointerButtons() {}, resetInput() {}, setSupervisorRequestLine() {}, connectInputDevice() {}, disconnectInputDevice() {},
 	};
 	const unsubscribe = pad.subscribe(sink);
 	let views = 0;
 	pad.subscribeView(() => { views += 1; });
-	return { pad, edges, unsubscribe, advance() { now += 1; }, views: () => views };
+	return { pad, edges, axes, unsubscribe, advance() { now += 1; }, views: () => views };
+}
+
+function createInputControllerFixture() {
+	const clock = { now: () => 0 } as HostClock;
+	const pad = new BrowserOnscreenGamepad(clock);
+	pad.setGeometry(geometry);
+	const source: InputSource = { devices: () => [pad], subscribe: sink => pad.subscribe(sink) };
+	const input = new Input(clock, source, pad.gamepadIndex);
+	const snapshot = createInputControllerSnapshot();
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
+	const supervisorPort = { supervisorContextActive: () => false, requestSupervisorLineEdge() {} } as SystemController;
+	const controller = new InputController(memory, input, supervisorPort);
+	controller.reset();
+	let cycle = 0;
+	return { pad, input, snapshot, memory, sample() {
+		input.pollInput();
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+		memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+		controller.onVblankEdge(++cycle);
+	} };
 }
 
 test('wide rounded shoulders use the actual silhouette rather than a circular circumbound', () => {
@@ -567,22 +589,10 @@ test('teardown publishes matching releases while sink is live and fresh subscrip
 });
 
 test('virtual device reaches real common input and armed ICU raw words without changing sample cadence', () => {
-	const clock = { now: () => 0 } as HostClock;
-	const pad = new BrowserOnscreenGamepad(clock);
-	pad.setGeometry(geometry);
-	const source: InputSource = { devices: () => [pad], subscribe: sink => pad.subscribe(sink) };
-	const input = new Input(clock, source, pad.gamepadIndex);
-	const snapshot = createInputControllerSnapshot();
-	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
-	const supervisorPort = { supervisorContextActive: () => false, requestSupervisorLineEdge() {} } as SystemController;
-	const controller = new InputController(memory, input, supervisorPort);
-	controller.reset();
-	let cycle = 0;
+	const fixture = createInputControllerFixture();
+	const { pad, input, snapshot, memory } = fixture;
 	const sample = () => {
-		input.pollInput();
-		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
-		memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
-		controller.onVblankEdge(++cycle);
+		fixture.sample();
 		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), snapshot.pads[0].buttons);
 		assert.deepEqual([...snapshot.pads[0].axesQ16], [0, 0, 0, 0, 0, 0], 'digital controls publish no analog axes');
 		return snapshot.pads[0].buttons;
@@ -602,5 +612,163 @@ test('virtual device reaches real common input and armed ICU raw words without c
 	pad.beginContact(3, 300, 100, 14, 14, true);
 	pad.endContact(3);
 	assert.equal(sample(), 0, 'complete between-sample tap is not stretched into guest state');
+	input.dispose();
+});
+
+test('switchable fixed-base L-stick publishes true axes, a radial neutral zone and a bounded circular range', () => {
+	const { pad, edges, axes, views, advance } = createFixture();
+	assert.equal(pad.directionalMode, 'dpad');
+	pad.setDirectionalMode('stick');
+	assert.equal(pad.directionalMode, 'stick');
+	assert.equal(views(), 1, 'a mode-only change notifies the passive view');
+	pad.setDirectionalMode('stick');
+	assert.equal(views(), 1, 'the same authored mode does not schedule more work');
+	pad.beginContact(1, 100, 100, 14, 14, true);
+	assert.equal(pad.stickActive, true);
+	assert.equal(views(), 2, 'a held neutral stick still updates its active feedback');
+	assert.equal(axes.length, 0);
+	pad.moveContact(1, 109, 100, 14, 14, true);
+	assert.equal(pad.stickX, 0);
+	assert.equal(axes.length, 0, 'the neutral radius is inclusive');
+	advance();
+	pad.moveContact(1, 129.5, 100, 14, 14, true);
+	assert.equal(pad.stickX, 0.5);
+	assert.equal(pad.stickY, 0);
+	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0.5, y: 0, time: 1 });
+	pad.moveContact(1, 150, 100, 14, 14, true);
+	assert.equal(pad.stickX, 1);
+	pad.moveContact(1, 600, 100, 14, 14, true);
+	assert.equal(pad.stickX, 1, 'captured motion beyond the artwork saturates without ending ownership');
+	assert.equal(pad.ownsContact(1), true);
+	pad.moveContact(1, 600, 600, 14, 14, true);
+	assert.ok(Math.abs(pad.stickX - Math.SQRT1_2) < 1e-15);
+	assert.ok(Math.abs(pad.stickY - Math.SQRT1_2) < 1e-15);
+	assert.equal(pad.buttons, 0, 'an analog stick never invents digital pad or stick-click bits');
+	assert.equal(edges.length, 0);
+	pad.endContact(1);
+	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0, y: 0, time: 1 });
+	assert.equal(pad.stickActive, false);
+});
+
+test('one stick owner survives contact-slot swaps, other pad fingers do not steal or auto-promote, and actions remain independent', () => {
+	const { pad, axes } = createFixture();
+	pad.setDirectionalMode('stick');
+	pad.beginContact(1, 300, 100, 0, 0, true);
+	pad.beginContact(2, 325, 100, 14, 14, true);
+	pad.beginContact(3, 150, 100, 0, 0, true);
+	pad.beginContact(4, 100, 50, 0, 0, true);
+	assert.equal(pad.buttons, 3);
+	assert.equal(pad.stickX, 1);
+	assert.equal(pad.stickY, 0);
+	pad.moveContact(4, 50, 100, 14, 14, true);
+	assert.equal(pad.stickX, 1, 'a second directional finger cannot overwrite the owner');
+	pad.endContact(2); // Copy the held secondary pad into slot 1.
+	pad.endContact(1); // Copy the primary stick owner into slot 0.
+	assert.equal(pad.buttons, 0);
+	pad.moveContact(3, 100, 50, 14, 14, true);
+	assert.equal(pad.stickX, 0);
+	assert.equal(pad.stickY, -1, 'the swapped source lease still owns the stick');
+	pad.endContact(3);
+	assert.equal(pad.stickActive, false);
+	assert.equal(pad.stickX, 0);
+	assert.equal(pad.stickY, 0);
+	const before = axes.length;
+	pad.moveContact(4, 150, 100, 14, 14, true);
+	assert.equal(axes.length, before, 'a previously occupied finger is not promoted on movement');
+	assert.equal(pad.ownsContact(4), true, 'its route remains owned until its own release');
+	pad.beginContact(5, 129.5, 100, 14, 14, true);
+	assert.equal(pad.stickX, 0.5, 'a fresh down can acquire the free physical unit');
+	pad.endContact(4);
+	assert.equal(pad.stickX, 0.5, 'ending an unrelated retained pointer cannot release the owner');
+	pad.endContact(5);
+});
+
+test('mode changes release only directional contributions and require new pad gestures in either mode', () => {
+	const { pad, edges, axes } = createFixture();
+	pad.beginContact(1, 140, 100, 14, 14, true);
+	pad.beginContact(2, 100, 60, 14, 14, true);
+	pad.beginContact(3, 325, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0x9003);
+	pad.setDirectionalMode('stick');
+	assert.equal(pad.buttons, 3, 'the action-thumb chord survives a directional-unit replacement');
+	assert.deepEqual(edges.filter(edge => !edge.down).map(edge => edge.code), ['up', 'right']);
+	pad.moveContact(1, 150, 100, 14, 14, true);
+	pad.moveContact(2, 100, 50, 14, 14, true);
+	assert.equal(pad.stickActive, false);
+	assert.equal(axes.length, 0, 'existing pad pointers are retained but do not rearm the replacement');
+	pad.moveContact(3, 350, 100, 14, 14, true);
+	assert.equal(pad.buttons, 2, 'the same action finger retains its live nonexclusive route');
+	pad.beginContact(4, 150, 100, 0, 0, true);
+	assert.equal(pad.stickX, 1);
+	pad.setDirectionalMode('dpad');
+	assert.equal(pad.buttons, 2);
+	assert.equal(pad.stickActive, false);
+	assert.deepEqual(axes.map(axis => [axis.x, axis.y]), [[1, 0], [0, 0]]);
+	pad.moveContact(4, 50, 100, 14, 14, true);
+	assert.equal(pad.buttons, 2, 'the old analog pointer does not become a held digital direction');
+	pad.setGeometry(geometry);
+	assert.equal(pad.buttons, 2, 'resizing cannot reactivate suppressed leases');
+	pad.beginContact(5, 100, 60, 14, 14, true);
+	assert.equal(pad.buttons, 0x1002, 'a fresh down uses the currently selected digital pad');
+	for (const id of [2, 1, 4, 3, 5]) pad.endContact(id);
+	assert.equal(pad.buttons, 0);
+});
+
+test('stick geometry resampling, active transitions and cancellation publish only changed numerical state', () => {
+	const { pad, axes, views, unsubscribe } = createFixture();
+	pad.setDirectionalMode('stick');
+	pad.beginContact(1, 129.5, 100, 14, 14, true);
+	const before = views();
+	for (let move = 0; move < 10000; move += 1) pad.moveContact(1, 129.5, 100, 14, 14, true);
+	pad.setGeometry(geometry);
+	assert.equal(views(), before);
+	assert.equal(axes.length, 1);
+	pad.setGeometry({ ...geometry, padX: 120.5 });
+	assert.equal(pad.stickX, 0);
+	assert.equal(pad.stickActive, true, 'a geometry edit does not lose the captured active source');
+	assert.equal(axes.length, 2);
+	pad.setGeometry(geometry);
+	assert.equal(pad.stickX, 0.5, 'layout resamples the retained coordinates without a fresh native move');
+	pad.moveContact(1, 129.5, 100, 14, 14, false);
+	assert.equal(pad.stickActive, false);
+	assert.equal(pad.stickX, 0);
+	pad.moveContact(1, 129.5, 100, 14, 14, true);
+	assert.equal(pad.stickX, 0.5);
+	pad.beginContact(2, 300, 100, 14, 14, true);
+	unsubscribe();
+	assert.equal(pad.buttons, 0);
+	assert.equal(pad.stickActive, false);
+	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0, y: 0, time: 0 });
+	assert.equal(pad.ownsContact(1), false);
+	assert.equal(pad.ownsContact(2), false);
+});
+
+test('true L-stick axes use the common encoder and the existing armed ICU cadence independently of digital actions', () => {
+	const fixture = createInputControllerFixture();
+	const { pad, input, snapshot, memory } = fixture;
+	const sample = (buttons: number, x: number, y: number) => {
+		fixture.sample();
+		assert.equal(snapshot.pads[0].buttons, buttons);
+		assert.deepEqual([...snapshot.pads[0].axesQ16], [x, y, 0, 0, 0, 0]);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), buttons);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_LX_OFFSET), x);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_LY_OFFSET), y);
+	};
+	pad.setDirectionalMode('stick');
+	pad.beginContact(1, 129.5, 100, 14, 14, true);
+	pad.beginContact(2, 325, 100, 14, 14, true);
+	sample(3, 0x8000, 0);
+	pad.moveContact(1, 70.5, 100, 14, 14, true);
+	sample(3, 0xffff8000, 0);
+	pad.moveContact(1, 100, 129.5, 14, 14, true);
+	sample(3, 0, 0x8000);
+	pad.moveContact(1, 100, 70.5, 14, 14, true);
+	sample(3, 0, 0xffff8000);
+	pad.setDirectionalMode('dpad');
+	sample(3, 0, 0);
+	pad.beginContact(3, 140, 100, 14, 14, true);
+	sample(0x8003, 0, 0);
+	pad.cancelContacts();
+	sample(0, 0, 0);
 	input.dispose();
 });

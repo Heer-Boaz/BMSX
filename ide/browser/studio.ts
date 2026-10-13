@@ -97,6 +97,7 @@ async function startBrowserStudio(): Promise<void> {
 			options.input,
 			rewind,
 			execution,
+			options.menuOptions,
 		);
 		const workspace = configuration.workspace;
 		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();

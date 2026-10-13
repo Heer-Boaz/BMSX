@@ -4936,8 +4936,9 @@ initially pressing a switch, but cannot steal a real auxiliary skin hit.
 Face and auxiliary switches retain circular geometry. LB/LT/RB/RT use finite
 round-ended circular bands: one layout producer writes the center-line arc,
 half-width and bounds and generates matching inner/outer SVG arcs and end caps.
-Two concentric bands follow each hand's circular envelope; safe-edge, cross-hand
-and vertical budgets determine their sweep and thickness. Ellipse-contact and
+Two adjacent segments share one circle per hand, rather than stacked rings;
+safe-edge, cross-hand and vertical budgets determine their sweep and thickness.
+Ellipse-contact and
 nearest-surface queries consume that actual shape, not a circumbound circle or
 the SVG bounding rectangle. Geometry is retained and updated at layout time;
 native moves allocate no shape objects and perform no DOM hit tests. Circular
@@ -4948,9 +4949,19 @@ over the whole disc, with a neutral center and up to two adjacent bits per
 contact. There is no analog origin, moving tip or exclusive first-finger owner.
 Captured pad contacts continue outside the artwork until their native release;
 independent fingers may publish opposing bits without raw-word normalization.
-The passive D-pad view is an outlined SVG round frame and digital cross, with
-four independent cardinal highlights. Opposing raw direction bits light both
-arms; the view never rewrites controller words. The shared browser page producer
+The passive D-pad view is an enlarged outlined SVG digital cross without a
+surrounding ring, with four independent cardinal highlights. Opposing raw
+direction bits light both arms; the view never rewrites controller words. The
+same directional acquisition frame can instead host an analog left stick:
+one pointer retains it until release, with radial neutral/travel mapping and
+captured movement outside the frame. Normalized host axes enter the ordinary
+`ls` input sink; common input owns Q16 conversion and carts own directional
+bindings. The browser does not synthesize D-pad bits from the analog stick.
+Changing the unit releases directional output and suppresses already-held
+directional contacts until release, without canceling held action contacts.
+Browser startup contributes its touch-mode value to the existing host menu;
+there is no additional gameplay toggle, guest shortcut or storage facade.
+The shared browser page producer
 needs no D-pad raster assets. Every control's interior remains unfilled even
 while held; only contour, direction and label feedback covers the game image.
 Artwork changes do not change numerical acquisition geometry or control layout.
@@ -4990,6 +5001,18 @@ touch listeners do not produce input: Pointer Events remain the sole contact
 producer. Page zoom outside the player is not disabled through viewport limits,
 global root-style mutations or global gesture handlers. ICU sampling and its raw
 words are unchanged.
+
+The mirrored host on-screen keyboard retains the selected key and modifier
+contribution per activating controller button or logical pointer until its
+actual release/cancel. Per-key counts combine independent sources; selection
+changes do not retarget a held key. Sticky modifiers remain intentional UI
+state, and one-shot Shift outlives every still-held shifted contributor.
+Host UI consumes physical source lifetimes, not command-repeat edges for key
+entry. The producer never shortens a key into a host-frame pulse or invents a
+minimum hold/FIFO; guest firmware owns typematic and ICU samples the ordinary
+raw HID bitmap. Closing the keyboard releases its virtual contributions only,
+without releasing an independently held physical keyboard key.
+
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed

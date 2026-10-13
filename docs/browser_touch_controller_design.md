@@ -1,6 +1,117 @@
 # Browser touch-controller ownership
 
+## Adjacent shoulder pairs, selectable analog stick and held keyboard keys, 2026-10-13
+
+The user rejected stacked shoulder rows. Each hand now has one circular
+center-line, split into two adjacent segments: LT/LB on the left and RB/RT on
+the right. The pair has the same world center, radius, radial thickness and
+label height. Its inner round-cap chord reserves the actual gap; SVG and
+contact math consume the same finite arcs. Floating translation avoids CSS
+layout-grid quantization, and whole-CSS-pixel SVG viewports use matching
+viewBoxes so the authored path is not rescaled. These are producer-owned
+presentation representations, not input epsilons or DOM queries on moves.
+
+The digital D-pad loses its surrounding circle. Its cross grows 15% inside
+the unchanged acquisition frame, without reducing face-button sizes. The
+single-row shoulder deck allows a less restrictive 300px landscape height
+budget (formerly 360px), and the portrait budget is 500px rather than 568px.
+Only real width/height packing scales controls down; normal phone/tablet
+controls retain their capped authored sizes. Video fitting remains 4:3 and
+integer/half-integer, above the actual portrait deck.
+
+The existing host menu gains **TOUCH CONTROL: D-PAD / LEFT STICK** only when
+browser startup owns a touch controller. It uses the existing value-option
+contract, including ordinary analog menu navigation, not a new gameplay button,
+URL parameter, guest key or preference facade. The choice is session-local,
+like existing host video options. Player and Studio startup both contribute
+the browser-owned option. The default remains D-pad.
+
+The analog stick follows [PPSSPP's fixed-base pointer ownership](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L552-L646):
+one retained pointer, movement outside the artwork, actual release to zero.
+The old BMSX moving-knob implementation emitted only D-pad bits; it is not
+restored as a compatibility path. The new unit emits real normalized `ls`
+axes; common `GamepadInput` owns signed Q16 encoding, and cart bindings own
+direction thresholds. Current Nemesis source explicitly binds `ls` with
+`input.stick_directions`. Mode changes release directional output and suppress
+held directional contacts until native release, while keeping all action
+contacts intact. The passive transparent knob renders normalized coordinates;
+no moving-origin, finger promotion, per-move allocation or synthetic D-pad bits
+are introduced. Digital sectors and multi-finger opposing bits are unchanged.
+
+### Keyboard lifetime fix (TypeScript and C++)
+
+The previously reproduced one-host-frame pulse bug is now fixed at the
+keyboard producer and source-routing owners. Controller commands and pointer
+keys begin on actual down, retain their selected key/modifier contribution,
+and end on actual up/cancel. Independent source counts prevent one release
+from dropping another held key. Selection changes cannot retarget a held key;
+sticky Ctrl/Alt and one-shot Shift remain separate intentional UX. Held special
+keys are no longer converted into host-generated repeat pulses. Guest typematic
+and raw ICU sampling are unchanged. This follows [VICE's source lifetime](https://github.com/libretro/vice-libretro/blob/f63b56688f3133a2bb17499db9eebb7ab81df5f5/libretro/libretro-vkbd.c#L1470-L1555),
+not a minimum-duration workaround.
+
+| Owner representation | TypeScript | C++ |
+| --- | --- | --- |
+| Authored key identity | host `code` string, mapped once to key index | HID `u8 usage`, mapped once to key index |
+| Source-held key | retained `Int16Array` key indices, -1 means no key | `std::array<i16, SourceCount>`, same absence state |
+| Key/modifier contributions | retained byte counts and modifier masks | retained `u8` counts and masks |
+| Source lifetime | physical controller-button words and logical pointer held/down | same physical words and pointer state |
+| Publication | `Input.setVirtualKeyboardKey` -> ordinary keyboard owner | `LibretroInput.setVirtualKeyboardKey` -> virtual HID words |
+| Guest boundary | armed VBlank raw HID bitmap | same raw HID bitmap |
+
+Hot callers are `runHostFrame -> Input.pollInput -> HostOverlayMenu.tickInput`
+and `retro_run -> LibretroInput.poll -> HostOverlayMenu::handleInput`, followed
+by actual source `activate/command/releaseSource` and ordinary ICU sampling.
+No compiler, cart, hardware register or machine-runtime representation changed.
+The real paired Nemesis BIOS-terminal regression repeats 24 physically held
+100ms inputs for each of letters and Backspace, controller and pointer, at
+60Hz and 120Hz host cadence: **all eight cases now receive 24/24**, compared
+with 10-20/24 before the fix. This is real guest evidence, not only a producer
+unit test. Actual Metalion cheat activation and physical iPhone acceptance
+have not been established. Sub-guest-frame taps retain normal sampled-device
+semantics; no FIFO or arbitrary duration is invented.
+
+### Current validation and publication
+
+The final focused bundle passes **265 TypeScript tests**, the three C++
+keyboard/UI/environment tests, all four browser/node/scripts/tests typechecks,
+the release build and diff checks. Strict SVG/contact comparisons cover 27
+layout profiles without loosening their oracle. Trusted native input tests
+cover analog ownership, zero on release, independent button chords, actual
+Q16 publication at common input/ICU boundaries, mode suppression and knob
+feedback. Rendered phone/tablet layouts were inspected in both orientations.
+
+Actual paired `nemesis_s` and `2025` packages boot with running audio in
+Chromium WebGPU and WPE WebKit WebGL2, without script/GPU/request errors.
+WPE repeats 1,008 trusted native state checks in 16 package/profile/orientation
+combinations. Its fixed 2x2 contact injection is not physical iPhone proof.
+The real public host menu switches D-pad -> left stick -> D-pad by native
+touch navigation in both games and orientations; the stick then publishes
+real axes with no digital direction bits. The BIOS-terminal letter/Backspace
+regression described above remains the guest keyboard evidence, not a claim
+that Metalion activation has been tested.
+
+Azure publication is complete. The published engine SHA-256 is
+`c1e7efecb86537447a28881df2b91e1b2b216161103f1316b08c4c8b93697fdc`.
+All 43 public asset/route/header receipts match the staged package; public
+Chromium repeats the actual-game phone/tablet and native menu checks without
+errors. Paired ROM media and input tracing are unchanged. Existing game URLs
+and `/ios/` suffixes remain; no new route or parameter is required. No GitHub
+media or source push is part of this publication.
+Evidence: `.bmsx/hosting/split-stick-keyboard-evidence/` and
+`.bmsx/hosting/keyboard-held-lifetime-evidence/`.
+
+Read-only review also reproduced a pre-existing browser reset boundary issue:
+`Input.resetInput()` clears virtual keys without invalidating the visible
+keyboard's sticky Ctrl/Alt state. It is not introduced or solved by this
+source-lifetime change; reset notification belongs at that owner boundary,
+not in a reassert-on-poll fallback. Native menu reset already closes its
+keyboard. The validation above does not claim browser sticky modifiers survive
+blur correctly.
+
 ## Curved shoulders and transparent controller, 2026-10-13
+
+Historical record for `7b77dd880`; shoulder rows and D-pad presentation superseded above.
 
 The user requested genuine wrapping shoulder curves rather than capsules and
 then explicitly preferred redesigning the whole D-pad as a transparent unit.
@@ -143,7 +254,7 @@ is introduced. Azure publication is complete; 43 public asset/route/header
 receipts match the staged package, and public Chromium repeats actual-game
 phone/tablet input and presentation checks in both orientations without errors.
 
-### Separate keyboard-forwarding diagnosis, not a fix in this slice
+### Historical keyboard-forwarding diagnosis (implemented in the current slice above)
 
 The shared virtual keyboard producer discards the activating source's hold
 duration: it releases its generated key after one host UI frame. A production

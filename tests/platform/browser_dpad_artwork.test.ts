@@ -39,8 +39,12 @@ for (const debug of [false, true]) {
 			const html = await readFile(join(fixture, 'dist', filename), 'utf8');
 			const artwork = html.slice(html.indexOf('<svg id="d-pad-svg"'), html.indexOf('</svg>', html.indexOf('<svg id="d-pad-svg"')));
 			assert.ok(artwork.includes('viewBox="0 0 100 100"'), 'the established frame is retained');
-			assert.ok(artwork.includes('id="d-pad-contour"'), 'a round outer contour remains visible');
+			assert.ok(!artwork.includes('id="d-pad-contour"'), 'the digital cross has no unnecessary outer circle');
 			assert.ok(artwork.includes('id="d-pad-cross"'), 'the physical cross has a static outline');
+			assert.ok(artwork.includes('id="d-pad-artwork"'), 'digital artwork has its own passive mode group');
+			assert.ok(artwork.includes('id="left-stick-artwork" visibility="hidden"'),
+				'the optional analog unit starts hidden rather than drawing a circle around the D-pad');
+			assert.ok(artwork.includes('id="left-stick-tip"'), 'every product includes the independently projected analog tip');
 			assert.equal([...artwork.matchAll(/class="d-pad-direction"/g)].length, 4);
 			assert.ok(!artwork.includes('<image'), 'no opaque raster background is embedded or requested');
 			assert.ok(!html.includes('@@DPAD_'), 'the product has no unresolved artwork slots');
@@ -110,6 +114,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
 					}),
 					geometry: document.getElementById('d-pad-svg')!.getBoundingClientRect().toJSON(),
+					cross: document.getElementById('d-pad-cross')!.getBoundingClientRect().toJSON(),
+					modeVisibility: ['d-pad-artwork', 'left-stick-artwork'].map(id => getComputedStyle(document.getElementById(id)!).visibility),
 				};
 			},
 		};
@@ -118,7 +124,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	const measure = () => page.evaluate(() => (globalThis as any).artworkProbe.measure());
 	const resting = await measure();
 	assert.deepEqual(resting.active, []);
-	assert.ok(Math.abs(resting.geometry.width - 196.5) < 0.0001, 'the authored acquisition frame follows the existing landscape scale');
+	assert.ok(Math.abs(resting.geometry.width - 180 * Math.min(1.1, 852 / 568, 393 / 300)) < 0.0001,
+		'the authored acquisition frame follows the single-shoulder-row landscape budget');
+	assert.ok(Math.abs(resting.cross.width / resting.geometry.width - 0.759) < 0.0001,
+		'the larger digital cross fills its existing acquisition frame without shrinking any face target');
+	assert.deepEqual(resting.modeVisibility, ['visible', 'hidden'], 'D-pad mode paints no analog outer ring');
 	let previousNibble = 0;
 	for (let nibble = 0; nibble < 16; nibble += 1) {
 		await t.test(`raw direction mask 0x${nibble.toString(16)} highlights all pressed arms without filling the game view`, async () => {

@@ -7,8 +7,10 @@ import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDist
 
 // Directional capture and live, nonexclusive button hits are distinct purposes:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
-const enum ContactPurpose { Pad, Buttons }
+const enum ContactPurpose { Pad, Buttons, SuppressedPad }
 const DIAGONAL_SLOPE = Math.SQRT2 - 1;
+
+export type OnscreenDirectionalMode = 'dpad' | 'stick';
 
 export interface OnscreenActionGeometry {
 	x: number;
@@ -59,6 +61,14 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
 	private nextPressId = 1;
 	private activeButtons = 0;
+	private padMode: OnscreenDirectionalMode = 'dpad';
+	private stickContactIndex = -1;
+	private tipX = 0;
+	private tipY = 0;
+	private tipActive = false;
+	private publishedTipX = 0;
+	private publishedTipY = 0;
+	private publishedTipActive = false;
 
 	public constructor(
 		private readonly clock: HostClock,
@@ -69,6 +79,27 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 
 	public get buttons(): number { return this.activeButtons; }
 	public get geometryRevision(): number { return this.geometryVersion; }
+	public get directionalMode(): OnscreenDirectionalMode { return this.padMode; }
+	public get stickX(): number { return this.tipX; }
+	public get stickY(): number { return this.tipY; }
+	public get stickActive(): boolean { return this.tipActive; }
+
+	/** Replacing a physical directional unit requires a fresh down, not a reinterpretation of held fingers. */
+	public setDirectionalMode(mode: OnscreenDirectionalMode): void {
+		if (mode === this.padMode) return;
+		const previousButtons = this.activeButtons;
+		this.padMode = mode;
+		for (let index = 0; index < this.contactCount; index += 1) {
+			if (this.contactPurposes[index] !== ContactPurpose.Pad) continue;
+			this.setContribution(index, 0);
+			this.contactPurposes[index] = ContactPurpose.SuppressedPad;
+		}
+		this.stickContactIndex = -1;
+		this.tipX = 0;
+		this.tipY = 0;
+		this.tipActive = false;
+		this.publishChanges(previousButtons, true);
+	}
 
 	public setGeometry(geometry: OnscreenGamepadGeometry): void {
 		const previousButtons = this.activeButtons;
@@ -80,6 +111,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 					this.contactHalfWidths[index], this.contactHalfHeights[index])
 				: 0);
 		}
+		if (this.stickContactIndex >= 0) this.updateStick(this.stickContactIndex);
 		// Publish the final aggregate, not temporary count changes while resampling.
 		this.publishChanges(previousButtons);
 	}
@@ -153,7 +185,13 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.contactHalfHeights[index] = halfHeight;
 		this.contactActive[index] = active;
 		this.contactContributions[index] = 0;
-		this.setContribution(index, active ? purpose === ContactPurpose.Pad ? this.padButtons(x, y) : buttons : 0);
+		if (purpose === ContactPurpose.Pad) {
+			if (this.padMode === 'dpad') this.setContribution(index, active ? this.padButtons(x, y) : 0);
+			else if (this.stickContactIndex < 0) {
+				this.stickContactIndex = index;
+				this.updateStick(index);
+			}
+		} else this.setContribution(index, active ? buttons : 0);
 		this.publishChanges(previousButtons);
 		return true;
 	}
@@ -176,6 +214,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.contactHalfHeights[index] = halfHeight;
 		this.contactActive[index] = active;
 		this.setContribution(index, active ? this.contactButtons(this.contactPurposes[index], x, y, halfWidth, halfHeight) : 0);
+		if (index === this.stickContactIndex) this.updateStick(index);
 		this.publishChanges(previousButtons);
 		return true;
 	}
@@ -185,6 +224,12 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		if (index < 0) return false;
 		const previousButtons = this.activeButtons;
 		this.setContribution(index, 0);
+		if (index === this.stickContactIndex) {
+			this.stickContactIndex = -1;
+			this.tipX = 0;
+			this.tipY = 0;
+			this.tipActive = false;
+		}
 		const last = --this.contactCount;
 		if (index !== last) {
 			this.contactIds[index] = this.contactIds[last];
@@ -195,6 +240,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			this.contactHalfHeights[index] = this.contactHalfHeights[last];
 			this.contactActive[index] = this.contactActive[last];
 			this.contactContributions[index] = this.contactContributions[last];
+			if (last === this.stickContactIndex) this.stickContactIndex = index;
 		}
 		this.publishChanges(previousButtons);
 		return true;
@@ -205,11 +251,16 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.contactCount = 0;
 		this.buttonCounts.fill(0);
 		this.activeButtons = 0;
+		this.stickContactIndex = -1;
+		this.tipX = 0;
+		this.tipY = 0;
+		this.tipActive = false;
 		this.publishChanges(previousButtons);
 	}
 
 	private contactButtons(purpose: ContactPurpose, x: number, y: number, halfWidth: number, halfHeight: number): number {
-		if (purpose === ContactPurpose.Pad) return this.padButtons(x, y);
+		if (purpose === ContactPurpose.Pad) return this.padMode === 'dpad' ? this.padButtons(x, y) : 0;
+		if (purpose === ContactPurpose.SuppressedPad) return 0;
 		const actions = this.geometry.actions;
 		let buttons = 0;
 		for (let index = 0; index < actions.length; index += 1) {
@@ -219,6 +270,33 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 				: contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
 		}
 		return buttons;
+	}
+
+	/**
+	 * One retained pointer drives a fixed-base, circular L-stick, including motion outside the artwork.
+	 * https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L552-L646
+	 */
+	private updateStick(index: number): void {
+		this.tipActive = this.contactActive[index];
+		if (!this.tipActive) {
+			this.tipX = 0;
+			this.tipY = 0;
+			return;
+		}
+		const geometry = this.geometry;
+		const dx = this.contactX[index] - geometry.padX;
+		const dy = this.contactY[index] - geometry.padY;
+		const distanceSquared = dx * dx + dy * dy;
+		const neutralRadius = geometry.padNeutralRadius;
+		if (distanceSquared <= neutralRadius * neutralRadius) {
+			this.tipX = 0;
+			this.tipY = 0;
+			return;
+		}
+		const distance = Math.sqrt(distanceSquared);
+		const magnitude = Math.min(1, (distance - neutralRadius) / (geometry.padRadius - neutralRadius));
+		this.tipX = dx / distance * magnitude;
+		this.tipY = dy / distance * magnitude;
 	}
 
 	private padButtons(x: number, y: number): number {
@@ -266,17 +344,26 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		}
 	}
 
-	private publishChanges(previousButtons: number): void {
+	private publishChanges(previousButtons: number, modeChanged = false): void {
 		const changedButtons = this.activeButtons ^ previousButtons;
-		if (changedButtons === 0) return;
-		const time = this.clock.now();
-		for (let bit = 0; bit < GAMEPAD_BUTTON_IDS.length; bit += 1) {
-			const mask = 1 << bit;
-			if ((changedButtons & mask) === 0) continue;
-			const down = (this.activeButtons & mask) !== 0;
-			if (down) this.pressIds[bit] = this.nextPressId++;
-			this.sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[bit], down, down ? 1 : 0, time, this.pressIds[bit]);
+		const changedAxes = this.tipX !== this.publishedTipX || this.tipY !== this.publishedTipY;
+		if (changedButtons === 0 && !changedAxes && this.tipActive === this.publishedTipActive && !modeChanged) return;
+		if (changedButtons !== 0 || changedAxes) {
+			const time = this.clock.now();
+			if (changedButtons !== 0) {
+				for (let bit = 0; bit < GAMEPAD_BUTTON_IDS.length; bit += 1) {
+					const mask = 1 << bit;
+					if ((changedButtons & mask) === 0) continue;
+					const down = (this.activeButtons & mask) !== 0;
+					if (down) this.pressIds[bit] = this.nextPressId++;
+					this.sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[bit], down, down ? 1 : 0, time, this.pressIds[bit]);
+				}
+			}
+			if (changedAxes) this.sink.inputAxis2(this.id, 'ls', this.tipX, this.tipY, time);
 		}
+		this.publishedTipX = this.tipX;
+		this.publishedTipY = this.tipY;
+		this.publishedTipActive = this.tipActive;
 		this.viewListener?.();
 	}
 }

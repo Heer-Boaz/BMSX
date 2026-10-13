@@ -585,7 +585,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	const primaryPointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
-	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true, 'pointer-down forwards the key for the entire actual hold');
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
 
 	currentTime += 1;
@@ -594,10 +594,16 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	currentTime += 1;
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
-	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false, 'pointer-up forwards a real key release, not a deferred pulse');
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
-	// The host-menu transition must deactivate the keyboard before its next
-	// keyboard tick would normally release this virtual key pulse.
+	currentTime += 1;
+	input.inputButton('pointer:0', 'pointer_primary', true, 1, currentTime, pressId++);
+	tickMenu(input, menu);
+	currentTime += 1;
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	// A host-menu transition also releases any still-held virtual key source.
 	currentTime += 1;
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, currentTime, pressId++);
 	input.inputButton('keyboard:0', 'AltRight', true, 1, currentTime, pressId++);

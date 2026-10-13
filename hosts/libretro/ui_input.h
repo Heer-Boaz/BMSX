@@ -21,6 +21,8 @@ public:
 	bool gamepadButtonPressed(u8 player, InputControllerGamepadButtonBit button) const;
 	bool gamepadButtonJustPressed(u8 player, InputControllerGamepadButtonBit button) const;
 	bool gamepadButtonRepeatEdge(u8 player, InputControllerGamepadButtonBit button) const;
+	bool pointerJustPressed() const { return pointerPressed; }
+	bool pointerHeld() const { return pointerDown; }
 	bool activatePointer(i32 target);
 	bool pointerCapturedBy(i32 target) const;
 	void consume() const;

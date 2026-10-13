@@ -33,7 +33,7 @@
 	stroke-width: 1.25;
 }
 
-.d-pad-outline, .d-pad-direction {
+.d-pad-outline, .d-pad-direction, .stick-outline {
 	fill: none;
 	stroke: rgba(232, 240, 247, 0.7);
 	stroke-width: 1.25;
@@ -41,7 +41,7 @@
 	stroke-linejoin: round;
 }
 
-.d-pad-direction[data-touched="true"] {
+.d-pad-direction[data-touched="true"], .stick-outline[data-touched="true"] {
 	stroke: #e2f7ff;
 	stroke-width: 2.5;
 }

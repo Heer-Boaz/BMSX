@@ -76,6 +76,7 @@ async function startBrowserPlayer(): Promise<void> {
 			options.input,
 			rewind,
 			execution,
+			options.menuOptions,
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {

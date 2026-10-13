@@ -8,7 +8,8 @@ import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { point_in_rect } from '../../machine/ts/common/rect';
-import type { Input } from './input/manager';
+import { Input } from './input/manager';
+import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 
 type OnScreenKeyDefinition = {
 	readonly label: string;
@@ -111,9 +112,10 @@ const KEY_DEFINITIONS: readonly OnScreenKeyDefinition[] = [
 	{ label: '>', code: 'ArrowRight', span: 1, modifier: NO_MODIFIER },
 ];
 
+const FORWARDED_CODES = [...KEY_DEFINITIONS.map(key => key.code), 'Home', 'End'];
 const KEY_INDEX_BY_CODE = new Map<string, number>();
-for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
-	KEY_INDEX_BY_CODE.set(KEY_DEFINITIONS[index].code, index);
+for (let index = 0; index < FORWARDED_CODES.length; index += 1) {
+	KEY_INDEX_BY_CODE.set(FORWARDED_CODES[index], index);
 }
 
 const ROWS: readonly OnScreenKeyboardRow[] = [
@@ -151,11 +153,14 @@ const COLOR_TITLE = 0xff5bc6ff;
 const COMMAND_COUNT = 2 + KEY_DEFINITIONS.length * 2 + HELP_LINES.length;
 
 export class HostOnScreenKeyboard {
+	public static readonly POINTER_SOURCE = Input.PLAYERS_MAX * INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
+	public static readonly SOURCE_COUNT = HostOnScreenKeyboard.POINTER_SOURCE + 1;
 	private selectedRow = INITIAL_ROW;
 	private selectedKey = INITIAL_KEY;
-	private pulseCode = '';
-	private pulseKeyIndex = -1;
-	private releaseShiftAfterPulse = false;
+	private readonly sourceKeys = new Int16Array(HostOnScreenKeyboard.SOURCE_COUNT).fill(-1);
+	private readonly sourceModifiers = new Uint8Array(HostOnScreenKeyboard.SOURCE_COUNT);
+	private readonly keyCounts = new Uint8Array(FORWARDED_CODES.length);
+	private readonly modifierCounts = new Uint8Array(MODIFIER_CODES.length);
 	private readonly modifierStates = [false, false, false];
 	private readonly panelRect: RectRenderSubmission = {
 		kind: RectRenderKind.Fill,
@@ -239,7 +244,7 @@ export class HostOnScreenKeyboard {
 	}
 
 	public close(): void {
-		this.releasePulse();
+		for (let source = 0; source < HostOnScreenKeyboard.SOURCE_COUNT; source += 1) this.releaseSource(source);
 		if (this.modifierStates[MODIFIER_SHIFT]) {
 			this.setShift(false);
 		}
@@ -252,19 +257,25 @@ export class HostOnScreenKeyboard {
 		this.updateKeyColors();
 	}
 
-	public releasePulse(): void {
-		const pulseKeyIndex = this.pulseKeyIndex;
-		if (this.pulseCode.length !== 0) {
-			this.input.setVirtualKeyboardKey(this.pulseCode, false);
-			this.pulseCode = '';
+	/** Each physical source retains its chosen key until that source releases. */
+	public releaseSource(source: number): void {
+		const key = this.sourceKeys[source];
+		if (key < 0) return;
+		this.sourceKeys[source] = -1;
+		if (--this.keyCounts[key] === 0) this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], false);
+		const modifiers = this.sourceModifiers[source];
+		this.sourceModifiers[source] = 0;
+		let shiftEnded = false;
+		for (let modifier = 0; modifier < MODIFIER_CODES.length; modifier += 1) {
+			if ((modifiers & (1 << modifier)) === 0) continue;
+			this.modifierCounts[modifier] -= 1;
+			if (this.modifierCounts[modifier] !== 0) continue;
+			if (modifier === MODIFIER_SHIFT && this.modifierStates[modifier]) {
+				this.setShift(false);
+				shiftEnded = true;
+			} else if (!this.modifierStates[modifier]) this.input.setVirtualKeyboardKey(MODIFIER_CODES[modifier], false);
 		}
-		this.pulseKeyIndex = -1;
-		if (this.releaseShiftAfterPulse) {
-			this.releaseShiftAfterPulse = false;
-			this.setShift(false);
-		} else if (pulseKeyIndex >= 0) {
-			this.updateKeyColors();
-		}
+		if (!shiftEnded) this.updateKeyColors();
 	}
 
 	public moveHorizontal(direction: number): void {
@@ -291,7 +302,7 @@ export class HostOnScreenKeyboard {
 		this.updateKeyColors();
 	}
 
-	public activate(): void {
+	public activate(source: number): void {
 		const key = KEY_DEFINITIONS[this.selectedKey];
 		if (key.modifier !== NO_MODIFIER) {
 			if (key.modifier === MODIFIER_SHIFT) {
@@ -300,46 +311,46 @@ export class HostOnScreenKeyboard {
 			}
 			const down = !this.modifierStates[key.modifier];
 			this.modifierStates[key.modifier] = down;
-			this.input.setVirtualKeyboardKey(key.code, down);
+			if (this.modifierCounts[key.modifier] === 0) this.input.setVirtualKeyboardKey(key.code, down);
 			this.updateKeyColors();
 			return;
 		}
-		this.pulseKey(key.code, this.selectedKey);
+		this.pressKey(source, this.selectedKey);
 	}
 
-	public command(command: OnScreenKeyboardCommand): void {
+	public command(source: number, command: OnScreenKeyboardCommand): void {
 		switch (command) {
 			case OnScreenKeyboardCommand.None:
 				return;
 			case OnScreenKeyboardCommand.Activate:
-				this.activate();
+				this.activate(source);
 				return;
 			case OnScreenKeyboardCommand.Backspace:
-				this.pulseKey('Backspace');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('Backspace'));
 				return;
 			case OnScreenKeyboardCommand.Delete:
-				this.pulseKey('Delete');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('Delete'));
 				return;
 			case OnScreenKeyboardCommand.Space:
-				this.pulseKey('Space');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('Space'));
 				return;
 			case OnScreenKeyboardCommand.Shift:
 				this.setShift(!this.modifierStates[MODIFIER_SHIFT]);
 				return;
 			case OnScreenKeyboardCommand.Left:
-				this.pulseKey('ArrowLeft');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('ArrowLeft'));
 				return;
 			case OnScreenKeyboardCommand.Right:
-				this.pulseKey('ArrowRight');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('ArrowRight'));
 				return;
 			case OnScreenKeyboardCommand.Home:
-				this.pulseKey('Home');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('Home'));
 				return;
 			case OnScreenKeyboardCommand.End:
-				this.pulseKey('End');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('End'));
 				return;
 			case OnScreenKeyboardCommand.Enter:
-				this.pulseKey('Enter');
+				this.pressKey(source, KEY_INDEX_BY_CODE.get('Enter'));
 				return;
 		}
 	}
@@ -389,7 +400,7 @@ export class HostOnScreenKeyboard {
 	private updateKeyColors(): void {
 		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
 			const modifier = KEY_DEFINITIONS[index].modifier;
-			this.keyRects[index].color = index === this.pulseKeyIndex
+			this.keyRects[index].color = this.keyCounts[index] !== 0
 				? COLOR_KEY_PRESSED
 				: index === this.selectedKey
 				? COLOR_KEY_SELECTED
@@ -399,19 +410,25 @@ export class HostOnScreenKeyboard {
 		}
 	}
 
-	private pulseKey(code: string, keyIndex = KEY_INDEX_BY_CODE.get(code)): void {
-		this.input.setVirtualKeyboardKey(code, true);
-		this.pulseCode = code;
-		this.pulseKeyIndex = keyIndex === undefined ? -1 : keyIndex;
-		this.releaseShiftAfterPulse = this.modifierStates[MODIFIER_SHIFT];
-		if (this.pulseKeyIndex >= 0) {
-			this.updateKeyColors();
+	private pressKey(source: number, key: number): void {
+		this.sourceKeys[source] = key;
+		let modifiers = 0;
+		for (let modifier = 0; modifier < MODIFIER_CODES.length; modifier += 1) {
+			if (this.modifierStates[modifier]) {
+				modifiers |= 1 << modifier;
+				this.modifierCounts[modifier] += 1;
+			}
 		}
+		this.sourceModifiers[source] = modifiers;
+		if (++this.keyCounts[key] === 1) this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], true);
+		this.updateKeyColors();
 	}
 
 	private setShift(down: boolean): void {
+		const previous = this.modifierStates[MODIFIER_SHIFT] || this.modifierCounts[MODIFIER_SHIFT] !== 0;
 		this.modifierStates[MODIFIER_SHIFT] = down;
-		this.input.setVirtualKeyboardKey(MODIFIER_CODES[MODIFIER_SHIFT], down);
+		const pressed = down || this.modifierCounts[MODIFIER_SHIFT] !== 0;
+		if (previous !== pressed) this.input.setVirtualKeyboardKey(MODIFIER_CODES[MODIFIER_SHIFT], pressed);
 		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
 			const definition = KEY_DEFINITIONS[index];
 			const label = down && definition.shiftLabel !== undefined

@@ -4,7 +4,7 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import { Input } from './input/manager';
 import { HostUiInput, HostUiInputSource } from './input/ui';
-import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT, InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import {
 	GAMEPAD_REMAP_CONTROLS,
 	gamepadRemapChoiceIndex,
@@ -38,7 +38,7 @@ type HostMenuValue = {
 	readonly label: string;
 };
 
-type HostMenuValueOption = {
+export type HostMenuValueOption = {
 	readonly kind: 'value';
 	readonly label: string;
 	readonly values: readonly HostMenuValue[];
@@ -134,23 +134,22 @@ const MENU_KEYBOARD_BUTTONS = (1 << BUTTON_UP) | (1 << BUTTON_DOWN) | (1 << BUTT
 type OnScreenKeyboardCommandBinding = {
 	readonly button: HostMenuButton;
 	readonly command: OnScreenKeyboardCommand;
-	readonly repeat: boolean;
 	readonly requiresSelect: boolean;
 };
 
 const ON_SCREEN_KEYBOARD_COMMAND_BINDINGS: readonly OnScreenKeyboardCommandBinding[] = [
-	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Delete, repeat: false, requiresSelect: true },
-	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Home, repeat: true, requiresSelect: true },
-	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.End, repeat: true, requiresSelect: true },
-	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Space, repeat: true, requiresSelect: false },
-	{ button: BUTTON_X, command: OnScreenKeyboardCommand.Backspace, repeat: true, requiresSelect: false },
-	{ button: BUTTON_Y, command: OnScreenKeyboardCommand.Shift, repeat: false, requiresSelect: false },
-	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Left, repeat: true, requiresSelect: false },
-	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.Right, repeat: true, requiresSelect: false },
-	{ button: BUTTON_LEFT_TRIGGER, command: OnScreenKeyboardCommand.Home, repeat: true, requiresSelect: false },
-	{ button: BUTTON_RIGHT_TRIGGER, command: OnScreenKeyboardCommand.End, repeat: true, requiresSelect: false },
-	{ button: BUTTON_START, command: OnScreenKeyboardCommand.Enter, repeat: false, requiresSelect: false },
-	{ button: BUTTON_A, command: OnScreenKeyboardCommand.Activate, repeat: false, requiresSelect: false },
+	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Delete, requiresSelect: true },
+	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Home, requiresSelect: true },
+	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.End, requiresSelect: true },
+	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Space, requiresSelect: false },
+	{ button: BUTTON_X, command: OnScreenKeyboardCommand.Backspace, requiresSelect: false },
+	{ button: BUTTON_Y, command: OnScreenKeyboardCommand.Shift, requiresSelect: false },
+	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Left, requiresSelect: false },
+	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.Right, requiresSelect: false },
+	{ button: BUTTON_LEFT_TRIGGER, command: OnScreenKeyboardCommand.Home, requiresSelect: false },
+	{ button: BUTTON_RIGHT_TRIGGER, command: OnScreenKeyboardCommand.End, requiresSelect: false },
+	{ button: BUTTON_START, command: OnScreenKeyboardCommand.Enter, requiresSelect: false },
+	{ button: BUTTON_A, command: OnScreenKeyboardCommand.Activate, requiresSelect: false },
 ];
 
 const TITLE_TEXT = 'CORE OPTIONS';
@@ -285,7 +284,7 @@ export class HostOverlayMenu {
 	private onScreenKeyboardShortcutRequested = false;
 	private remapPlayerIndex = 1;
 	private rootSelection = 0;
-	private readonly rootOptions: readonly HostMenuOption[] = [
+	private readonly rootOptions: HostMenuOption[] = [
 		{
 			kind: 'value',
 			label: 'Show Usage Gizmo',
@@ -397,7 +396,9 @@ export class HostOverlayMenu {
 		private readonly input: Input,
 		private readonly rewind: HostRewind,
 		private readonly execution: HostExecutionControl,
+		frontendOptions: readonly HostMenuValueOption[] = [],
 	) {
+		this.rootOptions.splice(this.rootOptions.length - 2, 0, ...frontendOptions);
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
 		this.uiInput = new HostUiInput(input, presenter);
@@ -843,7 +844,7 @@ export class HostOverlayMenu {
 		this.page = next;
 		const sources = next === HostOverlayPage.Closed ? HostUiInputSource.None
 			: next === HostOverlayPage.Keyboard ? HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Pointer
-				: HostUiInputSource.Gamepad | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
+				: HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
 		this.uiInput.reset(sources, MENU_KEYBOARD_BUTTONS);
 		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
 			next === HostOverlayPage.Keyboard ? HOST_ON_SCREEN_KEYBOARD_BUTTON : null,
@@ -920,44 +921,28 @@ export class HostOverlayMenu {
 	}
 
 	private tickKeyboardInput(): HostMenuInput {
-		this.keyboard.releasePulse();
-		const pointerActivated = this.tickPointerInput();
-		if (pointerActivated) {
-			this.keyboard.activate();
-
-			return HostMenuInput.Inactive;
-		}
-		if (this.uiInput.buttonRepeatEdge(BUTTON_UP)) {
-			this.keyboard.moveVertical(-1);
-		}
-		if (this.uiInput.buttonRepeatEdge(BUTTON_DOWN)) {
-			this.keyboard.moveVertical(1);
-		}
-		if (this.uiInput.buttonRepeatEdge(BUTTON_LEFT)) {
-			this.keyboard.moveHorizontal(-1);
-		}
-		if (this.uiInput.buttonRepeatEdge(BUTTON_RIGHT)) {
-			this.keyboard.moveHorizontal(1);
-		}
-		const command = this.onScreenKeyboardCommand();
-		if (command !== OnScreenKeyboardCommand.None) {
-			this.keyboard.command(command);
-		}
-
-		return HostMenuInput.Inactive;
-	}
-
-	private onScreenKeyboardCommand(): OnScreenKeyboardCommand {
-		for (const binding of ON_SCREEN_KEYBOARD_COMMAND_BINDINGS) {
-			for (let player = 0; player < Input.PLAYERS_MAX; player += 1) {
-				if (this.uiInput.gamepadButtonPressed(player, BUTTON_SELECT) !== binding.requiresSelect) continue;
-				const active = binding.repeat
-					? this.uiInput.gamepadButtonRepeatEdge(player, binding.button)
-					: this.uiInput.gamepadButtonJustPressed(player, binding.button);
-				if (active) return binding.command;
+		const ui = this.uiInput;
+		if (!ui.pointerHeld) this.keyboard.releaseSource(HostOnScreenKeyboard.POINTER_SOURCE);
+		const pointerKey = ui.pointerValid && ui.pointerChanged
+			? this.keyboard.selectAt(ui.pointerPosition.x, ui.pointerPosition.y) : -1;
+		if (ui.pointerJustPressed && pointerKey >= 0) this.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+		if (ui.buttonRepeatEdge(BUTTON_UP)) this.keyboard.moveVertical(-1);
+		if (ui.buttonRepeatEdge(BUTTON_DOWN)) this.keyboard.moveVertical(1);
+		if (ui.buttonRepeatEdge(BUTTON_LEFT)) this.keyboard.moveHorizontal(-1);
+		if (ui.buttonRepeatEdge(BUTTON_RIGHT)) this.keyboard.moveHorizontal(1);
+		for (let player = 0; player < Input.PLAYERS_MAX; player += 1) {
+			const sourceBase = player * INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
+			for (let button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; button += 1) {
+				if (!ui.gamepadButtonPressed(player, button)) this.keyboard.releaseSource(sourceBase + button);
+			}
+			for (const binding of ON_SCREEN_KEYBOARD_COMMAND_BINDINGS) {
+				if (ui.gamepadButtonJustPressed(player, binding.button)
+					&& ui.gamepadButtonPressed(player, BUTTON_SELECT) === binding.requiresSelect) {
+					this.keyboard.command(sourceBase + binding.button, binding.command);
+				}
 			}
 		}
-		return OnScreenKeyboardCommand.None;
+		return HostMenuInput.Inactive;
 	}
 
 	private tickPointerInput(): boolean {
