@@ -1,3 +1,165 @@
+/*
+ * Shared Player/Studio shell. Runtime owns geometry and state attributes;
+ * this stylesheet owns presentation. Optional input-trace UI owns its own CSS.
+ *
+ * Layers inside the fixed player-surface stacking context:
+ *   0 canvas, 2 controls, 1000 boot mask, 1001 boot messages, 11000 keyboard.
+ * The optional trace is a body sibling at 10000. While the keyboard is visible,
+ * the whole player-surface context rises to 11000 so it can receive touches
+ * above that trace; the keyboard's child z-index alone cannot do this.
+ */
+
+/* Document, player surface and game image */
+
+body {
+	position: fixed;
+	margin: 0;
+	padding: 0;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	overflow: hidden;
+	background-color: #2020ff;
+	cursor: auto;
+	min-height: 100%;
+	width: 100vw;
+	height: 100%;
+}
+
+body.game-started {
+	background-color: #101010;
+}
+
+html {
+	width: 100vw;
+	height: 100%;
+	touch-action: manipulation;
+}
+
+#player-surface {
+	position: fixed;
+	inset: 0;
+	box-sizing: border-box;
+	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+	touch-action: none;
+}
+
+/* Stable interaction bounds, including when mobile browser chrome retracts. */
+#controller-viewport {
+	position: absolute;
+	inset: 0;
+	width: min(100%, 100svw);
+	height: min(100%, 100svh);
+	pointer-events: none;
+}
+
+#gameContainer {
+	position: relative;
+}
+
+#gamescreen {
+	position: fixed;
+	transform-origin: 0 0;
+	image-rendering: pixelated;
+	overflow: hidden;
+	display: none;
+	z-index: 0;
+	background-color: #000000;
+	/* Prevent default browser gestures on the game surface; pointer handlers manage input */
+	touch-action: none;
+}
+
+/* Boot logo, progress and errors (hosts/browser/boot.ts) */
+
+#hidor {
+	z-index: 1000;
+	position: absolute;
+	top: 60vh;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: #2020ff;
+}
+
+.showsover {
+	animation: colorto_showsover 1.0s forwards linear;
+}
+
+#msx {
+	position: absolute;
+	margin-left: auto;
+	margin-right: auto;
+	max-width: 90%;
+	left: 50%;
+	max-height: 55%;
+}
+
+#msx.hidden, #msx.enter {
+	transform: translateX(-50%) translateY(65vh);
+}
+
+#msx.enter {
+	animation: enter 1.0s forwards linear;
+	display: block;
+}
+
+@keyframes enter {
+	from {
+		transform: translateX(-50%) translateY(65vh);
+	}
+
+	to {
+		transform: translateX(-50%) translateY(calc(60vh - 100%));
+	}
+}
+
+@keyframes colorto_showsover {
+	from {
+		background-color: #2020ff;
+	}
+
+	to {
+		background-color: #ff0000;
+	}
+}
+
+#loading, #extra-message {
+	z-index: 1001;
+	margin-left: auto;
+	margin-right: auto;
+	width: 100vw;
+	position: absolute;
+	font-family: monospace;
+	font-size: clamp(16px, 2vw, 64px);
+	text-align: center;
+	font-weight: normal;
+}
+
+#loading {
+	top: 60vh;
+	color: #ffffff;
+}
+
+#extra-message {
+	color: #ff0000;
+}
+
+#loading.coloring {
+	animation: coloring 2s infinite;
+}
+
+@keyframes coloring {
+	0% {}
+
+	50% {
+		color: #2020ff;
+	}
+
+	100% {}
+}
+
+/* On-screen controller artwork; numeric layout and hit testing live in the view/model. */
+
 .control-surface {
 	position: fixed;
 	z-index: 2;
@@ -41,11 +203,8 @@
 	stroke-linejoin: round;
 }
 
-.d-pad-direction[data-touched="true"], .stick-outline[data-touched="true"] {
-	stroke: #e2f7ff;
-	stroke-width: 2.5;
-}
-
+.d-pad-direction[data-touched="true"],
+.stick-outline[data-touched="true"],
 .action-button[data-touched="true"] {
 	stroke: #e2f7ff;
 	stroke-width: 2.5;
@@ -70,10 +229,10 @@
 
 .action-accent { fill: var(--control-accent); opacity: 0.48; }
 .action-button[data-touched="true"] ~ .action-accent { opacity: 1; }
-.red { --control-accent: #ff8580; }
-.blue { --control-accent: #91bcff; }
-.green { --control-accent: #98d6a2; }
-.pink { --control-accent: #e8a7df; }
+.face-control.red { --control-accent: #ff8580; }
+.face-control.blue { --control-accent: #91bcff; }
+.face-control.green { --control-accent: #98d6a2; }
+.face-control.pink { --control-accent: #e8a7df; }
 
 .auxiliary {
 	stroke: rgba(232, 240, 247, 0.30);
@@ -83,210 +242,7 @@
 .shoulder-label { font-size: 13px; }
 .menu-label { font-size: 10px; letter-spacing: 0.1px; }
 
-body {
-	position: fixed;
-	margin: 0;
-	padding: 0;
-	-webkit-user-select: none;
-	-moz-user-select: none;
-	-ms-user-select: none;
-	user-select: none;
-	-webkit-touch-callout: none;
-	/* -webkit-user-drag: none; */
-	overflow: hidden;
-	background-color: #2020ff;
-
-	cursor: auto;
-	min-height: 100%;
-	width: 100vw;
-	height: 100%;
-}
-
-body.game-started {
-	background-color: #101010;
-}
-
-html {
-	width: 100vw;
-	height: 100%;
-	touch-action: manipulation;
-}
-
-#player-surface {
-	position: fixed;
-	inset: 0;
-	box-sizing: border-box;
-	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-	touch-action: none;
-}
-
-/* Stable interaction bounds, including when mobile browser chrome retracts. */
-#controller-viewport {
-	position: absolute;
-	inset: 0;
-	width: min(100%, 100svw);
-	height: min(100%, 100svh);
-	pointer-events: none;
-}
-
-#gameContainer {
-	position: relative;
-}
-
-#gamescreen {
-	position: fixed;
-	transform-origin: 0 0;
-	-ms-interpolation-mode: nearest-neighbor;
-	image-rendering: pixelated;
-	overflow: hidden;
-	display: none;
-	z-index: 0;
-	background-color: #000000;
-	/* Prevent default browser gestures on the game surface; pointer handlers manage input */
-	touch-action: none;
-}
-
-#hidor {
-	z-index: 1000;
-	position: absolute;
-	top: 60vh;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	background-color: #2020ff;
-}
-
-.showsover {
-	animation: colorto_showsover 1.0s forwards linear;
-}
-
-#msx {
-	position: absolute;
-	margin-left: auto;
-	margin-right: auto;
-	max-width: 90%;
-	left: 50%;
-	max-height: 55%;
-}
-
-#msx.hidden {
-	transform: translateX(-50%) translateY(65vh);
-}
-
-#msx.enter {
-	animation: enter 1.0s forwards linear;
-	transform: translateX(-50%) translateY(65vh);
-	display: block;
-}
-
-#msx.fade-in {
-	animation: fade-in .5s;
-}
-
-#msx.fade-out {
-	animation: fade-out .5s;
-}
-
-@keyframes enter {
-	from {
-		transform: translateX(-50%) translateY(65vh);
-	}
-
-	to {
-		transform: translateX(-50%) translateY(calc(60vh - 100%));
-	}
-}
-
-@keyframes colorto_showsover {
-	from {
-		background-color: #2020ff;
-	}
-
-	to {
-		background-color: #ff0000;
-	}
-}
-
-#loading {
-	z-index: 1001;
-	margin-left: auto;
-	margin-right: auto;
-	width: 100vw;
-	position: absolute;
-	top: 60vh;
-	color: #ffffff;
-	font-family: monospace;
-	font-size: clamp(16px, 2vw, 64px);
-	text-align: center;
-	font-weight: normal;
-}
-
-#extra-message {
-	z-index: 1001;
-	margin-left: auto;
-	margin-right: auto;
-	width: 100vw;
-	position: absolute;
-	color: #ff0000;
-	font-family: monospace;
-	font-size: clamp(16px, 2vw, 64px);
-	text-align: center;
-	font-weight: normal;
-}
-
-.appear {
-	animation: fade-in-partial 1.0s infinite linear alternate;
-}
-
-.fadeout {
-	animation: fade-out 1.0s linear forwards;
-}
-
-#loading.coloring {
-	animation: coloring 2s infinite;
-}
-
-@keyframes coloring {
-	0% {}
-
-	50% {
-		color: #2020ff;
-	}
-
-	100% {}
-}
-
-@keyframes fade-in-partial {
-	from {
-		opacity: .3;
-	}
-
-	to {
-		opacity: 1;
-	}
-}
-
-@keyframes fade-in {
-	from {
-		opacity: 0;
-	}
-
-	to {
-		opacity: 1;
-	}
-}
-
-@keyframes fade-out {
-	from {
-		opacity: 1;
-	}
-
-	to {
-		opacity: 0;
-	}
-}
-
-/* Packaged touch-keyboard presentation; runtime only updates state and labels. */
+/* Touch keyboard: packaged structure, runtime state and labels only. */
 
 .bmsx-touch-keyboard-visible #player-surface { z-index: 11000; }
 .bmsx-touch-keyboard-visible #controller-viewport { visibility: hidden; }

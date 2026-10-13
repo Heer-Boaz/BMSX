@@ -5114,6 +5114,14 @@ cloning, key-node rebuilding, defensive DTO parsing or frame-time DOM measuremen
 Dynamic Studio editor content remains a separate application presentation owner;
 this base-player contract does not require a fully static IDE.
 
+The shared stylesheet is organized by those owners: document/player and canvas,
+boot, controller artwork, then keyboard and its responsive states. As in
+[noVNC's stylesheet](https://github.com/novnc/noVNC/blob/b17d04c1a1a926a59f4a04bb866332b429f2ce37/app/styles/base.css#L8-L28),
+its layer map is explicit. The optional input trace is a separate body-level
+overlay; opening the keyboard elevates the player stacking context above it,
+not just the keyboard child. Neither the layer rules nor responsive CSS own
+controller geometry, video scaling or input lifetimes.
+
 The source owner publishes through the existing Input/LibretroInput virtual
 keyboard path. Host UI consumes physical source lifetimes, not command-repeat
 edges for key entry. The producer never shortens a key into a host-frame pulse
