@@ -107,12 +107,17 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		const base = document.getElementById('d-pad-svg')!.getBoundingClientRect();
 		const a = document.getElementById('a_knop')!.getBoundingClientRect();
 		const canvas = document.getElementById('gamescreen')!.getBoundingClientRect();
+		const faceNeutral = coordinates.center('button-controls', 1);
 		return {
 			a: coordinates.center('a_knop', 1), b: coordinates.center('b_knop', 2), x: coordinates.center('x_knop', 3), y: coordinates.center('y_knop', 4),
 			a2: { id: 5, x: a.left + a.width * 0.6, y: a.top + a.height * 0.5 },
 			aEdge: { id: 1, x: a.left + a.width * 0.5, y: a.top + a.height * 0.025 },
 			pad: coordinates.center('d-pad-svg', 6),
-			left: coordinates.center('d-pad-left', 6), right: coordinates.center('d-pad-right', 6), up: coordinates.center('d-pad-up', 6),
+			left: { id: 6, x: base.left + base.width * 0.2, y: base.top + base.height * 0.5 },
+			right: { id: 6, x: base.left + base.width * 0.8, y: base.top + base.height * 0.5 },
+			up: { id: 6, x: base.left + base.width * 0.5, y: base.top + base.height * 0.2 },
+			select: coordinates.center('select_knop', 11),
+			faceNeutral,
 			upRight: { id: 6, x: base.left + base.width * 0.64, y: base.top + base.height * 0.36, radiusX: 14, radiusY: 14 },
 			canvas: { id: 7, x: canvas.left + canvas.width * 0.5, y: canvas.top + canvas.height * 0.5 },
 			canvas2: { id: 8, x: canvas.left + canvas.width * 0.55, y: canvas.top + canvas.height * 0.5 },
@@ -191,6 +196,44 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		assert.deepEqual(released.edges.map((edge: any) => [edge.code, edge.down]), [['a', false]]);
 	});
 
+	await t.test('a resting thumb on the face deck rolls into A and a measured circular footprint does not invent B', async () => {
+		await touch('touchStart', [points.faceNeutral]);
+		await assertWord(0);
+		await touch('touchMove', [points.a]);
+		await assertWord(1);
+		await touch('touchMove', [{ ...points.a, x: points.a.x + 22, y: points.a.y - 22, radiusX: 14, radiusY: 14 }]);
+		await assertWord(1, 0);
+		await touch('touchMove', [{ ...points.a, x: (points.a.x + points.b.x) / 2, y: (points.a.y + points.b.y) / 2, radiusX: 14, radiusY: 14 }]);
+		await assertWord(3, 0);
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
+	await t.test('a continuous outer D-pad arc has no diagonal gap and a held pad cannot press SELECT', async () => {
+		const radius = points.right.x - points.pad.x;
+		await touch('touchStart', [points.right]);
+		let phase = 0;
+		for (let step = 0; step <= 16; step += 1) {
+			const angle = (step + 0.5) * Math.PI / 32;
+			await touch('touchMove', [{ id: points.pad.id, x: points.pad.x + Math.cos(angle) * radius,
+				y: points.pad.y - Math.sin(angle) * radius, radiusX: 14, radiusY: 14 }]);
+			const word = (await poll()).buttons;
+			assert.ok(word === 0x8000 || word === 0x9000 || word === 0x1000, 'every arc sample presses a cardinal or joined adjacent pair, never neutral or an opposite');
+			const nextPhase = word === 0x8000 ? 0 : word === 0x9000 ? 1 : 2;
+			assert.ok(nextPhase >= phase, 'the quarter arc cannot drop back into a previous pressure region');
+			phase = nextPhase;
+			await assertWord(word, 0);
+		}
+		assert.equal(phase, 2, 'the completed arc has reached UP');
+		await touch('touchMove', [{ id: points.pad.id, x: points.select.x, y: points.select.y, radiusX: 14, radiusY: 14 }]);
+		await assertWord(0x8000, 0);
+		await touch('touchStart', [{ id: points.pad.id, x: points.select.x, y: points.select.y, radiusX: 14, radiusY: 14 }, points.select]);
+		const state = await poll();
+		assert.equal(state.buttons, 0x8100, 'an independent finger can press SELECT while the first still owns the rocker');
+		await touch('touchEnd', []);
+		await assertWord(0);
+	});
+
 	await t.test('digital D-pad capture supports immediate direction changes, rolling and re-entry', async () => {
 		await touch('touchStart', [points.pad]);
 		await assertWord(0);
@@ -203,14 +246,14 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 		assert.equal((await poll()).padImage, 'svgimg-d-pad-ru');
 		await touch('touchMove', [{ ...points.pad, x: points.canvas.x, y: points.canvas.y }]);
-		await assertWord(0);
+		await assertWord(0x8000, 0); // A captured digital rocker keeps steering beyond its edge.
 		await touch('touchMove', [points.left]);
 		await assertWord(0x4000);
 		await touch('touchEnd', []);
 		await assertWord(0);
 	});
 
-	await t.test('D-pad and A+B+X+Y fingers remain independent when one leaves every button', async () => {
+	await t.test('D-pad and A+B+X+Y fingers remain independent while the captured rocker leaves its artwork', async () => {
 		const active = [points.left];
 		await touch('touchStart', active);
 		await assertWord(0x4000);
@@ -221,7 +264,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await assertWord(0x400f);
 		active[0] = { ...points.left, x: points.canvas.x, y: points.pad.y };
 		await touch('touchMove', active);
-		await assertWord(0xf);
+		await assertWord(0x800f);
 		active[0] = points.pad;
 		await touch('touchMove', active);
 		await assertWord(0xf);
@@ -234,7 +277,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await assertWord(0);
 	});
 
-	await t.test('misses stay outside the controller while every acquired finger can slide between virtual buttons', async () => {
+	await t.test('misses stay outside the controller and pad ownership cannot migrate into action buttons', async () => {
 		await touch('touchStart', [points.miss]);
 		await touch('touchMove', [{ ...points.miss, x: points.a.x, y: points.a.y }]);
 		await assertWord(0);
@@ -246,7 +289,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await touch('touchEnd', [points.left]);
 		await assertWord(0);
 		await touch('touchMove', [{ ...second, x: points.a.x, y: points.a.y }]);
-		await assertWord(1);
+		await assertWord(0x8000);
 		await touch('touchEnd', []);
 	});
 

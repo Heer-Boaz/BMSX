@@ -1,6 +1,125 @@
 # Browser touch-controller ownership
 
-## Current contact-area controls, 2026-10-13
+## Physical component contacts, 2026-10-13
+
+The host owns three kinds of mechanical components: the joined digital D-pad,
+the A/B/X/Y button deck and each separate auxiliary switch. Every native contact
+keeps its component until its own up/cancel. It does **not** keep one face button:
+a thumb can acquire the neutral face deck, roll into A, bridge A+B, continue to
+B, leave the buttons and return without lifting. Other fingers contribute
+independently. Per-button counts and raw press IDs remain the source of the
+common gamepad word; releasing one contact cannot release another contributor.
+
+Component ownership prevents the D-pad's skin estimate from pressing SELECT
+and prevents the face deck from spilling into START/RS. A direct hit on an
+actual visible button takes precedence over another component's neutral-body
+acquisition region. This is important at RS's inner crescent, where the neutral
+face envelope overlaps the otherwise separate visible switch. If only the
+reported skin area reaches components, the nearest intersecting component
+acquires the contact. Canvas-started contacts remain canvas input. Auxiliary
+switches require their own contact; one-thumb chords are supported inside
+A/B/X/Y, not between mechanically separate components.
+
+### Contact geometry
+
+Pointer Events are the sole native producer. Reported width/height become
+CSS-client half-extents once per down/move. Only the specification's unavailable
+1x1 report uses the authored 28x28 estimate. Smaller supplied extents and
+anisotropic extents are consumed directly; mouse/pen remain point contacts.
+No pressure-derived size, TouchEvent ID fusion, UA heuristic, per-event DTO or
+per-frame hit test is introduced.
+
+The footprint is an axis-aligned **ellipse estimate**, not its filled bounding
+rectangle and not a claim about actual skin geometry. Equal axes use the exact
+circle sum-of-radii test. Zero axes are a segment or point. Other ellipses use
+an allocation-free monotone closest-point query with early distance bounds and
+floating-point bracket convergence. No arbitrary iteration cap, epsilon
+inflation or corruption fallback is used. This removes the demonstrated false
+A+B chord in an empty corner of the former contact rectangle. As with ordinary
+double-precision geometry, oblique mathematical tangencies can round to either
+side by an ULP; independent margin tests cover both sides.
+
+### Digital rocker
+
+Four overlapping absolute direction regions cover the whole round disc. The
+contact **center** tilts the joined rocker; the outline is used for acquiring
+it, not for inventing independently depressed opposing arms. The central 18%
+radius is neutral, including under a broad reported footprint. Outside it,
+immediate slope comparisons produce one cardinal or two adjacent directions.
+There is no moving stick, stored analog vector, drag origin, smoothing or
+center excursion needed to change direction. Captured pad contacts continue
+steering outside the artwork until up/cancel. Independent fingers may still
+publish opposing raw bits; the model never cleans or normalizes their word.
+The original nine PNG layers only project those bits onto displayed tilt.
+
+Using the skin outline to expand rocker cones was rejected during native
+validation: on small embedded players a broad thumb plus subpixel coordinate
+rounding turned a nominal cardinal into a diagonal. Contact-center digital
+regions avoid that defect without profile-specific thresholds or hysteresis.
+
+### Layout and observation
+
+The numerical layout owner retains the current artwork positions, equal face
+sizes, original D-pad PNGs and uniform scale. The face deck's neutral acquisition
+circle and individual switch groups are numerical interaction geometry; the
+obsolete four finite rectangular arms are removed. Game-image fitting remains
+independent, 4:3, and integer/half-integer scaled.
+
+Admitting a layout changes its geometry revision, **not gamepad input**. A held
+contact's contribution changes only on its next actual input sample or end.
+An identical-coordinate sample after a new revision is evaluated against the
+new geometry; it cannot incorrectly take the unchanged-sample fast path. This
+fixes the demonstrated layout-only release of A, without fictitious coordinate
+rebasing or suppressing a genuine native move off the relocated button.
+
+The existing opt-in /ios/ trace records applied geometry revisions, client
+bounds and current model/common words alongside native events. Layout rows
+therefore explain an actual subsequent sample against relocated controls.
+The ordinary pages still do not load tracing. Page gesture and cancellation
+ownership, common per-frame polling, routed snapshots, ICU MMIO and C++ remain
+unchanged.
+
+### References and validation scope
+
+References were inspected before changing the owners:
+
+- [PPSSPP independent contacts and digital D-pad](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454): live button contributions, native-sample state changes and a digital rocker separate from the analog stick.
+- [RetroArch overlapping eight-way regions](https://github.com/libretro/RetroArch/blob/d2f24d32b976c782bca19ec4e6edfbd828a02101/input/input_driver.c#L5494-L5563): immediate absolute digital slope comparisons.
+- [Geometric Tools closest-point construction](https://github.com/davideberly/GeometricTools/blob/e09f5b39a33da6b4bfd0ff8dbb64ddcb7fdfc763/GTE/Mathematics/DistPointHyperellipsoid.h#L271-L359): the monotone ellipse distance equation, specialized here to a scalar boolean query.
+- [Pointer Events contact extents](https://www.w3.org/TR/pointerevents3/#dom-pointerevent-width): CSS pixels and the unavailable-dimension sentinel. These dimensions estimate contact area; they do not provide a pressure map.
+
+Independent analytical ellipse tests cover 51,200 tangency-margin, reflection
+and axis-swap cases, including degenerate and highly anisotropic contacts.
+The native adversarial suite has a genuine red baseline at 80079e95d: nine of
+its first thirteen cases failed before this fix. It checks the real browser
+hub, model, raw common input, routed snapshots and armed ICU. Selected-path
+unit tests and desktop WebKit cannot prove physical iPhone event delivery or
+comfort; no claim of device acceptance follows from these checks.
+
+Evidence: .bmsx/hosting/physical-gamepad-evidence/.
+
+The completed focused suite passes **149 tests**. Browser, node-host, scripts
+and tests typechecks and the release player build pass. Local actual games
+pass in all four ordinary/trace packages, both phone orientations and an
+additional tablet in both orientations with WebGPU, running non-silent audio,
+correct 4:3/half-step fitting and no errors. WPE WebKit repeats independent
+contacts, digital direction changes, outside capture and trace/model/common
+agreement across 16 actual-game phone/tablet profiles. Its fixed 2x2 injected
+contact is not evidence for measured UIKit footprints.
+
+The ordinary /nemesis_s/ and /2025/ pages and their /ios/ suffixes are published
+with engine SHA-256
+fd098127b61c31358094025012c9369fe1cad547c1ea38df3fc495117b6f1724.
+The paired system/cartridge artifacts, library page, hosting routes and
+isolation headers are unchanged. This resolves the demonstrated code defects;
+the historical iPhone-specific A+B release report still needs actual-device
+confirmation and is not declared resolved by desktop validation.
+
+**Everything below is historical and superseded. It records the rejected
+finite-arm/rectangular-envelope design and the appearance-only restoration,
+not the current input contract or its acceptance status.**
+
+## Historical contact-area attempt and artwork restoration
 
 ### Temporary artwork restoration
 

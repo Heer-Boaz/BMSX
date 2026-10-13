@@ -123,13 +123,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					},
 				};
 				const padBounds = document.getElementById('d-pad-svg')!.getBoundingClientRect();
-				const directions = ['up', 'right', 'down', 'left'].map(name => {
-					const rect = document.getElementById('d-pad-' + name) as unknown as SVGRectElement;
-					const bounds = rect.getBoundingClientRect();
-					return { name, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2,
-						width: bounds.width, height: bounds.height, left: bounds.left, top: bounds.top,
-						right: bounds.right, bottom: bounds.bottom };
-				});
+
 				const pad = { id: 'd-pad-svg', x: padBounds.left + padBounds.width / 2,
 					y: padBounds.top + padBounds.height / 2, radius: padBounds.width / 2,
 					bounds: { left: padBounds.left, top: padBounds.top, width: padBounds.width, height: padBounds.height },
@@ -137,7 +131,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				};
 				return {
 					circles: [pad, ...actionIds.map(id => read.circle(id))],
-					directions,
 					padImage: document.querySelector('.d-pad-image[data-active="true"]')!.id,
 					labels: actionIds.map(id => {
 						const label = document.getElementById(id + '_text')!;
@@ -189,7 +182,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		if (touchActive) await touch('touchEnd', []);
 		await settle();
 	});
-	const evidence: Array<{ profile: string; safe: unknown; geometry: unknown; minimumContactGap: number;
+	const evidence: Array<{ profile: string; safe: unknown; geometry: unknown; minimumControlGap: number;
 		secondaryOffsets: Array<{ id: string; x: number; y: number }> }> = [];
 	for (const profile of profiles) {
 		await t.test(profile.name, async () => {
@@ -310,19 +303,20 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			await touch('touchStart', [padCenter]);
 			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0 },
 				'neutral center acquires a controller lease without pressing a direction');
-			const [up, right, down, left] = resting.directions;
+			const travel = pad.radius * 0.7;
+			const diagonalTravel = travel / Math.SQRT2;
 			const masks = { up: 1 << InputControllerGamepadButtonBit.Up, right: 1 << InputControllerGamepadButtonBit.Right,
 				down: 1 << InputControllerGamepadButtonBit.Down, left: 1 << InputControllerGamepadButtonBit.Left };
 			const rolls = [
-				{ x: right.x, y: right.y, mask: masks.right, image: 'r' },
-				{ x: (up.right + right.left) / 2, y: (up.bottom + right.top) / 2, mask: masks.up | masks.right, image: 'ru' },
-				{ x: up.x, y: up.y, mask: masks.up, image: 'u' },
-				{ x: (up.left + left.right) / 2, y: (up.bottom + left.top) / 2, mask: masks.up | masks.left, image: 'lu' },
-				{ x: left.x, y: left.y, mask: masks.left, image: 'l' },
-				{ x: (down.left + left.right) / 2, y: (down.top + left.bottom) / 2, mask: masks.down | masks.left, image: 'ld' },
-				{ x: down.x, y: down.y, mask: masks.down, image: 'd' },
-				{ x: (down.right + right.left) / 2, y: (down.top + right.bottom) / 2, mask: masks.down | masks.right, image: 'rd' },
-				{ x: right.x, y: right.y, mask: masks.right, image: 'r' },
+				{ x: pad.x + travel, y: pad.y, mask: masks.right, image: 'r' },
+				{ x: pad.x + diagonalTravel, y: pad.y - diagonalTravel, mask: masks.up | masks.right, image: 'ru' },
+				{ x: pad.x, y: pad.y - travel, mask: masks.up, image: 'u' },
+				{ x: pad.x - diagonalTravel, y: pad.y - diagonalTravel, mask: masks.up | masks.left, image: 'lu' },
+				{ x: pad.x - travel, y: pad.y, mask: masks.left, image: 'l' },
+				{ x: pad.x - diagonalTravel, y: pad.y + diagonalTravel, mask: masks.down | masks.left, image: 'ld' },
+				{ x: pad.x, y: pad.y + travel, mask: masks.down, image: 'd' },
+				{ x: pad.x + diagonalTravel, y: pad.y + diagonalTravel, mask: masks.down | masks.right, image: 'rd' },
+				{ x: pad.x + travel, y: pad.y, mask: masks.right, image: 'r' },
 			];
 			for (const roll of rolls) {
 				await touch('touchMove', [{ ...padCenter, x: roll.x, y: roll.y, radiusX: 14, radiusY: 14 }]);
@@ -331,11 +325,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				await settle();
 				const rolled = await measure();
 				assert.equal(rolled.padImage, `svgimg-d-pad-${roll.image}`);
-				assert.deepEqual(rolled.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })),
-					resting.directions.map(({ x, y, width, height }: any) => ({ x, y, width, height })), 'artwork state changes never move the retained numerical direction regions');
+				assert.deepEqual(rolled.circles[0].bounds, resting.circles[0].bounds, 'artwork state changes never move the digital rocker frame');
 			}
 			await touch('touchEnd', []);
-			evidence.push({ profile: profile.name, safe, geometry: resting, minimumContactGap: Math.min(...gaps), secondaryOffsets });
+			evidence.push({ profile: profile.name, safe, geometry: resting, minimumControlGap: Math.min(...gaps), secondaryOffsets });
 			for (const framebufferWidth of [256, 321, 257, 320]) {
 				await page.evaluate(width => {
 					(globalThis as any).ergonomicsProbe.video.setDisplaySize(width, 240);
@@ -412,12 +405,12 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-paired.png` });
 					const scale = await page.evaluate(() => visualViewport!.scale);
 					await touch('touchMove', [a, b, { ...pad, x: -40 }]);
-					assert.equal((await poll()).sampledButtons, 3, 'leaving every finite direction region releases only the directional contribution');
+					assert.equal((await poll()).sampledButtons, 0x4003, 'an acquired rocker continues steering when the thumb leaves its artwork');
 					assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true, 'controller retains the native lease for reentry');
 					assert.equal(await page.evaluate(() => visualViewport!.scale), scale);
 					await settle();
 					const dragged = await measure();
-					assert.equal(dragged.padImage, 'svgimg-d-pad-neutral', 'artwork returns to neutral without a moving or clamped tip');
+					assert.equal(dragged.padImage, 'svgimg-d-pad-l', 'the static pressed artwork remains LEFT beyond the pad boundary');
 					assert.deepEqual(dragged.circles.map((circle: any) => circle.bounds), circles.map((circle: any) => circle.bounds));
 					await touch('touchMove', [a, b, pad]);
 					assert.equal((await poll()).sampledButtons, 0x4003, 'reentry restores the held contact contribution');
@@ -433,7 +426,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 		});
 	}
-	await t.test('live browser-chrome height changes resample held contacts against stable local groups', async () => {
+	await t.test('live browser-chrome height changes admit layout without releasing held contacts', async () => {
 		await page.setViewportSize({ width: 844, height: 390 });
 		await page.evaluate(() => {
 			const style = document.getElementById('player-surface')!.style;
@@ -450,7 +443,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		await touch('touchStart', [{ id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 }]);
 		const expected = [{ id: 'select_knop', x: 128, y: 10 }, { id: 'start_knop', x: -140, y: 20 },
 			{ id: 'ls_knop', x: 100, y: -80 }, { id: 'rs_knop', x: -100, y: -70 }];
-		for (const [height, expectedWord] of [[341, 1], [340, 1], [320, 1], [300, 0], [280, 0], [390, 1]]) {
+		for (const height of [341, 340, 320, 300, 280, 390]) {
 			await page.setViewportSize({ width: 844, height });
 			await page.evaluate(height => {
 				document.getElementById('player-surface')!.style.height = `${height}px`;
@@ -470,11 +463,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					`${circle.id} remains attached to its own hand at ${height}px browser height`);
 			}
 			const word = await poll();
-			assert.equal(word.buttons, expectedWord, `stationary reported 28px thumb follows actual button overlap at ${height}px viewport height`);
+			assert.equal(word.buttons, 1, `viewport layout alone cannot release the held thumb at ${height}px height`);
 			assert.equal(word.physicalButtons, word.buttons);
 			assert.equal(word.sampledButtons, word.buttons);
 			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true,
-				'geometry movement changes physical overlap but retains the contact lease');
+				'layout preserves both held contribution and contact ownership until a native contact update');
 			assert.equal(current.circles[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
 			await page.screenshot({ path: `${evidenceDirectory}/chrome-transition-${height}-held.png` });
 		}

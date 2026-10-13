@@ -12,15 +12,12 @@ import { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
 const geometry: OnscreenGamepadGeometry = {
-	padX: 100, padY: 100, padRadius: 50,
-	directions: [
-		{ x: 100, y: 65, halfWidth: 25, halfHeight: 15, buttons: 0x1000 },
-		{ x: 135, y: 100, halfWidth: 15, halfHeight: 25, buttons: 0x8000 },
-		{ x: 100, y: 135, halfWidth: 25, halfHeight: 15, buttons: 0x2000 },
-		{ x: 65, y: 100, halfWidth: 15, halfHeight: 25, buttons: 0x4000 },
-	],
-	actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
+	buttonGroups: [{ x: 325, y: 100, radius: 50,
+		actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+	}],
 };
+const face = geometry.buttonGroups[0];
 
 function createFixture() {
 	let now = 0;
@@ -65,7 +62,9 @@ test('a single contact slides from A through A+B to B and releases outside finit
 
 test('contact half-extents reach adjacent circles independently of a point coordinate', () => {
 	const { pad } = createFixture();
-	assert.equal(pad.beginContact(1, 325, 100, 0, 0, true), false, 'the point falls in the gap');
+	assert.equal(pad.beginContact(1, 325, 100, 0, 0, true), true, 'the neutral face deck owns a point in the button gap');
+	assert.equal(pad.buttons, 0);
+	pad.endContact(1);
 	assert.equal(pad.beginContact(2, 325, 100, 8, 1, true), true);
 	assert.equal(pad.buttons, 3);
 	pad.moveContact(2, 325, 100, 0, 0, true);
@@ -74,25 +73,29 @@ test('contact half-extents reach adjacent circles independently of a point coord
 	assert.equal(pad.buttons, 3);
 });
 
-test('circle/envelope intersection respects rounded corners and inclusive contact edges', () => {
+test('elliptical skin contact respects curved boundaries and inclusive circle edges', () => {
 	const { pad } = createFixture();
-	pad.setGeometry({ ...geometry, actions: [geometry.actions[0]] });
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [face.actions[0]] }] });
 	assert.equal(pad.beginContact(1, 330, 100, 10, 0, true), true, 'the contact reaches the circle at one edge');
 	assert.equal(pad.buttons, 1);
 	pad.moveContact(1, 329, 121, 10, 1, true);
 	assert.equal(pad.buttons, 0, 'overlapping circle bounds does not hit a rounded corner');
 	pad.moveContact(1, 329, 110, 10, 10, true);
+	assert.equal(pad.buttons, 0, 'the filled contact bounding rectangle invents an intersection here');
+	pad.moveContact(1, 328, 108, 10, 10, true);
 	assert.equal(pad.buttons, 1);
 });
 
 test('all action intersections contribute, not only the nearest or initially touched button', () => {
 	const { pad } = createFixture();
-	pad.setGeometry({ ...geometry, actions: [
-		...geometry.actions,
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, y: 125, radius: 80, actions: [
+		...face.actions,
 		{ x: 300, y: 150, radius: 20, buttons: 4 },
 		{ x: 350, y: 150, radius: 20, buttons: 8 },
-	] });
+	] }] });
 	assert.equal(pad.beginContact(1, 325, 125, 14, 14, true), true);
+	assert.equal(pad.buttons, 0, 'a 28px circular thumb does not reach these four circle corners');
+	pad.moveContact(1, 325, 125, 16, 16, true);
 	assert.equal(pad.buttons, 15);
 	pad.moveContact(1, 300, 100, 14, 14, true);
 	assert.equal(pad.buttons, 1);
@@ -159,14 +162,14 @@ test('digital pad owns its neutral center and changes immediately through every 
 	assert.equal(pad.buttons, 0);
 });
 
-test('rolling contact overlaps adjacent direction arms without traversing the center', () => {
+test('rolling contact crosses overlapping digital direction regions without traversing the center', () => {
 	const { pad } = createFixture();
 	pad.beginContact(1, 135, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000);
 	pad.moveContact(1, 125, 95, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000);
-	pad.moveContact(1, 125, 94, 14, 14, true);
-	assert.equal(pad.buttons, 0x9000, 'the thumb reaches the upward arm at its edge');
+	pad.moveContact(1, 125, 89, 14, 14, true);
+	assert.equal(pad.buttons, 0x9000, 'the rocker enters the shared right/up region');
 	pad.moveContact(1, 100, 65, 14, 14, true);
 	assert.equal(pad.buttons, 0x1000);
 });
@@ -202,26 +205,37 @@ test('multiple directional contacts contribute independently and survive contact
 	assert.equal(pad.buttons, 0);
 });
 
-test('one controller route slides between action buttons and the digital pad and can return from outside', () => {
+test('a contact rolls within its physical component without spilling into another deck', () => {
 	const { pad } = createFixture();
 	pad.beginContact(1, 300, 100, 14, 14, true);
 	pad.moveContact(1, 140, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0x8000);
+	assert.equal(pad.buttons, 0, 'a face-deck contact does not turn into a pad contact');
 	pad.moveContact(1, 600, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0, 'outside the finite pad arms is not a held direction');
+	assert.equal(pad.buttons, 0);
 	assert.equal(pad.ownsContact(1), true);
 	pad.moveContact(1, 350, 100, 14, 14, true);
 	assert.equal(pad.buttons, 2);
 	pad.moveContact(1, 100, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0);
 	assert.equal(pad.ownsContact(1), true);
+	pad.endContact(1);
+	pad.beginContact(2, 140, 100, 14, 14, true);
+	pad.moveContact(2, 350, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0x8000, 'a held rocker continues outside without pressing a face button');
+	pad.moveContact(2, 100, 60, 14, 14, true);
+	assert.equal(pad.buttons, 0x1000, 'outside capture does not freeze its direction');
 });
 
-test('overlapping action and direction geometry ORs both bits without exclusive-control priority', () => {
+test('skin spill cannot press a secondary switch while a pad contact keeps its component lease', () => {
 	const { pad } = createFixture();
-	pad.setGeometry({ ...geometry, actions: [{ x: 140, y: 100, radius: 20, buttons: 1 }] });
-	pad.beginContact(1, 140, 100, 0, 0, true);
-	assert.equal(pad.buttons, 0x8001);
+	pad.setGeometry({ ...geometry, buttonGroups: [{ x: 180, y: 100, radius: 20,
+		actions: [{ x: 180, y: 100, radius: 20, buttons: 0x100 }] }] });
+	pad.beginContact(1, 145, 100, 30, 30, true);
+	assert.equal(pad.buttons, 0x8000);
+	pad.beginContact(2, 180, 100, 40, 40, true);
+	assert.equal(pad.buttons, 0x8100, 'a separate finger directly on the switch remains independent despite a broad footprint');
+	pad.endContact(1);
+	assert.equal(pad.buttons, 0x100);
 });
 
 test('a miss never acquires on movement and an ended contact cannot be revived', () => {
@@ -246,51 +260,63 @@ test('inactive contacts retain the controller route but activation uses their cu
 	pad.moveContact(1, 60, 100, 14, 14, false);
 	assert.equal(pad.buttons, 0);
 	pad.moveContact(1, 60, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0, 'activation does not migrate the face contact to a different component');
+	pad.beginContact(2, 100, 100, 14, 14, false);
+	pad.moveContact(2, 60, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x4000);
 	pad.moveContact(1, 60, 100, 14, 14, false);
+	pad.moveContact(2, 60, 100, 14, 14, false);
 	pad.setGeometry(geometry);
 	assert.equal(pad.buttons, 0, 'layout does not activate an inactive contact');
 });
 
-test('layout replacement resamples retained coordinates, footprint and activation immediately', () => {
+test('layout admission is silent and the next physical sample uses its new geometry', () => {
 	const { pad } = createFixture();
 	pad.beginContact(1, 325, 100, 14, 14, true);
 	assert.equal(pad.buttons, 3);
-	pad.setGeometry({ ...geometry, actions: [{ x: 339, y: 100, radius: 0, buttons: 4 }] });
-	assert.equal(pad.buttons, 4, 'resampling retains the footprint reaching the new target');
-	pad.setGeometry({ ...geometry, actions: [{ x: 340, y: 100, radius: 0, buttons: 4 }] });
-	assert.equal(pad.buttons, 0, 'the moved button no longer intersects the retained footprint');
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [{ x: 339, y: 100, radius: 0, buttons: 4 }] }] });
+	assert.equal(pad.buttons, 3, 'layout is not a contact event');
+	pad.moveContact(1, 325, 100, 14, 14, true);
+	assert.equal(pad.buttons, 4, 'a new sample applies the updated geometry even at identical coordinates');
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [{ x: 340, y: 100, radius: 0, buttons: 4 }] }] });
+	assert.equal(pad.buttons, 4);
+	pad.moveContact(1, 325, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0, 'a native sample outside the moved button releases its contribution');
 	assert.equal(pad.ownsContact(1), true);
 	pad.setGeometry(geometry);
-	assert.equal(pad.buttons, 3, 'layout never cancels the retained contact');
+	assert.equal(pad.buttons, 0);
+	pad.moveContact(1, 325, 100, 14, 14, true);
+	assert.equal(pad.buttons, 3);
 });
 
-test('contact-slot removal retains the swapped contact sample for later layout resampling', () => {
+test('contact-slot removal retains the swapped component and geometry revision', () => {
 	const { pad } = createFixture();
 	pad.beginContact(1, 300, 100, 0, 0, false);
 	pad.beginContact(2, 325, 100, 14, 6, true);
 	pad.endContact(1);
-	pad.setGeometry({ ...geometry, actions: [{ x: 339, y: 106, radius: 0, buttons: 4 }] });
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [{ x: 332, y: 103, radius: 0, buttons: 4 }] }] });
+	assert.equal(pad.buttons, 3);
+	pad.moveContact(2, 325, 100, 14, 6, true);
 	assert.equal(pad.buttons, 4, 'coordinates, both half-extents and activation follow the swapped ID');
 	assert.equal(pad.ownsContact(2), true);
 	pad.endContact(2);
 	assert.equal(pad.buttons, 0);
 });
 
-test('layout resampling publishes only final aggregate edges when contact contributions exchange', () => {
+test('layout admission publishes no edges and release still uses each retained contribution', () => {
 	const { pad, edges, views } = createFixture();
 	pad.beginContact(1, 300, 100, 0, 0, true);
 	pad.beginContact(2, 350, 100, 0, 0, true);
 	const before = views();
-	pad.setGeometry({ ...geometry, actions: [
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [
 		{ x: 300, y: 100, radius: 20, buttons: 2 },
 		{ x: 350, y: 100, radius: 20, buttons: 1 },
-	] });
+	] }] });
 	assert.equal(pad.buttons, 3);
 	assert.equal(edges.length, 2, 'temporary zero counts are not published');
 	assert.equal(views(), before);
 	pad.endContact(1);
-	assert.equal(pad.buttons, 1);
+	assert.equal(pad.buttons, 2, 'without a new native sample, B remains the second finger\'s held contribution');
 	pad.endContact(2);
 	assert.equal(pad.buttons, 0);
 	for (const code of ['a', 'b']) {
@@ -316,9 +342,9 @@ test('identical contact samples skip geometry work while changed samples and lay
 	const contactButtons = Reflect.get(pad, 'contactButtons');
 	let hits = 0;
 	Object.defineProperty(pad, 'contactButtons', {
-		value(x: number, y: number, halfWidth: number, halfHeight: number) {
+		value(group: number, x: number, y: number, halfWidth: number, halfHeight: number) {
 			hits += 1;
-			return contactButtons.call(pad, x, y, halfWidth, halfHeight);
+			return contactButtons.call(pad, group, x, y, halfWidth, halfHeight);
 		},
 	});
 	pad.beginContact(1, 300, 100, 14, 14, true);
@@ -334,17 +360,17 @@ test('identical contact samples skip geometry work while changed samples and lay
 	pad.moveContact(1, 301, 100, 15, 13, true);
 	assert.equal(pad.buttons, 1);
 	assert.equal(hits, 5, 'reactivating uses the retained current sample');
-	pad.setGeometry({ ...geometry, actions: [{ x: 301, y: 100, radius: 20, buttons: 4 }] });
-	assert.equal(pad.buttons, 4);
-	assert.equal(hits, 6, 'layout resamples stationary contacts itself');
+	pad.setGeometry({ ...geometry, buttonGroups: [{ ...face, actions: [{ x: 301, y: 100, radius: 20, buttons: 4 }] }] });
+	assert.equal(pad.buttons, 1);
+	assert.equal(hits, 5, 'layout does not replay a stationary contact');
 	pad.moveContact(1, 301, 100, 15, 13, true);
 	assert.equal(pad.buttons, 4);
-	assert.equal(hits, 6, 'the unchanged sample remains current after layout');
+	assert.equal(hits, 6, 'the next native sample sees the new geometry revision');
 });
 
 test('button aggregation retains more than 255 owners and reuses ended contact sample storage', () => {
 	const { pad, edges } = createFixture();
-	const arrays = ['contactIds', 'contactX', 'contactY', 'contactHalfWidths', 'contactHalfHeights', 'contactActive', 'contactContributions']
+	const arrays = ['contactIds', 'contactGroups', 'contactGeometryVersions', 'contactX', 'contactY', 'contactHalfWidths', 'contactHalfHeights', 'contactActive', 'contactContributions']
 		.map(name => ({ name, array: Reflect.get(pad, name) as Array<number | boolean> }));
 	for (let id = 0; id < 300; id += 1) pad.beginContact(id, 300, 100, 14, 14, true);
 	assert.equal(pad.buttons, 1);

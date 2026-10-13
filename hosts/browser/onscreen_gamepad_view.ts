@@ -1,5 +1,6 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenDirectionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
+import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenButtonGroupGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
+import type { BrowserInputDiagnostics } from './input_trace_contract';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick }
 
@@ -12,13 +13,6 @@ const ACTIONS = [
 	{ id: 'start_knop', surface: ActionSurfaceIndex.Start, buttons: 1 << InputControllerGamepadButtonBit.Start },
 	{ id: 'ls_knop', surface: ActionSurfaceIndex.LeftStick, buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
 	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
-] as const;
-
-const DIRECTIONS = [
-	{ id: 'd-pad-up', buttons: 1 << InputControllerGamepadButtonBit.Up },
-	{ id: 'd-pad-right', buttons: 1 << InputControllerGamepadButtonBit.Right },
-	{ id: 'd-pad-down', buttons: 1 << InputControllerGamepadButtonBit.Down },
-	{ id: 'd-pad-left', buttons: 1 << InputControllerGamepadButtonBit.Left },
 ] as const;
 
 const DIRECTION_BUTTONS = (1 << InputControllerGamepadButtonBit.Up) | (1 << InputControllerGamepadButtonBit.Right)
@@ -56,14 +50,14 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalPadY: number;
 	private readonly nominalPadRadius: number;
 	private readonly padImages: SVGImageElement[] = [];
-	private readonly nominalDirections: OnscreenDirectionGeometry[] = [];
-	private readonly directions: OnscreenDirectionGeometry[] = [];
 	private readonly circles: SVGCircleElement[] = [];
 	private readonly nominalActions: OnscreenActionGeometry[] = [];
 	private readonly actions: OnscreenActionGeometry[] = [];
+	private readonly buttonGroups: OnscreenButtonGroupGeometry[] = [];
 	private readonly geometry: OnscreenGamepadGeometry = {
-		padX: 0, padY: 0, padRadius: 0, directions: this.directions, actions: this.actions,
+		padX: 0, padY: 0, padRadius: 0, padNeutralRadius: 0, buttonGroups: this.buttonGroups,
 	};
+	private readonly layoutObserver: BrowserInputDiagnostics | undefined;
 	private readonly unsubscribeView: () => void;
 	private animationFrameId = 0;
 	private renderedButtons = 0;
@@ -78,6 +72,7 @@ export class BrowserOnscreenGamepadView {
 		private readonly window: Window,
 		private readonly model: BrowserOnscreenGamepad,
 	) {
+		this.layoutObserver = window.bmsxInputTrace;
 		this.padSurface = document.getElementById('d-pad-controls');
 		const padArtwork = document.getElementById('d-pad-svg') as unknown as SVGSVGElement;
 		this.padArtworkWidth = padArtwork.viewBox.baseVal.width;
@@ -96,16 +91,6 @@ export class BrowserOnscreenGamepadView {
 		for (const direction of PAD_IMAGES) {
 			this.padImages.push(document.getElementById(`svgimg-d-pad-${direction}`) as unknown as SVGImageElement);
 		}
-		for (const direction of DIRECTIONS) {
-			const rect = document.getElementById(direction.id) as unknown as SVGRectElement;
-			this.nominalDirections.push({
-				x: rect.x.baseVal.value + rect.width.baseVal.value / 2,
-				y: rect.y.baseVal.value + rect.height.baseVal.value / 2,
-				halfWidth: rect.width.baseVal.value / 2, halfHeight: rect.height.baseVal.value / 2,
-				buttons: direction.buttons,
-			});
-			this.directions.push({ x: 0, y: 0, halfWidth: 0, halfHeight: 0, buttons: direction.buttons });
-		}
 		for (const action of ACTIONS) {
 			const circle = document.getElementById(action.id) as unknown as SVGCircleElement;
 			this.circles.push(circle);
@@ -114,6 +99,10 @@ export class BrowserOnscreenGamepadView {
 				radius: circle.r.baseVal.value, buttons: action.buttons,
 			});
 			this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
+		}
+		this.buttonGroups.push({ x: 0, y: 0, radius: 0, actions: this.actions.slice(0, 4) });
+		for (let index = 4; index < this.actions.length; index += 1) {
+			this.buttonGroups.push({ x: 0, y: 0, radius: 0, actions: [this.actions[index]] });
 		}
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 	}
@@ -185,14 +174,7 @@ export class BrowserOnscreenGamepadView {
 		geometry.padX = padX;
 		geometry.padY = padY;
 		geometry.padRadius = padRadius;
-		for (let index = 0; index < this.directions.length; index += 1) {
-			const nominal = this.nominalDirections[index];
-			const direction = this.directions[index];
-			direction.x = padLeft + nominal.x * padScale;
-			direction.y = padTop + nominal.y * padScale;
-			direction.halfWidth = nominal.halfWidth * padScale;
-			direction.halfHeight = nominal.halfHeight * padScale;
-		}
+		geometry.padNeutralRadius = padRadius * 0.18;
 		for (let index = 0; index < this.actions.length; index += 1) {
 			const surface = this.actionSurfaces[ACTIONS[index].surface];
 			const nominal = this.nominalActions[index];
@@ -201,7 +183,19 @@ export class BrowserOnscreenGamepadView {
 			action.y = surface.top + nominal.y * surface.scale;
 			action.radius = nominal.radius * surface.scale;
 		}
+		const faceGroup = this.buttonGroups[0];
+		faceGroup.x = faceCenterX;
+		faceGroup.y = faceCenterY;
+		faceGroup.radius = faceSurface.artworkWidth * faceScale / 2;
+		for (let index = 1; index < this.buttonGroups.length; index += 1) {
+			const group = this.buttonGroups[index];
+			const action = group.actions[0];
+			group.x = action.x;
+			group.y = action.y;
+			group.radius = action.radius;
+		}
 		this.model.setGeometry(geometry);
+		this.layoutObserver?.controllerLayout(this.model.geometryRevision, left, top, width, height, this.model.buttons);
 		this.padSurface.hidden = false;
 	}
 

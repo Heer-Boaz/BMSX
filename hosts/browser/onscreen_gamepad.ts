@@ -1,6 +1,11 @@
 import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
 import type { HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
+import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { contactIntersectsCircle } from './touch_geometry';
+
+const enum ContactGroup { Miss = -2, Pad = -1 }
+const DIAGONAL_SLOPE = Math.SQRT2 - 1;
 
 export interface OnscreenActionGeometry {
 	x: number;
@@ -9,12 +14,12 @@ export interface OnscreenActionGeometry {
 	buttons: number;
 }
 
-export interface OnscreenDirectionGeometry {
+/** One physical button deck; a contact can press any of its buttons together. */
+export interface OnscreenButtonGroupGeometry {
 	x: number;
 	y: number;
-	halfWidth: number;
-	halfHeight: number;
-	buttons: number;
+	radius: number;
+	actions: readonly OnscreenActionGeometry[];
 }
 
 /** CSS-client geometry produced once by the control view's layout owner. */
@@ -22,8 +27,8 @@ export interface OnscreenGamepadGeometry {
 	padX: number;
 	padY: number;
 	padRadius: number;
-	directions: readonly OnscreenDirectionGeometry[];
-	actions: readonly OnscreenActionGeometry[];
+	padNeutralRadius: number;
+	buttonGroups: readonly OnscreenButtonGroupGeometry[];
 }
 
 /** Contact-owned virtual device. Native routing and presentation have separate owners. */
@@ -37,9 +42,12 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public readonly supportsVibration: boolean;
 
 	private geometry: OnscreenGamepadGeometry;
+	private geometryVersion = 0;
 	private sink: InputEventSink;
 	private viewListener: (() => void) | null = null;
 	private readonly contactIds: number[] = [];
+	private readonly contactGroups: number[] = [];
+	private readonly contactGeometryVersions: number[] = [];
 	private readonly contactX: number[] = [];
 	private readonly contactY: number[] = [];
 	private readonly contactHalfWidths: number[] = [];
@@ -60,17 +68,13 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	}
 
 	public get buttons(): number { return this.activeButtons; }
+	public get geometryRevision(): number { return this.geometryVersion; }
 
 	public setGeometry(geometry: OnscreenGamepadGeometry): void {
-		const previousButtons = this.activeButtons;
 		this.geometry = geometry;
-		for (let index = 0; index < this.contactCount; index += 1) {
-			this.setContribution(index, this.contactActive[index]
-				? this.contactButtons(this.contactX[index], this.contactY[index], this.contactHalfWidths[index], this.contactHalfHeights[index])
-				: 0);
-		}
-		// Replacing geometry is one model update, not intermediate per-contact edges.
-		this.publishChanges(previousButtons);
+		// Layout is not a physical input sample. Held contributions change only
+		// on their next native sample or release, never from stale coordinates.
+		this.geometryVersion += 1;
 	}
 
 	public setVibration(durationMs: number, intensity: number): void {
@@ -91,26 +95,23 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		return () => { this.viewListener = null; };
 	}
 
-	/** Acquire the controller route, including the pad's neutral center. */
+	/** Acquire a mechanical component, including the neutral pad and face deck. */
 	public beginContact(id: number, x: number, y: number, halfWidth: number, halfHeight: number, active: boolean): boolean {
-		const buttons = this.contactButtons(x, y, halfWidth, halfHeight);
-		if (buttons === 0) {
-			const geometry = this.geometry;
-			const dx = Math.max(Math.abs(x - geometry.padX) - halfWidth, 0);
-			const dy = Math.max(Math.abs(y - geometry.padY) - halfHeight, 0);
-			if (dx * dx + dy * dy > geometry.padRadius * geometry.padRadius) return false;
-		}
+		const group = this.acquireGroup(x, y, halfWidth, halfHeight);
+		if (group === ContactGroup.Miss) return false;
 		const previousButtons = this.activeButtons;
 		const index = this.contactCount++;
 		// Retain the high-water storage; ending a contact does not truncate these arrays.
 		this.contactIds[index] = id;
+		this.contactGroups[index] = group;
+		this.contactGeometryVersions[index] = this.geometryVersion;
 		this.contactX[index] = x;
 		this.contactY[index] = y;
 		this.contactHalfWidths[index] = halfWidth;
 		this.contactHalfHeights[index] = halfHeight;
 		this.contactActive[index] = active;
 		this.contactContributions[index] = 0;
-		this.setContribution(index, active ? buttons : 0);
+		this.setContribution(index, active ? this.contactButtons(group, x, y, halfWidth, halfHeight) : 0);
 		this.publishChanges(previousButtons);
 		return true;
 	}
@@ -125,14 +126,15 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		if (index < 0) return false;
 		if (this.contactX[index] === x && this.contactY[index] === y
 			&& this.contactHalfWidths[index] === halfWidth && this.contactHalfHeights[index] === halfHeight
-			&& this.contactActive[index] === active) return true;
+			&& this.contactActive[index] === active && this.contactGeometryVersions[index] === this.geometryVersion) return true;
 		const previousButtons = this.activeButtons;
 		this.contactX[index] = x;
 		this.contactY[index] = y;
 		this.contactHalfWidths[index] = halfWidth;
 		this.contactHalfHeights[index] = halfHeight;
 		this.contactActive[index] = active;
-		this.setContribution(index, active ? this.contactButtons(x, y, halfWidth, halfHeight) : 0);
+		this.contactGeometryVersions[index] = this.geometryVersion;
+		this.setContribution(index, active ? this.contactButtons(this.contactGroups[index], x, y, halfWidth, halfHeight) : 0);
 		this.publishChanges(previousButtons);
 		return true;
 	}
@@ -145,6 +147,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		const last = --this.contactCount;
 		if (index !== last) {
 			this.contactIds[index] = this.contactIds[last];
+			this.contactGroups[index] = this.contactGroups[last];
+			this.contactGeometryVersions[index] = this.contactGeometryVersions[last];
 			this.contactX[index] = this.contactX[last];
 			this.contactY[index] = this.contactY[last];
 			this.contactHalfWidths[index] = this.contactHalfWidths[last];
@@ -164,22 +168,77 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.publishChanges(previousButtons);
 	}
 
-	/** A contact envelope may press every intersecting virtual button. */
-	private contactButtons(x: number, y: number, halfWidth: number, halfHeight: number): number {
+	private acquireGroup(x: number, y: number, halfWidth: number, halfHeight: number): number {
 		const geometry = this.geometry;
-		let buttons = 0;
-		for (let index = 0; index < geometry.actions.length; index += 1) {
-			const action = geometry.actions[index];
-			const dx = Math.max(Math.abs(x - action.x) - halfWidth, 0);
-			const dy = Math.max(Math.abs(y - action.y) - halfHeight, 0);
-			if (dx * dx + dy * dy <= action.radius * action.radius) buttons |= action.buttons;
-		}
-		for (let index = 0; index < geometry.directions.length; index += 1) {
-			const direction = geometry.directions[index];
-			if (Math.abs(x - direction.x) <= halfWidth + direction.halfWidth
-				&& Math.abs(y - direction.y) <= halfHeight + direction.halfHeight) {
-				buttons |= direction.buttons;
+		const padX = x - geometry.padX;
+		const padY = y - geometry.padY;
+		// Visible buttons win over the neutral plastic of another component.
+		// The face deck's acquisition envelope can overlap an inner RS edge.
+		for (let index = 0; index < geometry.buttonGroups.length; index += 1) {
+			const actions = geometry.buttonGroups[index].actions;
+			for (let actionIndex = 0; actionIndex < actions.length; actionIndex += 1) {
+				const action = actions[actionIndex];
+				const dx = x - action.x;
+				const dy = y - action.y;
+				if (dx * dx + dy * dy <= action.radius * action.radius) return index;
 			}
+		}
+		// Direct neutral-body contact still wins over skin-only pickup nearby.
+		if (padX * padX + padY * padY <= geometry.padRadius * geometry.padRadius) return ContactGroup.Pad;
+		for (let index = 0; index < geometry.buttonGroups.length; index += 1) {
+			const group = geometry.buttonGroups[index];
+			const dx = x - group.x;
+			const dy = y - group.y;
+			if (dx * dx + dy * dy <= group.radius * group.radius) return index;
+		}
+		let selected = ContactGroup.Miss;
+		let nearest = Infinity;
+		if (contactIntersectsCircle(padX, padY, halfWidth, halfHeight, geometry.padRadius)) {
+			selected = ContactGroup.Pad;
+			nearest = Math.hypot(padX, padY) - geometry.padRadius;
+		}
+		for (let index = 0; index < geometry.buttonGroups.length; index += 1) {
+			const group = geometry.buttonGroups[index];
+			const dx = x - group.x;
+			const dy = y - group.y;
+			if (!contactIntersectsCircle(dx, dy, halfWidth, halfHeight, group.radius)) continue;
+			const distance = Math.hypot(dx, dy) - group.radius;
+			if (distance < nearest) {
+				selected = index;
+				nearest = distance;
+			}
+		}
+		return selected;
+	}
+
+	/** Face buttons share skin contact; the rocker is one joined digital control. */
+	private contactButtons(groupIndex: number, x: number, y: number, halfWidth: number, halfHeight: number): number {
+		if (groupIndex === ContactGroup.Pad) return this.padButtons(x, y);
+		const group = this.geometry.buttonGroups[groupIndex];
+		let buttons = 0;
+		for (let index = 0; index < group.actions.length; index += 1) {
+			const action = group.actions[index];
+			if (contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
+		}
+		return buttons;
+	}
+
+	private padButtons(x: number, y: number): number {
+		const geometry = this.geometry;
+		const dx = x - geometry.padX;
+		const dy = y - geometry.padY;
+		if (dx * dx + dy * dy <= geometry.padNeutralRadius * geometry.padNeutralRadius) return 0;
+		const ax = Math.abs(dx);
+		const ay = Math.abs(dy);
+		// A joined rocker tilts at the contact center; its skin outline cannot
+		// depress opposite arms. Overlapping absolute direction regions tile
+		// the complete disc, without a moving stick or per-gesture drag origin.
+		let buttons = 0;
+		if (dx !== 0 && ax >= DIAGONAL_SLOPE * ay) {
+			buttons |= 1 << (dx > 0 ? InputControllerGamepadButtonBit.Right : InputControllerGamepadButtonBit.Left);
+		}
+		if (dy !== 0 && ay >= DIAGONAL_SLOPE * ax) {
+			buttons |= 1 << (dy > 0 ? InputControllerGamepadButtonBit.Down : InputControllerGamepadButtonBit.Up);
 		}
 		return buttons;
 	}

@@ -95,9 +95,15 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	const before = await measure();
 	await page.setViewportSize({ width: 393, height: 852 });
 	await page.evaluate(() => (globalThis as any).layoutProbe.video.refreshLayout());
-	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 0, 'a stationary contact follows moved geometry rather than its initial action label');
+	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 1, 'layout admission cannot generate an input release without a native contact update');
 	const after = await measure();
 	assert.notDeepEqual(after[4], before[4], 'orientation updates nominal action geometry');
+	const sampled = await page.evaluate(bounds => {
+		const pad = (globalThis as any).layoutProbe.pad;
+		pad.moveContact(1, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, 14, 14, true);
+		return pad.buttons;
+	}, before[4]);
+	assert.equal(sampled, 0, 'the next contact sample sees the admitted geometry even when its coordinates and footprint are unchanged');
 	await page.evaluate(() => {
 		const probe = (globalThis as any).layoutProbe;
 		const b = document.getElementById('b_knop')!.getBoundingClientRect();

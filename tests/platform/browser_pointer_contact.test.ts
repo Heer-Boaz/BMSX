@@ -32,8 +32,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
 		pad.setGeometry({
-			padX: 100, padY: 100, padRadius: 50, directions: [],
-			actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+			padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
+			buttonGroups: [{ x: 325, y: 100, radius: 50,
+				actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+			}],
 		});
 		const nativeEvents: Array<{ type: string; id: number; pointerType: string; width: number; height: number; x: number; y: number; trusted: boolean }> = [];
 		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
@@ -99,7 +101,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await takeEvents();
 	});
 
-	await t.test('a measured rectangular contact intersects two adjacent circular buttons', async () => {
+	await t.test('a measured elliptical contact intersects two adjacent circular buttons', async () => {
 		await touch('touchStart', [{ id: 1, x: 325, y: 100, radiusX: 12, radiusY: 8 }]);
 		await assertWord(3);
 		const events = await takeEvents();
@@ -118,7 +120,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await assertWord(0);
 		await takeEvents();
 		await touch('touchStart', [{ id: 2, x: 325, y: 100, radiusX: 1, radiusY: 1 }]);
-		await assertWord(0, 1);
+		await assertWord(0, 0);
 		const small = await takeEvents();
 		assert.deepEqual(small.native.map(event => [event.width, event.height, event.trusted]), [[2, 2, true]]);
 		assert.deepEqual(small.calls, [{ kind: 'begin', x: 325, y: 100, halfWidth: 1, halfHeight: 1, active: true }]);
@@ -162,7 +164,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('a single default-looking axis preserves the actual nonuniform contact instead of selecting the fallback', async () => {
-		for (const [radiusX, radiusY, word, pointer] of [[0.5, 12, 0, 1], [12, 0.5, 3, 0]]) {
+		for (const [radiusX, radiusY, word, pointer] of [[0.5, 12, 0, 0], [12, 0.5, 3, 0]]) {
 			await touch('touchStart', [{ id: 1, x: 325, y: 100, radiusX, radiusY }]);
 			await assertWord(word, pointer);
 			const events = await takeEvents();
@@ -193,7 +195,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await t.test(`native ${pointerType} contact remains a point rather than an artificial thumb`, async () => {
 			await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 325, y: 100, button: 'left', buttons: 1, clickCount: 1, pointerType });
 			activeMouse = pointerType;
-			await assertWord(0, 1);
+			await assertWord(0, 0);
 			const events = await takeEvents();
 			assert.ok(events.native.some(event => event.type === 'pointerdown' && event.pointerType === pointerType && event.trusted));
 			assert.deepEqual(events.calls.filter(call => call.kind === 'begin'), [{ kind: 'begin', x: 325, y: 100, halfWidth: 0, halfHeight: 0, active: true }]);

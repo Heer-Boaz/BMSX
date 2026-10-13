@@ -13,6 +13,7 @@ export interface BrowserInputTraceObserver {
 
 /** Installed only by the diagnostic page's early script, before the player bundle. */
 export interface BrowserInputDiagnostics extends BrowserInputTraceObserver {
+	controllerLayout(revision: number, left: number, top: number, width: number, height: number, buttons: number): void;
 	setController(controller: BrowserOnscreenGamepad | null): void;
 	setCommonGamepad(gamepad: GamepadInput | null): void;
 	setStatus(status: string): void;

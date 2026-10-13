@@ -4924,23 +4924,32 @@ touch contact dimensions into CSS-client half-extents once per down/move.
 Reported dimensions are consumed directly; the Pointer Events unavailable
 `1x1` contact uses an authored `28x28` CSS-pixel envelope. Mouse/pen remain point
 contacts. Pressure is not a size estimate, and Touch Events are not a second
-producer. The numerical controller recomputes each contact's contribution
-against every circular action button and finite rectangular D-pad direction.
-A thumb can overlap adjacent buttons; direction changes and diagonal rolling
-publish raw digital bits immediately, with no analog origin, moving tip,
-exclusive first-finger owner or initial-button assignment.
+producer. Contact outlines are axis-aligned ellipse estimates, not filled
+bounding rectangles. The numerical controller retains each contact's physical
+component: the joined D-pad, the A/B/X/Y deck or one auxiliary switch. Within
+the face deck a thumb can overlap every intersecting circular button, including
+multiple adjacent buttons at once. Visible button-center hits take priority
+over neutral acquisition envelopes; neutral deck contact can acquire the route
+without initially pressing a button. A skin estimate cannot spill from one
+mechanical component into another.
+The joined rocker uses immediate absolute contact-center direction regions
+over the whole disc, with a neutral center and up to two adjacent bits per
+contact. There is no analog origin, moving tip or exclusive first-finger owner.
+Captured pad contacts continue outside the artwork until their native release;
+independent fingers may publish opposing bits without raw-word normalization.
 The passive D-pad view uses the original nine disc images, embedded by the
 shared browser product page builder. Opposing raw direction bits balance only
 the displayed tilt; the view never rewrites controller words. Artwork changes
 do not change numerical acquisition geometry or control layout.
 
 Per-button reference counts combine contacts without releasing another
-finger's controls. A neutral D-pad contact can acquire the controller route.
-Leaving every virtual button releases its contribution, not its capture/route;
-returning or sliding between controller buttons needs no new down. A
-canvas-started contact remains canvas input. Layout changes resample retained
-scalar contacts once and publish the resulting aggregate edges, not false
-intermediate edges between fingers. This is host interaction policy, not a
+finger's controls. Leaving face buttons releases their contribution, not the
+component capture/route; returning or sliding inside that deck needs no new
+down. A canvas-started contact remains canvas input. Layout admission increments
+the geometry revision without producing input edges from stale contact
+coordinates. The next physical sample evaluates current geometry, including
+at unchanged coordinates; up/cancel releases the retained contribution. Opt-in
+browser tracing records applied layouts as well as native events. This is host interaction policy, not a
 machine-runtime or mirrored ICU change. Neither
 compatibility mouse boundary events, focus gain, nor touch pressure/button
 fields end a retained contact. Window blur, page hide, and document visibility

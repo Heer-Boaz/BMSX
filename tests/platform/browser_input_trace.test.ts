@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -11,6 +12,7 @@ test('input trace reuses bounded records and preserves errors after overwrite an
 	first.pointerId = 8;
 	first.width = 36;
 	first.height = 28;
+	first.geometryRevision = 5;
 	first.touchCount = 2;
 	first.touchIds[0] = 4;
 	buffer.recordError('javascript', 2, 'Vertex error');
@@ -21,6 +23,7 @@ test('input trace reuses bounded records and preserves errors after overwrite an
 	assert.equal(reused.pointerId, -1);
 	assert.equal(reused.width, 0);
 	assert.equal(reused.height, 0);
+	assert.equal(reused.geometryRevision, 0);
 	assert.equal(buffer.count, 2);
 	assert.equal(buffer.total, 3);
 	assert.equal(buffer.overwritten, 1);
@@ -78,8 +81,8 @@ export { Input } from './hosts/common/input/manager';`,
 		const trace = window.bmsxInputTrace as any;
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
-		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, directions: [],
-			actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] });
+		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, padNeutralRadius: 14,
+			buttonGroups: [{ x: 660, y: 235, radius: 100, actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] }] });
 		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);
 		hub.setTraceObserver(trace);
@@ -99,7 +102,7 @@ export { Input } from './hosts/common/input/manager';`,
 			const row = trace.buffer.get(index);
 			records.push({ sequence: row.sequence, kind: row.kind, phase: row.phase, id: row.pointerId, primary: row.primary,
 				before: row.before, after: row.after, commonBefore: row.commonBefore, commonAfter: row.commonAfter,
-				trusted: row.trusted, prevented: row.prevented, route: row.route, width: row.width, height: row.height,
+				trusted: row.trusted, prevented: row.prevented, route: row.route, width: row.width, height: row.height, geometryRevision: row.geometryRevision,
 				full: Array.from(row.touchIds.subarray(0, row.touchCount)), changed: Array.from(row.changedTouchIds.subarray(0, row.changedTouchCount)) });
 		}
 		return { model: pad.buttons, common: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), records };
@@ -110,6 +113,7 @@ export { Input } from './hosts/common/input/manager';`,
 	assert.deepEqual(downs.map(row => [row.before, row.after, row.commonBefore, row.commonAfter, row.route]), [[0, 1, 0, 1, 'controller'], [1, 3, 1, 3, 'controller']]);
 	assert.ok(downs.every(row => row.trusted && row.prevented));
 	assert.ok(downs.every(row => row.width > 0 && row.height > 0));
+	assert.ok(downs.every(row => row.geometryRevision === 1), 'routed pointers carry the admitted geometry version independently of layout-row retention');
 	assert.equal(downs[1].primary, false);
 	for (const down of downs) {
 		assert.ok(sequence.records.some(row => row.phase === 'native' && row.kind === 'pointerdown' && row.id === down.id && row.sequence < down.sequence), 'early window capture survives owner stopImmediatePropagation');
@@ -199,4 +203,91 @@ export { Input } from './hosts/common/input/manager';`,
 		assert.deepEqual(lifecycleReset, ['reset', reason, 1, 0, 1, 0, true]);
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	}
+});
+
+test('applied controller layouts are traced without manufacturing native releases', async t => {
+	const bootstrap = await build({
+		entryPoints: ['hosts/browser/input_trace_bootstrap.ts'], bundle: true, platform: 'browser',
+		format: 'iife', write: false, tsconfig: 'tsconfig.base.json',
+	});
+	const fixture = await build({
+		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
+export { BrowserVideoOutput } from './hosts/browser/video_output';
+export { BrowserInputHub } from './hosts/browser/input';
+export { BrowserHostClock } from './hosts/browser/timing';
+export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd() },
+		bundle: true, platform: 'browser', format: 'iife', globalName: 'layoutTraceFixture', write: false, tsconfig: 'tsconfig.base.json',
+	});
+	const template = await readFile('gamebase.html', 'utf8');
+	let controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
+		controls = controls.replace(`@@DPAD_${name.toUpperCase()}@@`, `data:image/png;base64,${(await readFile(`rom/d-pad-${name}.png`)).toString('base64')}`);
+	}
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
+	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);
+	await page.addScriptTag({ content: bootstrap.outputFiles[0].text });
+	await page.addScriptTag({ content: fixture.outputFiles[0].text });
+	const a = await page.evaluate(() => {
+		const api = (globalThis as any).layoutTraceFixture;
+		const clock = new api.BrowserHostClock();
+		const model = new api.BrowserOnscreenGamepad(clock);
+		const view = new api.BrowserOnscreenGamepadView(document, window, model);
+		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+		const video = new api.BrowserVideoOutput(canvas, view);
+		const trace = window.bmsxInputTrace;
+		trace.setController(model);
+		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, model, 'F2');
+		hub.setTraceObserver(trace);
+		const input = new api.Input(clock, hub, model.gamepadIndex);
+		trace.setCommonGamepad(input.getPlayerInput(1).inputHandlers.gamepad);
+		video.refreshLayout();
+		(globalThis as any).layoutTraceProbe = { model, video, trace, input };
+		const bounds = document.getElementById('a_knop')!.getBoundingClientRect();
+		return { id: 1, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2, radiusX: 14, radiusY: 14 };
+	});
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] });
+	await page.setViewportSize({ width: 852, height: 300 });
+	const resized = await page.evaluate(() => {
+		const probe = (globalThis as any).layoutTraceProbe;
+		probe.video.refreshLayout();
+		const layouts = [];
+		for (let index = 0; index < probe.trace.buffer.count; index += 1) {
+			const row = probe.trace.buffer.get(index);
+			if (row.phase === 'layout') layouts.push({ revision: row.geometryRevision, bounds: [row.x, row.y, row.width, row.height],
+				words: [row.before, row.after, row.commonBefore, row.commonAfter] });
+		}
+		return { buttons: probe.model.buttons, layouts, text: probe.trace.view.text() };
+	});
+	assert.equal(resized.buttons, 1, 'a browser height change does not release a held A');
+	assert.deepEqual(resized.layouts, [
+		{ revision: 1, bounds: [0, 0, 852, 393], words: [0, 0, 0, 0] },
+		{ revision: 2, bounds: [0, 0, 852, 300], words: [1, 1, 1, 1] },
+	]);
+	assert.match(resized.text, /layout control-layout revision=2 bounds=0\.0,0\.0,852\.0,300\.0 route=controller model=0x1->0x1 common=0x1->0x1/);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x + 1 }] });
+	const moved = await page.evaluate(() => {
+		const probe = (globalThis as any).layoutTraceProbe;
+		const routes = [];
+		for (let index = 0; index < probe.trace.buffer.count; index += 1) {
+			const row = probe.trace.buffer.get(index);
+			if (row.phase === 'route' && row.kind === 'pointermove') routes.push(row);
+		}
+		const row = routes.at(-1);
+		return { buttons: probe.model.buttons, common: probe.trace.commonGamepad.physicalGamepadButtonsWord(),
+			phase: row.phase, kind: row.kind, before: row.before, after: row.after, trusted: row.trusted, geometryRevision: row.geometryRevision };
+	});
+	assert.equal(moved.buttons, 0, 'the next native movement applies the current, moved button geometry');
+	assert.equal(moved.common, 0);
+	assert.deepEqual([moved.phase, moved.kind, moved.before, moved.after, moved.trusted], ['route', 'pointermove', 1, 0, true]);
+	assert.equal(moved.geometryRevision, 2, 'the native update identifies the current admitted geometry');
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await page.evaluate(() => {
+		const probe = (globalThis as any).layoutTraceProbe;
+		probe.input.dispose();
+		probe.video.dispose();
+	});
 });

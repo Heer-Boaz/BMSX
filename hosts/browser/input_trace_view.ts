@@ -84,9 +84,12 @@ export class BrowserInputTraceView {
 			const row = this.buffer.get(index);
 			let line = `${row.sequence} ${row.time.toFixed(1)} ${row.phase} ${row.kind}`;
 			if (row.pointerId !== -1) {
-				line += ` id=${row.pointerId} type=${row.pointerType} primary=${+row.primary} xy=${row.x.toFixed(1)},${row.y.toFixed(1)} size=${row.width.toFixed(1)}x${row.height.toFixed(1)} buttons=${row.nativeButtons} pressure=${row.pressure} trusted=${+row.trusted} cancelable=${+row.cancelable} prevented=${+row.prevented} target=${row.target}`;
+				line += ` id=${row.pointerId} type=${row.pointerType} primary=${+row.primary} xy=${row.x.toFixed(1)},${row.y.toFixed(1)} size=${row.width.toFixed(1)}x${row.height.toFixed(1)} geometry=${row.geometryRevision} buttons=${row.nativeButtons} pressure=${row.pressure} trusted=${+row.trusted} cancelable=${+row.cancelable} prevented=${+row.prevented} target=${row.target}`;
 			}
-			if (row.phase === 'route' || row.phase === 'reset') {
+			if (row.phase === 'layout') {
+				line += ` revision=${row.geometryRevision} bounds=${row.x.toFixed(1)},${row.y.toFixed(1)},${row.width.toFixed(1)},${row.height.toFixed(1)}`;
+			}
+			if (row.phase === 'route' || row.phase === 'reset' || row.phase === 'layout') {
 				line += ` route=${row.route} model=0x${row.before.toString(16)}->0x${row.after.toString(16)} common=${row.commonBefore < 0 ? '-' : `0x${row.commonBefore.toString(16)}`}->${row.commonAfter < 0 ? '-' : `0x${row.commonAfter.toString(16)}`} completed=${+row.completed}`;
 			}
 			if (row.phase === 'native' && row.pointerType !== 'touch-snapshot') line += ` model-entry=0x${row.before.toString(16)}`;

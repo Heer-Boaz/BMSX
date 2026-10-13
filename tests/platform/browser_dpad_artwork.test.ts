@@ -80,10 +80,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const snapshot = api.createInputControllerSnapshot();
 		const view = new api.BrowserOnscreenGamepadView(document, window, model);
 		view.layout(0, 0, 852, 393);
-		const geometry = ['up', 'down', 'left', 'right'].map(name => {
-			const rect = document.getElementById('d-pad-' + name)!.getBoundingClientRect();
-			return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height };
-		});
+		const pad = document.getElementById('d-pad-svg')!.getBoundingClientRect();
+		const x = pad.left + pad.width / 2;
+		const y = pad.top + pad.height / 2;
+		const travel = pad.width * 0.35;
+		const geometry = [{ x, y: y - travel }, { x, y: y + travel }, { x: x - travel, y }, { x: x + travel, y }];
 		const artwork = [...document.querySelectorAll<SVGImageElement>('.d-pad-image')];
 		await Promise.all(artwork.map(image => {
 			const resource = new Image();
@@ -117,10 +118,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						const rect = image.getBoundingClientRect();
 						return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
 					}),
-					geometry: ['up', 'down', 'left', 'right'].map(name => {
-						const rect = document.getElementById('d-pad-' + name)!.getBoundingClientRect();
-						return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height };
-					}),
+					geometry: document.getElementById('d-pad-svg')!.getBoundingClientRect().toJSON(),
 				};
 			},
 		};
