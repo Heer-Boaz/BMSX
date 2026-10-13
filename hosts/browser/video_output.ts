@@ -59,8 +59,16 @@ export class BrowserVideoOutput implements VideoOutput {
 		const top = Math.max(player.top, viewportTop + insetTop);
 		const right = Math.min(player.right, viewportLeft + viewportWidth - insetRight);
 		const bottom = Math.min(player.bottom, viewportTop + viewportHeight - insetBottom);
+		if (this.controlView) {
+			const controls = this.controllerViewport.getBoundingClientRect();
+			this.controlView.layout(controls.left + insetLeft, controls.top + insetTop,
+				Math.max(0, controls.width - insetLeft - insetRight), Math.max(0, controls.height - insetTop - insetBottom));
+		}
+		// The authored portrait deck owns its boundary; canvas fitting consumes it.
+		// Landscape controls remain overlays on the full dynamic visible space.
+		const portraitDeckTop = this.controlView ? this.controlView.portraitDeckTop : null;
 		const width = Math.max(0, right - left);
-		const height = Math.max(0, bottom - top);
+		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
 		const presentationHeight = this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
 		const scale = Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight) * 2) / 2;
 		const displayWidth = this.renderWidth * scale;
@@ -68,12 +76,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.canvas.style.width = `${displayWidth}px`;
 		this.canvas.style.height = `${displayHeight}px`;
 		this.canvas.style.left = `${left + (width - displayWidth) / 2}px`;
-		this.canvas.style.top = `${top + (height - displayHeight) / 2}px`;
-		if (this.controlView) {
-			const controls = this.controllerViewport.getBoundingClientRect();
-			this.controlView.layout(controls.left + insetLeft, controls.top + insetTop,
-				Math.max(0, controls.width - insetLeft - insetRight), Math.max(0, controls.height - insetTop - insetBottom));
-		}
+		this.canvas.style.top = `${portraitDeckTop === null ? top + (height - displayHeight) / 2 : top}px`;
 	}
 
 	public dispose(): void {

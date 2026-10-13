@@ -14,6 +14,10 @@ const actions = [
 	{ id: 'start_knop', label: 'START', buttons: 1 << InputControllerGamepadButtonBit.Start },
 	{ id: 'ls_knop', label: 'LS', buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
 	{ id: 'rs_knop', label: 'RS', buttons: 1 << InputControllerGamepadButtonBit.RightStick },
+	{ id: 'lb_knop', label: 'LB', buttons: 1 << InputControllerGamepadButtonBit.LeftBumper },
+	{ id: 'rb_knop', label: 'RB', buttons: 1 << InputControllerGamepadButtonBit.RightBumper },
+	{ id: 'lt_knop', label: 'LT', buttons: 1 << InputControllerGamepadButtonBit.LeftTrigger },
+	{ id: 'rt_knop', label: 'RT', buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
 ] as const;
 
 // Insets are controlled fixture inputs, not measurements of a particular Safari version.
@@ -32,8 +36,8 @@ const profiles: readonly {
 	{ name: 'compact-landscape', width: 568, height: 320, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'phone14-portrait-safe', width: 390, height: 844, insets: [47, 0, 34, 0], screenshot: true },
 	{ name: 'phone14-landscape-safe', width: 844, height: 390, insets: [0, 47, 21, 47], screenshot: true },
-	{ name: 'portrait-stagger-width-boundary-below', width: 379, height: 844, insets: [47, 0, 34, 0], screenshot: true },
-	{ name: 'portrait-stagger-width-boundary-at', width: 380, height: 844, insets: [47, 0, 34, 0], screenshot: true },
+	{ name: 'portrait-width-379', width: 379, height: 844, insets: [47, 0, 34, 0], screenshot: true },
+	{ name: 'portrait-width-380', width: 380, height: 844, insets: [47, 0, 34, 0], screenshot: true },
 	{ name: 'phone-portrait', width: 393, height: 852, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'phone-landscape', width: 852, height: 393, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'large-portrait-safe', width: 430, height: 932, insets: [47, 0, 34, 0], screenshot: false },
@@ -53,7 +57,7 @@ const profiles: readonly {
 ] as const;
 
 // Geometry and native desktop input contracts, not proof of hand comfort or iPhone multitouch.
-test('generic gamepad places equal faces and secondary controls in authored hand groups', async t => {
+test('handheld gamepad keeps aligned hands, equal faces, complete shoulders, and reachable menus', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	let controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
@@ -70,7 +74,7 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/hand-group-gamepad-evidence';
+	const evidenceDirectory = '.bmsx/hosting/handheld-gamepad-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -131,6 +135,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				};
 				return {
 					circles: [pad, ...actionIds.map(id => read.circle(id))],
+					deckTop: view.portraitDeckTop,
+					canvas: (() => { const rect = canvas.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; })(),
 					padImage: document.querySelector('.d-pad-image[data-active="true"]')!.id,
 					labels: actionIds.map(id => {
 						const label = document.getElementById(id + '_text')!;
@@ -139,7 +145,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						return { text: label.textContent, visibility: style.visibility, opacity: style.opacity, fill: style.fill,
 							left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
 					}),
-					groups: ['d-pad-controls', 'button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'].map(id => {
+					groups: ['d-pad-controls', 'button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls', 'lb-controls', 'rb-controls', 'lt-controls', 'rt-controls'].map(id => {
 						const element = document.getElementById(id)!;
 						const bounds = element.getBoundingClientRect();
 						return { id, hidden: element.hidden, pointerEvents: getComputedStyle(element).pointerEvents,
@@ -208,67 +214,61 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				right: player.left + player.width - profile.insets[1], bottom: player.top + player.height - profile.insets[2] };
 			const circles = resting.circles;
 			const faceDiameter = circles[1].bounds.width;
-			const scale = profile.smallPlayer ? Math.min(1, player.width / 568, player.height / 239) : Math.min(1.1, Math.max(1, Math.min(safe.right - safe.left, safe.bottom - safe.top) / 390));
-			// CSS left/top are resolved on the browser's subpixel layout grid;
-			// transformed SVG sizes remain precise, positions can differ by 1/64 px.
+			const width = safe.right - safe.left;
+			const height = safe.bottom - safe.top;
+			const landscape = width >= height;
+			const scale = landscape ? Math.min(1.1, width / 568, height / 360) : Math.min(1.1, (width - 36) / 388, height / 568);
+			// Browser CSS positions use a subpixel layout grid; transformed SVG
+			// dimensions preserve the authored uniform scaling more precisely.
 			const coordinateTolerance = 1 / 32;
-			assert.ok(Math.abs(faceDiameter - 80 * scale) < 0.0001, profile.smallPlayer ? 'explicit smaller-player profile fits equally scaled face targets' : 'phone face targets are 80-88 CSS px, not accessibility-minimum-sized targets');
+			assert.equal(circles.length, 13, 'the rocker plus every one of the twelve physical gamepad buttons is present');
+			assert.ok(Math.abs(faceDiameter - 80 * scale) < 0.0001, 'all face targets share the handheld width/height budget');
 			for (const circle of circles.slice(1, 5)) {
 				assert.ok(Math.abs(circle.bounds.width - faceDiameter) < 0.0001, `${circle.id} has the same target diameter as every other face button`);
 				assert.equal(circle.presentation.fill, circles[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
 				assert.equal(circle.presentation.stroke, circles[1].presentation.stroke);
 			}
-			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'pad follows the same authored CSS-client scale as the face group');
-			const utilityDiameter = 52 * (profile.smallPlayer ? scale : 1);
-			for (const circle of circles.slice(5)) assert.ok(Math.abs(circle.bounds.width - utilityDiameter) < 0.0001,
-				`${circle.id} follows the authored secondary scale, including the whole compact hand group`);
+			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'the PNG rocker and face deck share their authored uniform scale');
 			const pad = circles[0];
 			const faceCenter = { x: (circles[1].x + circles[4].x) / 2, y: (circles[1].y + circles[4].y) / 2 };
-			const landscape = safe.right - safe.left >= safe.bottom - safe.top;
+			assert.ok(Math.abs(pad.y - faceCenter.y) < coordinateTolerance, 'both thumbs use one hand row rather than a portrait stagger');
+			const [select, start, ls, rs, lb, rb, lt, rt] = circles.slice(5);
+			const middle = (safe.left + safe.right) / 2;
+			assert.ok(select.x < middle && start.x > middle, 'SELECT and START straddle the handheld center');
+			assert.ok(Math.abs(select.y - start.y) < coordinateTolerance, 'menu controls share one bottom row');
+			assert.ok(select.y > pad.y && start.y > faceCenter.y, 'menu controls lie below the main hand row');
+			assert.ok(ls.x < select.x && rs.x > start.x, 'stick clicks remain separate from the centered menu controls');
+			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
+			const shoulderDiameter = 64 * (landscape ? scale : Math.max(0.875, scale));
 			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
-			for (const index of [5, 6, 7, 8]) {
-				const circle = circles[index];
-				const primary = index === 5 || index === 7 ? pad : faceCenter;
-				const dx = circle.x - primary.x;
-				const dy = circle.y - primary.y;
-				assert.ok(Math.hypot(dx, dy) <= (landscape ? 144 : 168) * scale + 0.0001,
-					`${circle.id} stays inside its authored hand's local reach envelope, not a viewport-top or central bank`);
-				secondaryOffsets.push({ id: circle.id, x: dx / scale, y: dy / scale });
+			for (const circle of [lb, rb, lt, rt]) {
+				assert.ok(Math.abs(circle.bounds.width - shoulderDiameter) < 0.0001, `${circle.id} uses the larger gameplay shoulder target`);
+				assert.ok(circle.bounds.width > select.bounds.width, 'frequently used shoulders are larger than the utility menu targets');
+				const primary = circle === lb || circle === lt ? pad : faceCenter;
+				assert.ok(circle.y < primary.y, `${circle.id} is reachable above its own hand, not placed at the viewport top`);
+				secondaryOffsets.push({ id: circle.id, x: (circle.x - primary.x) / scale, y: (circle.y - primary.y) / scale });
 			}
-			assert.ok(circles[7].x < circles[5].x && circles[6].x < circles[8].x,
-				'left LS/SELECT and right START/RS remain separate authored hand groups');
 			if (landscape) {
-				const expected = [{ id: 'select_knop', x: 128, y: 10 }, { id: 'start_knop', x: -140, y: 20 },
-					{ id: 'ls_knop', x: 100, y: -80 }, { id: 'rs_knop', x: -100, y: -70 }];
+				const expected = [{ id: 'lb_knop', x: 100, y: -80 }, { id: 'rb_knop', x: -100, y: -70 },
+					{ id: 'lt_knop', x: 30, y: -144 }, { id: 'rt_knop', x: -28, y: -144 }];
 				for (let index = 0; index < expected.length; index += 1) {
 					assert.equal(secondaryOffsets[index].id, expected[index].id);
 					assert.ok(Math.abs(secondaryOffsets[index].x - expected[index].x) < coordinateTolerance / scale);
 					assert.ok(Math.abs(secondaryOffsets[index].y - expected[index].y) < coordinateTolerance / scale,
-						'landscape secondary arcs follow their primary dials at every browser-chrome height');
+						'landscape shoulder arcs follow the primary hand geometry across browser heights');
 				}
+				assert.equal(resting.deckTop, null, 'landscape retains an overlay rather than reserving a portrait deck');
 			} else {
-				const faceLift = safe.right - safe.left < 380 ? 208 : 144;
-				assert.ok(Math.abs(pad.y - faceCenter.y - faceLift * scale) < coordinateTolerance,
-					'portrait uses an authored stagger, not incremental collision packing');
-				assert.ok(Math.abs(circles[5].x - pad.x) < coordinateTolerance);
-				assert.ok(Math.abs(circles[5].y - (pad.y - pad.radius - utilityDiameter / 2 - 12 * scale)) < coordinateTolerance,
-					'left portrait secondary row is immediately above the left primary dial');
-				assert.ok(Math.abs(circles[6].y - (faceCenter.y - 104 * scale - utilityDiameter / 2 - 12 * scale)) < coordinateTolerance,
-					'right portrait secondary row is immediately above the right primary dial');
-			}
-			const approvedPadCenters: Record<string, readonly number[]> = {
-				'phone14-portrait-safe': [114, 688], 'phone14-landscape-safe': [169, 247],
-				'browser-landscape-safe': [157, 189], 'browser-landscape-300-safe': [157, 169],
-				'browser-landscape-280-safe': [157, 149],
-			};
-			if (profile.name in approvedPadCenters) {
-				assert.ok(Math.abs(pad.x - approvedPadCenters[profile.name][0]) < 0.0001);
-				assert.ok(Math.abs(pad.y - approvedPadCenters[profile.name][1]) < 0.0001,
-					'approved phone pad placement is unchanged');
+				assert.ok(resting.deckTop !== null);
+				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
+				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
+				assert.ok(Math.abs(lb.y - lt.y) < coordinateTolerance && Math.abs(rb.y - rt.y) < coordinateTolerance,
+					'portrait presents two shoulders above each hand on the same upper row');
+				assert.ok(lb.y < pad.y - pad.radius && rb.y < faceCenter.y - 104 * scale,
+					'the shoulder row remains above rather than over the primary button targets');
 			}
 			const gaps: number[] = [];
-			const minimumGap = profile.smallPlayer ? 8 * scale : 8;
-			const paintClearance = 12 * (profile.smallPlayer ? scale : 1);
+			const paintClearance = 0;
 			for (let index = 0; index < circles.length; index += 1) {
 				const circle = circles[index];
 				assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} keeps uniform CSS-client scaling`);
@@ -280,7 +280,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					const next = circles[other];
 					const gap = Math.hypot(circle.x - next.x, circle.y - next.y) - circle.radius - next.radius;
 					gaps.push(gap);
-					assert.ok(gap >= minimumGap - 0.0001, `${circle.id}/${next.id} primary and button geometry retain their authored separation`);
+					assert.ok(gap >= -0.0001, `${circle.id}/${next.id} physical activating circles never overlap`);
 				}
 			}
 			for (const group of resting.groups) {
@@ -442,9 +442,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const initial = await measure();
 		const finger = { id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 };
 		await touch('touchStart', [finger]);
-		const expected = [{ id: 'select_knop', x: 128, y: 10 }, { id: 'start_knop', x: -140, y: 20 },
-			{ id: 'ls_knop', x: 100, y: -80 }, { id: 'rs_knop', x: -100, y: -70 }];
-		for (const [height, held] of [[341, 1], [340, 1], [320, 0], [300, 0], [280, 0], [390, 1]]) {
+		for (const height of [341, 340, 320, 300, 280, 390]) {
 			await page.setViewportSize({ width: 844, height });
 			await page.evaluate(height => {
 				document.getElementById('player-surface')!.style.height = `${height}px`;
@@ -452,27 +450,20 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}, height);
 			await settle();
 			const current = await measure();
-			const pad = current.circles[0];
-			const faceCenter = { x: (current.circles[1].x + current.circles[4].x) / 2,
-				y: (current.circles[1].y + current.circles[4].y) / 2 };
-			for (let index = 0; index < expected.length; index += 1) {
-				const circle = current.circles[index + 5];
-				const primary = index === 0 || index === 2 ? pad : faceCenter;
-				assert.equal(circle.id, expected[index].id);
-				assert.ok(Math.abs(circle.x - primary.x - expected[index].x) < 1 / 32);
-				assert.ok(Math.abs(circle.y - primary.y - expected[index].y) < 1 / 32,
-					`${circle.id} remains attached to its own hand at ${height}px browser height`);
-			}
+			const held = current.circles.slice(1).reduce((word: number, circle: any, index: number) =>
+				Math.hypot(finger.x - circle.x, finger.y - circle.y) <= circle.radius + 14 ? word | actions[index].buttons : word, 0);
 			const word = await poll();
 			assert.equal(word.buttons, held, `true document/player-frame geometry immediately applies at ${height}px height`);
 			assert.equal(word.physicalButtons, word.buttons);
-			assert.equal(word.sampledButtons, word.buttons);
+			assert.equal(word.sampledButtons, word.buttons & ~0x100);
 			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true,
 				'true layout changes contributions, not the retained contact identity');
 			assert.equal(current.circles[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
 			finger.x += 1;
 			await touch('touchMove', [finger]);
-			assert.equal((await poll()).sampledButtons, held, 'one-pixel native jitter does not reveal an edge deferred by layout');
+			const jittered = current.circles.slice(1).reduce((word: number, circle: any, index: number) =>
+				Math.hypot(finger.x - circle.x, finger.y - circle.y) <= circle.radius + 14 ? word | actions[index].buttons : word, 0);
+			assert.equal((await poll()).sampledButtons, jittered & ~0x100, 'one-pixel native jitter does not reveal an edge deferred by layout');
 			await page.screenshot({ path: `${evidenceDirectory}/player-resize-${height}-held.png` });
 		}
 		await touch('touchEnd', []);

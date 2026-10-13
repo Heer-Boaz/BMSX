@@ -1,5 +1,86 @@
 # Browser touch-controller ownership
 
+## Handheld layout and complete shoulder controls, 2026-10-13
+
+The user reports that the revised contact input works well on their iPhone,
+but reproduced a portrait presentation regression: the image was centered in
+the whole viewport instead of appearing above the lower controls. The video
+owner now consumes a view-authored `portraitDeckTop`; it no longer invents the
+portrait control reservation or centers the image behind it. Portrait remains
+safe-top-aligned and horizontally centered, with maximal 4:3 half-step fitting.
+Landscape retains its full dynamic image area and centered presentation.
+
+The concrete layout references inspected before editing are Delta's pinned
+[GBA skin](https://github.com/rileytestut/GBADeltaCore/blob/869c34aeca9dd2b3fbd329092bb2743b0ae80c98/GBADeltaCore/Controller%20Skin/info.json#L312-L462)
+and, for four equal faces, its [SNES skin](https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L509).
+They place left D-pad and right buttons on one hand row, shoulders above their
+hands and Start/Select below. [MAME4iOS's portrait frame split](https://github.com/yoshisuga/MAME4iOS/blob/9c0f4c918444f47701840702e55e64851bdc3128/iOS/EmulatorController.m#L4444-L4482)
+likewise keeps a top game region distinct from the lower skin. BMSX does not
+copy their licensed decoration, extended hit boxes or two-button limitations.
+
+The current portrait deck aligns the existing PNG D-pad and four equal face
+buttons horizontally. A real width budget uniformly scales the primary
+geometry; the old large vertical stagger is removed. Start/Select sit below at
+the center, with LS/RS as secondary stick-click targets. Shoulder targets have
+an authored nominal diameter of 64px, enlarged from the previous 52px utility
+size; compact, phone and tablet profiles remain proportionately scaled. In
+landscape, bumpers follow the inward thumb arcs and triggers have distinct
+upper targets. Sizes and clearances are local ergonomic decisions, not
+universal constants established by the references.
+
+All twelve action targets now exist: A/B/X/Y, LB/RB, LT/RT, Select/Start and
+LS/RS. The formerly visible LS/RS were **stick clicks**, not bumpers. The added
+four targets use the same independent, nonexclusive contact path, not aliases.
+Common `GamepadInput` already owns digital trigger-to-Q16 conversion: pressed
+LT/RT supply button bits 6/7 and axes 4/5 at `0x00010000`; release supplies zero.
+No new browser encoder, pressure interpretation or common/machine change is
+needed. [PPSSPP's shoulder buttons](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L1087-L1090)
+use the ordinary independent button path; [RetroArch's control names](https://github.com/libretro/RetroArch/blob/d2f24d32b976c782bca19ec4e6edfbd828a02101/input/input_driver.c#L221-L230)
+explicitly distinguish shoulders, triggers and stick clicks.
+
+Existing shortcut ownership stays unchanged: Select+Start opens the host menu,
+Select+LB requests the BIOS supervisor, Select+RB selects Studio where that
+frontend registers it, and Select+X opens the host keyboard. LT/RT retain their
+ordinary game and host-keyboard Home/End functions; they are not new Studio
+shortcuts. Native tests exercise the actual menu state, supervisor line, raw
+trigger axes and ICU, while Studio callback checks are explicitly routing
+proof rather than rendered Studio UI acceptance.
+
+Stable small-viewport control bounds, surface-local gesture suppression,
+contact identities, reference counts, old PNG bytes and common frame polling
+are unchanged. The portrait video boundary is a scalar property of the layout
+owner, not a per-input DOM query, a duplicated layout helper or a fallback.
+
+### Handheld-layout validation and publication
+
+The complete focused suite passes **209 tests**, including all 27 layout
+profiles, 60 native skin-only action pickups and 35 native shoulder/trigger
+and host-shortcut checks. Portrait safe-top and above-deck fitting are checked
+for phones, tablets, embedded players, safe insets and odd framebuffer widths;
+held A+Right survives real VisualViewport-only changes and native jitter in
+both orientations. The nine original PNGs remain byte-identical in every
+player/trace/Studio page variant, and all 16 raw direction projections remain
+unchanged. Browser/node/scripts/tests typechecks, release build and diff checks
+pass. No native movement path gained a DOM measurement or per-sample layout DTO.
+
+Local actual games pass in all four ordinary/trace packages plus a tablet,
+both orientations, with WebGPU, running audio, trigger axes and the handheld
+layout. A rendered host-menu screenshot confirms native Select+Start opens the
+real player menu. WPE WebKit repeats all twelve taps/glides and trigger axes in
+16 actual-game phone/tablet profiles, with **1,008 trusted native state checks**,
+WebGL2, running audio and no errors. WPE's injected footprint remains fixed
+2x2: it is not evidence for measured iPhone thumb geometry or ergonomics.
+
+The existing ordinary `/nemesis_s/`, `/2025/` and `/ios/` suffix pages are
+published with engine SHA-256
+`8b04c939fc5e14ea8f05863f371895c00d62e9e1bc71c24d6e0aecffa86bd1dd`.
+Public receipts, unchanged paired media, routes, library and isolation headers
+are verified. Public Chromium repeats the real-game phone/tablet checks in
+both orientations. The earlier user feedback establishes improved iPhone
+input; **this new layout** still needs actual-device ergonomic acceptance.
+Evidence: `.bmsx/hosting/handheld-layout-evidence/` and
+`.bmsx/hosting/handheld-gamepad-evidence/`.
+
 ## Production-reference audit and current contact contract, 2026-10-13
 
 The audit of `4d7e4d926` reproduced real defects despite the previous 149 green
@@ -41,7 +122,7 @@ The DOM-free numerical controller retains just two contact purposes:
 
 - **Pad:** immediate absolute directional input, retained outside the artwork
   until that pointer's up/cancel.
-- **Buttons:** live ellipse intersections with **all eight** face and auxiliary
+- **Buttons:** live ellipse intersections with **all twelve** face and auxiliary
   circles. A thumb can bridge adjacent switches or slide between utility and
   face buttons without lifting. Leaving them removes its bits, not its route.
 
@@ -101,9 +182,10 @@ The video owner measures this frame, subtracts the player's safe-area insets
 once and publishes matching artwork/input transforms. Dynamic VisualViewport
 changes do **not** re-anchor controls beneath a held thumb.
 
-The canvas independently fits the current dynamic VisualViewport. It keeps
-4:3 and the existing integer/half-integer scaling; it is not reduced to the
-small control viewport. Embedded players remain bounded by their own surface.
+The canvas independently fits the current dynamic VisualViewport, restricted
+to the view-authored region above the deck in portrait. It keeps 4:3 and the
+existing integer/half-integer scaling; it is not reduced to the small control
+viewport in landscape. Embedded players remain bounded by their own surface.
 A true document/orientation/player resize changes the control frame honestly:
 `setGeometry` immediately resamples retained coordinates and publishes only the
 final aggregate edge diff. There is no delayed per-contact revision catch-up,
@@ -130,7 +212,7 @@ UIKit skin evidence. Physical iPhone Safari/PWA behavior and ergonomic comfort
 remain an unverified acceptance gate; the historical device-specific A+B
 release report is not declared solved solely from desktop tests.
 
-### Completed validation and publication
+### Validation and publication of the preceding contact-owner correction
 
 The full focused suite passes **163 tests**; browser, node, scripts and tests
 TypeScript checks, release player build and `git diff --check` pass. The pinned

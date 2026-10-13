@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 
 // Real VisualViewport changes in desktop Chromium prove the browser-owner
 // boundary, not Safari toolbar animation or physical iPhone touch delivery.
-test('visual-only viewport changes fit the canvas without relocating held controls or deferring input edges', async t => {
+test('visual-only viewport changes retain held controls in landscape overlays and the separate portrait deck', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	let controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
@@ -60,8 +60,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				input.sampleInputControllerSnapshot(snapshot, 0);
 				return {
 					controller: read.bounds('controller-viewport'),
-					controls: ['d-pad-svg', 'a_knop', 'b_knop', 'x_knop', 'y_knop', 'select_knop', 'start_knop', 'ls_knop', 'rs_knop'].map(id => read.bounds(id)),
+					controls: ['d-pad-svg', 'a_knop', 'b_knop', 'x_knop', 'y_knop', 'select_knop', 'start_knop', 'ls_knop', 'rs_knop',
+						'lb_knop', 'rb_knop', 'lt_knop', 'rt_knop'].map(id => read.bounds(id)),
 					canvas: read.bounds('gamescreen'),
+					deckTop: view.portraitDeckTop,
 					visual: { width: visualViewport!.width, height: visualViewport!.height, scale: visualViewport!.scale },
 					layout: { width: innerWidth, height: innerHeight },
 					revision: model.geometryRevision, model: model.buttons,
@@ -73,52 +75,75 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	});
 	const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 	const measure = () => page.evaluate(() => (globalThis as any).viewportProbe.measure());
-	await settle();
-	const initial = await measure();
-	const a = initial.controls[1];
-	const pad = initial.controls[0];
-	const fingers = [
-		{ id: 1, x: a.left + a.width / 2, y: a.top + a.height / 2, radiusX: 14, radiusY: 14 },
-		{ id: 2, x: pad.left + pad.width / 2 + 70, y: pad.top + pad.height / 2, radiusX: 14, radiusY: 14 },
-	];
 	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [fingers[0]] });
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers });
-	await settle();
-	const held = await measure();
-	assert.deepEqual([held.model, held.common, held.sampled], [0x8001, 0x8001, 0x8001]);
-	await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.1 });
-	await settle();
-	const resized = await measure();
-	assert.deepEqual(resized.layout, initial.layout, 'the document viewport did not resize');
-	assert.notDeepEqual(resized.visual, initial.visual, 'the actual browser VisualViewport did resize');
-	assert.deepEqual(resized.controller, initial.controller, 'the authored small-viewport controller frame remains stable');
-	assert.deepEqual(resized.controls, initial.controls, 'presentation and interaction retain the same client-space transform');
-	assert.equal(resized.revision, held.revision, 'a visual-only change does not manufacture new controller geometry');
-	assert.equal(resized.native.length, held.native.length, 'no native pointer sample was emitted by the visual-only change');
-	assert.deepEqual([resized.model, resized.common, resized.sampled], [0x8001, 0x8001, 0x8001]);
-	assert.notDeepEqual(resized.canvas, initial.canvas, 'canvas presentation still fits the dynamic visible space');
-	assert.equal(resized.canvas.width / resized.canvas.height, 4 / 3);
-	assert.equal(resized.canvas.width / 320 * 2 % 1, 0, 'canvas fitting retains integer/half-integer scaling');
-	for (const finger of fingers) finger.x += 1;
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers });
-	await settle();
-	const jitter = await measure();
-	assert.deepEqual([jitter.model, jitter.common, jitter.sampled], [0x8001, 0x8001, 0x8001], 'one-pixel native jitter cannot reveal a postponed layout release or direction switch');
-	assert.deepEqual(jitter.controls, initial.controls);
-	assert.ok(jitter.native.slice(held.native.length).every((event: any) => event.type === 'pointermove' && event.trusted));
-	assert.equal(jitter.native.length - held.native.length, 2);
 	const evidence = '.bmsx/hosting/touch-professional-audit';
 	await mkdir(evidence, { recursive: true });
-	await page.screenshot({ path: `${evidence}/stable-visual-viewport-held-jitter.png` });
-	await writeFile(`${evidence}/stable-visual-viewport-held-jitter.json`, JSON.stringify({ initial, held, resized, jitter }, null, 2));
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	assert.deepEqual(await page.evaluate(() => {
+	for (const profile of [
+		{ name: 'landscape', viewport: { width: 852, height: 393 }, insets: [0, 0, 0, 0] },
+		{ name: 'portrait', viewport: { width: 393, height: 852 }, insets: [47, 0, 34, 0] },
+	]) {
+		await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 });
+		await page.setViewportSize(profile.viewport);
+		await page.evaluate(insets => {
+			document.getElementById('player-surface')!.style.padding = insets.map(value => `${value}px`).join(' ');
+			(globalThis as any).viewportProbe.video.refreshLayout();
+		}, profile.insets);
+		await settle();
+		const initial = await measure();
+		await page.screenshot({ path: `${evidence}/stable-${profile.name}-layout-unscaled.png` });
+		const a = initial.controls[1];
+		const pad = initial.controls[0];
+		const fingers = [
+			{ id: 1, x: a.left + a.width / 2, y: a.top + a.height / 2, radiusX: 14, radiusY: 14 },
+			{ id: 2, x: pad.left + pad.width / 2 + 70, y: pad.top + pad.height / 2, radiusX: 14, radiusY: 14 },
+		];
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [fingers[0]] });
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers });
+		await settle();
+		const held = await measure();
+		assert.deepEqual([held.model, held.common, held.sampled], [0x8001, 0x8001, 0x8001]);
+		await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.1 });
+		await settle();
+		const resized = await measure();
+		assert.deepEqual(resized.layout, initial.layout, 'the document viewport did not resize');
+		assert.notDeepEqual(resized.visual, initial.visual, 'the actual browser VisualViewport did resize');
+		assert.deepEqual(resized.controller, initial.controller, 'the authored small-viewport controller frame remains stable');
+		assert.deepEqual(resized.controls, initial.controls, 'presentation and interaction retain the same client-space transform');
+		assert.equal(resized.revision, held.revision, 'a visual-only change does not manufacture new controller geometry');
+		assert.equal(resized.native.length, held.native.length, 'no native pointer sample was emitted by the visual-only change');
+		assert.deepEqual([resized.model, resized.common, resized.sampled], [0x8001, 0x8001, 0x8001]);
+		if (profile.name === 'landscape') {
+			assert.equal(resized.deckTop, null, 'landscape does not reserve a portrait controller deck');
+			assert.notDeepEqual(resized.canvas, initial.canvas, 'landscape canvas presentation still fits the dynamic visible space');
+		} else {
+			assert.equal(resized.canvas.top, profile.insets[0], 'portrait screen remains at the safe top during a visual-only change');
+			assert.equal(resized.deckTop, initial.deckTop, 'portrait screen reservation belongs to the stable authored control frame');
+			assert.ok(resized.canvas.top + resized.canvas.height <= resized.deckTop, 'portrait fitting never crosses the control deck boundary');
+			assert.ok(resized.controls.every((control: { top: number }) => resized.canvas.top + resized.canvas.height <= control.top), 'portrait controls do not occlude the screen');
+		}
+		assert.equal(resized.canvas.width / resized.canvas.height, 4 / 3);
+		assert.equal(resized.canvas.width / 320 * 2 % 1, 0, 'canvas fitting retains integer/half-integer scaling');
+		for (const finger of fingers) finger.x += 1;
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers });
+		await settle();
+		const jitter = await measure();
+		assert.deepEqual([jitter.model, jitter.common, jitter.sampled], [0x8001, 0x8001, 0x8001], 'one-pixel native jitter cannot reveal a postponed layout release or direction switch');
+		assert.deepEqual(jitter.controls, initial.controls);
+		assert.ok(jitter.native.slice(held.native.length).every((event: any) => event.type === 'pointermove' && event.trusted));
+		assert.equal(jitter.native.length - held.native.length, 2);
+		await page.screenshot({ path: `${evidence}/stable-${profile.name}-visual-viewport-held-jitter.png` });
+		await writeFile(`${evidence}/stable-${profile.name}-visual-viewport-held-jitter.json`, JSON.stringify({ initial, held, resized, jitter }, null, 2));
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		assert.deepEqual(await page.evaluate(() => {
+			const probe = (globalThis as any).viewportProbe;
+			const state = probe.measure();
+			return [state.model, state.common, state.sampled];
+		}), [0, 0, 0]);
+	}
+	await page.evaluate(() => {
 		const probe = (globalThis as any).viewportProbe;
-		const state = probe.measure();
 		probe.input.dispose();
 		probe.video.dispose();
-		return [state.model, state.common, state.sampled];
-	}), [0, 0, 0]);
+	});
 	assert.deepEqual(errors, []);
 });

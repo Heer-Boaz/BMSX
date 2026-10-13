@@ -69,7 +69,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 } });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	const controls = html.slice(html.indexOf('<div id="d-pad-controls"'), html.indexOf('<div id="gameContainer">'));
+	const controls = html.slice(html.indexOf('<div id="controller-viewport"'), html.indexOf('<div id="gameContainer">'));
 	await page.setContent(`<!doctype html><style>${await readFile('gamebase.css', 'utf8')}</style>${controls}`);
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });
 	await page.evaluate(async () => {
@@ -127,7 +127,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	const measure = () => page.evaluate(() => (globalThis as any).artworkProbe.measure());
 	const resting = await measure();
 	assert.deepEqual(resting.active, ['svgimg-d-pad-neutral']);
-	assert.ok(Math.abs(resting.bounds[0].width - 180 * 393 / 390) < 0.0001, 'the original images retain the current authored uniform scale');
+	assert.ok(Math.abs(resting.bounds[0].width - 196.5) < 0.0001, 'the original images follow the authored landscape hand-row scale');
 	assert.deepEqual(resting.bounds, Array(9).fill(resting.bounds[0]), 'every original state shares the exact same artwork frame');
 	const projected = ['neutral', 'u', 'd', 'neutral', 'l', 'lu', 'ld', 'l', 'r', 'ru', 'rd', 'r', 'neutral', 'u', 'd', 'neutral'];
 	let previousImage = 'neutral';

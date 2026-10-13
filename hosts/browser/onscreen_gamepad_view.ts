@@ -2,7 +2,7 @@ import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/device
 import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
 import type { BrowserInputDiagnostics } from './input_trace_contract';
 
-const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick }
+const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick, LeftBumper, RightBumper, LeftTrigger, RightTrigger }
 
 const ACTIONS = [
 	{ id: 'a_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -13,6 +13,10 @@ const ACTIONS = [
 	{ id: 'start_knop', surface: ActionSurfaceIndex.Start, buttons: 1 << InputControllerGamepadButtonBit.Start },
 	{ id: 'ls_knop', surface: ActionSurfaceIndex.LeftStick, buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
 	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
+	{ id: 'lb_knop', surface: ActionSurfaceIndex.LeftBumper, buttons: 1 << InputControllerGamepadButtonBit.LeftBumper },
+	{ id: 'rb_knop', surface: ActionSurfaceIndex.RightBumper, buttons: 1 << InputControllerGamepadButtonBit.RightBumper },
+	{ id: 'lt_knop', surface: ActionSurfaceIndex.LeftTrigger, buttons: 1 << InputControllerGamepadButtonBit.LeftTrigger },
+	{ id: 'rt_knop', surface: ActionSurfaceIndex.RightTrigger, buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
 ] as const;
 
 const DIRECTION_BUTTONS = (1 << InputControllerGamepadButtonBit.Up) | (1 << InputControllerGamepadButtonBit.Right)
@@ -20,16 +24,13 @@ const DIRECTION_BUTTONS = (1 << InputControllerGamepadButtonBit.Up) | (1 << Inpu
 // Artwork rows for the signed direction axes: up, neutral, down.
 const PAD_IMAGES = ['lu', 'u', 'ru', 'l', 'neutral', 'r', 'ld', 'd', 'rd'] as const;
 
-const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls'] as const;
-const COMPACT_PROFILE = { margin: 20, bottom: 24 };
-const SMALL_PLAYER_PROFILE = { margin: 20, bottom: 20 };
-const LANDSCAPE_PROFILE = { margin: 32, bottom: 32 };
-const PORTRAIT_PROFILE = { margin: 24, bottom: 32 };
+const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls',
+	'lb-controls', 'rb-controls', 'lt-controls', 'rt-controls'] as const;
 const PAD_SIZE = 180;
 const CONTROL_GAP = 12;
-const UTILITY_SIZE = 52;
-const PORTRAIT_FACE_LIFT = 144;
-const NARROW_PORTRAIT_FACE_LIFT = 208;
+const MENU_SIZE = 52;
+const STICK_CLICK_SIZE = 44;
+const SHOULDER_SIZE = 64;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -66,6 +67,7 @@ export class BrowserOnscreenGamepadView {
 	private layoutTop = 0;
 	private layoutWidth = -1;
 	private layoutHeight = -1;
+	private portraitControlTop: number | null = null;
 
 	public constructor(
 		document: Document,
@@ -103,6 +105,9 @@ export class BrowserOnscreenGamepadView {
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 	}
 
+	/** Upper limit of portrait video, authored with the actual lower control deck. */
+	public get portraitDeckTop(): number | null { return this.portraitControlTop; }
+
 	/** Layout and acquisition share the same uniform CSS-client transforms. */
 	public layout(left: number, top: number, width: number, height: number): void {
 		if (left === this.layoutLeft && top === this.layoutTop && width === this.layoutWidth && height === this.layoutHeight) return;
@@ -111,60 +116,79 @@ export class BrowserOnscreenGamepadView {
 		this.layoutWidth = width;
 		this.layoutHeight = height;
 		const landscape = width >= height;
-		const smallPlayer = landscape ? width < 568 || height < 239 : height < 568;
-		const compact = width < 360 || landscape && width < 640;
-		const shortLandscape = landscape && height < 320;
-		const profile = smallPlayer ? SMALL_PLAYER_PROFILE : compact ? COMPACT_PROFILE : landscape ? LANDSCAPE_PROFILE : PORTRAIT_PROFILE;
-		const viewportScale = smallPlayer
-			? Math.min(1, width / 568, height / 239)
-			: Math.min(1.1, Math.max(1, Math.min(width, height) / 390));
-		const margin = smallPlayer ? profile.margin * viewportScale : shortLandscape ? 20 : profile.margin;
-		const padBottom = smallPlayer ? profile.bottom * viewportScale : shortLandscape ? 20 : profile.bottom;
-		const faceBottom = smallPlayer ? 16 * viewportScale : shortLandscape ? 16 : profile.bottom;
-		const padScale = PAD_SIZE / this.padArtworkWidth * viewportScale;
+		// Delta's four-button handheld deck keeps both primary controls on one
+		// hand row. Its geometry is a reference, not a source of copied artwork:
+		// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L509
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
+		const viewportScale = landscape
+			? Math.min(1.1, width / 568, height / 360)
+			: Math.min(1.1, (width - CONTROL_GAP * 3) / (PAD_SIZE + faceSurface.artworkWidth), height / 568);
+		const margin = landscape ? 16 * viewportScale : CONTROL_GAP;
+		const bottom = 16 * viewportScale;
+		const gap = CONTROL_GAP * viewportScale;
+		const padScale = PAD_SIZE / this.padArtworkWidth * viewportScale;
 		const faceScale = viewportScale;
+		const menuScale = landscape ? viewportScale : Math.max(0.85, viewportScale);
+		const menuSize = MENU_SIZE * menuScale;
+		const clickSize = STICK_CLICK_SIZE * menuScale;
+		const menuY = top + height - bottom - menuSize / 2;
+		const primaryRadius = Math.max(this.padArtworkHeight * padScale, faceSurface.artworkHeight * faceScale) / 2;
+		const primaryY = landscape
+			? top + height - bottom - primaryRadius
+			: menuY - menuSize / 2 - 16 * viewportScale - primaryRadius;
 		const padLeft = left + margin;
-		const padTop = top + height - padBottom - this.padArtworkHeight * padScale;
+		const padTop = primaryY - this.nominalPadY * padScale;
 		const padX = padLeft + this.nominalPadX * padScale;
-		const padY = padTop + this.nominalPadY * padScale;
+		const padY = primaryY;
 		const padRadius = this.nominalPadRadius * padScale;
 		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
 		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
-		const faceCenterY = landscape
-			? top + height - faceBottom - faceSurface.artworkHeight * faceScale / 2
-			: padY - (width < 380 ? NARROW_PORTRAIT_FACE_LIFT : PORTRAIT_FACE_LIFT) * viewportScale;
-		const faceTop = faceCenterY - faceSurface.artworkHeight * faceScale / 2;
+		const faceCenterY = primaryY;
+		const faceTop = primaryY - faceSurface.artworkHeight * faceScale / 2;
 		this.padSurface.style.left = `${padLeft}px`;
 		this.padSurface.style.top = `${padTop}px`;
 		this.padSurface.style.transform = `scale(${padScale})`;
 		this.placeActionSurface(ActionSurfaceIndex.Face, faceLeft, faceTop, faceScale);
-		// Lemuroid/PadKit's primary/secondary grouping: secondary controls follow
-		// their own hand, not the viewport top or a shared central packing area.
-		const utilitySize = UTILITY_SIZE * (smallPlayer ? viewportScale : 1);
-		const utilityRadius = utilitySize / 2;
-		const utilityScale = utilitySize / this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
+		const menuArtworkWidth = this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
+		const menuSurfaceScale = menuSize / menuArtworkWidth;
+		const clickSurfaceScale = clickSize / this.actionSurfaces[ActionSurfaceIndex.LeftStick].artworkWidth;
+		const centerX = left + width / 2;
+		this.placeActionSurface(ActionSurfaceIndex.Select,
+			centerX - 32 * menuScale - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
+		this.placeActionSurface(ActionSurfaceIndex.Start,
+			centerX + 32 * menuScale - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
+		const clickOffset = (32 + MENU_SIZE / 2 + CONTROL_GAP + STICK_CLICK_SIZE / 2) * menuScale;
+		this.placeActionSurface(ActionSurfaceIndex.LeftStick,
+			(landscape ? centerX - clickOffset : padX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
+		this.placeActionSurface(ActionSurfaceIndex.RightStick,
+			(landscape ? centerX + clickOffset : faceCenterX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
+		const shoulderSize = SHOULDER_SIZE * (landscape ? viewportScale : Math.max(0.875, viewportScale));
+		const shoulderRadius = shoulderSize / 2;
+		const shoulderScale = shoulderSize / this.actionSurfaces[ActionSurfaceIndex.LeftBumper].artworkWidth;
 		if (landscape) {
-			// Inward arcs also fit the short visual viewport left by Safari chrome.
-			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
-				padX + 100 * viewportScale - utilityRadius, padY - 80 * viewportScale - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Select,
-				padX + 128 * viewportScale - utilityRadius, padY + 10 * viewportScale - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightStick,
-				faceCenterX - 100 * viewportScale - utilityRadius, faceCenterY - 70 * viewportScale - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Start,
-				faceCenterX - 140 * viewportScale - utilityRadius, faceCenterY + 20 * viewportScale - utilityRadius, utilityScale);
+			// Bumpers stay on the inward thumb arcs; triggers have their own upper
+			// targets. Neither pair aliases the distinct LS/RS stick-click bits.
+			this.placeActionSurface(ActionSurfaceIndex.LeftBumper,
+				padX + 100 * viewportScale - shoulderRadius, padY - 80 * viewportScale - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightBumper,
+				faceCenterX - 100 * viewportScale - shoulderRadius, faceCenterY - 70 * viewportScale - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.LeftTrigger,
+				padX + 30 * viewportScale - shoulderRadius, padY - 144 * viewportScale - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightTrigger,
+				faceCenterX - 28 * viewportScale - shoulderRadius, faceCenterY - 144 * viewportScale - shoulderRadius, shoulderScale);
+			this.portraitControlTop = null;
 		} else {
-			const leftUtilityY = padY - padRadius - utilityRadius - CONTROL_GAP * viewportScale;
-			const rightUtilityY = faceTop - utilityRadius - CONTROL_GAP * viewportScale;
-			this.placeActionSurface(ActionSurfaceIndex.LeftStick,
-				padX - 64 * viewportScale - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Select,
-				padX - utilityRadius, leftUtilityY - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightStick,
-				faceCenterX + 78 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
-			this.placeActionSurface(ActionSurfaceIndex.Start,
-				faceCenterX + 14 * viewportScale - utilityRadius, rightUtilityY - utilityRadius, utilityScale);
+			const shoulderY = primaryY - primaryRadius - gap - shoulderRadius;
+			const shoulderOffset = (shoulderSize + gap) / 2;
+			this.placeActionSurface(ActionSurfaceIndex.LeftTrigger,
+				padX - shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.LeftBumper,
+				padX + shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightBumper,
+				faceCenterX - shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
+			this.placeActionSurface(ActionSurfaceIndex.RightTrigger,
+				faceCenterX + shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
+			this.portraitControlTop = shoulderY - shoulderRadius - CONTROL_GAP;
 		}
 		const geometry = this.geometry;
 		geometry.padX = padX;

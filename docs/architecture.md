@@ -4926,8 +4926,8 @@ Reported dimensions are consumed directly; the Pointer Events unavailable
 contacts. Pressure is not a size estimate, and Touch Events are not a second
 producer. Contact outlines are axis-aligned ellipse estimates, not filled
 bounding rectangles. The numerical controller separates retained directional
-capture from live button contacts. All eight face and auxiliary circles can
-contribute nonexclusively to a button contact; a thumb may bridge adjacent
+capture from live button contacts. All twelve face, shoulder, trigger and
+auxiliary circles can contribute nonexclusively to a button contact; a thumb may bridge adjacent
 switches or slide between them without lifting. Actual activating surfaces
 precede the neutral face acquisition envelope. Direct visible button-center
 hits precede directional pickup; area-only conflicts compare actual control
@@ -4950,7 +4950,14 @@ canvas input. The explicit controller viewport is bounded by its player and
 CSS small viewport dimensions. The video owner measures it separately from
 the dynamic VisualViewport used for canvas fitting, preserving stable control
 transforms during visual-only changes while retaining the image's 4:3 and
-integer/half-integer scale. Actual document/orientation/player layout changes
+integer/half-integer scale. Portrait aligns the game at the safe top and fits
+above the control view's authored `portraitDeckTop`; landscape retains full
+dynamic centering. The handheld deck aligns D-pad and equal face buttons on
+one hand row, with larger distinct LB/RB and LT/RT targets and a lower menu
+row. LS/RS remain separate stick-click buttons. Trigger edges use the existing
+common gamepad owner to publish both raw button bits and Q16 axes; no browser
+encoding or shortcut remapping is introduced. Actual document/orientation/player
+layout changes
 immediately resample retained coordinates and publish only the final aggregate
 edge diff. There is no delayed geometry revision catch-up or stale input latch.
 Opt-in browser tracing records applied geometry revision/bounds and actual
