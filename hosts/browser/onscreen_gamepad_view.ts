@@ -36,7 +36,9 @@ const STICK_CLICK_SIZE = 44;
 const SHOULDER_THICKNESS = 56;
 const SHOULDER_INWARD_SWEEP = Math.PI / 3;
 const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
-const LANDSCAPE_MARGIN = 16;
+const CONTROL_MARGIN = 4;
+const MIN_GAMEPLAY_SHOULDER_THICKNESS = 44;
+const SHOULDER_PAINT_RADIUS = 1.5;
 const PAINT_CLEARANCE = 4;
 const KEYBOARD_SHOULDER_START = 10 * Math.PI / 180;
 const KEYBOARD_SHOULDER_SWEEP = 40 * Math.PI / 180;
@@ -72,6 +74,13 @@ interface ControlLayoutMetrics {
 	rightOuter: number;
 	leftInner: number;
 	rightInner: number;
+	leftSplit: number;
+	rightSplit: number;
+	keyboardHalfWidth: number;
+	leftKeyboardRing: number;
+	rightKeyboardRing: number;
+	leftKeyboardGap: number;
+	rightKeyboardGap: number;
 	keyboardSplit: number;
 	utilityDrop: number;
 	leftGap: number;
@@ -106,7 +115,8 @@ export class BrowserOnscreenGamepadView {
 		width: -1, height: -1, landscape: false, scale: 1, margin: 0, bottom: 0, gap: 0,
 		menuScale: 1, menuSize: 0, clickSize: 0, padRadius: 0, faceRadius: 0, primaryRadius: 0,
 		halfWidth: 0, leftRing: 0, rightRing: 0, leftOuter: 0, rightOuter: 0,
-		leftInner: 0, rightInner: 0,
+		leftInner: 0, rightInner: 0, leftSplit: 0, rightSplit: 0,
+		keyboardHalfWidth: 0, leftKeyboardRing: 0, rightKeyboardRing: 0, leftKeyboardGap: 0, rightKeyboardGap: 0,
 		keyboardSplit: 0, utilityDrop: 0,
 		leftGap: 0, rightGap: 0, topReach: 0, portraitDeckHeight: 0,
 	};
@@ -276,34 +286,35 @@ export class BrowserOnscreenGamepadView {
 			leftClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
 			rightClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
-		// Each hand has one shoulder ring, split into two adjacent finite bands.
+		// Gameplay puts the easier bumper on the outer/top part of one ring
+		// and the trigger inward. No full outer flank displaces the primary bank.
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
-		const halfWidth = metrics.halfWidth;
-		const leftShoulderRadius = metrics.leftRing;
-		const rightShoulderRadius = metrics.rightRing;
 		const compactKeyboard = landscape && this.keyboardVisible;
+		const halfWidth = compactKeyboard ? metrics.keyboardHalfWidth : metrics.halfWidth;
+		const leftShoulderRadius = compactKeyboard ? metrics.leftKeyboardRing : metrics.leftRing;
+		const rightShoulderRadius = compactKeyboard ? metrics.rightKeyboardRing : metrics.rightRing;
 		if (compactKeyboard) {
 			// Foreground keyboard context rotates the finite shoulder sectors to
 			// the inward hand sides; no input lease is canceled or reassigned.
 			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-				leftShoulderRadius, halfWidth, KEYBOARD_SHOULDER_START, metrics.keyboardSplit - metrics.leftGap);
+				leftShoulderRadius, halfWidth, KEYBOARD_SHOULDER_START, metrics.keyboardSplit - metrics.leftKeyboardGap);
 			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-				leftShoulderRadius, halfWidth, metrics.keyboardSplit + metrics.leftGap, KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP);
+				leftShoulderRadius, halfWidth, metrics.keyboardSplit + metrics.leftKeyboardGap, KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP);
 			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, Math.PI - metrics.keyboardSplit + metrics.rightGap, Math.PI - KEYBOARD_SHOULDER_START);
+				rightShoulderRadius, halfWidth, Math.PI - metrics.keyboardSplit + metrics.rightKeyboardGap, Math.PI - KEYBOARD_SHOULDER_START);
 			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, Math.PI - KEYBOARD_SHOULDER_START - KEYBOARD_SHOULDER_SWEEP, Math.PI - metrics.keyboardSplit - metrics.rightGap);
+				rightShoulderRadius, halfWidth, Math.PI - KEYBOARD_SHOULDER_START - KEYBOARD_SHOULDER_SWEEP, Math.PI - metrics.keyboardSplit - metrics.rightKeyboardGap);
 		} else {
 			const upward = -Math.PI / 2;
 			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-				leftShoulderRadius, halfWidth, upward + metrics.leftGap, upward + metrics.leftInner);
+				leftShoulderRadius, halfWidth, upward - metrics.leftOuter, upward + metrics.leftSplit - metrics.leftGap);
 			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightGap);
+				rightShoulderRadius, halfWidth, upward - metrics.rightSplit + metrics.rightGap, upward + metrics.rightOuter);
 			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-				leftShoulderRadius, halfWidth, upward - metrics.leftOuter, upward - metrics.leftGap);
+				leftShoulderRadius, halfWidth, upward + metrics.leftSplit + metrics.leftGap, upward + metrics.leftInner);
 			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, upward + metrics.rightGap, upward + metrics.rightOuter);
+				rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightSplit - metrics.rightGap);
 		}
 		// Shoulder paths already use CSS-client units (their SVG scale is 1).
 		// Scale their labels with the controller just like the other artwork.
@@ -357,11 +368,12 @@ export class BrowserOnscreenGamepadView {
 		const nominalTopReach = Math.sqrt(nominalRightRing * nominalRightRing
 			- (nominalHalfWidth + CONTROL_GAP / 2) * (nominalHalfWidth + CONTROL_GAP / 2)) + nominalHalfWidth;
 		const nominalPairSpacing = STICK_CLICK_SIZE / 2 + MENU_SIZE / 2 + CONTROL_GAP;
-		// Primary edge anchors and their complete inward keyboard-context side
-		// bands determine the width budget, not an invented utility-row inset.
-		const landscapeWidth = LANDSCAPE_MARGIN * 2 + nominalPadRadius + nominalFaceRadius
+		// Retain the established authored thumb-size calibration while changing
+		// shoulder roles and edge placement; minimum shoulder targets never
+		// silently shrink the primary banks to fit an ornamental outer ring.
+		const landscapeWidth = 32 + nominalPadRadius + nominalFaceRadius
 			+ nominalLeftRing + nominalRightRing + nominalHalfWidth * 2 + CONTROL_GAP;
-		const landscapeHeight = LANDSCAPE_MARGIN * 2 + nominalTopReach + nominalPrimaryRadius;
+		const landscapeHeight = 32 + nominalTopReach + nominalPrimaryRadius;
 		// A circular-tube top bound gives a finite portrait deck height even when
 		// menu targets retain their minimum scale below the primary width scale.
 		const portraitPrimaryHeight = nominalRightRing + nominalHalfWidth + nominalPrimaryRadius + 32;
@@ -375,7 +387,7 @@ export class BrowserOnscreenGamepadView {
 			? Math.min(1.1, width / landscapeWidth, height / landscapeHeight)
 			: Math.min(1.1, (width - CONTROL_GAP * 3) / (PAD_SIZE + face.artworkWidth), portraitHeightScale);
 		const scale = metrics.scale;
-		metrics.margin = metrics.landscape ? LANDSCAPE_MARGIN * scale : CONTROL_GAP;
+		metrics.margin = CONTROL_MARGIN;
 		metrics.bottom = 16 * scale;
 		metrics.gap = CONTROL_GAP * scale;
 		metrics.menuScale = metrics.landscape ? scale : Math.max(0.85, scale);
@@ -384,9 +396,17 @@ export class BrowserOnscreenGamepadView {
 		metrics.padRadius = nominalPadRadius * scale;
 		metrics.faceRadius = nominalFaceRadius * scale;
 		metrics.primaryRadius = nominalPrimaryRadius * scale;
-		metrics.halfWidth = nominalHalfWidth * scale;
+		metrics.halfWidth = Math.max(MIN_GAMEPLAY_SHOULDER_THICKNESS / 2, nominalHalfWidth * scale);
+		// The compact foreground keyboard is a separate host-UI hand pose. Its
+		// established tiny-frame thickness keeps all twelve bindings available
+		// without reducing the unchanged primary banks. Gameplay keeps 44px.
+		metrics.keyboardHalfWidth = nominalHalfWidth * scale;
 		metrics.leftRing = metrics.padRadius + metrics.gap + metrics.halfWidth;
 		metrics.rightRing = metrics.faceRadius + metrics.gap + metrics.halfWidth;
+		metrics.leftKeyboardRing = metrics.padRadius + metrics.gap + metrics.keyboardHalfWidth;
+		metrics.rightKeyboardRing = metrics.faceRadius + metrics.gap + metrics.keyboardHalfWidth;
+		metrics.leftKeyboardGap = Math.asin((metrics.keyboardHalfWidth + metrics.gap / 2) / metrics.leftKeyboardRing);
+		metrics.rightKeyboardGap = Math.asin((metrics.keyboardHalfWidth + metrics.gap / 2) / metrics.rightKeyboardRing);
 		const halfWidth = metrics.halfWidth;
 		const halfLane = (width - metrics.margin * 2 - metrics.padRadius - metrics.faceRadius - metrics.gap) / 2;
 		const inwardSine = Math.sin(SHOULDER_INWARD_SWEEP);
@@ -394,16 +414,16 @@ export class BrowserOnscreenGamepadView {
 		metrics.rightInner = Math.asin((Math.min(halfLane, metrics.rightRing * inwardSine + halfWidth) - halfWidth) / metrics.rightRing);
 		metrics.leftGap = Math.asin((halfWidth + metrics.gap / 2) / metrics.leftRing);
 		metrics.rightGap = Math.asin((halfWidth + metrics.gap / 2) / metrics.rightRing);
-		// Yield the outward trigger endpoint where portrait inward room is
-		// constrained. Both bumpers remain larger AND lower on their own ring;
-		// using the full outward edge angle would make those goals incompatible.
-		metrics.leftOuter = Math.min(Math.asin((metrics.padRadius - halfWidth) / metrics.leftRing),
-			metrics.leftInner - BUMPER_SWEEP_ADVANTAGE * 2);
-		metrics.rightOuter = Math.min(Math.asin((metrics.faceRadius - halfWidth) / metrics.rightRing),
-			metrics.rightInner - BUMPER_SWEEP_ADVANTAGE * 2);
+		// The finite outer caps consume only the available primary edge gutter,
+		// including the actual 3px SVG bezel. Shift the seam inward so the
+		// outer bumper has a broader usable arc without moving either hand bank.
+		metrics.leftOuter = Math.asin((metrics.padRadius + metrics.margin - SHOULDER_PAINT_RADIUS - halfWidth) / metrics.leftRing);
+		metrics.rightOuter = Math.asin((metrics.faceRadius + metrics.margin - SHOULDER_PAINT_RADIUS - halfWidth) / metrics.rightRing);
+		metrics.leftSplit = (metrics.leftInner - metrics.leftOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
+		metrics.rightSplit = (metrics.rightInner - metrics.rightOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
 		metrics.keyboardSplit = KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP / 2 - BUMPER_SWEEP_ADVANTAGE;
-		metrics.topReach = Math.max(metrics.leftRing * Math.cos(metrics.leftGap),
-			metrics.rightRing * Math.cos(metrics.rightGap)) + halfWidth;
+		metrics.topReach = Math.max(metrics.leftRing * Math.cos(Math.max(0, metrics.leftGap - Math.abs(metrics.leftSplit))),
+			metrics.rightRing * Math.cos(Math.max(0, metrics.rightGap - Math.abs(metrics.rightSplit)))) + halfWidth;
 		const pairHalf = nominalPairSpacing * metrics.menuScale / 2;
 		const menuRadius = metrics.menuSize / 2;
 		const a = this.nominalActions[0];

@@ -376,13 +376,14 @@ i32 HostOnScreenKeyboard::selectAt(i32 x, i32 y) {
 
 void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 	BFont* font = presenter.default_font;
-	const i32 viewportWidth = static_cast<i32>(presenter.viewportSize.x);
-	const i32 viewportHeight = static_cast<i32>(presenter.viewportSize.y);
-	if (m_layout_width != viewportWidth
-		|| m_layout_height != viewportHeight
+	const auto& bounds = presenter.visibleViewportBounds;
+	const f32 viewportWidth = bounds.right - bounds.left;
+	if (m_layout_left != bounds.left || m_layout_top != bounds.top
+		|| m_layout_width != viewportWidth
 		|| m_layout_font != font) {
+		m_layout_left = bounds.left;
+		m_layout_top = bounds.top;
 		m_layout_width = viewportWidth;
-		m_layout_height = viewportHeight;
 		m_layout_font = font;
 		layoutKeys(presenter);
 	}
@@ -474,10 +475,13 @@ void HostOnScreenKeyboard::setShift(LibretroInput& input, bool down) {
 
 void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	BFont* font = presenter.default_font;
+	const auto& bounds = presenter.visibleViewportBounds;
+	const f32 viewportWidth = bounds.right - bounds.left;
 	const i32 lineHeight = font->lineHeight() > 10 ? 10 : font->lineHeight();
 	const i32 keyHeight = lineHeight + 4;
 	const i32 maxUnits = kRows[0].units;
-	const i32 keyboardWidth = maxUnits * (kUnitWidth + kKeyGap) - kKeyGap;
+	const i32 unitWidth = std::min(kUnitWidth, static_cast<i32>((viewportWidth - kPanelPadding * 2 + kKeyGap) / maxUnits) - kKeyGap);
+	const i32 keyboardWidth = maxUnits * (unitWidth + kKeyGap) - kKeyGap;
 	const i32 keysHeight = static_cast<i32>(kRows.size()) * keyHeight
 		+ (static_cast<i32>(kRows.size()) - 1) * kRowGap;
 	const i32 helpHeight = static_cast<i32>(kHelpLines.size()) * lineHeight
@@ -485,10 +489,9 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	const i32 panelWidth = keyboardWidth + kPanelPadding * 2;
 	const i32 panelHeight = kPanelPadding * 2 + lineHeight + kTitleGap
 		+ keysHeight + kHelpGap + helpHeight;
-	const i32 viewportWidth = static_cast<i32>(presenter.viewportSize.x);
-	const i32 viewportHeight = static_cast<i32>(presenter.viewportSize.y);
-	const i32 left = (viewportWidth - panelWidth) / 2;
-	const i32 top = (viewportHeight - panelHeight) / 2;
+	const f32 left = bounds.left + static_cast<i32>((viewportWidth - panelWidth) / 2);
+	// Keep the interactive key grid above the surrounding gamepad hand row.
+	const f32 top = bounds.top + kPanelPadding;
 	m_panel_rect.area = RectBounds{
 		static_cast<f32>(left),
 		static_cast<f32>(top),
@@ -497,17 +500,17 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 		920.0f,
 	};
 	m_title_glyphs.font = font;
-	m_title_glyphs.x = static_cast<f32>(viewportWidth - font->measure(m_title_glyphs.items[0])) * 0.5f;
+	m_title_glyphs.x = bounds.left + static_cast<i32>((viewportWidth - font->measure(m_title_glyphs.items[0])) / 2);
 	m_title_glyphs.y = static_cast<f32>(top + kPanelPadding);
-	const i32 keyTop = top + kPanelPadding + lineHeight + kTitleGap;
+	const f32 keyTop = top + kPanelPadding + lineHeight + kTitleGap;
 	for (size_t rowIndex = 0u; rowIndex < kRows.size(); rowIndex += 1u) {
 		const KeyboardRow& row = kRows[rowIndex];
-		const i32 rowWidth = row.units * (kUnitWidth + kKeyGap) - kKeyGap;
-		i32 keyLeft = (viewportWidth - rowWidth) / 2;
-		const i32 keyY = keyTop + static_cast<i32>(rowIndex) * (keyHeight + kRowGap);
+		const i32 rowWidth = row.units * (unitWidth + kKeyGap) - kKeyGap;
+		f32 keyLeft = bounds.left + static_cast<i32>((viewportWidth - rowWidth) / 2);
+		const f32 keyY = keyTop + static_cast<i32>(rowIndex) * (keyHeight + kRowGap);
 		for (i32 index = row.start; index < row.start + row.count; index += 1) {
 			const size_t offset = static_cast<size_t>(index);
-			const i32 width = kKeys[offset].span * (kUnitWidth + kKeyGap) - kKeyGap;
+			const i32 width = kKeys[offset].span * (unitWidth + kKeyGap) - kKeyGap;
 			m_key_rects[offset].area = RectBounds{
 				static_cast<f32>(keyLeft),
 				static_cast<f32>(keyY),
@@ -523,11 +526,11 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 			keyLeft += width + kKeyGap;
 		}
 	}
-	const i32 helpTop = keyTop + keysHeight + kHelpGap;
+	const f32 helpTop = keyTop + keysHeight + kHelpGap;
 	for (size_t index = 0u; index < kHelpLines.size(); index += 1u) {
 		GlyphRenderSubmission& glyphs = m_help_glyphs[index];
 		glyphs.font = font;
-		glyphs.x = static_cast<f32>(viewportWidth - font->measure(glyphs.items[0])) * 0.5f;
+		glyphs.x = bounds.left + static_cast<i32>((viewportWidth - font->measure(glyphs.items[0])) / 2);
 		glyphs.y = static_cast<f32>(
 			helpTop + static_cast<i32>(index) * (lineHeight + kHelpLineGap));
 	}

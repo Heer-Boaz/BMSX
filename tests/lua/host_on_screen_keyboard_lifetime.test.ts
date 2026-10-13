@@ -80,6 +80,7 @@ test('the actual host-menu producer forwards simultaneous controller commands an
 	const queue = new HostOverlayQueue();
 	const presenter = {
 		viewportSize: { x: 256, y: 212 },
+		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 		hostOverlayQueue: queue,
 		mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },

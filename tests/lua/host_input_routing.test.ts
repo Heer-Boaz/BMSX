@@ -352,6 +352,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 		show_resource_usage_gizmo: false,
 		deviceQuantizeMode: 0,
 		viewportSize: { x: 256, y: 212 },
+		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 		default_font: {
 			lineHeight: 8,
 			measure: (value: string) => value.length * 6,
@@ -439,6 +440,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	const presenter = {
 		show_resource_usage_gizmo: false,
 		viewportSize: { x: 256, y: 212 },
+		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 		default_font: {
 			lineHeight: 8,
 			measure: (value: string) => value.length * 6,

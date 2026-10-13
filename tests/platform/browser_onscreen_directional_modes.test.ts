@@ -54,7 +54,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				const pad = new api.BrowserOnscreenGamepad(clock);
 				const view = new api.BrowserOnscreenGamepadView(document, window, pad);
 				const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-				const video = new api.BrowserVideoOutput(canvas, view);
+				const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 				video.refreshLayout();
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
 				const native: Array<{ type: string; id: number; trusted: boolean; pointerType: string; x: number; y: number }> = [];

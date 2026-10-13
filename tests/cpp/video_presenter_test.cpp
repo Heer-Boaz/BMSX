@@ -12,20 +12,27 @@ static void require(bool condition, const char* message) {
 
 class TestVideoOutput final : public VideoOutput {
 public:
+	using VideoOutput::VideoOutput;
 	i32 width = 256, height = 192;
 	u32 changes = 0;
-	void setDisplaySize(i32 w, i32 h) override { width = w; height = h; ++changes; }
+	void setDisplaySize(i32 w, i32 h) override { width = w; height = h; ++changes; visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
 };
 
 int main() {
-	TestVideoOutput video;
+	TestVideoOutput video(256, 192);
 	auto backend = std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& software = *backend;
 	backend->resizePresentationTarget(256, 192);
 	VideoPresenter presenter(video, std::move(backend), 256, 192);
+	require(&presenter.visibleViewportBounds == &video.visibleViewportBounds, "visible bounds are retained by the actual video output");
+	require(presenter.visibleViewportBounds.left == 0 && presenter.visibleViewportBounds.top == 0
+		&& presenter.visibleViewportBounds.right == 256 && presenter.visibleViewportBounds.bottom == 192,
+		"initial visible bounds represent the actual initial target before any resize");
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
 	const auto nativeConfiguration = presenter.deviceQuantizeConfigurationRevision();
 	presenter.setFixedRenderTargetSize(384, 288);
+	require(presenter.visibleViewportBounds.right == 384 && presenter.visibleViewportBounds.bottom == 288,
+		"native full-output bounds follow the actual target producer resize");
 	require(presenter.offscreenCanvasSize.x == 256 && presenter.offscreenCanvasSize.y == 192, "host admission retains native dimensions");
 	require(presenter.deviceQuantizeConfigurationRevision() == nativeConfiguration, "host admission retains native graph");
 	const auto* pixels = software.framebuffer();

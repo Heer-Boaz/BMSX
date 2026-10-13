@@ -35,7 +35,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const model = new api.BrowserOnscreenGamepad(clock);
 		const view = new api.BrowserOnscreenGamepadView(document, window, model);
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-		const video = new api.BrowserVideoOutput(canvas, view);
+		const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 		video.refreshLayout();
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, model, 'F2');
 		const snapshot = api.createInputControllerSnapshot();

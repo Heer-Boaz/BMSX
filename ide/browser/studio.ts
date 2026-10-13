@@ -63,7 +63,7 @@ async function startBrowserStudio(): Promise<void> {
 		const media = artifact === null
 			? await loadBrowserMedia(document.body.dataset.systemRom, document.body.dataset.defaultRom)
 			: await loadPublishedMedia(httpSession(configuration.server!.baseUrl), artifact);
-		const options = await prepareBrowserStartup(BMSX_BROWSER_DEBUG, media);
+		const options = await prepareBrowserStartup(BMSX_BROWSER_DEBUG, media, 'fit');
 		const runtime = initializeMachineRuntime(
 			options.systemRom,
 			options.cartridgeSlots,

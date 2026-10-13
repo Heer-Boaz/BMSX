@@ -86,7 +86,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		document.getElementById('bmsx-input-trace')!.style.display = 'none';
 		const view = new api.BrowserOnscreenGamepadView(document, window, pad);
 		const canvas = document.getElementById('gamescreen');
-		const video = new api.BrowserVideoOutput(canvas, view);
+		const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 		video.refreshLayout();
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);

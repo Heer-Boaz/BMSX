@@ -27,6 +27,7 @@ async function startBrowserPlayer(): Promise<void> {
 		const options = await prepareBrowserStartup(
 			BMSX_BROWSER_DEBUG,
 			await loadBrowserMedia(document.body.dataset.systemRom, document.body.dataset.defaultRom),
+			'overscan',
 		);
 		const runtime = initializeMachineRuntime(
 			options.systemRom,
@@ -83,7 +84,6 @@ async function startBrowserPlayer(): Promise<void> {
 				setIndex: index => options.videoOutput.setScreenFit(index === 0 ? 'fit' : 'overscan'),
 			}],
 		);
-		hostOverlayMenu.setOverlayVisibilityListener(options.videoOutput.setHostOverlayVisible);
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
 		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		runtime.frameScheduler.clearQueuedTime();

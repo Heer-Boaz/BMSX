@@ -51,6 +51,7 @@ public:
 	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
 	Vec2 viewportSize;       // Host presentation size, independent of machine scanout.
+	const RectBounds& visibleViewportBounds;
 	Vec2 canvasSize;         // The backing buffer size
 	Vec2 offscreenCanvasSize;// Native PCRTC source size, independent of the host surface.
 

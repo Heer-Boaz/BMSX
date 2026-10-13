@@ -87,7 +87,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	// A reset, non-executing machine supplies real GX output. No ROM packer or cart fixture.
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes), input, PSX_MACHINE_SPEC);
 	machine.resetDevices();
-	const display = new BrowserVideoOutput(canvas, null);
+	const display = new BrowserVideoOutput(canvas, null, 'fit');
 	const presenter = new VideoPresenter(display, backend, WIDTH, HEIGHT);
 	presenter.crt_postprocessing_enabled = false;
 	presenter.default_font = new Font({ variant: 'tiny' });

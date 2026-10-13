@@ -1,3 +1,5 @@
+import type { RectBounds } from '../common/rect';
+
 export type VideoOutputBounds = {
 	width: number;
 	height: number;
@@ -35,6 +37,8 @@ export function mapDisplayPointToViewport(
 }
 
 export interface VideoOutput {
+	/** Retained half-open visible bounds in the full presentation target's logical pixels. */
+	readonly visibleViewportBounds: Readonly<RectBounds>;
 	setDisplaySize(width: number, height: number): void;
 	measureDisplay(): VideoOutputBounds;
 }

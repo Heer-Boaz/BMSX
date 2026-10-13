@@ -34,7 +34,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const backend = await createWebGPUBackend(canvas, adapter, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const errors: string[] = [];
 	backend.device.addEventListener('uncapturederror', event => errors.push(event.error.message));
-	const presenter = initializeMachineVideoPresenter(runtime, new BrowserVideoOutput(canvas, null), backend);
+	const presenter = initializeMachineVideoPresenter(runtime, new BrowserVideoOutput(canvas, null, 'fit'), backend);
 	presenter.crt_postprocessing_enabled = false;
 	let puller: AudioOutputPuller | null = null;
 	let audioFrames = 0;

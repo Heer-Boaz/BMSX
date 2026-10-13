@@ -4981,7 +4981,8 @@ invalidate DPR-dependent presentation without frame polling or resizing controls
 The handheld deck anchors D-pad and equal face buttons at the safe side edges,
 targets the landscape middle hand row and fits asymmetric same-ring shoulders
 inside the available reach. Shoulder envelopes never push the primary groups
-inward. Bumpers use the larger, closer segment; triggers use upper segments.
+inward. Bumpers use the larger outward/topward segments; triggers use inward segments,
+with the same spatial identities in portrait and landscape.
 LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
 Transparent control interiors retain the scene; a dark stroke under the light
 label glyphs supplies contrast on bright scenes without an opaque button fill.
@@ -4992,16 +4993,23 @@ owner composes a stable width-derived 4:3 video slot, including the permitted
 overscan extent, a 12px separation and that deck. This publishes geometry once,
 without a provisional bottom layout. Scanout/DPR/picture-mode changes do not
 move controls. Portrait Fit starts at the safe top; landscape is centered.
-The browser player offers FIT (default) and opt-in OVERSCAN 5% in the existing
-host menu. Overscan is bounded by 5% of the complete image per edge, in both
+The browser player offers FIT and OVERSCAN 5% in the existing
+host menu. The browser player explicitly starts Overscan; Studio explicitly
+starts Fit. Overscan is bounded by 5% of the complete image per edge, in both
 axes, and clips at the actual safe video frame rather than spilling into the
 portrait deck. Portrait uses its available height before clipping game text.
 The full canvas transform remains authoritative for coordinates; native CSS
 clip hit-testing excludes hidden pixels from acquiring canvas contacts.
-Actual host overlay pages explicitly select uncropped Fit, restoring the user's
-picture policy on exit. Studio remains Fit-only. This is not a guarantee that
-guest HUDs, BIOS terminal text or closed-page resource indicators have safe
-overscan margins; those are part of the optionally cropped image.
+Host pages never change the selected picture policy or game transform. Output
+publishes required retained visibleViewportBounds in full target logical pixels;
+Presenter retains that rectangle directly while its full-image projection stays
+unchanged. Browser derives it from actual clipping; offscreen/native producers
+initialize the full rectangle from their real target dimensions. Host-menu
+window rows and pointer indices share a first-row offset, preserving font size.
+Keyboard fits its own grid within that region and uses the same rectangles for
+rendering and hit testing, top-docked and cached by visible origin/width/font. Timeline/FPS/
+resource indicators use those bounds too. Guest HUD/BIOS text still needs cart-
+authored overscan margins; host UI does not silently protect it by changing mode.
 Actual host-keyboard visibility selects a compact edge controller context
 in landscape; thumb sizes are unchanged and each complete hand group is
 recomposed at the key-grid sides with lower utility rows. Interactive key rectangles own new native downs ahead of gamepad pickup,

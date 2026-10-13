@@ -18,6 +18,7 @@ namespace bmsx {
 
 VideoPresenter::VideoPresenter(VideoOutput& output, std::unique_ptr<GPUBackend> backend, i32 viewportWidth, i32 viewportHeight)
 	: viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, visibleViewportBounds(output.visibleViewportBounds)
 	, canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, m_output(output)

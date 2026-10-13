@@ -84,6 +84,8 @@ int main(int argc, char** argv) {
 			restoredCycles = runtime.machine.scheduler.currentNowCycles();
 		};
 		retro_system_av_info avInfo{};
+		avInfo.geometry.base_width = 256;
+		avInfo.geometry.base_height = 212;
 		LibretroVideoOutput video(avInfo);
 		auto backend = std::make_unique<CountingSoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		auto& software = *backend;

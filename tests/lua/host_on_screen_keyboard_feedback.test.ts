@@ -19,6 +19,7 @@ function fixture() {
 	const queue = new HostOverlayQueue();
 	const presenter = {
 		viewportSize: { x: 256, y: 192 },
+		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 192 },
 		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 		hostOverlayQueue: queue,
 	} as VideoPresenter;

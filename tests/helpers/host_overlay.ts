@@ -7,8 +7,9 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 export function createHostOverlayFixture(width: number, height: number) {
 	const backend = new HeadlessGPUBackend(width, height, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	backend.resizePresentationTarget(width, height);
-	const presenter = new VideoPresenter(new OffscreenVideoOutput(width, height), backend, width, height);
+	const output = new OffscreenVideoOutput(width, height);
+	const presenter = new VideoPresenter(output, backend, width, height);
 	const queue = presenter.hostOverlayQueue;
 	const renderer = new OverlayRenderer(queue);
-	return { backend, presenter, queue, renderer };
+	return { backend, output, presenter, queue, renderer };
 }

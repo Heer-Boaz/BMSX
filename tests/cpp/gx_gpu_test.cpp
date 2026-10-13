@@ -3297,8 +3297,10 @@ void testSoftwarePresentationCopiesRgbAsOpaquePixels() {
 
 void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	class Output final : public bmsx::VideoOutput {
-		void setDisplaySize(bmsx::i32, bmsx::i32) override {}
-	} video;
+	public:
+		using VideoOutput::VideoOutput;
+		void setDisplaySize(bmsx::i32 w, bmsx::i32 h) override { visibleViewportBounds = bmsx::RectBounds{0, 0, static_cast<bmsx::f32>(w), static_cast<bmsx::f32>(h), 0}; }
+	} video(4, 3);
 	bmsx::GxGpuCommandBuffer commands(commandBufferDmaHarness.dma);
 	commands.reset();
 	SoftwareFrameHarness frame(commands, commands.readback);

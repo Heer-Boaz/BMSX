@@ -20,7 +20,9 @@ static void require(bool condition, const char* message) {
 }
 
 class TestVideoOutput final : public VideoOutput {
-	void setDisplaySize(i32, i32) override {}
+public:
+	using VideoOutput::VideoOutput;
+	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
 };
 
 // Real device-output owners, with disabled display circuits and a fixed background.
@@ -42,7 +44,7 @@ struct OutputFixture {
 };
 
 static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
-	TestVideoOutput video;
+	TestVideoOutput video(65, 3);
 	backend->resizePresentationTarget(65, 3);
 	VideoPresenter presenter(video, std::move(backend), 65, 3);
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));

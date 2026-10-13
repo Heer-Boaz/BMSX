@@ -189,7 +189,8 @@ export class HostOnScreenKeyboard {
 		commandCount: COMMAND_COUNT,
 	};
 	private layoutWidth = -1;
-	private layoutHeight = -1;
+	private layoutLeft = -1;
+	private layoutTop = -1;
 	private layoutFont: GlyphRenderSubmission['font'] = null;
 
 	public constructor(
@@ -415,11 +416,14 @@ export class HostOnScreenKeyboard {
 	public queueRenderCommands(): void {
 		const presenter = this.presenter;
 		const font = presenter.default_font;
-		if (this.layoutWidth !== presenter.viewportSize.x
-			|| this.layoutHeight !== presenter.viewportSize.y
+		const bounds = presenter.visibleViewportBounds;
+		const width = bounds.right - bounds.left;
+		if (this.layoutLeft !== bounds.left || this.layoutTop !== bounds.top
+			|| this.layoutWidth !== width
 			|| this.layoutFont !== font) {
-			this.layoutWidth = presenter.viewportSize.x;
-			this.layoutHeight = presenter.viewportSize.y;
+			this.layoutLeft = bounds.left;
+			this.layoutTop = bounds.top;
+			this.layoutWidth = width;
 			this.layoutFont = font;
 			this.layoutKeys();
 		}
@@ -504,32 +508,36 @@ export class HostOnScreenKeyboard {
 
 	private layoutKeys(): void {
 		const presenter = this.presenter;
+		const bounds = presenter.visibleViewportBounds;
+		const viewportWidth = bounds.right - bounds.left;
 		const font = presenter.default_font;
 		const lineHeight = font.lineHeight > 10 ? 10 : font.lineHeight;
 		const keyHeight = lineHeight + 4;
 		const maxUnits = ROWS[0].units;
-		const keyboardWidth = maxUnits * (UNIT_WIDTH + KEY_GAP) - KEY_GAP;
+		const unitWidth = Math.min(UNIT_WIDTH, (((viewportWidth - PANEL_PADDING * 2 + KEY_GAP) / maxUnits) | 0) - KEY_GAP);
+		const keyboardWidth = maxUnits * (unitWidth + KEY_GAP) - KEY_GAP;
 		const keysHeight = ROWS.length * keyHeight + (ROWS.length - 1) * ROW_GAP;
 		const helpHeight = HELP_LINES.length * lineHeight + (HELP_LINES.length - 1) * HELP_LINE_GAP;
 		const panelWidth = keyboardWidth + PANEL_PADDING * 2;
 		const panelHeight = PANEL_PADDING * 2 + lineHeight + TITLE_GAP + keysHeight + HELP_GAP + helpHeight;
-		const left = ((presenter.viewportSize.x - panelWidth) / 2) | 0;
-		const top = ((presenter.viewportSize.y - panelHeight) / 2) | 0;
+		const left = bounds.left + (((viewportWidth - panelWidth) / 2) | 0);
+		// Keep the interactive key grid above the surrounding gamepad hand row.
+		const top = bounds.top + PANEL_PADDING;
 		this.panelRect.area.left = left;
 		this.panelRect.area.top = top;
 		this.panelRect.area.right = left + panelWidth;
 		this.panelRect.area.bottom = top + panelHeight;
 		this.titleGlyphs.font = font;
-		this.titleGlyphs.x = ((presenter.viewportSize.x - font.measure(TITLE)) / 2) | 0;
+		this.titleGlyphs.x = bounds.left + (((viewportWidth - font.measure(TITLE)) / 2) | 0);
 		this.titleGlyphs.y = top + PANEL_PADDING;
 		const keyTop = top + PANEL_PADDING + lineHeight + TITLE_GAP;
 		for (let rowIndex = 0; rowIndex < ROWS.length; rowIndex += 1) {
 			const row = ROWS[rowIndex];
-			const rowWidth = row.units * (UNIT_WIDTH + KEY_GAP) - KEY_GAP;
-			let keyLeft = ((presenter.viewportSize.x - rowWidth) / 2) | 0;
+			const rowWidth = row.units * (unitWidth + KEY_GAP) - KEY_GAP;
+			let keyLeft = bounds.left + (((viewportWidth - rowWidth) / 2) | 0);
 			const keyY = keyTop + rowIndex * (keyHeight + ROW_GAP);
 			for (let index = row.start; index < row.start + row.count; index += 1) {
-				const width = KEY_DEFINITIONS[index].span * (UNIT_WIDTH + KEY_GAP) - KEY_GAP;
+				const width = KEY_DEFINITIONS[index].span * (unitWidth + KEY_GAP) - KEY_GAP;
 				const rect = this.keyRects[index];
 				rect.area.left = keyLeft;
 				rect.area.top = keyY;
@@ -547,7 +555,7 @@ export class HostOnScreenKeyboard {
 		for (let index = 0; index < HELP_LINES.length; index += 1) {
 			const glyphs = this.helpGlyphs[index];
 			glyphs.font = font;
-			glyphs.x = ((presenter.viewportSize.x - font.measure(HELP_LINES[index])) / 2) | 0;
+			glyphs.x = bounds.left + (((viewportWidth - font.measure(HELP_LINES[index])) / 2) | 0);
 			glyphs.y = helpTop + index * (lineHeight + HELP_LINE_GAP);
 		}
 	}

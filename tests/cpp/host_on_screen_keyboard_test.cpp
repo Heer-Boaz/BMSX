@@ -17,8 +17,64 @@ void require(bool condition, const char* message) { if (!condition) throw std::r
 
 class TestVideoOutput final : public VideoOutput {
 public:
-	void setDisplaySize(i32, i32) override {}
+	using VideoOutput::VideoOutput;
+	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
 };
+
+void testVisibleViewport() {
+	TestVideoOutput video(256, 192);
+	VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
+	Font font;
+	presenter.default_font = &font;
+	HostOnScreenKeyboard keyboard;
+	keyboard.open();
+	const auto frame = [&]() {
+		keyboard.queueRenderCommands(presenter);
+		return presenter.hostOverlayQueue.consumeHostMenuFrame();
+	};
+	const HostMenuFrame normal = frame();
+	const auto* panel = normal.commandRefs[0].rect;
+	const auto* q = normal.commandRefs[32].rect;
+	require(panel->area.right - panel->area.left == 231, "full native keyboard retains its existing panel width");
+	require(panel->area.top == video.visibleViewportBounds.top + 4, "actual native keyboard panel docks at the visible picture top");
+	require(q->area.right - q->area.left == 13, "full native keyboard retains its existing key unit");
+	video.visibleViewportBounds = RectBounds{12.8F, 9.6F, 243.2F, 182.4F, 0};
+	const HostMenuFrame cropped = frame();
+	require(&presenter.visibleViewportBounds == &video.visibleViewportBounds, "presenter borrows the retained actual output rectangle");
+	require(cropped.commandRefs[0].rect == panel && cropped.commandRefs[32].rect == q, "visible layout retains existing commands");
+	require(panel->area.right - panel->area.left == 215, "keyboard grid reduces its unit to fit the real cropped width");
+	require(panel->area.top == video.visibleViewportBounds.top + 4, "cropped native keyboard retains its direct top anchor");
+	require(q->area.right == q->area.left + 12, "cropped keys use the same integer grid as their glyph positions");
+	const auto& bounds = presenter.visibleViewportBounds;
+	for (size_t index = 0; index < cropped.commandCount; ++index) {
+		if (cropped.commandKinds[index] == Host2DKind::Rect) {
+			const auto& area = cropped.commandRefs[index].rect->area;
+			require(area.left >= bounds.left && area.right <= bounds.right && area.top >= bounds.top && area.bottom <= bounds.bottom,
+				"every keyboard panel/key rectangle stays inside the visible target");
+		} else if (cropped.commandKinds[index] == Host2DKind::Glyphs) {
+			const auto& glyph = *cropped.commandRefs[index].glyphs;
+			require(glyph.x >= bounds.left && glyph.x + font.measure(glyph.items[0]) <= bounds.right
+				&& glyph.y >= bounds.top && glyph.y + font.lineHeight() <= bounds.bottom,
+				"actual font key labels, title and help stay inside the visible target");
+		}
+	}
+	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount; ++key) {
+		const auto center = middlepoint_area(cropped.commandRefs[2 + key * 2].rect->area);
+		require(keyboard.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key),
+			"every painted cropped key remains directly selectable");
+	}
+	const f32 oldLeft = q->area.left, oldTop = q->area.top;
+	video.visibleViewportBounds.bottom -= 10;
+	require(frame().commandRefs[32].rect == q && q->area.left == oldLeft && q->area.top == oldTop,
+		"a picture-bottom change retains the actual top-docked key paint geometry");
+	const auto qCenter = middlepoint_area(q->area);
+	require(keyboard.selectAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
+		"top-docked paint and hit testing continue sharing the same retained key rectangle");
+	video.visibleViewportBounds = RectBounds{14.8F, 12.6F, 245.2F, 185.4F, 0};
+	require(frame().commandRefs[32].rect == q, "origin-only relayout retains the key command");
+	require(q->area.left == oldLeft + 2 && q->area.top == oldTop + 3, "origin-only visible changes invalidate layout cache");
+	require(presenter.viewportSize.x == 256 && presenter.viewportSize.y == 192, "host UI layout never resizes the game target");
+}
 
 void testFeedback() {
 	constexpr u32 idleColor = 0xff252525u;
@@ -27,7 +83,7 @@ void testFeedback() {
 	constexpr u32 textColor = 0xffefefefu;
 	constexpr u32 pressedTextColor = 0xff101010u;
 	constexpr size_t q = 15u, w = 16u, backspace = 13u, shift = 41u, control = 53u;
-	TestVideoOutput video;
+	TestVideoOutput video(320, 240);
 	VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(320, 240, PSX_MACHINE_SPEC.gxGpuVramBytes), 320, 240);
 	Font font;
 	presenter.default_font = &font;
@@ -297,6 +353,7 @@ int main() {
 		sample();
 		require(!pressed(hid_key_usage::Q), "final physical keyboard release clears the sampled bit");
 		testFeedback();
+		testVisibleViewport();
 		std::cout << "HOST-ON-SCREEN-KEYBOARD:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

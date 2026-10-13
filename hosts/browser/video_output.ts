@@ -1,4 +1,5 @@
 import type { VideoOutput } from '../../machine/ts/render/video_output';
+import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 
@@ -10,20 +11,25 @@ const OVERSCAN_VISIBLE_FRACTION = 0.9;
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
 	private renderWidth: number;
+	private renderHeight: number;
+	public readonly visibleViewportBounds: RectBounds;
 	private readonly playerSurface: HTMLElement;
 	private readonly controllerViewport: HTMLElement | null;
 	private readonly visualViewport: VisualViewport | null;
 	private readonly resizeObserver: ResizeObserver;
 	private resolutionQuery: MediaQueryList;
 	private layoutAnimationFrameId = 0;
-	private selectedScreenFit: BrowserScreenFit = 'fit';
-	private hostOverlayVisible = false;
+	private selectedScreenFit: BrowserScreenFit;
 
 	public constructor(
 		private readonly canvas: HTMLCanvasElement,
 		private readonly controlView: BrowserOnscreenGamepadView | null,
+		screenFit: BrowserScreenFit,
 	) {
+		this.selectedScreenFit = screenFit;
 		this.renderWidth = canvas.width;
+		this.renderHeight = canvas.height;
+		this.visibleViewportBounds = { left: 0, top: 0, right: canvas.width, bottom: canvas.height };
 		this.playerSurface = canvas.ownerDocument.getElementById('player-surface');
 		this.controllerViewport = controlView ? canvas.ownerDocument.getElementById('controller-viewport') : null;
 		this.visualViewport = window.visualViewport;
@@ -42,8 +48,17 @@ export class BrowserVideoOutput implements VideoOutput {
 		}
 	}
 
-	public setDisplaySize(width: number, _height: number): void {
+	public setDisplaySize(width: number, height: number): void {
+		// Until the scheduled CSS layout, the existing clip keeps its source
+		// fractions. Publish that region in the new target coordinates now.
+		const widthScale = width / this.renderWidth;
+		const heightScale = height / this.renderHeight;
+		this.visibleViewportBounds.left *= widthScale;
+		this.visibleViewportBounds.right *= widthScale;
+		this.visibleViewportBounds.top *= heightScale;
+		this.visibleViewportBounds.bottom *= heightScale;
 		this.renderWidth = width;
+		this.renderHeight = height;
 		this.scheduleLayout();
 	}
 
@@ -58,13 +73,6 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.selectedScreenFit = mode;
 		this.refreshLayout();
 	}
-
-	/** Host text/keyboard pages use an uncropped presentation, independently of gameplay policy. */
-	public readonly setHostOverlayVisible = (visible: boolean): void => {
-		if (visible === this.hostOverlayVisible) return;
-		this.hostOverlayVisible = visible;
-		this.refreshLayout();
-	};
 
 	/** Initial geometry is published synchronously before the input source activates. */
 	public refreshLayout(): void {
@@ -108,7 +116,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		const width = Math.max(0, right - left);
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
 		const presentationHeight = this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
-		const overscan = this.selectedScreenFit === 'overscan' && !this.hostOverlayVisible;
+		const overscan = this.selectedScreenFit === 'overscan';
 		const visibleFraction = overscan ? OVERSCAN_VISIBLE_FRACTION : 1;
 		const dpr = window.devicePixelRatio;
 		// Quantize the presentation in physical display pixels, not UI CSS
@@ -127,9 +135,18 @@ export class BrowserVideoOutput implements VideoOutput {
 		// Clip the actual safe video frame, including the portrait deck edge.
 		// CSS clipping also excludes hidden pixels from native hit testing;
 		// measureDisplay retains the complete image transform for coordinates.
+		const clipTop = Math.max(0, top - displayTop);
+		const clipRight = Math.max(0, displayLeft + displayWidth - right);
+		const clipBottom = Math.max(0, displayTop + displayHeight - top - height);
+		const clipLeft = Math.max(0, left - displayLeft);
 		this.canvas.style.clipPath = overscan
-			? `inset(${Math.max(0, top - displayTop)}px ${Math.max(0, displayLeft + displayWidth - right)}px ${Math.max(0, displayTop + displayHeight - top - height)}px ${Math.max(0, left - displayLeft)}px)`
+			? `inset(${clipTop}px ${clipRight}px ${clipBottom}px ${clipLeft}px)`
 			: 'none';
+		write_rect_bounds(this.visibleViewportBounds,
+			clipLeft / displayWidth * this.renderWidth,
+			clipTop / displayHeight * this.renderHeight,
+			(displayWidth - clipRight) / displayWidth * this.renderWidth,
+			(displayHeight - clipBottom) / displayHeight * this.renderHeight);
 	}
 
 	public dispose(): void {

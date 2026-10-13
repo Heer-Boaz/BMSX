@@ -1,6 +1,135 @@
 # Browser touch-controller ownership
 
+## Outer bumpers, persistent picture policy and host-UI viewport, 2026-10-13
+
+The phone feedback supersedes `640677735`'s inner bumpers and automatic
+host-menu Fit. LB/RB now occupy the outward/topward ring segments; LT/RT the
+inward segments, with the same identities/order in portrait and landscape.
+The extra primary edge margin is reduced without guessing/removing the
+browser's cutout insets. Digital artwork fills more of its unchanged contact
+bank. Neither direction classification nor native contact/frame polling is
+changed. Keyboard controls remain a separately authored host-UI pose so all
+bindings can remain outside its interactive key grid.
+
+A separately centered top arch with a full outward flank was evaluated, not
+blindly implemented. The independent prototype needed about 170px of bumper
+travel from a normal phone primary center, versus 143/158px for the wrapping
+outer-ring alternative. A wide arch raised that to 202px and pushed the hand
+row down to 233px in a 393px frame. Its resemblance to a physical controller did
+not make that a good touch layout. The implemented alternative favors the
+requested outward movement; it is not claimed to be a perfectly centered top
+arch or to prove physical-thumb comfort. [RetroArch's actual top/outer button
+ordering](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/retropad/retropad.cfg#L74-L108)
+is a topology reference, not an exact copied shape.
+
+The browser player explicitly starts with OVERSCAN 5%; FIT is an optional user
+choice. Browser Studio explicitly starts Fit. The startup/video-output
+constructors require that policy from their producer; fixtures request their
+own policy explicitly. Opening/closing Options, Rewind or Keyboard never
+changes the image transform or selected picture mode. The old visibility hook
+and its automatic Fit override are deleted, not hidden behind another wrapper.
+
+Video output instead publishes a required retained `visibleViewportBounds`
+rectangle in the full target's logical coordinates. Browser output derives it
+from the actual image/clip, including physical half-step fitting and the
+portrait video boundary. A target resize synchronously rebases its logical
+coordinates before the queued CSS layout. Offscreen/native output producers
+publish a full rectangle initialized with their actual dimensions. The native
+libretro AV producer already initializes its geometry before constructing the
+output; zeroed test AV fixtures are corrected at their producer, not handled
+with a fallback. Presenter retains the output rectangle directly; its full
+image size and pointer transform do not change.
+
+Host UI consumes that region. Menu rows keep their existing font height and
+scroll the selected visible window; a range in the title indicates the shown
+rows. Draw and pointer-hit indices use the same first-row offset. Row-text
+widths are measured only when text/font changes, and range text only when its
+window changes. Keyboard uses the same retained rectangles for drawing and
+input, recomputes on visible origin/width/font changes, and fits its own key
+grid (13px units become 12px only when required by the cropped 256px surface).
+Timeline/FPS/resource indicators use the same visible bounds. This is the
+existing menu plus scrolling, not a new menu UX.
+
+Real-player all-button keyboard validation found LT falling on CTRL in the
+centered source 256 landscape layout. The event was correctly admitted to the
+foreground key; it was not a contact-lifecycle fault. The keyboard owner now
+docks its unchanged panel at the visible top plus its existing 4px padding,
+leaving the bottom hand pose unchanged. A proposal test covers both 256/320
+source sizes, both picture policies and phone/tablet orientations: all 144
+native button bindings remain accessible; font size and primary/utility
+positions do not change. In the actual failing case the last key row moves
+from 240.5 to 188.5 CSS px and the LT surface clears it by over 16px. Some outer
+primary-circle rim pixels can still overlap keys; real key priority remains,
+and this is not a claim of universally disjoint whole control surfaces.
+[DOSBox Pure's owner-controlled keyboard docking and shared draw/hit rectangles](https://github.com/schellingb/dosbox-pure/blob/a4a0bab7f8931433588f2fcad9045c85b277373d/dosbox_pure_osd.h#L1185-L1237)
+were inspected before the mirrored policy change. Its cursor-driven top/bottom
+switch is deliberately not copied; BMSX uses one stable top anchor.
+
+[MAME's visible-row budget and
+retained selection window](https://github.com/mamedev/mame/blob/9c56c134fc51abb2558ae263cb399fde76d2c0d8/src/frontend/mame/ui/menu.cpp#L646-L708)
+and [matching pointer offset](https://github.com/mamedev/mame/blob/9c56c134fc51abb2558ae263cb399fde76d2c0d8/src/frontend/mame/ui/menu.cpp#L1369-L1399)
+were inspected before the mirrored changes.
+
+Representation gate before TS/C++ edits:
+
+| Owned representation | TypeScript | C++ | Producer/consumer |
+| --- | --- | --- | --- |
+| Image/clip geometry | Browser CSS numbers | No browser CSS mirror | BrowserVideoOutput, layout events only |
+| Visible target region | readonly RectBounds alias, logical pixels | RectBounds f32, const alias | Output produces; Presenter and host UI consume |
+| Complete target size | vec2 numbers | Vec2 f32, dimensions i32 | Existing setRenderTargetSize/setDisplaySize |
+| Scroll row/window | integer indices | i32 indices | Menu selected-window drawing and pointer-hit offset |
+| Input/register/guest data | Existing raw words | Existing raw words | Unchanged |
+
+Hot paths audited before editing were TS/C++ `queueFrameOverlayCommands` →
+`queueRenderCommands`, keyboard cached `layoutKeys`, and existing pointer
+`capturesPointer`/HostUiInput mapping → `selectAt`/`containsPoint`. Browser
+clip projection remains layout-event-only; target-size publication is the
+existing rare presenter/output boundary. There are no extra per-move DOM
+queries, per-frame allocations, event FIFOs or synthetic releases. Arbitrarily
+long physical-device labels exceeding menu width remain an existing separate
+text-layout limitation; this slice does not invent truncation or validation.
+
+Validation for this slice (not physical-iPhone acceptance):
+
+- 319 focused TS/browser/package tests, 9 native C++ regressions and all five
+  Browser/Node/Scripts/Tests/Studio typechecks pass; the real libretro core links.
+- Authored digital scale 1.35 and analog scale 1.11 were checked through the actual
+  public view/model paint path: 240 poses across eight viewport profiles and
+  DPR1/2/3. Every painted pixel corner remains inside the unchanged acquisition
+  bank; gameplay shoulders keep at least 44 CSS px thickness.
+- Actual packaged WebGPU and WebGL2 each pass 54 keyboard feedback states on
+  three DPR3 profiles, including native mixed Q/BKSP/W ownership, afterglow and
+  real SELECT+X close. All 72 native keyboard controller bindings across both
+  games and three profiles pass with 180 trusted edges; actual ROM responses are
+  recorded and the original LT/CTRL failure is corrected without input changes.
+- Ordinary-player menu tests cover both games and three profiles: 36 raster
+  states with 100% title/selection/value glyph matches and 132 trusted edges.
+  True UP/DOWN wrapping, reopen and native pointer activation use the same
+  scrolled global option. Image rectangle, backing size and CSS clip stay equal.
+  The actual 21-row menu scrolls where needed and shows no fake range where all
+  rows fit. This is not finger-drag menu navigation or a full menu redesign.
+- Final Linux WPE playback covers 16 profiles, 1008 button states, 1016 trusted
+  edges and 504 exact trace rows with audio, correct paired ROMs and no errors.
+  WPE's fixed 2x2 contacts are not UIKit or native thumb-area evidence.
+
+Final player engine SHA256:
+`3886737a9e8bc1b42fe1e02b2d66c7dd586f38a5479e92ea6b6897aeb96eae87`.
+Published at the unchanged `/2025/` and `/nemesis_s/` player paths plus their
+existing `/ios/` trace variants. All 43 public route/asset/header receipts match
+the final package, including that engine hash. Public-player native repeats
+pass all 72 keyboard controller bindings and 54 WebGPU feedback states with no
+errors. Root library and immutable BIOS/cart pairs remain unchanged; no new
+routes or query parameters.
+
+Evidence is retained in `.bmsx/hosting/outer-bumper-overscan-evidence/`;
+independent shape/raster/proposal evidence is in
+`.bmsx/hosting/top-bumper-layout-evidence/`. Physical iPhone comfort and
+large/native-variable contact footprints still need device acceptance.
+
 ## Reach-first side controls and bounded picture overscan, 2026-10-13
+
+This section records `640677735`; its inner-bumper placement, Fit default and
+automatic host-page Fit are superseded above.
 
 The previous symmetric 140-degree shoulder envelope displaced phone primary
 controls roughly 65px inward. Correct containment was not good usability.

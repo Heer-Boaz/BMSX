@@ -88,7 +88,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const model = new api.BrowserOnscreenGamepad(clock);
 		const view = new api.BrowserOnscreenGamepadView(document, window, model);
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-		const video = new api.BrowserVideoOutput(canvas, view);
+		const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 		video.refreshLayout();
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, model, 'F2');
 		const pointerEvents: Array<{ type: string; id: number; trusted: boolean }> = [];
@@ -134,11 +134,15 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					},
 				};
 				const padBounds = document.getElementById('d-pad-svg')!.getBoundingClientRect();
+				const padBezel = document.querySelector('#d-pad-artwork .control-bezel') as SVGGraphicsElement;
+				const padBezelBounds = padBezel.getBoundingClientRect();
+				const padEdge = Number.parseFloat(getComputedStyle(padBezel).strokeWidth) * padBezel.getScreenCTM()!.a / 2;
 
 				const pad = { id: 'd-pad-svg', x: padBounds.left + padBounds.width / 2,
 					y: padBounds.top + padBounds.height / 2, radius: padBounds.width / 2,
 					bounds: { left: padBounds.left, top: padBounds.top, width: padBounds.width, height: padBounds.height },
-					painted: { left: padBounds.left, top: padBounds.top, right: padBounds.right, bottom: padBounds.bottom },
+					painted: { left: padBezelBounds.left - padEdge, top: padBezelBounds.top - padEdge,
+						right: padBezelBounds.right + padEdge, bottom: padBezelBounds.bottom + padEdge },
 				};
 				return {
 					targets: [pad, ...actionIds.map((id, index) => read.target(id, index))],
@@ -367,9 +371,12 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(Math.abs(select.y - pad.y - 136 * scale) < coordinateTolerance,
 					'utility reach follows actual primary-circle clearance rather than tablet viewport height');
 			}
-			assert.ok(Math.abs(pad.bounds.left - safe.left - (landscape ? 16 * scale : 12)) < coordinateTolerance,
+			assert.ok(Math.abs(pad.bounds.left - safe.left - 4) < coordinateTolerance,
 				'primary D-pad edge clearance is not enlarged to make room for an outer shoulder ring');
-			assert.ok(Math.abs(targets[2].painted.right - safe.right + (landscape ? 16 * scale : 12) - (1 + 1.5) * scale) < coordinateTolerance,
+			assert.ok(pad.x - pad.radius >= safe.left && pad.x + pad.radius <= safe.right
+				&& pad.y - pad.radius >= safe.top && pad.y + pad.radius <= safe.bottom,
+				'the entire unchanged directional acquisition circle remains inside the safe player, not only the painted cross');
+			assert.ok(Math.abs(targets[2].painted.right - safe.right + 4 - (1 + 1.5) * scale) < coordinateTolerance,
 				'the face cluster remains at its authored primary edge, with only the actual bezel paint extending beyond the acquisition frame');
 			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
 			for (const [bumper, trigger, primary] of [[lb, lt, pad], [rb, rt, faceCenter]]) {
@@ -381,17 +388,20 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'bumpers and triggers follow one circle, not vertically stacked concentric rings');
 				assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
 				assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
-				assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) > 0,
-					'the bumper owns the inward part of the same ring and the trigger owns the upper outward part');
+				assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) < 0,
+					'the easier bumper owns the outer/top ring segment and the trigger stays inward in both orientations');
 				const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
 				const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
 				assert.ok(bumperSweep > triggerSweep, 'the easier bumper has a genuinely larger finite curved target, not just a swapped label');
-				assert.ok(Math.max(bumper.outline.startY, bumper.outline.endY) > Math.max(trigger.outline.startY, trigger.outline.endY),
-					'the bumper endpoint reaches farther down toward its primary hand than the trigger endpoint');
+				const direction = primary.x < middle ? -1 : 1;
+				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;
+				const holdingX = primary.x + direction * holdingRadius;
+				assert.ok(distanceToControl(bumper, holdingX, primary.y) < distanceToControl(trigger, holdingX, primary.y),
+					'the true bumper surface is nearer than the trigger from the physical outer holding point, not just an equal-radius label assertion');
 				const bumperLabel = resting.labels[bumper.id === 'lb_knop' ? 8 : 9];
 				const triggerLabel = resting.labels[trigger.id === 'lt_knop' ? 10 : 11];
-				assert.ok((bumperLabel.top + bumperLabel.bottom) / 2 > (triggerLabel.top + triggerLabel.bottom) / 2,
-					'actual rendered bumper labels are below trigger labels in both orientations, not merely assigned larger areas');
+				assert.ok(((bumperLabel.left + bumperLabel.right) - (triggerLabel.left + triggerLabel.right)) * direction > 0,
+					'actual rendered bumper labels retain the same outer-side role in both orientations');
 			}
 			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
 			for (const shoulder of [lb, rb, lt, rt]) {
@@ -401,11 +411,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.equal(shoulder.transform.d, 1);
 				assert.ok(Math.abs(shoulder.transform.e - shoulder.x - shoulder.outline.left) < coordinateTolerance);
 				assert.ok(Math.abs(shoulder.transform.f - shoulder.y - shoulder.outline.top) < coordinateTolerance);
-				assert.ok(shoulder.bounds.width > shoulder.bounds.height, `${shoulder.id} remains horizontally oriented despite real curvature`);
+				if (shoulder === lb || shoulder === rb) assert.ok(shoulder.bounds.width > shoulder.bounds.height, `${shoulder.id} remains a broad outer shoulder arch`);
 				assert.ok(shoulder.outline.radius > shoulder.outline.halfWidth, `${shoulder.id} is a bent band with a real concave inner edge`);
 				assert.equal(shoulder.presentation.fill, 'none', 'shoulder backgrounds are fully transparent');
 				assert.ok(shoulder.bounds.width > select.bounds.width, 'shoulder contact width is larger than utility menu targets');
-				assert.ok(shoulder.outline.halfWidth * 2 >= 36 * scale - coordinateTolerance,
+				assert.ok(shoulder.outline.halfWidth * 2 >= 44 - coordinateTolerance,
 					`${shoulder.id} keeps a real radial target thickness inside the common viewport budget`);
 				const primary = shoulder === lb || shoulder === lt ? pad : faceCenter;
 				assert.ok(shoulder.y < primary.y, `${shoulder.id} is reachable above its own hand, not placed at the viewport top`);
@@ -413,17 +423,18 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 			if (landscape) {
 				assert.equal(resting.deckTop, null, 'landscape retains an overlay rather than reserving a portrait deck');
-				const centeredY = safe.top + Math.max(4 + topReach * scale,
+				const actualTopReach = Math.max(pad.y - lb.y - lb.outline.top, pad.y - rb.y - rb.outline.top);
+				const centeredY = safe.top + Math.max(4 + actualTopReach,
 					Math.min(height / 2, height - 4 - 104 * scale));
 				assert.ok(Math.abs(pad.y - centeredY) < coordinateTolerance,
 					'landscape targets the PSP hand row at the safe midpoint, constrained only by the complete painted hand silhouette');
-				if (4 + topReach * scale <= height / 2) {
+				if (4 + actualTopReach <= height / 2) {
 					assert.ok(Math.abs(pad.y - (safe.top + height / 2)) < coordinateTolerance,
 						'normal phone and tablet primary controls are vertically centered rather than bottom-anchored');
 				}
-				assert.ok(lb.y > lt.y && rb.y > rt.y, 'landscape bumpers sit on the lower inward thumb-roll segment rather than beyond the trigger');
-				assert.ok(Math.abs(lb.outline.endX - Math.sin(Math.PI / 3)) < 1e-12
-					&& Math.abs(rb.outline.startX + Math.sin(Math.PI / 3)) < 1e-12,
+				assert.ok(lb.x < lt.x && rb.x > rt.x, 'landscape puts bumpers on the outer hand sides instead of more difficult inward segments');
+				assert.ok(Math.abs(lt.outline.endX - Math.sin(Math.PI / 3)) < 1e-12
+					&& Math.abs(rt.outline.startX + Math.sin(Math.PI / 3)) < 1e-12,
 					'the upper/inward shoulder arcs reach 60 degrees while respecting the primary edge anchors');
 			} else {
 				assert.ok(resting.deckTop !== null);
@@ -440,7 +451,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
 				assert.ok(lb.y < pad.y && rb.y < faceCenter.y,
 					'portrait shoulders remain above their corresponding thumb unit inside the measured lower deck');
-				assert.ok(lb.y > lt.y && rb.y > rt.y, 'portrait bumpers are genuinely nearer the hand row, not just assigned more target area');
+				assert.ok(lb.x < lt.x && rb.x > rt.x, 'portrait preserves the exact same outer-bumper role as landscape');
 			}
 			const fillSamples: Array<{ id: string; x: number; y: number }> = [];
 			const expectedFills: boolean[] = [];
@@ -661,8 +672,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'opening the keyboard never shrinks either thumb unit or any of the equal face targets');
 			}
 			assert.ok(keyboardContext.targets[5].y > keyboardContext.targets[0].y, 'keyboard utilities remain below their own context hand row');
+			const [keyboardLB, keyboardRB, keyboardLT, keyboardRT] = keyboardContext.targets.slice(9);
+			assert.ok(keyboardLB.x < keyboardLT.x && keyboardRB.x > keyboardRT.x,
+				'the distinct keyboard hand pose preserves the easier outer bumper and the inward trigger on both hands');
 			if (landscape) {
-				assert.ok(Math.abs(keyboardContext.targets[0].x - safe.left - (16 + 90) * scale) < coordinateTolerance,
+				assert.ok(Math.abs(keyboardContext.targets[0].x - safe.left - 4 - 90 * scale) < coordinateTolerance,
 					'the keyboard-context D-pad occupies its authored outer hand edge');
 				assert.ok(Math.abs(keyboardContext.targets[0].y - safe.bottom + 4 + (26 + 136) * scale) < coordinateTolerance,
 					'the keyboard-context hand row bottom-packs its complete real primary-and-utility hand deck');

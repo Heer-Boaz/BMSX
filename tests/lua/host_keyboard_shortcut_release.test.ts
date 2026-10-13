@@ -26,6 +26,7 @@ for (const hostHz of [60, 120]) {
 			t.after(() => input.dispose());
 			const queue = new HostOverlayQueue();
 			const presenter = { viewportSize: { x: 256, y: 212 },
+		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 				default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 				hostOverlayQueue: queue } as VideoPresenter;
 			const menu = new HostOverlayMenu(presenter, {} as Runtime, input, {} as HostRewind, createHostFrameFixture().execution);

@@ -13,10 +13,12 @@ import {
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
 import { HostOverlayQueue } from './host_overlay/overlay_queue';
 import type { RgbaImage } from './image';
+import type { RectBounds } from '../common/rect';
 
 export class VideoPresenter {
 	public accessor default_font: BFont;
 	public viewportSize: vec2;
+	public readonly visibleViewportBounds: Readonly<RectBounds>;
 	public canvasSize: vec2;
 	public readonly nativeCtx: BackendContext;
 	public readonly backend: GPUBackend;
@@ -55,6 +57,7 @@ export class VideoPresenter {
 		this.backend = backend;
 		this.nativeCtx = backend.context;
 		this.viewportSize = { x: viewportWidth, y: viewportHeight };
+		this.visibleViewportBounds = output.visibleViewportBounds;
 		this.canvasSize = { x: viewportWidth, y: viewportHeight };
 		this.offscreenCanvasSize = { x: viewportWidth, y: viewportHeight };
 	}

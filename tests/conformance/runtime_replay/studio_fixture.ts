@@ -70,7 +70,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const browserInput = nativeClipboard ? new BrowserInputHub(canvas, canvas, clock, null, HOST_SUPERVISOR_KEY_CODE) : undefined;
 	const input = new Input(clock, browserInput ?? new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(bios, [cart, null], PSX_MACHINE_SPEC, input);
-	const display = new BrowserVideoOutput(canvas, null);
+	const display = new BrowserVideoOutput(canvas, null, 'fit');
 	const presenter = initializeMachineVideoPresenter(runtime, display, backend);
 	presenter.crt_postprocessing_enabled = false;
 	let puller: AudioOutputPuller | null = null;

@@ -32,6 +32,7 @@ import {
 	create_rect_bounds,
 	point_in_rect,
 	write_rect_bounds,
+	type RectBounds,
 } from '../../machine/ts/common/rect';
 
 type HostMenuValue = {
@@ -256,8 +257,13 @@ export class HostOverlayMenu {
 	private readonly optionHitRect = create_rect_bounds();
 	private readonly pointerCapturePoint = { x: 0, y: 0 };
 	private keyboardVisibilityListener: ((visible: boolean) => void) | null = null;
-	private overlayVisibilityListener: ((visible: boolean) => void) | null = null;
 	private optionLineHeight = 0;
+	private optionFirstRow = 0;
+	private optionVisibleRows = 0;
+	private titleText = TITLE_TEXT;
+	private layoutFont: GlyphRenderSubmission['font'] = null;
+	private optionTextWidth = 0;
+	private titleTextWidth = 0;
 	private selected = 0;
 	private dirtyText = true;
 	private readonly lineText: string[] = [];
@@ -271,6 +277,8 @@ export class HostOverlayMenu {
 	private readonly usageLabels: GlyphRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usagePercents: GlyphRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usagePercentCode: number[] = new Array(USAGE_BAR_COUNT);
+	private usageOriginLeft = -1;
+	private usageOriginTop = -1;
 	private readonly optionGlyphs: GlyphRenderSubmission[];
 	private readonly commandKinds = new Array<Host2DKind>(HOST_MENU_COMMAND_CAPACITY);
 	private readonly commandRefs = new Array<Host2DRef>(HOST_MENU_COMMAND_CAPACITY);
@@ -477,11 +485,6 @@ export class HostOverlayMenu {
 		this.keyboardVisibilityListener = listener;
 	}
 
-	/** Frontend presentation distinguishes protected host pages from the gameplay image. */
-	public setOverlayVisibilityListener(listener: (visible: boolean) => void): void {
-		this.overlayVisibilityListener = listener;
-	}
-
 	public tickInput(): HostMenuInput {
 		if (this.onScreenKeyboardShortcutRequested) {
 			this.onScreenKeyboardShortcutRequested = false;
@@ -619,44 +622,63 @@ export class HostOverlayMenu {
 				if (this.rewind.frameStepCycles(-1) < state.positionCycles) state.enabledActions |= 1 << TimelineAction.Previous;
 				if (this.rewind.frameStepCycles(1) > state.positionCycles) state.enabledActions |= 1 << TimelineAction.Next;
 			}
-			this.timeline.update(state, 6, this.presenter.viewportSize.y - HostRewindTimeline.height(this.timelineFont) - 6,
-				this.presenter.viewportSize.x - 6, this.timelineFont);
+			const bounds = this.presenter.visibleViewportBounds;
+			this.timeline.update(state, bounds.left + 6, bounds.bottom - HostRewindTimeline.height(this.timelineFont) - 6,
+				bounds.right - 6, this.timelineFont);
 			this.presenter.hostOverlayQueue.publishHostMenuFrame(this.timeline.frame);
 			return;
 		}
 		this.clearRenderCommands();
-		if (this.dirtyText) {
+		const textWasDirty = this.dirtyText;
+		if (textWasDirty) {
 			this.rebuildText();
 		}
 		const presenter = this.presenter;
 		const font = presenter.default_font;
+		const fontChanged = this.layoutFont !== font;
+		if (textWasDirty || fontChanged) {
+			this.layoutFont = font;
+			this.optionTextWidth = 0;
+			for (let index = 0; index < this.options.length; index += 1) {
+				this.optionTextWidth = Math.max(this.optionTextWidth, font.measure(this.lineText[index]));
+			}
+		}
 		const lineHeight = font.lineHeight > 10 ? 10 : font.lineHeight;
 		const padding = 4;
 		const titleHeight = lineHeight;
 		const titleGap = 4;
-		let boxWidth = font.measure(this.titleGlyphs.items as string);
-		for (let index = 0; index < this.options.length; index += 1) {
-			const width = font.measure(this.lineText[index]);
-			if (width > boxWidth) {
-				boxWidth = width;
-			}
+		const topBezel = 2;
+		const bounds = presenter.visibleViewportBounds;
+		const visibleRows = Math.min(this.options.length,
+			((bounds.bottom - bounds.top - titleHeight - titleGap - padding * 2 - topBezel) / lineHeight) | 0);
+		let firstRow = Math.min(this.optionFirstRow, this.options.length - visibleRows);
+		if (this.selected < firstRow) firstRow = this.selected;
+		else if (this.selected >= firstRow + visibleRows) firstRow = this.selected - visibleRows + 1;
+		if (textWasDirty || fontChanged || firstRow !== this.optionFirstRow || visibleRows !== this.optionVisibleRows) {
+			const title = visibleRows === this.options.length ? this.titleText
+				: `${this.titleText} [${firstRow + 1}-${firstRow + visibleRows}/${this.options.length}]`;
+			this.titleGlyphs.items = title;
+			this.titleGlyphs.item_end = title.length;
+			this.titleTextWidth = font.measure(title);
 		}
-		boxWidth += padding * 2;
-		const boxHeight = this.options.length * lineHeight + padding * 2;
+		this.optionFirstRow = firstRow;
+		this.optionVisibleRows = visibleRows;
+		const boxWidth = Math.max(this.optionTextWidth, this.titleTextWidth) + padding * 2;
+		const boxHeight = visibleRows * lineHeight + padding * 2;
 		const totalHeight = titleHeight + titleGap + boxHeight;
-		const left = (presenter.viewportSize.x - boxWidth) / 2;
-		const top = (presenter.viewportSize.y - totalHeight) / 2;
+		const left = (bounds.left + bounds.right - boxWidth) / 2;
+		const top = (bounds.top + bounds.bottom - totalHeight - topBezel) / 2 + topBezel;
 		const boxTop = top + titleHeight + titleGap;
 		write_rect_bounds(
 			this.optionHitRect,
 			left,
 			boxTop + padding,
 			left + boxWidth,
-			boxTop + padding + this.options.length * lineHeight,
+			boxTop + padding + visibleRows * lineHeight,
 		);
 		this.optionLineHeight = lineHeight;
 		this.panelRect.area.left = left;
-		this.panelRect.area.top = top - 2;
+		this.panelRect.area.top = top - topBezel;
 		this.panelRect.area.right = left + boxWidth;
 		this.panelRect.area.bottom = boxTop + boxHeight;
 		this.queueCommand(Host2DKind.Rect, this.panelRect);
@@ -664,8 +686,9 @@ export class HostOverlayMenu {
 		this.titleGlyphs.x = left + padding;
 		this.titleGlyphs.y = top;
 		this.queueCommand(Host2DKind.Glyphs, this.titleGlyphs);
-		for (let index = 0; index < this.options.length; index += 1) {
-			const y = boxTop + padding + index * lineHeight;
+		for (let row = 0; row < visibleRows; row += 1) {
+			const index = firstRow + row;
+			const y = boxTop + padding + row * lineHeight;
 			if (index === this.selected) {
 				this.highlightRect.area.left = left;
 				this.highlightRect.area.top = y - 2;
@@ -705,12 +728,13 @@ export class HostOverlayMenu {
 				this.fpsGlyphs.item_end = text.length;
 				this.fpsTextWidth = font.measure(text);
 			}
-			this.fpsGlyphs.x = presenter.viewportSize.x - 8 - this.fpsTextWidth;
-			this.fpsGlyphs.y = 8;
+			this.fpsGlyphs.x = presenter.visibleViewportBounds.right - 8 - this.fpsTextWidth;
+			this.fpsGlyphs.y = presenter.visibleViewportBounds.top + 8;
 			this.queueCommand(Host2DKind.Glyphs, this.fpsGlyphs);
 			queued = true;
 		}
 		if (presenter.show_resource_usage_gizmo) {
+			this.layoutUsageGizmo(presenter.visibleViewportBounds);
 			const runtime = this.runtime;
 			const gxGpuVramBytes = runtime.machine.gxGpu.readVramSnapshotBytes().byteLength;
 			this.queueCommand(Host2DKind.Rect, this.usagePanelRect);
@@ -730,12 +754,33 @@ export class HostOverlayMenu {
 		return queued;
 	}
 
+	private layoutUsageGizmo(bounds: Readonly<RectBounds>): void {
+		if (bounds.left === this.usageOriginLeft && bounds.top === this.usageOriginTop) return;
+		this.usageOriginLeft = bounds.left;
+		this.usageOriginTop = bounds.top;
+		write_rect_bounds(this.usagePanelRect.area, bounds.left + USAGE_X - 4, bounds.top + USAGE_Y - 4,
+			bounds.left + USAGE_X - 4 + USAGE_PANEL_WIDTH, bounds.top + USAGE_Y - 4 + USAGE_PANEL_HEIGHT);
+		for (let index = 0; index < USAGE_BAR_COUNT; index += 1) {
+			const left = bounds.left + USAGE_BAR_X;
+			const top = bounds.top + USAGE_Y + index * USAGE_ROW_HEIGHT + 1;
+			write_rect_bounds(this.usageBarBackgrounds[index].area, left, top, left + USAGE_BAR_WIDTH, top + USAGE_BAR_HEIGHT);
+			const fill = this.usageBarFills[index].area;
+			fill.left = left;
+			fill.top = top;
+			fill.bottom = top + USAGE_BAR_HEIGHT;
+			this.usageLabels[index].x = bounds.left + USAGE_X;
+			this.usageLabels[index].y = top;
+			this.usagePercents[index].x = left + USAGE_BAR_WIDTH + 1;
+			this.usagePercents[index].y = top;
+		}
+	}
+
 	private queueUsageBar(index: number, used: number, total: number, font: NonNullable<GlyphRenderSubmission['font']>): void {
 		const ratio = used / total;
 		const fillWidth = usageFillWidth(used, total);
 		const fill = this.usageBarFills[index];
 		const percentCode = usagePercentCode(used, total);
-		fill.area.right = USAGE_BAR_X + fillWidth;
+		fill.area.right = fill.area.left + fillWidth;
 		fill.color = usageColor(ratio);
 		this.usageLabels[index].font = font;
 		const pct = this.usagePercents[index];
@@ -846,7 +891,6 @@ export class HostOverlayMenu {
 	}
 
 	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
-		const overlayWasVisible = this.page !== HostOverlayPage.Closed;
 		const keyboardWasVisible = this.page === HostOverlayPage.Keyboard;
 		switch (this.page) {
 			case HostOverlayPage.Keyboard:
@@ -866,9 +910,6 @@ export class HostOverlayMenu {
 				break;
 		}
 		this.page = next;
-		if (overlayWasVisible !== (next !== HostOverlayPage.Closed)) {
-			this.overlayVisibilityListener?.(next !== HostOverlayPage.Closed);
-		}
 		if (keyboardWasVisible !== (next === HostOverlayPage.Keyboard)) {
 			this.keyboardVisibilityListener?.(next === HostOverlayPage.Keyboard);
 		}
@@ -888,16 +929,13 @@ export class HostOverlayMenu {
 			case HostOverlayPage.Options:
 				this.options = this.rootOptions;
 				this.selected = this.rootSelection;
-				this.titleGlyphs.items = TITLE_TEXT;
-				this.titleGlyphs.item_end = TITLE_TEXT.length;
+				this.titleText = TITLE_TEXT;
 				this.controllerPortRevision = this.input.controllerPortRevision;
 				break;
 			case HostOverlayPage.GamepadRemap: {
 				this.options = this.remapOptions;
 				this.selected = 0;
-				const title = `PLAYER ${this.remapPlayerIndex} CONTROLS`;
-				this.titleGlyphs.items = title;
-				this.titleGlyphs.item_end = title.length;
+				this.titleText = `PLAYER ${this.remapPlayerIndex} CONTROLS`;
 				break;
 			}
 			case HostOverlayPage.Keyboard:
@@ -992,7 +1030,7 @@ export class HostOverlayMenu {
 		if (!point_in_rect(x, y, this.optionHitRect)) {
 			return -1;
 		}
-		const index = ((y - this.optionHitRect.top) / this.optionLineHeight) | 0;
+		const index = this.optionFirstRow + (((y - this.optionHitRect.top) / this.optionLineHeight) | 0);
 		if (index !== this.selected) {
 			this.selected = index;
 		}

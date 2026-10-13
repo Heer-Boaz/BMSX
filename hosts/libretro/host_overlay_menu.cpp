@@ -408,51 +408,71 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 			if (rewind.frameStepCycles(-1) < state.positionCycles) state.enabledActions |= 1u << static_cast<u32>(TimelineAction::Previous);
 			if (rewind.frameStepCycles(1) > state.positionCycles) state.enabledActions |= 1u << static_cast<u32>(TimelineAction::Next);
 		}
-		timeline.update(state, 6, static_cast<i32>(presenter.viewportSize.y) - HostRewindTimeline::height(timelineFont) - 6,
-			static_cast<i32>(presenter.viewportSize.x) - 6, timelineFont);
+		const auto& bounds = presenter.visibleViewportBounds;
+		timeline.update(state, static_cast<i32>(bounds.left + 6), static_cast<i32>(bounds.bottom) - HostRewindTimeline::height(timelineFont) - 6,
+			static_cast<i32>(bounds.right) - 6, timelineFont);
 		presenter.hostOverlayQueue.publishHostMenuFrame(timeline.frame());
 		return;
 	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
-	if (m_dirtyText) {
+	const bool textWasDirty = m_dirtyText;
+	if (textWasDirty) {
 		rebuildText(presenter);
 	}
 	BFont* font = presenter.default_font;
+	const bool fontChanged = m_layoutFont != font;
+	if (textWasDirty || fontChanged) {
+		m_layoutFont = font;
+		m_optionTextWidth = 0;
+		for (size_t index = 0; index < kOptions.size(); ++index) {
+			m_optionTextWidth = std::max(m_optionTextWidth, font->measure(m_lineText[index]));
+		}
+	}
 	const i32 lineHeight = font->lineHeight() > 10 ? 10 : font->lineHeight();
 	const i32 padding = 4;
 	const i32 titleHeight = lineHeight;
 	const i32 titleGap = 4;
-	i32 boxWidth = font->measure(m_titleGlyphs.items[0]);
-	for (size_t index = 0; index < kOptions.size(); ++index) {
-		const i32 width = font->measure(m_lineText[index]);
-		if (width > boxWidth) {
-			boxWidth = width;
-		}
+	const i32 topBezel = 2;
+	const auto& bounds = presenter.visibleViewportBounds;
+	const i32 visibleRows = std::min(static_cast<i32>(kOptions.size()),
+		static_cast<i32>((bounds.bottom - bounds.top - titleHeight - titleGap - padding * 2 - topBezel) / lineHeight));
+	i32 firstRow = std::min(m_optionFirstRow, static_cast<i32>(kOptions.size()) - visibleRows);
+	if (m_selected < firstRow) firstRow = m_selected;
+	else if (m_selected >= firstRow + visibleRows) firstRow = m_selected - visibleRows + 1;
+	if (textWasDirty || fontChanged || firstRow != m_optionFirstRow || visibleRows != m_optionVisibleRows) {
+		m_titleGlyphs.items[0] = visibleRows == static_cast<i32>(kOptions.size()) ? std::string(kTitleText)
+			: std::string(kTitleText) + " [" + std::to_string(firstRow + 1) + "-" + std::to_string(firstRow + visibleRows)
+				+ "/" + std::to_string(kOptions.size()) + "]";
+		m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
+		m_titleTextWidth = font->measure(m_titleGlyphs.items[0]);
 	}
-	boxWidth += padding * 2;
-	const i32 boxHeight = static_cast<i32>(kOptions.size()) * lineHeight + padding * 2;
+	m_optionFirstRow = firstRow;
+	m_optionVisibleRows = visibleRows;
+	const i32 boxWidth = std::max(m_optionTextWidth, m_titleTextWidth) + padding * 2;
+	const i32 boxHeight = visibleRows * lineHeight + padding * 2;
 	const i32 totalHeight = titleHeight + titleGap + boxHeight;
-	const i32 left = (static_cast<i32>(presenter.viewportSize.x) - boxWidth) / 2;
-	const i32 top = (static_cast<i32>(presenter.viewportSize.y) - totalHeight) / 2;
-	const i32 boxTop = top + titleHeight + titleGap;
+	const f32 left = (bounds.left + bounds.right - boxWidth) / 2;
+	const f32 top = (bounds.top + bounds.bottom - totalHeight - topBezel) / 2 + topBezel;
+	const f32 boxTop = top + titleHeight + titleGap;
 	m_optionHitRect = RectBounds{
 		static_cast<f32>(left),
 		static_cast<f32>(boxTop + padding),
 		static_cast<f32>(left + boxWidth),
-		static_cast<f32>(boxTop + padding + static_cast<i32>(kOptions.size()) * lineHeight),
+		static_cast<f32>(boxTop + padding + visibleRows * lineHeight),
 		0.0f,
 	};
 	m_optionLineHeight = lineHeight;
-	m_panelRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(boxTop), static_cast<f32>(left + boxWidth), static_cast<f32>(boxTop + boxHeight), 920.0f};
+	m_panelRect.area = RectBounds{left, top - topBezel, left + boxWidth, boxTop + boxHeight, 920.0f};
 	queueCommand(rectKind, Host2DRef{.rect = &m_panelRect});
 	m_titleGlyphs.font = font;
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
 	queueCommand(itemsKind, Host2DRef{.glyphs = &m_titleGlyphs});
-	for (i32 index = 0; index < static_cast<i32>(kOptions.size()); index += 1) {
-		const i32 y = boxTop + padding + index * lineHeight;
+	for (i32 row = 0; row < visibleRows; row += 1) {
+		const i32 index = firstRow + row;
+		const f32 y = boxTop + padding + row * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
 			queueCommand(rectKind, Host2DRef{.rect = &m_highlightRect});
@@ -490,12 +510,13 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 			m_fpsGlyphs.font = font;
 			m_fpsTextWidth = font->measure(m_fpsText);
 		}
-		m_fpsGlyphs.x = presenter.viewportSize.x - 8.0f - static_cast<f32>(m_fpsTextWidth);
-		m_fpsGlyphs.y = 8.0f;
+		m_fpsGlyphs.x = presenter.visibleViewportBounds.right - 8.0f - static_cast<f32>(m_fpsTextWidth);
+		m_fpsGlyphs.y = presenter.visibleViewportBounds.top + 8.0f;
 		queueCommand(itemsKind, Host2DRef{.glyphs = &m_fpsGlyphs});
 		queued = true;
 	}
 	if (presenter.showResourceUsageGizmo) {
+		layoutUsageGizmo(presenter.visibleViewportBounds);
 		const double gxGpuVramBytes = static_cast<double>(
 			runtime.machine.gxGpu.readVramSnapshotBytes().size());
 		const std::array<double, UsageBarCount> used{
@@ -515,7 +536,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 			const double ratio = used[offset] / total[offset];
 			const i32 fillWidth = usageFillWidth(used[offset], total[offset]);
 			RectRenderSubmission& fill = m_usageBarFills[offset];
-			fill.area.right = static_cast<f32>(kUsageBarX + fillWidth);
+			fill.area.right = fill.area.left + fillWidth;
 			fill.color = usageColor(ratio);
 			GlyphRenderSubmission& label = m_usageLabels[offset];
 			GlyphRenderSubmission& percent = m_usagePercents[offset];
@@ -542,6 +563,29 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 		publishRenderCommands(presenter);
 	}
 	return queued;
+}
+
+void HostOverlayMenu::layoutUsageGizmo(const RectBounds& bounds) {
+	if (bounds.left == m_usageOriginLeft && bounds.top == m_usageOriginTop) return;
+	m_usageOriginLeft = bounds.left;
+	m_usageOriginTop = bounds.top;
+	m_usagePanelRect.area.left = bounds.left + kUsageX - 4;
+	m_usagePanelRect.area.top = bounds.top + kUsageY - 4;
+	m_usagePanelRect.area.right = m_usagePanelRect.area.left + kUsagePanelWidth;
+	m_usagePanelRect.area.bottom = m_usagePanelRect.area.top + kUsagePanelHeight;
+	for (size_t index = 0; index < UsageBarCount; ++index) {
+		const f32 left = bounds.left + kUsageBarX;
+		const f32 top = bounds.top + kUsageY + index * kUsageRowHeight + 1;
+		auto& background = m_usageBarBackgrounds[index].area;
+		background.left = left; background.top = top;
+		background.right = left + kUsageBarWidth; background.bottom = top + kUsageBarHeight;
+		auto& fill = m_usageBarFills[index].area;
+		fill.left = left; fill.top = top; fill.bottom = top + kUsageBarHeight;
+		m_usageLabels[index].x = bounds.left + kUsageX;
+		m_usageLabels[index].y = top;
+		m_usagePercents[index].x = left + kUsageBarWidth + 1;
+		m_usagePercents[index].y = top;
+	}
 }
 
 void HostOverlayMenu::dismiss(LibretroInput& input, HostRewind& rewind, Outcome outcome) {
@@ -639,7 +683,7 @@ i32 HostOverlayMenu::selectPointerTargetAt(i32 x, i32 y) {
 	if (!point_in_rect(static_cast<f32>(x), static_cast<f32>(y), m_optionHitRect)) {
 		return -1;
 	}
-	const i32 index = static_cast<i32>(
+	const i32 index = m_optionFirstRow + static_cast<i32>(
 		(static_cast<f32>(y) - m_optionHitRect.top)
 		/ static_cast<f32>(m_optionLineHeight));
 	m_selected = index;

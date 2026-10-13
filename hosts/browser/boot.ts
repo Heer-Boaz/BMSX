@@ -10,7 +10,7 @@ import { ConsoleLogOutput } from '../common/log';
 import { BrowserOnscreenGamepad } from './onscreen_gamepad';
 import { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 import { BrowserFrameLoop, BrowserHostClock } from './timing';
-import { BrowserVideoOutput } from './video_output';
+import { BrowserVideoOutput, type BrowserScreenFit } from './video_output';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 import { createBrowserBackend } from './backend';
 import type { HostAudioSink } from '../common/audio_output';
@@ -60,7 +60,7 @@ export async function loadBrowserMedia(systemRomPath: string, defaultRom: string
 }
 
 /** Presentation and input startup consume selected media, independently of its storage or transport. */
-export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMedia): Promise<BrowserStartup> {
+export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMedia, screenFit: BrowserScreenFit): Promise<BrowserStartup> {
 	await showCartridgeBoot(media.cartridgeSlots[0], debug);
 	createAudioContext(audioState);
 	const gamescreen = document.getElementById('gamescreen');
@@ -86,7 +86,7 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 			setIndex: index => onscreenGamepad.setDirectionalMode(index === 0 ? 'dpad' : 'stick'),
 		});
 	}
-	const videoOutput = new BrowserVideoOutput(gamescreen, controlView);
+	const videoOutput = new BrowserVideoOutput(gamescreen, controlView, screenFit);
 	videoOutput.refreshLayout();
 	const inputHub = new BrowserInputHub(
 		gamescreen,

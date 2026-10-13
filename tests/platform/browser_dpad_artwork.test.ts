@@ -42,7 +42,7 @@ for (const debug of [false, true]) {
 			assert.ok(!artwork.includes('id="d-pad-contour"'), 'the digital cross has no unnecessary outer circle');
 			assert.ok(artwork.includes('id="d-pad-cross"'), 'the physical cross has a static outline');
 			assert.ok(artwork.includes('id="d-pad-artwork"'), 'digital artwork has its own passive mode group');
-			assert.ok(artwork.includes('id="left-stick-artwork" visibility="hidden"'),
+			assert.match(artwork, /<g id="left-stick-artwork"[^>]* visibility="hidden"/,
 				'the optional analog unit starts hidden rather than drawing a circle around the D-pad');
 			assert.ok(artwork.includes('id="left-stick-tip"'), 'every product includes the independently projected analog tip');
 			assert.equal([...artwork.matchAll(/class="d-pad-direction"/g)].length, 4);
@@ -69,9 +69,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	const controls = html.slice(html.indexOf('<div id="controller-viewport"'), html.indexOf('<div id="gameContainer">'));
-	await page.setContent(`<!doctype html><style>${await readFile('gamebase.css', 'utf8')} body { background: rgb(31, 127, 211); }</style>${controls}`);
+	const artworkPage = `<!doctype html><style>${await readFile('gamebase.css', 'utf8')} body { background: rgb(31, 127, 211); }</style>${controls}`;
+	await page.setContent(artworkPage);
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });
-	await page.evaluate(() => {
+	const initializeArtwork = () => {
 		const api = (globalThis as any).artworkFixture;
 		const clock = new api.BrowserHostClock();
 		const model = new api.BrowserOnscreenGamepad(clock);
@@ -92,6 +93,23 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		observer.observe(document.getElementById('d-pad-controls')!, { attributes: true, subtree: true });
 		(globalThis as any).artworkProbe = {
 			model, view, input, geometry, observer,
+			pose(mode: 'dpad' | 'stick', direction: number) {
+				model.cancelContacts();
+				model.setDirectionalMode(mode);
+				const bank = document.getElementById('d-pad-svg')!.getBoundingClientRect();
+				const x = bank.left + bank.width / 2, y = bank.top + bank.height / 2, radius = bank.width / 2;
+				if (mode === 'dpad') {
+					for (let index = 0; index < 4; index += 1) {
+						const angle = index * Math.PI / 2;
+						model.beginContact(index + 1, x + radius * 0.7 * Math.cos(angle), y + radius * 0.7 * Math.sin(angle), 0, 0, true);
+					}
+				} else {
+					model.beginContact(1, x, y, 0, 0, true);
+					if (direction >= 0) model.moveContact(1, x + radius * 2 * Math.cos(direction * Math.PI / 4),
+						y + radius * 2 * Math.sin(direction * Math.PI / 4), 0, 0, true);
+				}
+				return { x, y, radius };
+			},
 			setDirections(nibble: number) {
 				model.cancelContacts();
 				for (let index = 0; index < geometry.length; index += 1) {
@@ -119,14 +137,15 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				};
 			},
 		};
-	});
+	};
+	await page.evaluate(initializeArtwork);
 	const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 	const measure = () => page.evaluate(() => (globalThis as any).artworkProbe.measure());
 	const resting = await measure();
 	assert.deepEqual(resting.active, []);
 	assert.ok(Math.abs(resting.geometry.width - 180 * Math.min(1.1, 852 / 568, 393 / 300)) < 0.0001,
 		'the authored acquisition frame follows the single-shoulder-row landscape budget');
-	assert.ok(Math.abs(resting.cross.width / resting.geometry.width - 0.759) < 0.0001,
+	assert.ok(Math.abs(resting.cross.width / resting.geometry.width - 0.891) < 0.0001,
 		'the larger digital cross fills its existing acquisition frame without shrinking any face target');
 	assert.deepEqual(resting.modeVisibility, ['visible', 'hidden'], 'D-pad mode paints no analog outer ring');
 	let previousNibble = 0;
@@ -155,6 +174,45 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			assert.deepEqual((await measure()).writes, [], 'an unchanged next view frame performs no DOM writes');
 		});
 	}
+	await t.test('calibrated digital and analog ink stays inside the unchanged acquisition bank at DPR 1, 2, and 3', async () => {
+		// This is actual Chromium paint evidence from the public model/view
+		// producer, separate from the native multi-finger delivery tests.
+		for (const dpr of [1, 2, 3]) {
+			const rasterPage = await browser.newPage({ viewport: { width: 320, height: 240 }, deviceScaleFactor: dpr });
+			rasterPage.on('pageerror', error => errors.push(error.message));
+			await rasterPage.setContent(artworkPage);
+			await rasterPage.addScriptTag({ content: bundle.outputFiles[0].text });
+			await rasterPage.evaluate(initializeArtwork);
+			await rasterPage.evaluate(() => (globalThis as any).artworkProbe.observer.disconnect());
+			await rasterPage.addStyleTag({ content: '.control-surface:not(#d-pad-controls) { visibility: hidden !important; }' });
+			for (const [width, height] of [[320, 240], [320, 568], [568, 239], [390, 763], [750, 369], [852, 393], [768, 980], [1024, 748]]) {
+				await rasterPage.setViewportSize({ width, height });
+				await rasterPage.evaluate(({ width, height }) => (globalThis as any).artworkProbe.view.layout(0, 0, width, height), { width, height });
+				const hidden = await rasterPage.addStyleTag({ content: '#d-pad-svg { visibility: hidden !important; }' });
+				const blank = PNG.sync.read(await rasterPage.screenshot());
+				await hidden.evaluate(element => element.parentNode!.removeChild(element));
+				await hidden.dispose();
+				for (let pose = -2; pose < 8; pose += 1) {
+					const bank = await rasterPage.evaluate(pose => (globalThis as any).artworkProbe.pose(pose === -2 ? 'dpad' : 'stick', pose), pose);
+					await rasterPage.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+					const raster = PNG.sync.read(await rasterPage.screenshot());
+					assert.equal(raster.width, width * dpr, 'the browser raster uses the tested device pixel ratio');
+					let inkPixels = 0;
+					for (let offset = 0; offset < raster.data.length; offset += 4) {
+						if (raster.data[offset] === blank.data[offset] && raster.data[offset + 1] === blank.data[offset + 1]
+							&& raster.data[offset + 2] === blank.data[offset + 2]) continue;
+						inkPixels += 1;
+						const pixel = offset / 4, x = pixel % raster.width, y = Math.trunc(pixel / raster.width);
+						for (const dx of [0, 1]) for (const dy of [0, 1]) assert.ok(
+							Math.hypot((x + dx) / dpr - bank.x, (y + dy) / dpr - bank.y) <= bank.radius,
+							`${width}x${height}/DPR${dpr}/pose${pose}: every painted pixel corner, including active strokes, lies in the unchanged acquisition circle`);
+					}
+					assert.ok(inkPixels > 0, 'the visible digital cross or stick actually painted pixels');
+				}
+			}
+			await rasterPage.close();
+		}
+	});
 	await page.evaluate(() => {
 		const probe = (globalThis as any).artworkProbe;
 		probe.observer.disconnect();

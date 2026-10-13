@@ -24,7 +24,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		const pad = new api.BrowserOnscreenGamepad(new api.BrowserHostClock());
 		pad.subscribe({ inputButton() {} });
 		const view = new api.BrowserOnscreenGamepadView(document, window, pad);
-		const video = new api.BrowserVideoOutput(document.getElementById('gamescreen'), view);
+		const video = new api.BrowserVideoOutput(document.getElementById('gamescreen'), view, 'fit');
 		video.refreshLayout();
 		(globalThis as any).layoutProbe = {
 			pad, view, video,

@@ -49,7 +49,7 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 				return createRenderPipeline.call(this, descriptor);
 			};
 			device.pushErrorScope('validation');
-			const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null), backend, 320, 240);
+			const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 320, 240);
 			const library = new RenderPassLibrary(backend, presenter);
 			await device.queue.onSubmittedWorkDone();
 			const validationError = await device.popErrorScope();

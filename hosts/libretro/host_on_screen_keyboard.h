@@ -76,8 +76,9 @@ private:
 	std::array<GlyphRenderSubmission, KeyCount> m_key_glyphs;
 	std::array<Host2DKind, CommandCount> m_command_kinds;
 	std::array<Host2DRef, CommandCount> m_command_refs;
-	i32 m_layout_width = -1;
-	i32 m_layout_height = -1;
+	f32 m_layout_left = -1;
+	f32 m_layout_top = -1;
+	f32 m_layout_width = -1;
 	BFont* m_layout_font = nullptr;
 };
 

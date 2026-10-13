@@ -878,6 +878,22 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_host_on_screen_keyboard_tests PRIVATE ${BMSX_LIBRETRO_DIR})
 	add_test(NAME bmsx_host_on_screen_keyboard_tests COMMAND bmsx_host_on_screen_keyboard_tests)
 
+	add_executable(bmsx_host_overlay_menu_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_menu_test.cpp
+		${BMSX_LIBRETRO_DIR}/button_repeat.cpp
+		${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
+		${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/ui_input.cpp
+		${BMSX_LIBRETRO_DIR}/rewind.cpp
+		${BMSX_LIBRETRO_DIR}/rewind_timeline.cpp
+		${BMSX_LIBRETRO_DIR}/presentation_state.cpp
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
+	)
+	target_link_libraries(bmsx_host_overlay_menu_tests PRIVATE bmsx_host_support)
+	target_include_directories(bmsx_host_overlay_menu_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+	add_test(NAME bmsx_host_overlay_menu_tests COMMAND bmsx_host_overlay_menu_tests)
+
 	foreach(runner IN ITEMS host_rewind libretro_rewind)
 		add_executable(bmsx_${runner}_conformance_runner
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/${runner}_conformance_runner.cpp
