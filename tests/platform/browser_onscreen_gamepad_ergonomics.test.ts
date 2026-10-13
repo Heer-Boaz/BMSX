@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
 
 const actions = [
 	{ id: 'a_knop', label: 'A', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -110,19 +111,22 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			},
 			measure() {
 				const read = {
-					circle(id: string) {
-						const circle = document.getElementById(id) as unknown as SVGCircleElement;
-						const bounds = circle.getBoundingClientRect();
-						const bezel = circle.previousElementSibling as SVGCircleElement;
+					target(id: string, index: number) {
+						const element = document.getElementById(id) as unknown as SVGGraphicsElement;
+						const bounds = element.getBoundingClientRect();
+						const bezel = element.previousElementSibling as SVGGraphicsElement;
+						const geometry = model.geometry.actions[index];
 						const bezelBounds = bezel.getBoundingClientRect();
-						const scale = bounds.width / (circle.r.baseVal.value * 2);
+						const scale = element.getScreenCTM()!.a;
 						const edge = Number.parseFloat(getComputedStyle(bezel).strokeWidth) * scale / 2;
-						const style = getComputedStyle(circle);
+						const style = getComputedStyle(element);
 						return {
-							id, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2, radius: bounds.width / 2,
+							id, x: geometry.x, y: geometry.y, radius: geometry.radius,
+							outline: geometry.outline ? { halfLength: geometry.outline.halfLength, radius: geometry.outline.radius } : undefined,
+							tag: element.tagName,
 							bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
 							painted: { left: bezelBounds.left - edge, top: bezelBounds.top - edge, right: bezelBounds.right + edge, bottom: bezelBounds.bottom + edge },
-							presentation: { fill: style.fill, stroke: style.stroke, touched: circle.getAttribute('data-touched') },
+							presentation: { fill: style.fill, stroke: style.stroke, touched: element.getAttribute('data-touched') },
 						};
 					},
 				};
@@ -134,7 +138,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					painted: { left: padBounds.left, top: padBounds.top, right: padBounds.right, bottom: padBounds.bottom },
 				};
 				return {
-					circles: [pad, ...actionIds.map(id => read.circle(id))],
+					targets: [pad, ...actionIds.map((id, index) => read.target(id, index))],
 					deckTop: view.portraitDeckTop,
 					canvas: (() => { const rect = canvas.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; })(),
 					padImage: document.querySelector('.d-pad-image[data-active="true"]')!.id,
@@ -152,6 +156,13 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 							bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height } };
 					}),
 				};
+			},
+			fills(samples: Array<{ id: string; x: number; y: number }>) {
+				return samples.map(sample => {
+					const shape = document.getElementById(sample.id) as unknown as SVGGeometryElement;
+					const local = new DOMPoint(sample.x, sample.y).matrixTransform(shape.getScreenCTM()!.inverse());
+					return shape.isPointInFill(local);
+				});
 			},
 			background(kind: string) {
 				const context = canvas.getContext('2d')!;
@@ -212,8 +223,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-dark-rest.png` });
 			const safe = { left: player.left + profile.insets[3], top: player.top + profile.insets[0],
 				right: player.left + player.width - profile.insets[1], bottom: player.top + player.height - profile.insets[2] };
-			const circles = resting.circles;
-			const faceDiameter = circles[1].bounds.width;
+			const targets = resting.targets;
+			const faceDiameter = targets[1].bounds.width;
 			const width = safe.right - safe.left;
 			const height = safe.bottom - safe.top;
 			const landscape = width >= height;
@@ -221,66 +232,75 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			// Browser CSS positions use a subpixel layout grid; transformed SVG
 			// dimensions preserve the authored uniform scaling more precisely.
 			const coordinateTolerance = 1 / 32;
-			assert.equal(circles.length, 13, 'the rocker plus every one of the twelve physical gamepad buttons is present');
+			assert.equal(targets.length, 13, 'the rocker plus every one of the twelve physical gamepad buttons is present');
 			assert.ok(Math.abs(faceDiameter - 80 * scale) < 0.0001, 'all face targets share the handheld width/height budget');
-			for (const circle of circles.slice(1, 5)) {
+			for (const circle of targets.slice(1, 5)) {
 				assert.ok(Math.abs(circle.bounds.width - faceDiameter) < 0.0001, `${circle.id} has the same target diameter as every other face button`);
-				assert.equal(circle.presentation.fill, circles[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
-				assert.equal(circle.presentation.stroke, circles[1].presentation.stroke);
+				assert.equal(circle.presentation.fill, targets[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
+				assert.equal(circle.presentation.stroke, targets[1].presentation.stroke);
 			}
-			assert.ok(Math.abs(circles[0].bounds.width - 180 * scale) < 0.0001, 'the PNG rocker and face deck share their authored uniform scale');
-			const pad = circles[0];
-			const faceCenter = { x: (circles[1].x + circles[4].x) / 2, y: (circles[1].y + circles[4].y) / 2 };
+			assert.ok(Math.abs(targets[0].bounds.width - 180 * scale) < 0.0001, 'the PNG rocker and face deck share their authored uniform scale');
+			const pad = targets[0];
+			const faceCenter = { x: (targets[1].x + targets[4].x) / 2, y: (targets[1].y + targets[4].y) / 2 };
 			assert.ok(Math.abs(pad.y - faceCenter.y) < coordinateTolerance, 'both thumbs use one hand row rather than a portrait stagger');
-			const [select, start, ls, rs, lb, rb, lt, rt] = circles.slice(5);
+			const [select, start, ls, rs, lb, rb, lt, rt] = targets.slice(5);
 			const middle = (safe.left + safe.right) / 2;
 			assert.ok(select.x < middle && start.x > middle, 'SELECT and START straddle the handheld center');
 			assert.ok(Math.abs(select.y - start.y) < coordinateTolerance, 'menu controls share one bottom row');
 			assert.ok(select.y > pad.y && start.y > faceCenter.y, 'menu controls lie below the main hand row');
 			assert.ok(ls.x < select.x && rs.x > start.x, 'stick clicks remain separate from the centered menu controls');
 			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
-			const shoulderDiameter = 64 * (landscape ? scale : Math.max(0.875, scale));
 			const secondaryOffsets: Array<{ id: string; x: number; y: number }> = [];
-			for (const circle of [lb, rb, lt, rt]) {
-				assert.ok(Math.abs(circle.bounds.width - shoulderDiameter) < 0.0001, `${circle.id} uses the larger gameplay shoulder target`);
-				assert.ok(circle.bounds.width > select.bounds.width, 'frequently used shoulders are larger than the utility menu targets');
-				const primary = circle === lb || circle === lt ? pad : faceCenter;
-				assert.ok(circle.y < primary.y, `${circle.id} is reachable above its own hand, not placed at the viewport top`);
-				secondaryOffsets.push({ id: circle.id, x: (circle.x - primary.x) / scale, y: (circle.y - primary.y) / scale });
+			for (const shoulder of [lb, rb, lt, rt]) {
+				assert.equal(shoulder.tag, 'path', `${shoulder.id} uses a physical shoulder outline, not a circular target`);
+				assert.ok(shoulder.outline, `${shoulder.id} publishes its real rounded outline to input`);
+				assert.ok(shoulder.bounds.width / shoulder.bounds.height >= 1.5 - 0.0001, `${shoulder.id} is horizontally oriented`);
+				assert.ok(shoulder.bounds.width > select.bounds.width, 'shoulder contact width is larger than utility menu targets');
+				if (!profile.smallPlayer) assert.ok(shoulder.bounds.height >= 44 - coordinateTolerance,
+					`${shoulder.id} keeps meaningful touch height rather than squeezing into a thin decorative tab`);
+				const primary = shoulder === lb || shoulder === lt ? pad : faceCenter;
+				assert.ok(shoulder.y < primary.y, `${shoulder.id} is reachable above its own hand, not placed at the viewport top`);
+				secondaryOffsets.push({ id: shoulder.id, x: (shoulder.x - primary.x) / scale, y: (shoulder.y - primary.y) / scale });
 			}
 			if (landscape) {
-				const expected = [{ id: 'lb_knop', x: 100, y: -80 }, { id: 'rb_knop', x: -100, y: -70 },
-					{ id: 'lt_knop', x: 30, y: -144 }, { id: 'rt_knop', x: -28, y: -144 }];
-				for (let index = 0; index < expected.length; index += 1) {
-					assert.equal(secondaryOffsets[index].id, expected[index].id);
-					assert.ok(Math.abs(secondaryOffsets[index].x - expected[index].x) < coordinateTolerance / scale);
-					assert.ok(Math.abs(secondaryOffsets[index].y - expected[index].y) < coordinateTolerance / scale,
-						'landscape shoulder arcs follow the primary hand geometry across browser heights');
-				}
 				assert.equal(resting.deckTop, null, 'landscape retains an overlay rather than reserving a portrait deck');
 			} else {
 				assert.ok(resting.deckTop !== null);
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
 				assert.ok(Math.abs(lb.y - lt.y) < coordinateTolerance && Math.abs(rb.y - rt.y) < coordinateTolerance,
-					'portrait presents two shoulders above each hand on the same upper row');
+					'portrait keeps the four shoulder targets on one reachable upper row');
 				assert.ok(lb.y < pad.y - pad.radius && rb.y < faceCenter.y - 104 * scale,
 					'the shoulder row remains above rather than over the primary button targets');
 			}
+			const fillSamples: Array<{ id: string; x: number; y: number }> = [];
+			const expectedFills: boolean[] = [];
+			for (const shoulder of [lb, rb, lt, rt]) {
+				for (let column = -1; column <= 9; column += 1) {
+					for (let row = -1; row <= 5; row += 1) {
+						const x = shoulder.bounds.left + shoulder.bounds.width * (column + 0.37) / 9;
+						const y = shoulder.bounds.top + shoulder.bounds.height * (row + 0.43) / 5;
+						fillSamples.push({ id: shoulder.id, x, y });
+						expectedFills.push(controlContainsPoint(shoulder, x, y));
+					}
+				}
+			}
+			assert.deepEqual(await page.evaluate(samples => (globalThis as any).ergonomicsProbe.fills(samples), fillSamples), expectedFills,
+				'every shoulder SVG fill consumes the same numerical finite capsule, including its clipped corners');
 			const gaps: number[] = [];
 			const paintClearance = 0;
-			for (let index = 0; index < circles.length; index += 1) {
-				const circle = circles[index];
-				assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} keeps uniform CSS-client scaling`);
+			for (let index = 0; index < targets.length; index += 1) {
+				const circle = targets[index];
+				if (!circle.outline) assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} keeps uniform CSS-client scaling`);
 				assert.ok(circle.painted.left >= safe.left + paintClearance - 0.0001, `${circle.id} left paint clearance`);
 				assert.ok(circle.painted.top >= safe.top + paintClearance - 0.0001, `${circle.id} top paint clearance`);
 				assert.ok(circle.painted.right <= safe.right - paintClearance + 0.0001, `${circle.id} right paint clearance`);
 				assert.ok(circle.painted.bottom <= safe.bottom - paintClearance + 0.0001, `${circle.id} bottom paint clearance`);
-				for (let other = index + 1; other < circles.length; other += 1) {
-					const next = circles[other];
-					const gap = Math.hypot(circle.x - next.x, circle.y - next.y) - circle.radius - next.radius;
+				for (let other = index + 1; other < targets.length; other += 1) {
+					const next = targets[other];
+					const gap = controlSeparation(circle, next);
 					gaps.push(gap);
-					assert.ok(gap >= -0.0001, `${circle.id}/${next.id} physical activating circles never overlap`);
+					assert.ok(gap >= -0.0001, `${circle.id}/${next.id} physical activating surfaces never overlap`);
 				}
 			}
 			for (const group of resting.groups) {
@@ -292,14 +312,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.equal(label.text, actions[index].label);
 				assert.equal(label.visibility, 'visible');
 				assert.ok(Number(label.opacity) > 0 && label.width > 0 && label.height > 0, `${actions[index].label} label is painted`);
-				const circle = circles[index + 1];
+				const circle = targets[index + 1];
 				for (const x of [label.left, label.right]) {
 					for (const y of [label.top, label.bottom]) {
-						assert.ok(Math.hypot(x - circle.x, y - circle.y) < circle.radius, `${actions[index].label} painted text fits inside its contact circle`);
+						assert.ok(controlContainsPoint(circle, x, y), `${actions[index].label} painted text fits inside its actual contact surface`);
 					}
 				}
 			}
-			const padCenter = { id: 6, x: circles[0].x, y: circles[0].y };
+			const padCenter = { id: 6, x: targets[0].x, y: targets[0].y };
 			await touch('touchStart', [padCenter]);
 			assert.deepEqual(await poll(), { buttons: 0, physicalButtons: 0, sampledButtons: 0 },
 				'neutral center acquires a controller lease without pressing a direction');
@@ -325,7 +345,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				await settle();
 				const rolled = await measure();
 				assert.equal(rolled.padImage, `svgimg-d-pad-${roll.image}`);
-				assert.deepEqual(rolled.circles[0].bounds, resting.circles[0].bounds, 'artwork state changes never move the digital rocker frame');
+				assert.deepEqual(rolled.targets[0].bounds, resting.targets[0].bounds, 'artwork state changes never move the digital rocker frame');
 			}
 			await touch('touchEnd', []);
 			evidence.push({ profile: profile.name, safe, geometry: resting, minimumControlGap: Math.min(...gaps), secondaryOffsets });
@@ -336,37 +356,37 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				}, framebufferWidth);
 				const changed = await measure();
 				assert.deepEqual(changed.groups, resting.groups, `framebuffer ${framebufferWidth} does not change any control group`);
-				assert.deepEqual(changed.circles.map((circle: any) => circle.bounds), circles.map((circle: any) => circle.bounds));
+				assert.deepEqual(changed.targets.map((circle: any) => circle.bounds), targets.map((circle: any) => circle.bounds));
 			}
 			for (let index = 0; index < actions.length; index += 1) {
-				const circle = circles[index + 1];
+				const circle = targets[index + 1];
 				await touch('touchStart', [{ id: 1, x: circle.x, y: circle.y }]);
 				// SELECT remains the existing host-control modifier; contact geometry does not change routing policy.
 				const sampledButtons = actions[index].id === 'select_knop' ? 0 : actions[index].buttons;
 				assert.deepEqual(await poll(), { buttons: actions[index].buttons, physicalButtons: actions[index].buttons, sampledButtons }, `${actions[index].label} native center has its own exact physical bit`);
 				await settle();
 				const pressed = await measure();
-				assert.equal(pressed.circles[index + 1].presentation.touched, 'true');
-				assert.notEqual(pressed.circles[index + 1].presentation.fill, circle.presentation.fill);
-				assert.deepEqual(pressed.circles.map((entry: any) => entry.bounds), circles.map((entry: any) => entry.bounds), 'press rendering never moves a target');
+				assert.equal(pressed.targets[index + 1].presentation.touched, 'true');
+				assert.notEqual(pressed.targets[index + 1].presentation.fill, circle.presentation.fill);
+				assert.deepEqual(pressed.targets.map((entry: any) => entry.bounds), targets.map((entry: any) => entry.bounds), 'press rendering never moves a target');
 				await touch('touchEnd', []);
 				assert.equal((await poll()).sampledButtons, 0);
 				await settle();
 			}
-			const thumb = { id: 1, x: circles[1].x, y: circles[1].y, radiusX: 14, radiusY: 14 };
+			const thumb = { id: 1, x: targets[1].x, y: targets[1].y, radiusX: 14, radiusY: 14 };
 			await touch('touchStart', [thumb]);
 			assert.equal((await poll()).sampledButtons, 1);
-			const bridge = { ...thumb, x: (circles[1].x + circles[2].x) / 2, y: (circles[1].y + circles[2].y) / 2 };
+			const bridge = { ...thumb, x: (targets[1].x + targets[2].x) / 2, y: (targets[1].y + targets[2].y) / 2 };
 			await touch('touchMove', [bridge]);
 			assert.equal((await poll()).sampledButtons, 3, 'one reported thumb footprint bridges adjacent A and B');
 			await settle();
-			assert.deepEqual((await measure()).circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
+			assert.deepEqual((await measure()).targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
 			const directionThumb = { id: 2, x: rolls[1].x, y: rolls[1].y, radiusX: 14, radiusY: 14 };
 			await touch('touchStart', [bridge, directionThumb]);
 			assert.equal((await poll()).sampledButtons, 3 | masks.up | masks.right, 'a second thumb independently rolls a diagonal while the first presses two faces');
 			await touch('touchEnd', [directionThumb]);
 			assert.equal((await poll()).sampledButtons, 3, 'lifting the directional thumb leaves both face contributions held');
-			await touch('touchMove', [{ ...thumb, x: circles[2].x, y: circles[2].y }]);
+			await touch('touchMove', [{ ...thumb, x: targets[2].x, y: targets[2].y }]);
 			assert.equal((await poll()).sampledButtons, 2, 'rolling onto B releases A without releasing the thumb');
 			await touch('touchEnd', []);
 			assert.equal((await poll()).sampledButtons, 0);
@@ -388,9 +408,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-thumb-chord.png` });
 					await touch('touchEnd', []);
 					await settle();
-					const base = circles[0];
-					const a = { id: 1, x: circles[1].x, y: circles[1].y };
-					const b = { id: 2, x: circles[2].x, y: circles[2].y };
+					const base = targets[0];
+					const a = { id: 1, x: targets[1].x, y: targets[1].y };
+					const b = { id: 2, x: targets[2].x, y: targets[2].y };
 					const pad = { id: 3, x: base.x - base.radius * 0.7, y: base.y };
 					await touch('touchStart', [a]);
 					await touch('touchStart', [a, b]);
@@ -398,10 +418,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					assert.equal((await poll()).sampledButtons, 0x4003);
 					await settle();
 					const paired = await measure();
-					assert.deepEqual(paired.circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
+					assert.deepEqual(paired.targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['true', 'true']);
 					assert.equal(paired.padImage, 'svgimg-d-pad-l');
-					assert.notEqual(paired.circles[1].presentation.fill, circles[1].presentation.fill);
-					assert.notEqual(paired.circles[2].presentation.stroke, circles[2].presentation.stroke);
+					assert.notEqual(paired.targets[1].presentation.fill, targets[1].presentation.fill);
+					assert.notEqual(paired.targets[2].presentation.stroke, targets[2].presentation.stroke);
 					await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-${background}-paired.png` });
 					const scale = await page.evaluate(() => visualViewport!.scale);
 					await touch('touchMove', [a, b, { ...pad, x: -40 }]);
@@ -411,14 +431,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					await settle();
 					const dragged = await measure();
 					assert.equal(dragged.padImage, 'svgimg-d-pad-l', 'the static pressed artwork remains LEFT beyond the pad boundary');
-					assert.deepEqual(dragged.circles.map((circle: any) => circle.bounds), circles.map((circle: any) => circle.bounds));
+					assert.deepEqual(dragged.targets.map((circle: any) => circle.bounds), targets.map((circle: any) => circle.bounds));
 					await touch('touchMove', [a, b, pad]);
 					assert.equal((await poll()).sampledButtons, 0x4003, 'reentry restores the held contact contribution');
 					await touch('touchEnd', [a]);
 					assert.equal((await poll()).sampledButtons, 0x4002);
 					await settle();
 					const released = await measure();
-					assert.deepEqual(released.circles.slice(1, 3).map((circle: any) => circle.presentation.touched), ['false', 'true']);
+					assert.deepEqual(released.targets.slice(1, 3).map((circle: any) => circle.presentation.touched), ['false', 'true']);
 					await touch('touchEnd', []);
 					assert.equal((await poll()).sampledButtons, 0);
 					await settle();
@@ -440,7 +460,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		});
 		await settle();
 		const initial = await measure();
-		const finger = { id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 };
+		const finger = { id: 1, x: initial.targets[1].x, y: initial.targets[1].y, radiusX: 14, radiusY: 14 };
 		await touch('touchStart', [finger]);
 		for (const height of [341, 340, 320, 300, 280, 390]) {
 			await page.setViewportSize({ width: 844, height });
@@ -450,19 +470,19 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}, height);
 			await settle();
 			const current = await measure();
-			const held = current.circles.slice(1).reduce((word: number, circle: any, index: number) =>
-				Math.hypot(finger.x - circle.x, finger.y - circle.y) <= circle.radius + 14 ? word | actions[index].buttons : word, 0);
+			const held = current.targets.slice(1).reduce((word: number, circle: any, index: number) =>
+				distanceToControl(circle, finger.x, finger.y) <= 14 ? word | actions[index].buttons : word, 0);
 			const word = await poll();
 			assert.equal(word.buttons, held, `true document/player-frame geometry immediately applies at ${height}px height`);
 			assert.equal(word.physicalButtons, word.buttons);
 			assert.equal(word.sampledButtons, word.buttons & ~0x100);
 			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true,
 				'true layout changes contributions, not the retained contact identity');
-			assert.equal(current.circles[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
+			assert.equal(current.targets[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
 			finger.x += 1;
 			await touch('touchMove', [finger]);
-			const jittered = current.circles.slice(1).reduce((word: number, circle: any, index: number) =>
-				Math.hypot(finger.x - circle.x, finger.y - circle.y) <= circle.radius + 14 ? word | actions[index].buttons : word, 0);
+			const jittered = current.targets.slice(1).reduce((word: number, circle: any, index: number) =>
+				distanceToControl(circle, finger.x, finger.y) <= 14 ? word | actions[index].buttons : word, 0);
 			assert.equal((await poll()).sampledButtons, jittered & ~0x100, 'one-pixel native jitter does not reveal an edge deferred by layout');
 			await page.screenshot({ path: `${evidenceDirectory}/player-resize-${height}-held.png` });
 		}

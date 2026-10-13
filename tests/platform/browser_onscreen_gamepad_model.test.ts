@@ -10,12 +10,16 @@ import type { SystemController } from '../../machine/ts/machine/devices/system/c
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import type { HorizontalCapsule } from '../../hosts/browser/touch_geometry';
 
 const geometry: OnscreenGamepadGeometry = {
 	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
 	faceX: 325, faceY: 100, faceRadius: 50,
 	actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
 };
+
+const wideShoulder: HorizontalCapsule = { halfLength: 28, radius: 20 };
+const capsuleShoulder: HorizontalCapsule = { halfLength: 30, radius: 18 };
 
 function createFixture() {
 	let now = 0;
@@ -32,6 +36,96 @@ function createFixture() {
 	pad.subscribeView(() => { views += 1; });
 	return { pad, edges, unsubscribe, advance() { now += 1; }, views: () => views };
 }
+
+test('wide rounded shoulders use the actual silhouette rather than a circular circumbound', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, faceX: 300, faceY: 100, faceRadius: 0,
+		actions: [{ x: 300, y: 100, radius: 52, buttons: 0x10, outline: wideShoulder }] });
+	assert.equal(pad.beginContact(1, 348, 100, 0, 0, true), true, 'the long shoulder wing activates');
+	assert.equal(pad.buttons, 0x10);
+	pad.moveContact(1, 300, 150, 0, 0, true);
+	assert.equal(pad.buttons, 0, 'empty space in the enclosing circle is not a button');
+	pad.endContact(1);
+	assert.equal(pad.beginContact(2, 347, 119, 0, 0, true), false,
+		'empty space in the rounded AABB corner does not acquire');
+});
+
+test('one elliptical thumb bridges shoulder buttons and independent owners retain the same raw bits', () => {
+	const { pad, edges } = createFixture();
+	pad.setGeometry({ ...geometry, faceX: 300, faceY: 106, faceRadius: 100, actions: [
+		{ x: 300, y: 80, radius: 52, buttons: 0x10, outline: wideShoulder },
+		{ x: 300, y: 132, radius: 52, buttons: 0x40, outline: wideShoulder },
+	] });
+	pad.beginContact(1, 300, 106, 2, 6, true);
+	assert.equal(pad.buttons, 0x50, 'inclusive finite edge contact reaches both LB and LT');
+	pad.moveContact(1, 300, 80, 14, 3, true);
+	assert.equal(pad.buttons, 0x10);
+	pad.beginContact(2, 300, 132, 3, 14, true);
+	assert.equal(pad.buttons, 0x50);
+	pad.moveContact(1, 300, 106, 14, 14, true);
+	assert.equal(pad.buttons, 0x50);
+	pad.endContact(1);
+	assert.equal(pad.buttons, 0x40, 'the second finger still contributes LT');
+	pad.endContact(2);
+	assert.equal(pad.buttons, 0);
+	assert.deepEqual(edges.filter(edge => edge.code === 'lb').map(edge => edge.down), [true, false]);
+	assert.deepEqual(edges.filter(edge => edge.code === 'lt').map(edge => edge.down), [true, false, true, false]);
+});
+
+test('pad and rounded shoulder acquisition compare actual surfaces, never the shoulder circumbound', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, actions: [
+		{ x: 160, y: 70, radius: 52, buttons: 0x10, outline: wideShoulder },
+	] });
+	pad.beginContact(1, 125, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0x8000, 'a pad-center hit beats shoulder area-only pickup inside its circumbound');
+	pad.endContact(1);
+	pad.beginContact(2, 154, 105, 16, 16, true);
+	assert.equal(pad.buttons, 0x8000, 'outside both solids, the actual nearer pad edge wins');
+	pad.endContact(2);
+	pad.beginContact(3, 125, 85, 14, 14, true);
+	assert.equal(pad.buttons, 0x10, 'a direct rounded shoulder hit remains a button even over the pad');
+	pad.moveContact(3, 300, 100, 0, 0, true);
+	assert.equal(pad.buttons, 0, 'the same held finger remains a live button contact, not a captured pad');
+});
+
+test('finite capsule shoulders preserve live button contacts and actual-surface pad acquisition', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, actions: [
+		geometry.actions[0],
+		{ x: 160, y: 70, radius: 48, buttons: 0x10, outline: capsuleShoulder },
+	] });
+	pad.beginContact(1, 125, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0x8000, 'the circumbound interior is not a direct capsule hit');
+	pad.endContact(1);
+	pad.beginContact(2, 154, 105, 18, 18, true);
+	assert.equal(pad.buttons, 0x8000, 'the nearer pad beats area-only contact with the capsule');
+	pad.endContact(2);
+	pad.beginContact(3, 125, 85, 14, 14, true);
+	assert.equal(pad.buttons, 0x10, 'the actual rounded end cap is a direct button surface');
+	pad.moveContact(3, 300, 100, 14, 14, true);
+	assert.equal(pad.buttons, 1, 'the finger glides to A without changing native ownership');
+	pad.moveContact(3, 209, 70, 0, 0, true);
+	assert.equal(pad.buttons, 0, 'the capsule centerline does not extend beyond its finite end');
+	pad.moveContact(3, 207, 70, 0, 0, true);
+	assert.equal(pad.buttons, 0x10, 'the same held contact can re-enter the outer cap');
+});
+
+test('one thumb can chord capsule shoulder rows while another finger contributes independently', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, faceX: 300, faceY: 104, faceRadius: 100, actions: [
+		{ x: 300, y: 80, radius: 48, buttons: 0x10, outline: capsuleShoulder },
+		{ x: 300, y: 128, radius: 48, buttons: 0x40, outline: capsuleShoulder },
+	] });
+	pad.beginContact(1, 300, 104, 2, 6, true);
+	assert.equal(pad.buttons, 0x50);
+	pad.beginContact(2, 345, 128, 2, 14, true);
+	assert.equal(pad.buttons, 0x50, 'independent anisotropic finger reaches the other endpoint cap');
+	pad.endContact(1);
+	assert.equal(pad.buttons, 0x40);
+	pad.endContact(2);
+	assert.equal(pad.buttons, 0);
+});
 
 test('a single contact slides from A through A+B to B and releases outside finite buttons', () => {
 	const { pad, edges } = createFixture();

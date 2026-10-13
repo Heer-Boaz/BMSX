@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { controlContainsPoint, distanceToControl, outsideControlPoint } from './touch_gamepad_geometry_oracle';
 
 const actions = [
 	{ id: 'a_knop', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -115,6 +116,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 				return { model: pad.buttons, common: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(),
 					routed: snapshot.pads[0].buttons, mmio: memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_BUTTONS_OFFSET), pointer: snapshot.pointerButtons };
 			},
+			geometry() {
+				return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius,
+					outline: action.outline ? { halfLength: action.outline.halfLength, radius: action.outline.radius } : undefined }));
+			},
 			refreshLayout() { video.refreshLayout(); },
 			takeEvents() { return events.splice(0); },
 			clearTrace() { trace.buffer.clear(); },
@@ -135,9 +140,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	const measure = () => page.evaluate(actionIds => {
 		const pad = document.getElementById('d-pad-svg')!.getBoundingClientRect();
 		const face = document.getElementById('action-buttons-svg')!.getBoundingClientRect();
-		const actions = actionIds.map(id => {
+		const shapes = (globalThis as any).touchAcceptance.geometry();
+		const actions = actionIds.map((id, index) => {
 			const rect = document.getElementById(id)!.getBoundingClientRect();
-			return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radius: rect.width / 2 };
+			return { ...shapes[index], bounds: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } };
 		});
 		return { pad: { x: pad.left + pad.width / 2, y: pad.top + pad.height / 2, radius: pad.width / 2 },
 			face: { x: face.left + face.width / 2, y: face.top + face.height / 2, radius: face.width / 2 }, actions };
@@ -246,22 +252,21 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			}, profile.padding);
 			const geometry = await measure();
 			for (const [index, action] of geometry.actions.entries()) {
-				// The oracle uses only independent circle distances. Search for an
-				// actual isolated skin-only sample, rather than freezing old layout
+				// The oracle uses independent distance to the actual circle or finite
+				// capsule. Search an isolated skin-only sample rather than old layout
 				// coordinates or reusing the production acquisition implementation.
 				let contact: TouchPoint | undefined;
 				for (let degrees = 0; degrees < 360 && contact === undefined; degrees += 10) {
 					const angle = degrees * Math.PI / 180;
-					const point = { id: 1, x: action.x + (action.radius + 1) * Math.cos(angle),
-						y: action.y + (action.radius + 1) * Math.sin(angle), radiusX: 14, radiusY: 14 };
+					const point = { id: 1, ...outsideControlPoint(action, angle, 1), radiusX: 14, radiusY: 14 };
 					if (point.x < 0 || point.x > profile.width || point.y < 0 || point.y > profile.height) continue;
 					if (Math.hypot(point.x - geometry.pad.x, point.y - geometry.pad.y) <= geometry.pad.radius) continue;
 					const touched = geometry.actions.reduce((word, button, buttonIndex) =>
-						Math.hypot(point.x - button.x, point.y - button.y) <= button.radius + 14 ? word | actions[buttonIndex].buttons : word, 0);
+						distanceToControl(button, point.x, point.y) <= 14 ? word | actions[buttonIndex].buttons : word, 0);
 					if (touched === actions[index].buttons) contact = point;
 				}
 				assert.ok(contact, `${actions[index].id} exposes an independently reachable skin-only edge`);
-				assert.ok(Math.hypot(contact.x - action.x, contact.y - action.y) > action.radius,
+				assert.ok(!controlContainsPoint(action, contact.x, contact.y),
 					'the contact center is outside the actual switch; activation requires its measured skin footprint');
 				await takeEvents();
 				await touch('touchStart', [contact]);
@@ -376,10 +381,20 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('one thumb can truly contact X plus RB while another finger independently holds RB', async () => {
-		const { actions: [, , x, , , , , , , rb] } = await measure();
-		const contact = { id: 1, x: (x.x + rb.x) / 2, y: (x.y + rb.y) / 2, radiusX: 14, radiusY: 14 };
-		assert.ok(Math.hypot(contact.x - x.x, contact.y - x.y) < x.radius + 14);
-		assert.ok(Math.hypot(contact.x - rb.x, contact.y - rb.y) < rb.radius + 14);
+		const geometry = await measure();
+		const [, , x, , , , , , , rb] = geometry.actions;
+		let contact: TouchPoint | undefined;
+		for (let row = -24; row <= 24 && contact === undefined; row += 2) {
+			for (let column = -24; column <= 24; column += 2) {
+				const candidate = { id: 1, x: (x.x + rb.x) / 2 + column, y: (x.y + rb.y) / 2 + row, radiusX: 14, radiusY: 14 };
+				const touched = geometry.actions.reduce((word, action, index) =>
+					distanceToControl(action, candidate.x, candidate.y) < 14 ? word | actions[index].buttons : word, 0);
+				if (touched === 0x24) { contact = candidate; break; }
+			}
+		}
+		assert.ok(contact, 'actual neighboring face/shoulder surfaces expose a genuine one-thumb bridge');
+		assert.ok(distanceToControl(x, contact.x, contact.y) < 14);
+		assert.ok(distanceToControl(rb, contact.x, contact.y) < 14);
 		const second = { id: 2, x: rb.x, y: rb.y, radiusX: 1, radiusY: 1 };
 		await touch('touchStart', [contact]);
 		await assertWord(0x24, 0, 'actual skin overlap contributes both visible switches, not one arbitrarily selected button deck');
@@ -395,12 +410,17 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('a direct utility press wins over a large thumb reaching the nearby pad', async () => {
-		const { pad, actions: [, , , , , , , , lb] } = await measure();
-		const contact = { id: 1, x: lb.x, y: lb.y, radiusX: 43, radiusY: 43 };
-		assert.ok(Math.hypot(lb.x - pad.x, lb.y - pad.y) < pad.radius + 43,
+		const geometry = await measure();
+		const { pad, actions: [, , , , , , , , lb] } = geometry;
+		const radius = Math.hypot(lb.x - pad.x, lb.y - pad.y) - pad.radius + 2;
+		const contact = { id: 1, x: lb.x, y: lb.y, radiusX: radius, radiusY: radius };
+		assert.ok(Math.hypot(lb.x - pad.x, lb.y - pad.y) < pad.radius + radius,
 			'the measured skin area also reaches the pad');
 		await touch('touchStart', [contact]);
-		await assertWord(0x10, 0, 'only LB is pressed, even though the thumb area also touches the pad');
+		const expected = geometry.actions.reduce((word, action, index) =>
+			distanceToControl(action, contact.x, contact.y) <= radius ? word | actions[index].buttons : word, 0);
+		assert.ok((expected & 0x10) !== 0);
+		await assertWord(expected, 0, 'a direct LB contact keeps all real button intersections, but never becomes pad input');
 		await touch('touchMove', [{ ...contact, x: pad.x - pad.radius * 0.8, y: pad.y }]);
 		await assertWord(0, 0, 'the retained utility contact does not become a directional contact');
 	});
@@ -414,10 +434,12 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			const dx = primary.x - utility.x;
 			const dy = primary.y - utility.y;
 			const length = Math.hypot(dx, dy);
-			for (const offset of [0, utility.radius * 0.8]) {
+			const innerPoint = outsideControlPoint(utility, Math.atan2(dy, dx), 0);
+			const innerDistance = Math.hypot(innerPoint.x - utility.x, innerPoint.y - utility.y);
+			for (const offset of [0, innerDistance * 0.8]) {
 				const point = { id: 1, x: utility.x + dx / length * offset,
 					y: utility.y + dy / length * offset, radiusX: 1, radiusY: 1 };
-				assert.ok(Math.hypot(point.x - utility.x, point.y - utility.y) < utility.radius,
+				assert.ok(controlContainsPoint(utility, point.x, point.y),
 					'the point is inside the actual visible utility button');
 				for (const button of actions.slice(0, 4)) {
 					assert.ok(Math.hypot(point.x - button.x, point.y - button.y) > button.radius,

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
+import { distanceToControl } from './touch_gamepad_geometry_oracle';
 
 const BUTTONS = [
 	{ id: 'a_knop', bit: InputControllerGamepadButtonBit.A },
@@ -93,6 +94,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
 					menu,
+					geometry() {
+						return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius, buttons: action.buttons,
+							outline: action.outline ? { halfLength: action.outline.halfLength, radius: action.outline.radius } : undefined }));
+					},
 					poll() {
 						input.pollInput();
 						const menuInput = menu.tickInput();
@@ -158,6 +163,58 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					assert.equal(state.menuInput, 0);
 				});
 			}
+
+			await orientation.test('rounded shoulder corners are not their broad-phase circumbound circles', async () => {
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				for (const id of ['lb_knop', 'rb_knop', 'lt_knop', 'rt_knop']) {
+					const button = BUTTONS.find(button => button.id === id)!;
+					const shape = shapes.find(shape => shape.buttons === 1 << button.bit);
+					assert.ok(shape.outline, `${id} owns an actual rounded outline`);
+					let outside: { x: number; y: number } | undefined;
+					for (let degrees = 0; degrees < 360 && outside === undefined; degrees += 10) {
+						const angle = degrees * Math.PI / 180;
+						const candidate = { x: shape.x + shape.radius * 0.8 * Math.cos(angle), y: shape.y + shape.radius * 0.8 * Math.sin(angle) };
+						if (shapes.every(other => distanceToControl(other, candidate.x, candidate.y) > 3)) outside = candidate;
+					}
+					assert.ok(outside, `${id} exposes empty space inside its intentionally loose broad bound`);
+					await touch('touchStart', [point(id)]);
+					assert.equal((await poll()).model, shape.buttons);
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point(id), ...outside, radiusX: 1, radiusY: 1 }] });
+					const empty = await poll();
+					assert.equal(empty.model, 0, `${id} releases as the retained contact leaves its actual arched outline`);
+					assert.equal(empty.physical, 0);
+					assert.equal(empty.snapshot, 0);
+					assert.equal(empty.mmio, 0);
+					await touch('touchEnd', []);
+				}
+			});
+
+			await orientation.test('one thumb bridges each shoulder pair without merging their independent raw bits', async () => {
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				for (const [firstId, secondId, word] of [['lb_knop', 'lt_knop', 0x50], ['rb_knop', 'rt_knop', 0xa0]] as const) {
+					const first = shapes.find(shape => shape.buttons === 1 << BUTTONS.find(button => button.id === firstId)!.bit);
+					const second = shapes.find(shape => shape.buttons === 1 << BUTTONS.find(button => button.id === secondId)!.bit);
+					let bridge: { x: number; y: number } | undefined;
+					for (let row = -28; row <= 28 && bridge === undefined; row += 2) {
+						for (let column = -28; column <= 28; column += 2) {
+							const candidate = { x: (first.x + second.x) / 2 + column, y: (first.y + second.y) / 2 + row };
+							const touched = shapes.reduce((mask, shape) => distanceToControl(shape, candidate.x, candidate.y) < 14 ? mask | shape.buttons : mask, 0);
+							if (touched === word) { bridge = candidate; break; }
+						}
+					}
+					assert.ok(bridge, `${firstId}/${secondId} have a reachable true-contact chord, not overlapping target rectangles`);
+					await touch('touchStart', [{ ...point(firstId), ...bridge }]);
+					const paired = await poll();
+					assert.equal(paired.model, word);
+					assert.equal(paired.physical, word);
+					assert.equal(paired.snapshot, word);
+					assert.equal(paired.mmio, word);
+					assert.deepEqual(paired.axes, firstId === 'lb_knop' ? [0x10000, 0] : [0, 0x10000]);
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point(secondId), id: point(firstId).id }] });
+					assert.equal((await poll()).model, second.buttons, 'rolling across the pair releases only the bumper');
+					await touch('touchEnd', []);
+				}
+			});
 
 			await orientation.test('LT and RT retain independent full-travel axes and ICU bits in either release order', async () => {
 				for (const released of ['lt_knop', 'rt_knop']) {

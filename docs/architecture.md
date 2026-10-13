@@ -4927,12 +4927,18 @@ contacts. Pressure is not a size estimate, and Touch Events are not a second
 producer. Contact outlines are axis-aligned ellipse estimates, not filled
 bounding rectangles. The numerical controller separates retained directional
 capture from live button contacts. All twelve face, shoulder, trigger and
-auxiliary circles can contribute nonexclusively to a button contact; a thumb may bridge adjacent
+auxiliary surfaces can contribute nonexclusively to a button contact; a thumb may bridge adjacent
 switches or slide between them without lifting. Actual activating surfaces
 precede the neutral face acquisition envelope. Direct visible button-center
 hits precede directional pickup; area-only conflicts compare actual control
 boundaries. A neutral deck contact may acquire the button route without
 initially pressing a switch, but cannot steal a real auxiliary skin hit.
+Face and auxiliary switches retain circular geometry. LB/LT/RB/RT use wide
+horizontal capsules: one layout producer writes their finite center-line and
+end-cap radius and generates the matching SVG outline. Ellipse-contact and
+nearest-surface queries consume that actual shape, not a circumbound circle or
+the SVG bounding rectangle. Geometry is retained and updated at layout time;
+native moves allocate no shape objects and perform no DOM hit tests.
 The joined rocker uses immediate absolute contact-center direction regions
 over the whole disc, with a neutral center and up to two adjacent bits per
 contact. There is no analog origin, moving tip or exclusive first-finger owner.

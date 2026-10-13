@@ -1,6 +1,95 @@
 # Browser touch-controller ownership
 
+## Wide shoulder surfaces, 2026-10-13
+
+This slice replaces only LB/LT/RB/RT's circular artwork and hit geometry with
+wide horizontal capsules. The user explicitly permits a pill silhouette.
+Delta's actual pinned SNES landscape artwork uses that shape; its
+[skin metadata](https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L65-L87)
+authors 100x40 landscape and 97x29 portrait shoulder rectangles. These establish
+a production precedent, not a universal size prescription. DeltaCore's
+`ButtonsInputView` uses extended rectangular pickup frames: BMSX does **not**
+copy that approximation for its nonexclusive thumb-contact model.
+
+The numerical representation is a finite horizontal segment plus a disk,
+the [capsule representation in Box2D](https://github.com/erincatto/box2d/blob/ac7c751eaeddbabdc1c4d41ae4f3a25d78627790/include/box2d/collision.h#L134-L146).
+`onscreen_control_shapes.ts` owns production of the two retained scalar fields
+and matching SVG path. `touch_geometry.ts` owns exact contact queries: when
+the ellipse center projects onto the segment, the closest segment distance is
+vertical; otherwise it is the existing ellipse-versus-end-cap-circle query.
+No polygon tessellation, point grid, DOM hit testing, pressure sizing, generic
+future polygon framework, or per-move allocation is introduced. The circumbound
+radius remains only metadata and is never substituted for the shoulder skin.
+
+Nominal shoulders are 112x56 CSS pixels. Layout budgets real horizontal room
+between the two hands and between portrait shoulders; height aims for at least
+44 pixels, capped by the available width to retain a horizontal silhouette in
+small embedded players. Landscape retains inward bumpers and upper triggers,
+with explicit separation from face/pad bodies. Portrait uses a single row
+LT/LB/RB/RT above the aligned primary hand row, preserving the top game region
+and its integer/half-integer scale rather than reserving another shoulder row.
+Sizes and offsets are local ergonomic choices. LS/RS retain their existing
+footer placement: this shoulders-first slice does not claim to resolve the
+reported LS/RS placement concern.
+
+Independent contact identities, rolling multi-button pickup, reference counts,
+digital pad behavior and nine original pad PNGs are unchanged. Existing common
+input and ICU publish ordinary bumper/trigger bits and trigger Q16 axes; host
+shortcuts and frame polling are untouched.
+
+### Shoulder validation and publication
+
+The focused bundle passes **225 tests**, with browser/node/scripts/tests
+typechecks, release build and diff checks. All 27 layout profiles retain actual
+body separation and legible labels; each compares 308 SVG-fill points against
+an independent finite-segment oracle. Native tests cover all twelve buttons,
+shoulder-pair thumb bridges, glides, independent release counts, empty space
+inside loose circumbounds, trigger axes, ICU words and existing host routing.
+Analytical support cases include anisotropic and zero-axis contacts plus 1,000
+seeded capsule/ellipse tangent constructions. The original pad images and
+integer/half-integer video fit remain covered.
+
+Actual paired `nemesis_s` and `2025` games pass in all four ordinary/trace
+packages, phone/tablet and both orientations. Chromium uses WebGPU; WPE WebKit
+uses WebGL2 and repeats **1,008 trusted native state checks** in 16 profiles.
+Both retain running audio, portrait safe-top/above-deck video and no script,
+GPU or request errors. Rendered screenshots were inspected. WPE native contacts
+remain fixed 2x2, so these are not physical-iPhone thumb or ergonomic acceptance.
+Evidence: `.bmsx/hosting/shoulder-capsule-evidence/` and
+`.bmsx/hosting/shoulder-geometry-evidence/`.
+
+The release engine SHA-256 is
+`1e38e2d85b19bd9f40cd83852d8fd1e6ea6485137eb69a4d7fbda334bb6fe8bc`;
+paired ROM media and the tracing bundle are unchanged. Existing game URLs and
+their `/ios/` suffixes are retained; no new diagnostic route or URL parameter
+is introduced. Azure publication is complete; 43 public asset/route/header
+receipts match the staged package, and public Chromium repeats actual-game
+phone/tablet input and presentation checks in both orientations without errors.
+
+### Separate keyboard-forwarding diagnosis, not a fix in this slice
+
+The shared virtual keyboard producer discards the activating source's hold
+duration: it releases its generated key after one host UI frame. A production
+`runHostFrame`/real paired Nemesis BIOS-terminal reproduction with 100ms held
+inputs and a roughly 49.76Hz guest confirms missing letters and Backspaces.
+At 60Hz host cadence, only 18-20 of 24 controller or pointer inputs were sampled;
+at 120Hz, only 10-11. Both activation methods reach the same pulse producer,
+matching the reported responsive keyboard UI but inconsistent guest input.
+Actual Metalion cheat activation has not been tested.
+
+The next coherent fix belongs to the mirrored TS/C++ host keyboard producer,
+not ICU or a cart: retain the pressed selected key for the actual source's
+down/up lifetime, publish modifiers throughout that lifetime, and keep sticky
+modifier UX separate. [VICE's virtual keyboard](https://github.com/libretro/vice-libretro/blob/f63b56688f3133a2bb17499db9eebb7ab81df5f5/libretro/libretro-vkbd.c#L1470-L1555)
+provides this source-lifetime precedent. Do not introduce arbitrary minimum
+millisecond pulses, host typematic commands or a FIFO behind level-sampled
+hardware. Ordinary sub-guest-frame taps remain sampled-state semantics.
+The owner/callsite TS/C++ table and rendered guest evidence are retained in
+`.bmsx/hosting/keyboard-forwarding-audit/findings.md`.
+
 ## Handheld layout and complete shoulder controls, 2026-10-13
+
+Historical record for `6aa97dda9`; shoulder size and shape are superseded above.
 
 The user reports that the revised contact input works well on their iPhone,
 but reproduced a portrait presentation regression: the image was centered in

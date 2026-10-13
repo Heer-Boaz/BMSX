@@ -2,7 +2,8 @@ import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
 import type { HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { contactIntersectsCircle } from './touch_geometry';
+import { contactIntersectsCircle, contactIntersectsHorizontalCapsule, pointDistanceToHorizontalCapsule,
+	type HorizontalCapsule } from './touch_geometry';
 
 // Directional capture and live, nonexclusive button hits are distinct purposes:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
@@ -12,8 +13,11 @@ const DIAGONAL_SLOPE = Math.SQRT2 - 1;
 export interface OnscreenActionGeometry {
 	x: number;
 	y: number;
+	/** Exact for a circle; circumbound metadata when an outline is present. */
 	radius: number;
 	buttons: number;
+	/** Absence identifies a circular control; shoulders supply their actual capsule. */
+	outline?: HorizontalCapsule;
 }
 
 /** CSS-client geometry produced once by the control view's layout owner. */
@@ -102,33 +106,41 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public beginContact(id: number, x: number, y: number, halfWidth: number, halfHeight: number, active: boolean): boolean {
 		const geometry = this.geometry;
 		let buttons = 0;
-		let directButton = false;
-		let nearestButton = Infinity;
 		for (let index = 0; index < geometry.actions.length; index += 1) {
 			const action = geometry.actions[index];
 			const dx = x - action.x;
 			const dy = y - action.y;
-			const distanceSquared = dx * dx + dy * dy;
-			if (!contactIntersectsCircle(dx, dy, halfWidth, halfHeight, action.radius)) continue;
-			buttons |= action.buttons;
-			if (distanceSquared <= action.radius * action.radius) directButton = true;
-			if (!directButton) nearestButton = Math.min(nearestButton, Math.sqrt(distanceSquared) - action.radius);
+			if (action.outline
+				? contactIntersectsHorizontalCapsule(dx, dy, halfWidth, halfHeight, action.outline)
+				: contactIntersectsCircle(dx, dy, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
 		}
 		const padX = x - geometry.padX;
 		const padY = y - geometry.padY;
 		const padDistanceSquared = padX * padX + padY * padY;
 		let purpose = ContactPurpose.Buttons;
-		if (!directButton) {
-			if (padDistanceSquared <= geometry.padRadius * geometry.padRadius) {
-				purpose = ContactPurpose.Pad;
-			} else if (contactIntersectsCircle(padX, padY, halfWidth, halfHeight, geometry.padRadius)) {
-				// Area-only pickup compares actual controls; an invisible face envelope
-				// must not intercept a footprint that already presses a real button.
-				if (Math.sqrt(padDistanceSquared) - geometry.padRadius <= nearestButton) purpose = ContactPurpose.Pad;
-			} else if (buttons === 0 && !contactIntersectsCircle(x - geometry.faceX, y - geometry.faceY,
-				halfWidth, halfHeight, geometry.faceRadius)) {
-				return false;
+		if (contactIntersectsCircle(padX, padY, halfWidth, halfHeight, geometry.padRadius)) {
+			// Only an ambiguous pad/button footprint needs actual surface distances.
+			// Circumbounds cannot steal a direct hit or invent a nearest shoulder.
+			let directButton = false;
+			let nearestButton = Infinity;
+			for (let index = 0; index < geometry.actions.length; index += 1) {
+				const action = geometry.actions[index];
+				if ((buttons & action.buttons) === 0) continue;
+				const dx = x - action.x;
+				const dy = y - action.y;
+				const distance = action.outline ? pointDistanceToHorizontalCapsule(dx, dy, action.outline)
+					: Math.max(0, Math.hypot(dx, dy) - action.radius);
+				if (distance === 0) {
+					directButton = true;
+					break;
+				}
+				nearestButton = Math.min(nearestButton, distance);
 			}
+			if (!directButton && (padDistanceSquared <= geometry.padRadius * geometry.padRadius
+				|| Math.sqrt(padDistanceSquared) - geometry.padRadius <= nearestButton)) purpose = ContactPurpose.Pad;
+		} else if (buttons === 0 && !contactIntersectsCircle(x - geometry.faceX, y - geometry.faceY,
+			halfWidth, halfHeight, geometry.faceRadius)) {
+			return false;
 		}
 		const previousButtons = this.activeButtons;
 		const index = this.contactCount++;
@@ -202,7 +214,9 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		let buttons = 0;
 		for (let index = 0; index < actions.length; index += 1) {
 			const action = actions[index];
-			if (contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
+			if (action.outline
+				? contactIntersectsHorizontalCapsule(x - action.x, y - action.y, halfWidth, halfHeight, action.outline)
+				: contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
 		}
 		return buttons;
 	}

@@ -1,6 +1,7 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
 import type { BrowserInputDiagnostics } from './input_trace_contract';
+import { layoutShoulderOutline } from './onscreen_control_shapes';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick, LeftBumper, RightBumper, LeftTrigger, RightTrigger }
 
@@ -30,10 +31,12 @@ const PAD_SIZE = 180;
 const CONTROL_GAP = 12;
 const MENU_SIZE = 52;
 const STICK_CLICK_SIZE = 44;
-const SHOULDER_SIZE = 64;
+const SHOULDER_WIDTH = 112;
+const SHOULDER_HEIGHT = 56;
 
 interface ActionSurface {
 	element: HTMLElement;
+	artwork: SVGSVGElement;
 	artworkWidth: number;
 	artworkHeight: number;
 	left: number;
@@ -51,7 +54,9 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalPadY: number;
 	private readonly nominalPadRadius: number;
 	private readonly padImages: SVGImageElement[] = [];
-	private readonly circles: SVGCircleElement[] = [];
+	private readonly buttonShapes: SVGGeometryElement[] = [];
+	private readonly shoulderActions: OnscreenActionGeometry[] = [];
+	private readonly shoulderLabels: SVGTextElement[] = [];
 	private readonly nominalActions: OnscreenActionGeometry[] = [];
 	private readonly actions: OnscreenActionGeometry[] = [];
 	private readonly geometry: OnscreenGamepadGeometry = {
@@ -83,7 +88,7 @@ export class BrowserOnscreenGamepadView {
 			const element = document.getElementById(id);
 			const artwork = element.firstElementChild as SVGSVGElement;
 			this.actionSurfaces.push({
-				element, artworkWidth: artwork.viewBox.baseVal.width, artworkHeight: artwork.viewBox.baseVal.height,
+				element, artwork, artworkWidth: artwork.viewBox.baseVal.width, artworkHeight: artwork.viewBox.baseVal.height,
 				left: 0, top: 0, scale: 1,
 			});
 		}
@@ -94,13 +99,21 @@ export class BrowserOnscreenGamepadView {
 			this.padImages.push(document.getElementById(`svgimg-d-pad-${direction}`) as unknown as SVGImageElement);
 		}
 		for (const action of ACTIONS) {
-			const circle = document.getElementById(action.id) as unknown as SVGCircleElement;
-			this.circles.push(circle);
-			this.nominalActions.push({
-				x: circle.cx.baseVal.value, y: circle.cy.baseVal.value,
-				radius: circle.r.baseVal.value, buttons: action.buttons,
-			});
-			this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
+			const element = document.getElementById(action.id) as unknown as SVGGeometryElement;
+			this.buttonShapes.push(element);
+			if (action.surface < ActionSurfaceIndex.LeftBumper) {
+				const circle = element as SVGCircleElement;
+				this.nominalActions.push({
+					x: circle.cx.baseVal.value, y: circle.cy.baseVal.value,
+					radius: circle.r.baseVal.value, buttons: action.buttons,
+				});
+				this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
+			} else {
+				const geometry = { x: 0, y: 0, radius: 0, buttons: action.buttons, outline: { halfLength: 0, radius: 0 } };
+				this.actions.push(geometry);
+				this.shoulderActions.push(geometry);
+				this.shoulderLabels.push(document.getElementById(action.id + '_text') as unknown as SVGTextElement);
+			}
 		}
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 	}
@@ -162,33 +175,33 @@ export class BrowserOnscreenGamepadView {
 			(landscape ? centerX - clickOffset : padX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
 			(landscape ? centerX + clickOffset : faceCenterX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
-		const shoulderSize = SHOULDER_SIZE * (landscape ? viewportScale : Math.max(0.875, viewportScale));
-		const shoulderRadius = shoulderSize / 2;
-		const shoulderScale = shoulderSize / this.actionSurfaces[ActionSurfaceIndex.LeftBumper].artworkWidth;
+		const shoulderScale = landscape ? viewportScale : Math.max(0.875, viewportScale);
+		const shoulderWidth = landscape ? Math.min(SHOULDER_WIDTH * shoulderScale,
+			faceCenterX - 100 * viewportScale - (padX + 130 * viewportScale) - gap)
+			: Math.min(SHOULDER_WIDTH * shoulderScale, (width - margin * 2 - gap * 3) / 4);
+		const shoulderHeight = Math.min(Math.max(44, SHOULDER_HEIGHT * shoulderScale), shoulderWidth / 1.5);
 		if (landscape) {
-			// Bumpers stay on the inward thumb arcs; triggers have their own upper
-			// targets. Neither pair aliases the distinct LS/RS stick-click bits.
-			this.placeActionSurface(ActionSurfaceIndex.LeftBumper,
-				padX + 100 * viewportScale - shoulderRadius, padY - 80 * viewportScale - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightBumper,
-				faceCenterX - 100 * viewportScale - shoulderRadius, faceCenterY - 70 * viewportScale - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.LeftTrigger,
-				padX + 30 * viewportScale - shoulderRadius, padY - 144 * viewportScale - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightTrigger,
-				faceCenterX - 28 * viewportScale - shoulderRadius, faceCenterY - 144 * viewportScale - shoulderRadius, shoulderScale);
+			// Wide bumpers stay on the inward thumb arcs, clear of the D-pad body.
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper,
+				padX + 130 * viewportScale, padY - 96 * viewportScale, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper,
+				faceCenterX - 100 * viewportScale, faceCenterY - 84 * viewportScale, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger,
+				padX + 30 * viewportScale, padY - 156 * viewportScale, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger,
+				faceCenterX - 28 * viewportScale, faceCenterY - 156 * viewportScale, shoulderWidth, shoulderHeight);
 			this.portraitControlTop = null;
 		} else {
-			const shoulderY = primaryY - primaryRadius - gap - shoulderRadius;
-			const shoulderOffset = (shoulderSize + gap) / 2;
-			this.placeActionSurface(ActionSurfaceIndex.LeftTrigger,
-				padX - shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.LeftBumper,
-				padX + shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightBumper,
-				faceCenterX - shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
-			this.placeActionSurface(ActionSurfaceIndex.RightTrigger,
-				faceCenterX + shoulderOffset - shoulderRadius, shoulderY - shoulderRadius, shoulderScale);
-			this.portraitControlTop = shoulderY - shoulderRadius - CONTROL_GAP;
+			const shoulderY = primaryY - primaryRadius - gap - shoulderHeight / 2;
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger,
+				left + margin + shoulderWidth / 2, shoulderY, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper,
+				left + margin + shoulderWidth * 1.5 + gap, shoulderY, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper,
+				left + width - margin - shoulderWidth * 1.5 - gap, shoulderY, shoulderWidth, shoulderHeight);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger,
+				left + width - margin - shoulderWidth / 2, shoulderY, shoulderWidth, shoulderHeight);
+			this.portraitControlTop = shoulderY - shoulderHeight / 2 - CONTROL_GAP;
 		}
 		const geometry = this.geometry;
 		geometry.padX = padX;
@@ -198,7 +211,7 @@ export class BrowserOnscreenGamepadView {
 		geometry.faceX = faceCenterX;
 		geometry.faceY = faceCenterY;
 		geometry.faceRadius = faceSurface.artworkWidth * faceScale / 2;
-		for (let index = 0; index < this.actions.length; index += 1) {
+		for (let index = 0; index < this.nominalActions.length; index += 1) {
 			const surface = this.actionSurfaces[ACTIONS[index].surface];
 			const nominal = this.nominalActions[index];
 			const action = this.actions[index];
@@ -233,6 +246,27 @@ export class BrowserOnscreenGamepadView {
 		surface.element.hidden = false;
 	}
 
+	/** Publishes matching numerical surface and SVG outline at layout time only. */
+	private placeShoulder(index: ActionSurfaceIndex, x: number, y: number, width: number, height: number): void {
+		const shoulderIndex = index - ActionSurfaceIndex.LeftBumper;
+		const action = this.shoulderActions[shoulderIndex];
+		const surface = this.actionSurfaces[index];
+		const path = layoutShoulderOutline(action.outline, width, height);
+		action.x = x;
+		action.y = y;
+		action.radius = width / 2;
+		surface.element.style.width = `${width}px`;
+		surface.element.style.height = `${height}px`;
+		surface.artwork.setAttribute('viewBox', `0 0 ${width} ${height}`);
+		surface.artwork.setAttribute('width', `${width}`);
+		surface.artwork.setAttribute('height', `${height}`);
+		surface.artwork.firstElementChild.setAttribute('d', path);
+		this.buttonShapes[this.nominalActions.length + shoulderIndex].setAttribute('d', path);
+		this.shoulderLabels[shoulderIndex].setAttribute('x', `${width / 2}`);
+		this.shoulderLabels[shoulderIndex].setAttribute('y', `${height / 2}`);
+		this.placeActionSurface(index, x - width / 2, y - height / 2, 1);
+	}
+
 	private readonly scheduleRender = (): void => {
 		if (!this.animationFrameId) this.animationFrameId = this.window.requestAnimationFrame(this.render);
 	};
@@ -246,7 +280,7 @@ export class BrowserOnscreenGamepadView {
 			for (let index = 0; index < ACTIONS.length; index += 1) {
 				const mask = ACTIONS[index].buttons;
 				if ((changedButtons & mask) !== 0) {
-					this.circles[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
+					this.buttonShapes[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
 				}
 			}
 			if ((changedButtons & DIRECTION_BUTTONS) !== 0) {

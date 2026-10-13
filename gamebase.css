@@ -11,6 +11,7 @@
 #d-pad-controls { width: 100px; height: 100px; }
 #button-controls { width: 208px; height: 208px; }
 .utility-surface { width: 44px; height: 44px; }
+.shoulder-surface { width: 112px; height: 56px; }
 .control-surface[hidden] { display: none; }
 
 .control-surface svg {
@@ -63,6 +64,7 @@
 }
 
 .auxiliary-label { font-size: 12px; }
+.shoulder-label { font-size: 17px; }
 .menu-label { font-size: 10px; letter-spacing: 0.1px; }
 .utility-surface .action-label { fill: rgba(243, 247, 250, 0.9); }
 

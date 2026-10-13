@@ -60,3 +60,30 @@ export function contactIntersectsCircle(dx: number, dy: number, halfWidth: numbe
 		}
 	}
 }
+
+/** A finite horizontal centre-line offset by a circular radius. */
+export interface HorizontalCapsule {
+	halfLength: number;
+	radius: number;
+}
+
+/** Distance to the actual solid capsule, not its enclosing circle or rectangle. */
+export function pointDistanceToHorizontalCapsule(x: number, y: number, capsule: HorizontalCapsule): number {
+	return Math.max(0, Math.hypot(Math.max(Math.abs(x) - capsule.halfLength, 0), y) - capsule.radius);
+}
+
+/**
+ * Exact axis-aligned ellipse against a horizontal capsule. On the centre-line's
+ * x interval, the interior closest pair has a vertical normal. Outside it, the
+ * closest pair uses the corresponding endpoint disk. The existing ellipse-circle
+ * query therefore supplies both curved ends, including zero-axis contacts.
+ * The segment-plus-radius representation matches Box2D's capsule primitive:
+ * https://github.com/erincatto/box2d/blob/ac7c751eaeddbabdc1c4d41ae4f3a25d78627790/include/box2d/collision.h#L134-L146
+ */
+export function contactIntersectsHorizontalCapsule(
+	x: number, y: number, halfWidth: number, halfHeight: number, capsule: HorizontalCapsule,
+): boolean {
+	const beyondLine = Math.abs(x) - capsule.halfLength;
+	if (beyondLine <= 0) return Math.abs(y) <= halfHeight + capsule.radius;
+	return contactIntersectsCircle(beyondLine, y, halfWidth, halfHeight, capsule.radius);
+}
