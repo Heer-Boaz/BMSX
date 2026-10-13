@@ -78,6 +78,8 @@ async function startBrowserPlayer(): Promise<void> {
 			execution,
 			options.menuOptions,
 		);
+		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
 			options.browserInput.poll(currentTime);

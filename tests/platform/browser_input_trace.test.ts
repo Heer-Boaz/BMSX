@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { BrowserInputTraceBuffer } from '../../hosts/browser/input_trace_buffer';
+import { distanceToControl } from './touch_gamepad_geometry_oracle';
 
 test('input trace reuses bounded records and preserves errors after overwrite and freeze', () => {
 	const buffer = new BrowserInputTraceBuffer(2);
@@ -247,22 +248,32 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		video.refreshLayout();
 		(globalThis as any).layoutTraceProbe = { model, video, trace, input };
 		const bounds = document.getElementById('a_knop')!.getBoundingClientRect();
-		return { id: 1, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2, radiusX: 14, radiusY: 14 };
+		return { id: 1, x: bounds.left + bounds.width / 2, y: bounds.bottom - 4, radiusX: 2, radiusY: 2 };
 	});
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] });
+	const beforeResize = await page.evaluate(() => {
+		const probe = (globalThis as any).layoutTraceProbe;
+		return { buttons: probe.model.buttons, sequence: probe.trace.buffer.total };
+	});
+	assert.equal(beforeResize.buttons, 1, 'the small native footprint presses A before its real surface moves');
 	await page.setViewportSize({ width: 852, height: 300 });
-	const resized = await page.evaluate(() => {
+	const resized = await page.evaluate(sequence => {
 		const probe = (globalThis as any).layoutTraceProbe;
 		probe.video.refreshLayout();
 		const layouts = [];
+		const nativeChanges = [];
 		for (let index = 0; index < probe.trace.buffer.count; index += 1) {
 			const row = probe.trace.buffer.get(index);
 			if (row.phase === 'layout') layouts.push({ revision: row.geometryRevision, bounds: [row.x, row.y, row.width, row.height],
 				words: [row.before, row.after, row.commonBefore, row.commonAfter] });
+			if (row.sequence > sequence && row.phase === 'native' && row.kind.startsWith('pointer')) nativeChanges.push(row.kind);
 		}
-		return { buttons: probe.model.buttons, layouts, text: probe.trace.view.text() };
-	});
+		return { buttons: probe.model.buttons, actions: probe.model.geometry.actions, layouts, nativeChanges, text: probe.trace.view.text() };
+	}, beforeResize.sequence);
+	assert.ok(resized.actions.every(action => distanceToControl(action, a.x, a.y) > a.radiusX),
+		'the old contact area lies outside every relocated button according to the independent shape oracle');
+	assert.deepEqual(resized.nativeChanges, [], 'real layout mutation itself does not manufacture a native pointer event');
 	assert.equal(resized.buttons, 0, 'a true document resize moves the button away from its retained contact immediately');
 	assert.deepEqual(resized.layouts, [
 		{ revision: 1, bounds: [0, 0, 852, 393], words: [0, 0, 0, 0] },

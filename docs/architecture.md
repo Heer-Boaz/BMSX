@@ -4946,7 +4946,9 @@ contacts use exact point-to-arc dilation; anisotropic contacts use endpoint disk
 containment and finite inner/outer arc tests with scalar polynomial root isolation.
 The joined rocker uses immediate absolute contact-center direction regions
 over the whole disc, with a neutral center and up to two adjacent bits per
-contact. There is no analog origin, moving tip or exclusive first-finger owner.
+contact. Cardinals occupy 60-degree regions and intentional diagonals 30;
+boundary equality selects the diagonal. There is no analog origin, moving tip
+or exclusive first-finger owner.
 Captured pad contacts continue outside the artwork until their native release;
 independent fingers may publish opposing bits without raw-word normalization.
 The passive D-pad view is an enlarged outlined SVG digital cross without a
@@ -4977,7 +4979,29 @@ integer/half-integer scale. Portrait aligns the game at the safe top and fits
 above the control view's authored `portraitDeckTop`; landscape retains full
 dynamic centering. The handheld deck aligns D-pad and equal face buttons on
 one hand row, with larger distinct LB/RB and LT/RT targets and a lower menu
-row. LS/RS remain separate stick-click buttons. Trigger edges use the existing
+row. Landscape packs each full hand silhouette, including its 140-degree
+wrapping shoulder envelope, and targets the safe viewport's middle row rather
+than bottom-aligning the primary controls. Actual bounds constrain short
+players; capped control sizes are not scaled up with screen area or shrunk to
+reserve video columns. Portrait keeps compact shoulder lanes and top-fitted
+video without shrinking its primary thumb targets to fit landscape rings.
+Actual host-keyboard visibility selects a compact lower/edge controller context
+in landscape; capped thumb sizes and footer anchors remain identical. Its
+interactive key rectangles own new native downs ahead of gamepad pickup,
+through the host menu's existing viewport projection. Help text does not claim
+touches. Acquired canvas/controller leases keep their ordinary lifetime and
+route. Visibility transitions notify the passive view once and use the same
+layout producer, rather than frame polling, cancelling fingers or inventing
+input releases. Gameplay restores the wrapping middle hand row.
+The common host UI retains routed ownership of already-held physical button
+masks, bound keyboard usages and primary-pointer input when their source loses
+focus, until the existing host input poll observes the source release. This
+prevents the closing press from leaking into gameplay after a control-context
+reflow. Raw words and contact
+leases remain untouched; fresh buttons and independent axis words are not
+captured. TypeScript and native C++ use the same retained masks and the existing
+host input tick, with no timed releases or changed ICU sampling.
+LS/RS remain separate stick-click buttons. Trigger edges use the existing
 common gamepad owner to publish both raw button bits and Q16 axes; no browser
 encoding or shortcut remapping is introduced. Actual document/orientation/player
 layout changes

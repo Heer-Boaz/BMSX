@@ -218,6 +218,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			await touch('touchMove', [{ id: points.pad.id, x: points.pad.x + Math.cos(angle) * radius,
 				y: points.pad.y - Math.sin(angle) * radius, radiusX: 14, radiusY: 14 }]);
 			const word = (await poll()).buttons;
+			const expected = (angle >= Math.PI / 6 ? 0x1000 : 0) | (angle <= Math.PI / 3 ? 0x8000 : 0);
+			assert.equal(word, expected, 'the native outer arc follows the absolute 60-degree cardinal/30-degree diagonal sectors');
 			assert.ok(word === 0x8000 || word === 0x9000 || word === 0x1000, 'every arc sample presses a cardinal or joined adjacent pair, never neutral or an opposite');
 			const nextPhase = word === 0x8000 ? 0 : word === 0x9000 ? 1 : 2;
 			assert.ok(nextPhase >= phase, 'the quarter arc cannot drop back into a previous pressure region');
@@ -226,10 +228,15 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		}
 		assert.equal(phase, 2, 'the completed arc has reached UP');
 		await touch('touchMove', [{ id: points.pad.id, x: points.select.x, y: points.select.y, radiusX: 14, radiusY: 14 }]);
-		await assertWord(0x8000, 0);
+		const dx = points.select.x - points.pad.x;
+		const dy = points.select.y - points.pad.y;
+		const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
+		const capturedDirection = (angle >= Math.PI / 6 ? dy < 0 ? 0x1000 : 0x2000 : 0)
+			| (angle <= Math.PI / 3 ? dx < 0 ? 0x4000 : 0x8000 : 0);
+		await assertWord(capturedDirection, 0); // Captured direction cannot become SELECT or canvas input.
 		await touch('touchStart', [{ id: points.pad.id, x: points.select.x, y: points.select.y, radiusX: 14, radiusY: 14 }, points.select]);
 		const state = await poll();
-		assert.equal(state.buttons, 0x8100, 'an independent finger can press SELECT while the first still owns the rocker');
+		assert.equal(state.buttons, capturedDirection | 0x100, 'an independent finger can press SELECT while the first still owns the rocker');
 		await touch('touchEnd', []);
 		await assertWord(0);
 	});

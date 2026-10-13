@@ -350,9 +350,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await touch('touchMove', [{ ...padContact, x: select.x, y: select.y }]);
 		const dx = select.x - pad.x;
 		const dy = select.y - pad.y;
-		const slope = Math.SQRT2 - 1;
-		const outsideDirection = (Math.abs(dx) * slope <= Math.abs(dy) ? dy < 0 ? 0x1000 : 0x2000 : 0)
-			| (Math.abs(dy) * slope <= Math.abs(dx) ? dx < 0 ? 0x4000 : 0x8000 : 0);
+		const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
+		const outsideDirection = (angle >= Math.PI / 6 ? dy < 0 ? 0x1000 : 0x2000 : 0)
+			| (angle <= Math.PI / 3 ? dx < 0 ? 0x4000 : 0x8000 : 0);
 		await assertWord(outsideDirection, 0, 'the captured pad continues outside its disc without pressing SELECT');
 		await touch('touchEnd', []);
 		const faceContact = { id: 2, x: a.x, y: a.y, radiusX: 14, radiusY: 14 };
@@ -421,8 +421,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			distanceToControl(action, contact.x, contact.y) <= radius ? word | actions[index].buttons : word, 0);
 		assert.ok((expected & 0x10) !== 0);
 		await assertWord(expected, 0, 'a direct LB contact keeps all real button intersections, but never becomes pad input');
-		await touch('touchMove', [{ ...contact, x: pad.x - pad.radius * 0.8, y: pad.y }]);
-		await assertWord(0, 0, 'the retained utility contact does not become a directional contact');
+		const moved = { ...contact, x: pad.x - pad.radius * 0.8, y: pad.y };
+		await touch('touchMove', [moved]);
+		const movedButtons = geometry.actions.reduce((word, action, index) =>
+			distanceToControl(action, moved.x, moved.y) <= radius ? word | actions[index].buttons : word, 0);
+		await assertWord(movedButtons, 0, 'the retained utility contact keeps only actual button intersections, never pad directions');
 	});
 
 	await t.test('visible utility-button centers and inner edges beat another component\'s neutral deck', async () => {
@@ -508,13 +511,16 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 
 	await t.test('a true controller viewport resize resamples held contact geometry and records its source', async () => {
 		const { actions: [a] } = await measure();
-		const contact = { id: 1, x: a.x, y: a.y - 8, radiusX: 14, radiusY: 14 };
+		const contact = { id: 1, x: a.x, y: a.y + a.radius - 4, radiusX: 2, radiusY: 2 };
 		await touch('touchStart', [contact]);
 		await assertWord(1);
 		await takeEvents();
 		await page.evaluate(() => (globalThis as any).touchAcceptance.clearTrace());
 		await page.setViewportSize({ width: 852, height: 320 });
 		await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
+		const relocated = await measure();
+		assert.ok(relocated.actions.every(action => distanceToControl(action, contact.x, contact.y) > contact.radiusX),
+			'the old physical coordinate lies outside every relocated button including its measured contact area');
 		assert.deepEqual(await takeEvents(), [], 'layout itself does not produce a native release event');
 		await assertWord(0, 0, 'a true document-height resize relocates the button and immediately resamples the retained contact');
 		const rows = await page.evaluate<LayoutTraceRow[]>(() => (globalThis as any).touchAcceptance.layoutRows());

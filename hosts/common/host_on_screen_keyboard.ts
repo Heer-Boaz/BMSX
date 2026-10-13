@@ -386,6 +386,14 @@ export class HostOnScreenKeyboard {
 		}
 	}
 
+	/** Only published interactive keys take foreground input, not labels or help text. */
+	public containsPoint(x: number, y: number): boolean {
+		for (let index = 0; index < this.keyRects.length; index += 1) {
+			if (point_in_rect(x, y, this.keyRects[index].area)) return true;
+		}
+		return false;
+	}
+
 	public selectAt(x: number, y: number): number {
 		for (let rowIndex = 0; rowIndex < ROWS.length; rowIndex += 1) {
 			const row = ROWS[rowIndex];

@@ -99,6 +99,8 @@ async function startBrowserStudio(): Promise<void> {
 			execution,
 			options.menuOptions,
 		);
+		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		const workspace = configuration.workspace;
 		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
 		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));

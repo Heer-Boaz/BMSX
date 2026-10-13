@@ -8,7 +8,10 @@ import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDist
 // Directional capture and live, nonexclusive button hits are distinct purposes:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
 const enum ContactPurpose { Pad, Buttons, SuppressedPad }
-const DIAGONAL_SLOPE = Math.SQRT2 - 1;
+// BMSX's 60-degree cardinal regions leave a deliberate 30-degree region for
+// each diagonal. Center-relative selection remains stateless, as in PSPDpad:
+// https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L396-L448
+const DPAD_DIAGONAL_SLOPE = 1 / Math.sqrt(3);
 
 export type OnscreenDirectionalMode = 'dpad' | 'stick';
 
@@ -310,10 +313,10 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		// footprint acquires the gesture; its center selects the direction, so
 		// one broad contact does not invent opposing directional contributions.
 		let buttons = 0;
-		if (dx !== 0 && ax >= DIAGONAL_SLOPE * ay) {
+		if (dx !== 0 && ax >= DPAD_DIAGONAL_SLOPE * ay) {
 			buttons |= 1 << (dx > 0 ? InputControllerGamepadButtonBit.Right : InputControllerGamepadButtonBit.Left);
 		}
-		if (dy !== 0 && ay >= DIAGONAL_SLOPE * ax) {
+		if (dy !== 0 && ay >= DPAD_DIAGONAL_SLOPE * ax) {
 			buttons |= 1 << (dy > 0 ? InputControllerGamepadButtonBit.Down : InputControllerGamepadButtonBit.Up);
 		}
 		return buttons;

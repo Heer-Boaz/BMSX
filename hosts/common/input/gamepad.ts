@@ -1,6 +1,6 @@
 import { getPressedState } from './manager';
 import type { ButtonState, GamepadInputHandler, KeyOrButtonId2ButtonState } from './models';
-import { inputControllerGamepadButtonBit } from './gamepad_buttons';
+import { GAMEPAD_BUTTON_IDS, inputControllerGamepadButtonBit } from './gamepad_buttons';
 import type { HostClock } from '../clock';
 import type { GamepadDevice } from './contracts';
 import {
@@ -179,6 +179,16 @@ export class GamepadInput implements GamepadInputHandler {
 				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.RightX] = 0;
 				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.RightY] = 0;
 				break;
+		}
+	}
+
+	/** Consume physical button bits without also capturing independent axis datapaths. */
+	public consumeGamepadButtons(buttons: number): void {
+		this.routedInputControllerButtons = (this.routedInputControllerButtons & ~buttons) >>> 0;
+		while (buttons !== 0) {
+			const bit = 31 - Math.clz32(buttons & -buttons);
+			buttons &= buttons - 1;
+			this.buttonStates[GAMEPAD_BUTTON_IDS[bit]].consumed = true;
 		}
 	}
 

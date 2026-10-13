@@ -254,6 +254,8 @@ export class HostOverlayMenu {
 	private readonly keyboard: HostOnScreenKeyboard;
 	private readonly uiInput: HostUiInput;
 	private readonly optionHitRect = create_rect_bounds();
+	private readonly pointerCapturePoint = { x: 0, y: 0 };
+	private keyboardVisibilityListener: ((visible: boolean) => void) | null = null;
 	private optionLineHeight = 0;
 	private selected = 0;
 	private dirtyText = true;
@@ -460,6 +462,18 @@ export class HostOverlayMenu {
 		return this.page === HostOverlayPage.Options || this.page === HostOverlayPage.GamepadRemap
 			? HostMenuExecution.Paused
 			: this.page === HostOverlayPage.Rewind ? HostMenuExecution.Rewind : HostMenuExecution.Live;
+	}
+
+	/** Acquire foreground keyboard contacts without changing any existing pointer lease. */
+	public readonly capturesPointer = (x: number, y: number): boolean => {
+		return this.page === HostOverlayPage.Keyboard
+			&& this.presenter.mapDisplayPointToViewport(x, y, this.pointerCapturePoint)
+			&& this.keyboard.containsPoint(this.pointerCapturePoint.x, this.pointerCapturePoint.y);
+	};
+
+	/** Browser control presentation follows actual page transitions, not frame polling. */
+	public setKeyboardVisibilityListener(listener: (visible: boolean) => void): void {
+		this.keyboardVisibilityListener = listener;
 	}
 
 	public tickInput(): HostMenuInput {
@@ -826,6 +840,7 @@ export class HostOverlayMenu {
 	}
 
 	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
+		const keyboardWasVisible = this.page === HostOverlayPage.Keyboard;
 		switch (this.page) {
 			case HostOverlayPage.Keyboard:
 				this.keyboard.close();
@@ -844,6 +859,9 @@ export class HostOverlayMenu {
 				break;
 		}
 		this.page = next;
+		if (keyboardWasVisible !== (next === HostOverlayPage.Keyboard)) {
+			this.keyboardVisibilityListener?.(next === HostOverlayPage.Keyboard);
+		}
 		const sources = next === HostOverlayPage.Closed ? HostUiInputSource.None
 			: next === HostOverlayPage.Keyboard ? HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Pointer
 				: HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;

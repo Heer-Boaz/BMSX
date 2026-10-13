@@ -73,7 +73,7 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/handheld-gamepad-evidence';
+	const evidenceDirectory = '.bmsx/hosting/psp-controls-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -102,6 +102,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const snapshot = api.createInputControllerSnapshot();
 		(globalThis as any).ergonomicsProbe = {
 			video, model, pointerEvents,
+			keyboardContext: view.setKeyboardVisible,
+			geometryRevision() { return model.geometryRevision; },
 			poll() {
 				input.pollInput();
 				input.sampleInputControllerSnapshot(snapshot, 0);
@@ -268,7 +270,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const width = safe.right - safe.left;
 			const height = safe.bottom - safe.top;
 			const landscape = width >= height;
-			const scale = landscape ? Math.min(1.1, width / 568, height / 300) : Math.min(1.1, (width - 36) / 388, height / 500);
+			const shoulderSweep = 70 * Math.PI / 180;
+			const leftReach = 130 * Math.sin(shoulderSweep) + 28;
+			const rightReach = 144 * Math.sin(shoulderSweep) + 28;
+			const topReach = Math.sqrt(144 * 144 - 34 * 34) + 28;
+			const landscapeWidth = 2 * (16 + leftReach + rightReach) + 12;
+			const landscapeHeight = 32 + topReach + 104;
+			const scale = landscape ? Math.min(1.1, width / landscapeWidth, height / landscapeHeight)
+				: Math.min(1.1, (width - 36) / 388, height / 500);
 			// Browser CSS positions use a subpixel layout grid; transformed SVG
 			// dimensions preserve the authored uniform scaling more precisely.
 			const coordinateTolerance = 1 / 32;
@@ -322,6 +331,20 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 			if (landscape) {
 				assert.equal(resting.deckTop, null, 'landscape retains an overlay rather than reserving a portrait deck');
+				const centeredY = safe.top + Math.max((16 + topReach) * scale,
+					Math.min(height / 2, height - (16 + 104) * scale));
+				assert.ok(Math.abs(pad.y - centeredY) < coordinateTolerance,
+					'landscape targets the PSP hand row at the safe midpoint, constrained only by the complete painted hand silhouette');
+				if ((16 + topReach) * scale <= height / 2) {
+					assert.ok(Math.abs(pad.y - (safe.top + height / 2)) < coordinateTolerance,
+						'normal phone and tablet primary controls are vertically centered rather than bottom-anchored');
+				}
+				for (const shoulder of [lb, rb, lt, rt]) {
+					const arc = shoulder.outline;
+					const farEnd = Math.min(arc.startY, arc.endY) < arc.startY ? arc.startX : arc.endX;
+					assert.ok(Math.abs(Math.abs(farEnd) - Math.sin(shoulderSweep)) < 1e-12,
+						'the shoulder pair wraps the full authored 140-degree upper arch rather than a squeezed top cap');
+				}
 			} else {
 				assert.ok(resting.deckTop !== null);
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
@@ -519,6 +542,56 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					await settle();
 				}
 			}
+			const contextFinger = { id: 8, x: select.x, y: select.y, radiusX: 2, radiusY: 2 };
+			await touch('touchStart', [contextFinger]);
+			assert.equal((await poll()).physicalButtons, 0x100);
+			const contextPointer = await page.evaluate(() => (globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id);
+			const revision = await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision());
+			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(true));
+			await settle();
+			const keyboardContext = await measure();
+			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision()), revision + 1,
+				'one real keyboard context transition republishes the authored numerical layout');
+			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(true));
+			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision()), revision + 1,
+				'repeated visibility notification does not manufacture another layout');
+			assert.equal(await page.evaluate(id => (globalThis as any).ergonomicsProbe.model.ownsContact(id), contextPointer), true,
+				'the UI context changes geometry without ending the browser-owned contact lease');
+			assert.equal((await poll()).physicalButtons, 0x100,
+				'the held SELECT contributor remains down at its unchanged footer anchor');
+			for (let index = 0; index < 5; index += 1) {
+				assert.ok(Math.abs(keyboardContext.targets[index].bounds.width - targets[index].bounds.width) < 0.0001,
+					'opening the keyboard never shrinks either thumb unit or any of the equal face targets');
+			}
+			assert.deepEqual(keyboardContext.targets.slice(5, 9).map((target: any) => target.bounds), targets.slice(5, 9).map(target => target.bounds),
+				'keyboard context preserves SELECT/START/LS/RS footer anchors exactly');
+			if (landscape) {
+				assert.ok(Math.abs(keyboardContext.targets[0].x - safe.left - (16 + 90) * scale) < coordinateTolerance,
+					'the keyboard-context D-pad occupies its authored outer hand edge');
+				assert.ok(Math.abs(keyboardContext.targets[0].y - safe.bottom + (16 + 104) * scale) < coordinateTolerance,
+					'the keyboard-context hand row occupies its authored lower hand deck');
+			} else {
+				assert.deepEqual(keyboardContext.targets.map((target: any) => target.bounds), targets.map(target => target.bounds),
+					'portrait already has a separate hand deck and does not move when the keyboard opens');
+			}
+			for (let index = 0; index < keyboardContext.targets.length; index += 1) {
+				const target = keyboardContext.targets[index];
+				assert.ok(target.painted.left >= safe.left - 0.0001 && target.painted.top >= safe.top - 0.0001
+					&& target.painted.right <= safe.right + 0.0001 && target.painted.bottom <= safe.bottom + 0.0001,
+					`${target.id} keyboard-context paint remains inside actual safe bounds`);
+				for (let other = index + 1; other < keyboardContext.targets.length; other += 1) {
+					assert.ok(controlSeparation(target, keyboardContext.targets[other]) >= -0.0001,
+						`${target.id}/${keyboardContext.targets[other].id} keyboard-context activating surfaces never overlap`);
+				}
+			}
+			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-keyboard-context.png` });
+			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(false));
+			await settle();
+			assert.deepEqual((await measure()).targets.map((target: any) => target.bounds), targets.map(target => target.bounds),
+				'closing the keyboard restores the exact authored PSP gameplay layout');
+			assert.equal((await poll()).physicalButtons, 0x100, 'restoring gameplay geometry still preserves the held SELECT contributor');
+			await touch('touchEnd', []);
+			assert.equal((await poll()).physicalButtons, 0);
 		});
 	}
 	await t.test('true player-frame resize resamples held contacts before any subsequent native jitter', async () => {

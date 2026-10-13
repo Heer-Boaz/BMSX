@@ -34,6 +34,9 @@ export class HostUiInput {
 	private pointerTarget = -1;
 	private sources = HostUiInputSource.None;
 	private keyboardButtons = 0;
+	private exitCapturedSources = HostUiInputSource.None;
+	private exitCapturedKeyboardKeys = 0;
+	private readonly exitCapturedGamepadButtons = new Uint32Array(Input.PLAYERS_MAX);
 	private readonly buttons = new Uint32Array(SOURCE_COUNT);
 	private readonly blocked = new Uint32Array(SOURCE_COUNT);
 	private readonly pressedEdges = new Uint32Array(SOURCE_COUNT);
@@ -43,6 +46,7 @@ export class HostUiInput {
 	public constructor(private readonly input: Input, private readonly presenter: VideoPresenter) {}
 
 	public reset(nextSources: HostUiInputSource, nextKeyboardButtons: number): void {
+		this.captureLeavingSources(this.sources & ~nextSources);
 		this.consumeSources(this.sources | nextSources, this.keyboardButtons | nextKeyboardButtons);
 		this.sources = nextSources;
 		this.keyboardButtons = nextKeyboardButtons;
@@ -151,7 +155,70 @@ export class HostUiInput {
 	}
 	public pointerCapturedBy(target: number): boolean { return this.pointerDown && this.pointerTarget === target; }
 
-	public consume(): void { this.consumeSources(this.sources, this.keyboardButtons); }
+	public consume(): void {
+		this.consumeSources(this.sources, this.keyboardButtons);
+		if (this.exitCapturedSources !== HostUiInputSource.None) this.consumeExitCapturedInput();
+	}
+
+	/** A focus transition owns already-held physical inputs until their actual up. */
+	private captureLeavingSources(leaving: HostUiInputSource): void {
+		if ((leaving & HostUiInputSource.Gamepad) !== 0) {
+			for (let player = 0; player < Input.PLAYERS_MAX; player += 1) {
+				const gamepad = this.input.getPlayerInput(player + 1).inputHandlers.gamepad;
+				if (gamepad === null) continue;
+				this.exitCapturedGamepadButtons[player] |= gamepad.physicalGamepadButtonsWord();
+				if (this.exitCapturedGamepadButtons[player] !== 0) this.exitCapturedSources |= HostUiInputSource.Gamepad;
+			}
+		}
+		if ((leaving & HostUiInputSource.Keyboard) !== 0) {
+			const keyboard = this.input.getPlayerInput(1).inputHandlers.keyboard!;
+			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
+				const binding = KEYBOARD_BINDINGS[index];
+				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.getKeyState(binding.code).pressed) {
+					this.exitCapturedKeyboardKeys |= 1 << index;
+				}
+			}
+			if (this.exitCapturedKeyboardKeys !== 0) this.exitCapturedSources |= HostUiInputSource.Keyboard;
+		}
+		if ((leaving & HostUiInputSource.Pointer) !== 0
+			&& this.input.getPlayerInput(1).inputHandlers.pointer!.getButtonState('pointer_primary').pressed) {
+			this.exitCapturedSources |= HostUiInputSource.Pointer;
+		}
+	}
+
+	private consumeExitCapturedInput(): void {
+		if ((this.exitCapturedSources & HostUiInputSource.Gamepad) !== 0) {
+			let retained = 0;
+			for (let player = 0; player < Input.PLAYERS_MAX; player += 1) {
+				if (this.exitCapturedGamepadButtons[player] === 0) continue;
+				const gamepad = this.input.getPlayerInput(player + 1).inputHandlers.gamepad;
+				this.exitCapturedGamepadButtons[player] &= gamepad === null ? 0 : gamepad.physicalGamepadButtonsWord();
+				const buttons = this.exitCapturedGamepadButtons[player];
+				retained |= buttons;
+				if ((this.sources & HostUiInputSource.Gamepad) !== 0) continue;
+				if (buttons !== 0) gamepad!.consumeGamepadButtons(buttons);
+			}
+			if (retained === 0) this.exitCapturedSources &= ~HostUiInputSource.Gamepad;
+		}
+		if ((this.exitCapturedSources & HostUiInputSource.Keyboard) !== 0) {
+			const keyboard = this.input.getPlayerInput(1).inputHandlers.keyboard!;
+			let keys = this.exitCapturedKeyboardKeys;
+			while (keys !== 0) {
+				const index = 31 - Math.clz32(keys & -keys);
+				const mask = 1 << index;
+				keys &= keys - 1;
+				const binding = KEYBOARD_BINDINGS[index];
+				if (!keyboard.getKeyState(binding.code).pressed) this.exitCapturedKeyboardKeys &= ~mask;
+				else if ((this.sources & HostUiInputSource.Keyboard) === 0 || (this.keyboardButtons & binding.mask) === 0) keyboard.consumeKey(binding.code);
+			}
+			if (this.exitCapturedKeyboardKeys === 0) this.exitCapturedSources &= ~HostUiInputSource.Keyboard;
+		}
+		if ((this.exitCapturedSources & HostUiInputSource.Pointer) !== 0) {
+			const pointer = this.input.getPlayerInput(1).inputHandlers.pointer!;
+			if (!pointer.getButtonState('pointer_primary').pressed) this.exitCapturedSources &= ~HostUiInputSource.Pointer;
+			else if ((this.sources & HostUiInputSource.Pointer) === 0) pointer.consumeButton('pointer_primary');
+		}
+	}
 
 	private consumeSources(sources: HostUiInputSource, keyboardButtons: number): void {
 		if ((sources & HostUiInputSource.Gamepad) !== 0) {

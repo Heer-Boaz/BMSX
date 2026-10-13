@@ -1,5 +1,170 @@
 # Browser touch-controller ownership
 
+## PSP-style landscape hand placement and wider cardinal regions, 2026-10-13
+
+The supplied physical PSP reference establishes the requested landscape
+arrangement: primary controls sit around the screen's middle hand row, not
+against its bottom edge. Its physical shoulder placement cannot be used on a
+flat touch screen. BMSX instead packs each complete hand silhouette, including
+two adjacent shoulder segments on one wrapping upper ring. The authored
+landscape envelope spans 140 degrees, less its actual inner round-cap gap;
+the prior short, almost horizontal caps were constrained by primary controls
+placed too close to the safe edges. Full finite-band bounds now determine
+the gutter and inter-hand packing rather than limiting the arc afterward.
+Both primary centers target the safe viewport midpoint. Available vertical
+room constrains that row to keep the upper ring and lower controls inside
+its frame. Capped thumb/button sizes remain independent of screen area;
+real width and height packing, not video letterboxing, limits their scale.
+
+Existing [PPSSPP touch layout controls](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/TouchControlLayoutScreen.cpp)
+and pinned Delta authored layouts were inspected before this change. The
+PSP-inspired row and wrapping ring are BMSX design choices, not claimed
+production-reference numeric defaults or copied artwork. SVG path, contact
+geometry and label placement retain the same producer. Shoulder label size
+now follows the controller scale as its paths already do, including narrow
+embedded players. Landscape video still uses the full dynamic viewport and
+4:3 integer/half-integer fitting; no reserved side columns are introduced.
+Portrait retains its top-aligned video, lower deck and full thumb targets;
+its narrow hand lanes deliberately keep compact arcs instead of shrinking
+the whole controller merely to fit a landscape-size ring.
+
+Digital D-pad cardinal regions grow from 45 to 60 degrees (plus/minus 30
+degrees from each axis). Each deliberate diagonal retains a 30-degree region;
+boundary equality still selects that diagonal. The existing scalar slope
+comparison remains stateless and immediate, including captured motion outside
+the artwork, neutral center and independent opposing raw bits. Analog mode
+is unchanged. [PPSSPP's center-relative digital selection](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L396-L448)
+was inspected; 60/30 is a local calibration responding to the user's
+accidental-diagonal report, not PPSSPP's numeric policy. There is no
+hysteresis, dwell, intermediate neutral event or per-move trigonometry.
+
+The uncertain SELECT-after-keyboard-close report is audited separately.
+Shortcut/UI consumption owns routed guest state, not the touch model's raw
+word or passive artwork. A genuinely still-held SELECT finger remains shown
+after X closes the keyboard; its actual release must clear the raw model,
+common input and SVG. A synthetic all-contact reset on modal close would
+break this source lifetime and is not introduced. Device acceptance is not
+inferred from a Chromium trace.
+
+### Foreground keyboard acquisition and its authored control context
+
+Actual packaged-browser testing caught a regression before publication: a
+wrapping gameplay shoulder physically crossed Q/W and intercepted their
+pointer-down. A whole-panel priority rule would also steal on-screen A/X and
+the keyboard's closing chord. Neither moving individual keys nor canceling
+controller contacts is a valid fix.
+
+The keyboard instead owns pure hit queries over its published interactive key
+rectangles, not its title/help text. The host menu owns current page state and
+display-to-viewport projection into one retained point. BrowserInputHub asks
+that foreground owner only when admitting a new down, before gamepad pickup;
+existing canvas/controller leases keep their ordinary move/up/cancel routes.
+Player and Studio wire the same actual owners. This follows [PPSSPP foreground
+acquisition](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/Common/UI/ScreenManager.cpp#L79-L109),
+without another key producer, per-move UI work or a generic input facade.
+
+Keyboard visibility also selects an explicitly authored landscape controller
+context: edge-positioned, lower hand controls and compact shoulder lanes keep
+the real typing/navigation/closing controls usable around the keyboard. The
+gameplay context restores the PSP row and wrapping arches. Both use the same
+capped thumb sizes and exact footer anchors, so SELECT does not move. Portrait
+does not change. The host menu notifies actual enter/leave transitions only;
+the existing view/layout producer publishes complete geometry and resamples
+retained client coordinates normally. Contacts are never reset, restored,
+promoted or assigned synthetic releases. A switch moved away from a retained
+finger stops contributing according to the existing live-surface contract.
+
+This remains host presentation/routing state: CSS client coordinates enter
+the browser admission policy; common UI maps to its existing viewport key
+rectangles. Raw keys, axes, ICU cadence and source lifetime are unchanged.
+The native C++ frontend has no browser touch-controller layer to
+arbitrate. Hot callers are `onPointerDown -> capturesPointer -> containsPoint`
+and actual menu transition -> control context -> existing layout publication;
+there is no frame-polled visibility synchronization or runtime validation.
+Controller outlines may still cross noninteractive keyboard decoration in the
+single-canvas presentation; this does not claim a new foreground compositor.
+
+### Focus-exit input ownership (TypeScript and C++)
+
+The new native keyboard regression test exposed a separate, concrete routing
+problem: closing the landscape keyboard restores gameplay geometry while its
+X finger is still physically held. In the phone profile that retained contact
+then overlaps A. Consuming only the closing frame allowed that already-held
+action to reach gameplay on the next host poll. This is not evidence of the
+original uncertain SELECT-sticking report: SELECT retains its exact footer
+position and its real native up clears it.
+
+`HostUiInput` now retains routed ownership of the physical buttons, bound keys
+and primary pointer already held when their UI source loses focus. Pending
+masks intersect the current physical state; release observed by the existing
+host input poll rearms only that input. As elsewhere in the sampled-input
+contract, a complete up/down sequence between polls can coalesce; no event
+queue or minimum-duration pulse is introduced. Fresh independent controls and
+other players remain independent. Physical model
+words, contact leases, passive artwork and independent axis words are never
+rewritten. Gamepad ownership consumes a raw mask at the gamepad owner, rather
+than translating bits to string operations that also consume stick/trigger
+axes. The same policy belongs to the native C++ host UI owner.
+
+| Retained routing representation | TypeScript | C++ |
+| --- | --- | --- |
+| Pending physical buttons per player | fixed `Uint32Array`, raw button masks | fixed `std::array<u32>`, same masks |
+| Pending physical UI keys | scalar binding-index bitset; Enter/NumpadEnter distinct | `u32` binding-index bitset; same usages |
+| Pending primary-pointer ownership | source flag until physical up | same `u8` source flag |
+| Routed button consumption | `GamepadInput.consumeGamepadButtons(mask)` | `LibretroInput::consumeGamepadButtons(slot, mask)` |
+| Independent axes and raw device state | unchanged | unchanged |
+
+Hot callers are menu transition -> `HostUiInput.reset` and every existing
+menu input tick -> `HostUiInput.consume`, before normal guest ICU sampling.
+Only a focus transition acquires held inputs. Idle frames take one scalar
+flag check; pending work visits occupied pad masks and set key bits, without
+allocations, timers, synthetic releases or changed frame polling. Ordinary
+host entry/repeat blocking remains separate from focus-exit routing.
+
+Native browser fixtures exercise the actual keyboard, controller, input
+manager and armed ICU, not just a mock menu: overlapping Q/W contacts receive
+their keys while independent shoulder leases survive; all twelve controller
+centers remain reachable; the closing contact's raw A may remain held while
+the routed snapshot and armed ICU see zero. Separate tests cover per-player
+release, distinct Enter aliases, new controls, pointer lifetime and unchanged
+stick/trigger axis words. Physical iPhone acceptance remains separate.
+
+### Validation and publication
+
+The complete touch/input/package regression bundle passes **295 tests**,
+including the native foreground-keyboard fixture and release-order/focus-exit
+tests. The mirrored C++ keyboard/UI/environment targets pass 3/3; browser,
+node, scripts, tests and IDE typechecks, release build and diff check pass.
+Authored layout tests retain independent painted-bound, label, gap and contact
+shape oracles; they also cover held SELECT across keyboard contexts and exact
+gameplay geometry restoration.
+
+The final packaged WebGPU player runs both immutable game/BIOS pairs in phone
+and tablet portrait/landscape, with audio, independent and thumb-area buttons,
+directional sliding, triggers, menu controls, unchanged 4:3 half-step fitting
+and zoom=1. Real host-menu navigation switches D-pad -> stick -> D-pad in both
+games and orientations. Native Chromium keyboard checks cover 18 captured
+presentation/input states in each of three profiles, with WebGPU and WebGL2:
+actual controller and direct-key sources, independent releases, feedback,
+closing and restored gameplay geometry. Rendered gameplay and keyboard PNGs
+were inspected; no script/GPU errors occurred.
+
+Linux WPE WebKit repeats all four ordinary/trace game packages across four
+phone/tablet orientations: 16 profiles, 1008 asserted input states and 1016
+trusted native pointer events, audio running, paired ROMs returning 200 and
+no errors/warnings/failed requests. Its fixed 2x2 point contacts do not prove
+UIKit, variable native thumb footprints, WebGPU or physical iPhone behavior.
+Evidence is in `.bmsx/hosting/psp-controls-evidence/`.
+
+Azure publication uses the existing ordinary and game `/ios/` pages only.
+All 43 public asset/header/route receipts match the staged release; public
+WebGPU player checks repeat both games and the keyboard run repeats all 18
+states in each of the three profiles without script/GPU errors. Engine SHA-256:
+`374efeeefc7bc5d53c78c14b53611090fc986a5b7c41ef9d986f71ca13548d21`.
+Immutable media, root library and existing route configuration are unchanged;
+no GitHub source/media push is part of this publication. The original physical
+iPhone SELECT report remains unreproduced, not marked fixed.
+
 ## Visible on-screen keyboard forwarding feedback, 2026-10-13
 
 Selection and forwarding now have clearly different presentation. Selection
@@ -933,8 +1098,10 @@ normalization belongs in the hub, not in the gamepad model or a cart.
   or one of eight directions, including diagonals. Its deadzone is an explicit
   control-profile parameter. Analog-axis publication, floating/following bases,
   sensitivity filters, flicks and repeat generation are not part of this slice.
-- Neutral includes squared distance equal to squared deadzone radius. Eight-way
-  sectors use multiplication-based slope comparisons at 22.5-degree boundaries,
+- Neutral includes squared distance equal to squared deadzone radius. This
+  historical slice's eight-way sectors used multiplication-based slope
+  comparisons at 22.5-degree boundaries (superseded by the current 60/30-degree
+  policy above),
   with boundary equality assigned to diagonals. No `atan2`, division by a
   component, rounding or fixed-point encoder is needed for direction bits.
   The multiplication-based direction datapath is also used by

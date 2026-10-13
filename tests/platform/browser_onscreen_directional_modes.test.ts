@@ -140,6 +140,36 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				await assertState(0, 0, 0);
 			});
 
+			await orientation.test('a trusted digital thumb rolls through widened cardinals and deliberate diagonals without lifting', async () => {
+				const { geometry } = await measure();
+				const radius = geometry.padRadius * 0.7;
+				const thumb = { id: 1, x: geometry.padX + radius, y: geometry.padY, radiusX: 28, radiusY: 28 };
+				await touch('touchStart', [thumb]);
+				await assertState(0x8000, 0, 0);
+				for (const cardinal of [
+					{ x: 1, y: 0, bits: 0x8000, next: 0x2000 },
+					{ x: 0, y: 1, bits: 0x2000, next: 0x4000 },
+					{ x: -1, y: 0, bits: 0x4000, next: 0x1000 },
+					{ x: 0, y: -1, bits: 0x1000, next: 0x8000 },
+				]) {
+					for (const roll of [0.5, 0.7, 0.5]) {
+						thumb.x = geometry.padX + radius * (cardinal.x - cardinal.y * roll);
+						thumb.y = geometry.padY + radius * (cardinal.y + cardinal.x * roll);
+						await touch('touchMove', [thumb]);
+						await assertState(cardinal.bits | (roll === 0.7 ? cardinal.next : 0), 0, 0);
+					}
+				}
+				thumb.x = geometry.padX + geometry.padRadius * 2;
+				thumb.y = geometry.padY - geometry.padRadius * 0.95;
+				await touch('touchMove', [thumb]);
+				await assertState(0x8000, 0, 0);
+				thumb.y = geometry.padY - geometry.padRadius * 1.4;
+				await touch('touchMove', [thumb]);
+				await assertState(0x9000, 0, 0);
+				await touch('touchEnd', []);
+				await assertState(0, 0, 0);
+			});
+
 			await orientation.test('one captured thumb drives true L-stick axes while another bridges A+B and survives outside artwork', async () => {
 				await setMode('stick');
 				const { geometry } = await measure();

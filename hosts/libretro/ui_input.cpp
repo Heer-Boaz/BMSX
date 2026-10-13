@@ -22,6 +22,7 @@ constexpr auto keyboardBindings = std::to_array<KeyboardBinding>({
 }
 HostUiInput::HostUiInput(LibretroInput& input) : input(input) {}
 void HostUiInput::reset(u8 nextSources, u32 nextKeyboardButtons) {
+	captureLeavingSources(sources & ~nextSources);
 	consumeSources(sources | nextSources, keyboardButtons | nextKeyboardButtons);
 	sources = nextSources;
 	keyboardButtons = nextKeyboardButtons;
@@ -115,7 +116,56 @@ bool HostUiInput::activatePointer(i32 target) {
 	return activated;
 }
 bool HostUiInput::pointerCapturedBy(i32 target) const { return pointerDown && pointerTarget == target; }
-void HostUiInput::consume() const { consumeSources(sources, keyboardButtons); }
+void HostUiInput::consume() {
+	consumeSources(sources, keyboardButtons);
+	if (exitCapturedSources != HostUiInputSource::None) consumeExitCapturedInput();
+}
+void HostUiInput::captureLeavingSources(u8 leaving) {
+	if ((leaving & HostUiInputSource::Gamepad) != 0) {
+		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+			exitCapturedGamepadButtons[player] |= input.physicalGamepadButtonsWord(player);
+			if (exitCapturedGamepadButtons[player] != 0) exitCapturedSources |= HostUiInputSource::Gamepad;
+		}
+	}
+	if ((leaving & HostUiInputSource::Keyboard) != 0) {
+		for (size_t index = 0; index < keyboardBindings.size(); ++index) {
+			const auto& binding = keyboardBindings[index];
+			if ((keyboardButtons & (1u << static_cast<u32>(binding.button))) != 0 && input.physicalKeyboardUsagePressed(binding.usage)) exitCapturedKeyboardKeys |= 1u << index;
+		}
+		if (exitCapturedKeyboardKeys != 0) exitCapturedSources |= HostUiInputSource::Keyboard;
+	}
+	if ((leaving & HostUiInputSource::Pointer) != 0 && input.pointerButtonPressed(INP_POINTER_BUTTON_PRIMARY)) exitCapturedSources |= HostUiInputSource::Pointer;
+}
+void HostUiInput::consumeExitCapturedInput() {
+	if ((exitCapturedSources & HostUiInputSource::Gamepad) != 0) {
+		u32 retained = 0;
+		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+			if (exitCapturedGamepadButtons[player] == 0) continue;
+			exitCapturedGamepadButtons[player] &= input.physicalGamepadButtonsWord(player);
+			const u32 held = exitCapturedGamepadButtons[player];
+			retained |= held;
+			if ((sources & HostUiInputSource::Gamepad) != 0) continue;
+			if (held != 0) input.consumeGamepadButtons(player, held);
+		}
+		if (retained == 0) exitCapturedSources &= ~HostUiInputSource::Gamepad;
+	}
+	if ((exitCapturedSources & HostUiInputSource::Keyboard) != 0) {
+		u32 keys = exitCapturedKeyboardKeys;
+		while (keys != 0) {
+			const auto index = std::countr_zero(keys);
+			const u32 mask = 1u << index;
+			keys &= keys - 1;
+			const auto& binding = keyboardBindings[index];
+			if (!input.physicalKeyboardUsagePressed(binding.usage)) exitCapturedKeyboardKeys &= ~mask;
+			else if ((sources & HostUiInputSource::Keyboard) == 0 || (keyboardButtons & (1u << static_cast<u32>(binding.button))) == 0) input.consumePhysicalKeyboardUsage(binding.usage);
+		}
+		if (exitCapturedKeyboardKeys == 0) exitCapturedSources &= ~HostUiInputSource::Keyboard;
+	}
+	if ((exitCapturedSources & HostUiInputSource::Pointer) != 0) {
+		if (!input.pointerButtonPressed(INP_POINTER_BUTTON_PRIMARY)) exitCapturedSources &= ~HostUiInputSource::Pointer;
+		else if ((sources & HostUiInputSource::Pointer) == 0) input.consumePointerButton(INP_POINTER_BUTTON_PRIMARY);
+	}
+}
 void HostUiInput::consumeSources(u8 sources, u32 keyboardButtons) const {
 	if ((sources & HostUiInputSource::Gamepad) != 0) {
 		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) input.consumeGamepadInput(player);

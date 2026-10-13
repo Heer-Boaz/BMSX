@@ -1,5 +1,6 @@
 #include "ui_input.h"
 #include "input.h"
+#include "hid_keys.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -78,5 +79,32 @@ int main() {
 		require(ui.buttonJustPressed(action), "new keyboard action after release");
 		input.postKeyboardEvent(key, false); tick();
 	}
+	// Focus exit retains only the held physical button/key/pointer identities.
+	buttons = 0; stickX = 0; pointerDown = false;
+	ui.reset(HostUiInputSource::Keyboard | HostUiInputSource::Gamepad | HostUiInputSource::Pointer, keyboardActions);
+	tick(); ui.consume();
+	buttons = (1u << RETRO_DEVICE_ID_JOYPAD_A) | (1u << RETRO_DEVICE_ID_JOYPAD_L2) | (1u << RETRO_DEVICE_ID_JOYPAD_L3);
+	stickX = 32767; pointerDown = true; input.postKeyboardEvent(RETROK_RETURN, true);
+	tick(); ui.consume();
+	ui.reset(HostUiInputSource::None, 0);
+	InputControllerSnapshot snapshot{};
+	const auto keyPressed = [&](u8 usage) { return (snapshot.keyWords[usage >> 5] & (1u << (usage & 31))) != 0; };
+	for (int frame = 0; frame < 15; ++frame) {
+		tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+		require((input.physicalGamepadButtonsWord(0) & (1u << static_cast<u32>(InputControllerGamepadButtonBit::A))) != 0, "exit consumption is not a physical release");
+		require(snapshot.pads[0].buttons == 0 && snapshot.pointerButtons == 0 && !keyPressed(hid_key_usage::Enter), "held inputs stay consumed across subsequent polls after closing");
+		require(snapshot.pads[0].axesQ16[static_cast<size_t>(InputControllerGamepadAxis::LeftX)] == 0x10000u, "button exit ownership leaves stick axes independent");
+		require(snapshot.pads[0].axesQ16[static_cast<size_t>(InputControllerGamepadAxis::LeftTrigger)] == 0x10000u, "button exit ownership leaves trigger axes independent");
+	}
+	buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_B; input.postKeyboardEvent(RETROK_KP_ENTER, true);
+	tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+	require(snapshot.pads[0].buttons == (1u << static_cast<u32>(InputControllerGamepadButtonBit::B)), "fresh button remains independent of captured holds");
+	require(!keyPressed(hid_key_usage::Enter) && keyPressed(hid_key_usage::NumpadEnter), "Enter aliases retain distinct physical identities");
+	buttons &= ~(1u << RETRO_DEVICE_ID_JOYPAD_A); input.postKeyboardEvent(RETROK_RETURN, false); pointerDown = false;
+	tick(); ui.consume();
+	buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_A; input.postKeyboardEvent(RETROK_RETURN, true); pointerDown = true;
+	tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+	require(snapshot.pads[0].buttons == ((1u << static_cast<u32>(InputControllerGamepadButtonBit::A)) | (1u << static_cast<u32>(InputControllerGamepadButtonBit::B))), "real up rearms only its own button");
+	require(keyPressed(hid_key_usage::Enter) && keyPressed(hid_key_usage::NumpadEnter) && snapshot.pointerButtons != 0, "new keyboard and pointer presses route normally");
 	std::cout << "HOST-UI-INPUT:PASS\n";
 }

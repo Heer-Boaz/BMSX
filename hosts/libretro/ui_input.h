@@ -25,17 +25,22 @@ public:
 	bool pointerHeld() const { return pointerDown; }
 	bool activatePointer(i32 target);
 	bool pointerCapturedBy(i32 target) const;
-	void consume() const;
+	void consume();
 private:
 	static constexpr size_t SourceCount = INPUT_CONTROLLER_PAD_COUNT + 1;
 	static constexpr size_t ButtonCount = INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
 	void updateButtons(size_t source, u32 physicalButtons, f64 now, f64 frameDurationMs, i64 frameId);
 	void consumeSources(u8 sources, u32 keyboardButtons) const;
+	void captureLeavingSources(u8 leaving);
+	void consumeExitCapturedInput();
 	LibretroInput& input;
 	bool pointerDown = false, pointerPressed = false, pointerReleased = false, pointerBlocked = false;
 	i32 pointerTarget = -1;
 	u8 sources = HostUiInputSource::None;
 	u32 keyboardButtons = 0;
+	u8 exitCapturedSources = HostUiInputSource::None;
+	u32 exitCapturedKeyboardKeys = 0;
+	std::array<u32, INPUT_CONTROLLER_PAD_COUNT> exitCapturedGamepadButtons{};
 	i64 frameId = 0;
 	std::array<u32, SourceCount> buttons{}, blocked{}, pressedEdges{}, repeatEdges{};
 	std::array<ButtonRepeat, SourceCount * ButtonCount> repeats;

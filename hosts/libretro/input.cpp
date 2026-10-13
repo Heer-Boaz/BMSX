@@ -418,6 +418,10 @@ void LibretroInput::consumeGamepadButton(
 	m_gamepads[deviceSlot].buttons &= ~(1u << static_cast<u32>(button));
 }
 
+void LibretroInput::consumeGamepadButtons(u8 deviceSlot, u32 buttons) {
+	m_gamepads[deviceSlot].buttons &= ~buttons;
+}
+
 void LibretroInput::consumeGamepadInput(u8 deviceSlot) {
 	m_gamepads[deviceSlot].buttons = 0u;
 	m_gamepads[deviceSlot].axesQ16.fill(0u);

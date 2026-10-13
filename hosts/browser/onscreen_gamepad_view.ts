@@ -34,6 +34,8 @@ const CONTROL_GAP = 12;
 const MENU_SIZE = 52;
 const STICK_CLICK_SIZE = 44;
 const SHOULDER_THICKNESS = 56;
+const LANDSCAPE_SHOULDER_HALF_SWEEP = 70 * Math.PI / 180;
+const LANDSCAPE_MARGIN = 16;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -80,6 +82,7 @@ export class BrowserOnscreenGamepadView {
 	private layoutWidth = -1;
 	private layoutHeight = -1;
 	private portraitControlTop: number | null = null;
+	private keyboardVisible = false;
 
 	public constructor(
 		document: Document,
@@ -136,6 +139,15 @@ export class BrowserOnscreenGamepadView {
 	/** Upper limit of portrait video, authored with the actual lower control deck. */
 	public get portraitDeckTop(): number | null { return this.portraitControlTop; }
 
+	/** Host keyboard context keeps the touch gamepad at the surrounding hand edges. */
+	public readonly setKeyboardVisible = (visible: boolean): void => {
+		if (visible === this.keyboardVisible) return;
+		this.keyboardVisible = visible;
+		const width = this.layoutWidth;
+		this.layoutWidth = -1;
+		this.layout(this.layoutLeft, this.layoutTop, width, this.layoutHeight);
+	};
+
 	/** Layout and acquisition share the same uniform CSS-client transforms. */
 	public layout(left: number, top: number, width: number, height: number): void {
 		if (left === this.layoutLeft && top === this.layoutTop && width === this.layoutWidth && height === this.layoutHeight) return;
@@ -144,14 +156,28 @@ export class BrowserOnscreenGamepadView {
 		this.layoutWidth = width;
 		this.layoutHeight = height;
 		const landscape = width >= height;
+		const gameplayLandscape = landscape && !this.keyboardVisible;
 		// Delta's four-button handheld deck keeps both primary controls on one
 		// hand row. Its geometry is a reference, not a source of copied artwork:
 		// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L509
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
+		const nominalHalfWidth = SHOULDER_THICKNESS / 2;
+		const nominalLeftRing = PAD_SIZE / 2 + CONTROL_GAP + nominalHalfWidth;
+		const nominalRightRing = faceSurface.artworkWidth / 2 + CONTROL_GAP + nominalHalfWidth;
+		const leftHandReach = nominalLeftRing * Math.sin(LANDSCAPE_SHOULDER_HALF_SWEEP) + nominalHalfWidth;
+		const rightHandReach = nominalRightRing * Math.sin(LANDSCAPE_SHOULDER_HALF_SWEEP) + nominalHalfWidth;
+		const handTopReach = Math.sqrt(nominalRightRing * nominalRightRing
+			- (nominalHalfWidth + CONTROL_GAP / 2) * (nominalHalfWidth + CONTROL_GAP / 2)) + nominalHalfWidth;
+		const primaryBottomReach = Math.max(PAD_SIZE, faceSurface.artworkHeight) / 2;
+		// Pack the entire hand silhouette, not just the D-pad acquisition frame.
+		// In landscape this leaves room for the finite shoulder ring to follow
+		// the hand around both upper corners instead of flattening at an edge.
+		const landscapeWidth = 2 * (LANDSCAPE_MARGIN + leftHandReach + rightHandReach) + CONTROL_GAP;
+		const landscapeHeight = 2 * LANDSCAPE_MARGIN + handTopReach + primaryBottomReach;
 		const viewportScale = landscape
-			? Math.min(1.1, width / 568, height / 300)
+			? Math.min(1.1, width / landscapeWidth, height / landscapeHeight)
 			: Math.min(1.1, (width - CONTROL_GAP * 3) / (PAD_SIZE + faceSurface.artworkWidth), height / 500);
-		const margin = landscape ? 16 * viewportScale : CONTROL_GAP;
+		const margin = landscape ? LANDSCAPE_MARGIN * viewportScale : CONTROL_GAP;
 		const bottom = 16 * viewportScale;
 		const gap = CONTROL_GAP * viewportScale;
 		const padScale = PAD_SIZE / this.padArtworkWidth * viewportScale;
@@ -161,15 +187,18 @@ export class BrowserOnscreenGamepadView {
 		const clickSize = STICK_CLICK_SIZE * menuScale;
 		const menuY = top + height - bottom - menuSize / 2;
 		const primaryRadius = Math.max(this.padArtworkHeight * padScale, faceSurface.artworkHeight * faceScale) / 2;
-		const primaryY = landscape
-			? top + height - bottom - primaryRadius
-			: menuY - menuSize / 2 - 16 * viewportScale - primaryRadius;
-		const padLeft = left + margin;
+		const primaryY = gameplayLandscape
+			? top + Math.max(margin + handTopReach * viewportScale,
+				Math.min(height / 2, height - margin - primaryRadius))
+			: landscape ? top + height - bottom - primaryRadius
+				: menuY - menuSize / 2 - 16 * viewportScale - primaryRadius;
+		const padLeft = left + margin + (gameplayLandscape ? (leftHandReach - PAD_SIZE / 2) * viewportScale : 0);
 		const padTop = primaryY - this.nominalPadY * padScale;
 		const padX = padLeft + this.nominalPadX * padScale;
 		const padY = primaryY;
 		const padRadius = this.nominalPadRadius * padScale;
-		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
+		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale
+			- (gameplayLandscape ? (rightHandReach - faceSurface.artworkWidth / 2) * viewportScale : 0);
 		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
 		const faceCenterY = primaryY;
 		const faceTop = primaryY - faceSurface.artworkHeight * faceScale / 2;
@@ -194,15 +223,18 @@ export class BrowserOnscreenGamepadView {
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
 		const faceRadius = faceSurface.artworkWidth * faceScale / 2;
-		const shoulderThickness = Math.min(SHOULDER_THICKNESS * viewportScale,
-			primaryY - top - 4 * viewportScale - Math.max(padRadius, faceRadius) - gap);
+		const shoulderThickness = landscape ? SHOULDER_THICKNESS * viewportScale
+			: Math.min(SHOULDER_THICKNESS * viewportScale,
+				primaryY - top - 4 * viewportScale - Math.max(padRadius, faceRadius) - gap);
 		const halfWidth = shoulderThickness / 2;
 		const laneHalfWidth = Math.min(padX - left - margin,
 			left + width - margin - faceCenterX, (faceCenterX - padX - gap) / 2);
 		const leftShoulderRadius = padRadius + gap + halfWidth;
 		const rightShoulderRadius = faceRadius + gap + halfWidth;
-		const leftHalfAngle = Math.asin((laneHalfWidth - halfWidth) / leftShoulderRadius);
-		const rightHalfAngle = Math.asin((laneHalfWidth - halfWidth) / rightShoulderRadius);
+		const leftHalfAngle = gameplayLandscape ? LANDSCAPE_SHOULDER_HALF_SWEEP
+			: Math.asin((laneHalfWidth - halfWidth) / leftShoulderRadius);
+		const rightHalfAngle = gameplayLandscape ? LANDSCAPE_SHOULDER_HALF_SWEEP
+			: Math.asin((laneHalfWidth - halfWidth) / rightShoulderRadius);
 		const leftGapAngle = Math.asin((halfWidth + gap / 2) / leftShoulderRadius);
 		const rightGapAngle = Math.asin((halfWidth + gap / 2) / rightShoulderRadius);
 		const upward = -Math.PI / 2;
@@ -214,6 +246,9 @@ export class BrowserOnscreenGamepadView {
 			leftShoulderRadius, halfWidth, upward - leftHalfAngle, upward - leftGapAngle);
 		this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
 			rightShoulderRadius, halfWidth, upward + rightGapAngle, upward + rightHalfAngle);
+		// Shoulder paths already use CSS-client units (their SVG scale is 1).
+		// Scale their labels with the controller just like the other artwork.
+		for (const label of this.shoulderLabels) label.style.fontSize = `${17 * viewportScale}px`;
 		this.portraitControlTop = landscape ? null
 			: Math.min(this.shoulderActions[0].y + this.shoulderActions[0].outline.top,
 				this.shoulderActions[1].y + this.shoulderActions[1].outline.top) - CONTROL_GAP;

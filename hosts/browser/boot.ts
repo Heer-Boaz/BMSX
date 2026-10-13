@@ -37,6 +37,7 @@ export interface BrowserStartup {
 	audio: HostAudioSink;
 	frames: BrowserFrameLoop;
 	videoOutput: BrowserVideoOutput;
+	controlView: BrowserOnscreenGamepadView | null;
 	videoBackend: GPUBackend;
 	logOutput: LogOutput;
 	menuOptions: readonly HostMenuValueOption[];
@@ -119,6 +120,7 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 		frames,
 		audio: new WorkerStreamingAudioSink(audioState.sndcontext),
 		videoOutput,
+		controlView,
 		videoBackend,
 		logOutput: new ConsoleLogOutput(),
 		menuOptions,

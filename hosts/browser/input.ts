@@ -148,6 +148,7 @@ export class BrowserInputHub implements InputSource {
 	private readonly clock: HostClock;
 	private readonly onscreenGamepad: BrowserOnscreenGamepad;
 	private keyboardCapture: ((code: string) => boolean) = null;
+	private foregroundPointerCapture: ((x: number, y: number) => boolean) | null = null;
 	private nativeClipboardEnabled: ((action: ClipboardAction) => boolean) | undefined;
 	private readonly nativeClipboardKeys = new Set<string>();
 	private nextPressId = 1;
@@ -306,6 +307,11 @@ export class BrowserInputHub implements InputSource {
 		this.keyboardCapture = handler;
 	}
 
+	/** Foreground host UI owns new contacts inside its actual displayed surface. */
+	setForegroundPointerCapture(handler: (x: number, y: number) => boolean): void {
+		this.foregroundPointerCapture = handler;
+	}
+
 	/** Host controls may admit native clipboard events without injecting a guest key. */
 	setNativeClipboardEnabled(enabled: ((action: ClipboardAction) => boolean) | undefined): void { this.nativeClipboardEnabled = enabled; }
 
@@ -389,7 +395,9 @@ export class BrowserInputHub implements InputSource {
 	private readonly onPointerDown = (event: PointerEvent): void => {
 		const touch = event.pointerType === 'touch';
 		const active = touch || (event.buttons & 1) !== 0;
-		if (this.onscreenGamepad) {
+		const foreground = this.foregroundPointerCapture !== null
+			&& this.foregroundPointerCapture(event.clientX, event.clientY);
+		if (!foreground && this.onscreenGamepad) {
 			const estimated = touch && event.width === 1 && event.height === 1;
 			const halfWidth = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.width / 2 : 0;
 			const halfHeight = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.height / 2 : 0;

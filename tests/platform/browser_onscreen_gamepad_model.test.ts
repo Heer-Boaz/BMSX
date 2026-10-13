@@ -292,9 +292,83 @@ test('rolling contact crosses overlapping digital direction regions without trav
 	pad.moveContact(1, 125, 95, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000);
 	pad.moveContact(1, 125, 89, 14, 14, true);
+	assert.equal(pad.buttons, 0x8000, 'a modest thumb roll stays in the wider cardinal region');
+	pad.moveContact(1, 125, 83, 14, 14, true);
 	assert.equal(pad.buttons, 0x9000, 'the rocker enters the shared right/up region');
 	pad.moveContact(1, 100, 65, 14, 14, true);
 	assert.equal(pad.buttons, 0x1000);
+});
+
+test('digital pad gives every cardinal a 60-degree region while preserving deliberate diagonals', () => {
+	const { pad, axes } = createFixture();
+	pad.beginContact(1, 100, 100, 14, 14, true);
+	const cardinals = [
+		{ x: 1, y: 0, bits: 0x8000, clockwise: 0x2000, counterclockwise: 0x1000 },
+		{ x: 0, y: 1, bits: 0x2000, clockwise: 0x4000, counterclockwise: 0x8000 },
+		{ x: -1, y: 0, bits: 0x4000, clockwise: 0x1000, counterclockwise: 0x2000 },
+		{ x: 0, y: -1, bits: 0x1000, clockwise: 0x8000, counterclockwise: 0x4000 },
+	];
+	for (const cardinal of cardinals) {
+		for (const degrees of [-59, -45, -31, -29, 0, 29, 31, 45, 59]) {
+			const radians = degrees * Math.PI / 180;
+			const dx = 40 * (cardinal.x * Math.cos(radians) - cardinal.y * Math.sin(radians));
+			const dy = 40 * (cardinal.y * Math.cos(radians) + cardinal.x * Math.sin(radians));
+			const expected = cardinal.bits | (degrees < -30 ? cardinal.counterclockwise : degrees > 30 ? cardinal.clockwise : 0);
+			pad.moveContact(1, 100 + dx, 100 + dy, 100, 100, true);
+			assert.equal(pad.buttons, expected, `cardinal ${cardinal.bits} at ${degrees} degrees`);
+		}
+	}
+	assert.deepEqual(axes, [], 'digital sector selection never synthesizes analog axes');
+});
+
+test('digital pad sector boundaries are inclusive diagonals in every quadrant and at every held radius', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, padX: 0, padY: 0 });
+	pad.beginContact(1, 0, 0, 0, 0, true);
+	for (const radius of [20, 40, 400]) {
+		const boundary = radius / Math.sqrt(3);
+		for (const sx of [-1, 1]) {
+			for (const sy of [-1, 1]) {
+				const horizontal = sx < 0 ? 0x4000 : 0x8000;
+				const vertical = sy < 0 ? 0x1000 : 0x2000;
+				for (const [dx, dy, expected] of [
+					[radius, boundary - 0.001, horizontal],
+					[radius, boundary, horizontal | vertical],
+					[radius, boundary + 0.001, horizontal | vertical],
+					[boundary - 0.001, radius, vertical],
+					[boundary, radius, horizontal | vertical],
+					[boundary + 0.001, radius, horizontal | vertical],
+				]) {
+					pad.moveContact(1, sx * dx, sy * dy, 0, 0, true);
+					assert.equal(pad.buttons, expected, `boundary at ${sx * dx},${sy * dy}`);
+					assert.equal(pad.ownsContact(1), true, 'sector selection does not change captured ownership outside the artwork');
+				}
+			}
+		}
+	}
+});
+
+test('wider cardinal sectors preserve opposing contributors as raw sampled direction bits', () => {
+	const fixture = createInputControllerFixture();
+	const { pad, snapshot, memory, input } = fixture;
+	pad.beginContact(1, 60, 80, 14, 14, true);
+	pad.beginContact(2, 140, 120, 14, 14, true);
+	fixture.sample();
+	assert.equal(pad.buttons, 0xc000, 'independent oblique cardinal contacts retain left and right');
+	assert.equal(snapshot.pads[0].buttons, 0xc000);
+	assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), 0xc000);
+	pad.moveContact(1, 60, 60, 14, 14, true);
+	pad.moveContact(2, 140, 140, 14, 14, true);
+	fixture.sample();
+	assert.equal(snapshot.pads[0].buttons, 0xf000, 'deliberate opposing diagonals remain representable without normalization');
+	assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), 0xf000);
+	pad.endContact(1);
+	fixture.sample();
+	assert.equal(snapshot.pads[0].buttons, 0xa000);
+	pad.endContact(2);
+	fixture.sample();
+	assert.equal(snapshot.pads[0].buttons, 0);
+	input.dispose();
 });
 
 test('rapid digital direction jumps have no intermediate analog or neutral state', () => {

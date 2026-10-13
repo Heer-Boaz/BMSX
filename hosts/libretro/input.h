@@ -34,6 +34,7 @@ public:
 	void consumeGamepadButton(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button);
+	void consumeGamepadButtons(u8 deviceSlot, u32 buttons);
 	void consumeGamepadInput(u8 deviceSlot);
 	void setExclusiveGamepadHostShortcut(InputControllerGamepadButtonBit button);
 	void clearExclusiveGamepadHostShortcut();
