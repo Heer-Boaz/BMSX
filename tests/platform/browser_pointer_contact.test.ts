@@ -33,9 +33,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		const pad = new api.BrowserOnscreenGamepad(clock);
 		pad.setGeometry({
 			padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
-			buttonGroups: [{ x: 325, y: 100, radius: 50,
-				actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
-			}],
+			faceX: 325, faceY: 100, faceRadius: 50,
+			actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
 		});
 		const nativeEvents: Array<{ type: string; id: number; pointerType: string; width: number; height: number; x: number; y: number; trusted: boolean }> = [];
 		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {

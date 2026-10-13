@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 
 test('native browser contacts reach the real common input and ICU without DOM-target feedback', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await build({
 		stdin: {
 			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';

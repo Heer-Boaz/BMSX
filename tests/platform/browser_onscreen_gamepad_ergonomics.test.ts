@@ -55,7 +55,7 @@ const profiles: readonly {
 // Geometry and native desktop input contracts, not proof of hand comfort or iPhone multitouch.
 test('generic gamepad places equal faces and secondary controls in authored hand groups', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	let controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	let controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
 		const bytes = await readFile(`rom/d-pad-${name}.png`);
 		controls = controls.replace(`@@DPAD_${name.toUpperCase()}@@`, `data:image/png;base64,${bytes.toString('base64')}`);
@@ -426,7 +426,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 		});
 	}
-	await t.test('live browser-chrome height changes admit layout without releasing held contacts', async () => {
+	await t.test('true player-frame resize resamples held contacts before any subsequent native jitter', async () => {
 		await page.setViewportSize({ width: 844, height: 390 });
 		await page.evaluate(() => {
 			const style = document.getElementById('player-surface')!.style;
@@ -440,10 +440,11 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		});
 		await settle();
 		const initial = await measure();
-		await touch('touchStart', [{ id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 }]);
+		const finger = { id: 1, x: initial.circles[1].x, y: initial.circles[1].y, radiusX: 14, radiusY: 14 };
+		await touch('touchStart', [finger]);
 		const expected = [{ id: 'select_knop', x: 128, y: 10 }, { id: 'start_knop', x: -140, y: 20 },
 			{ id: 'ls_knop', x: 100, y: -80 }, { id: 'rs_knop', x: -100, y: -70 }];
-		for (const height of [341, 340, 320, 300, 280, 390]) {
+		for (const [height, held] of [[341, 1], [340, 1], [320, 0], [300, 0], [280, 0], [390, 1]]) {
 			await page.setViewportSize({ width: 844, height });
 			await page.evaluate(height => {
 				document.getElementById('player-surface')!.style.height = `${height}px`;
@@ -463,13 +464,16 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					`${circle.id} remains attached to its own hand at ${height}px browser height`);
 			}
 			const word = await poll();
-			assert.equal(word.buttons, 1, `viewport layout alone cannot release the held thumb at ${height}px height`);
+			assert.equal(word.buttons, held, `true document/player-frame geometry immediately applies at ${height}px height`);
 			assert.equal(word.physicalButtons, word.buttons);
 			assert.equal(word.sampledButtons, word.buttons);
 			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.ownsContact((globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id)), true,
-				'layout preserves both held contribution and contact ownership until a native contact update');
+				'true layout changes contributions, not the retained contact identity');
 			assert.equal(current.circles[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
-			await page.screenshot({ path: `${evidenceDirectory}/chrome-transition-${height}-held.png` });
+			finger.x += 1;
+			await touch('touchMove', [finger]);
+			assert.equal((await poll()).sampledButtons, held, 'one-pixel native jitter does not reveal an edge deferred by layout');
+			await page.screenshot({ path: `${evidenceDirectory}/player-resize-${height}-held.png` });
 		}
 		await touch('touchEnd', []);
 		assert.equal((await poll()).sampledButtons, 0);

@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 
 test('control geometry follows CSS player layout independently of framebuffer resolution', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await build({
 		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
@@ -95,7 +95,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	const before = await measure();
 	await page.setViewportSize({ width: 393, height: 852 });
 	await page.evaluate(() => (globalThis as any).layoutProbe.video.refreshLayout());
-	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 1, 'layout admission cannot generate an input release without a native contact update');
+	assert.equal(await page.evaluate(() => (globalThis as any).layoutProbe.pad.buttons), 0, 'true orientation geometry changes resample the retained contact immediately');
 	const after = await measure();
 	assert.notDeepEqual(after[4], before[4], 'orientation updates nominal action geometry');
 	const sampled = await page.evaluate(bounds => {
@@ -103,7 +103,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		pad.moveContact(1, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, 14, 14, true);
 		return pad.buttons;
 	}, before[4]);
-	assert.equal(sampled, 0, 'the next contact sample sees the admitted geometry even when its coordinates and footprint are unchanged');
+	assert.equal(sampled, 0, 'an unchanged next contact sample agrees with the geometry already admitted');
 	await page.evaluate(() => {
 		const probe = (globalThis as any).layoutProbe;
 		const b = document.getElementById('b_knop')!.getBoundingClientRect();

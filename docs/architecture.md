@@ -4925,13 +4925,14 @@ Reported dimensions are consumed directly; the Pointer Events unavailable
 `1x1` contact uses an authored `28x28` CSS-pixel envelope. Mouse/pen remain point
 contacts. Pressure is not a size estimate, and Touch Events are not a second
 producer. Contact outlines are axis-aligned ellipse estimates, not filled
-bounding rectangles. The numerical controller retains each contact's physical
-component: the joined D-pad, the A/B/X/Y deck or one auxiliary switch. Within
-the face deck a thumb can overlap every intersecting circular button, including
-multiple adjacent buttons at once. Visible button-center hits take priority
-over neutral acquisition envelopes; neutral deck contact can acquire the route
-without initially pressing a button. A skin estimate cannot spill from one
-mechanical component into another.
+bounding rectangles. The numerical controller separates retained directional
+capture from live button contacts. All eight face and auxiliary circles can
+contribute nonexclusively to a button contact; a thumb may bridge adjacent
+switches or slide between them without lifting. Actual activating surfaces
+precede the neutral face acquisition envelope. Direct visible button-center
+hits precede directional pickup; area-only conflicts compare actual control
+boundaries. A neutral deck contact may acquire the button route without
+initially pressing a switch, but cannot steal a real auxiliary skin hit.
 The joined rocker uses immediate absolute contact-center direction regions
 over the whole disc, with a neutral center and up to two adjacent bits per
 contact. There is no analog origin, moving tip or exclusive first-finger owner.
@@ -4943,14 +4944,18 @@ the displayed tilt; the view never rewrites controller words. Artwork changes
 do not change numerical acquisition geometry or control layout.
 
 Per-button reference counts combine contacts without releasing another
-finger's controls. Leaving face buttons releases their contribution, not the
-component capture/route; returning or sliding inside that deck needs no new
-down. A canvas-started contact remains canvas input. Layout admission increments
-the geometry revision without producing input edges from stale contact
-coordinates. The next physical sample evaluates current geometry, including
-at unchanged coordinates; up/cancel releases the retained contribution. Opt-in
-browser tracing records applied layouts as well as native events. This is host interaction policy, not a
-machine-runtime or mirrored ICU change. Neither
+finger's controls. Leaving buttons releases their contribution, not the
+retained route; returning needs no new down. A canvas-started contact remains
+canvas input. The explicit controller viewport is bounded by its player and
+CSS small viewport dimensions. The video owner measures it separately from
+the dynamic VisualViewport used for canvas fitting, preserving stable control
+transforms during visual-only changes while retaining the image's 4:3 and
+integer/half-integer scale. Actual document/orientation/player layout changes
+immediately resample retained coordinates and publish only the final aggregate
+edge diff. There is no delayed geometry revision catch-up or stale input latch.
+Opt-in browser tracing records applied geometry revision/bounds and actual
+model/common before/after words as well as native events. This is host
+interaction policy, not a machine-runtime or mirrored ICU change. Neither
 compatibility mouse boundary events, focus gain, nor touch pressure/button
 fields end a retained contact. Window blur, page hide, and document visibility
 loss end all contacts; a visible `visibilitychange` does not.

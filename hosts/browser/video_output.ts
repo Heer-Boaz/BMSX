@@ -6,6 +6,7 @@ import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 export class BrowserVideoOutput implements VideoOutput {
 	private renderWidth: number;
 	private readonly playerSurface: HTMLElement;
+	private readonly controllerViewport: HTMLElement | null;
 	private readonly visualViewport: VisualViewport | null;
 	private readonly resizeObserver: ResizeObserver;
 	private layoutAnimationFrameId = 0;
@@ -16,9 +17,11 @@ export class BrowserVideoOutput implements VideoOutput {
 	) {
 		this.renderWidth = canvas.width;
 		this.playerSurface = canvas.ownerDocument.getElementById('player-surface');
+		this.controllerViewport = controlView ? canvas.ownerDocument.getElementById('controller-viewport') : null;
 		this.visualViewport = window.visualViewport;
 		this.resizeObserver = new ResizeObserver(this.scheduleLayout);
 		this.resizeObserver.observe(this.playerSurface);
+		if (this.controllerViewport) this.resizeObserver.observe(this.controllerViewport);
 		window.addEventListener('resize', this.scheduleLayout);
 		window.addEventListener('orientationchange', this.scheduleLayout);
 		if (this.visualViewport) {
@@ -48,10 +51,14 @@ export class BrowserVideoOutput implements VideoOutput {
 		const viewportHeight = viewport ? viewport.height : document.documentElement.clientHeight;
 		const player = this.playerSurface.getBoundingClientRect();
 		const style = window.getComputedStyle(this.playerSurface);
-		const left = Math.max(player.left, viewportLeft + Number.parseFloat(style.paddingLeft));
-		const top = Math.max(player.top, viewportTop + Number.parseFloat(style.paddingTop));
-		const right = Math.min(player.right, viewportLeft + viewportWidth - Number.parseFloat(style.paddingRight));
-		const bottom = Math.min(player.bottom, viewportTop + viewportHeight - Number.parseFloat(style.paddingBottom));
+		const insetLeft = Number.parseFloat(style.paddingLeft);
+		const insetTop = Number.parseFloat(style.paddingTop);
+		const insetRight = Number.parseFloat(style.paddingRight);
+		const insetBottom = Number.parseFloat(style.paddingBottom);
+		const left = Math.max(player.left, viewportLeft + insetLeft);
+		const top = Math.max(player.top, viewportTop + insetTop);
+		const right = Math.min(player.right, viewportLeft + viewportWidth - insetRight);
+		const bottom = Math.min(player.bottom, viewportTop + viewportHeight - insetBottom);
 		const width = Math.max(0, right - left);
 		const height = Math.max(0, bottom - top);
 		const presentationHeight = this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
@@ -62,7 +69,11 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.canvas.style.height = `${displayHeight}px`;
 		this.canvas.style.left = `${left + (width - displayWidth) / 2}px`;
 		this.canvas.style.top = `${top + (height - displayHeight) / 2}px`;
-		this.controlView?.layout(left, top, width, height);
+		if (this.controlView) {
+			const controls = this.controllerViewport.getBoundingClientRect();
+			this.controlView.layout(controls.left + insetLeft, controls.top + insetTop,
+				Math.max(0, controls.width - insetLeft - insetRight), Math.max(0, controls.height - insetTop - insetBottom));
+		}
 	}
 
 	public dispose(): void {

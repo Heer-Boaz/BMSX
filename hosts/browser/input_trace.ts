@@ -36,11 +36,11 @@ export class BrowserInputTrace implements BrowserInputDiagnostics {
 		this.commonGamepad = gamepad;
 	}
 
-	/** Layout admission is observable even though it cannot change contact state. */
-	controllerLayout(revision: number, left: number, top: number, width: number, height: number, buttons: number): void {
+	/** Observe authoritative layout admission and its retained-contact edges. */
+	controllerLayout(revision: number, left: number, top: number, width: number, height: number, before: number, after: number, commonBefore: number): void {
 		if (this.buffer.frozen) return;
 		const common = this.commonGamepad ? this.commonGamepad.physicalGamepadButtonsWord() : -1;
-		this.view.setButtons(buttons, common);
+		this.view.setButtons(after, common);
 		const record = this.buffer.reserve('control-layout', 'layout', this.window.performance.now());
 		record.geometryRevision = revision;
 		record.x = left;
@@ -48,9 +48,9 @@ export class BrowserInputTrace implements BrowserInputDiagnostics {
 		record.width = width;
 		record.height = height;
 		record.route = 'controller';
-		record.before = buttons;
-		record.after = buttons;
-		record.commonBefore = common;
+		record.before = before;
+		record.after = after;
+		record.commonBefore = commonBefore;
 		record.commonAfter = common;
 	}
 

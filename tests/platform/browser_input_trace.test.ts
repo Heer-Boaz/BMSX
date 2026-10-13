@@ -82,7 +82,8 @@ export { Input } from './hosts/common/input/manager';`,
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
 		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, padNeutralRadius: 14,
-			buttonGroups: [{ x: 660, y: 235, radius: 100, actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] }] });
+			faceX: 660, faceY: 235, faceRadius: 100,
+			actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] });
 		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);
 		hub.setTraceObserver(trace);
@@ -205,7 +206,7 @@ export { Input } from './hosts/common/input/manager';`,
 	}
 });
 
-test('applied controller layouts are traced without manufacturing native releases', async t => {
+test('true controller-frame layout changes trace retained-contact edges independently of native events', async t => {
 	const bootstrap = await build({
 		entryPoints: ['hosts/browser/input_trace_bootstrap.ts'], bundle: true, platform: 'browser',
 		format: 'iife', write: false, tsconfig: 'tsconfig.base.json',
@@ -220,7 +221,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'layoutTraceFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const template = await readFile('gamebase.html', 'utf8');
-	let controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	let controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	for (const name of ['neutral', 'u', 'ru', 'r', 'rd', 'd', 'ld', 'l', 'lu']) {
 		controls = controls.replace(`@@DPAD_${name.toUpperCase()}@@`, `data:image/png;base64,${(await readFile(`rom/d-pad-${name}.png`)).toString('base64')}`);
 	}
@@ -262,12 +263,12 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		}
 		return { buttons: probe.model.buttons, layouts, text: probe.trace.view.text() };
 	});
-	assert.equal(resized.buttons, 1, 'a browser height change does not release a held A');
+	assert.equal(resized.buttons, 0, 'a true document resize moves the button away from its retained contact immediately');
 	assert.deepEqual(resized.layouts, [
 		{ revision: 1, bounds: [0, 0, 852, 393], words: [0, 0, 0, 0] },
-		{ revision: 2, bounds: [0, 0, 852, 300], words: [1, 1, 1, 1] },
+		{ revision: 2, bounds: [0, 0, 852, 300], words: [1, 0, 1, 0] },
 	]);
-	assert.match(resized.text, /layout control-layout revision=2 bounds=0\.0,0\.0,852\.0,300\.0 route=controller model=0x1->0x1 common=0x1->0x1/);
+	assert.match(resized.text, /layout control-layout revision=2 bounds=0\.0,0\.0,852\.0,300\.0 route=controller model=0x1->0x0 common=0x1->0x0/);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x + 1 }] });
 	const moved = await page.evaluate(() => {
 		const probe = (globalThis as any).layoutTraceProbe;
@@ -280,9 +281,9 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		return { buttons: probe.model.buttons, common: probe.trace.commonGamepad.physicalGamepadButtonsWord(),
 			phase: row.phase, kind: row.kind, before: row.before, after: row.after, trusted: row.trusted, geometryRevision: row.geometryRevision };
 	});
-	assert.equal(moved.buttons, 0, 'the next native movement applies the current, moved button geometry');
+	assert.equal(moved.buttons, 0, 'tiny native jitter does not postpone or introduce the already-observed layout edge');
 	assert.equal(moved.common, 0);
-	assert.deepEqual([moved.phase, moved.kind, moved.before, moved.after, moved.trusted], ['route', 'pointermove', 1, 0, true]);
+	assert.deepEqual([moved.phase, moved.kind, moved.before, moved.after, moved.trusted], ['route', 'pointermove', 0, 0, true]);
 	assert.equal(moved.geometryRevision, 2, 'the native update identifies the current admitted geometry');
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	await page.evaluate(() => {

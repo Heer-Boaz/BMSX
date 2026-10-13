@@ -1,5 +1,5 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenButtonGroupGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
+import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry } from './onscreen_gamepad';
 import type { BrowserInputDiagnostics } from './input_trace_contract';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick }
@@ -53,9 +53,9 @@ export class BrowserOnscreenGamepadView {
 	private readonly circles: SVGCircleElement[] = [];
 	private readonly nominalActions: OnscreenActionGeometry[] = [];
 	private readonly actions: OnscreenActionGeometry[] = [];
-	private readonly buttonGroups: OnscreenButtonGroupGeometry[] = [];
 	private readonly geometry: OnscreenGamepadGeometry = {
-		padX: 0, padY: 0, padRadius: 0, padNeutralRadius: 0, buttonGroups: this.buttonGroups,
+		padX: 0, padY: 0, padRadius: 0, padNeutralRadius: 0,
+		faceX: 0, faceY: 0, faceRadius: 0, actions: this.actions,
 	};
 	private readonly layoutObserver: BrowserInputDiagnostics | undefined;
 	private readonly unsubscribeView: () => void;
@@ -99,10 +99,6 @@ export class BrowserOnscreenGamepadView {
 				radius: circle.r.baseVal.value, buttons: action.buttons,
 			});
 			this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
-		}
-		this.buttonGroups.push({ x: 0, y: 0, radius: 0, actions: this.actions.slice(0, 4) });
-		for (let index = 4; index < this.actions.length; index += 1) {
-			this.buttonGroups.push({ x: 0, y: 0, radius: 0, actions: [this.actions[index]] });
 		}
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 	}
@@ -175,6 +171,9 @@ export class BrowserOnscreenGamepadView {
 		geometry.padY = padY;
 		geometry.padRadius = padRadius;
 		geometry.padNeutralRadius = padRadius * 0.18;
+		geometry.faceX = faceCenterX;
+		geometry.faceY = faceCenterY;
+		geometry.faceRadius = faceSurface.artworkWidth * faceScale / 2;
 		for (let index = 0; index < this.actions.length; index += 1) {
 			const surface = this.actionSurfaces[ACTIONS[index].surface];
 			const nominal = this.nominalActions[index];
@@ -183,19 +182,11 @@ export class BrowserOnscreenGamepadView {
 			action.y = surface.top + nominal.y * surface.scale;
 			action.radius = nominal.radius * surface.scale;
 		}
-		const faceGroup = this.buttonGroups[0];
-		faceGroup.x = faceCenterX;
-		faceGroup.y = faceCenterY;
-		faceGroup.radius = faceSurface.artworkWidth * faceScale / 2;
-		for (let index = 1; index < this.buttonGroups.length; index += 1) {
-			const group = this.buttonGroups[index];
-			const action = group.actions[0];
-			group.x = action.x;
-			group.y = action.y;
-			group.radius = action.radius;
-		}
+		const observer = this.layoutObserver;
+		const before = this.model.buttons;
+		const commonBefore = observer && observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1;
 		this.model.setGeometry(geometry);
-		this.layoutObserver?.controllerLayout(this.model.geometryRevision, left, top, width, height, this.model.buttons);
+		observer?.controllerLayout(this.model.geometryRevision, left, top, width, height, before, this.model.buttons, commonBefore);
 		this.padSurface.hidden = false;
 	}
 

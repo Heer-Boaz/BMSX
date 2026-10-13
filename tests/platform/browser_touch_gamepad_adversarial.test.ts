@@ -12,18 +12,35 @@ interface TouchPoint {
 	radiusY: number;
 }
 
+interface NativeContactEvent {
+	type: string;
+	width: number;
+	height: number;
+	trusted: boolean;
+}
+
+interface LayoutTraceRow {
+	revision: number;
+	height: number;
+	before: number;
+	after: number;
+	commonBefore: number;
+	commonAfter: number;
+}
+
 /** Independent acceptance probes, including the outer-arc/round-contact failures
  * missed by the earlier selected center/diagonal samples. The browser is real
  * Chromium; this does not claim that CDP emulates UIKit or Safari. */
 test('physical touch gamepad interactions survive adversarial native browser input', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
-	const controls = template.slice(template.indexOf('<div id="d-pad-controls"'), template.indexOf('<div id="gameContainer">'));
+	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const bundle = await build({
 		stdin: {
 			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
 export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserInputHub } from './hosts/browser/input';
+export { BrowserInputTrace } from './hosts/browser/input_trace';
 export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
@@ -47,12 +64,18 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		const api = (globalThis as any).fixture;
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
+		const trace = new api.BrowserInputTrace(window);
+		window.bmsxInputTrace = trace;
+		document.getElementById('bmsx-input-trace')!.style.display = 'none';
 		const view = new api.BrowserOnscreenGamepadView(document, window, pad);
 		const canvas = document.getElementById('gamescreen');
 		const video = new api.BrowserVideoOutput(canvas, view);
 		video.refreshLayout();
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
+		trace.setController(pad);
+		hub.setTraceObserver(trace);
 		const input = new api.Input(clock, hub, pad.gamepadIndex);
+		trace.setCommonGamepad(input.getPlayerInput(1).inputHandlers.gamepad);
 		const snapshot = api.createInputControllerSnapshot();
 		const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
 		const controller = new api.InputController(memory, input, {
@@ -78,11 +101,21 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			},
 			refreshLayout() { video.refreshLayout(); },
 			takeEvents() { return events.splice(0); },
+			clearTrace() { trace.buffer.clear(); },
+			layoutRows() {
+				const rows = [];
+				for (let index = 0; index < trace.buffer.count; index += 1) {
+					const row = trace.buffer.get(index);
+					if (row.phase === 'layout') rows.push({ revision: row.geometryRevision, height: row.height,
+						before: row.before, after: row.after, commonBefore: row.commonBefore, commonAfter: row.commonAfter });
+				}
+				return rows;
+			},
 		};
 	});
 	const cdp = await page.context().newCDPSession(page);
 	const poll = () => page.evaluate(() => (globalThis as any).touchAcceptance.poll());
-	const takeEvents = () => page.evaluate(() => (globalThis as any).touchAcceptance.takeEvents());
+	const takeEvents = () => page.evaluate<NativeContactEvent[]>(() => (globalThis as any).touchAcceptance.takeEvents());
 	const measure = () => page.evaluate(() => {
 		const pad = document.getElementById('d-pad-svg')!.getBoundingClientRect();
 		const face = document.getElementById('action-buttons-svg')!.getBoundingClientRect();
@@ -91,7 +124,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radius: rect.width / 2 };
 		});
 		return { pad: { x: pad.left + pad.width / 2, y: pad.top + pad.height / 2, radius: pad.width / 2 },
-			face: { x: face.left + face.width / 2, y: face.top + face.height / 2 }, actions };
+			face: { x: face.left + face.width / 2, y: face.top + face.height / 2, radius: face.width / 2 }, actions };
 	});
 	const activeIds = new Set<number>();
 	const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', touchPoints: TouchPoint[]) => {
@@ -109,7 +142,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		if (activeIds.size !== 0) await touch('touchCancel', []);
 		await assertWord(0);
 		await page.setViewportSize({ width: 852, height: 393 });
-		await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
+		await page.evaluate(() => {
+			document.getElementById('player-surface')!.style.padding = '0px';
+			(globalThis as any).touchAcceptance.refreshLayout();
+		});
 		await takeEvents();
 	});
 
@@ -155,7 +191,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 
 	await t.test('a neutral face-bank touch can roll onto A without lifting or becoming canvas input', async () => {
 		const { face, actions: [a] } = await measure();
-		const contact = { id: 1, ...face, radiusX: 14, radiusY: 14 };
+		const contact = { id: 1, x: face.x, y: face.y, radiusX: 14, radiusY: 14 };
 		await touch('touchStart', [contact]);
 		await assertWord(0);
 		await touch('touchMove', [{ ...contact, x: a.x, y: a.y }]);
@@ -178,6 +214,56 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await touch('touchMove', [{ ...canvasContact, x: a.x, y: a.y }]);
 		await assertWord(0, 1, 'an already captured canvas pointer stays canvas-owned when crossing the controls');
 	});
+
+	for (const profile of [
+		{ name: 'phone', width: 852, height: 393, padding: '0px', startOffsetX: 33, startOffsetY: 20 },
+		{ name: 'phone14 safe landscape', width: 844, height: 390, padding: '0px 47px 21px 47px', startOffsetX: 33, startOffsetY: 20 },
+		{ name: 'tablet', width: 1024, height: 748, padding: '0px', startOffsetX: 35, startOffsetY: 18 },
+		{ name: 'embedded', width: 320, height: 240, padding: '0px', startOffsetX: 19, startOffsetY: 20 },
+	]) {
+		await t.test(`${profile.name}: actual RS skin contact beats another control's neutral acquisition region`, async () => {
+			await page.setViewportSize({ width: profile.width, height: profile.height });
+			await page.evaluate(padding => {
+				document.getElementById('player-surface')!.style.padding = padding;
+				(globalThis as any).touchAcceptance.refreshLayout();
+			}, profile.padding);
+			const { face, actions } = await measure();
+			const rs = actions[7];
+			const contact = { id: 1, x: rs.x + rs.radius + 1, y: rs.y, radiusX: 14, radiusY: 14 };
+			assert.ok(Math.hypot(contact.x - face.x, contact.y - face.y) < face.radius,
+				'the reported center is inside the neighboring neutral face acquisition circle');
+			assert.deepEqual(actions.map((action, index) => Math.hypot(contact.x - action.x, contact.y - action.y) <= action.radius + 14 ? index : -1).filter(index => index !== -1), [7],
+				'independent sum-of-radii geometry proves that only the actual RS switch is touched');
+			await takeEvents();
+			await touch('touchStart', [contact]);
+			await assertWord(0x800, 0, 'neutral acquisition must not swallow actual button contact');
+			assert.deepEqual((await takeEvents()).map(event => [event.type, event.width, event.height, event.trusted]), [['pointerdown', 28, 28, true]]);
+		});
+
+		await t.test(`${profile.name}: actual START skin contact beats a nearer neutral envelope`, async () => {
+			await page.setViewportSize({ width: profile.width, height: profile.height });
+			await page.evaluate(padding => {
+				document.getElementById('player-surface')!.style.padding = padding;
+				(globalThis as any).touchAcceptance.refreshLayout();
+			}, profile.padding);
+			const { pad, face, actions } = await measure();
+			const start = actions[5];
+			const contact = { id: 1, x: start.x + profile.startOffsetX, y: start.y + profile.startOffsetY, radiusX: 14, radiusY: 14 };
+			const faceRadius = face.radius;
+			assert.ok(Math.hypot(contact.x - pad.x, contact.y - pad.y) > pad.radius);
+			assert.ok(Math.hypot(contact.x - face.x, contact.y - face.y) > faceRadius);
+			for (const action of actions) assert.ok(Math.hypot(contact.x - action.x, contact.y - action.y) > action.radius,
+				'the contact center is outside every button, so this tests footprint acquisition rather than direct-center priority');
+			assert.deepEqual(actions.map((action, index) => Math.hypot(contact.x - action.x, contact.y - action.y) <= action.radius + 14 ? index : -1).filter(index => index !== -1), [5],
+				'the footprint intersects only START, not any real face button');
+			assert.ok(Math.hypot(contact.x - face.x, contact.y - face.y) - faceRadius < Math.hypot(contact.x - start.x, contact.y - start.y) - start.radius,
+				'the old nearest-neutral-envelope policy incorrectly preferred the face deck at this sample');
+			await takeEvents();
+			await touch('touchStart', [contact]);
+			await assertWord(0x200, 0, 'actual START contact cannot be replaced by a zero-contribution face acquisition');
+			assert.deepEqual((await takeEvents()).map(event => [event.type, event.width, event.height, event.trusted]), [['pointerdown', 28, 28, true]]);
+		});
+	}
 
 	await t.test('a large centered thumb leaves the mechanical D-pad neutral', async () => {
 		const { pad } = await measure();
@@ -243,7 +329,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await assertWord(0x8000);
 	});
 
-	await t.test('held contacts belong to a mechanical component, not whichever other control they cross', async () => {
+	await t.test('directional capture is retained while a button contact can slide between every button', async () => {
 		const { pad, actions: [a, , , , select] } = await measure();
 		const padContact = { id: 1, x: pad.x + pad.radius * 0.8, y: pad.y, radiusX: 14, radiusY: 14 };
 		await touch('touchStart', [padContact]);
@@ -255,8 +341,44 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await touch('touchStart', [faceContact]);
 		await assertWord(1);
 		await touch('touchMove', [{ ...faceContact, x: select.x, y: select.y }]);
-		await assertWord(0, 0, 'leaving the face deck cannot migrate the thumb into a utility button');
+		await assertWord(0x100, 0, 'button contacts recompute all visible buttons rather than keeping a fixed face-deck subset');
 		await touch('touchEnd', []);
+	});
+
+	await t.test('START-to-A and LS-to-SELECT glides require no lift or new acquisition', async () => {
+		const { actions } = await measure();
+		for (const [firstIndex, secondIndex, firstWord, secondWord] of [[5, 0, 0x200, 1], [6, 4, 0x400, 0x100]]) {
+			const first = actions[firstIndex];
+			const second = actions[secondIndex];
+			const contact = { id: 1, x: first.x, y: first.y, radiusX: 14, radiusY: 14 };
+			await touch('touchStart', [contact]);
+			await assertWord(firstWord);
+			await touch('touchMove', [{ ...contact, x: second.x, y: second.y }]);
+			await assertWord(secondWord);
+			await touch('touchMove', [contact]);
+			await assertWord(firstWord, 0, 'initial acquisition does not restrict the live button subset');
+			await touch('touchEnd', []);
+			await assertWord(0);
+		}
+	});
+
+	await t.test('one thumb can truly contact X plus START while another finger independently holds START', async () => {
+		const { actions: [, , x, , , start] } = await measure();
+		const contact = { id: 1, x: (x.x + start.x) / 2, y: (x.y + start.y) / 2, radiusX: 14, radiusY: 14 };
+		assert.ok(Math.hypot(contact.x - x.x, contact.y - x.y) < x.radius + 14);
+		assert.ok(Math.hypot(contact.x - start.x, contact.y - start.y) < start.radius + 14);
+		const second = { id: 2, x: start.x, y: start.y, radiusX: 1, radiusY: 1 };
+		await touch('touchStart', [contact]);
+		await assertWord(0x204, 0, 'actual skin overlap contributes both visible switches, not one arbitrarily selected button deck');
+		await touch('touchStart', [contact, second]);
+		await assertWord(0x204);
+		const xOnly = { ...contact, x: x.x, y: x.y };
+		await touch('touchMove', [xOnly, second]);
+		await assertWord(0x204, 0, 'START remains pressed by its separate finger after the thumb rolls off it');
+		await touch('touchEnd', [xOnly]);
+		await assertWord(0x200);
+		await touch('touchEnd', []);
+		await assertWord(0);
 	});
 
 	await t.test('a direct utility press wins over a large thumb reaching the nearby pad', async () => {
@@ -346,18 +468,22 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await assertWord(0);
 	});
 
-	await t.test('browser layout changes cannot manufacture input edges before a new native pointer sample', async () => {
+	await t.test('a true controller viewport resize resamples held contact geometry and records its source', async () => {
 		const { actions: [a] } = await measure();
 		const contact = { id: 1, x: a.x, y: a.y - 8, radiusX: 14, radiusY: 14 };
 		await touch('touchStart', [contact]);
 		await assertWord(1);
 		await takeEvents();
+		await page.evaluate(() => (globalThis as any).touchAcceptance.clearTrace());
 		await page.setViewportSize({ width: 852, height: 320 });
 		await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
 		assert.deepEqual(await takeEvents(), [], 'layout itself does not produce a native release event');
-		await assertWord(1, 0, 'a visual-viewport update must not silently manufacture a release');
+		await assertWord(0, 0, 'a true document-height resize relocates the button and immediately resamples the retained contact');
+		const rows = await page.evaluate<LayoutTraceRow[]>(() => (globalThis as any).touchAcceptance.layoutRows());
+		assert.ok(rows.some(row => row.height === 320 && row.before === 1 && row.after === 0 && row.commonBefore === 1 && row.commonAfter === 0),
+			'the trace must attribute the model/common release to authoritative control geometry, not a fabricated native event');
 		await touch('touchMove', [{ ...contact, x: contact.x + 0.25 }]);
-		await assertWord(0, 0, 'the next native sample applies the visibly admitted new layout');
+		await assertWord(0, 0, 'subsequent native movement agrees with the admitted geometry rather than undoing the release');
 		await touch('touchEnd', []);
 		await assertWord(0);
 	});
