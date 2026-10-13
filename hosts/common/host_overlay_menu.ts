@@ -256,6 +256,7 @@ export class HostOverlayMenu {
 	private readonly optionHitRect = create_rect_bounds();
 	private readonly pointerCapturePoint = { x: 0, y: 0 };
 	private keyboardVisibilityListener: ((visible: boolean) => void) | null = null;
+	private overlayVisibilityListener: ((visible: boolean) => void) | null = null;
 	private optionLineHeight = 0;
 	private selected = 0;
 	private dirtyText = true;
@@ -474,6 +475,11 @@ export class HostOverlayMenu {
 	/** Browser control presentation follows actual page transitions, not frame polling. */
 	public setKeyboardVisibilityListener(listener: (visible: boolean) => void): void {
 		this.keyboardVisibilityListener = listener;
+	}
+
+	/** Frontend presentation distinguishes protected host pages from the gameplay image. */
+	public setOverlayVisibilityListener(listener: (visible: boolean) => void): void {
+		this.overlayVisibilityListener = listener;
 	}
 
 	public tickInput(): HostMenuInput {
@@ -840,6 +846,7 @@ export class HostOverlayMenu {
 	}
 
 	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
+		const overlayWasVisible = this.page !== HostOverlayPage.Closed;
 		const keyboardWasVisible = this.page === HostOverlayPage.Keyboard;
 		switch (this.page) {
 			case HostOverlayPage.Keyboard:
@@ -859,6 +866,9 @@ export class HostOverlayMenu {
 				break;
 		}
 		this.page = next;
+		if (overlayWasVisible !== (next !== HostOverlayPage.Closed)) {
+			this.overlayVisibilityListener?.(next !== HostOverlayPage.Closed);
+		}
 		if (keyboardWasVisible !== (next === HostOverlayPage.Keyboard)) {
 			this.keyboardVisibilityListener?.(next === HostOverlayPage.Keyboard);
 		}

@@ -4974,20 +4974,37 @@ retained route; returning needs no new down. A canvas-started contact remains
 canvas input. The explicit controller viewport is bounded by its player and
 CSS small viewport dimensions. The video owner measures it separately from
 the dynamic VisualViewport used for canvas fitting, preserving stable control
-transforms during visual-only changes while retaining the image's 4:3 and
-integer/half-integer scale. Portrait aligns the game at the safe top and fits
-above the control view's authored `portraitDeckTop`; landscape retains full
-dynamic centering. The handheld deck aligns D-pad and equal face buttons on
-one hand row, with larger distinct LB/RB and LT/RT targets and a lower menu
-row. Landscape packs each full hand silhouette, including its 140-degree
-wrapping shoulder envelope, and targets the safe viewport's middle row rather
-than bottom-aligning the primary controls. Actual bounds constrain short
-players; capped control sizes are not scaled up with screen area or shrunk to
-reserve video columns. Portrait keeps compact shoulder lanes and top-fitted
-video without shrinking its primary thumb targets to fit landscape rings.
-Actual host-keyboard visibility selects a compact lower/edge controller context
-in landscape; capped thumb sizes and footer anchors remain identical. Its
-interactive key rectangles own new native downs ahead of gamepad pickup,
+transforms during visual-only changes. The presentation owner quantizes 4:3
+video in physical-display-pixel half steps, then publishes CSS dimensions;
+raw renderer targets and CSS thumb sizes are unchanged. Resolution-query events
+invalidate DPR-dependent presentation without frame polling or resizing controls.
+The handheld deck anchors D-pad and equal face buttons at the safe side edges,
+targets the landscape middle hand row and fits asymmetric same-ring shoulders
+inside the available reach. Shoulder envelopes never push the primary groups
+inward. Bumpers use the larger, closer segment; triggers use upper segments.
+LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
+Transparent control interiors retain the scene; a dark stroke under the light
+label glyphs supplies contrast on bright scenes without an opaque button fill.
+Actual bounds constrain short players; capped control sizes are not scaled up
+with screen area or shrunk to reserve video columns.
+The view retains finite portrait-deck metrics for measure/arrange. The video
+owner composes a stable width-derived 4:3 video slot, including the permitted
+overscan extent, a 12px separation and that deck. This publishes geometry once,
+without a provisional bottom layout. Scanout/DPR/picture-mode changes do not
+move controls. Portrait Fit starts at the safe top; landscape is centered.
+The browser player offers FIT (default) and opt-in OVERSCAN 5% in the existing
+host menu. Overscan is bounded by 5% of the complete image per edge, in both
+axes, and clips at the actual safe video frame rather than spilling into the
+portrait deck. Portrait uses its available height before clipping game text.
+The full canvas transform remains authoritative for coordinates; native CSS
+clip hit-testing excludes hidden pixels from acquiring canvas contacts.
+Actual host overlay pages explicitly select uncropped Fit, restoring the user's
+picture policy on exit. Studio remains Fit-only. This is not a guarantee that
+guest HUDs, BIOS terminal text or closed-page resource indicators have safe
+overscan margins; those are part of the optionally cropped image.
+Actual host-keyboard visibility selects a compact edge controller context
+in landscape; thumb sizes are unchanged and each complete hand group is
+recomposed at the key-grid sides with lower utility rows. Interactive key rectangles own new native downs ahead of gamepad pickup,
 through the host menu's existing viewport projection. Help text does not claim
 touches. Acquired canvas/controller leases keep their ordinary lifetime and
 route. Visibility transitions notify the passive view once and use the same

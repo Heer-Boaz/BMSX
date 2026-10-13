@@ -76,8 +76,14 @@ async function startBrowserPlayer(): Promise<void> {
 			options.input,
 			rewind,
 			execution,
-			options.menuOptions,
+			[...options.menuOptions, {
+				kind: 'value', label: 'PICTURE',
+				values: [{ label: 'FIT' }, { label: 'OVERSCAN 5%' }],
+				getIndex: () => options.videoOutput.screenFit === 'fit' ? 0 : 1,
+				setIndex: index => options.videoOutput.setScreenFit(index === 0 ? 'fit' : 'overscan'),
+			}],
 		);
+		hostOverlayMenu.setOverlayVisibilityListener(options.videoOutput.setHostOverlayVisible);
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
 		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		runtime.frameScheduler.clearQueuedTime();

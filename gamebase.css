@@ -53,6 +53,10 @@
 
 .action-label {
 	fill: #f3f7fa;
+	stroke: #101010;
+	stroke-width: 0.12em;
+	stroke-linejoin: round;
+	paint-order: stroke fill;
 	font-family: system-ui, sans-serif;
 	font-size: 23px;
 	font-weight: 650;

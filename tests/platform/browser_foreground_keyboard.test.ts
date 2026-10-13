@@ -59,6 +59,12 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const video = new api.BrowserVideoOutput(canvas, view);
 				video.refreshLayout();
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
+				// Observe source delivery before the owning hub can stop propagation.
+				const native: Array<{ type: string; id: number; trusted: boolean }> = [];
+				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, event => {
+					const pointer = event as PointerEvent;
+					native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted });
+				}, { capture: true, passive: true });
 				const input = new api.Input(clock, hub, pad.gamepadIndex);
 				const backend = new api.HeadlessGPUBackend(256, 212, api.PSX_MACHINE_SPEC.gxGpuVramBytes);
 				const presenter = new api.VideoPresenter(video, backend, 256, 212);
@@ -71,11 +77,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
 				const controller = new api.InputController(memory, input, { supervisorContextActive() { return false; }, requestSupervisorLineEdge() {} });
 				controller.reset();
-				const native: Array<{ type: string; id: number; trusted: boolean }> = [];
-				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, event => {
-					const pointer = event as PointerEvent;
-					native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted });
-				}, { capture: true, passive: true });
 				const display = {
 					client(x: number, y: number) { const rect = canvas.getBoundingClientRect(); return { x: rect.left + x * rect.width / 256, y: rect.top + y * rect.height / 212 }; },
 					center(id: string) { const r = document.getElementById(id)!.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
@@ -114,6 +115,19 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const cdp = await page.context().newCDPSession(page);
 			const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: Array<{ id: number; x: number; y: number }>) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(point => ({ ...point, radiusX: 1, radiusY: 1 })) });
 			const poll = async () => { await page.evaluate(() => (globalThis as any).keyboardTouch.poll()); return page.evaluate(() => (globalThis as any).keyboardTouch.poll()); };
+			const artworkAt = (points: Array<{ x: number; y: number }>) => page.evaluate(({ points, buttons }) => {
+				let word = 0;
+				for (const [id, bit] of Object.entries(buttons)) {
+					const shape = document.getElementById(id) as unknown as SVGGeometryElement;
+					const inverse = shape.getScreenCTM()!.inverse();
+					for (const point of points) {
+						if (shape.isPointInFill(new DOMPoint(point.x, point.y).matrixTransform(inverse))) word |= 1 << bit;
+					}
+				}
+				const pad = document.getElementById('d-pad-svg')!.getBoundingClientRect();
+				const face = document.getElementById('action-buttons-svg')!.getBoundingClientRect();
+				return { word, padLeft: pad.left, faceRight: face.right };
+			}, { points, buttons: CONTROLLER_BUTTONS });
 			let centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
 			const toggle = async () => {
 				centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
@@ -164,26 +178,49 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			await touch('touchStart', [padRight]);
 			assert.equal((await poll()).model, 1 << InputControllerGamepadButtonBit.Right, 'digital D-pad navigation remains available outside keyboard keys');
 			await touch('touchEnd', [padRight]); await poll();
-			// Keep the Select lease from opening, and keep a canvas keyboard lease
-			// through closing. Neither owner may claim the other's existing contact.
+			// A keyboard-context hand reflow may remove a held button contribution,
+			// but it cannot cancel that finger or claim an existing canvas lease.
 			await toggle();
 			centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
-			await touch('touchStart', [centers.select]); await poll();
-			await touch('touchStart', [centers.select, centers.x]); await poll();
+			const openingSelect = centers.select;
+			await touch('touchStart', [openingSelect]); await poll();
+			const openingNative = await page.evaluate(() => (globalThis as any).keyboardTouch.native.at(-1));
+			assert.equal(openingNative.type, 'pointerdown');
+			await touch('touchStart', [openingSelect, centers.x]); await poll();
 			await touch('touchEnd', [centers.x]); await poll();
 			const qPoint = { id: id++, ...positions.q };
-			await touch('touchStart', [centers.select, qPoint]);
+			await touch('touchStart', [openingSelect, qPoint]);
 			let held = await poll();
-			assert.equal(held.model, SELECT); assert.equal(held.q, true);
-			centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
-			await touch('touchStart', [centers.select, qPoint, centers.x]);
+			assert.equal(held.model, (await artworkAt([openingSelect])).word, 'the old held coordinate follows actual post-reflow button surfaces');
+			assert.equal(held.physical, held.model);
+			assert.equal(held.controllerLeases, 1, 'losing coverage does not end the original Select contact lease');
+			assert.equal(held.q, true); assert.equal(held.qMmio, true); assert.equal(held.pointerHeld, true);
+			await touch('touchEnd', [openingSelect]);
 			held = await poll();
-			assert.equal(held.model & SELECT, SELECT); assert.equal(held.controllerLeases, 2, 'closing reflows art but never steals the actual controller leases'); assert.equal(held.q, false, 'closing releases generated keys immediately, not browser contacts');
+			const openingUp = await page.evaluate(() => (globalThis as any).keyboardTouch.native.at(-1));
+			assert.equal(openingUp.type, 'pointerup'); assert.equal(openingUp.id, openingNative.id, 'the original Select finger ends through its actual native up');
+			assert.equal(held.controllerLeases, 0); assert.equal(held.model, 0);
+			assert.equal(held.q, true); assert.equal(held.qMmio, true); assert.equal(held.pointerHeld, true);
+			centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
+			const closingSelect = { ...centers.select, id: id++ };
+			const closingX = { ...centers.x, id: id++ };
+			await touch('touchStart', [qPoint, closingSelect]);
+			held = await poll();
+			assert.equal(held.model, SELECT); assert.equal(held.controllerLeases, 1);
+			assert.equal(held.q, true); assert.equal(held.qMmio, true);
+			await touch('touchStart', [qPoint, closingSelect, closingX]);
+			held = await poll();
+			assert.equal(held.model, (await artworkAt([closingSelect, closingX])).word, 'closing resamples the existing fingers against actual gameplay artwork');
+			assert.equal(held.physical, held.model);
+			assert.equal(held.controllerLeases, 2, 'closing reflows art but never steals the actual controller leases'); assert.equal(held.q, false, 'closing releases generated keys immediately, not browser contacts');
+			assert.equal(held.qMmio, false);
 			assert.equal(held.pointerHeld, true);
 			assert.equal(held.sampledPad, 0, 'closing host UI cannot leak a held action into gameplay after reflow');
 			assert.equal(held.padMmio, 0, 'the armed ICU likewise sees no unintended action');
-			await touch('touchEnd', [centers.x]); await poll();
-			await touch('touchEnd', [centers.select]); await poll();
+			await touch('touchEnd', [closingX]); await poll();
+			await touch('touchEnd', [closingSelect]);
+			const controlsUp = await poll();
+			assert.equal(controlsUp.controllerLeases, 0); assert.equal(controlsUp.model, 0); assert.equal(controlsUp.physical, 0);
 			const admissionCalls = held.admissionCalls;
 			await touch('touchMove', [{ ...qPoint, ...positions.outsideLb }]);
 			const moved = await poll();
@@ -192,14 +229,28 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.equal(moved.admissionCalls, admissionCalls, 'foreground admission is never queried on move or release');
 			await touch('touchEnd', [qPoint]);
 			const allUp = await poll();
-			assert.equal(allUp.model, 0); assert.equal(allUp.pointerHeld, false);
+			assert.equal(allUp.model, 0); assert.equal(allUp.physical, 0); assert.equal(allUp.controllerLeases, 0); assert.equal(allUp.pointerHeld, false);
+			assert.equal(allUp.sampledPad, 0); assert.equal(allUp.padMmio, 0);
 			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.q), false, 'closed keyboard has no foreground claim');
 			const closedQ = { id: id++, ...positions.q };
+			const artwork = await artworkAt([closedQ]);
 			await touch('touchStart', [closedQ]);
 			const closed = await poll();
-			if (profile.width > profile.height) assert.equal(closed.model & LB, LB, 'the regression key point really overlaps the shoulder in landscape');
+			assert.equal(closed.model, artwork.word, 'without foreground keyboard focus the native contact follows the actual SVG button silhouettes');
+			if (profile.name === 'tablet landscape') assert.equal(artwork.word & LB, LB, 'the tablet fixture still exercises the actual Q/shoulder overlap');
+			if (profile.name === 'phone landscape') {
+				assert.equal(artwork.word & LB, 0, 'the phone shoulder no longer extends inward into the former Q point');
+				assert.ok(artwork.padLeft <= 20 && artwork.faceRight >= profile.width - 20, 'phone primaries remain edge anchored rather than pushed inward');
+			}
 			await touch('touchEnd', [closedQ]); await poll();
-			assert.ok((await page.evaluate(() => (globalThis as any).keyboardTouch.native)).every((event: { trusted: boolean }) => event.trusted));
+			const gameplayA = { ...await page.evaluate(() => (globalThis as any).keyboardTouch.positions().controllerButtons.find((point: { id: string }) => point.id === 'a_knop')), id: id++ };
+			await touch('touchStart', [gameplayA]);
+			const gameplay = await poll();
+			assert.deepEqual([gameplay.model, gameplay.physical, gameplay.sampledPad, gameplay.padMmio], [1, 1, 1, 1], 'fresh gameplay input reaches the armed ICU after all actual native releases');
+			await touch('touchEnd', [gameplayA]);
+			const gameplayUp = await poll();
+			assert.deepEqual([gameplayUp.model, gameplayUp.physical, gameplayUp.sampledPad, gameplayUp.padMmio], [0, 0, 0, 0]);
+			assert.ok((await page.evaluate(() => (globalThis as any).keyboardTouch.native)).every((event: { trusted: boolean; type: string }) => event.trusted && event.type !== 'pointercancel'), 'context reflow never fabricates native cancellation');
 			assert.deepEqual(errors, []);
 		});
 	}

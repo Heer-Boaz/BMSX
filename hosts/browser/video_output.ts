@@ -2,6 +2,11 @@ import type { VideoOutput } from '../../machine/ts/render/video_output';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 
+export type BrowserScreenFit = 'fit' | 'overscan';
+const PORTRAIT_CONTROL_GAP = 12;
+// An explicit presentation policy, not a claim that carts author safe borders.
+const OVERSCAN_VISIBLE_FRACTION = 0.9;
+
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
 	private renderWidth: number;
@@ -9,7 +14,10 @@ export class BrowserVideoOutput implements VideoOutput {
 	private readonly controllerViewport: HTMLElement | null;
 	private readonly visualViewport: VisualViewport | null;
 	private readonly resizeObserver: ResizeObserver;
+	private resolutionQuery: MediaQueryList;
 	private layoutAnimationFrameId = 0;
+	private selectedScreenFit: BrowserScreenFit = 'fit';
+	private hostOverlayVisible = false;
 
 	public constructor(
 		private readonly canvas: HTMLCanvasElement,
@@ -19,6 +27,10 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.playerSurface = canvas.ownerDocument.getElementById('player-surface');
 		this.controllerViewport = controlView ? canvas.ownerDocument.getElementById('controller-viewport') : null;
 		this.visualViewport = window.visualViewport;
+		// Re-arm a resolution query on DPR changes, as VS Code's pixel-ratio
+		// owner does; logical player bounds need not change with the monitor.
+		this.resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+		this.resolutionQuery.addEventListener('change', this.onResolutionChange);
 		this.resizeObserver = new ResizeObserver(this.scheduleLayout);
 		this.resizeObserver.observe(this.playerSurface);
 		if (this.controllerViewport) this.resizeObserver.observe(this.controllerViewport);
@@ -38,6 +50,21 @@ export class BrowserVideoOutput implements VideoOutput {
 	public measureDisplay(): DOMRect {
 		return this.canvas.getBoundingClientRect();
 	}
+
+	public get screenFit(): BrowserScreenFit { return this.selectedScreenFit; }
+
+	public setScreenFit(mode: BrowserScreenFit): void {
+		if (mode === this.selectedScreenFit) return;
+		this.selectedScreenFit = mode;
+		this.refreshLayout();
+	}
+
+	/** Host text/keyboard pages use an uncropped presentation, independently of gameplay policy. */
+	public readonly setHostOverlayVisible = (visible: boolean): void => {
+		if (visible === this.hostOverlayVisible) return;
+		this.hostOverlayVisible = visible;
+		this.refreshLayout();
+	};
 
 	/** Initial geometry is published synchronously before the input source activates. */
 	public refreshLayout(): void {
@@ -61,8 +88,19 @@ export class BrowserVideoOutput implements VideoOutput {
 		const bottom = Math.min(player.bottom, viewportTop + viewportHeight - insetBottom);
 		if (this.controlView) {
 			const controls = this.controllerViewport.getBoundingClientRect();
+			const controlWidth = Math.max(0, controls.width - insetLeft - insetRight);
+			const controlHeight = Math.max(0, controls.height - insetTop - insetBottom);
+			const portrait = controlWidth < controlHeight;
+			const deckHeight = portrait ? this.controlView.measurePortraitDeckHeight(controlWidth, controlHeight) : 0;
+			// A width-derived video slot keeps control placement independent of
+			// scanout resolution, DPR, overscan and visual-only viewport changes.
+			// Portrait has vertical room: reserve the tallest permitted width
+			// even in Fit, instead of needlessly cropping top/bottom game text.
+			const slotHeight = Math.min(controlWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT
+				/ (GX_GPU_DISPLAY_ASPECT_WIDTH * OVERSCAN_VISIBLE_FRACTION),
+				controlHeight - deckHeight - PORTRAIT_CONTROL_GAP);
 			this.controlView.layout(controls.left + insetLeft, controls.top + insetTop,
-				Math.max(0, controls.width - insetLeft - insetRight), Math.max(0, controls.height - insetTop - insetBottom));
+				controlWidth, controlHeight, portrait ? controls.top + insetTop + slotHeight + PORTRAIT_CONTROL_GAP : undefined);
 		}
 		// The authored portrait deck owns its boundary; canvas fitting consumes it.
 		// Landscape controls remain overlays on the full dynamic visible space.
@@ -70,19 +108,35 @@ export class BrowserVideoOutput implements VideoOutput {
 		const width = Math.max(0, right - left);
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
 		const presentationHeight = this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
-		const scale = Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight) * 2) / 2;
+		const overscan = this.selectedScreenFit === 'overscan' && !this.hostOverlayVisible;
+		const visibleFraction = overscan ? OVERSCAN_VISIBLE_FRACTION : 1;
+		const dpr = window.devicePixelRatio;
+		// Quantize the presentation in physical display pixels, not UI CSS
+		// units. Source render targets and touch geometry remain unchanged.
+		const scale = Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight)
+			* dpr * 2 / visibleFraction) / (dpr * 2);
 		const displayWidth = this.renderWidth * scale;
 		const displayHeight = presentationHeight * scale;
+		const displayLeft = left + (width - displayWidth) / 2;
+		const displayTop = portraitDeckTop === null ? top + (height - displayHeight) / 2
+			: top + (overscan ? Math.min(0, (height - displayHeight) / 2) : 0);
 		this.canvas.style.width = `${displayWidth}px`;
 		this.canvas.style.height = `${displayHeight}px`;
-		this.canvas.style.left = `${left + (width - displayWidth) / 2}px`;
-		this.canvas.style.top = `${portraitDeckTop === null ? top + (height - displayHeight) / 2 : top}px`;
+		this.canvas.style.left = `${displayLeft}px`;
+		this.canvas.style.top = `${displayTop}px`;
+		// Clip the actual safe video frame, including the portrait deck edge.
+		// CSS clipping also excludes hidden pixels from native hit testing;
+		// measureDisplay retains the complete image transform for coordinates.
+		this.canvas.style.clipPath = overscan
+			? `inset(${Math.max(0, top - displayTop)}px ${Math.max(0, displayLeft + displayWidth - right)}px ${Math.max(0, displayTop + displayHeight - top - height)}px ${Math.max(0, left - displayLeft)}px)`
+			: 'none';
 	}
 
 	public dispose(): void {
 		if (this.layoutAnimationFrameId) window.cancelAnimationFrame(this.layoutAnimationFrameId);
 		this.layoutAnimationFrameId = 0;
 		this.resizeObserver.disconnect();
+		this.resolutionQuery.removeEventListener('change', this.onResolutionChange);
 		window.removeEventListener('resize', this.scheduleLayout);
 		window.removeEventListener('orientationchange', this.scheduleLayout);
 		if (this.visualViewport) {
@@ -94,6 +148,13 @@ export class BrowserVideoOutput implements VideoOutput {
 
 	private readonly scheduleLayout = (): void => {
 		if (!this.layoutAnimationFrameId) this.layoutAnimationFrameId = window.requestAnimationFrame(this.runScheduledLayout);
+	};
+
+	private readonly onResolutionChange = (): void => {
+		this.resolutionQuery.removeEventListener('change', this.onResolutionChange);
+		this.resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+		this.resolutionQuery.addEventListener('change', this.onResolutionChange);
+		this.scheduleLayout();
 	};
 
 	private readonly runScheduledLayout = (): void => {

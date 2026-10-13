@@ -221,8 +221,17 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('skin-only pickup reaches an action without making canvas contacts migrate into the deck', async () => {
-		const { actions: [a] } = await measure();
-		const outsideCenter = { id: 1, x: a.x, y: a.y + a.radius + 10, radiusX: 14, radiusY: 14 };
+		const geometry = await measure();
+		const a = geometry.actions[0];
+		const outsideCenter = { id: 1, ...outsideControlPoint(a, Math.PI / 4, 10), radiusX: 14, radiusY: 14 };
+		assert.ok(Math.hypot(outsideCenter.x - geometry.face.x, outsideCenter.y - geometry.face.y) > geometry.face.radius,
+			'the contact center lies outside the actual face acquisition bank, not just outside A');
+		assert.ok(Math.hypot(outsideCenter.x - geometry.pad.x, outsideCenter.y - geometry.pad.y) > geometry.pad.radius + 14,
+			'the measured skin cannot acquire the directional bank');
+		assert.ok(distanceToControl(a, outsideCenter.x, outsideCenter.y) > 0
+			&& distanceToControl(a, outsideCenter.x, outsideCenter.y) < 14, 'only the measured skin reaches A');
+		for (const action of geometry.actions.slice(1)) assert.ok(distanceToControl(action, outsideCenter.x, outsideCenter.y) > 14,
+			'the actual curved hand and nearby utility switches are independently outside this contact footprint');
 		await touch('touchStart', [outsideCenter]);
 		await assertWord(1, 0, 'the skin estimate reaches A although its center is outside the whole deck');
 		await touch('touchEnd', []);

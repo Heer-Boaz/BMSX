@@ -34,8 +34,12 @@ const CONTROL_GAP = 12;
 const MENU_SIZE = 52;
 const STICK_CLICK_SIZE = 44;
 const SHOULDER_THICKNESS = 56;
-const LANDSCAPE_SHOULDER_HALF_SWEEP = 70 * Math.PI / 180;
+const SHOULDER_INWARD_SWEEP = Math.PI / 3;
+const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
 const LANDSCAPE_MARGIN = 16;
+const PAINT_CLEARANCE = 4;
+const KEYBOARD_SHOULDER_START = 10 * Math.PI / 180;
+const KEYBOARD_SHOULDER_SWEEP = 40 * Math.PI / 180;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -45,6 +49,35 @@ interface ActionSurface {
 	left: number;
 	top: number;
 	scale: number;
+}
+
+interface ControlLayoutMetrics {
+	width: number;
+	height: number;
+	landscape: boolean;
+	scale: number;
+	margin: number;
+	bottom: number;
+	gap: number;
+	menuScale: number;
+	menuSize: number;
+	clickSize: number;
+	padRadius: number;
+	faceRadius: number;
+	primaryRadius: number;
+	halfWidth: number;
+	leftRing: number;
+	rightRing: number;
+	leftOuter: number;
+	rightOuter: number;
+	leftInner: number;
+	rightInner: number;
+	keyboardSplit: number;
+	utilityDrop: number;
+	leftGap: number;
+	rightGap: number;
+	topReach: number;
+	portraitDeckHeight: number;
 }
 
 /** Passive controller artwork and its authored numerical layout. */
@@ -69,6 +102,14 @@ export class BrowserOnscreenGamepadView {
 		padX: 0, padY: 0, padRadius: 0, padNeutralRadius: 0,
 		faceX: 0, faceY: 0, faceRadius: 0, actions: this.actions,
 	};
+	private readonly metrics: ControlLayoutMetrics = {
+		width: -1, height: -1, landscape: false, scale: 1, margin: 0, bottom: 0, gap: 0,
+		menuScale: 1, menuSize: 0, clickSize: 0, padRadius: 0, faceRadius: 0, primaryRadius: 0,
+		halfWidth: 0, leftRing: 0, rightRing: 0, leftOuter: 0, rightOuter: 0,
+		leftInner: 0, rightInner: 0,
+		keyboardSplit: 0, utilityDrop: 0,
+		leftGap: 0, rightGap: 0, topReach: 0, portraitDeckHeight: 0,
+	};
 	private readonly layoutObserver: BrowserInputDiagnostics | undefined;
 	private readonly unsubscribeView: () => void;
 	private animationFrameId = 0;
@@ -82,6 +123,7 @@ export class BrowserOnscreenGamepadView {
 	private layoutWidth = -1;
 	private layoutHeight = -1;
 	private portraitControlTop: number | null = null;
+	private allocatedPortraitDeckTop: number | undefined;
 	private keyboardVisible = false;
 
 	public constructor(
@@ -139,66 +181,58 @@ export class BrowserOnscreenGamepadView {
 	/** Upper limit of portrait video, authored with the actual lower control deck. */
 	public get portraitDeckTop(): number | null { return this.portraitControlTop; }
 
+	/** Numerical measure pass; arrange reuses these retained metrics without publishing input. */
+	public measurePortraitDeckHeight(width: number, height: number): number {
+		return this.prepareLayoutMetrics(width, height).portraitDeckHeight;
+	}
+
 	/** Host keyboard context keeps the touch gamepad at the surrounding hand edges. */
 	public readonly setKeyboardVisible = (visible: boolean): void => {
 		if (visible === this.keyboardVisible) return;
 		this.keyboardVisible = visible;
 		const width = this.layoutWidth;
 		this.layoutWidth = -1;
-		this.layout(this.layoutLeft, this.layoutTop, width, this.layoutHeight);
+		this.layout(this.layoutLeft, this.layoutTop, width, this.layoutHeight, this.allocatedPortraitDeckTop);
 	};
 
 	/** Layout and acquisition share the same uniform CSS-client transforms. */
-	public layout(left: number, top: number, width: number, height: number): void {
-		if (left === this.layoutLeft && top === this.layoutTop && width === this.layoutWidth && height === this.layoutHeight) return;
+	public layout(left: number, top: number, width: number, height: number, portraitDeckTop?: number): void {
+		if (left === this.layoutLeft && top === this.layoutTop && width === this.layoutWidth && height === this.layoutHeight
+			&& portraitDeckTop === this.allocatedPortraitDeckTop) return;
 		this.layoutLeft = left;
 		this.layoutTop = top;
 		this.layoutWidth = width;
 		this.layoutHeight = height;
-		const landscape = width >= height;
+		this.allocatedPortraitDeckTop = portraitDeckTop;
+		const metrics = this.prepareLayoutMetrics(width, height);
+		const landscape = metrics.landscape;
 		const gameplayLandscape = landscape && !this.keyboardVisible;
 		// Delta's four-button handheld deck keeps both primary controls on one
 		// hand row. Its geometry is a reference, not a source of copied artwork:
 		// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L509
 		const faceSurface = this.actionSurfaces[ActionSurfaceIndex.Face];
-		const nominalHalfWidth = SHOULDER_THICKNESS / 2;
-		const nominalLeftRing = PAD_SIZE / 2 + CONTROL_GAP + nominalHalfWidth;
-		const nominalRightRing = faceSurface.artworkWidth / 2 + CONTROL_GAP + nominalHalfWidth;
-		const leftHandReach = nominalLeftRing * Math.sin(LANDSCAPE_SHOULDER_HALF_SWEEP) + nominalHalfWidth;
-		const rightHandReach = nominalRightRing * Math.sin(LANDSCAPE_SHOULDER_HALF_SWEEP) + nominalHalfWidth;
-		const handTopReach = Math.sqrt(nominalRightRing * nominalRightRing
-			- (nominalHalfWidth + CONTROL_GAP / 2) * (nominalHalfWidth + CONTROL_GAP / 2)) + nominalHalfWidth;
-		const primaryBottomReach = Math.max(PAD_SIZE, faceSurface.artworkHeight) / 2;
-		// Pack the entire hand silhouette, not just the D-pad acquisition frame.
-		// In landscape this leaves room for the finite shoulder ring to follow
-		// the hand around both upper corners instead of flattening at an edge.
-		const landscapeWidth = 2 * (LANDSCAPE_MARGIN + leftHandReach + rightHandReach) + CONTROL_GAP;
-		const landscapeHeight = 2 * LANDSCAPE_MARGIN + handTopReach + primaryBottomReach;
-		const viewportScale = landscape
-			? Math.min(1.1, width / landscapeWidth, height / landscapeHeight)
-			: Math.min(1.1, (width - CONTROL_GAP * 3) / (PAD_SIZE + faceSurface.artworkWidth), height / 500);
-		const margin = landscape ? LANDSCAPE_MARGIN * viewportScale : CONTROL_GAP;
-		const bottom = 16 * viewportScale;
-		const gap = CONTROL_GAP * viewportScale;
+		const viewportScale = metrics.scale;
+		const margin = metrics.margin;
 		const padScale = PAD_SIZE / this.padArtworkWidth * viewportScale;
 		const faceScale = viewportScale;
-		const menuScale = landscape ? viewportScale : Math.max(0.85, viewportScale);
-		const menuSize = MENU_SIZE * menuScale;
-		const clickSize = STICK_CLICK_SIZE * menuScale;
-		const menuY = top + height - bottom - menuSize / 2;
-		const primaryRadius = Math.max(this.padArtworkHeight * padScale, faceSurface.artworkHeight * faceScale) / 2;
+		const menuScale = metrics.menuScale;
+		const menuSize = metrics.menuSize;
+		const clickSize = metrics.clickSize;
+		const primaryRadius = metrics.primaryRadius;
+		const allocatedDeckTop = portraitDeckTop === undefined ? top + height - metrics.portraitDeckHeight : portraitDeckTop;
 		const primaryY = gameplayLandscape
-			? top + Math.max(margin + handTopReach * viewportScale,
-				Math.min(height / 2, height - margin - primaryRadius))
-			: landscape ? top + height - bottom - primaryRadius
-				: menuY - menuSize / 2 - 16 * viewportScale - primaryRadius;
-		const padLeft = left + margin + (gameplayLandscape ? (leftHandReach - PAD_SIZE / 2) * viewportScale : 0);
+			? top + Math.max(PAINT_CLEARANCE + metrics.topReach,
+				Math.min(height / 2, height - PAINT_CLEARANCE - primaryRadius))
+			: landscape ? top + height - PAINT_CLEARANCE - menuSize / 2 - metrics.utilityDrop
+				: allocatedDeckTop + metrics.topReach;
+		const menuY = landscape ? Math.min(primaryY + metrics.utilityDrop, top + height - PAINT_CLEARANCE - menuSize / 2)
+			: primaryY + metrics.utilityDrop;
+		const padLeft = left + margin;
 		const padTop = primaryY - this.nominalPadY * padScale;
 		const padX = padLeft + this.nominalPadX * padScale;
 		const padY = primaryY;
 		const padRadius = this.nominalPadRadius * padScale;
-		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale
-			- (gameplayLandscape ? (rightHandReach - faceSurface.artworkWidth / 2) * viewportScale : 0);
+		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
 		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
 		const faceCenterY = primaryY;
 		const faceTop = primaryY - faceSurface.artworkHeight * faceScale / 2;
@@ -209,43 +243,68 @@ export class BrowserOnscreenGamepadView {
 		const menuArtworkWidth = this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
 		const menuSurfaceScale = menuSize / menuArtworkWidth;
 		const clickSurfaceScale = clickSize / this.actionSurfaces[ActionSurfaceIndex.LeftStick].artworkWidth;
-		const centerX = left + width / 2;
+		const pairSpacing = (STICK_CLICK_SIZE / 2 + MENU_SIZE / 2 + CONTROL_GAP) * menuScale;
+		const pairHalf = pairSpacing / 2;
+		const utilityDY = menuY - primaryY;
+		const menuRadius = menuSize / 2;
+		const clickRadius = clickSize / 2;
+		// A short viewport can compress the vertical hand deck. Retain the
+		// physical circle clearance by rolling its utility pair sideways, only
+		// when the centered below-hand pair no longer fits that actual height.
+		const leftSelectOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
+			(padRadius + menuRadius + metrics.gap) ** 2 - utilityDY ** 2)));
+		const leftClickOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
+			(padRadius + clickRadius + metrics.gap) ** 2 - utilityDY ** 2)));
+		const leftOuterRoom = padX - left - clickRadius - PAINT_CLEARANCE;
+		const leftClickX = leftClickOffset <= leftOuterRoom ? padX - leftClickOffset : padX + leftClickOffset;
+		const selectX = leftClickOffset <= leftOuterRoom ? padX + leftSelectOffset : leftClickX + pairSpacing;
+		const a = this.nominalActions[0];
+		const aOffset = (a.y - faceSurface.artworkHeight / 2) * faceScale;
+		const aRadius = a.radius * faceScale;
+		const startOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
+			(aRadius + menuRadius + metrics.gap) ** 2 - (utilityDY - aOffset) ** 2)));
+		const rightClickOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
+			(aRadius + clickRadius + metrics.gap) ** 2 - (utilityDY - aOffset) ** 2)));
+		const rightOuterRoom = left + width - faceCenterX - clickRadius - PAINT_CLEARANCE;
+		const rightClickX = rightClickOffset <= rightOuterRoom ? faceCenterX + rightClickOffset : faceCenterX - rightClickOffset;
+		const startX = rightClickOffset <= rightOuterRoom ? faceCenterX - startOffset : rightClickX - pairSpacing;
 		this.placeActionSurface(ActionSurfaceIndex.Select,
-			centerX - 32 * menuScale - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
+			selectX - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.Start,
-			centerX + 32 * menuScale - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
-		const clickOffset = (32 + MENU_SIZE / 2 + CONTROL_GAP + STICK_CLICK_SIZE / 2) * menuScale;
+			startX - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.LeftStick,
-			(landscape ? centerX - clickOffset : padX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
+			leftClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
-			(landscape ? centerX + clickOffset : faceCenterX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
+			rightClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		// Each hand has one shoulder ring, split into two adjacent finite bands.
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
-		const faceRadius = faceSurface.artworkWidth * faceScale / 2;
-		const shoulderThickness = landscape ? SHOULDER_THICKNESS * viewportScale
-			: Math.min(SHOULDER_THICKNESS * viewportScale,
-				primaryY - top - 4 * viewportScale - Math.max(padRadius, faceRadius) - gap);
-		const halfWidth = shoulderThickness / 2;
-		const laneHalfWidth = Math.min(padX - left - margin,
-			left + width - margin - faceCenterX, (faceCenterX - padX - gap) / 2);
-		const leftShoulderRadius = padRadius + gap + halfWidth;
-		const rightShoulderRadius = faceRadius + gap + halfWidth;
-		const leftHalfAngle = gameplayLandscape ? LANDSCAPE_SHOULDER_HALF_SWEEP
-			: Math.asin((laneHalfWidth - halfWidth) / leftShoulderRadius);
-		const rightHalfAngle = gameplayLandscape ? LANDSCAPE_SHOULDER_HALF_SWEEP
-			: Math.asin((laneHalfWidth - halfWidth) / rightShoulderRadius);
-		const leftGapAngle = Math.asin((halfWidth + gap / 2) / leftShoulderRadius);
-		const rightGapAngle = Math.asin((halfWidth + gap / 2) / rightShoulderRadius);
-		const upward = -Math.PI / 2;
-		this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-			leftShoulderRadius, halfWidth, upward + leftGapAngle, upward + leftHalfAngle);
-		this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
-			rightShoulderRadius, halfWidth, upward - rightHalfAngle, upward - rightGapAngle);
-		this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-			leftShoulderRadius, halfWidth, upward - leftHalfAngle, upward - leftGapAngle);
-		this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
-			rightShoulderRadius, halfWidth, upward + rightGapAngle, upward + rightHalfAngle);
+		const halfWidth = metrics.halfWidth;
+		const leftShoulderRadius = metrics.leftRing;
+		const rightShoulderRadius = metrics.rightRing;
+		const compactKeyboard = landscape && this.keyboardVisible;
+		if (compactKeyboard) {
+			// Foreground keyboard context rotates the finite shoulder sectors to
+			// the inward hand sides; no input lease is canceled or reassigned.
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
+				leftShoulderRadius, halfWidth, KEYBOARD_SHOULDER_START, metrics.keyboardSplit - metrics.leftGap);
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
+				leftShoulderRadius, halfWidth, metrics.keyboardSplit + metrics.leftGap, KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, Math.PI - metrics.keyboardSplit + metrics.rightGap, Math.PI - KEYBOARD_SHOULDER_START);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, Math.PI - KEYBOARD_SHOULDER_START - KEYBOARD_SHOULDER_SWEEP, Math.PI - metrics.keyboardSplit - metrics.rightGap);
+		} else {
+			const upward = -Math.PI / 2;
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
+				leftShoulderRadius, halfWidth, upward + metrics.leftGap, upward + metrics.leftInner);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightGap);
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
+				leftShoulderRadius, halfWidth, upward - metrics.leftOuter, upward - metrics.leftGap);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, upward + metrics.rightGap, upward + metrics.rightOuter);
+		}
 		// Shoulder paths already use CSS-client units (their SVG scale is 1).
 		// Scale their labels with the controller just like the other artwork.
 		for (const label of this.shoulderLabels) label.style.fontSize = `${17 * viewportScale}px`;
@@ -282,6 +341,76 @@ export class BrowserOnscreenGamepadView {
 		this.animationFrameId = 0;
 		this.padSurface.hidden = true;
 		for (const surface of this.actionSurfaces) surface.element.hidden = true;
+	}
+
+	/** Intrinsic hand/deck measure, retained across composition and arrange passes. */
+	private prepareLayoutMetrics(width: number, height: number): ControlLayoutMetrics {
+		const metrics = this.metrics;
+		if (width === metrics.width && height === metrics.height) return metrics;
+		const face = this.actionSurfaces[ActionSurfaceIndex.Face];
+		const nominalPadRadius = PAD_SIZE / 2;
+		const nominalFaceRadius = face.artworkWidth / 2;
+		const nominalPrimaryRadius = Math.max(PAD_SIZE, face.artworkHeight) / 2;
+		const nominalHalfWidth = SHOULDER_THICKNESS / 2;
+		const nominalLeftRing = nominalPadRadius + CONTROL_GAP + nominalHalfWidth;
+		const nominalRightRing = nominalFaceRadius + CONTROL_GAP + nominalHalfWidth;
+		const nominalTopReach = Math.sqrt(nominalRightRing * nominalRightRing
+			- (nominalHalfWidth + CONTROL_GAP / 2) * (nominalHalfWidth + CONTROL_GAP / 2)) + nominalHalfWidth;
+		const nominalPairSpacing = STICK_CLICK_SIZE / 2 + MENU_SIZE / 2 + CONTROL_GAP;
+		// Primary edge anchors and their complete inward keyboard-context side
+		// bands determine the width budget, not an invented utility-row inset.
+		const landscapeWidth = LANDSCAPE_MARGIN * 2 + nominalPadRadius + nominalFaceRadius
+			+ nominalLeftRing + nominalRightRing + nominalHalfWidth * 2 + CONTROL_GAP;
+		const landscapeHeight = LANDSCAPE_MARGIN * 2 + nominalTopReach + nominalPrimaryRadius;
+		// A circular-tube top bound gives a finite portrait deck height even when
+		// menu targets retain their minimum scale below the primary width scale.
+		const portraitPrimaryHeight = nominalRightRing + nominalHalfWidth + nominalPrimaryRadius + 32;
+		const portraitHeightScale = height >= (portraitPrimaryHeight + MENU_SIZE) * 0.85
+			? height / (portraitPrimaryHeight + MENU_SIZE)
+			: (height - MENU_SIZE * 0.85) / portraitPrimaryHeight;
+		metrics.width = width;
+		metrics.height = height;
+		metrics.landscape = width >= height;
+		metrics.scale = metrics.landscape
+			? Math.min(1.1, width / landscapeWidth, height / landscapeHeight)
+			: Math.min(1.1, (width - CONTROL_GAP * 3) / (PAD_SIZE + face.artworkWidth), portraitHeightScale);
+		const scale = metrics.scale;
+		metrics.margin = metrics.landscape ? LANDSCAPE_MARGIN * scale : CONTROL_GAP;
+		metrics.bottom = 16 * scale;
+		metrics.gap = CONTROL_GAP * scale;
+		metrics.menuScale = metrics.landscape ? scale : Math.max(0.85, scale);
+		metrics.menuSize = MENU_SIZE * metrics.menuScale;
+		metrics.clickSize = STICK_CLICK_SIZE * metrics.menuScale;
+		metrics.padRadius = nominalPadRadius * scale;
+		metrics.faceRadius = nominalFaceRadius * scale;
+		metrics.primaryRadius = nominalPrimaryRadius * scale;
+		metrics.halfWidth = nominalHalfWidth * scale;
+		metrics.leftRing = metrics.padRadius + metrics.gap + metrics.halfWidth;
+		metrics.rightRing = metrics.faceRadius + metrics.gap + metrics.halfWidth;
+		const halfWidth = metrics.halfWidth;
+		const halfLane = (width - metrics.margin * 2 - metrics.padRadius - metrics.faceRadius - metrics.gap) / 2;
+		const inwardSine = Math.sin(SHOULDER_INWARD_SWEEP);
+		metrics.leftInner = Math.asin((Math.min(halfLane, metrics.leftRing * inwardSine + halfWidth) - halfWidth) / metrics.leftRing);
+		metrics.rightInner = Math.asin((Math.min(halfLane, metrics.rightRing * inwardSine + halfWidth) - halfWidth) / metrics.rightRing);
+		metrics.leftGap = Math.asin((halfWidth + metrics.gap / 2) / metrics.leftRing);
+		metrics.rightGap = Math.asin((halfWidth + metrics.gap / 2) / metrics.rightRing);
+		// Yield the outward trigger endpoint where portrait inward room is
+		// constrained. Both bumpers remain larger AND lower on their own ring;
+		// using the full outward edge angle would make those goals incompatible.
+		metrics.leftOuter = Math.min(Math.asin((metrics.padRadius - halfWidth) / metrics.leftRing),
+			metrics.leftInner - BUMPER_SWEEP_ADVANTAGE * 2);
+		metrics.rightOuter = Math.min(Math.asin((metrics.faceRadius - halfWidth) / metrics.rightRing),
+			metrics.rightInner - BUMPER_SWEEP_ADVANTAGE * 2);
+		metrics.keyboardSplit = KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP / 2 - BUMPER_SWEEP_ADVANTAGE;
+		metrics.topReach = Math.max(metrics.leftRing * Math.cos(metrics.leftGap),
+			metrics.rightRing * Math.cos(metrics.rightGap)) + halfWidth;
+		const pairHalf = nominalPairSpacing * metrics.menuScale / 2;
+		const menuRadius = metrics.menuSize / 2;
+		const a = this.nominalActions[0];
+		metrics.utilityDrop = Math.max(Math.sqrt((metrics.padRadius + menuRadius + metrics.gap) ** 2 - pairHalf ** 2),
+			(a.y - face.artworkHeight / 2) * scale + Math.sqrt((a.radius * scale + menuRadius + metrics.gap) ** 2 - pairHalf ** 2));
+		metrics.portraitDeckHeight = metrics.topReach + metrics.utilityDrop + metrics.menuSize / 2 + metrics.bottom;
+		return metrics;
 	}
 
 	private placeActionSurface(index: ActionSurfaceIndex, left: number, top: number, scale: number): void {

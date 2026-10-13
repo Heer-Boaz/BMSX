@@ -1,6 +1,121 @@
 # Browser touch-controller ownership
 
+## Reach-first side controls and bounded picture overscan, 2026-10-13
+
+The previous symmetric 140-degree shoulder envelope displaced phone primary
+controls roughly 65px inward. Correct containment was not good usability.
+Primary thumb groups now own the safe edge anchors and middle landscape row;
+same-center shoulder sectors adapt to the available outer/inner space instead.
+Bumpers have the larger, nearer arc segment and triggers its upper segment.
+LS/SELECT and START/RS belong to their respective hand groups, not a central
+footer. Normal phone/tablet utility pairs sit directly below their primary
+group at its actual circle clearance, not at a distant viewport footer. Short
+players reflow those pairs sideways only when that centered row cannot fit.
+Target containment, actual
+shape gaps and readable labels remain independent acceptance constraints.
+
+Before implementation, [RetroArch Neo-RetroPad's authored side groups and
+different bumper/trigger reach](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/neo-retropad-clear.cfg#L156-L208)
+and [PPSSPP's deliberate avoidance of far shoulder corners](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L945-L958)
+were inspected. BMSX's asymmetric arcs remain a local design, not copied
+production artwork or proof of physical-thumb comfort.
+
+A real white-background keyboard preview exposed invisible light labels.
+[RetroArch's clear A glyph layers](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/src/clear/button_a.svg#L104-L132)
+and [PPSSPP's dark-first text rendering](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/Common/Render/DrawBuffer.cpp#L539-L542)
+establish a contrasting glyph underlay without filling the control background.
+BMSX uses one CSS stroke-before-fill pass, not filters or duplicate text. All
+288 actual label-raster checks on white/dark/busy backgrounds retain both light
+and dark ink, including actual stroked pixels beyond text BBoxes; those pixels
+stay within the independently authored activating silhouettes. Control
+interiors remain transparent. This validates raster ink, not subjective
+physical-device readability.
+
+Portrait measures a finite deck once into retained numerical metrics, then
+arranges it after a stable width-derived video slot and 12px gap. Measurement
+does not publish provisional contact geometry. The slot reserves the tallest
+permitted overscan width at 4:3, subject to actual remaining height. This uses
+available portrait height before cutting game text: an initial actual `2025`
+preview exposed a clipped `(A) Next` in the shorter slot and was not shipped.
+Scanout resolution, DPR, selected picture mode and visual-only viewport changes
+do not move the controls. Surplus height below a compact composition remains
+real: bounded cropping cannot turn 4:3 content into a full tall-phone picture.
+
+Video output, not the controller, quantizes presentation in physical display
+pixels and converts the result to CSS units. [DuckStation's physical surface
+dimensions](https://github.com/stenzek/duckstation/blob/cc1970f64433d8692c7367aac091fe1b120a697a/src/duckstation-qt/qtwindowinfo.cpp#L149-L195)
+and [PPSSPP's physical-pixel frame and integer output](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/GPU/Common/PresentationCommon.cpp#L52-L180)
+establish that owner boundary. The retained half-step policy is not a universal
+pixel-perfect claim: half steps, pixel-aspect correction and odd widths can
+resample. At width393/native320/DPR3, Fit is 373.33px instead of320; a426.67px
+candidate loses3.95% per horizontal edge, unlike the old CSS1.5 step's9.06%.
+
+The existing player menu offers `PICTURE: FIT / OVERSCAN 5%`, default Fit.
+Five percent means the maximum fraction of the complete image at each edge,
+in both axes, not an assumed cart-safe margin. Both orientations use the same
+discrete physical half-step grid. Some frames admit no larger candidate.
+Native CSS clipping is bounded by the actual safe video frame, including the
+portrait deck; hidden pixels cannot acquire canvas contacts. The full image
+rectangle remains the coordinate transform for visible and captured input.
+Actual host-menu pages explicitly select uncropped Fit and restore the chosen
+picture policy on exit; Studio does not offer overscan. Guest HUD/BIOS terminal
+text and closed-page resource indicators are still part of the optional crop,
+not automatically protected. No cart-specific safety heuristic is invented.
+
+DPR invalidation re-arms the owning resolution query, following [VS Code's
+pixel-ratio monitor](https://github.com/microsoft/vscode/blob/2b0c23ebbd865a97ccc5ef1dd409c11e55534ec3/src/vs/base/browser/pixelRatio.ts#L18-L44).
+It does not poll every frame or multiply DPR by pinch-zoom scale. No raw
+renderer/backing dimensions, shared input sampling or touch-contact ownership
+change. All conversions stay in browser video/layout owners.
+
+The landscape keyboard context repacks each complete hand group along the
+key-grid sides with lower utility rows, preserving its target sizes. Shoulders turn toward the
+inward/lower hand sides. The old held SELECT pixel is not promised to remain
+over SELECT after that real layout change: contact IDs retain their leases and
+contributions follow the current authored surface, without cancellation or
+synthetic releases. Actual native all-twelve-label reachability, Q-source
+retention, old SELECT release and a fresh current-position SELECT+X gesture
+are independent checks; UI containment alone does not establish usability.
+
+
+Validation for this slice uses independent shape/clearance/usability oracles,
+not just containment. The final focused bundle passes 309/309 tests, including
+27 layout profiles, all twelve native keyboard-context bindings, retained
+contact/source lifetimes and forty DPR/scanout/orientation presentation cases.
+Five project TypeScript checks and the three unchanged native host/UI keyboard
+regressions pass. The DPR query subscription/re-arm/disposal test explicitly
+injects a test notification after a real DPR mutation: CDP does not reliably
+emit an actual monitor-change notification. It does not prove Safari's event
+producer, and no production polling workaround was added.
+
+Actual immutable `nemesis_s` and `2025` browser packages were exercised through
+native input, without private menu/model writes: six DPR3 game/orientation
+previews choose Picture modes in the real menu; native keyboard interactions
+cover 54 rendered states per backend across phone portrait/landscape and tablet
+landscape, with 132 trusted events per backend. Final actual keyboard-context
+label presses in both games and all three profiles verify 72 exact raw button
+bindings and releases through 180 trusted native events. Real native menu navigation
+also switches D-pad/stick modes in both games and orientations. Linux WPE
+WebGL2 adds sixteen actual-game profiles, 1,008 states and 1,016 trusted pointer
+events, with no errors, warnings or failed requests. WPE uses fixed 2x2
+contacts and DPR1; it is not UIKit, a thumb-area model or physical iPhone
+comfort evidence. Visible `2025` portrait overscan keeps `(A) Next` intact.
+
+The four ordinary/trace packages share browser engine SHA256
+`0f64639f5236f9ae64f6daf9b194617e4f05712a706ee3b7232fcd63d2385cc4`.
+The final ordinary and trace pages are published to the existing Azure site;
+43 public route/asset/header receipts match the final package, without new
+routes or query parameters. The immutable ROM pairs and library routes remain
+unchanged. Evidence is under
+`.bmsx/hosting/reachable-controls-evidence/`,
+`.bmsx/hosting/layout-usability-evidence/` and
+`.bmsx/hosting/display-spatial-reference-evidence/`.
+
 ## PSP-style landscape hand placement and wider cardinal regions, 2026-10-13
+
+This section records the earlier `2d6d4e795` layout. Its symmetric hand packing
+and portrait anchors are superseded above; its digital D-pad calibration and
+source-lifetime fixes remain in force.
 
 The supplied physical PSP reference establishes the requested landscape
 arrangement: primary controls sit around the screen's middle hand row, not
