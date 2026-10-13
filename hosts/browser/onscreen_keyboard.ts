@@ -1,15 +1,11 @@
 import type { OnScreenKeyboard } from '../common/input/on_screen_keyboard';
 import { KeyboardPage, ON_SCREEN_KEY_DEFINITIONS } from '../common/input/on_screen_keyboard_keys';
-import { BROWSER_KEYBOARD_PAGES } from './onscreen_keyboard_layout';
-import { BROWSER_ONSCREEN_KEYBOARD_STYLE } from './onscreen_keyboard_style';
-
-const PAGE_LABELS = ['Letters', '123', 'Fn'] as const;
+import { BROWSER_KEYBOARD_KEY_LABELS } from './onscreen_keyboard_layout';
 
 /** CSS keyboard presentation and native contact leases; shared model owns every key edge. */
 export class BrowserOnscreenKeyboard {
 	private readonly window: Window;
 	private readonly panel: HTMLElement;
-	private readonly style: HTMLStyleElement;
 	private readonly pages: HTMLElement[] = [];
 	private readonly pageButtons: HTMLButtonElement[] = [];
 	private readonly pageByButton = new Map<HTMLButtonElement, KeyboardPage>();
@@ -40,75 +36,28 @@ export class BrowserOnscreenKeyboard {
 	) {
 		this.window = document.defaultView;
 		this.modelVisible = model.visible;
-		this.style = document.createElement('style');
-		this.style.textContent = BROWSER_ONSCREEN_KEYBOARD_STYLE;
-		document.head.appendChild(this.style);
-		this.panel = document.createElement('section');
-		this.panel.className = 'bmsx-touch-keyboard';
-		this.panel.setAttribute('aria-label', 'On-screen keyboard');
-		this.panel.hidden = true;
-		const toolbar = document.createElement('nav');
-		toolbar.className = 'bmsx-touch-keyboard-toolbar';
-		toolbar.setAttribute('aria-label', 'Keyboard pages');
-		this.panel.appendChild(toolbar);
-		for (let pageIndex = 0; pageIndex < BROWSER_KEYBOARD_PAGES.length; pageIndex += 1) {
-			const button = document.createElement('button');
-			button.type = 'button';
-			button.tabIndex = -1;
-			button.className = 'bmsx-touch-keyboard-tab';
-			button.textContent = PAGE_LABELS[pageIndex];
-			button.setAttribute('aria-pressed', 'false');
-			toolbar.appendChild(button);
-			this.pageButtons.push(button);
-			this.pageByButton.set(button, pageIndex);
-			const definition = BROWSER_KEYBOARD_PAGES[pageIndex];
-			const page = document.createElement('div');
-			page.className = 'bmsx-touch-keyboard-page';
-			page.hidden = true;
-			let units = 0;
-			for (const row of definition.rows) units = Math.max(units, row.units);
-			page.style.setProperty('--page-units', `${units}`);
-			for (const row of definition.rows) {
-				const rowElement = document.createElement('div');
-				rowElement.className = 'bmsx-touch-keyboard-row';
-				rowElement.style.setProperty('--row-units', `${row.units}`);
-				for (let column = 0; column < row.keys.length; column += 1) {
-					const key = row.keys[column];
-					const slot = document.createElement('div');
-					slot.className = 'bmsx-touch-keyboard-slot';
-					slot.style.setProperty('--key-span', `${row.spans[column]}`);
-					const button = document.createElement('button');
-					button.type = 'button';
-					button.tabIndex = -1;
-					button.className = 'bmsx-touch-key';
-					button.setAttribute('data-code', ON_SCREEN_KEY_DEFINITIONS[key].code);
-					button.setAttribute('aria-label', ON_SCREEN_KEY_DEFINITIONS[key].label);
-					button.setAttribute('aria-pressed', 'false');
-					button.setAttribute('data-selected', 'false');
-					button.setAttribute('data-highlighted', 'false');
-					slot.appendChild(button);
-					rowElement.appendChild(slot);
-					this.keyByButton.set(button, { key, page: pageIndex });
-					this.keyButtons.push(button);
-					this.keyIndices.push(key);
-					this.keyLabels.push('');
-					this.renderedPressed.push(false);
-					this.renderedHighlighted.push(false);
-					this.renderedSelected.push(false);
-				}
-				page.appendChild(rowElement);
-			}
-			this.pages.push(page);
-			this.panel.appendChild(page);
+		// gamebase.html and the package builder own the nodes; this view binds once.
+		this.panel = document.getElementById('bmsx-touch-keyboard');
+		this.closeButton = document.getElementById('bmsx-touch-keyboard-close') as HTMLButtonElement;
+		const pages = this.panel.querySelectorAll<HTMLElement>('.bmsx-touch-keyboard-page');
+		for (let index = 0; index < pages.length; index += 1) this.pages.push(pages[index]);
+		const tabs = this.panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-keyboard-tab');
+		for (let index = 0; index < tabs.length; index += 1) {
+			this.pageButtons.push(tabs[index]);
+			this.pageByButton.set(tabs[index], Number(tabs[index].dataset.page));
 		}
-		this.closeButton = document.createElement('button');
-		this.closeButton.type = 'button';
-		this.closeButton.tabIndex = -1;
-		this.closeButton.className = 'bmsx-touch-keyboard-close';
-		this.closeButton.textContent = 'Close';
-		this.closeButton.setAttribute('aria-label', 'Close on-screen keyboard');
-		toolbar.appendChild(this.closeButton);
-		document.getElementById('player-surface').appendChild(this.panel);
+		const buttons = this.panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-key');
+		for (let index = 0; index < buttons.length; index += 1) {
+			const button = buttons[index];
+			const key = Number(button.dataset.key);
+			this.keyByButton.set(button, { key, page: Number(button.dataset.page) });
+			this.keyButtons.push(button);
+			this.keyIndices.push(key);
+			this.keyLabels.push(button.textContent);
+			this.renderedPressed.push(button.getAttribute('aria-pressed') === 'true');
+			this.renderedHighlighted.push(button.getAttribute('data-highlighted') === 'true');
+			this.renderedSelected.push(button.getAttribute('data-selected') === 'true');
+		}
 		this.unsubscribe = model.subscribe(this.modelChanged);
 		this.scheduleRender();
 	}
@@ -182,8 +131,7 @@ export class BrowserOnscreenKeyboard {
 		this.unsubscribe();
 		if (this.animationId) this.window.cancelAnimationFrame(this.animationId);
 		this.animationId = 0;
-		this.panel.remove();
-		this.style.remove();
+		this.panel.hidden = true;
 		this.document.body.classList.remove('bmsx-touch-keyboard-visible');
 	}
 
@@ -242,9 +190,8 @@ export class BrowserOnscreenKeyboard {
 				button.setAttribute('data-selected', selected ? 'true' : 'false');
 				this.renderedSelected[index] = selected;
 			}
-			const code = ON_SCREEN_KEY_DEFINITIONS[key].code;
-			const label = code === 'ArrowLeft' ? '←' : code === 'ArrowDown' ? '↓' : code === 'ArrowUp' ? '↑'
-				: code === 'ArrowRight' ? '→' : code === 'ShiftLeft' ? '⇧' : code === 'Backspace' ? '⌫' : model.label(key);
+			const definition = ON_SCREEN_KEY_DEFINITIONS[key];
+			const label = definition.shiftLabel === undefined ? BROWSER_KEYBOARD_KEY_LABELS[key] : model.label(key);
 			if (label !== this.keyLabels[index]) {
 				button.textContent = label;
 				button.setAttribute('data-wide-label', label.length > 1 ? 'true' : 'false');

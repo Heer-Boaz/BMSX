@@ -131,6 +131,17 @@
 					</svg>
 				</div>
 			</div>
+			<section id="bmsx-touch-keyboard" class="bmsx-touch-keyboard" aria-label="On-screen keyboard" hidden>
+				@@BMSX_TOUCH_KEYBOARD_PAGES@@
+				<nav class="bmsx-touch-keyboard-toolbar" aria-label="Keyboard pages">
+					<button id="bmsx-touch-keyboard-close" type="button" tabindex="-1" class="bmsx-touch-keyboard-close" aria-label="Close on-screen keyboard">Close</button>
+					<div class="bmsx-touch-keyboard-tabs">
+						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="0" aria-pressed="false">Letters</button>
+						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="1" aria-pressed="false">123</button>
+						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="2" aria-pressed="false">Fn</button>
+					</div>
+				</nav>
+			</section>
 			<div id="gameContainer">
 				<canvas id="gamescreen" hidden></canvas>
 			</div>

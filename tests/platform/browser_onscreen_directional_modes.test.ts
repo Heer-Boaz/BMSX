@@ -4,6 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
+import { roundContactBankWord } from './touch_gamepad_geometry_oracle';
 
 function expectedStickAxes(geometry: { padX: number; padY: number; padRadius: number; neutral: number }, pointer: { x: number; y: number }): [number, number] {
 	const dx = pointer.x - geometry.padX;
@@ -92,7 +93,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 								tip: [tip.cx.baseVal.value, tip.cy.baseVal.value],
 								filledSurfaces: Array.from(document.querySelectorAll('#d-pad-svg path,#d-pad-svg circle,.action-button')).filter(shape => getComputedStyle(shape).fill !== 'none').length },
 							geometry: { padX: pad.geometry.padX, padY: pad.geometry.padY, padRadius: pad.geometry.padRadius, neutral: pad.geometry.padNeutralRadius,
-								a: pad.geometry.actions.find(action => action.buttons === 1), b: pad.geometry.actions.find(action => action.buttons === 2) },
+								a: pad.geometry.actions.find(action => action.buttons === 1), b: pad.geometry.actions.find(action => action.buttons === 2),
+								shoulders: pad.geometry.actions.filter(action => action.bank === 1) },
 							revision: pad.geometryRevision,
 							bounds: { left: padBounds.left, top: padBounds.top, width: padBounds.width, height: padBounds.height },
 							visual: { width: visualViewport!.width, height: visualViewport!.height, scale: visualViewport!.scale },
@@ -121,7 +123,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				const state = await measure();
 				assert.deepEqual([state.model, state.physical, state.sampled, state.mmio], [buttons, buttons, buttons, buttons]);
 				const encodedAxes = [encodeSignedFix16(state.tip[0]), encodeSignedFix16(state.tip[1])];
-				assert.deepEqual(state.axes, [...encodedAxes, 0, 0, 0, 0], 'common snapshot consumes exactly the producer axes');
+				assert.deepEqual(state.axes, [...encodedAxes, 0, 0, (buttons & 0x40) !== 0 ? 0x10000 : 0, (buttons & 0x80) !== 0 ? 0x10000 : 0], 'common snapshot consumes exactly the producer axes');
 				assert.deepEqual(state.physicalAxes, encodedAxes);
 				assert.deepEqual(state.mmioAxes, encodedAxes, 'armed ICU latches exactly the common words');
 				assert.ok(Math.abs((encodedAxes[0] | 0) - (x | 0)) <= 1, 'native float contact coordinates match requested horizontal travel within one Q16 unit');
@@ -156,16 +158,17 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						thumb.x = geometry.padX + radius * (cardinal.x - cardinal.y * roll);
 						thumb.y = geometry.padY + radius * (cardinal.y + cardinal.x * roll);
 						await touch('touchMove', [thumb]);
-						await assertState(cardinal.bits | (roll === 0.7 ? cardinal.next : 0), 0, 0);
+						await assertState(cardinal.bits | (roll === 0.7 ? cardinal.next : 0)
+							| roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
 					}
 				}
 				thumb.x = geometry.padX + geometry.padRadius * 2;
 				thumb.y = geometry.padY - geometry.padRadius * 0.95;
 				await touch('touchMove', [thumb]);
-				await assertState(0x8000, 0, 0);
+				await assertState(0x8000 | roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
 				thumb.y = geometry.padY - geometry.padRadius * 1.4;
 				await touch('touchMove', [thumb]);
-				await assertState(0x9000, 0, 0);
+				await assertState(0x9000 | roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
 				await touch('touchEnd', []);
 				await assertState(0, 0, 0);
 			});
@@ -219,7 +222,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				await touch('touchEnd', [pad, fresh]);
 				const digital = { ...pad, id: 4, x: geometry.padX, y: geometry.padY - geometry.padRadius };
 				await touch('touchStart', [action, digital]);
-				const resumed = await assertState(0x1002, 0, 0);
+				const resumed = await assertState(0x1002 | roundContactBankWord(geometry.shoulders, digital.x, digital.y, digital.radiusX), 0, 0);
 				assert.deepEqual([resumed.artwork.dpadHidden, resumed.artwork.stickHidden], [false, true]);
 			});
 

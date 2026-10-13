@@ -4,7 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { controlContainsPoint, distanceToControl, outsideControlPoint, roundContactBankWord } from './touch_gamepad_geometry_oracle';
+import { controlContainsPoint, distanceToControl, ellipseContactWord, outsideControlPoint, roundContactBankWord } from './touch_gamepad_geometry_oracle';
 
 const actions = [
 	{ id: 'a_knop', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -297,7 +297,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		for (const viewport of [{ width: 852, height: 393 }, { width: 393, height: 852 }, { width: 1366, height: 1024 }, { width: 1024, height: 1366 }]) {
 			await page.setViewportSize(viewport);
 			await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
-			const { pad } = await measure();
+			const { pad, actions: shapes } = await measure();
+			const leftShoulders = shapes.filter(shape => shape.bank === 1);
 			for (const [radiusX, radiusY] of [[1, 1], [14, 14], [24, 4], [30, 30]]) {
 				for (let degrees = 0; degrees <= 360; degrees += 10) {
 					const angle = degrees * Math.PI / 180;
@@ -306,7 +307,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 					await touch(degrees === 0 ? 'touchStart' : 'touchMove', [contact]);
 					const state = await poll();
 					const location = `${viewport.width}x${viewport.height}, ${degrees}deg, ${radiusX}x${radiusY} contact radii`;
-					assert.equal(state.model & ~0xf000, 0, `no adjacent utility spill at ${location}`);
+					const shoulderWord = ellipseContactWord(leftShoulders, contact.x, contact.y, radiusX, radiusY);
+					assert.equal(state.model & 0x50, shoulderWord, `only actually touched left shoulders contribute at ${location}`);
+					assert.equal(state.model & ~0xf050, 0, `no utility, right-shoulder or face-bank spill at ${location}`);
 					assert.notEqual(state.model, 0, `no dead gap at ${location}`);
 					assert.notEqual(state.model & 0x3000, 0x3000, `no one-thumb Up+Down at ${location}`);
 					assert.notEqual(state.model & 0xc000, 0xc000, `no one-thumb Left+Right at ${location}`);
@@ -420,7 +423,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await assertWord(0);
 	});
 
-	await t.test('a direct utility press wins over a large thumb reaching the nearby pad', async () => {
+	await t.test('a direct shoulder press stays shoulder-only until a deliberate nearest-surface directional roll', async () => {
 		const geometry = await measure();
 		const { pad, actions: [, , , , , , , , lb] } = geometry;
 		const radius = Math.hypot(lb.x - pad.x, lb.y - pad.y) - pad.radius + 2;
@@ -433,8 +436,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		await assertWord(expected, 0, 'a direct LB contact chords only its actual shoulder bank, never pad or unrelated controls');
 		const moved = { ...contact, x: pad.x - pad.radius * 0.8, y: pad.y };
 		await touch('touchMove', [moved]);
-		const movedButtons = roundContactBankWord(geometry.actions, moved.x, moved.y, radius);
-		await assertWord(movedButtons, 0, 'the retained utility contact keeps only actual button intersections, never pad directions');
+		const movedShoulders = roundContactBankWord(geometry.actions.filter(action => action.bank === lb.bank), moved.x, moved.y, radius);
+		await assertWord(0x4000 | movedShoulders, 0, 'the genuine move deliberately enters the directional acquisition region while retaining only actually touched left shoulders');
 	});
 
 	await t.test('visible utility-button centers and inner edges beat another component\'s neutral deck', async () => {

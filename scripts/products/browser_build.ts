@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 
 import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
+import { renderBrowserKeyboardPages } from './browser_keyboard';
 import { PLAYER_CARTRIDGE_SLOT, PLAYER_INPUT_TRACE_SCRIPT, PLAYER_MANIFEST, PLAYER_SYSTEM_ROM_SLOT, PLAYER_TITLE_SLOT } from './player_page';
 import { productNeedsRebuild } from './rebuild';
 import { javascriptProductFilename } from './targets';
@@ -199,6 +200,7 @@ function renderBrowserPage(
 	const imagePrefix = 'data:image/png;base64,';
 	return applyTemplateValues(inputs.html, {
 		'@@BMSX_PRODUCT_CONFIGURATION@@': configuration,
+		'@@BMSX_TOUCH_KEYBOARD_PAGES@@': renderBrowserKeyboardPages(),
 		'@@BMSX_BEFORE_HOST_SCRIPT@@': beforeHostScript,
 		'/*#css*/': inputs.css,
 		'#title': title,

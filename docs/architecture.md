@@ -4935,6 +4935,12 @@ touched surface, then unions footprint hits only within its bank. This keeps
 one-thumb A+B and LB+LT chords while isolating shoulder contacts from Y;
 independent contacts can still combine Y+RB. Bank choice is live, not captured
 for the whole contact, so deliberate slides between groups remain possible.
+Digital Pad contacts additionally union genuine left-shoulder footprint hits,
+allowing one thumb to roll between a direction and direction+LB/LT. A direct
+shoulder down stays shoulder-only: a later move must cross the actual nearest-
+surface partition towards the pad before acquiring direction. Fully rolling
+off the pad onto a left shoulder contributes only that shoulder; ordinary
+outside dragging still retains direction. Analog stick capture stays exclusive.
 Actual activating surfaces
 precede the neutral face acquisition envelope. Direct visible button-center
 hits precede directional pickup; area-only conflicts compare actual control
@@ -4990,8 +4996,11 @@ targets the landscape middle hand row and fits asymmetric same-ring shoulders
 inside the available reach. Shoulder envelopes never push the primary groups
 inward. Landscape bumpers use the larger outward/topward segments; triggers use inward
 segments. Portrait has an independently authored detached shoulder strip:
-LB/LT above the left primary group, RT/RB above the right, with a 24 CSS-pixel
-empty band above the complete primary acquisition surfaces. It does not scale
+LB/LT above the left primary group, RT/RB above the right. The left arcs retain
+12 CSS pixels of actual surface clearance from the pad, derived from each
+nearest round cap, so one thumb can genuinely bridge them. The right strip
+retains its 24 CSS-pixel empty band above the complete face acquisition bank.
+This hand-specific reach does not alter the video slot or deck measure. It does not scale
 or transplant the landscape shoulder ring into a portrait controller.
 LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
 Transparent control interiors retain the scene; restrained translucent contours
@@ -5082,13 +5091,28 @@ keyboard releases its owned key state, but retained native contacts stay owned
 until actual up/cancel, including across a reopen. It never releases an
 independently held physical keyboard key or fabricates browser pointer events.
 
-The browser view has four-row Text, Symbols and Fn pages, dedicated page/Close
-controls and CSS-sized touch targets. Letter keys follow a ten-unit QWERTY row,
-not the native bitmap sixteen-unit grid. Phone letters are narrower than 44px;
-all key rows and toolbar targets remain at least 44px high, even in the 239px
+The browser view retains four-row Text, Symbols and Fn pages, not the native
+bitmap sixteen-unit grid or a full desktop keyboard. Eleven-unit authored rows
+place Backspace upper-right, Tab left-middle and Enter right-middle. A smaller
+Space shares every page's bottom row with four cursor keys. Close is a separate
+bottom-left footer command, away from Backspace. Phone letters are narrower than
+44px; all real key/footer targets remain at least 44px high, including the 239px
 short-player layout. Pane gutters retain keyboard ownership rather than leaking
 through to hidden controls. Physical gamepad navigation uses these actual rows,
 and SELECT+Y cycles pages. Native frontends retain their separate bitmap layout.
+
+`gamebase.html` owns the static browser player/control/keyboard shell;
+`gamebase.css` owns its styling. The common Player/Studio package renderer calls
+`scripts/products/browser_keyboard.ts` to emit keyboard rows from the sole
+`BROWSER_KEYBOARD_PAGES` layout producer. Browser navigation consumes that same
+row/span data, not a duplicated grid. Central key identities and one browser
+key-cap label producer supply package-time attributes/glyphs and later state
+updates. The browser view binds the existing emitted nodes once, consumes owned
+numeric page/key identities and updates only visibility, labels and changed
+state attributes. There is no runtime keyboard HTML/CSS injection, template
+cloning, key-node rebuilding, defensive DTO parsing or frame-time DOM measurement.
+Dynamic Studio editor content remains a separate application presentation owner;
+this base-player contract does not require a fully static IDE.
 
 The source owner publishes through the existing Input/LibretroInput virtual
 keyboard path. Host UI consumes physical source lifetimes, not command-repeat
@@ -5104,7 +5128,9 @@ UI poll time. Retained listeners notify the CSS view only on revisions; its RAF
 updates existing key nodes and changed attributes, without per-frame DOM reads
 or keyboard rebuilds. Bitmap drawing consumes the same feedback. The deadline
 never extends key lifetime, injects another edge or proves guest consumption.
-Browser input teardown disposes the view, its nodes/style and model subscription.
+Browser input teardown releases virtual sources, cancels pending paint and
+disposes the model subscription, then hides the document-owned panel. Static
+keyboard nodes/styles remain owned by the packaged page.
 
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed

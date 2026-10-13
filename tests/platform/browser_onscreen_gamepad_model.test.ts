@@ -109,10 +109,10 @@ test('pad and rounded shoulder acquisition compare actual surfaces, never the sh
 		{ x: 160, y: 70, radius: 52, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder },
 	] });
 	pad.beginContact(1, 125, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0x8000, 'a pad-center hit beats shoulder area-only pickup inside its circumbound');
+	assert.equal(pad.buttons, 0x8010, 'directional acquisition also contributes the genuinely touched adjacent LB surface');
 	pad.endContact(1);
 	pad.beginContact(2, 154, 105, 16, 16, true);
-	assert.equal(pad.buttons, 0x8000, 'outside both solids, the actual nearer pad edge wins');
+	assert.equal(pad.buttons, 0x8010, 'the nearer pad acquires direction while the real footprint still reaches LB');
 	pad.endContact(2);
 	pad.beginContact(3, 125, 85, 14, 14, true);
 	assert.equal(pad.buttons, 0x10, 'a direct rounded shoulder hit remains a button even over the pad');
@@ -127,10 +127,10 @@ test('finite curved arc shoulders preserve live button contacts and actual-surfa
 		{ x: 160, y: 70, radius: 48, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: curvedShoulder },
 	] });
 	pad.beginContact(1, 125, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0x8000, 'the circumbound interior is not a direct curved arc hit');
+	assert.equal(pad.buttons, 0x8010, 'the pad acquires direction and its footprint reaches the actual curved LB surface');
 	pad.endContact(1);
 	pad.beginContact(2, 154, 105, 18, 18, true);
-	assert.equal(pad.buttons, 0x8000, 'the nearer pad beats area-only contact with the curved arc');
+	assert.equal(pad.buttons, 0x8010, 'the nearer pad acquires direction without excluding a true LB intersection');
 	pad.endContact(2);
 	pad.beginContact(3, 125, 85, 14, 14, true);
 	assert.equal(pad.buttons, 0x10, 'the actual rounded end cap is a direct button surface');
@@ -434,6 +434,168 @@ test('directional capture cannot press secondary switches and independent button
 	assert.equal(pad.buttons, 0x100);
 });
 
+const directionalShoulderGeometry: OnscreenGamepadGeometry = { ...geometry, actions: [
+	...geometry.actions,
+	{ x: 100, y: 20, radius: 15, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder },
+	{ x: 60, y: 30, radius: 15, buttons: 0x40, bank: OnscreenActionBank.LeftShoulder },
+] };
+
+test('one rolling digital thumb combines actual neighboring shoulders in either acquisition order', () => {
+	const { pad, edges } = createFixture();
+	pad.setGeometry(directionalShoulderGeometry);
+	pad.beginContact(1, 100, 60, 14, 14, true);
+	assert.equal(pad.buttons, 0x1000);
+	pad.moveContact(1, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010, 'the same native footprint now bridges Up and LB');
+	pad.moveContact(1, 100, 20, 14, 14, true);
+	assert.equal(pad.buttons, 0x10, 'rolling completely onto a real shoulder relinquishes direction');
+	pad.moveContact(1, 100, -200, 14, 14, true);
+	assert.equal(pad.buttons, 0x1000, 'ordinary outside dragging preserves the acquired directional gesture');
+	pad.moveContact(1, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010);
+	pad.endContact(1);
+	assert.equal(pad.buttons, 0);
+	pad.beginContact(2, 100, 20, 14, 14, true);
+	assert.equal(pad.buttons, 0x10);
+	pad.moveContact(2, 100, 40, 14, 14, true);
+	assert.equal(pad.buttons, 0x10, 'footprint-only grazing retains the nearer shoulder, without inventing Up');
+	pad.moveContact(2, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010, 'crossing the actual nearest-surface partition acquires Up immediately');
+	pad.moveContact(2, 75, 75, 14, 14, true);
+	assert.equal(pad.buttons, 0x5000, 'ordinary cardinal and diagonal classification is unchanged after acquisition');
+	pad.endContact(2);
+	assert.equal(pad.buttons, 0);
+	for (const code of ['up', 'lb']) {
+		const events = edges.filter(edge => edge.code === code);
+		for (let index = 0; index < events.length; index += 2) {
+			assert.equal(events[index].down, true);
+			assert.equal(events[index + 1].down, false);
+			assert.equal(events[index].pressId, events[index + 1].pressId);
+		}
+	}
+});
+
+test('a broad digital thumb can contribute direction plus both neighboring LB and LT, but never unrelated banks', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, actions: [
+		{ x: 100, y: 20, radius: 15, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder },
+		{ x: 100, y: 10, radius: 15, buttons: 0x40, bank: OnscreenActionBank.LeftShoulder },
+		{ x: 125, y: 20, radius: 15, buttons: 0x100, bank: OnscreenActionBank.LeftUtility },
+		{ x: 125, y: 25, radius: 15, buttons: 0x20, bank: OnscreenActionBank.RightShoulder },
+		{ x: 125, y: 30, radius: 15, buttons: 8, bank: OnscreenActionBank.Face },
+	] });
+	pad.beginContact(1, 100, 50, 30, 30, true);
+	assert.equal(pad.buttons, 0x1050, 'one directional contributor touches Up, LB and LT, not utility, RB or Y');
+	pad.moveContact(1, 100, 50, 14, 14, true);
+	assert.equal(pad.buttons, 0x1000, 'reducing the actual contact area removes both shoulder contributions');
+	pad.moveContact(1, 100, 50, 30, 30, true);
+	assert.equal(pad.buttons, 0x1050);
+	pad.cancelContacts();
+	assert.equal(pad.buttons, 0);
+	assert.equal(pad.ownsContact(1), false);
+	pad.beginContact(2, 100, 20, 30, 30, true);
+	assert.equal(pad.buttons, 0x50, 'direct shoulder acquisition stays shoulder-only despite a footprint touching the pad');
+	pad.endContact(2);
+});
+
+test('a live face finger only gains directional eligibility after deliberately entering the left shoulder bank', () => {
+	const { pad } = createFixture();
+	pad.setGeometry(directionalShoulderGeometry);
+	pad.beginContact(1, 300, 100, 14, 14, true);
+	pad.moveContact(1, 100, 60, 14, 14, true);
+	assert.equal(pad.buttons, 0, 'ordinary face-to-pad travel remains a button gesture');
+	pad.moveContact(1, 100, 20, 14, 14, true);
+	assert.equal(pad.buttons, 0x10);
+	pad.moveContact(1, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010, 'the actual left-hand shoulder acquisition permits a deliberate directional roll');
+	pad.endContact(1);
+});
+
+test('directional-shoulder counts retain independent fingers in either release order and through a contact-slot swap', () => {
+	for (const chordFirst of [false, true]) {
+		const { pad, edges } = createFixture();
+		pad.setGeometry(directionalShoulderGeometry);
+		pad.beginContact(9, 300, 100, 0, 0, false);
+		pad.beginContact(1, 100, 45, 14, 14, true);
+		pad.beginContact(2, 100, 20, 14, 14, true);
+		pad.beginContact(3, 100, 60, 14, 14, true);
+		assert.equal(pad.buttons, 0x1010);
+		pad.endContact(9);
+		pad.endContact(chordFirst ? 1 : 2);
+		assert.equal(pad.buttons, 0x1010, 'aggregate Up and LB still have actual independent owners');
+		pad.endContact(chordFirst ? 2 : 1);
+		assert.equal(pad.buttons, 0x1000, 'only the independent Up owner remains');
+		pad.moveContact(3, 60, 100, 14, 14, true);
+		assert.equal(pad.buttons, 0x4000, 'swapped directional ownership and contact sample remain correct');
+		pad.endContact(3);
+		assert.equal(pad.buttons, 0);
+		assert.deepEqual(edges.filter(edge => edge.code === 'lb').map(edge => edge.down), [true, false]);
+	}
+});
+
+test('layout resamples live digital shoulder contributions without inventing a shoulder-first directional lease', () => {
+	const { pad } = createFixture();
+	pad.setGeometry(directionalShoulderGeometry);
+	pad.beginContact(1, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010);
+	pad.setGeometry(geometry);
+	assert.equal(pad.buttons, 0x1000, 'removing the adjacent shoulder removes only its current contribution');
+	pad.setGeometry(directionalShoulderGeometry);
+	assert.equal(pad.buttons, 0x1010, 'the retained footprint sees the restored authored surface');
+	pad.endContact(1);
+	pad.beginContact(2, 100, 20, 14, 14, true);
+	pad.setGeometry({ ...geometry, padY: 50 });
+	assert.equal(pad.buttons, 0, 'a layout write does not promote an existing shoulder finger into a captured direction');
+	pad.moveContact(2, 100, 21, 14, 14, true);
+	assert.equal(pad.buttons, 0x1000, 'a genuine subsequent move deliberately acquires the relocated directional unit');
+	pad.endContact(2);
+});
+
+test('analog stick leases remain exclusive and switching modes releases the whole acquired digital gesture only', () => {
+	const { pad } = createFixture();
+	pad.setGeometry(directionalShoulderGeometry);
+	pad.beginContact(1, 100, 45, 14, 14, true);
+	pad.beginContact(2, 100, 20, 14, 14, true);
+	assert.equal(pad.buttons, 0x1010);
+	pad.setDirectionalMode('stick');
+	assert.equal(pad.buttons, 0x10, 'the independent shoulder source survives digital-gesture suppression');
+	pad.moveContact(1, 100, 45, 30, 30, true);
+	assert.equal(pad.buttons, 0x10);
+	pad.moveContact(2, 100, 45, 14, 14, true);
+	assert.equal(pad.buttons, 0x10, 'a shoulder finger does not acquire analog ownership while sliding');
+	assert.equal(pad.stickActive, false);
+	pad.endContact(1);
+	pad.endContact(2);
+	pad.beginContact(3, 100, 45, 14, 14, true);
+	assert.equal(pad.stickActive, true);
+	assert.equal(pad.buttons, 0, 'the analog-owned footprint cannot contribute LB');
+	pad.moveContact(3, 100, 20, 14, 14, true);
+	assert.equal(pad.buttons, 0);
+	assert.equal(pad.stickY, -1);
+	pad.endContact(3);
+	assert.equal(pad.stickActive, false);
+});
+
+test('one-contact directional shoulder chords reach ordinary common snapshots and armed ICU words', () => {
+	const { pad, input, snapshot, memory, sample } = createInputControllerFixture();
+	pad.setGeometry(directionalShoulderGeometry);
+	const assertWord = (word: number) => {
+		sample();
+		assert.equal(pad.buttons, word);
+		assert.equal(input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), word);
+		assert.equal(snapshot.pads[0].buttons, word);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), word);
+		assert.deepEqual([...snapshot.pads[0].axesQ16].slice(0, 2), [0, 0]);
+	};
+	pad.beginContact(1, 100, 45, 14, 14, true);
+	assertWord(0x1010);
+	pad.moveContact(1, 65, 49, 14, 14, true);
+	assertWord(0x5040);
+	pad.endContact(1);
+	assertWord(0);
+	input.dispose();
+});
+
 test('button-bank eligibility follows the nearest true surface while gliding without per-button capture', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
@@ -688,9 +850,9 @@ test('identical contact samples skip geometry work while changed samples and lay
 	const contactButtons = Reflect.get(pad, 'contactButtons');
 	let hits = 0;
 	Object.defineProperty(pad, 'contactButtons', {
-		value(purpose: number, x: number, y: number, halfWidth: number, halfHeight: number) {
+		value(purpose: number, x: number, y: number, halfWidth: number, halfHeight: number, acquirePad: boolean) {
 			hits += 1;
-			return contactButtons.call(pad, purpose, x, y, halfWidth, halfHeight);
+			return contactButtons.call(pad, purpose, x, y, halfWidth, halfHeight, acquirePad);
 		},
 	});
 	pad.beginContact(1, 300, 100, 14, 14, true);

@@ -1,5 +1,143 @@
 # Browser touch-controller ownership
 
+## One-thumb directional/shoulder contact, 2026-10-14
+
+Digital D-pad capture is no longer exclusive of the left shoulder bank. Its
+actual contact ellipse can press intersected LB/LT silhouettes while retaining
+a direction. Direct shoulder acquisition still produces only shoulder bits;
+a deliberate move crossing the nearest true-surface partition towards the pad
+acquires the rocker. Rolling fully off the pad onto a shoulder relinquishes
+direction, while ordinary captured drags outside the controls keep working.
+Analog-stick capture remains exclusive. Face/right-shoulder and utility-bank
+isolation, independent contact reference counts and per-frame input sampling
+are unchanged.
+
+This follows the distinction between [PPSSPP's digital gliding and analog
+capture](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454),
+not a claim that its point-coordinate input implements BMSX's contact ellipse.
+No synthetic events, sticky buttons, inflated invisible targets or extra input
+producer are involved. Left-shoulder descriptors and the actual empty disk
+around the pad are cached at layout time; ordinary directional rolls skip arc
+queries. Native contact moves allocate no temporary geometry.
+
+The old portrait strip was positioned above the taller face bank, leaving
+35–44 CSS pixels between the real left shoulder surfaces and the smaller pad.
+That could not support a genuine 28px thumb footprint. The left arcs now derive
+their vertical positions from their nearest round caps and the actual pad disk,
+keeping 12px physical clearance for both LB and LT. The right shoulder strip,
+Y protection, authored control sizes, portrait video slot and deck height remain
+unchanged. Landscape retains its existing approximately 13px clearance.
+
+Focused native tests cover both acquisition orders, five positions through each
+real contact corridor, round and anisotropic footprints, independent release,
+ordinary common snapshots and the armed ICU MMIO words/trigger axes. These are
+browser input/geometry proofs, not physical-iPhone ergonomic acceptance.
+
+Final integration: **466 distinct tests pass** (350 in the browser/keyboard/
+shared-input/package bundle, 116 shoulder tests), plus all five TypeScript
+projects. Packaged WebGPU games pass one-contact LB/LT rolls in both phone
+orientations; 16 Linux WPE/WebKit profiles retain ordinary controller behavior.
+WPE's reported 2x2 contacts do not prove thumb-area behavior. Final product
+screenshots and receipts: `.bmsx/hosting/thumb-keyboard-evidence/`; native
+surface/MMIO and independent before/after geometry evidence:
+`.bmsx/hosting/directional-shoulder-chords/`.
+
+## Static compact-keyboard refinement, 2026-10-14
+
+This targeted refinement keeps the existing four-row Text/Symbols/Fn approach,
+shared TS/C++ key/source model, modifier/cancel policy and forwarding feedback.
+It does not replace raw guest input with native text composition or redesign the
+keyboard around a full desktop grid. It supersedes only the browser keyboard
+layout and runtime-created DOM/style ownership described in the 2026-10-13 slice.
+
+### Physical special-key roles without a tiny desktop keyboard
+
+All three pages now keep Backspace at the upper-right edge, Tab at the
+left-middle edge and Enter at the right-middle edge. Text retains QWERTY and
+its home/Shift rows. Space has a 2.5-unit span (Text previously used 3.5), with a
+stable Left/Down/Up/Right cluster on every bottom row, including Symbols and Fn.
+These are four inline cursor keys, not a claim of a literal desktop inverted-T.
+Close is a distinct bottom-left footer command, separated from the page selectors
+and far from upper-right Backspace; it is not another typing key. The conventional
+return glyph avoids overflowing the narrow phone Enter cap while its raw key
+identity and full accessible label remain unchanged.
+
+Rows have eleven authored units. Narrow phone gutters retain approximately
+32px-wide letters at a 393px viewport, rather than shrinking the existing letter
+pitch to fit a complete desktop keyboard. Letter targets are **not** 44x44 on a
+phone. Every real key/footer target remains at least 44px high; tablet letters
+are wider. Four 44px rows, a 44px footer, gaps and padding total 237px in the
+239px short player. No inaccessible extra row, minimum-duration keypress timer
+or keyboard-triggered game refit was added.
+
+[DOSBox Pure's authored physical keyboard matrix](https://github.com/schellingb/dosbox-pure/blob/a4a0bab7f8931433588f2fcad9045c85b277373d/dosbox_pure_osd.h#L1166-L1182)
+was inspected for positional roles, not copied as a six-row desktop layout or a
+phone ergonomic guarantee. The compact three-page approach remains informed by
+[RetroArch's raw-key/Fn overlay](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/keyboards/split-qwerty/split-qwerty.cfg#L1-L65).
+
+### One layout producer, static package structure
+
+`gamebase.html` owns the existing player/control shell and the keyboard
+section/footer. `gamebase.css` owns all its styling. Browser products package the
+keyboard rows through `scripts/products/browser_keyboard.ts`, using the same
+`BROWSER_KEYBOARD_PAGES` rows/spans that the shared model consumes for real
+physical-gamepad navigation. Both Player and Studio use the common
+`browser_build.ts` page-rendering boundary. There is no independently authored
+HTML grid to drift away from navigation, and no runtime markup/style injection.
+
+The generator reuses central key definitions and the browser presentation's
+single key-cap label producer, including arrow/Shift/Backspace/Enter glyphs.
+It emits real page/key identities, initial accessibility/state attributes and
+layout custom properties into the packaged HTML. The runtime view binds those
+existing nodes once and consumes their owned numeric identities directly; it
+only updates labels, visibility and changed state attributes on model revisions.
+No template cloning, key-node rebuilding, per-frame DOM measurement or runtime
+DTO validation was introduced. Teardown releases real virtual sources, cancels
+pending paint and unsubscribes, then hides the document-owned panel; it does not
+remove static page nodes or an injected stylesheet.
+
+Static structure with runtime state binding follows production precedents:
+[noVNC's authored touch/special-key controls](https://github.com/novnc/noVNC/blob/b17d04c1a1a926a59f4a04bb866332b429f2ce37/vnc.html#L130-L156)
+with [handlers attached to existing IDs](https://github.com/novnc/noVNC/blob/b17d04c1a1a926a59f4a04bb866332b429f2ce37/app/ui.js#L261-L285),
+and [Kodi's static keyboard skin](https://github.com/xbmc/xbmc/blob/492d01b042761bec828bbb31b1a3d79e34bc7e79/addons/skin.estuary/xml/DialogKeyboard.xml#L70-L166)
+with [label/visibility updates](https://github.com/xbmc/xbmc/blob/492d01b042761bec828bbb31b1a3d79e34bc7e79/xbmc/dialogs/GUIDialogKeyboardGeneric.cpp#L542-L566).
+Neither precedent proves BMSX phone comfort. noVNC's native text-input mechanism
+is not adopted for guest raw-HID held-key/modifier/function-key semantics.
+This static player-shell contract does not forbid dynamically rendered Studio
+editor content or turn the IDE into pre-authored page markup.
+
+### Focused evidence and limits
+
+The keyboard suite passes **49/49**: actual Player/Studio packaging entrypoints
+in an isolated build directory, exact static key/CSS presence before host code,
+all 74 central key identities, physical special-key positions, all-page arrows,
+actual glyph containment and five native browser profiles. Trusted down/up/cancel
+contacts still cover independent fingers/controllers, same-key contributors,
+held/sticky modifiers, simultaneous page/key batches, real source release,
+feedback and exact drawn-row gamepad navigation. Existing node identities and
+stylesheet count remain unchanged through view creation/disposal.
+
+All five Browser/Node/Scripts/Tests/Studio typechecks pass. Fresh local packaged
+WebGPU and WebGL2 each pass eight source-lifetime/feedback/page/gamepad checks
+across phone portrait, phone landscape, tablet landscape and the 239px short
+player. Each case records 40 trusted native events and 30 keyboard trace rows,
+with no script/console errors. Opening/closing preserves the game transform;
+phone portrait and short-keyboard screenshots were visually inspected. The
+physical-gamepad producer in this harness is a controlled native-ABI fixture,
+not attached USB hardware.
+
+The actual packaged guest terminal receives native 90ms
+`H E L X Backspace P Enter` contacts. Visual inspection confirms `HELP`, its
+command listing and the following prompt after closing the keyboard. Appearance
+feedback alone is not used as proof that the guest accepted a key.
+
+Evidence: `.bmsx/hosting/physical-keyboard-reference-evidence/`,
+`.bmsx/hosting/browser-touch-keyboard-evidence/` and
+`.bmsx/hosting/thumb-keyboard-evidence/`. These are browser/source acceptance
+receipts, not physical iPhone thumb-comfort or UIKit evidence. The source model,
+native bitmap presentation, guest HID/ICU sampling and feedback lifetime are
+unchanged by this browser-only presentation/packaging refinement.
+
 ## Interaction banks, independent portrait and touch-first keyboard, 2026-10-13
 
 This slice supersedes the shared portrait/landscape shoulder topology and the
@@ -65,13 +203,14 @@ that model. `HostOnScreenKeyboard` is the bitmap view; browser `onscreen_keyboar
 is a CSS-client view with retained native contact leases. Neither is a state API
 facade and neither generates synthetic DOM KeyboardEvents.
 
-The browser has Text, Symbols and Fn pages, ten-column QWERTY letters, centered
-rows and wider modifiers/Space/Enter. The authored rows/spans drive both touch
-geometry and physical-gamepad navigation, with construction-cached centers.
-All key rows/toolbar targets are at least 44px high. Phone letters are
-approximately 33-37px wide, not claimed to be 44x44 targets; tablet letters are
-wider. A deliberate 44px-row mode fits the 239px short player, rather than
-shrinking keys or hiding unreachable rows. The native bitmap has its own grid,
+The browser has Text, Symbols and Fn pages with four rows. The 2026-10-14
+refinement above authors eleven-unit rows, positional Tab/Enter/Backspace and
+all-page cursor keys without adding a full desktop grid. Its same authored
+rows/spans drive touch geometry and physical-gamepad navigation, with
+construction-cached centers. All key/footer targets are at least 44px high;
+phone letters remain narrower than 44px, with wider tablet targets. A deliberate
+44px-row mode fits the 239px short player rather than shrinking keys or hiding
+unreachable rows. The native bitmap has its own grid,
 page title/help and SELECT+Y page cycling. F1-F12/Home/End use central existing
 raw HID identities, not a feature-local codec.
 
@@ -95,11 +234,12 @@ While browser typing is active, the virtual gamepad is hidden and cannot acquire
 new contacts; existing controller contacts still get their real release. A
 physical gamepad remains usable. There is no keyboard-induced game refit or
 controller reflow. The active player surface owns the foreground stacking plane,
-including over the existing trace panel in short frames. Teardown disposes the
-view's DOM/style/subscription. CSS nodes are built once; revision notifications
-schedule changed-attribute painting, with no frame-time DOM measurement or
-per-keyboard-frame rebuild. The 120ms release acknowledgement is visual only;
-raw HID key lifetimes, ICU sampling and guest typematic remain unchanged.
+including over the existing trace panel in short frames. The 2026-10-14
+static package boundary above now owns the DOM and CSS; teardown hides the
+panel and disposes the view subscription instead of removing page nodes/styles.
+Revision notifications schedule changed-attribute painting, with no frame-time
+DOM measurement or per-keyboard-frame rebuild. The 120ms release acknowledgement
+is visual only; raw HID key lifetimes, ICU sampling and guest typematic remain unchanged.
 
 References studied before this split:
 [RetroArch's raw-key split QWERTY and Fn overlay](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/keyboards/split-qwerty/split-qwerty.cfg#L1-L65),
@@ -131,8 +271,9 @@ host key-event FIFO.
 
 ### Validation
 
-Final source and packaged-product receipts are recorded in
-`.bmsx/hosting/touch-first-controls-evidence/`, with independent repro/review in
+The following frozen source/product receipts describe the 2026-10-13 slice,
+not fresh acceptance of the 2026-10-14 keyboard refinement above. They are
+recorded in `.bmsx/hosting/touch-first-controls-evidence/`, with independent repro/review in
 `contact-bank-audit/`, portrait raster evidence in
 `portrait-detached-controls-evidence/`, and CSS/native-source evidence in
 `browser-touch-keyboard-evidence/`.

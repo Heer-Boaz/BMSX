@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { ON_SCREEN_KEY_DEFINITIONS } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { renderBrowserKeyboardPages } from '../../scripts/products/browser_keyboard';
 
 test('browser keyboard pages cover every physical key and author the actual four touch rows', () => {
 	const keys = new Set<number>();
@@ -18,12 +24,58 @@ test('browser keyboard pages cover every physical key and author the actual four
 		}
 	}
 	assert.deepEqual([...keys].sort((a, b) => a - b), ON_SCREEN_KEY_DEFINITIONS.map((_, index) => index));
-	assert.deepEqual(BROWSER_KEYBOARD_PAGES[0].rows.slice(0, 2).map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join('')),
-		['qwertyuiop', 'asdfghjkl']);
+	assert.equal(BROWSER_KEYBOARD_PAGES[0].rows[0].keys.slice(0, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'qwertyuiop');
+	assert.equal(BROWSER_KEYBOARD_PAGES[0].rows[1].keys.slice(1, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'asdfghjkl');
+});
+
+test('physical special-key positions and shortened Space are stable on every compact page', () => {
+	for (const page of BROWSER_KEYBOARD_PAGES) {
+		const codes = page.rows.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code));
+		assert.equal(codes[0].at(-1), 'Backspace', 'Backspace stays on the upper-right edge');
+		assert.equal(codes[1][0], 'Tab', 'Tab stays on the left-middle edge');
+		assert.equal(codes[1].at(-1), 'Enter', 'Enter stays on the right-middle edge');
+		assert.deepEqual(codes[3], ['ControlLeft', 'AltLeft', 'Space', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight']);
+		assert.equal(page.rows[3].spans[2], 2.5, 'Space leaves a genuine arrow-key cluster on every page');
+		assert.equal(new Set(page.rows.flatMap(row => row.keys)).size, page.rows.reduce((total, row) => total + row.keys.length, 0),
+			'each key appears once per page so controller key identity has one real position');
+	}
+});
+
+test('Player and Studio package the same complete keyboard before any host script runs', async t => {
+	const folder = await mkdtemp(join(tmpdir(), 'bmsx-keyboard-template-'));
+	t.after(() => rm(folder, { recursive: true, force: true }));
+	await mkdir(join(folder, 'rom'));
+	for (const file of ['gamebase.html', 'gamebase.css', 'rom/bmsx.png', 'rom/manifest.json']) {
+		await copyFile(file, join(folder, file));
+	}
+	const builder = new URL('../../scripts/products/browser_build.ts', import.meta.url).href;
+	await promisify(execFile)(process.execPath, ['--import', createRequire(import.meta.url).resolve('tsx'), '--input-type=module', '-e', `
+import { buildBrowserPlayerPackage, buildBrowserStudioPackage } from ${JSON.stringify(builder)};
+await buildBrowserPlayerPackage({ debug: false, romName: '', title: 'BMSX', shortName: 'BMSX' });
+await buildBrowserStudioPackage(false);`], { cwd: folder });
+	const markup = renderBrowserKeyboardPages();
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	for (const file of ['index.html', 'player.template.html', 'player.input-trace.template.html', 'studio.html', 'studio.template.html']) {
+		const html = await readFile(join(folder, 'dist', file), 'utf8');
+		assert.ok(html.includes(markup), `${file} contains the exact shared-page producer output`);
+		assert.ok(!html.includes('@@BMSX_TOUCH_KEYBOARD_PAGES@@'));
+		const staticHtml = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
+		await page.goto(`data:text/html;charset=utf-8;base64,${Buffer.from(staticHtml).toString('base64')}`, { waitUntil: 'domcontentloaded' });
+		assert.equal(await page.locator('#bmsx-touch-keyboard').count(), 1);
+		assert.equal(await page.locator('.bmsx-touch-keyboard-page').count(), BROWSER_KEYBOARD_PAGES.length);
+		assert.equal(await page.locator('.bmsx-touch-key').count(), BROWSER_KEYBOARD_PAGES.reduce((total, definition) =>
+			total + definition.rows.reduce((rowTotal, row) => rowTotal + row.keys.length, 0), 0));
+		assert.equal(await page.locator('#bmsx-touch-keyboard').isVisible(), false, 'complete static keyboard starts hidden');
+		const keyboardRules = await page.evaluate(() => [...document.querySelector<HTMLStyleElement>('head > style')!.sheet!.cssRules]
+			.some(rule => rule.cssText.includes('.bmsx-touch-keyboard')));
+		assert.equal(keyboardRules, true, `${file} includes keyboard CSS from gamebase.css before runtime`);
+	}
 });
 
 test('native browser contacts drive the shared keyboard without guest-pixel geometry or collapsed fingers', async t => {
-	const template = await readFile('gamebase.html', 'utf8');
+	const template = (await readFile('gamebase.html', 'utf8')).replace('@@BMSX_TOUCH_KEYBOARD_PAGES@@', renderBrowserKeyboardPages());
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const css = await readFile('gamebase.css', 'utf8');
 	const bundle = await build({
@@ -82,12 +134,17 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, gamepad, 'F2');
 				const input = new api.Input(clock, hub, gamepad.gamepadIndex);
 				const model = new api.OnScreenKeyboard(input, api.BROWSER_KEYBOARD_PAGES);
+				const staticPanel = document.getElementById('bmsx-touch-keyboard');
+				const staticButtons = [...staticPanel.querySelectorAll('button')];
+				const styleCount = document.querySelectorAll('style').length;
 				const view = new api.BrowserOnscreenKeyboard(document, model, () => model.close());
 				hub.setOnscreenKeyboard(view);
 				const snapshot = api.createInputControllerSnapshot();
 				const controllerSource = model.allocateSource();
 				(globalThis as any).keyboardProbe = {
 					model, view, video, gamepad, native,
+					staticMarkup() { return { samePanel: staticPanel === document.getElementById('bmsx-touch-keyboard'),
+						sameButtons: staticButtons.every(button => button.isConnected), styles: document.querySelectorAll('style').length - styleCount }; },
 					poll() {
 						input.pollInput();
 						input.sampleInputControllerSnapshot(snapshot, 0);
@@ -105,10 +162,13 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 						const panel = document.querySelector('.bmsx-touch-keyboard')!;
 						const panelBounds = panel.getBoundingClientRect();
 						return { panel: { x: panelBounds.x, y: panelBounds.y, width: panelBounds.width, height: panelBounds.height },
+							close: (() => { const bounds = panel.querySelector('#bmsx-touch-keyboard-close')!.getBoundingClientRect();
+								return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }; })(),
 							rows: [...panel.querySelectorAll('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-keyboard-row')].map(row =>
 								[...row.querySelectorAll<HTMLButtonElement>('.bmsx-touch-key')].map(button => {
 									const bounds = button.getBoundingClientRect();
-									return { code: button.getAttribute('data-code'), x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+									const text = document.createRange(); text.selectNodeContents(button);
+									return { textWidth: text.getBoundingClientRect().width, code: button.getAttribute('data-code'), x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
 										pressed: button.getAttribute('aria-pressed'), highlighted: button.getAttribute('data-highlighted') };
 								})),
 							rowBounds: [...panel.querySelectorAll('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-keyboard-row')].map(row => {
@@ -142,6 +202,8 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				await settle();
 			};
 			await settle();
+			assert.deepEqual(await page.evaluate(() => (globalThis as any).keyboardProbe.staticMarkup()),
+				{ samePanel: true, sameButtons: true, styles: 0 }, 'view binds packaged nodes and never injects HTML or CSS at runtime');
 			const beforePicture = await picture();
 			const beforeRevision = (await measure()).geometryRevision;
 			await page.evaluate(() => (globalThis as any).keyboardProbe.model.open());
@@ -152,9 +214,15 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.deepEqual(await picture(), beforePicture, 'opening the CSS keyboard does not change picture policy, scale or clipping');
 			assert.ok(opening.panel.y >= -1 / 32 && opening.panel.y + opening.panel.height <= profile.height + 1 / 32);
 			assert.equal(opening.rows.length, 4);
+			assert.ok(opening.close.y >= opening.rows[3][0].y + opening.rows[3][0].height,
+				'Close lives in a separate bottom command row, away from upper-right Backspace');
+			assert.ok(opening.close.x < opening.rows[0].at(-1).x && opening.close.width >= 44 && opening.close.height >= 44);
 			assert.deepEqual(opening.rows.slice(0, 2).map((row: any[]) => row.map(key => key.code)), BROWSER_KEYBOARD_PAGES[0].rows.slice(0, 2)
 				.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code)));
-			for (const row of opening.rows) for (const key of row) assert.ok(key.height >= 44, 'all real key targets retain their touch height');
+			for (const row of opening.rows) for (const key of row) {
+				assert.ok(key.height >= 44, 'all real key targets retain their touch height');
+				assert.ok(key.textWidth <= key.width - 2, `${key.code} label stays inside its real border rather than overflowing a narrow phone key`);
+			}
 			if (profile.name === 'phone-portrait') for (const key of opening.rows[0]) assert.ok(key.width >= 32 && key.width <= 37,
 				'a ten-letter phone row uses an honest narrow pitch instead of claiming impossible 44px widths');
 			if (profile.name.startsWith('tablet')) for (const key of opening.rows[0]) assert.ok(key.width >= 44 && key.height >= 56);
@@ -321,6 +389,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					}
 					for (const row of current.rows) for (const key of row) {
 						assert.ok(key.height >= 44);
+						assert.ok(key.textWidth <= key.width - 2, `${label}/${key.code} cap text remains inside its actual key`);
 						const contact = await point(key.code, 7);
 						await touch('touchStart', [contact]);
 						assert.deepEqual((await poll()).codes, [key.code]);
@@ -367,7 +436,10 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			profileEvidence.push({ profile, opening, picture: beforePicture, nativeEvents: events.length, maximumCenterRounding, navigationRounding });
 			assert.deepEqual(errors, []);
 			await page.evaluate(() => (globalThis as any).keyboardProbe.finish());
-			assert.equal(await page.locator('.bmsx-touch-keyboard').count(), 0, 'input teardown owns and removes its DOM keyboard view');
+			assert.equal(await page.locator('.bmsx-touch-keyboard').count(), 1, 'teardown preserves the document-owned keyboard template');
+			assert.equal(await page.locator('.bmsx-touch-keyboard').isVisible(), false);
+			assert.deepEqual(await page.evaluate(() => (globalThis as any).keyboardProbe.staticMarkup()),
+				{ samePanel: true, sameButtons: true, styles: 0 });
 			await page.evaluate(() => (globalThis as any).keyboardProbe.model.open());
 			await settle();
 			assert.equal(await page.evaluate(() => document.body.classList.contains('bmsx-touch-keyboard-visible')), false,

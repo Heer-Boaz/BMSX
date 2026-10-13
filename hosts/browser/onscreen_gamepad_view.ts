@@ -281,16 +281,29 @@ export class BrowserOnscreenGamepadView {
 		const rightShoulderRadius = metrics.rightRing;
 		if (!landscape) {
 			// Portrait owns a detached handheld shoulder strip. Unlike landscape's
-			// wrapping ring, the strip leaves a real empty band above both thumb banks.
+			// wrapping ring, each strip is positioned against its own thumb bank.
 			// Delta likewise authors independent orientation representations:
 			// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L673
 			const width = metrics.portraitShoulderWidth;
 			const angle = metrics.portraitShoulderHalfAngle;
 			const centerY = allocatedDeckTop + halfWidth + PORTRAIT_SHOULDER_RADIUS;
 			const upward = -Math.PI / 2;
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper, left + margin + width / 2, centerY,
+			const bumperX = left + margin + width / 2;
+			const triggerX = left + margin + width * 1.5 + CONTROL_GAP;
+			// The inward end caps of these convex arcs face the smaller pad disk.
+			// Align each from that disk, not the taller face bank, retaining the
+			// same physical clearance and a genuine thumb-width bridge for both.
+			// Right shoulders retain their larger Y-button clearance.
+			const capReach = PORTRAIT_SHOULDER_RADIUS * Math.sin(angle);
+			const bumperCapOffset = Math.abs(padX - bumperX) - capReach;
+			const triggerCapOffset = Math.abs(padX - triggerX) - capReach;
+			const capHeight = PORTRAIT_SHOULDER_RADIUS * Math.cos(angle);
+			const capDistanceSquared = (padRadius + halfWidth + CONTROL_GAP) ** 2;
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper, bumperX,
+				padY + capHeight - Math.sqrt(capDistanceSquared - bumperCapOffset ** 2),
 				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, left + margin + width * 1.5 + CONTROL_GAP, centerY,
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, triggerX,
+				padY + capHeight - Math.sqrt(capDistanceSquared - triggerCapOffset ** 2),
 				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
 			this.placeShoulder(ActionSurfaceIndex.RightBumper, left + metrics.width - margin - width / 2, centerY,
 				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);

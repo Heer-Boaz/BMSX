@@ -59,6 +59,42 @@ export function roundContactBankWord(shapes: readonly BankedControlShapeOracle[]
 	return word;
 }
 
+/** Independent positive-axis ellipse oracle for non-grazing browser probes.
+ * Circles are exact. Otherwise containment and 4096 true perimeter samples prove
+ * an intersection; a miss requires separation exceeding the largest possible
+ * distance between an ellipse point and its closest sampled point. This bound
+ * is 2*maxAxis*sin(pi/(2*N)), below 0.019px for the 24x4 acceptance ellipses.
+ * Ambiguous grazing probes fail explicitly rather than treating sampling as an
+ * exact collision solver. Dedicated runtime geometry tests cover tangencies. */
+export function ellipseContactWord(shapes: readonly BankedControlShapeOracle[], x: number, y: number,
+	halfWidth: number, halfHeight: number): number {
+	let word = 0;
+	for (const shape of shapes) {
+		if (halfWidth === halfHeight) {
+			if (distanceToControl(shape, x, y) <= halfWidth) word |= shape.buttons;
+			continue;
+		}
+		const labelX = (shape.x - x) / halfWidth;
+		const labelY = (shape.y - y) / halfHeight;
+		if (controlContainsPoint(shape, x, y) || labelX * labelX + labelY * labelY <= 1) {
+			word |= shape.buttons;
+			continue;
+		}
+		const samples = 4096;
+		let minimum = Infinity;
+		for (let sample = 0; sample < samples; sample += 1) {
+			const angle = sample * TAU / samples;
+			minimum = Math.min(minimum, distanceToControl(shape, x + halfWidth * Math.cos(angle), y + halfHeight * Math.sin(angle)));
+			if (minimum === 0) break;
+		}
+		if (minimum === 0) word |= shape.buttons;
+		else if (minimum <= 2 * Math.max(halfWidth, halfHeight) * Math.sin(Math.PI / (2 * samples))) {
+			throw new Error('this browser acceptance probe has a grazing ellipse/solid ambiguity');
+		}
+	}
+	return word;
+}
+
 /** Finite arc-pair distance candidates are endpoint projections, stationary
  * radial points on the centre-to-centre line, and actual circle intersections.
  * Concentric arcs have the radial distance wherever their angular spans meet. */

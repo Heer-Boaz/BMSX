@@ -5,9 +5,10 @@ import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/device
 import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDistanceToRoundedCircularArc,
 	type RoundedCircularArc } from './touch_geometry';
 
-// Directional capture and live, nonexclusive button hits are distinct purposes:
+// Analogue capture remains exclusive. The digital left-hand unit additionally
+// allows genuine neighbouring shoulder footprints and deliberate button gliding:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
-const enum ContactPurpose { Pad, Buttons, SuppressedPad }
+const enum ContactPurpose { Pad, Buttons, LeftShoulder, SuppressedPad }
 // BMSX's 60-degree cardinal regions leave a deliberate 30-degree region for
 // each diagonal. Center-relative selection remains stateless, as in PSPDpad:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L396-L448
@@ -68,6 +69,10 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	private readonly sampledBankButtons = new Uint32Array(5);
 	private readonly sampledActions: number[] = [];
 	private sampledButtonDistance = Infinity;
+	private sampledBank = OnscreenActionBank.Face;
+	private readonly leftShoulderActions: OnscreenActionGeometry[] = [];
+	private leftShoulderActionCount = 0;
+	private leftShoulderClearRadius = Infinity;
 	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
 	private nextPressId = 1;
 	private activeButtons = 0;
@@ -116,11 +121,22 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.geometry = geometry;
 		// Reserve contact-query storage at the layout boundary, never on moves.
 		while (this.sampledActions.length < geometry.actions.length) this.sampledActions.push(0);
+		this.leftShoulderActionCount = 0;
+		this.leftShoulderClearRadius = Infinity;
+		for (let index = 0; index < geometry.actions.length; index += 1) {
+			const action = geometry.actions[index];
+			if (action.bank !== OnscreenActionBank.LeftShoulder) continue;
+			this.leftShoulderActions[this.leftShoulderActionCount++] = action;
+			const dx = geometry.padX - action.x;
+			const dy = geometry.padY - action.y;
+			this.leftShoulderClearRadius = Math.min(this.leftShoulderClearRadius, action.outline
+				? pointDistanceToRoundedCircularArc(dx, dy, action.outline) : Math.max(0, Math.hypot(dx, dy) - action.radius));
+		}
 		this.geometryVersion += 1;
 		for (let index = 0; index < this.contactCount; index += 1) {
 			this.setContribution(index, this.contactActive[index]
 				? this.contactButtons(this.contactPurposes[index], this.contactX[index], this.contactY[index],
-					this.contactHalfWidths[index], this.contactHalfHeights[index])
+					this.contactHalfWidths[index], this.contactHalfHeights[index], false)
 				: 0);
 		}
 		if (this.stickContactIndex >= 0) this.updateStick(this.stickContactIndex);
@@ -146,7 +162,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		return () => { this.viewListener = null; };
 	}
 
-	/** Capture a directional gesture or acquire live buttons, including their neutral face area. */
+	/** Acquire a directional gesture or a live button bank, including its neutral face area. */
 	public beginContact(id: number, x: number, y: number, halfWidth: number, halfHeight: number, active: boolean): boolean {
 		const geometry = this.geometry;
 		const padX = x - geometry.padX;
@@ -157,12 +173,16 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		let purpose = ContactPurpose.Buttons;
 		if (padContact) {
 			// A direct button surface wins; otherwise the nearest true surface
-			// acquires the directional lease. Its ownership remains fixed until up.
+			// acquires a retained directional lease. A shoulder-owned digital thumb
+			// can acquire that same lease later by deliberately crossing this partition.
 			if (this.sampledButtonDistance !== 0 && (padDistanceSquared <= geometry.padRadius * geometry.padRadius
 				|| Math.sqrt(padDistanceSquared) - geometry.padRadius <= this.sampledButtonDistance)) purpose = ContactPurpose.Pad;
 		} else if (buttons === 0 && !contactIntersectsCircle(x - geometry.faceX, y - geometry.faceY,
 			halfWidth, halfHeight, geometry.faceRadius)) {
 			return false;
+		}
+		if (purpose === ContactPurpose.Buttons && buttons !== 0 && this.sampledBank === OnscreenActionBank.LeftShoulder) {
+			purpose = ContactPurpose.LeftShoulder;
 		}
 		const previousButtons = this.activeButtons;
 		const index = this.contactCount++;
@@ -176,7 +196,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.contactActive[index] = active;
 		this.contactContributions[index] = 0;
 		if (purpose === ContactPurpose.Pad) {
-			if (this.padMode === 'dpad') this.setContribution(index, active ? this.padButtons(x, y) : 0);
+			if (this.padMode === 'dpad') this.setContribution(index, active
+				? this.padButtons(x, y) | this.sampledBankButtons[OnscreenActionBank.LeftShoulder] : 0);
 			else if (this.stickContactIndex < 0) {
 				this.stickContactIndex = index;
 				this.updateStick(index);
@@ -203,7 +224,27 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.contactHalfWidths[index] = halfWidth;
 		this.contactHalfHeights[index] = halfHeight;
 		this.contactActive[index] = active;
-		this.setContribution(index, active ? this.contactButtons(this.contactPurposes[index], x, y, halfWidth, halfHeight) : 0);
+		if (active) {
+			const purpose = this.contactPurposes[index];
+			const dx = x - this.geometry.padX;
+			const dy = y - this.geometry.padY;
+			const padDistanceSquared = dx * dx + dy * dy;
+			const acquirePad = purpose === ContactPurpose.LeftShoulder && this.padMode === 'dpad'
+				&& contactIntersectsCircle(dx, dy, halfWidth, halfHeight, this.geometry.padRadius);
+			let buttons = this.contactButtons(purpose, x, y, halfWidth, halfHeight, acquirePad);
+			if (acquirePad && this.sampledButtonDistance !== 0
+				&& (padDistanceSquared <= this.geometry.padRadius * this.geometry.padRadius
+					|| Math.sqrt(padDistanceSquared) - this.geometry.padRadius <= this.sampledButtonDistance)) {
+				// Crossing the nearest-surface partition acquires the digital rocker. Area-only
+				// grazing on a shoulder down never starts a directional gesture.
+				this.contactPurposes[index] = ContactPurpose.Pad;
+				buttons = this.padButtons(x, y) | this.sampledBankButtons[OnscreenActionBank.LeftShoulder];
+			} else if ((purpose === ContactPurpose.Buttons || purpose === ContactPurpose.LeftShoulder) && buttons !== 0) {
+				this.contactPurposes[index] = this.sampledBank === OnscreenActionBank.LeftShoulder
+					? ContactPurpose.LeftShoulder : ContactPurpose.Buttons;
+			}
+			this.setContribution(index, buttons);
+		} else this.setContribution(index, 0);
 		if (index === this.stickContactIndex) this.updateStick(index);
 		this.publishChanges(previousButtons);
 		return true;
@@ -248,10 +289,37 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		this.publishChanges(previousButtons);
 	}
 
-	private contactButtons(purpose: ContactPurpose, x: number, y: number, halfWidth: number, halfHeight: number): number {
-		if (purpose === ContactPurpose.Pad) return this.padMode === 'dpad' ? this.padButtons(x, y) : 0;
+	private contactButtons(purpose: ContactPurpose, x: number, y: number, halfWidth: number, halfHeight: number, acquirePad: boolean): number {
+		if (purpose === ContactPurpose.Pad) {
+			if (this.padMode === 'stick') return 0;
+			const dx = x - this.geometry.padX;
+			const dy = y - this.geometry.padY;
+			const clearRadius = this.leftShoulderClearRadius - Math.max(halfWidth, halfHeight);
+			// A circle containing the ellipse is entirely inside the true empty
+			// disk around the pad centre. Normal directional rolls skip all arcs.
+			if (clearRadius > 0 && dx * dx + dy * dy < clearRadius * clearRadius) return this.padButtons(x, y);
+			const padContact = contactIntersectsCircle(x - this.geometry.padX, y - this.geometry.padY,
+				halfWidth, halfHeight, this.geometry.padRadius);
+			let buttons = 0;
+			let shoulderCentre = false;
+			for (let index = 0; index < this.leftShoulderActionCount; index += 1) {
+				const action = this.leftShoulderActions[index];
+				const dx = x - action.x;
+				const dy = y - action.y;
+				if (action.outline ? contactIntersectsRoundedCircularArc(dx, dy, halfWidth, halfHeight, action.outline)
+					: contactIntersectsCircle(dx, dy, halfWidth, halfHeight, action.radius)) {
+					buttons |= action.buttons;
+					if (!padContact && !shoulderCentre) shoulderCentre = action.outline
+						? pointDistanceToRoundedCircularArc(dx, dy, action.outline) === 0
+						: dx * dx + dy * dy <= action.radius * action.radius;
+				}
+			}
+			// Rolling fully onto a real shoulder surface relinquishes direction,
+			// unlike ordinary captured dragging outside the directional artwork.
+			return !padContact && shoulderCentre ? buttons : this.padButtons(x, y) | buttons;
+		}
 		if (purpose === ContactPurpose.SuppressedPad) return 0;
-		return this.sampleButtonContact(x, y, halfWidth, halfHeight, false);
+		return this.sampleButtonContact(x, y, halfWidth, halfHeight, acquirePad);
 	}
 
 	/**
@@ -300,6 +368,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 				}
 			}
 		}
+		this.sampledBank = bank;
 		return banks[bank];
 	}
 

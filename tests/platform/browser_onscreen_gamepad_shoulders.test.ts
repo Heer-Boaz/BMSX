@@ -87,16 +87,19 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
 				input.getGlobalShortcutRegistry().registerControlShortcut(1, api.HOST_IDE_BUTTON,
 					() => { ideRequests += 1; }, () => { ideReleases += 1; });
-				const nativeEvents: Array<{ type: string; trusted: boolean; pointerType: string; width: number; height: number }> = [];
+				const nativeEvents: Array<{ type: string; trusted: boolean; pointerType: string; width: number; height: number; x: number; y: number }> = [];
 				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
 					window.addEventListener(type, event => {
 						const pointer = event as PointerEvent;
-						nativeEvents.push({ type, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height });
+						nativeEvents.push({ type, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height, x: pointer.clientX, y: pointer.clientY });
 					}, true);
 				}
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
 					menu,
+					directionalGeometry() {
+						return { x: pad.geometry.padX, y: pad.geometry.padY, radius: pad.geometry.padRadius };
+					},
 					geometry() {
 						return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius, buttons: action.buttons,
 							bank: action.bank, outline: action.outline ? { ...action.outline } : undefined }));
@@ -190,6 +193,102 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					}
 					await touch('touchEnd', []);
 					assert.equal((await poll()).model, 0);
+				}
+			});
+
+			await orientation.test('one trusted rolling thumb bridges the digital D-pad and both actual neighboring shoulders', async () => {
+				const padShape = await page.evaluate(() => (globalThis as any).shoulderTest.directionalGeometry());
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				const assertWord = async (word: number, message: string) => {
+					const state = await poll();
+					assert.deepEqual([state.model, state.physical, state.snapshot, state.mmio], Array(4).fill(word), message);
+					assert.equal(state.pointer, 0, 'the genuine native contact remains controller-owned');
+					assert.deepEqual(state.axes, [(word & 0x40) !== 0 ? 0x10000 : 0, (word & 0x80) !== 0 ? 0x10000 : 0]);
+				};
+				for (const id of ['lb_knop', 'lt_knop']) {
+					const own = BUTTONS.find(button => button.id === id)!;
+					const shoulderWord = 1 << own.bit;
+					const shape = shapes.find(action => action.buttons === shoulderWord);
+					const arc = shape.outline;
+					const cx = shape.x + arc.centerX;
+					const cy = shape.y + arc.centerY;
+					const start = Math.atan2(arc.startY, arc.startX);
+					const sweep = (Math.atan2(arc.endY, arc.endX) - start + Math.PI * 2) % (Math.PI * 2);
+					const desired = (Math.atan2(padShape.y - cy, padShape.x - cx) - start + Math.PI * 2) % (Math.PI * 2);
+					let coreX: number;
+					let coreY: number;
+					let probeAngle: number;
+					if (desired <= sweep) {
+						probeAngle = start + desired;
+						coreX = cx + arc.radius * Math.cos(start + desired);
+						coreY = cy + arc.radius * Math.sin(start + desired);
+					} else {
+						const sx = cx + arc.radius * arc.startX;
+						const sy = cy + arc.radius * arc.startY;
+						const ex = cx + arc.radius * arc.endX;
+						const ey = cy + arc.radius * arc.endY;
+						const useStart = Math.hypot(padShape.x - sx, padShape.y - sy) <= Math.hypot(padShape.x - ex, padShape.y - ey);
+						coreX = useStart ? sx : ex;
+						coreY = useStart ? sy : ey;
+						const inward = Math.min(Math.PI / 180, sweep / 4);
+						probeAngle = start + (useStart ? inward : sweep - inward);
+					}
+					const nearestGap = Math.hypot(coreX - padShape.x, coreY - padShape.y) - arc.halfWidth - padShape.radius;
+					assert.ok(nearestGap > 0 && nearestGap <= 14, `${profile.name} ${id} has a genuinely usable 28px contact bridge, not invisible hit inflation`);
+					if (profile.width < profile.height) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
+						`${profile.name} ${id} preserves the authored 12px physical portrait clearance`);
+					// Test the physical corridor just inside a finite cap, not exactly on
+					// a directional sector seam. Boundary classification is tested separately;
+					// floating atan2 and slope comparisons need not round a seam identically.
+					coreX = cx + arc.radius * Math.cos(probeAngle);
+					coreY = cy + arc.radius * Math.sin(probeAngle);
+					const distance = Math.hypot(coreX - padShape.x, coreY - padShape.y);
+					const ux = (coreX - padShape.x) / distance;
+					const uy = (coreY - padShape.y) / distance;
+					const gap = distance - arc.halfWidth - padShape.radius;
+					assert.ok(gap > 0 && gap <= 14, 'the actual chosen interior-cap corridor remains a physical 28px bridge');
+					const assertDirection = async (shoulders: number, message: string) => {
+						const native = await page.evaluate(() => (globalThis as any).shoulderTest.nativeEvents.at(-1));
+						// Consume the browser's actual floating client coordinates. A closest
+						// arc ray can lie exactly on a sector seam; native coordinate rounding
+						// is part of the producer, not a reason to freeze a mathematical ray.
+						const degrees = (Math.atan2(native.y - padShape.y, native.x - padShape.x) * 180 / Math.PI + 360) % 360;
+						const direction = degrees < 30 || degrees > 330 ? 0x8000
+							: degrees <= 60 ? 0xa000 : degrees < 120 ? 0x2000 : degrees <= 150 ? 0x6000
+								: degrees < 210 ? 0x4000 : degrees <= 240 ? 0x5000 : degrees < 300 ? 0x1000 : 0x9000;
+						await assertWord(direction | shoulders, message);
+					};
+					for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
+						const contact = { id: 1, x: padShape.x + ux * padShape.radius * 0.3,
+							y: padShape.y + uy * padShape.radius * 0.3, radiusX, radiusY };
+						await touch('touchStart', [contact]);
+						await assertDirection(0, 'direction-first acquisition retains the existing digital sectors');
+						// Five positions across a real corridor, not a single grazing point.
+						for (const offset of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+							contact.x = padShape.x + ux * (padShape.radius + gap * offset);
+							contact.y = padShape.y + uy * (padShape.radius + gap * offset);
+							await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
+							await assertDirection(shoulderWord, `${id} rolling contact reaches direction and shoulder through the true corridor`);
+						}
+						contact.x = coreX;
+						contact.y = coreY;
+						await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
+						await assertWord(shoulderWord, 'fully rolling onto the shoulder releases direction, not the retained native contact');
+						await touch('touchEnd', []);
+						await assertWord(0, 'up releases the entire one-thumb contribution');
+						await touch('touchStart', [contact]);
+						await assertWord(shoulderWord, 'shoulder-first down cannot invent directional presses');
+						contact.x = padShape.x + ux * (padShape.radius + gap * 0.65);
+						contact.y = padShape.y + uy * (padShape.radius + gap * 0.65);
+						await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
+						await assertWord(shoulderWord, 'area-only grazing keeps the center-nearest shoulder ownership');
+						contact.x = padShape.x + ux * (padShape.radius + gap * 0.35);
+						contact.y = padShape.y + uy * (padShape.radius + gap * 0.35);
+						await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
+						await assertDirection(shoulderWord, 'deliberate partition crossing acquires the digital rocker without lifting');
+						await touch('touchEnd', []);
+						await assertWord(0, 'all hardware contributions release together');
+					}
 				}
 			});
 

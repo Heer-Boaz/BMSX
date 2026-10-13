@@ -398,12 +398,17 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
 					assert.ok(bumperSweep > triggerSweep, 'the easier landscape bumper has a genuinely larger finite curved target, not just a swapped label');
 				} else {
-					assert.ok(Math.abs(bumper.y - trigger.y) < coordinateTolerance, 'portrait shoulder targets form one detached horizontal strip');
 					assert.ok(Math.abs(bumper.bounds.width - trigger.bounds.width) < coordinateTolerance,
 						'portrait keeps all four shoulder targets equally broad rather than copying the landscape rings');
 					assert.ok(bumper.bounds.width >= 69 - coordinateTolerance, 'even a compact phone keeps broad detached shoulder targets');
-					assert.ok(bumper.y + bumper.outline.bottom + 24 <= Math.min(pad.bounds.top, targets[4].bounds.top) + coordinateTolerance,
-						'the detached strip leaves a real 24px empty band before either full thumb acquisition bank');
+					if (primary === pad) {
+						for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - 12) < coordinateTolerance,
+							'each left portrait shoulder keeps an actual 12px thumb bridge from the smaller pad disk');
+					} else {
+						assert.ok(Math.abs(bumper.y - trigger.y) < coordinateTolerance, 'right portrait shoulders retain their detached horizontal strip');
+						assert.ok(bumper.y + bumper.outline.bottom + 24 <= targets[4].bounds.top + coordinateTolerance,
+							'the right strip retains its 24px empty band above the face bank, protecting Y');
+					}
 				}
 				const direction = primary.x < middle ? -1 : 1;
 				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;
