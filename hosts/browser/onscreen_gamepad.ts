@@ -2,8 +2,8 @@ import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
 import type { HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { contactIntersectsCircle, contactIntersectsHorizontalCapsule, pointDistanceToHorizontalCapsule,
-	type HorizontalCapsule } from './touch_geometry';
+import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDistanceToRoundedCircularArc,
+	type RoundedCircularArc } from './touch_geometry';
 
 // Directional capture and live, nonexclusive button hits are distinct purposes:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
@@ -16,8 +16,8 @@ export interface OnscreenActionGeometry {
 	/** Exact for a circle; circumbound metadata when an outline is present. */
 	radius: number;
 	buttons: number;
-	/** Absence identifies a circular control; shoulders supply their actual capsule. */
-	outline?: HorizontalCapsule;
+	/** Absence identifies a circular control; shoulders supply their actual curved arc. */
+	outline?: RoundedCircularArc;
 }
 
 /** CSS-client geometry produced once by the control view's layout owner. */
@@ -111,7 +111,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			const dx = x - action.x;
 			const dy = y - action.y;
 			if (action.outline
-				? contactIntersectsHorizontalCapsule(dx, dy, halfWidth, halfHeight, action.outline)
+				? contactIntersectsRoundedCircularArc(dx, dy, halfWidth, halfHeight, action.outline)
 				: contactIntersectsCircle(dx, dy, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
 		}
 		const padX = x - geometry.padX;
@@ -128,7 +128,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 				if ((buttons & action.buttons) === 0) continue;
 				const dx = x - action.x;
 				const dy = y - action.y;
-				const distance = action.outline ? pointDistanceToHorizontalCapsule(dx, dy, action.outline)
+				const distance = action.outline ? pointDistanceToRoundedCircularArc(dx, dy, action.outline)
 					: Math.max(0, Math.hypot(dx, dy) - action.radius);
 				if (distance === 0) {
 					directButton = true;
@@ -215,7 +215,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		for (let index = 0; index < actions.length; index += 1) {
 			const action = actions[index];
 			if (action.outline
-				? contactIntersectsHorizontalCapsule(x - action.x, y - action.y, halfWidth, halfHeight, action.outline)
+				? contactIntersectsRoundedCircularArc(x - action.x, y - action.y, halfWidth, halfHeight, action.outline)
 				: contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
 		}
 		return buttons;

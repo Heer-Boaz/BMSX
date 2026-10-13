@@ -10,7 +10,7 @@ import type { SystemController } from '../../machine/ts/machine/devices/system/c
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import type { HorizontalCapsule } from '../../hosts/browser/touch_geometry';
+import type { RoundedCircularArc } from '../../hosts/browser/touch_geometry';
 
 const geometry: OnscreenGamepadGeometry = {
 	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
@@ -18,8 +18,17 @@ const geometry: OnscreenGamepadGeometry = {
 	actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
 };
 
-const wideShoulder: HorizontalCapsule = { halfLength: 28, radius: 20 };
-const capsuleShoulder: HorizontalCapsule = { halfLength: 30, radius: 18 };
+function shoulderArc(halfWidth: number): RoundedCircularArc {
+	const radius = 100;
+	const halfAngle = 0.3;
+	return { centerX: 0, centerY: radius, radius, halfWidth,
+		startX: -Math.sin(halfAngle), startY: -Math.cos(halfAngle), endX: Math.sin(halfAngle), endY: -Math.cos(halfAngle),
+		quarterTurns: 0, startT: Math.tan((-Math.PI / 2 - halfAngle) / 2), endT: Math.tan((-Math.PI / 2 + halfAngle) / 2),
+		left: -radius * Math.sin(halfAngle) - halfWidth, top: -halfWidth,
+		right: radius * Math.sin(halfAngle) + halfWidth, bottom: radius * (1 - Math.cos(halfAngle)) + halfWidth };
+}
+const wideShoulder = shoulderArc(20);
+const curvedShoulder = shoulderArc(18);
 
 function createFixture() {
 	let now = 0;
@@ -89,33 +98,33 @@ test('pad and rounded shoulder acquisition compare actual surfaces, never the sh
 	assert.equal(pad.buttons, 0, 'the same held finger remains a live button contact, not a captured pad');
 });
 
-test('finite capsule shoulders preserve live button contacts and actual-surface pad acquisition', () => {
+test('finite curved arc shoulders preserve live button contacts and actual-surface pad acquisition', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
 		geometry.actions[0],
-		{ x: 160, y: 70, radius: 48, buttons: 0x10, outline: capsuleShoulder },
+		{ x: 160, y: 70, radius: 48, buttons: 0x10, outline: curvedShoulder },
 	] });
 	pad.beginContact(1, 125, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0x8000, 'the circumbound interior is not a direct capsule hit');
+	assert.equal(pad.buttons, 0x8000, 'the circumbound interior is not a direct curved arc hit');
 	pad.endContact(1);
 	pad.beginContact(2, 154, 105, 18, 18, true);
-	assert.equal(pad.buttons, 0x8000, 'the nearer pad beats area-only contact with the capsule');
+	assert.equal(pad.buttons, 0x8000, 'the nearer pad beats area-only contact with the curved arc');
 	pad.endContact(2);
 	pad.beginContact(3, 125, 85, 14, 14, true);
 	assert.equal(pad.buttons, 0x10, 'the actual rounded end cap is a direct button surface');
 	pad.moveContact(3, 300, 100, 14, 14, true);
 	assert.equal(pad.buttons, 1, 'the finger glides to A without changing native ownership');
-	pad.moveContact(3, 209, 70, 0, 0, true);
-	assert.equal(pad.buttons, 0, 'the capsule centerline does not extend beyond its finite end');
-	pad.moveContact(3, 207, 70, 0, 0, true);
+	pad.moveContact(3, 209, 74, 0, 0, true);
+	assert.equal(pad.buttons, 0, 'the curved arc centerline does not extend beyond its finite end');
+	pad.moveContact(3, 207, 74, 0, 0, true);
 	assert.equal(pad.buttons, 0x10, 'the same held contact can re-enter the outer cap');
 });
 
-test('one thumb can chord capsule shoulder rows while another finger contributes independently', () => {
+test('one thumb can chord curved arc shoulder rows while another finger contributes independently', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, faceX: 300, faceY: 104, faceRadius: 100, actions: [
-		{ x: 300, y: 80, radius: 48, buttons: 0x10, outline: capsuleShoulder },
-		{ x: 300, y: 128, radius: 48, buttons: 0x40, outline: capsuleShoulder },
+		{ x: 300, y: 80, radius: 48, buttons: 0x10, outline: curvedShoulder },
+		{ x: 300, y: 128, radius: 48, buttons: 0x40, outline: curvedShoulder },
 	] });
 	pad.beginContact(1, 300, 104, 2, 6, true);
 	assert.equal(pad.buttons, 0x50);

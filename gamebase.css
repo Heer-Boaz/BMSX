@@ -28,16 +28,25 @@
 }
 
 .action-button {
-	fill: rgba(15, 22, 30, 0.64);
+	fill: none;
 	stroke: rgba(232, 240, 247, 0.7);
 	stroke-width: 1.25;
 }
 
-.d-pad-image { visibility: hidden; }
-.d-pad-image[data-active="true"] { visibility: visible; }
+.d-pad-outline, .d-pad-direction {
+	fill: none;
+	stroke: rgba(232, 240, 247, 0.7);
+	stroke-width: 1.25;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.d-pad-direction[data-touched="true"] {
+	stroke: #e2f7ff;
+	stroke-width: 2.5;
+}
 
 .action-button[data-touched="true"] {
-	fill: rgba(30, 74, 98, 0.9);
 	stroke: #e2f7ff;
 	stroke-width: 2.5;
 }
@@ -59,7 +68,6 @@
 .pink { --control-accent: #e8a7df; }
 
 .auxiliary {
-	fill: rgba(15, 22, 30, 0.68);
 	stroke: rgba(232, 240, 247, 0.54);
 }
 

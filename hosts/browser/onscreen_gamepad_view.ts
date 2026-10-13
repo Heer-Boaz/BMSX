@@ -20,10 +20,12 @@ const ACTIONS = [
 	{ id: 'rt_knop', surface: ActionSurfaceIndex.RightTrigger, buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
 ] as const;
 
-const DIRECTION_BUTTONS = (1 << InputControllerGamepadButtonBit.Up) | (1 << InputControllerGamepadButtonBit.Right)
-	| (1 << InputControllerGamepadButtonBit.Down) | (1 << InputControllerGamepadButtonBit.Left);
-// Artwork rows for the signed direction axes: up, neutral, down.
-const PAD_IMAGES = ['lu', 'u', 'ru', 'l', 'neutral', 'r', 'ld', 'd', 'rd'] as const;
+const PAD_DIRECTIONS = [
+	{ id: 'd-pad-u', buttons: 1 << InputControllerGamepadButtonBit.Up },
+	{ id: 'd-pad-d', buttons: 1 << InputControllerGamepadButtonBit.Down },
+	{ id: 'd-pad-l', buttons: 1 << InputControllerGamepadButtonBit.Left },
+	{ id: 'd-pad-r', buttons: 1 << InputControllerGamepadButtonBit.Right },
+] as const;
 
 const ACTION_SURFACES = ['button-controls', 'select-controls', 'start-controls', 'ls-controls', 'rs-controls',
 	'lb-controls', 'rb-controls', 'lt-controls', 'rt-controls'] as const;
@@ -31,8 +33,7 @@ const PAD_SIZE = 180;
 const CONTROL_GAP = 12;
 const MENU_SIZE = 52;
 const STICK_CLICK_SIZE = 44;
-const SHOULDER_WIDTH = 112;
-const SHOULDER_HEIGHT = 56;
+const SHOULDER_THICKNESS = 56;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -53,7 +54,7 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalPadX: number;
 	private readonly nominalPadY: number;
 	private readonly nominalPadRadius: number;
-	private readonly padImages: SVGImageElement[] = [];
+	private readonly padDirections: SVGPathElement[] = [];
 	private readonly buttonShapes: SVGGeometryElement[] = [];
 	private readonly shoulderActions: OnscreenActionGeometry[] = [];
 	private readonly shoulderLabels: SVGTextElement[] = [];
@@ -67,7 +68,6 @@ export class BrowserOnscreenGamepadView {
 	private readonly unsubscribeView: () => void;
 	private animationFrameId = 0;
 	private renderedButtons = 0;
-	private renderedPadImage = 4;
 	private layoutLeft = 0;
 	private layoutTop = 0;
 	private layoutWidth = -1;
@@ -95,8 +95,8 @@ export class BrowserOnscreenGamepadView {
 		this.nominalPadX = this.padArtworkWidth / 2;
 		this.nominalPadY = this.padArtworkHeight / 2;
 		this.nominalPadRadius = this.padArtworkWidth / 2;
-		for (const direction of PAD_IMAGES) {
-			this.padImages.push(document.getElementById(`svgimg-d-pad-${direction}`) as unknown as SVGImageElement);
+		for (const direction of PAD_DIRECTIONS) {
+			this.padDirections.push(document.getElementById(direction.id) as unknown as SVGPathElement);
 		}
 		for (const action of ACTIONS) {
 			const element = document.getElementById(action.id) as unknown as SVGGeometryElement;
@@ -109,7 +109,11 @@ export class BrowserOnscreenGamepadView {
 				});
 				this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
 			} else {
-				const geometry = { x: 0, y: 0, radius: 0, buttons: action.buttons, outline: { halfLength: 0, radius: 0 } };
+				const geometry: OnscreenActionGeometry = { x: 0, y: 0, radius: 0, buttons: action.buttons, outline: {
+					centerX: 0, centerY: 0, radius: 0, halfWidth: 0,
+					startX: 0, startY: 0, endX: 0, endY: 0, quarterTurns: 0, startT: 0, endT: 0,
+					left: 0, top: 0, right: 0, bottom: 0,
+				} };
 				this.actions.push(geometry);
 				this.shoulderActions.push(geometry);
 				this.shoulderLabels.push(document.getElementById(action.id + '_text') as unknown as SVGTextElement);
@@ -175,34 +179,28 @@ export class BrowserOnscreenGamepadView {
 			(landscape ? centerX - clickOffset : padX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
 			(landscape ? centerX + clickOffset : faceCenterX) - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
-		const shoulderScale = landscape ? viewportScale : Math.max(0.875, viewportScale);
-		const shoulderWidth = landscape ? Math.min(SHOULDER_WIDTH * shoulderScale,
-			faceCenterX - 100 * viewportScale - (padX + 130 * viewportScale) - gap)
-			: Math.min(SHOULDER_WIDTH * shoulderScale, (width - margin * 2 - gap * 3) / 4);
-		const shoulderHeight = Math.min(Math.max(44, SHOULDER_HEIGHT * shoulderScale), shoulderWidth / 1.5);
-		if (landscape) {
-			// Wide bumpers stay on the inward thumb arcs, clear of the D-pad body.
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper,
-				padX + 130 * viewportScale, padY - 96 * viewportScale, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper,
-				faceCenterX - 100 * viewportScale, faceCenterY - 84 * viewportScale, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger,
-				padX + 30 * viewportScale, padY - 156 * viewportScale, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger,
-				faceCenterX - 28 * viewportScale, faceCenterY - 156 * viewportScale, shoulderWidth, shoulderHeight);
-			this.portraitControlTop = null;
-		} else {
-			const shoulderY = primaryY - primaryRadius - gap - shoulderHeight / 2;
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger,
-				left + margin + shoulderWidth / 2, shoulderY, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper,
-				left + margin + shoulderWidth * 1.5 + gap, shoulderY, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper,
-				left + width - margin - shoulderWidth * 1.5 - gap, shoulderY, shoulderWidth, shoulderHeight);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger,
-				left + width - margin - shoulderWidth / 2, shoulderY, shoulderWidth, shoulderHeight);
-			this.portraitControlTop = shoulderY - shoulderHeight / 2 - CONTROL_GAP;
-		}
+		// Two concentric shoulders follow each hand's circular envelope. Their
+		// true hulls fit safe edges, the cross-hand gap and the available height.
+		const faceRadius = faceSurface.artworkWidth * faceScale / 2;
+		const shoulderThickness = Math.min(SHOULDER_THICKNESS * viewportScale,
+			(primaryY - top - 4 * viewportScale - Math.max(padRadius, faceRadius) - gap * 2) / 2);
+		const halfWidth = shoulderThickness / 2;
+		const laneHalfWidth = Math.min(padX - left - margin,
+			left + width - margin - faceCenterX, (faceCenterX - padX - gap) / 2);
+		const leftBumperRadius = padRadius + gap + halfWidth;
+		const rightBumperRadius = faceRadius + gap + halfWidth;
+		const leftTriggerRadius = leftBumperRadius + shoulderThickness + gap;
+		const rightTriggerRadius = rightBumperRadius + shoulderThickness + gap;
+		this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY - leftBumperRadius,
+			leftBumperRadius, halfWidth, Math.asin((laneHalfWidth - halfWidth) / leftBumperRadius));
+		this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY - rightBumperRadius,
+			rightBumperRadius, halfWidth, Math.asin((laneHalfWidth - halfWidth) / rightBumperRadius));
+		this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY - leftTriggerRadius,
+			leftTriggerRadius, halfWidth, Math.asin((laneHalfWidth - halfWidth) / leftTriggerRadius));
+		this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY - rightTriggerRadius,
+			rightTriggerRadius, halfWidth, Math.asin((laneHalfWidth - halfWidth) / rightTriggerRadius));
+		this.portraitControlTop = landscape ? null
+			: primaryY - Math.max(leftTriggerRadius, rightTriggerRadius) - halfWidth - CONTROL_GAP;
 		const geometry = this.geometry;
 		geometry.padX = padX;
 		geometry.padY = padY;
@@ -247,14 +245,17 @@ export class BrowserOnscreenGamepadView {
 	}
 
 	/** Publishes matching numerical surface and SVG outline at layout time only. */
-	private placeShoulder(index: ActionSurfaceIndex, x: number, y: number, width: number, height: number): void {
+	private placeShoulder(index: ActionSurfaceIndex, x: number, y: number, radius: number, halfWidth: number, halfAngle: number): void {
 		const shoulderIndex = index - ActionSurfaceIndex.LeftBumper;
 		const action = this.shoulderActions[shoulderIndex];
 		const surface = this.actionSurfaces[index];
-		const path = layoutShoulderOutline(action.outline, width, height);
+		const outline = action.outline;
+		const path = layoutShoulderOutline(outline, radius, halfWidth, halfAngle);
+		const width = outline.right - outline.left;
+		const height = outline.bottom - outline.top;
 		action.x = x;
 		action.y = y;
-		action.radius = width / 2;
+		action.radius = Math.hypot(outline.right, outline.bottom);
 		surface.element.style.width = `${width}px`;
 		surface.element.style.height = `${height}px`;
 		surface.artwork.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -262,9 +263,9 @@ export class BrowserOnscreenGamepadView {
 		surface.artwork.setAttribute('height', `${height}`);
 		surface.artwork.firstElementChild.setAttribute('d', path);
 		this.buttonShapes[this.nominalActions.length + shoulderIndex].setAttribute('d', path);
-		this.shoulderLabels[shoulderIndex].setAttribute('x', `${width / 2}`);
-		this.shoulderLabels[shoulderIndex].setAttribute('y', `${height / 2}`);
-		this.placeActionSurface(index, x - width / 2, y - height / 2, 1);
+		this.shoulderLabels[shoulderIndex].setAttribute('x', `${-outline.left}`);
+		this.shoulderLabels[shoulderIndex].setAttribute('y', `${-outline.top}`);
+		this.placeActionSurface(index, x + outline.left, y + outline.top, 1);
 	}
 
 	private readonly scheduleRender = (): void => {
@@ -283,15 +284,10 @@ export class BrowserOnscreenGamepadView {
 					this.buttonShapes[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
 				}
 			}
-			if ((changedButtons & DIRECTION_BUTTONS) !== 0) {
-				// Opposing presses balance the disc's visual tilt, not the raw input bits.
-				const x = ((buttons >>> InputControllerGamepadButtonBit.Right) & 1) - ((buttons >>> InputControllerGamepadButtonBit.Left) & 1);
-				const y = ((buttons >>> InputControllerGamepadButtonBit.Down) & 1) - ((buttons >>> InputControllerGamepadButtonBit.Up) & 1);
-				const image = (y + 1) * 3 + x + 1;
-				if (image !== this.renderedPadImage) {
-					this.padImages[this.renderedPadImage].setAttribute('data-active', 'false');
-					this.padImages[image].setAttribute('data-active', 'true');
-					this.renderedPadImage = image;
+			for (let index = 0; index < PAD_DIRECTIONS.length; index += 1) {
+				const mask = PAD_DIRECTIONS[index].buttons;
+				if ((changedButtons & mask) !== 0) {
+					this.padDirections[index].setAttribute('data-touched', (buttons & mask) !== 0 ? 'true' : 'false');
 				}
 			}
 		}

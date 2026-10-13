@@ -1,6 +1,83 @@
 # Browser touch-controller ownership
 
+## Curved shoulders and transparent controller, 2026-10-13
+
+The user requested genuine wrapping shoulder curves rather than capsules and
+then explicitly preferred redesigning the whole D-pad as a transparent unit.
+Before editing, the actual pinned [PPSSPP shoulder SVG](https://github.com/hrydgard/ppsspp/blob/df4ea65ee67a55ca95bbe7ddde1ad12e5b46dc22/assets/ui_images/buttons.svg#L459-L473)
+and [RetroArch Clear D-pad SVG](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/src/clear/dpad_up.svg#L96-L114)
+were inspected and rendered. PPSSPP provides curved, outline-mode shoulders,
+not this exact concentric layout; its filled held variant is not copied.
+RetroArch Clear supplies an unfilled-control precedent. The circular-band
+packing and digital pad paths are BMSX-authored, not copied licensed artwork.
+
+LB/RB now follow the circular envelope above their corresponding primary
+control; LT/RT form an outer concentric row. Each shoulder is a finite circular
+center-line offset by a round half-width, with genuine inner/outer circular arcs
+and semicircular ends. A single layout producer generates both its numerical
+geometry and the SVG path. The actual per-hand lane and vertical room bound
+the sweep and thickness, keeping narrow portrait and short embedded players
+inside their frames without clipping, hiding triggers or overlapping targets.
+Portrait video still starts at the safe top and fits above the actual outer
+shoulder bounds using the existing integer/half-integer scale. Two curved rows
+reserve more portrait height than the former single capsule row; primary
+controls are not shrunk to conceal that tradeoff.
+
+Contact math consumes that finite curved band, including its concavity and
+rounded ends. Circular footprints use exact point-to-arc dilation. Anisotropic
+footprints use endpoint-circle tests, containment and inner/outer arc overlap;
+the positive-denominator half-angle inside test has a quartic numerator whose
+minimum lies at endpoints or cubic-derivative roots. Scalar monotone-interval
+root isolation follows [Geometric Tools](https://github.com/davideberly/GeometricTools/blob/e09f5b39a33da6b4bfd0ff8dbb64ddcb7fdfc763/GTE/Mathematics/RootsCubic.h#L309-L346).
+There is no angle grid, polygon approximation, fixed iteration cap, enclosing
+circle hit, per-contact allocation or DOM hit-test dependency.
+
+All action and auxiliary interiors use `fill:none`, including pressed states.
+Strokes and labels supply feedback without dimming the underlying scene.
+The old nine PNGs were fully opaque, including their corners; they remain
+untouched in source but are no longer read or embedded by browser products.
+The new SVG pad has a circular frame, rounded digital cross and four independent
+cardinal stroke highlights. It retains the original interaction frame, neutral
+radius, absolute digital sectors and capture outside the pad. Opposing raw
+direction bits highlight both arms rather than canceling only the visual tilt.
+Per-button contact counts, browser routing, common frame polling, trigger axes,
+ICU and host shortcuts are unchanged. Keyboard forwarding and LS/RS placement
+are outside this slice.
+
+### Curved-controller validation and publication
+
+The final focused bundle passes **229 tests**, all four browser/node/scripts/tests
+typechecks, release build and diff checks. The 27 layout profiles compare the
+drawn SVG with an independent angular finite-arc oracle, check actual target
+separation and frame bounds, and preserve top-aligned portrait fitting. Native
+tests exercise all twelve bits, both triggers and ICU axes, host routing,
+continuous shoulder-centerline rolls, thumb chords and independent releases.
+Analytical inner/outer and end-cap tests cover anisotropic, circular and zero-axis
+contacts, with 1,000 seeded support cases. An exploratory 5,000-case dense
+comparison found no disagreement; this finite check is not the mathematical
+proof or a runtime approximation. Pixel comparisons prove every control's
+interior preserves the underlying scene while resting **and held**.
+
+Actual paired `nemesis_s` and `2025` ordinary/trace pages pass in Chromium WebGPU
+and WPE WebKit WebGL2 with running audio and no script/GPU/request errors. WPE
+repeats 1,008 trusted native state checks in 16 phone/tablet orientations. Its
+fixed 2x2 contact injection does not establish iPhone thumb measurement or
+physical-device ergonomic acceptance. Rendered real-game screenshots were
+inspected; portrait remains above the deck and landscape no longer receives
+opaque button backplates.
+
+The published engine SHA-256 is
+`91cb66e64e88d3dbb1faf6712d14949686b9ad16cf017dbf698c15daa2832786`.
+Paired ROM media and input tracing are unchanged. Existing game URLs and
+their `/ios/` suffixes are retained; no new route or parameter is required.
+Azure publication is complete. All 43 public asset/route/header receipts match
+the staged package; public Chromium repeats actual-game phone/tablet checks in
+both orientations with WebGPU, running audio and no errors.
+Evidence: `.bmsx/hosting/curved-controls-evidence/`.
+
 ## Wide shoulder surfaces, 2026-10-13
+
+Historical record for `5e44a04bf`; shape and D-pad presentation superseded above.
 
 This slice replaces only LB/LT/RB/RT's circular artwork and hit geometry with
 wide horizontal capsules. The user explicitly permits a pill silhouette.

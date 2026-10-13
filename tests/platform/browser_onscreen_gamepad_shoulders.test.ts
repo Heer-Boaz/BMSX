@@ -96,7 +96,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					menu,
 					geometry() {
 						return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius, buttons: action.buttons,
-							outline: action.outline ? { halfLength: action.outline.halfLength, radius: action.outline.radius } : undefined }));
+							outline: action.outline ? { ...action.outline } : undefined }));
 					},
 					poll() {
 						input.pollInput();
@@ -120,10 +120,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				};
 			}, BUTTONS.map(button => button.id));
 			await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
-			const points = await page.evaluate(ids => ids.map((id, index) => {
-				const rect = document.getElementById(id)!.getBoundingClientRect();
-				return { id: index + 1, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radiusX: 14, radiusY: 14 };
-			}), BUTTONS.map(button => button.id));
+			const points = await page.evaluate(bits => bits.map((bit, index) => {
+				const shape = (globalThis as any).shoulderTest.geometry().find(action => action.buttons === 1 << bit);
+				return { id: index + 1, x: shape.x, y: shape.y, radiusX: 14, radiusY: 14 };
+			}), BUTTONS.map(button => button.bit));
 			const cdp = await page.context().newCDPSession(page);
 			let nativeContactCount = 0;
 			const touch = async (type: 'touchStart' | 'touchEnd', touchPoints: typeof points) => {
@@ -164,7 +164,32 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				});
 			}
 
-			await orientation.test('rounded shoulder corners are not their broad-phase circumbound circles', async () => {
+			await orientation.test('one retained finger follows the real curved shoulder centerlines without a release', async () => {
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				for (const id of ['lb_knop', 'rb_knop', 'lt_knop', 'rt_knop']) {
+					const button = BUTTONS.find(button => button.id === id)!;
+					const shape = shapes.find(shape => shape.buttons === 1 << button.bit);
+					const arc = shape.outline;
+					const start = Math.atan2(arc.startY, arc.startX);
+					const sweep = (Math.atan2(arc.endY, arc.endX) - start + Math.PI * 2) % (Math.PI * 2);
+					await touch('touchStart', [point(id)]);
+					for (let step = 0; step <= 12; step += 1) {
+						const angle = start + sweep * step / 12;
+						const contact = { ...point(id), x: shape.x + arc.centerX + arc.radius * Math.cos(angle),
+							y: shape.y + arc.centerY + arc.radius * Math.sin(angle) };
+						await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
+						const state = await poll();
+						assert.equal(state.model, shape.buttons, `${id} follows the bent band through its finite end caps`);
+						assert.equal(state.physical, shape.buttons);
+						assert.equal(state.snapshot, shape.buttons);
+						assert.equal(state.mmio, shape.buttons);
+					}
+					await touch('touchEnd', []);
+					assert.equal((await poll()).model, 0);
+				}
+			});
+
+			await orientation.test('curved shoulder bands are not their broad-phase circumbound circles', async () => {
 				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
 				for (const id of ['lb_knop', 'rb_knop', 'lt_knop', 'rt_knop']) {
 					const button = BUTTONS.find(button => button.id === id)!;

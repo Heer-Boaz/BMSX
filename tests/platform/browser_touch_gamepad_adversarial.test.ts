@@ -118,7 +118,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			},
 			geometry() {
 				return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius,
-					outline: action.outline ? { halfLength: action.outline.halfLength, radius: action.outline.radius } : undefined }));
+					outline: action.outline ? { ...action.outline } : undefined }));
 			},
 			refreshLayout() { video.refreshLayout(); },
 			takeEvents() { return events.splice(0); },
@@ -253,7 +253,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			const geometry = await measure();
 			for (const [index, action] of geometry.actions.entries()) {
 				// The oracle uses independent distance to the actual circle or finite
-				// capsule. Search an isolated skin-only sample rather than old layout
+				// curved band. Search an isolated skin-only sample rather than old layout
 				// coordinates or reusing the production acquisition implementation.
 				let contact: TouchPoint | undefined;
 				for (let degrees = 0; degrees < 360 && contact === undefined; degrees += 10) {
@@ -380,30 +380,30 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		}
 	});
 
-	await t.test('one thumb can truly contact X plus RB while another finger independently holds RB', async () => {
+	await t.test('one thumb can truly contact Y plus RB while another finger independently holds RB', async () => {
 		const geometry = await measure();
-		const [, , x, , , , , , , rb] = geometry.actions;
+		const [, , , y, , , , , , rb] = geometry.actions;
 		let contact: TouchPoint | undefined;
 		for (let row = -24; row <= 24 && contact === undefined; row += 2) {
 			for (let column = -24; column <= 24; column += 2) {
-				const candidate = { id: 1, x: (x.x + rb.x) / 2 + column, y: (x.y + rb.y) / 2 + row, radiusX: 14, radiusY: 14 };
+				const candidate = { id: 1, x: (y.x + rb.x) / 2 + column, y: (y.y + rb.y) / 2 + row, radiusX: 14, radiusY: 14 };
 				const touched = geometry.actions.reduce((word, action, index) =>
 					distanceToControl(action, candidate.x, candidate.y) < 14 ? word | actions[index].buttons : word, 0);
-				if (touched === 0x24) { contact = candidate; break; }
+				if (touched === 0x28) { contact = candidate; break; }
 			}
 		}
 		assert.ok(contact, 'actual neighboring face/shoulder surfaces expose a genuine one-thumb bridge');
-		assert.ok(distanceToControl(x, contact.x, contact.y) < 14);
+		assert.ok(distanceToControl(y, contact.x, contact.y) < 14);
 		assert.ok(distanceToControl(rb, contact.x, contact.y) < 14);
 		const second = { id: 2, x: rb.x, y: rb.y, radiusX: 1, radiusY: 1 };
 		await touch('touchStart', [contact]);
-		await assertWord(0x24, 0, 'actual skin overlap contributes both visible switches, not one arbitrarily selected button deck');
+		await assertWord(0x28, 0, 'actual skin overlap contributes both visible switches, not one arbitrarily selected button deck');
 		await touch('touchStart', [contact, second]);
-		await assertWord(0x24);
-		const xOnly = { ...contact, x: x.x, y: x.y };
-		await touch('touchMove', [xOnly, second]);
-		await assertWord(0x24, 0, 'RB remains pressed by its separate finger after the thumb rolls off it');
-		await touch('touchEnd', [xOnly]);
+		await assertWord(0x28);
+		const yOnly = { ...contact, x: y.x, y: y.y };
+		await touch('touchMove', [yOnly, second]);
+		await assertWord(0x28, 0, 'RB remains pressed by its separate finger after the thumb rolls off it');
+		await touch('touchEnd', [yOnly]);
 		await assertWord(0x20);
 		await touch('touchEnd', []);
 		await assertWord(0);

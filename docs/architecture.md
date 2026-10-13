@@ -4933,21 +4933,27 @@ precede the neutral face acquisition envelope. Direct visible button-center
 hits precede directional pickup; area-only conflicts compare actual control
 boundaries. A neutral deck contact may acquire the button route without
 initially pressing a switch, but cannot steal a real auxiliary skin hit.
-Face and auxiliary switches retain circular geometry. LB/LT/RB/RT use wide
-horizontal capsules: one layout producer writes their finite center-line and
-end-cap radius and generates the matching SVG outline. Ellipse-contact and
+Face and auxiliary switches retain circular geometry. LB/LT/RB/RT use finite
+round-ended circular bands: one layout producer writes the center-line arc,
+half-width and bounds and generates matching inner/outer SVG arcs and end caps.
+Two concentric bands follow each hand's circular envelope; safe-edge, cross-hand
+and vertical budgets determine their sweep and thickness. Ellipse-contact and
 nearest-surface queries consume that actual shape, not a circumbound circle or
 the SVG bounding rectangle. Geometry is retained and updated at layout time;
-native moves allocate no shape objects and perform no DOM hit tests.
+native moves allocate no shape objects and perform no DOM hit tests. Circular
+contacts use exact point-to-arc dilation; anisotropic contacts use endpoint disks,
+containment and finite inner/outer arc tests with scalar polynomial root isolation.
 The joined rocker uses immediate absolute contact-center direction regions
 over the whole disc, with a neutral center and up to two adjacent bits per
 contact. There is no analog origin, moving tip or exclusive first-finger owner.
 Captured pad contacts continue outside the artwork until their native release;
 independent fingers may publish opposing bits without raw-word normalization.
-The passive D-pad view uses the original nine disc images, embedded by the
-shared browser product page builder. Opposing raw direction bits balance only
-the displayed tilt; the view never rewrites controller words. Artwork changes
-do not change numerical acquisition geometry or control layout.
+The passive D-pad view is an outlined SVG round frame and digital cross, with
+four independent cardinal highlights. Opposing raw direction bits light both
+arms; the view never rewrites controller words. The shared browser page producer
+needs no D-pad raster assets. Every control's interior remains unfilled even
+while held; only contour, direction and label feedback covers the game image.
+Artwork changes do not change numerical acquisition geometry or control layout.
 
 Per-button reference counts combine contacts without releasing another
 finger's controls. Leaving buttons releases their contribution, not the

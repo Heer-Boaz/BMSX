@@ -61,29 +61,178 @@ export function contactIntersectsCircle(dx: number, dy: number, halfWidth: numbe
 	}
 }
 
-/** A finite horizontal centre-line offset by a circular radius. */
-export interface HorizontalCapsule {
-	halfLength: number;
+/**
+ * A finite circle arc offset by a round half-width. The layout producer supplies
+ * unit radial endpoints, a positive-cross sweep below pi, and radius > halfWidth.
+ * All positions and bounds are relative to the action's authored label point.
+ * quarterTurns rotates the query axes so [startT,endT] = tan(angle/2) is finite;
+ * a quarter-turn preserves an axis-aligned ellipse by exchanging its axes.
+ */
+export interface RoundedCircularArc {
+	centerX: number;
+	centerY: number;
 	radius: number;
+	halfWidth: number;
+	startX: number;
+	startY: number;
+	endX: number;
+	endY: number;
+	quarterTurns: 0 | 1 | 2 | 3;
+	startT: number;
+	endT: number;
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
 }
 
-/** Distance to the actual solid capsule, not its enclosing circle or rectangle. */
-export function pointDistanceToHorizontalCapsule(x: number, y: number, capsule: HorizontalCapsule): number {
-	return Math.max(0, Math.hypot(Math.max(Math.abs(x) - capsule.halfLength, 0), y) - capsule.radius);
+function directionIsOnArc(x: number, y: number, arc: RoundedCircularArc): boolean {
+	return arc.startX * y - arc.startY * x >= 0 && x * arc.endY - y * arc.endX >= 0;
+}
+
+/** Distance to the actual curved band, including its finite rounded ends. */
+export function pointDistanceToRoundedCircularArc(x: number, y: number, arc: RoundedCircularArc): number {
+	x -= arc.centerX;
+	y -= arc.centerY;
+	const distance = directionIsOnArc(x, y, arc)
+		? Math.abs(Math.hypot(x, y) - arc.radius)
+		: Math.min(Math.hypot(x - arc.radius * arc.startX, y - arc.radius * arc.startY),
+			Math.hypot(x - arc.radius * arc.endX, y - arc.radius * arc.endY));
+	return Math.max(0, distance - arc.halfWidth);
+}
+
+function circlePointIsInEllipse(t: number, radius: number, x: number, y: number, a: number, b: number): boolean {
+	const denominator = 1 + t * t;
+	const dx = (radius * (1 - t * t) / denominator - x) / a;
+	const dy = (radius * 2 * t / denominator - y) / b;
+	return dx * dx + dy * dy <= 1;
+}
+
+/** A monotone quartic-derivative interval contains at most one numerator extremum. */
+function stationaryArcPointIsInEllipse(
+	lower: number, upper: number, d0: number, d1: number, d2: number, d3: number,
+	radius: number, x: number, y: number, a: number, b: number,
+): boolean {
+	let lowerValue = ((d3 * lower + d2) * lower + d1) * lower + d0;
+	const upperValue = ((d3 * upper + d2) * upper + d1) * upper + d0;
+	if (lowerValue === 0) return circlePointIsInEllipse(lower, radius, x, y, a, b);
+	if (upperValue === 0) return circlePointIsInEllipse(upper, radius, x, y, a, b);
+	if ((lowerValue > 0) === (upperValue > 0)) return false;
+	for (;;) {
+		const middle = (lower + upper) * 0.5;
+		if (middle === lower || middle === upper) {
+			return circlePointIsInEllipse(lower, radius, x, y, a, b)
+				|| circlePointIsInEllipse(upper, radius, x, y, a, b);
+		}
+		const value = ((d3 * middle + d2) * middle + d1) * middle + d0;
+		if (value === 0) return circlePointIsInEllipse(middle, radius, x, y, a, b);
+		if ((value > 0) === (lowerValue > 0)) {
+			lower = middle;
+			lowerValue = value;
+		} else upper = middle;
+	}
 }
 
 /**
- * Exact axis-aligned ellipse against a horizontal capsule. On the centre-line's
- * x interval, the interior closest pair has a vertical normal. Outside it, the
- * closest pair uses the corresponding endpoint disk. The existing ellipse-circle
- * query therefore supplies both curved ends, including zero-axis contacts.
- * The segment-plus-radius representation matches Box2D's capsule primitive:
- * https://github.com/erincatto/box2d/blob/ac7c751eaeddbabdc1c4d41ae4f3a25d78627790/include/box2d/collision.h#L134-L146
+ * The ellipse inside-test quadratic evaluated on a circle, with t = tan(angle/2),
+ * has a quartic numerator and positive denominator. An inside point exists iff
+ * the numerator's minimum is nonpositive: an endpoint or a root of its cubic
+ * derivative supplies that minimum. The derivative's
+ * quadratic critical points split it into monotone root intervals; bisect only
+ * actual brackets, until adjacent representable endpoints, without an iteration
+ * budget or contact-time arrays. This specializes Geometric Tools' root isolation:
+ * https://github.com/davideberly/GeometricTools/blob/e09f5b39a33da6b4bfd0ff8dbb64ddcb7fdfc763/GTE/Mathematics/RootsCubic.h#L309-L346
  */
-export function contactIntersectsHorizontalCapsule(
-	x: number, y: number, halfWidth: number, halfHeight: number, capsule: HorizontalCapsule,
+function circularArcIntersectsEllipse(
+	lower: number, upper: number, radius: number, x: number, y: number, a: number, b: number,
 ): boolean {
-	const beyondLine = Math.abs(x) - capsule.halfLength;
-	if (beyondLine <= 0) return Math.abs(y) <= halfHeight + capsule.radius;
-	return contactIntersectsCircle(beyondLine, y, halfWidth, halfHeight, capsule.radius);
+	if (circlePointIsInEllipse(lower, radius, x, y, a, b)
+		|| circlePointIsInEllipse(upper, radius, x, y, a, b)) return true;
+	const rx = radius / a;
+	const ry = radius / b;
+	const px = x / a;
+	const py = y / b;
+	const d0 = -4 * ry * py;
+	const d1 = 2 * (-2 * (rx * rx - px * px) + 4 * ry * ry + 2 * py * py - 2);
+	const d2 = 3 * d0;
+	const d3 = 4 * ((rx + px) * (rx + px) + py * py - 1);
+	// Critical points of the cubic derivative. Stable quadratic roots avoid the
+	// cancellation of (-B +/- sqrt(discriminant)) when one root is near zero.
+	let first = upper;
+	let second = upper;
+	const qa = 3 * d3;
+	const qb = 2 * d2;
+	const qc = d1;
+	if (qa === 0) {
+		if (qb !== 0) first = Math.max(lower, Math.min(upper, -qc / qb));
+	} else {
+		const discriminant = qb * qb - 4 * qa * qc;
+		if (discriminant > 0) {
+			const q = -0.5 * (qb + (qb < 0 ? -1 : 1) * Math.sqrt(discriminant));
+			const root0 = q / qa;
+			const root1 = qc / q;
+			first = Math.max(lower, Math.min(upper, Math.min(root0, root1)));
+			second = Math.max(lower, Math.min(upper, Math.max(root0, root1)));
+		}
+	}
+	if (first > lower && stationaryArcPointIsInEllipse(lower, first, d0, d1, d2, d3, radius, x, y, a, b)) return true;
+	if (second > first && stationaryArcPointIsInEllipse(first, second, d0, d1, d2, d3, radius, x, y, a, b)) return true;
+	return upper > second && stationaryArcPointIsInEllipse(second, upper, d0, d1, d2, d3, radius, x, y, a, b);
+}
+
+/** Zero-axis footprints are finite horizontal or vertical segments. */
+function circularArcIntersectsSegment(
+	x: number, y: number, a: number, b: number, radius: number, arc: RoundedCircularArc,
+): boolean {
+	if (a === 0) {
+		const squared = radius * radius - x * x;
+		if (squared < 0) return false;
+		const crossing = Math.sqrt(squared);
+		return (crossing >= y - b && crossing <= y + b && directionIsOnArc(x, crossing, arc))
+			|| (-crossing >= y - b && -crossing <= y + b && directionIsOnArc(x, -crossing, arc));
+	}
+	const squared = radius * radius - y * y;
+	if (squared < 0) return false;
+	const crossing = Math.sqrt(squared);
+	return (crossing >= x - a && crossing <= x + a && directionIsOnArc(crossing, y, arc))
+		|| (-crossing >= x - a && -crossing <= x + a && directionIsOnArc(-crossing, y, arc));
+}
+
+/**
+ * Exact ellipse contact with a round-ended annular arc, not an enclosing circle.
+ * End disks, ellipse-center containment, and the two finite concentric boundary
+ * arcs cover intersection and containment. Circular footprints use a cheap exact
+ * dilation of the centerline; only anisotropic boundary contacts need root work.
+ */
+export function contactIntersectsRoundedCircularArc(
+	x: number, y: number, a: number, b: number, arc: RoundedCircularArc,
+): boolean {
+	if (x + a < arc.left || x - a > arc.right || y + b < arc.top || y - b > arc.bottom) return false;
+	if (a === b) return pointDistanceToRoundedCircularArc(x, y, arc) <= a;
+	x -= arc.centerX;
+	y -= arc.centerY;
+	const inner = arc.radius - arc.halfWidth;
+	const outer = arc.radius + arc.halfWidth;
+	const squared = x * x + y * y;
+	if (directionIsOnArc(x, y, arc) && squared >= inner * inner && squared <= outer * outer) return true;
+	if (contactIntersectsCircle(x - arc.radius * arc.startX, y - arc.radius * arc.startY, a, b, arc.halfWidth)
+		|| contactIntersectsCircle(x - arc.radius * arc.endX, y - arc.radius * arc.endY, a, b, arc.halfWidth)) return true;
+	if (a === 0 || b === 0) {
+		return circularArcIntersectsSegment(x, y, a, b, inner, arc)
+			|| circularArcIntersectsSegment(x, y, a, b, outer, arc);
+	}
+	// Rotate by whole quarter-turns only: no trigonometry and no skewed ellipse.
+	if (arc.quarterTurns === 2) {
+		x = -x;
+		y = -y;
+	} else if (arc.quarterTurns !== 0) {
+		const oldX = x;
+		x = arc.quarterTurns === 1 ? y : -y;
+		y = arc.quarterTurns === 1 ? -oldX : oldX;
+		const oldA = a;
+		a = b;
+		b = oldA;
+	}
+	return circularArcIntersectsEllipse(arc.startT, arc.endT, outer, x, y, a, b)
+		|| circularArcIntersectsEllipse(arc.startT, arc.endT, inner, x, y, a, b);
 }

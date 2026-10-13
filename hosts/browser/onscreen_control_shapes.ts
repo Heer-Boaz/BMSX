@@ -1,12 +1,31 @@
-import type { HorizontalCapsule } from './touch_geometry';
+import type { RoundedCircularArc } from './touch_geometry';
 
-/** Numerical hit geometry and SVG use the same sized capsule, not a circumbound. */
-export function layoutShoulderOutline(outline: HorizontalCapsule, width: number, height: number): string {
-	const radius = height / 2;
-	const halfLine = (width - height) / 2;
-	outline.halfLength = halfLine;
+/** The same finite circular tube supplies SVG arcs and numerical contact geometry. */
+export function layoutShoulderOutline(outline: RoundedCircularArc, radius: number, halfWidth: number, halfAngle: number): string {
+	const sine = Math.sin(halfAngle);
+	const cosine = Math.cos(halfAngle);
+	outline.centerX = 0;
+	outline.centerY = radius;
 	outline.radius = radius;
-	const left = width / 2 - halfLine;
-	const right = width / 2 + halfLine;
-	return `M ${left} 0 H ${right} A ${radius} ${radius} 0 0 1 ${right} ${height} H ${left} A ${radius} ${radius} 0 0 1 ${left} 0 Z`;
+	outline.halfWidth = halfWidth;
+	outline.startX = -sine;
+	outline.startY = -cosine;
+	outline.endX = sine;
+	outline.endY = -cosine;
+	outline.quarterTurns = 0;
+	outline.startT = Math.tan((-Math.PI / 2 - halfAngle) / 2);
+	outline.endT = Math.tan((-Math.PI / 2 + halfAngle) / 2);
+	outline.left = -radius * sine - halfWidth;
+	outline.right = radius * sine + halfWidth;
+	outline.top = -halfWidth;
+	outline.bottom = radius * (1 - cosine) + halfWidth;
+	const centerX = -outline.left;
+	const centerY = radius - outline.top;
+	const outer = radius + halfWidth;
+	const inner = radius - halfWidth;
+	return `M ${centerX - outer * sine} ${centerY - outer * cosine}`
+		+ ` A ${outer} ${outer} 0 0 1 ${centerX + outer * sine} ${centerY - outer * cosine}`
+		+ ` A ${halfWidth} ${halfWidth} 0 0 1 ${centerX + inner * sine} ${centerY - inner * cosine}`
+		+ ` A ${inner} ${inner} 0 0 0 ${centerX - inner * sine} ${centerY - inner * cosine}`
+		+ ` A ${halfWidth} ${halfWidth} 0 0 1 ${centerX - outer * sine} ${centerY - outer * cosine} Z`;
 }
