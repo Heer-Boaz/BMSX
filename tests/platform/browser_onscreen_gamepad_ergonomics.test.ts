@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
+import { roundContactBankWord, controlContainsPoint, controlSeparation, distanceToControl } from './touch_gamepad_geometry_oracle';
 
 const actions = [
 	{ id: 'a_knop', label: 'A', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -102,7 +102,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const snapshot = api.createInputControllerSnapshot();
 		(globalThis as any).ergonomicsProbe = {
 			video, model, pointerEvents,
-			keyboardContext: view.setKeyboardVisible,
 			geometryRevision() { return model.geometryRevision; },
 			measureDeck(width: number, height: number) { return view.measurePortraitDeckHeight(width, height); },
 			poll() {
@@ -123,7 +122,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 						const style = getComputedStyle(element);
 						const transform = element.getScreenCTM()!;
 						return {
-							id, x: geometry.x, y: geometry.y, radius: geometry.radius,
+							id, x: geometry.x, y: geometry.y, radius: geometry.radius, bank: geometry.bank, buttons: geometry.buttons,
 							outline: geometry.outline ? { ...geometry.outline } : undefined,
 							tag: element.tagName,
 							transform: { a: transform.a, d: transform.d, e: transform.e, f: transform.f },
@@ -245,9 +244,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		}
 	};
 
-	const labelRasterEvidence: Array<{ profile: string; context: string; background: string; label: string; inkPixels: number; lightPixels: number; darkPixels: number }> = [];
+	const labelRasterEvidence: Array<{ profile: string; context: string; background: string; label: string; inkPixels: number; changedPixels: number }> = [];
 	const assertRasterLabelContrast = async (profile: string, context: string, geometry: any) => {
-		// Isolate the actual browser-painted glyphs, including their new stroke.
+		// Isolate the actual browser-painted quiet glyphs and their thin stroke.
 		// Sentinel magenta is neither glyph color, so untouched background and
 		// anti-aliased ink can be distinguished without a text-bbox paint claim.
 		await page.evaluate(() => (globalThis as any).ergonomicsProbe.background('glyph-mask'));
@@ -259,13 +258,16 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		await isolation.dispose();
 		const ratio = glyphs.width / (await page.viewportSize())!.width;
 		const masks = geometry.labels.map((label: any, index: number) => {
-			assert.equal(label.stroke, 'rgb(16, 16, 16)');
+			assert.equal(label.fill, geometry.targets[index + 1].presentation.touched === 'true'
+				? 'rgba(243, 247, 250, 0.95)' : 'rgba(232, 240, 247, 0.44)',
+				'idle labels stay subordinate to the game image; a held key visibly acknowledges its own published state');
+			assert.equal(label.stroke, 'rgba(8, 12, 18, 0.38)');
 			assert.equal(label.strokeLinejoin, 'round');
 			// Computed CSS serializes the implied trailing fill as `stroke`.
 			assert.equal(label.paintOrder, 'stroke');
-			assert.ok(label.strokeWidth > 0);
+			assert.ok(label.strokeWidth > 0 && label.strokeWidth < 1, 'no heavy opaque label halo');
 			const padding = label.strokeWidth / 2 + 1 / ratio;
-			const ink: number[] = [], light: number[] = [], dark: number[] = [];
+			const ink: number[] = [];
 			const left = Math.trunc((label.left - padding) * ratio), top = Math.trunc((label.top - padding) * ratio);
 			const right = Math.trunc((label.right + padding) * ratio) + 1, bottom = Math.trunc((label.bottom + padding) * ratio) + 1;
 			for (let y = top; y <= bottom; y += 1) for (let x = left; x <= right; x += 1) {
@@ -275,12 +277,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				ink.push(offset);
 				for (const dx of [0, 1]) for (const dy of [0, 1]) assert.ok(controlContainsPoint(geometry.targets[index + 1], (x + dx) / ratio, (y + dy) / ratio),
 					`${actions[index].label} actual raster ink, including its stroke, stays inside the independent activating silhouette`);
-				const r = glyphs.data[offset], g = glyphs.data[offset + 1], b = glyphs.data[offset + 2];
-				if (r >= 200 && g >= 200 && b >= 200) light.push(offset);
-				if (r <= 64 && g <= 64 && b <= 64) dark.push(offset);
 			}
-			assert.ok(ink.length > 0 && light.length > 0 && dark.length > 0, `${actions[index].label} has actual light glyph and dark stroke pixels`);
-			return { ink, light, dark };
+			assert.ok(ink.length > 0, `${actions[index].label} still has visible raster ink`);
+			return { ink };
 		});
 		const checkedInk = new Set(masks.flatMap((mask: { ink: number[] }) => mask.ink));
 		for (let offset = 0; offset < glyphs.data.length; offset += 4) {
@@ -291,12 +290,16 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		for (const background of ['white', 'dark', 'bright']) {
 			await page.evaluate(kind => (globalThis as any).ergonomicsProbe.background(kind), background);
 			const scene = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-${background}-label-contrast.png` }));
+			const hidden = await page.addStyleTag({ content: '.action-label { visibility: hidden !important; }' });
+			const plainScene = PNG.sync.read(await page.screenshot());
+			await hidden.evaluate(element => element.parentNode!.removeChild(element));
+			await hidden.dispose();
 			for (let index = 0; index < masks.length; index += 1) {
 				const mask = masks[index];
-				const lightPixels = mask.light.filter((offset: number) => scene.data[offset] >= 200 && scene.data[offset + 1] >= 200 && scene.data[offset + 2] >= 200).length;
-				const darkPixels = mask.dark.filter((offset: number) => scene.data[offset] <= 80 && scene.data[offset + 1] <= 80 && scene.data[offset + 2] <= 80).length;
-				assert.ok(lightPixels > 0 && darkPixels > 0, `${profile}/${context}/${background}: ${actions[index].label} retains a painted light glyph and dark underlay`);
-				labelRasterEvidence.push({ profile, context, background, label: actions[index].label, inkPixels: mask.ink.length, lightPixels, darkPixels });
+				const changedPixels = mask.ink.filter((offset: number) => scene.data[offset] !== plainScene.data[offset]
+					|| scene.data[offset + 1] !== plainScene.data[offset + 1] || scene.data[offset + 2] !== plainScene.data[offset + 2]).length;
+				assert.ok(changedPixels > 0, `${profile}/${context}/${background}: ${actions[index].label} remains discoverable without opaque labels`);
+				labelRasterEvidence.push({ profile, context, background, label: actions[index].label, inkPixels: mask.ink.length, changedPixels });
 			}
 		}
 	};
@@ -380,19 +383,28 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				'the face cluster remains at its authored primary edge, with only the actual bezel paint extending beyond the acquisition frame');
 			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
 			for (const [bumper, trigger, primary] of [[lb, lt, pad], [rb, rt, faceCenter]]) {
-				assert.ok(Math.abs(bumper.x + bumper.outline.centerX - primary.x) < coordinateTolerance
+				if (landscape) {
+					assert.ok(Math.abs(bumper.x + bumper.outline.centerX - primary.x) < coordinateTolerance
 					&& Math.abs(trigger.x + trigger.outline.centerX - primary.x) < coordinateTolerance,
-					'both adjacent shoulders share the same horizontal center as their primary control');
-				assert.ok(Math.abs(bumper.y + bumper.outline.centerY - primary.y) < coordinateTolerance
-					&& Math.abs(trigger.y + trigger.outline.centerY - primary.y) < coordinateTolerance,
-					'bumpers and triggers follow one circle, not vertically stacked concentric rings');
-				assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
-				assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
-				assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) < 0,
-					'the easier bumper owns the outer/top ring segment and the trigger stays inward in both orientations');
-				const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
-				const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
-				assert.ok(bumperSweep > triggerSweep, 'the easier bumper has a genuinely larger finite curved target, not just a swapped label');
+						'both adjacent shoulders share the same horizontal center as their primary control');
+					assert.ok(Math.abs(bumper.y + bumper.outline.centerY - primary.y) < coordinateTolerance
+						&& Math.abs(trigger.y + trigger.outline.centerY - primary.y) < coordinateTolerance,
+						'bumpers and triggers follow one circle, not vertically stacked concentric rings');
+					assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
+					assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
+					assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) < 0,
+						'the easier bumper owns the outer/top ring segment and the trigger stays inward in both orientations');
+					const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
+					const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
+					assert.ok(bumperSweep > triggerSweep, 'the easier landscape bumper has a genuinely larger finite curved target, not just a swapped label');
+				} else {
+					assert.ok(Math.abs(bumper.y - trigger.y) < coordinateTolerance, 'portrait shoulder targets form one detached horizontal strip');
+					assert.ok(Math.abs(bumper.bounds.width - trigger.bounds.width) < coordinateTolerance,
+						'portrait keeps all four shoulder targets equally broad rather than copying the landscape rings');
+					assert.ok(bumper.bounds.width >= 69 - coordinateTolerance, 'even a compact phone keeps broad detached shoulder targets');
+					assert.ok(bumper.y + bumper.outline.bottom + 24 <= Math.min(pad.bounds.top, targets[4].bounds.top) + coordinateTolerance,
+						'the detached strip leaves a real 24px empty band before either full thumb acquisition bank');
+				}
 				const direction = primary.x < middle ? -1 : 1;
 				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;
 				const holdingX = primary.x + direction * holdingRadius;
@@ -444,14 +456,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'intrinsic numerical measurement does not publish a provisional input geometry');
 				const upperPathTop = Math.min(lb.y + lb.outline.top, rb.y + rb.outline.top);
 				assert.ok(Math.abs(deckHeight - (select.y + select.radius + 16 * scale - upperPathTop)) < 1e-10,
-					'the finite intrinsic deck height is produced by the actual curved hand geometry and authored bottom clearance');
+					'the finite intrinsic deck height is produced by the detached strip and actual primary/utility geometry');
 				assert.ok(Math.abs(resting.deckTop - safe.top - Math.min(width * 3 / (4 * 0.9), height - deckHeight - 12)) < coordinateTolerance,
 					'portrait composition arranges its intrinsic hand deck directly below the stable width-derived picture slot');
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
 				assert.ok(lb.y < pad.y && rb.y < faceCenter.y,
 					'portrait shoulders remain above their corresponding thumb unit inside the measured lower deck');
-				assert.ok(lb.x < lt.x && rb.x > rt.x, 'portrait preserves the exact same outer-bumper role as landscape');
+				assert.ok(lb.x < lt.x && rt.x < rb.x, 'portrait detached strip reads LB/LT and RT/RB at the corresponding hand sides');
 			}
 			const fillSamples: Array<{ id: string; x: number; y: number }> = [];
 			const expectedFills: boolean[] = [];
@@ -550,6 +562,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				await settle();
 				const pressed = await measure();
 				assert.equal(pressed.targets[index + 1].presentation.touched, 'true');
+				assert.deepEqual(pressed.labels.map((label: any) => label.fill), actions.map((_, other) => other === index
+					? 'rgba(243, 247, 250, 0.95)' : 'rgba(232, 240, 247, 0.44)'),
+					'only the truly held button brightens its quiet idle label');
 				assert.equal(pressed.targets[index + 1].presentation.fill, 'none', 'held switches never obscure the underlying game with a filled background');
 				assert.notEqual(pressed.targets[index + 1].presentation.stroke, circle.presentation.stroke);
 				assert.deepEqual(pressed.targets.map((entry: any) => entry.bounds), targets.map((entry: any) => entry.bounds), 'press rendering never moves a target');
@@ -646,69 +661,6 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const contrastProfile = profile.name === 'phone14-portrait-safe' || profile.name === 'phone14-landscape-safe'
 				|| profile.name === 'tablet-portrait' || profile.name === 'tablet-landscape';
 			if (contrastProfile) await assertRasterLabelContrast(profile.name, 'gameplay', await measure());
-			const contextFinger = { id: 8, x: select.x, y: select.y, radiusX: 2, radiusY: 2 };
-			await touch('touchStart', [contextFinger]);
-			assert.equal((await poll()).physicalButtons, 0x100);
-			const contextPointer = await page.evaluate(() => (globalThis as any).ergonomicsProbe.pointerEvents.filter((event: any) => event.type === 'pointerdown').at(-1).id);
-			const revision = await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision());
-			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(true));
-			await settle();
-			const keyboardContext = await measure();
-			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision()), revision + 1,
-				'one real keyboard context transition republishes the authored numerical layout');
-			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(true));
-			assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision()), revision + 1,
-				'repeated visibility notification does not manufacture another layout');
-			assert.equal(await page.evaluate(id => (globalThis as any).ergonomicsProbe.model.ownsContact(id), contextPointer), true,
-				'the UI context changes geometry without ending the browser-owned contact lease');
-			let contextExpected = 0;
-			for (let index = 1; index < keyboardContext.targets.length; index += 1) {
-				if (distanceToControl(keyboardContext.targets[index], contextFinger.x, contextFinger.y) <= 2) contextExpected |= actions[index - 1].buttons;
-			}
-			assert.equal((await poll()).physicalButtons, contextExpected,
-				'the retained button contact follows independent actual silhouettes after the whole keyboard hand deck moves');
-			for (let index = 0; index < 5; index += 1) {
-				assert.ok(Math.abs(keyboardContext.targets[index].bounds.width - targets[index].bounds.width) < 0.0001,
-					'opening the keyboard never shrinks either thumb unit or any of the equal face targets');
-			}
-			assert.ok(keyboardContext.targets[5].y > keyboardContext.targets[0].y, 'keyboard utilities remain below their own context hand row');
-			const [keyboardLB, keyboardRB, keyboardLT, keyboardRT] = keyboardContext.targets.slice(9);
-			assert.ok(keyboardLB.x < keyboardLT.x && keyboardRB.x > keyboardRT.x,
-				'the distinct keyboard hand pose preserves the easier outer bumper and the inward trigger on both hands');
-			if (landscape) {
-				assert.ok(Math.abs(keyboardContext.targets[0].x - safe.left - 4 - 90 * scale) < coordinateTolerance,
-					'the keyboard-context D-pad occupies its authored outer hand edge');
-				assert.ok(Math.abs(keyboardContext.targets[0].y - safe.bottom + 4 + (26 + 136) * scale) < coordinateTolerance,
-					'the keyboard-context hand row bottom-packs its complete real primary-and-utility hand deck');
-			} else {
-				assert.deepEqual(keyboardContext.targets.map((target: any) => target.bounds), targets.map(target => target.bounds),
-					'portrait already has a separate hand deck and does not move when the keyboard opens');
-			}
-			for (let index = 0; index < keyboardContext.targets.length; index += 1) {
-				const target = keyboardContext.targets[index];
-				assert.ok(target.painted.left >= safe.left - 0.0001 && target.painted.top >= safe.top - 0.0001
-					&& target.painted.right <= safe.right + 0.0001 && target.painted.bottom <= safe.bottom + 0.0001,
-					`${target.id} keyboard-context paint remains inside actual safe bounds`);
-				for (let other = index + 1; other < keyboardContext.targets.length; other += 1) {
-					assert.ok(controlSeparation(target, keyboardContext.targets[other]) >= -0.0001,
-						`${target.id}/${keyboardContext.targets[other].id} keyboard-context activating surfaces never overlap`);
-				}
-				if (index > 0) {
-					const label = keyboardContext.labels[index - 1];
-					for (const x of [label.left, label.right]) for (const y of [label.top, label.bottom]) {
-						assert.ok(controlContainsPoint(target, x, y), `${target.id} keyboard-context label fits its actual contact outline`);
-					}
-				}
-			}
-			if (contrastProfile) await assertRasterLabelContrast(profile.name, 'keyboard', keyboardContext);
-			if (profile.screenshot) await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-keyboard-context.png` });
-			await page.evaluate(() => (globalThis as any).ergonomicsProbe.keyboardContext(false));
-			await settle();
-			assert.deepEqual((await measure()).targets.map((target: any) => target.bounds), targets.map(target => target.bounds),
-				'closing the keyboard restores the exact authored PSP gameplay layout');
-			assert.equal((await poll()).physicalButtons, 0x100, 'restoring gameplay geometry still preserves the held SELECT contributor');
-			await touch('touchEnd', []);
-			assert.equal((await poll()).physicalButtons, 0);
 		});
 	}
 	await t.test('true player-frame resize resamples held contacts before any subsequent native jitter', async () => {
@@ -735,8 +687,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}, height);
 			await settle();
 			const current = await measure();
-			const held = current.targets.slice(1).reduce((word: number, circle: any, index: number) =>
-				distanceToControl(circle, finger.x, finger.y) <= 14 ? word | actions[index].buttons : word, 0);
+			const held = roundContactBankWord(current.targets.slice(1), finger.x, finger.y, 14);
 			const word = await poll();
 			assert.equal(word.buttons, held, `true document/player-frame geometry immediately applies at ${height}px height`);
 			assert.equal(word.physicalButtons, word.buttons);
@@ -746,8 +697,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			assert.equal(current.targets[1].presentation.touched, (word.buttons & 1) !== 0 ? 'true' : 'false');
 			finger.x += 1;
 			await touch('touchMove', [finger]);
-			const jittered = current.targets.slice(1).reduce((word: number, circle: any, index: number) =>
-				distanceToControl(circle, finger.x, finger.y) <= 14 ? word | actions[index].buttons : word, 0);
+			const jittered = roundContactBankWord(current.targets.slice(1), finger.x, finger.y, 14);
 			assert.equal((await poll()).sampledButtons, jittered & ~0x100, 'one-pixel native jitter does not reveal an edge deferred by layout');
 			await page.screenshot({ path: `${evidenceDirectory}/player-resize-${height}-held.png` });
 		}

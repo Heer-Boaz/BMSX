@@ -1,6 +1,176 @@
 # Browser touch-controller ownership
 
-## Outer bumpers, persistent picture policy and host-UI viewport, 2026-10-13
+## Interaction banks, independent portrait and touch-first keyboard, 2026-10-13
+
+This slice supersedes the shared portrait/landscape shoulder topology and the
+browser compact-gamepad/bitmap-keyboard pose below. It keeps the directional
+model/art, existing middle landscape hand anchors, bounded Overscan default,
+physical half-step video lattice and host-menu picture-policy ownership.
+
+### Actual contact isolation, not a global Y suppression
+
+A genuine 28x28 PointerEvent footprint centered 0.75 CSS px inside the inner
+RB silhouette activated RB+Y in the previous phone landscape model. The same
+pattern also occurred in portrait/tablet layouts; compact portrait RT could
+contaminate Y too. Equivalent LB contact did not press Up because directional
+contacts already have distinct captured ownership. Old tests sampled shoulder
+labels/centerlines, missing their true inner edges.
+
+The layout producer now emits required `OnscreenActionBank` metadata for face,
+left/right shoulders and left/right utility groups. For every button sample the
+model intersects the real silhouettes once, selects the nearest actually touched
+bank, then ORs footprint hits within that bank. Choice is live, so deliberately
+sliding from face to shoulder still works. A+B and LB+LT thumb chords survive;
+independent fingers can still hold Y+RB. Directional capture is unchanged.
+Retained masks and a layout-reserved high-water candidate buffer avoid per-event
+allocations and impose no 32-action cap. There is no geometry shrink, global
+"shoulder disables Y", captured button-bank lifetime, hysteresis or fake release.
+
+References inspected before implementation:
+[PPSSPP per-pointer button masks and directional exclusion](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L175)
+and [RetroArch per-contact overlay exclusivity](https://github.com/libretro/RetroArch/blob/4709c07f39ab05d88d4831d9a9267fef5cebedb2/input/input_driver.c#L5721-L5763).
+Neither uses browser footprint estimates or proves BMSX's exact bank policy;
+their real implementations inform ownership rather than being copied blindly.
+
+### Portrait is an independently composed controller
+
+Landscape keeps its existing real arched shoulder ring and primary positions.
+Portrait instead has a detached `[LB][LT] ... [RT][RB]` strip, with 24 CSS px of
+true empty space above complete primary acquisition banks. These are the same
+finite rounded circular bands as their real hit shapes, with actual widths
+69-88 CSS px and radial thicknesses 44-61.6px. Primary button sizes remain equal,
+and utility pairs stay under their respective hands.
+
+The image remains safe-top, width-derived, separately fitted and clipped above
+the deck. Phone image composition stays unchanged. Of 72 measured before/after
+DOM image frames, 59 were identical; constrained tablet fits naturally changed
+because the newly independent deck has a real larger height, plus one
+single-quantum DPR3/source256 change and one 0.088px embedded-player clip change.
+No fake deck height or shrunken touch targets was introduced to preserve stale
+picture bytes. Integer/half-step physical scaling and 5% overscan bounds remain.
+
+Idle labels are smaller, medium-weight and translucent, with a thin contrast
+stroke; outlines are restrained. Held labels/contours brighten without filling
+the controls. Pressed appearance does not enlarge the hit shape.
+[Delta's independently authored portrait and landscape SNES skin](https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L673)
+and [PPSSPP's opacity/held presentation](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L179-L200)
+were studied. Their smaller secondary targets and pressed-art rescaling are not
+copied. This validates geometry and presentation, not physical-thumb comfort.
+
+### One real key/source owner, two actual presentations
+
+`hosts/common/input/on_screen_keyboard` owns source/key counts, direct and sticky
+modifiers, selection/navigation, page state and forwarding feedback. C++ mirrors
+that model. `HostOnScreenKeyboard` is the bitmap view; browser `onscreen_keyboard`
+is a CSS-client view with retained native contact leases. Neither is a state API
+facade and neither generates synthetic DOM KeyboardEvents.
+
+The browser has Text, Symbols and Fn pages, ten-column QWERTY letters, centered
+rows and wider modifiers/Space/Enter. The authored rows/spans drive both touch
+geometry and physical-gamepad navigation, with construction-cached centers.
+All key rows/toolbar targets are at least 44px high. Phone letters are
+approximately 33-37px wide, not claimed to be 44x44 targets; tablet letters are
+wider. A deliberate 44px-row mode fits the 239px short player, rather than
+shrinking keys or hiding unreachable rows. The native bitmap has its own grid,
+page title/help and SELECT+Y page cycling. F1-F12/Home/End use central existing
+raw HID identities, not a feature-local codec.
+
+Each browser native contact gets a distinct reusable source slot. The pane owns
+key gutters too; chosen keys persist through moves and page changes. A real
+page/key surface carries its originating page: simultaneous Fn-tab and queued
+Text-Q downs must not guess that Q belongs to the current Fn navigation grid.
+This bug was reproduced with trusted native multi-down input and fixed at that
+producer/model boundary, not with an invalid-key fallback. Raw Q still forwards
+and Fn selection stays coherent.
+
+Direct held modifiers behave like hardware. An unused modifier tap completes a
+sticky latch at real up; if any source, including a physical-gamepad command,
+uses it in a key chord, no unwanted latch is created. Chord eligibility belongs
+to the shared source owner. A browser-only peer-contact approximation was
+independently reproduced as wrong and removed. Cancel/blur never latch; ordinary
+close releases only virtual keys, retains actual contact leases until their
+native up/cancel and cannot reinterpret held fingers after reopen.
+
+While browser typing is active, the virtual gamepad is hidden and cannot acquire
+new contacts; existing controller contacts still get their real release. A
+physical gamepad remains usable. There is no keyboard-induced game refit or
+controller reflow. The active player surface owns the foreground stacking plane,
+including over the existing trace panel in short frames. Teardown disposes the
+view's DOM/style/subscription. CSS nodes are built once; revision notifications
+schedule changed-attribute painting, with no frame-time DOM measurement or
+per-keyboard-frame rebuild. The 120ms release acknowledgement is visual only;
+raw HID key lifetimes, ICU sampling and guest typematic remain unchanged.
+
+References studied before this split:
+[RetroArch's raw-key split QWERTY and Fn overlay](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/keyboards/split-qwerty/split-qwerty.cfg#L1-L65),
+[DOSBox Pure's owned keyboard geometry](https://github.com/schellingb/dosbox-pure/blob/a4a0bab7f8931433588f2fcad9045c85b277373d/dosbox_pure_osd.h#L1185-L1237),
+and [UI Events keyboard-event semantics](https://www.w3.org/TR/uievents/#events-keyboardevents).
+Native OS text composition is not a dependable replacement for guest raw-HID
+modifier/function-key/held-state input. A future terminal/editor native-text
+contract would be a separate domain, not an OS-keyboard workaround here.
+
+Representation gate before mirrored edits:
+
+| Representation | TypeScript | C++ | Owner |
+| --- | --- | --- | --- |
+| Key identity | integer index + central code | integer index + central HID | Shared key definitions/model |
+| Source slot / aggregate count | integer slot / Uint32 | integer slot / u32 | Shared key lifetime owner |
+| Modifier taps/chords | eligibility + number generation + integer count | eligibility + u64 generation + size_t count | Shared owner across all sources |
+| Navigation/layout units | number, retained centers | f32, retained centers | Authored presentation pages |
+| Feedback deadlines | f64 per key | f64 per key | Source owner; views consume |
+| Browser native contact | retained native ID/source/page-key | no browser counterpart | Browser view/Hub |
+| Bitmap rect / CSS client rect | separate real view geometries | native bitmap RectBounds | Respective presentation |
+| Guest input words / typematic | unchanged raw HID/ICU | unchanged raw HID/ICU | Input/device/BIOS owners |
+
+Hot paths audited: HostOverlayMenu.tickKeyboardInput -> source command/release;
+Input.setVirtualKeyboardKey/LibretroInput equivalent; browser native down/move/
+up/cancel; model revision notification and feedback expiry; bitmap draw/hit and
+cached navigation. There is no per-edge observer iterator allocation, DTO
+validation, per-frame DOM read, synthetic keypress, minimum key-hold timer or
+host key-event FIFO.
+
+### Validation
+
+Final source and packaged-product receipts are recorded in
+`.bmsx/hosting/touch-first-controls-evidence/`, with independent repro/review in
+`contact-bank-audit/`, portrait raster evidence in
+`portrait-detached-controls-evidence/`, and CSS/native-source evidence in
+`browser-touch-keyboard-evidence/`.
+
+- Final focused TS/browser/package suite: **452/452**, all five Browser/Node/
+  Scripts/Tests/Studio typechecks, 10 native regression targets and the actual
+  linked libretro core. New browser keyboard suite covers 47 native-contact
+  cases across five profiles; shared-owner tests cover raw Input -> ICU/MMIO.
+- Shoulder-edge tests include 3,300 genuine native surface entries, three area
+  profiles (28x28, 40x56, 56x40), caps, slides, partial releases, same-bank chords
+  and independent Y+RB through armed MMIO. They sample surfaces, not just labels.
+- Frozen packaged WebGPU and WebGL2 each pass eight keyboard lifetime/feedback/
+  page/gamepad checks in phone portrait, landscape, tablet landscape and the
+  239px short player. CSS keyboard opening/closing leaves game geometry unchanged;
+  real key releases, not feedback deadlines, end input. The physical gamepad
+  producer in this product test is a controlled native-ABI fixture, not USB hardware.
+- Actual packaged guest-terminal `H E L X Backspace P Enter` with trusted 90ms
+  native contacts visibly prints `HELP` and its command listing. Instantaneous
+  automation taps shorter than a host sampling frame are not asserted as guest
+  acceptance and have not been stretched by a timer or FIFO.
+- Frozen Linux WPE WebKit keyboard: 16 ordinary/trace route-profile cases,
+  112 state receipts and 264 trusted changed-contact native events. Gameplay:
+  16 profiles, 1,008 states, 1,016 native events and 504 trace rows, no script/
+  request/GPU errors, correct immutable ROM pairs, running audio and nonzero PCM.
+  WPE uses fixed 2x2 contacts here; separate Chromium/MMIO tests cover larger
+  footprints. Neither browser harness proves UIKit behavior or physical comfort.
+- Picture/menu screenshots confirm both game source sizes, DPR3 Fit/Overscan,
+  independent portrait composition and unchanged game transform under host menu.
+  Browser player and Studio products build; Studio integration is compile evidence,
+  not a claim of visibly exercising the full IDE this slice.
+
+Frozen player engine is 1,426,421 bytes, SHA256
+`c3ef3fb05e31ef6d45710770f168eeb504e1e8f0fa25b5892fabf5dda99e4c5c`.
+Existing `/2025/`, `/nemesis_s/` and their `/ios/` trace variants are used; no new
+route or renderer query parameter is introduced. BIOS/cart artifacts remain
+unchanged. Source/media GitHub push is not part of this slice.
+
+## Historical: outer bumpers, picture policy and host-UI viewport, 2026-10-13
 
 The phone feedback supersedes `640677735`'s inner bumpers and automatic
 host-menu Fit. LB/RB now occupy the outward/topward ring segments; LT/RT the

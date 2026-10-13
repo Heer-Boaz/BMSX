@@ -24,10 +24,9 @@ import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_qua
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import {
-	HostOnScreenKeyboard,
-	OnScreenKeyboardCommand,
-} from './host_on_screen_keyboard';
+import { HostOnScreenKeyboard } from './host_on_screen_keyboard';
+import { OnScreenKeyboard } from './input/on_screen_keyboard';
+import { OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from './input/on_screen_keyboard_keys';
 import {
 	create_rect_bounds,
 	point_in_rect,
@@ -59,6 +58,8 @@ export const enum HostMenuExecution {
 	Paused,
 	Rewind,
 }
+
+export const enum HostKeyboardPresentation { Bitmap, External }
 
 type HostMenuActionOption = {
 	readonly kind: 'action';
@@ -139,6 +140,7 @@ type OnScreenKeyboardCommandBinding = {
 };
 
 const ON_SCREEN_KEYBOARD_COMMAND_BINDINGS: readonly OnScreenKeyboardCommandBinding[] = [
+	{ button: BUTTON_Y, command: OnScreenKeyboardCommand.TogglePage, requiresSelect: true },
 	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Delete, requiresSelect: true },
 	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Home, requiresSelect: true },
 	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.End, requiresSelect: true },
@@ -252,11 +254,10 @@ function usagePercentCodeText(code: number): string {
 export class HostOverlayMenu {
 	private readonly presenter: VideoPresenter;
 	private page = HostOverlayPage.Closed;
-	private readonly keyboard: HostOnScreenKeyboard;
+	private readonly keyboardView: HostOnScreenKeyboard | undefined;
 	private readonly uiInput: HostUiInput;
 	private readonly optionHitRect = create_rect_bounds();
 	private readonly pointerCapturePoint = { x: 0, y: 0 };
-	private keyboardVisibilityListener: ((visible: boolean) => void) | null = null;
 	private optionLineHeight = 0;
 	private optionFirstRow = 0;
 	private optionVisibleRows = 0;
@@ -408,10 +409,12 @@ export class HostOverlayMenu {
 		private readonly rewind: HostRewind,
 		private readonly execution: HostExecutionControl,
 		frontendOptions: readonly HostMenuValueOption[] = [],
+		public readonly keyboard = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES),
+		private readonly keyboardPresentation = HostKeyboardPresentation.Bitmap,
 	) {
 		this.rootOptions.splice(this.rootOptions.length - 2, 0, ...frontendOptions);
 		this.presenter = presenter;
-		this.keyboard = new HostOnScreenKeyboard(presenter, input);
+		if (keyboardPresentation === HostKeyboardPresentation.Bitmap) this.keyboardView = new HostOnScreenKeyboard(presenter, keyboard);
 		this.uiInput = new HostUiInput(input, presenter);
 		const remapOptions: HostMenuOption[] = new Array(
 			GAMEPAD_REMAP_CONTROLS.length + 3,
@@ -476,14 +479,10 @@ export class HostOverlayMenu {
 	/** Acquire foreground keyboard contacts without changing any existing pointer lease. */
 	public readonly capturesPointer = (x: number, y: number): boolean => {
 		return this.page === HostOverlayPage.Keyboard
+			&& this.keyboardPresentation === HostKeyboardPresentation.Bitmap
 			&& this.presenter.mapDisplayPointToViewport(x, y, this.pointerCapturePoint)
-			&& this.keyboard.containsPoint(this.pointerCapturePoint.x, this.pointerCapturePoint.y);
+			&& this.keyboardView.containsPoint(this.pointerCapturePoint.x, this.pointerCapturePoint.y);
 	};
-
-	/** Browser control presentation follows actual page transitions, not frame polling. */
-	public setKeyboardVisibilityListener(listener: (visible: boolean) => void): void {
-		this.keyboardVisibilityListener = listener;
-	}
 
 	public tickInput(): HostMenuInput {
 		if (this.onScreenKeyboardShortcutRequested) {
@@ -605,7 +604,8 @@ export class HostOverlayMenu {
 
 	public queueRenderCommands(): void {
 		if (this.page === HostOverlayPage.Keyboard) {
-			this.keyboard.queueRenderCommands();
+			if (this.keyboardPresentation === HostKeyboardPresentation.Bitmap) this.keyboardView.queueRenderCommands();
+			else this.clearRenderCommands();
 			return;
 		}
 		if (this.page === HostOverlayPage.Rewind) {
@@ -707,7 +707,8 @@ export class HostOverlayMenu {
 	}
 
 	public queueFrameOverlayCommands(hostFps: number): boolean {
-		if (this.page !== HostOverlayPage.Closed) {
+		if (this.page !== HostOverlayPage.Closed
+			&& !(this.page === HostOverlayPage.Keyboard && this.keyboardPresentation === HostKeyboardPresentation.External)) {
 			this.queueRenderCommands();
 			return true;
 		}
@@ -891,7 +892,6 @@ export class HostOverlayMenu {
 	}
 
 	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
-		const keyboardWasVisible = this.page === HostOverlayPage.Keyboard;
 		switch (this.page) {
 			case HostOverlayPage.Keyboard:
 				this.keyboard.close();
@@ -910,11 +910,9 @@ export class HostOverlayMenu {
 				break;
 		}
 		this.page = next;
-		if (keyboardWasVisible !== (next === HostOverlayPage.Keyboard)) {
-			this.keyboardVisibilityListener?.(next === HostOverlayPage.Keyboard);
-		}
 		const sources = next === HostOverlayPage.Closed ? HostUiInputSource.None
-			: next === HostOverlayPage.Keyboard ? HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Pointer
+			: next === HostOverlayPage.Keyboard ? HostUiInputSource.Gamepad | HostUiInputSource.LeftStick
+				| (this.keyboardPresentation === HostKeyboardPresentation.Bitmap ? HostUiInputSource.Pointer : HostUiInputSource.None)
 				: HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
 		this.uiInput.reset(sources, MENU_KEYBOARD_BUTTONS);
 		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
@@ -990,10 +988,12 @@ export class HostOverlayMenu {
 
 	private tickKeyboardInput(): HostMenuInput {
 		const ui = this.uiInput;
-		if (!ui.pointerHeld) this.keyboard.releaseSource(HostOnScreenKeyboard.POINTER_SOURCE);
-		const pointerKey = ui.pointerValid && ui.pointerChanged
-			? this.keyboard.selectAt(ui.pointerPosition.x, ui.pointerPosition.y) : -1;
-		if (ui.pointerJustPressed && pointerKey >= 0) this.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+		if (this.keyboardPresentation === HostKeyboardPresentation.Bitmap) {
+			if (!ui.pointerHeld) this.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
+			const pointerKey = ui.pointerValid && ui.pointerChanged
+				? this.keyboardView.selectAt(ui.pointerPosition.x, ui.pointerPosition.y) : -1;
+			if (ui.pointerJustPressed && pointerKey >= 0) this.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
+		}
 		if (ui.buttonRepeatEdge(BUTTON_UP)) this.keyboard.moveVertical(-1);
 		if (ui.buttonRepeatEdge(BUTTON_DOWN)) this.keyboard.moveVertical(1);
 		if (ui.buttonRepeatEdge(BUTTON_LEFT)) this.keyboard.moveHorizontal(-1);
@@ -1021,9 +1021,6 @@ export class HostOverlayMenu {
 	}
 
 	private selectPointerTargetAt(x: number, y: number): number {
-		if (this.page === HostOverlayPage.Keyboard) {
-			return this.keyboard.selectAt(x, y);
-		}
 		if (this.page === HostOverlayPage.Rewind) {
 			return this.timeline.selectAt(x, y);
 		}

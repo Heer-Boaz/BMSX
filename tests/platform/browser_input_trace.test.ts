@@ -57,7 +57,7 @@ test('early input trace observes trusted A+B, model/common mutations, cancellati
 	});
 	const fixture = await build({
 		stdin: {
-			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+			contents: `export { BrowserOnscreenGamepad, OnscreenActionBank } from './hosts/browser/onscreen_gamepad';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';`,
@@ -84,7 +84,7 @@ export { Input } from './hosts/common/input/manager';`,
 		const pad = new api.BrowserOnscreenGamepad(clock);
 		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, padNeutralRadius: 14,
 			faceX: 660, faceY: 235, faceRadius: 100,
-			actions: [{ x: 605, y: 235, radius: 35, buttons: 1 }, { x: 715, y: 235, radius: 35, buttons: 2 }] });
+			actions: [{ x: 605, y: 235, radius: 35, buttons: 1, bank: api.OnscreenActionBank.Face }, { x: 715, y: 235, radius: 35, buttons: 2, bank: api.OnscreenActionBank.Face }] });
 		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);
 		hub.setTraceObserver(trace);
@@ -213,7 +213,7 @@ test('true controller-frame layout changes trace retained-contact edges independ
 		format: 'iife', write: false, tsconfig: 'tsconfig.base.json',
 	});
 	const fixture = await build({
-		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+		stdin: { contents: `export { BrowserOnscreenGamepad, OnscreenActionBank } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
 export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserInputHub } from './hosts/browser/input';

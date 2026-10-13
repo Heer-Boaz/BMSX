@@ -444,6 +444,7 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/content.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+	${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/input.cpp
 	${BMSX_LIBRETRO_DIR}/ui_input.cpp
@@ -868,9 +869,21 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_host_ui_input_tests PRIVATE ${BMSX_LIBRETRO_DIR})
 	add_test(NAME bmsx_host_ui_input_tests COMMAND bmsx_host_ui_input_tests)
 
+	add_executable(bmsx_on_screen_keyboard_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/on_screen_keyboard_test.cpp
+		${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
+	)
+	target_link_libraries(bmsx_on_screen_keyboard_tests PRIVATE bmsx_host_support)
+	target_include_directories(bmsx_on_screen_keyboard_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+	add_test(NAME bmsx_on_screen_keyboard_tests COMMAND bmsx_on_screen_keyboard_tests)
+
 	add_executable(bmsx_host_on_screen_keyboard_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_on_screen_keyboard_test.cpp
 		${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp
 		${BMSX_LIBRETRO_DIR}/input.cpp
 		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	)
@@ -883,6 +896,7 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}/button_repeat.cpp
 		${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 		${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp
 		${BMSX_LIBRETRO_DIR}/input.cpp
 		${BMSX_LIBRETRO_DIR}/ui_input.cpp
 		${BMSX_LIBRETRO_DIR}/rewind.cpp

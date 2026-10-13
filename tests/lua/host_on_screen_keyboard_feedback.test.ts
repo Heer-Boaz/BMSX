@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HostOnScreenKeyboard, OnScreenKeyboardCommand } from '../../hosts/common/host_on_screen_keyboard';
+import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -23,10 +25,11 @@ function fixture() {
 		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 		hostOverlayQueue: queue,
 	} as VideoPresenter;
-	const keyboard = new HostOnScreenKeyboard(presenter, input);
+	const keyboard = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const view = new HostOnScreenKeyboard(presenter, keyboard);
 	keyboard.open();
 	const snapshot = createInputControllerSnapshot();
-	const frame = () => { keyboard.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
+	const frame = () => { view.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
 	return {
 		input, keyboard, frame,
 		key(index: number) {
@@ -117,12 +120,12 @@ test('different keys have independent held colors and release deadlines', t => {
 test('another source keeps the shared key bright beyond the first release', t => {
 	const f = fixture(); t.after(() => f.input.dispose());
 	f.keyboard.activate(0);
-	f.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.keyboard.releaseSource(0);
 	f.keyboard.updateFeedback(1000);
 	assert.equal(f.pressed('KeyQ'), true);
 	assert.equal(f.key(Q).fill, PRESSED);
-	f.keyboard.releaseSource(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
 	assert.equal(f.pressed('KeyQ'), false);
 	f.keyboard.updateFeedback(1119);
 	assert.equal(f.key(Q).fill, PRESSED);
@@ -214,10 +217,13 @@ test('idle feedback ticks and unexpired afterglow reuse commands without rescann
 	assert.equal(writes, 0);
 	f.keyboard.activate(0);
 	f.keyboard.releaseSource(0);
+	f.frame();
 	writes = 0;
 	f.keyboard.updateFeedback(250);
+	f.frame();
 	assert.equal(writes, 0);
 	f.keyboard.updateFeedback(320);
+	f.frame();
 	assert.equal(writes, 1);
 	f.keyboard.updateFeedback(1000);
 	assert.equal(writes, 1);

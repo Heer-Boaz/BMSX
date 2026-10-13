@@ -4926,9 +4926,16 @@ Reported dimensions are consumed directly; the Pointer Events unavailable
 contacts. Pressure is not a size estimate, and Touch Events are not a second
 producer. Contact outlines are axis-aligned ellipse estimates, not filled
 bounding rectangles. The numerical controller separates retained directional
-capture from live button contacts. All twelve face, shoulder, trigger and
-auxiliary surfaces can contribute nonexclusively to a button contact; a thumb may bridge adjacent
-switches or slide between them without lifting. Actual activating surfaces
+capture from live button contacts. Face, shoulder, trigger and utility
+surfaces within the chosen interaction bank contribute nonexclusively to a
+button contact; a thumb may bridge adjacent switches or slide between them
+without lifting. Face, left/right shoulder and left/right utility banks are
+authored by the geometry producer. Each sample selects the nearest actually
+touched surface, then unions footprint hits only within its bank. This keeps
+one-thumb A+B and LB+LT chords while isolating shoulder contacts from Y;
+independent contacts can still combine Y+RB. Bank choice is live, not captured
+for the whole contact, so deliberate slides between groups remain possible.
+Actual activating surfaces
 precede the neutral face acquisition envelope. Direct visible button-center
 hits precede directional pickup; area-only conflicts compare actual control
 boundaries. A neutral deck contact may acquire the button route without
@@ -4936,7 +4943,7 @@ initially pressing a switch, but cannot steal a real auxiliary skin hit.
 Face and auxiliary switches retain circular geometry. LB/LT/RB/RT use finite
 round-ended circular bands: one layout producer writes the center-line arc,
 half-width and bounds and generates matching inner/outer SVG arcs and end caps.
-Two adjacent segments share one circle per hand, rather than stacked rings;
+Landscape adjacent segments share one circle per hand, rather than stacked rings;
 safe-edge, cross-hand and vertical budgets determine their sweep and thickness.
 Ellipse-contact and
 nearest-surface queries consume that actual shape, not a circumbound circle or
@@ -4981,11 +4988,15 @@ invalidate DPR-dependent presentation without frame polling or resizing controls
 The handheld deck anchors D-pad and equal face buttons at the safe side edges,
 targets the landscape middle hand row and fits asymmetric same-ring shoulders
 inside the available reach. Shoulder envelopes never push the primary groups
-inward. Bumpers use the larger outward/topward segments; triggers use inward segments,
-with the same spatial identities in portrait and landscape.
+inward. Landscape bumpers use the larger outward/topward segments; triggers use inward
+segments. Portrait has an independently authored detached shoulder strip:
+LB/LT above the left primary group, RT/RB above the right, with a 24 CSS-pixel
+empty band above the complete primary acquisition surfaces. It does not scale
+or transplant the landscape shoulder ring into a portrait controller.
 LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
-Transparent control interiors retain the scene; a dark stroke under the light
-label glyphs supplies contrast on bright scenes without an opaque button fill.
+Transparent control interiors retain the scene; restrained translucent contours
+and smaller medium-weight labels use only a thin contrast stroke. Held labels
+and contours brighten without changing target size or painting an opaque fill.
 Actual bounds constrain short players; capped control sizes are not scaled up
 with screen area or shrunk to reserve video columns.
 The view retains finite portrait-deck metrics for measure/arrange. The video
@@ -5006,18 +5017,17 @@ Presenter retains that rectangle directly while its full-image projection stays
 unchanged. Browser derives it from actual clipping; offscreen/native producers
 initialize the full rectangle from their real target dimensions. Host-menu
 window rows and pointer indices share a first-row offset, preserving font size.
-Keyboard fits its own grid within that region and uses the same rectangles for
-rendering and hit testing, top-docked and cached by visible origin/width/font. Timeline/FPS/
-resource indicators use those bounds too. Guest HUD/BIOS text still needs cart-
+The native bitmap keyboard fits its grid within that region and uses the same
+rectangles for rendering and hit testing, top-docked and cached by visible
+origin/width/font. Timeline/FPS/resource indicators use those bounds too. Guest HUD/BIOS text still needs cart-
 authored overscan margins; host UI does not silently protect it by changing mode.
-Actual host-keyboard visibility selects a compact edge controller context
-in landscape; thumb sizes are unchanged and each complete hand group is
-recomposed at the key-grid sides with lower utility rows. Interactive key rectangles own new native downs ahead of gamepad pickup,
-through the host menu's existing viewport projection. Help text does not claim
-touches. Acquired canvas/controller leases keep their ordinary lifetime and
-route. Visibility transitions notify the passive view once and use the same
-layout producer, rather than frame polling, cancelling fingers or inventing
-input releases. Gameplay restores the wrapping middle hand row.
+The browser keyboard is a separate CSS-client presentation mounted in the player
+surface, not a bitmap scaled with guest video. While it is visible the browser
+hides the virtual gamepad and does not admit new gamepad contacts. Previously
+acquired contacts keep their ordinary route until native release. There is no
+keyboard-induced controller reflow or game-picture transform change. A physical
+gamepad remains an alternative keyboard input. Native bitmap keyboard placement
+still follows the visible host-UI viewport.
 The common host UI retains routed ownership of already-held physical button
 masks, bound keyboard usages and primary-pointer input when their source loses
 focus, until the existing host input poll observes the source release. This
@@ -5051,24 +5061,50 @@ producer. Page zoom outside the player is not disabled through viewport limits,
 global root-style mutations or global gesture handlers. ICU sampling and its raw
 words are unchanged.
 
-The mirrored host on-screen keyboard retains the selected key and modifier
-contribution per activating controller button or logical pointer until its
-actual release/cancel. Per-key counts combine independent sources; selection
-changes do not retarget a held key. Sticky modifiers remain intentional UI
-state, and one-shot Shift outlives every still-held shifted contributor.
-Host UI consumes physical source lifetimes, not command-repeat edges for key
-entry. The producer never shortens a key into a host-frame pulse or invents a
-minimum hold/FIFO; guest firmware owns typematic and ICU samples the ordinary
-raw HID bitmap. Closing the keyboard releases its virtual contributions only,
-without releasing an independently held physical keyboard key.
+`hosts/common/input/on_screen_keyboard` and its native mirror own keyboard
+selection, page navigation, held source/key contributions, sticky modifiers and
+forwarding feedback. The bitmap `HostOnScreenKeyboard` and browser CSS view are
+real geometry/drawing consumers, not state facades. Their authored rows/spans
+also drive navigation; centered rows and fractional widths use the same centers.
+Each browser key surface carries its originating page so simultaneous page-tab
+and old-page key downs retain valid selection independently of the active page.
+The actual key still forwards; there is no stale-target fallback or dropped key.
 
-Keyboard forwarding feedback is separate presentation state: held keys have
-a distinct bright background/dark glyph, and their actual final up retains
-that appearance for a short visual-only acknowledgement. Per-key monotonic
-deadlines live beside the retained draw commands and advance from host UI
-poll time. Selection changes cannot move that feedback, and idle ticks do
-not rescan key colors. The feedback deadline never extends real key lifetime,
-injects another edge or proves guest consumption.
+Every activating controller button and native keyboard contact retains its exact
+key until real release/cancel. Browser source slots grow only at a new contact
+high-water mark and are reused thereafter. Per-key counts combine independent
+sources, including multiple fingers on one key; selection/page changes never
+retarget held keys. Direct held modifiers combine with gamepad sticky modifiers.
+Unused touch modifier taps complete at real up; chord participation belongs to
+the shared source owner across touch and gamepad sources, not a browser-local
+peer-contact approximation. Cancellations cannot latch modifiers. Closing the
+keyboard releases its owned key state, but retained native contacts stay owned
+until actual up/cancel, including across a reopen. It never releases an
+independently held physical keyboard key or fabricates browser pointer events.
+
+The browser view has four-row Text, Symbols and Fn pages, dedicated page/Close
+controls and CSS-sized touch targets. Letter keys follow a ten-unit QWERTY row,
+not the native bitmap sixteen-unit grid. Phone letters are narrower than 44px;
+all key rows and toolbar targets remain at least 44px high, even in the 239px
+short-player layout. Pane gutters retain keyboard ownership rather than leaking
+through to hidden controls. Physical gamepad navigation uses these actual rows,
+and SELECT+Y cycles pages. Native frontends retain their separate bitmap layout.
+
+The source owner publishes through the existing Input/LibretroInput virtual
+keyboard path. Host UI consumes physical source lifetimes, not command-repeat
+edges for key entry. The producer never shortens a key into a host-frame pulse
+or invents a minimum hold/FIFO; guest firmware owns typematic and ICU samples
+the ordinary raw HID bitmap. Browser Pointer Events remain the sole native
+contact producer; OS text composition is not substituted for raw game keys.
+
+Keyboard forwarding feedback is separate presentation state: held keys have a
+distinct bright background/dark glyph, and final real up keeps a short visual-only
+acknowledgement. Per-key deadlines live in the source owner and advance from host
+UI poll time. Retained listeners notify the CSS view only on revisions; its RAF
+updates existing key nodes and changed attributes, without per-frame DOM reads
+or keyboard rebuilds. Bitmap drawing consumes the same feedback. The deadline
+never extends key lifetime, injects another edge or proves guest consumption.
+Browser input teardown disposes the view, its nodes/style and model subscription.
 
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed

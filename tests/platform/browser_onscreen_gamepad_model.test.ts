@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BrowserOnscreenGamepad, type OnscreenGamepadGeometry } from '../../hosts/browser/onscreen_gamepad';
+import { BrowserOnscreenGamepad, OnscreenActionBank, type OnscreenGamepadGeometry } from '../../hosts/browser/onscreen_gamepad';
 import type { HostClock } from '../../hosts/common/clock';
 import type { InputEventSink, InputSource } from '../../hosts/common/input/contracts';
 import { Input } from '../../hosts/common/input/manager';
@@ -15,7 +15,7 @@ import type { RoundedCircularArc } from '../../hosts/browser/touch_geometry';
 const geometry: OnscreenGamepadGeometry = {
 	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
 	faceX: 325, faceY: 100, faceRadius: 50,
-	actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+	actions: [{ x: 300, y: 100, radius: 20, buttons: 1, bank: OnscreenActionBank.Face }, { x: 350, y: 100, radius: 20, buttons: 2, bank: OnscreenActionBank.Face }],
 };
 
 function shoulderArc(halfWidth: number): RoundedCircularArc {
@@ -71,7 +71,7 @@ function createInputControllerFixture() {
 test('wide rounded shoulders use the actual silhouette rather than a circular circumbound', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, faceX: 300, faceY: 100, faceRadius: 0,
-		actions: [{ x: 300, y: 100, radius: 52, buttons: 0x10, outline: wideShoulder }] });
+		actions: [{ x: 300, y: 100, radius: 52, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder }] });
 	assert.equal(pad.beginContact(1, 348, 100, 0, 0, true), true, 'the long shoulder wing activates');
 	assert.equal(pad.buttons, 0x10);
 	pad.moveContact(1, 300, 150, 0, 0, true);
@@ -84,8 +84,8 @@ test('wide rounded shoulders use the actual silhouette rather than a circular ci
 test('one elliptical thumb bridges shoulder buttons and independent owners retain the same raw bits', () => {
 	const { pad, edges } = createFixture();
 	pad.setGeometry({ ...geometry, faceX: 300, faceY: 106, faceRadius: 100, actions: [
-		{ x: 300, y: 80, radius: 52, buttons: 0x10, outline: wideShoulder },
-		{ x: 300, y: 132, radius: 52, buttons: 0x40, outline: wideShoulder },
+		{ x: 300, y: 80, radius: 52, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder },
+		{ x: 300, y: 132, radius: 52, buttons: 0x40, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder },
 	] });
 	pad.beginContact(1, 300, 106, 2, 6, true);
 	assert.equal(pad.buttons, 0x50, 'inclusive finite edge contact reaches both LB and LT');
@@ -106,7 +106,7 @@ test('one elliptical thumb bridges shoulder buttons and independent owners retai
 test('pad and rounded shoulder acquisition compare actual surfaces, never the shoulder circumbound', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
-		{ x: 160, y: 70, radius: 52, buttons: 0x10, outline: wideShoulder },
+		{ x: 160, y: 70, radius: 52, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder },
 	] });
 	pad.beginContact(1, 125, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000, 'a pad-center hit beats shoulder area-only pickup inside its circumbound');
@@ -124,7 +124,7 @@ test('finite curved arc shoulders preserve live button contacts and actual-surfa
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
 		geometry.actions[0],
-		{ x: 160, y: 70, radius: 48, buttons: 0x10, outline: curvedShoulder },
+		{ x: 160, y: 70, radius: 48, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: curvedShoulder },
 	] });
 	pad.beginContact(1, 125, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000, 'the circumbound interior is not a direct curved arc hit');
@@ -145,8 +145,8 @@ test('finite curved arc shoulders preserve live button contacts and actual-surfa
 test('one thumb can chord curved arc shoulder rows while another finger contributes independently', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, faceX: 300, faceY: 104, faceRadius: 100, actions: [
-		{ x: 300, y: 80, radius: 48, buttons: 0x10, outline: curvedShoulder },
-		{ x: 300, y: 128, radius: 48, buttons: 0x40, outline: curvedShoulder },
+		{ x: 300, y: 80, radius: 48, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: curvedShoulder },
+		{ x: 300, y: 128, radius: 48, buttons: 0x40, bank: OnscreenActionBank.LeftShoulder, outline: curvedShoulder },
 	] });
 	pad.beginContact(1, 300, 104, 2, 6, true);
 	assert.equal(pad.buttons, 0x50);
@@ -209,12 +209,12 @@ test('elliptical skin contact respects curved boundaries and inclusive circle ed
 	assert.equal(pad.buttons, 1);
 });
 
-test('all action intersections contribute, not only the nearest or initially touched button', () => {
+test('all face-bank intersections contribute, not only the nearest or initially touched button', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, faceY: 125, faceRadius: 80, actions: [
 		...geometry.actions,
-		{ x: 300, y: 150, radius: 20, buttons: 4 },
-		{ x: 350, y: 150, radius: 20, buttons: 8 },
+		{ x: 300, y: 150, radius: 20, buttons: 4, bank: OnscreenActionBank.Face },
+		{ x: 350, y: 150, radius: 20, buttons: 8, bank: OnscreenActionBank.Face },
 	] });
 	assert.equal(pad.beginContact(1, 325, 125, 14, 14, true), true);
 	assert.equal(pad.buttons, 0, 'a 28px circular thumb does not reach these four circle corners');
@@ -425,7 +425,7 @@ test('directional capture stays separate from live button contacts', () => {
 
 test('directional capture cannot press secondary switches and independent button fingers remain live', () => {
 	const { pad } = createFixture();
-	pad.setGeometry({ ...geometry, actions: [{ x: 180, y: 100, radius: 20, buttons: 0x100 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 180, y: 100, radius: 20, buttons: 0x100, bank: OnscreenActionBank.LeftUtility }] });
 	pad.beginContact(1, 145, 100, 30, 30, true);
 	assert.equal(pad.buttons, 0x8000);
 	pad.beginContact(2, 180, 100, 40, 40, true);
@@ -434,16 +434,18 @@ test('directional capture cannot press secondary switches and independent button
 	assert.equal(pad.buttons, 0x100);
 });
 
-test('auxiliary and face buttons are live contributions rather than exclusive per-button leases', () => {
+test('button-bank eligibility follows the nearest true surface while gliding without per-button capture', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
 		...geometry.actions,
-		{ x: 400, y: 100, radius: 20, buttons: 0x100 },
+		{ x: 400, y: 100, radius: 20, buttons: 0x100, bank: OnscreenActionBank.LeftUtility },
 	] });
 	pad.beginContact(1, 400, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x100);
 	pad.moveContact(1, 375, 100, 14, 14, true);
-	assert.equal(pad.buttons, 0x102, 'one footprint can bridge a face button and an auxiliary switch');
+	assert.equal(pad.buttons, 2, 'equal true distances use authored order rather than combining unrelated banks');
+	pad.moveContact(1, 376, 100, 14, 14, true);
+	assert.equal(pad.buttons, 0x100, 'moving one pixel toward the utility switches banks immediately, without hysteresis');
 	pad.moveContact(1, 350, 100, 14, 14, true);
 	assert.equal(pad.buttons, 2);
 	pad.moveContact(1, 300, 100, 14, 14, true);
@@ -457,11 +459,106 @@ test('auxiliary and face buttons are live contributions rather than exclusive pe
 	assert.equal(pad.buttons, 0);
 });
 
+test('shoulder footprints cannot press Y, while independent fingers and live cross-bank glides remain physical contributions', () => {
+	const { pad, edges } = createFixture();
+	const bankGeometry: OnscreenGamepadGeometry = { ...geometry, faceX: 300, faceY: 130, faceRadius: 50, actions: [
+		{ x: 300, y: 130, radius: 20, buttons: 8, bank: OnscreenActionBank.Face },
+		{ x: 300, y: 80, radius: 52, buttons: 0x20, bank: OnscreenActionBank.RightShoulder, outline: wideShoulder },
+	] };
+	pad.setGeometry(bankGeometry);
+	for (const [halfWidth, halfHeight] of [[14, 14], [20, 28], [28, 20]]) {
+		pad.beginContact(1, 300, 99, halfWidth, halfHeight, true);
+		assert.equal(pad.buttons, 0x20, 'a direct shoulder hit wins despite the same footprint reaching Y');
+		pad.beginContact(2, 300, 111, halfWidth, halfHeight, true);
+		assert.equal(pad.buttons, 0x28, 'another finger directly on Y is never suppressed by a held shoulder');
+		pad.moveContact(1, 300, 111, halfWidth, halfHeight, true);
+		assert.equal(pad.buttons, 8, 'the first finger glides across banks without lifting or keeping its initial RB');
+		pad.moveContact(1, 300, 99, halfWidth, halfHeight, true);
+		assert.equal(pad.buttons, 0x28, 'returning to the shoulder does not erase the independent Y contributor');
+		pad.endContact(2);
+		assert.equal(pad.buttons, 0x20);
+		pad.setGeometry({ ...bankGeometry, actions: bankGeometry.actions.map(action => ({ ...action, y: action.y + 100 })) });
+		assert.equal(pad.buttons, 0, 'layout resamples the retained footprint, not a captured bank or stale contribution');
+		pad.moveContact(1, 300, 199, halfWidth, halfHeight, true);
+		assert.equal(pad.buttons, 0x20);
+		pad.endContact(1);
+		assert.equal(pad.buttons, 0);
+		pad.setGeometry(bankGeometry);
+	}
+	assert.deepEqual(edges.filter(edge => edge.code === 'y').map(edge => edge.down),
+		[true, false, true, false, true, false], 'Y has only genuine independent-finger edges');
+});
+
+test('bank arbitration reaches common input and armed ICU without changing frame sampling or global button masks', () => {
+	const { pad, input, snapshot, memory, sample } = createInputControllerFixture();
+	pad.setGeometry({ ...geometry, actions: [
+		{ x: 300, y: 130, radius: 20, buttons: 8, bank: OnscreenActionBank.Face },
+		{ x: 300, y: 80, radius: 52, buttons: 0x20, bank: OnscreenActionBank.RightShoulder, outline: wideShoulder },
+	] });
+	const sampleWord = (word: number) => {
+		sample();
+		assert.equal(pad.buttons, word);
+		assert.equal(input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), word);
+		assert.equal(snapshot.pads[0].buttons, word);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), word);
+	};
+	pad.beginContact(1, 300, 99, 20, 28, true);
+	sampleWord(0x20);
+	pad.beginContact(2, 300, 111, 28, 20, true);
+	sampleWord(0x28);
+	pad.endContact(1);
+	sampleWord(8);
+	pad.endContact(2);
+	sampleWord(0);
+});
+
+test('bank pickup uses true finite arc distances, never its circumbound or neutral acquisition envelope', () => {
+	const { pad } = createFixture();
+	pad.setGeometry({ ...geometry, faceX: 300, faceY: 100, faceRadius: 100, actions: [
+		{ x: 300, y: 80, radius: 52, buttons: 0x20, bank: OnscreenActionBank.RightShoulder, outline: wideShoulder },
+		{ x: 300, y: 130, radius: 20, buttons: 8, bank: OnscreenActionBank.Face },
+	] });
+	pad.beginContact(1, 300, 104, 14, 14, true);
+	assert.equal(pad.buttons, 0x20, 'outside both solids, the curved shoulder edge is nearer than Y');
+	pad.moveContact(1, 300, 106, 14, 14, true);
+	assert.equal(pad.buttons, 8, 'Y becomes nearer even though the center is inside the shoulder circumbound');
+	pad.moveContact(1, 300, 111, 2, 28, true);
+	assert.equal(pad.buttons, 8, 'a direct Y center wins despite the long measured footprint still reaching the arc');
+	pad.endContact(1);
+	pad.beginContact(2, 300, 106, 14, 14, true);
+	assert.equal(pad.buttons, 8, 'fresh acquisition and retained movement use the same bank policy');
+	pad.endContact(2);
+});
+
+test('bank candidate storage is reserved by geometry and retains every authored surface without a contact-time index-word limit', () => {
+	const { pad } = createFixture();
+	const actions = Array.from({ length: 34 }, (_, index) => ({ x: 1000 + index, y: 1000, radius: 0,
+		buttons: 1, bank: OnscreenActionBank.Face }));
+	// This near horizontal point misses a zero-width vertical contact. It must
+	// never alias the distant shoulder's index and enter the distance competition.
+	actions[0] = { x: 301, y: 100, radius: 0, buttons: 8, bank: OnscreenActionBank.Face };
+	actions[32] = { x: 300, y: 120, radius: 0, buttons: 0x20, bank: OnscreenActionBank.RightShoulder };
+	actions[33] = { x: 300, y: 125, radius: 0, buttons: 8, bank: OnscreenActionBank.Face };
+	pad.setGeometry({ ...geometry, actions });
+	const storage = Reflect.get(pad, 'sampledActions');
+	assert.equal(storage.length, 34);
+	pad.beginContact(1, 300, 100, 0, 28, true);
+	assert.equal(pad.buttons, 0x20, 'only true footprint hits compete, including indices beyond one register word');
+	pad.moveContact(1, 300, 101, 0, 28, true);
+	assert.equal(pad.buttons, 0x20);
+	pad.setGeometry(geometry);
+	assert.equal(pad.buttons, 1);
+	assert.equal(Reflect.get(pad, 'sampledActions'), storage, 'smaller layouts retain the high-water scratch storage');
+	assert.equal(storage.length, 34);
+	pad.endContact(1);
+	assert.equal(pad.buttons, 0);
+});
+
 test('actual button contact is not intercepted by the invisible neutral face envelope', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, actions: [
 		geometry.actions[0],
-		{ x: 390, y: 100, radius: 20, buttons: 0x100 },
+		{ x: 390, y: 100, radius: 20, buttons: 0x100, bank: OnscreenActionBank.LeftUtility },
 	] });
 	pad.beginContact(1, 365, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x100, 'the footprint presses the switch although its center is on the neutral face area');
@@ -472,7 +569,7 @@ test('actual button contact is not intercepted by the invisible neutral face env
 test('directional pickup compares actual surfaces before neutral face geometry', () => {
 	const { pad } = createFixture();
 	pad.setGeometry({ ...geometry, faceX: 180, faceRadius: 100,
-		actions: [{ x: 180, y: 100, radius: 20, buttons: 0x100 }] });
+		actions: [{ x: 180, y: 100, radius: 20, buttons: 0x100, bank: OnscreenActionBank.LeftUtility }] });
 	pad.beginContact(1, 154, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000, 'the nearer pad edge wins despite the neutral face envelope');
 	pad.endContact(1);
@@ -482,7 +579,7 @@ test('directional pickup compares actual surfaces before neutral face geometry',
 	pad.beginContact(3, 145, 100, 30, 30, true);
 	assert.equal(pad.buttons, 0x8000, 'a point directly on the pad retains its directional purpose');
 	pad.endContact(3);
-	pad.setGeometry({ ...geometry, actions: [{ x: 140, y: 100, radius: 10, buttons: 0x100 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 140, y: 100, radius: 10, buttons: 0x100, bank: OnscreenActionBank.LeftUtility }] });
 	pad.beginContact(4, 140, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0x100, 'a direct visible button hit takes priority over overlapping pad artwork');
 });
@@ -523,11 +620,11 @@ test('layout changes immediately resample retained contact geometry', () => {
 	const { pad } = createFixture();
 	pad.beginContact(1, 325, 100, 14, 14, true);
 	assert.equal(pad.buttons, 3);
-	pad.setGeometry({ ...geometry, actions: [{ x: 339, y: 100, radius: 0, buttons: 4 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 339, y: 100, radius: 0, buttons: 4, bank: OnscreenActionBank.Face }] });
 	assert.equal(pad.buttons, 4, 'current layout is authoritative for retained samples');
 	pad.moveContact(1, 325, 100, 14, 14, true);
 	assert.equal(pad.buttons, 4, 'the identical sample was already resampled');
-	pad.setGeometry({ ...geometry, actions: [{ x: 340, y: 100, radius: 0, buttons: 4 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 340, y: 100, radius: 0, buttons: 4, bank: OnscreenActionBank.Face }] });
 	assert.equal(pad.buttons, 0, 'moving geometry away releases the retained contribution immediately');
 	pad.moveContact(1, 325, 100, 14, 14, true);
 	assert.equal(pad.buttons, 0, 'a native sample outside the moved button releases its contribution');
@@ -543,7 +640,7 @@ test('contact-slot removal retains the swapped purpose and contact sample', () =
 	pad.beginContact(1, 300, 100, 0, 0, false);
 	pad.beginContact(2, 325, 100, 14, 6, true);
 	pad.endContact(1);
-	pad.setGeometry({ ...geometry, actions: [{ x: 332, y: 103, radius: 0, buttons: 4 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 332, y: 103, radius: 0, buttons: 4, bank: OnscreenActionBank.Face }] });
 	assert.equal(pad.buttons, 4, 'layout resamples the contact copied into the removed slot');
 	pad.moveContact(2, 325, 100, 14, 6, true);
 	assert.equal(pad.buttons, 4, 'coordinates, both half-extents and activation follow the swapped ID');
@@ -558,8 +655,8 @@ test('layout resampling publishes only final aggregate edges and releases curren
 	pad.beginContact(2, 350, 100, 0, 0, true);
 	const before = views();
 	pad.setGeometry({ ...geometry, actions: [
-		{ x: 300, y: 100, radius: 20, buttons: 2 },
-		{ x: 350, y: 100, radius: 20, buttons: 1 },
+		{ x: 300, y: 100, radius: 20, buttons: 2, bank: OnscreenActionBank.Face },
+		{ x: 350, y: 100, radius: 20, buttons: 1, bank: OnscreenActionBank.Face },
 	] });
 	assert.equal(pad.buttons, 3);
 	assert.equal(edges.length, 2, 'temporary zero counts are not published');
@@ -609,7 +706,7 @@ test('identical contact samples skip geometry work while changed samples and lay
 	pad.moveContact(1, 301, 100, 15, 13, true);
 	assert.equal(pad.buttons, 1);
 	assert.equal(hits, 4, 'reactivating uses the retained current sample');
-	pad.setGeometry({ ...geometry, actions: [{ x: 301, y: 100, radius: 20, buttons: 4 }] });
+	pad.setGeometry({ ...geometry, actions: [{ x: 301, y: 100, radius: 20, buttons: 4, bank: OnscreenActionBank.Face }] });
 	assert.equal(pad.buttons, 4);
 	assert.equal(hits, 5, 'layout resamples the retained contact exactly once');
 	pad.moveContact(1, 301, 100, 15, 13, true);

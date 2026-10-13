@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 test('native pointer contact geometry reaches common input and armed ICU at the browser boundary', async t => {
 	const bundle = await build({
 		stdin: {
-			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+			contents: `export { BrowserOnscreenGamepad, OnscreenActionBank } from './hosts/browser/onscreen_gamepad';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';
@@ -34,7 +34,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		pad.setGeometry({
 			padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
 			faceX: 325, faceY: 100, faceRadius: 50,
-			actions: [{ x: 300, y: 100, radius: 20, buttons: 1 }, { x: 350, y: 100, radius: 20, buttons: 2 }],
+			actions: [{ x: 300, y: 100, radius: 20, buttons: 1, bank: api.OnscreenActionBank.Face }, { x: 350, y: 100, radius: 20, buttons: 2, bank: api.OnscreenActionBank.Face }],
 		});
 		const nativeEvents: Array<{ type: string; id: number; pointerType: string; width: number; height: number; x: number; y: number; trusted: boolean }> = [];
 		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {

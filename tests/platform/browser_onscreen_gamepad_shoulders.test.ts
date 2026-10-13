@@ -4,7 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { distanceToControl } from './touch_gamepad_geometry_oracle';
+import { controlContainsPoint, distanceToControl, roundContactBankWord } from './touch_gamepad_geometry_oracle';
 
 const BUTTONS = [
 	{ id: 'a_knop', bit: InputControllerGamepadButtonBit.A },
@@ -51,6 +51,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 	for (const profile of [
 		{ name: 'phone portrait', width: 393, height: 720 },
 		{ name: 'phone landscape', width: 852, height: 393 },
+		{ name: 'compact portrait', width: 320, height: 568 },
+		{ name: 'tablet portrait', width: 768, height: 1024 },
+		{ name: 'tablet landscape', width: 1024, height: 768 },
 	]) {
 		await t.test(profile.name, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
@@ -84,11 +87,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
 				input.getGlobalShortcutRegistry().registerControlShortcut(1, api.HOST_IDE_BUTTON,
 					() => { ideRequests += 1; }, () => { ideReleases += 1; });
-				const nativeEvents: Array<{ type: string; trusted: boolean; pointerType: string }> = [];
-				for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
+				const nativeEvents: Array<{ type: string; trusted: boolean; pointerType: string; width: number; height: number }> = [];
+				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
 					window.addEventListener(type, event => {
 						const pointer = event as PointerEvent;
-						nativeEvents.push({ type, trusted: event.isTrusted, pointerType: pointer.pointerType });
+						nativeEvents.push({ type, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height });
 					}, true);
 				}
 				let cycle = 0;
@@ -96,8 +99,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					menu,
 					geometry() {
 						return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius, buttons: action.buttons,
-							outline: action.outline ? { ...action.outline } : undefined }));
+							bank: action.bank, outline: action.outline ? { ...action.outline } : undefined }));
 					},
+					refreshLayout() { video.refreshLayout(); },
 					poll() {
 						input.pollInput();
 						const menuInput = menu.tickInput();
@@ -186,6 +190,92 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					}
 					await touch('touchEnd', []);
 					assert.equal((await poll()).model, 0);
+				}
+			});
+
+			await orientation.test('complete shoulder silhouettes isolate estimated and measured thumb footprints from face and directional banks', async () => {
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				for (const id of ['lb_knop', 'rb_knop', 'lt_knop', 'rt_knop']) {
+					const button = BUTTONS.find(button => button.id === id)!;
+					const shape = shapes.find(shape => shape.buttons === 1 << button.bit);
+					const arc = shape.outline;
+					const centerX = shape.x + arc.centerX;
+					const centerY = shape.y + arc.centerY;
+					const start = Math.atan2(arc.startY, arc.startX);
+					const sweep = (Math.atan2(arc.endY, arc.endX) - start + Math.PI * 2) % (Math.PI * 2);
+					const surfacePoints: Array<{ x: number; y: number }> = [];
+					for (let step = 0; step <= 12; step += 1) {
+						for (const radial of [-0.999, 0, 0.999]) {
+							const angle = start + sweep * step / 12;
+							const radius = arc.radius + radial * arc.halfWidth;
+							surfacePoints.push({ x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) });
+						}
+					}
+					// Round caps are part of the genuine silhouette, not just the arc
+					// centerline. Include their outside wings and nearly painted edges.
+					for (const [dx, dy] of [[arc.startX, arc.startY], [arc.endX, arc.endY]]) {
+						for (let step = 0; step < 8; step += 1) {
+							const angle = Math.PI * step / 4;
+							surfacePoints.push({ x: centerX + arc.radius * dx + arc.halfWidth * 0.999 * Math.cos(angle),
+								y: centerY + arc.radius * dy + arc.halfWidth * 0.999 * Math.sin(angle) });
+						}
+					}
+					const bankMask = id === 'lb_knop' || id === 'lt_knop' ? 0x50 : 0xa0;
+					for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
+						for (const [index, surface] of surfacePoints.entries()) {
+							assert.ok(controlContainsPoint(shape, surface.x, surface.y), `${id} sample ${index} is inside the actual finite silhouette`);
+							const contact = { ...point(id), ...surface, radiusX, radiusY };
+							await touch('touchStart', [contact]);
+							const entered = await poll();
+							assert.notEqual(entered.model & shape.buttons, 0, `${id} direct surface entry is never intercepted by another bank`);
+							assert.equal(entered.model & ~bankMask, 0, `${id} ${radiusX * 2}x${radiusY * 2} footprint cannot invent Y/up/utility contributions`);
+							assert.deepEqual([entered.physical, entered.snapshot, entered.mmio], [entered.model, entered.model, entered.model]);
+							const axes = [(entered.model & 0x40) !== 0 ? 0x10000 : 0, (entered.model & 0x80) !== 0 ? 0x10000 : 0];
+							assert.deepEqual(entered.axes, axes);
+							assert.deepEqual(entered.mmioAxes, axes);
+							assert.equal(entered.pointer, 0);
+							await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...contact, x: shape.x, y: shape.y }] });
+							const moved = await poll();
+							assert.notEqual(moved.model & shape.buttons, 0);
+							assert.equal(moved.model & ~bankMask, 0, 'live centerline motion retains only the selected bank');
+							assert.deepEqual([moved.physical, moved.snapshot, moved.mmio], [moved.model, moved.model, moved.model]);
+							await touch('touchEnd', []);
+							const ended = await poll();
+							assert.deepEqual([ended.model, ended.physical, ended.snapshot, ended.mmio], [0, 0, 0, 0]);
+						}
+					}
+				}
+			});
+
+			await orientation.test('independent Y and RB contacts survive cross-bank slides, viewport relayout and either release order', async () => {
+				for (const releaseShoulderFirst of [false, true]) {
+					const rb = point('rb_knop');
+					const y = point('y_knop');
+					await touch('touchStart', [rb]);
+					assert.equal((await poll()).model, 0x20);
+					await touch('touchStart', [rb, y]);
+					const both = await poll();
+					assert.deepEqual([both.model, both.physical, both.snapshot, both.mmio], [0x28, 0x28, 0x28, 0x28]);
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...rb, x: y.x, y: y.y }, y] });
+					assert.equal((await poll()).model, 8, 'the first native pointer deliberately enters the face bank without lifting');
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [rb, y] });
+					assert.equal((await poll()).model, 0x28);
+					await page.setViewportSize({ width: profile.width + 18, height: profile.height });
+					await page.evaluate(() => (globalThis as any).shoulderTest.refreshLayout());
+					const resizedShapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+					const rbWord = roundContactBankWord(resizedShapes, rb.x, rb.y, 14);
+					const yWord = roundContactBankWord(resizedShapes, y.x, y.y, 14);
+					const resized = await poll();
+					assert.deepEqual([resized.model, resized.physical, resized.snapshot, resized.mmio], Array(4).fill(rbWord | yWord),
+						'relayout resamples the two real retained contacts using new surfaces, not synthetic releases or captured banks');
+					await touch('touchEnd', [releaseShoulderFirst ? rb : y]);
+					const remainingWord = releaseShoulderFirst ? yWord : rbWord;
+					const remaining = await poll();
+					assert.deepEqual([remaining.model, remaining.physical, remaining.snapshot, remaining.mmio], Array(4).fill(remainingWord));
+					await touch('touchEnd', []);
+					assert.equal((await poll()).mmio, 0);
+					await page.setViewportSize({ width: profile.width, height: profile.height });
+					await page.evaluate(() => (globalThis as any).shoulderTest.refreshLayout());
 				}
 			});
 
@@ -327,6 +417,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			const nativeEvents = await page.evaluate(() => (globalThis as any).shoulderTest.nativeEvents);
 			assert.ok(nativeEvents.length > 0);
 			assert.ok(nativeEvents.every(event => event.trusted && event.pointerType === 'touch'), 'input originates in Chromium native dispatch, not synthetic DOM events');
+			for (const [width, height] of [[28, 28], [40, 56], [56, 40]]) {
+				assert.ok(nativeEvents.some(event => event.type === 'pointerdown' && event.width === width && event.height === height),
+					`${width}x${height} contact geometry genuinely arrives from the native browser boundary`);
+			}
 			assert.deepEqual(errors, []);
 			await page.evaluate(() => (globalThis as any).shoulderTest.finish());
 		});

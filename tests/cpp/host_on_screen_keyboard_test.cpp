@@ -22,14 +22,18 @@ public:
 };
 
 void testVisibleViewport() {
+	LibretroInput input(supervisor);
+	input.setInputPollCallback(poll);
+	input.setInputStateCallback(state);
 	TestVideoOutput video(256, 192);
 	VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
 	Font font;
 	presenter.default_font = &font;
-	HostOnScreenKeyboard keyboard;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard view(keyboard);
 	keyboard.open();
 	const auto frame = [&]() {
-		keyboard.queueRenderCommands(presenter);
+		view.queueRenderCommands(presenter);
 		return presenter.hostOverlayQueue.consumeHostMenuFrame();
 	};
 	const HostMenuFrame normal = frame();
@@ -60,7 +64,7 @@ void testVisibleViewport() {
 	}
 	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount; ++key) {
 		const auto center = middlepoint_area(cropped.commandRefs[2 + key * 2].rect->area);
-		require(keyboard.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key),
+		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key),
 			"every painted cropped key remains directly selectable");
 	}
 	const f32 oldLeft = q->area.left, oldTop = q->area.top;
@@ -68,7 +72,7 @@ void testVisibleViewport() {
 	require(frame().commandRefs[32].rect == q && q->area.left == oldLeft && q->area.top == oldTop,
 		"a picture-bottom change retains the actual top-docked key paint geometry");
 	const auto qCenter = middlepoint_area(q->area);
-	require(keyboard.selectAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
+	require(view.selectAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
 		"top-docked paint and hit testing continue sharing the same retained key rectangle");
 	video.visibleViewportBounds = RectBounds{14.8F, 12.6F, 245.2F, 185.4F, 0};
 	require(frame().commandRefs[32].rect == q, "origin-only relayout retains the key command");
@@ -90,7 +94,8 @@ void testFeedback() {
 	LibretroInput input(supervisor);
 	input.setInputPollCallback(poll);
 	input.setInputStateCallback(state);
-	HostOnScreenKeyboard keyboard;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard view(keyboard);
 	InputControllerSnapshot snapshot;
 	f64 time = 1000;
 	const auto sample = [&]() {
@@ -105,7 +110,7 @@ void testFeedback() {
 		keyboard.updateFeedback(time);
 	};
 	const auto frame = [&]() {
-		keyboard.queueRenderCommands(presenter);
+		view.queueRenderCommands(presenter);
 		return presenter.hostOverlayQueue.consumeHostMenuFrame();
 	};
 	const auto expectKey = [&](size_t key, u32 background, u32 foreground) {
@@ -118,7 +123,7 @@ void testFeedback() {
 	const auto select = [&](size_t key) {
 		const RectBounds& area = frame().commandRefs[2u + key * 2u].rect->area;
 		const Vec2 center = middlepoint_area(area);
-		require(keyboard.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key), "selection comes from the published key geometry");
+		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key), "selection comes from the published key geometry");
 	};
 	const auto expectHomeEndHelp = [&](u32 color) {
 		const HostMenuFrame commands = frame();
@@ -134,13 +139,13 @@ void testFeedback() {
 	expectKey(w, selectedColor, textColor);
 	expectKey(q, idleColor, textColor);
 	select(q);
-	keyboard.activate(input, 0);
+	keyboard.activate(0);
 	sample();
 	require(pressed(hid_key_usage::Q), "held feedback accompanies the actual key down");
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(5000);
 	expectKey(q, pressedColor, pressedTextColor);
-	keyboard.releaseSource(input, 0);
+	keyboard.releaseSource(0);
 	sample();
 	require(!pressed(hid_key_usage::Q), "afterglow does not stretch raw input lifetime");
 	expectKey(q, pressedColor, pressedTextColor);
@@ -150,8 +155,8 @@ void testFeedback() {
 	expectKey(q, selectedColor, textColor);
 
 	advance(5200);
-	keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
-	keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+	keyboard.activate(OnScreenKeyboard::PointerSource);
+	keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 	sample();
 	require(!pressed(hid_key_usage::Q), "a completed short pointer tap is already released in the sampled input");
 	expectKey(q, pressedColor, pressedTextColor);
@@ -159,65 +164,65 @@ void testFeedback() {
 	expectKey(q, selectedColor, textColor);
 
 	advance(5400);
-	keyboard.activate(input, 0);
-	keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
-	keyboard.releaseSource(input, 0);
+	keyboard.activate(0);
+	keyboard.activate(OnScreenKeyboard::PointerSource);
+	keyboard.releaseSource(0);
 	advance(6000);
 	sample();
 	require(pressed(hid_key_usage::Q), "one independent contributor cannot end another contributor's feedback or key");
 	expectKey(q, pressedColor, pressedTextColor);
-	keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+	keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 	sample();
 	require(!pressed(hid_key_usage::Q), "the final contributor emits key up immediately");
 	advance(6120);
 	expectKey(q, selectedColor, textColor);
 
 	advance(6200);
-	keyboard.activate(input, 0);
+	keyboard.activate(0);
 	select(w);
-	keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
-	keyboard.releaseSource(input, 0);
+	keyboard.activate(OnScreenKeyboard::PointerSource);
+	keyboard.releaseSource(0);
 	advance(6320);
 	expectKey(q, idleColor, textColor);
 	expectKey(w, pressedColor, pressedTextColor);
 	sample();
 	require(!pressed(hid_key_usage::Q) && pressed(hid_key_usage::W), "simultaneously held letters retain independent input and visual lifetimes");
-	keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+	keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 
 	select(q);
 	advance(6400);
-	keyboard.activate(input, 0);
-	keyboard.releaseSource(input, 0);
+	keyboard.activate(0);
+	keyboard.releaseSource(0);
 	advance(6450);
-	keyboard.activate(input, 0);
+	keyboard.activate(0);
 	advance(6520);
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(6700);
-	keyboard.releaseSource(input, 0);
+	keyboard.releaseSource(0);
 	advance(6819);
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(6820);
 	expectKey(q, selectedColor, textColor);
 
 	advance(6900);
-	keyboard.command(input, 1, OnScreenKeyboardCommand::Backspace);
+	keyboard.command(1, OnScreenKeyboardCommand::Backspace);
 	expectKey(backspace, pressedColor, pressedTextColor);
 	expectKey(q, selectedColor, textColor);
-	keyboard.releaseSource(input, 1);
+	keyboard.releaseSource(1);
 	sample();
 	require(!pressed(hid_key_usage::Backspace), "command-key feedback never delays Backspace key up");
 	advance(7020);
 	expectKey(backspace, idleColor, textColor);
 
 	advance(7100);
-	keyboard.command(input, 3, OnScreenKeyboardCommand::Shift);
-	keyboard.activate(input, 0);
-	keyboard.command(input, 3, OnScreenKeyboardCommand::Shift);
+	keyboard.command(3, OnScreenKeyboardCommand::Shift);
+	keyboard.activate(0);
+	keyboard.command(3, OnScreenKeyboardCommand::Shift);
 	select(shift);
 	sample();
 	require(pressed(hid_key_usage::ShiftLeft), "captured shift remains physically forwarded after sticky state ends");
 	expectKey(shift, pressedColor, pressedTextColor);
-	keyboard.releaseSource(input, 0);
+	keyboard.releaseSource(0);
 	sample();
 	require(!pressed(hid_key_usage::ShiftLeft), "captured shift final release does not wait for visual expiry");
 	advance(7219);
@@ -227,16 +232,16 @@ void testFeedback() {
 
 	advance(7300);
 	select(control);
-	keyboard.activate(input, 3);
+	keyboard.activate(3);
 	expectKey(control, pressedColor, pressedTextColor);
 	select(q);
-	keyboard.activate(input, 0);
+	keyboard.activate(0);
 	select(control);
-	keyboard.activate(input, 3);
+	keyboard.activate(3);
 	sample();
 	require(pressed(hid_key_usage::ControlLeft), "captured sticky control remains down until its key source ends");
 	expectKey(control, pressedColor, pressedTextColor);
-	keyboard.releaseSource(input, 0);
+	keyboard.releaseSource(0);
 	sample();
 	require(!pressed(hid_key_usage::ControlLeft), "captured sticky modifier release is immediate");
 	advance(7420);
@@ -244,9 +249,9 @@ void testFeedback() {
 
 	for (const auto command : {OnScreenKeyboardCommand::Home, OnScreenKeyboardCommand::End}) {
 		advance(time + 200);
-		keyboard.command(input, 0, command);
+		keyboard.command(0, command);
 		expectHomeEndHelp(pressedColor);
-		keyboard.releaseSource(input, 0);
+		keyboard.releaseSource(0);
 		sample();
 		require(!pressed(hid_key_usage::Home) && !pressed(hid_key_usage::End), "hidden navigation-key feedback cannot keep navigation input held");
 		expectHomeEndHelp(pressedColor);
@@ -255,10 +260,10 @@ void testFeedback() {
 	}
 
 	select(q);
-	keyboard.activate(input, 0);
-	keyboard.releaseSource(input, 0);
+	keyboard.activate(0);
+	keyboard.releaseSource(0);
 	expectKey(q, pressedColor, pressedTextColor);
-	keyboard.close(input);
+	keyboard.close();
 	keyboard.open();
 	expectKey(q, selectedColor, textColor);
 	expectHomeEndHelp(0xffb2b2b2u);
@@ -270,7 +275,8 @@ int main() {
 		LibretroInput input(supervisor);
 		input.setInputPollCallback(poll);
 		input.setInputStateCallback(state);
-		HostOnScreenKeyboard keyboard;
+		OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard view(keyboard);
 		InputControllerSnapshot snapshot;
 		f64 time = 0;
 		const auto sample = [&](f64 delta = 20) {
@@ -283,70 +289,70 @@ int main() {
 		};
 		for (int hostHz : {60, 120}) {
 			keyboard.open();
-			keyboard.activate(input, 0);
+			keyboard.activate(0);
 			for (int frame = 0; frame < hostHz / 10; ++frame) {
 				sample(1000.0 / hostHz);
 				require(pressed(hid_key_usage::Q), "100ms physical hold survives every host poll");
 			}
-			keyboard.releaseSource(input, 0);
+			keyboard.releaseSource(0);
 			sample();
 			require(!pressed(hid_key_usage::Q), "actual source release produces key up");
 		}
-		keyboard.activate(input, 0);
-		keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
-		keyboard.releaseSource(input, 0);
+		keyboard.activate(0);
+		keyboard.activate(OnScreenKeyboard::PointerSource);
+		keyboard.releaseSource(0);
 		sample();
 		require(pressed(hid_key_usage::Q), "pointer independently retains the shared key");
-		keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+		keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 		sample();
 		require(!pressed(hid_key_usage::Q), "final shared contributor releases the key");
-		keyboard.activate(input, 0);
+		keyboard.activate(0);
 		keyboard.moveHorizontal(1);
-		keyboard.activate(input, HostOnScreenKeyboard::PointerSource);
-		keyboard.command(input, 2, OnScreenKeyboardCommand::Backspace);
+		keyboard.activate(OnScreenKeyboard::PointerSource);
+		keyboard.command(2, OnScreenKeyboardCommand::Backspace);
 		sample();
 		require(pressed(hid_key_usage::Q) && pressed(hid_key_usage::W) && pressed(hid_key_usage::Backspace), "moving selection never retargets held keys");
-		keyboard.releaseSource(input, 0);
-		keyboard.releaseSource(input, 2);
+		keyboard.releaseSource(0);
+		keyboard.releaseSource(2);
 		sample();
 		require(!pressed(hid_key_usage::Q) && !pressed(hid_key_usage::Backspace) && pressed(hid_key_usage::W), "different source keys release independently");
-		keyboard.releaseSource(input, HostOnScreenKeyboard::PointerSource);
+		keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 		keyboard.open();
-		keyboard.command(input, 3, OnScreenKeyboardCommand::Shift);
-		keyboard.activate(input, 0);
+		keyboard.command(3, OnScreenKeyboardCommand::Shift);
+		keyboard.activate(0);
 		keyboard.moveHorizontal(1);
-		keyboard.activate(input, 1);
-		keyboard.releaseSource(input, 0);
+		keyboard.activate(1);
+		keyboard.releaseSource(0);
 		sample();
 		require(pressed(hid_key_usage::W) && pressed(hid_key_usage::ShiftLeft), "shift belongs to every still-held shifted key");
-		keyboard.releaseSource(input, 1);
+		keyboard.releaseSource(1);
 		sample();
 		require(!pressed(hid_key_usage::ShiftLeft), "one-shot shift ends with the final shifted source");
 		keyboard.open();
 		for (int row = 0; row < 3; ++row) keyboard.moveVertical(1);
 		keyboard.moveHorizontal(-1);
-		keyboard.activate(input, 3);
-		keyboard.command(input, 0, OnScreenKeyboardCommand::Space);
-		keyboard.activate(input, 3);
+		keyboard.activate(3);
+		keyboard.command(0, OnScreenKeyboardCommand::Space);
+		keyboard.activate(3);
 		sample();
 		require(pressed(hid_key_usage::ControlLeft) && pressed(hid_key_usage::Space), "toggling a sticky modifier cannot alter an already-held key");
-		keyboard.releaseSource(input, 0);
+		keyboard.releaseSource(0);
 		sample();
 		require(!pressed(hid_key_usage::ControlLeft) && !pressed(hid_key_usage::Space), "captured sticky modifier releases with its key");
-		keyboard.command(input, 0, OnScreenKeyboardCommand::Backspace);
+		keyboard.command(0, OnScreenKeyboardCommand::Backspace);
 		for (int frame = 0; frame < 120; ++frame) {
 			sample(1000.0 / 120);
 			require(pressed(hid_key_usage::Backspace), "held special keys do not become host-generated repeat pulses");
 		}
-		keyboard.command(input, 1, OnScreenKeyboardCommand::Home);
-		keyboard.command(input, 2, OnScreenKeyboardCommand::End);
-		keyboard.close(input);
+		keyboard.command(1, OnScreenKeyboardCommand::Home);
+		keyboard.command(2, OnScreenKeyboardCommand::End);
+		keyboard.close();
 		sample();
 		for (u32 word : snapshot.keyWords) require(word == 0u, "closing releases every held virtual key and modifier");
 		keyboard.open();
-		keyboard.activate(input, 0);
+		keyboard.activate(0);
 		input.postKeyboardEvent(RETROK_q, true);
-		keyboard.releaseSource(input, 0);
+		keyboard.releaseSource(0);
 		sample();
 		require(pressed(hid_key_usage::Q), "physical keyboard ownership outlives the released overlay source");
 		input.postKeyboardEvent(RETROK_q, false);

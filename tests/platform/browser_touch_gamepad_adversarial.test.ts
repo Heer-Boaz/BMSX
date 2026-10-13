@@ -4,7 +4,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import { controlContainsPoint, distanceToControl, outsideControlPoint } from './touch_gamepad_geometry_oracle';
+import { controlContainsPoint, distanceToControl, outsideControlPoint, roundContactBankWord } from './touch_gamepad_geometry_oracle';
 
 const actions = [
 	{ id: 'a_knop', buttons: 1 << InputControllerGamepadButtonBit.A },
@@ -118,7 +118,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			},
 			geometry() {
 				return pad.geometry.actions.map(action => ({ x: action.x, y: action.y, radius: action.radius,
-					outline: action.outline ? { ...action.outline } : undefined }));
+					buttons: action.buttons, bank: action.bank, outline: action.outline ? { ...action.outline } : undefined }));
 			},
 			refreshLayout() { video.refreshLayout(); },
 			takeEvents() { return events.splice(0); },
@@ -389,7 +389,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		}
 	});
 
-	await t.test('one thumb can truly contact Y plus RB while another finger independently holds RB', async () => {
+	await t.test('one thumb selects the nearest face or shoulder bank while another finger independently holds RB', async () => {
 		const geometry = await measure();
 		const [, , , y, , , , , , rb] = geometry.actions;
 		let contact: TouchPoint | undefined;
@@ -406,9 +406,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		assert.ok(distanceToControl(rb, contact.x, contact.y) < 14);
 		const second = { id: 2, x: rb.x, y: rb.y, radiusX: 1, radiusY: 1 };
 		await touch('touchStart', [contact]);
-		await assertWord(0x28, 0, 'actual skin overlap contributes both visible switches, not one arbitrarily selected button deck');
+		const expected = roundContactBankWord(geometry.actions, contact.x, contact.y, 14);
+		assert.ok(expected === 8 || expected === 0x20, 'the independent true-surface oracle chooses one bank, not a global Y mask');
+		await assertWord(expected, 0, 'a bridging footprint selects the nearest bank rather than spilling into another physical unit');
 		await touch('touchStart', [contact, second]);
-		await assertWord(0x28);
+		await assertWord(expected | 0x20);
 		const yOnly = { ...contact, x: y.x, y: y.y };
 		await touch('touchMove', [yOnly, second]);
 		await assertWord(0x28, 0, 'RB remains pressed by its separate finger after the thumb rolls off it');
@@ -426,14 +428,12 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		assert.ok(Math.hypot(lb.x - pad.x, lb.y - pad.y) < pad.radius + radius,
 			'the measured skin area also reaches the pad');
 		await touch('touchStart', [contact]);
-		const expected = geometry.actions.reduce((word, action, index) =>
-			distanceToControl(action, contact.x, contact.y) <= radius ? word | actions[index].buttons : word, 0);
+		const expected = roundContactBankWord(geometry.actions, contact.x, contact.y, radius);
 		assert.ok((expected & 0x10) !== 0);
-		await assertWord(expected, 0, 'a direct LB contact keeps all real button intersections, but never becomes pad input');
+		await assertWord(expected, 0, 'a direct LB contact chords only its actual shoulder bank, never pad or unrelated controls');
 		const moved = { ...contact, x: pad.x - pad.radius * 0.8, y: pad.y };
 		await touch('touchMove', [moved]);
-		const movedButtons = geometry.actions.reduce((word, action, index) =>
-			distanceToControl(action, moved.x, moved.y) <= radius ? word | actions[index].buttons : word, 0);
+		const movedButtons = roundContactBankWord(geometry.actions, moved.x, moved.y, radius);
 		await assertWord(movedButtons, 0, 'the retained utility contact keeps only actual button intersections, never pad directions');
 	});
 

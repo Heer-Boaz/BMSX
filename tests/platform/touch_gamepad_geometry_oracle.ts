@@ -9,6 +9,11 @@ export interface ControlShapeOracle {
 	outline?: RoundedCircularArc;
 }
 
+export interface BankedControlShapeOracle extends ControlShapeOracle {
+	bank: number;
+	buttons: number;
+}
+
 const TAU = Math.PI * 2;
 
 function angleIsOnArc(angle: number, arc: RoundedCircularArc): boolean {
@@ -33,6 +38,25 @@ export function distanceToControl(shape: ControlShapeOracle, x: number, y: numbe
 
 export function controlContainsPoint(shape: ControlShapeOracle, x: number, y: number): boolean {
 	return corePointDistance(shape, x, y) <= (shape.outline?.halfWidth ?? shape.radius);
+}
+
+/** Independent round-contact eligibility: closest true surface chooses a bank,
+ * and every touched surface in that bank contributes its hardware bits. */
+export function roundContactBankWord(shapes: readonly BankedControlShapeOracle[], x: number, y: number, radius: number): number {
+	let nearest = Infinity;
+	let bank = -1;
+	for (const shape of shapes) {
+		const distance = distanceToControl(shape, x, y);
+		if (distance <= radius && distance < nearest) {
+			nearest = distance;
+			bank = shape.bank;
+		}
+	}
+	let word = 0;
+	for (const shape of shapes) {
+		if (shape.bank === bank && distanceToControl(shape, x, y) <= radius) word |= shape.buttons;
+	}
+	return word;
 }
 
 /** Finite arc-pair distance candidates are endpoint projections, stationary

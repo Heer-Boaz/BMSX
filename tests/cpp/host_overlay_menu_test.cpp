@@ -107,6 +107,24 @@ int main() {
 			"reopening at the same font, bounds and first window retains the visible range title");
 		assertVisible(reopened, presenter.visibleViewportBounds, font);
 		require(presenter.viewportSize.x == width && presenter.viewportSize.y == height, "menu lifecycle never changes the game's full presentation target");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+		require(frame().commandRefs[1].glyphs->items[0] == "KEYBOARD: TEXT", "actual native Select+X enters the model's text page");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+		require(frame().commandRefs[1].glyphs->items[0] == "KEYBOARD: SYMBOLS", "actual native Select+Y changes the real logical and painted page");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+		require(frame().commandRefs[1].glyphs->items[0] == "KEYBOARD: FN", "a second actual page chord reaches function keys");
+		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; tick();
+		// The native input owner composes virtual-key routed words at its next physical poll.
+		tick();
+		InputControllerSnapshot keyboardSnapshot{};
+		input.sampleInputControllerSnapshot(keyboardSnapshot, InputControllerSampleContext::Normal);
+		require((keyboardSnapshot.keyWords[hid_key_usage::F1 >> 5] & (1u << (hid_key_usage::F1 & 31))) != 0,
+			"native gamepad A forwards the selected actual F1 identity, never the old main-page Q");
+		buttons = 0; tick(); tick();
+		input.sampleInputControllerSnapshot(keyboardSnapshot, InputControllerSampleContext::Normal);
+		require((keyboardSnapshot.keyWords[hid_key_usage::F1 >> 5] & (1u << (hid_key_usage::F1 & 31))) == 0, "actual native A UP releases function key");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+		require(!menu.active(), "actual native close chord retires function-page UI without guest presentation changes");
 		std::cout << "HOST-VISIBLE-MENU:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -32,8 +34,9 @@ function keyboardFixture() {
 	presenter.default_font = new Font();
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, { devices: () => [], subscribe: () => () => {} }, -1);
-	const keyboard = new HostOnScreenKeyboard(presenter, input);
-	keyboard.open();
+	const model = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const keyboard = new HostOnScreenKeyboard(presenter, model);
+	model.open();
 	const frame = () => { keyboard.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
 	return { output, presenter, input, keyboard, frame };
 }

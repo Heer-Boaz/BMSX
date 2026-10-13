@@ -9,7 +9,10 @@ import { HostAudioOutput } from '../common/audio_output';
 import { HostAudioDevice } from '../common/audio_device';
 import { HostFrameRunResult, runHostFrame } from '../common/host_frame';
 import { HostFrameSession } from '../common/frame_session';
-import { HostOverlayMenu } from '../common/host_overlay_menu';
+import { HostKeyboardPresentation, HostOverlayMenu, HostOverlayOutcome } from '../common/host_overlay_menu';
+import { OnScreenKeyboard } from '../common/input/on_screen_keyboard';
+import { BrowserOnscreenKeyboard } from './onscreen_keyboard';
+import { BROWSER_KEYBOARD_PAGES } from './onscreen_keyboard_layout';
 import { RenderPresentationState } from '../common/presentation_state';
 import { SystemOutputLog } from '../common/system_output_log';
 import {
@@ -83,9 +86,13 @@ async function startBrowserPlayer(): Promise<void> {
 				getIndex: () => options.videoOutput.screenFit === 'fit' ? 0 : 1,
 				setIndex: index => options.videoOutput.setScreenFit(index === 0 ? 'fit' : 'overscan'),
 			}],
+			new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES),
+			HostKeyboardPresentation.External,
 		);
+		options.browserInput.setOnscreenKeyboard(new BrowserOnscreenKeyboard(
+			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
+		));
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
-		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
 			options.browserInput.poll(currentTime);

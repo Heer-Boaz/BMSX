@@ -8,6 +8,7 @@ import {
 import { type HostClock } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import type { BrowserOnscreenGamepad } from './onscreen_gamepad';
+import type { BrowserOnscreenKeyboard } from './onscreen_keyboard';
 import type { BrowserInputTraceObserver, BrowserInputTraceRoute, BrowserInputResetReason } from './input_trace_contract';
 import {
 	createGamepadHaptics,
@@ -147,6 +148,7 @@ export class BrowserInputHub implements InputSource {
 	private readonly gamepads: GamepadDevice[] = [];
 	private readonly clock: HostClock;
 	private readonly onscreenGamepad: BrowserOnscreenGamepad;
+	private onscreenKeyboard: BrowserOnscreenKeyboard | undefined;
 	private keyboardCapture: ((code: string) => boolean) = null;
 	private foregroundPointerCapture: ((x: number, y: number) => boolean) | null = null;
 	private nativeClipboardEnabled: ((action: ClipboardAction) => boolean) | undefined;
@@ -241,6 +243,8 @@ export class BrowserInputHub implements InputSource {
 			ownerWindow.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
 			if (trace) this.observeInputReset(trace, 'teardown');
 			else this.cancelInput();
+			this.onscreenKeyboard?.dispose();
+			this.onscreenKeyboard = undefined;
 			unsubscribeOnscreen?.();
 			for (const device of this.gamepads) {
 				if (device) {
@@ -257,16 +261,18 @@ export class BrowserInputHub implements InputSource {
 		return event => {
 			const before = this.onscreenGamepad ? this.onscreenGamepad.buttons : 0;
 			const commonBefore = observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1;
-			let route: BrowserInputTraceRoute = this.onscreenGamepad?.ownsContact(event.pointerId)
-				? 'controller' : this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
+			let route: BrowserInputTraceRoute = this.onscreenKeyboard?.ownsContact(event.pointerId) ? 'keyboard'
+				: this.onscreenGamepad?.ownsContact(event.pointerId) ? 'controller'
+					: this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
 			let completed = false;
 			try {
 				handler(event);
 				completed = true;
 			} finally {
 				if (event.type === 'pointerdown') {
-					route = this.onscreenGamepad?.ownsContact(event.pointerId)
-						? 'controller' : this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
+					route = this.onscreenKeyboard?.ownsContact(event.pointerId) ? 'keyboard'
+						: this.onscreenGamepad?.ownsContact(event.pointerId) ? 'controller'
+							: this.activePointerIndex(event.pointerId) >= 0 ? 'canvas' : 'ignored';
 				}
 				observer.pointerRouted(event, route, before, this.onscreenGamepad ? this.onscreenGamepad.buttons : 0,
 					commonBefore, observer.commonGamepad ? observer.commonGamepad.physicalGamepadButtonsWord() : -1, completed);
@@ -310,6 +316,11 @@ export class BrowserInputHub implements InputSource {
 	/** Foreground host UI owns new contacts inside its actual displayed surface. */
 	setForegroundPointerCapture(handler: (x: number, y: number) => boolean): void {
 		this.foregroundPointerCapture = handler;
+	}
+
+	/** The browser keyboard retains native key-contact leases, independently of the canvas pointer. */
+	setOnscreenKeyboard(keyboard: BrowserOnscreenKeyboard): void {
+		this.onscreenKeyboard = keyboard;
 	}
 
 	/** Host controls may admit native clipboard events without injecting a guest key. */
@@ -374,6 +385,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private readonly cancelInput = (): void => {
+		this.onscreenKeyboard?.cancelContacts();
 		this.onscreenGamepad?.cancelContacts();
 		this.nativeClipboardKeys.clear();
 		const supervisorRequestLineHigh = this.activeKeyPressIds.has(this.supervisorRequestKeyCode);
@@ -395,9 +407,15 @@ export class BrowserInputHub implements InputSource {
 	private readonly onPointerDown = (event: PointerEvent): void => {
 		const touch = event.pointerType === 'touch';
 		const active = touch || (event.buttons & 1) !== 0;
+		if (this.onscreenKeyboard?.beginContact(event.pointerId, event.target, active)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			this.gestureSurface.setPointerCapture(event.pointerId);
+			return;
+		}
 		const foreground = this.foregroundPointerCapture !== null
 			&& this.foregroundPointerCapture(event.clientX, event.clientY);
-		if (!foreground && this.onscreenGamepad) {
+		if (!foreground && !this.onscreenKeyboard?.visible && this.onscreenGamepad) {
 			const estimated = touch && event.width === 1 && event.height === 1;
 			const halfWidth = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.width / 2 : 0;
 			const halfHeight = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.height / 2 : 0;
@@ -422,6 +440,11 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private readonly onPointerUp = (event: PointerEvent): void => {
+		if (this.onscreenKeyboard?.endContact(event.pointerId, false)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (this.onscreenGamepad?.endContact(event.pointerId)) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
@@ -431,6 +454,11 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private readonly onPointerCancel = (event: PointerEvent): void => {
+		if (this.onscreenKeyboard?.endContact(event.pointerId, true)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (this.onscreenGamepad?.endContact(event.pointerId)) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
@@ -488,6 +516,11 @@ export class BrowserInputHub implements InputSource {
 	private readonly onPointerMove = (event: PointerEvent): void => {
 		const touch = event.pointerType === 'touch';
 		const active = touch || (event.buttons & 1) !== 0;
+		if (this.onscreenKeyboard?.moveContact(event.pointerId, active)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 		if (this.onscreenGamepad) {
 			const estimated = touch && event.width === 1 && event.height === 1;
 			const halfWidth = touch ? estimated ? ESTIMATED_TOUCH_HALF_SIZE : event.width / 2 : 0;

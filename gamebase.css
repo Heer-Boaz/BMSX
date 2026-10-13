@@ -20,22 +20,22 @@
 	pointer-events: none;
 }
 
-/* Dark outer edges and light inner edges stay readable over either scene tone. */
+/* Quiet idle artwork stays subordinate to the game; held controls acknowledge input. */
 .control-bezel {
 	fill: none;
-	stroke: rgba(8, 12, 18, 0.68);
+	stroke: rgba(8, 12, 18, 0.30);
 	stroke-width: 3;
 }
 
 .action-button {
 	fill: none;
-	stroke: rgba(232, 240, 247, 0.7);
+	stroke: rgba(232, 240, 247, 0.34);
 	stroke-width: 1.25;
 }
 
 .d-pad-outline, .d-pad-direction, .stick-outline {
 	fill: none;
-	stroke: rgba(232, 240, 247, 0.7);
+	stroke: rgba(232, 240, 247, 0.40);
 	stroke-width: 1.25;
 	stroke-linecap: round;
 	stroke-linejoin: round;
@@ -52,19 +52,23 @@
 }
 
 .action-label {
-	fill: #f3f7fa;
-	stroke: #101010;
-	stroke-width: 0.12em;
+	fill: rgba(232, 240, 247, 0.44);
+	stroke: rgba(8, 12, 18, 0.38);
+	stroke-width: 0.04em;
 	stroke-linejoin: round;
 	paint-order: stroke fill;
 	font-family: system-ui, sans-serif;
-	font-size: 23px;
-	font-weight: 650;
+	font-size: 17px;
+	font-weight: 500;
 	text-anchor: middle;
 	dominant-baseline: central;
 }
 
-.action-accent { fill: var(--control-accent); opacity: 0.8; }
+.action-button[data-touched="true"] ~ .action-label {
+	fill: rgba(243, 247, 250, 0.95);
+}
+
+.action-accent { fill: var(--control-accent); opacity: 0.48; }
 .action-button[data-touched="true"] ~ .action-accent { opacity: 1; }
 .red { --control-accent: #ff8580; }
 .blue { --control-accent: #91bcff; }
@@ -72,13 +76,12 @@
 .pink { --control-accent: #e8a7df; }
 
 .auxiliary {
-	stroke: rgba(232, 240, 247, 0.54);
+	stroke: rgba(232, 240, 247, 0.30);
 }
 
 .auxiliary-label { font-size: 12px; }
-.shoulder-label { font-size: 17px; }
+.shoulder-label { font-size: 13px; }
 .menu-label { font-size: 10px; letter-spacing: 0.1px; }
-.utility-surface .action-label { fill: rgba(243, 247, 250, 0.9); }
 
 body {
 	position: fixed;

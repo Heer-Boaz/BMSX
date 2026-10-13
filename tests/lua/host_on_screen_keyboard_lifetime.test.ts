@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HostOnScreenKeyboard, OnScreenKeyboardCommand } from '../../hosts/common/host_on_screen_keyboard';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
@@ -17,7 +18,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 function fixture() {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, { devices: () => [], subscribe: () => () => {} }, -1);
-	const keyboard = new HostOnScreenKeyboard({} as VideoPresenter, input);
+	const keyboard = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
 	keyboard.open();
 	const snapshot = createInputControllerSnapshot();
 	const writes: Array<{ code: string; down: boolean }> = [];
@@ -58,13 +59,13 @@ test('a controller and the logical pointer retain independent contributions to t
 	const f = fixture();
 	t.after(() => f.input.dispose());
 	f.keyboard.activate(0);
-	f.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.poll();
 	assert.equal(f.pressed('KeyQ'), true);
 	f.keyboard.releaseSource(0);
 	f.poll();
 	assert.equal(f.pressed('KeyQ'), true, 'the remaining pointer hold cannot be released by the controller');
-	f.keyboard.releaseSource(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
 	f.poll();
 	assert.equal(f.pressed('KeyQ'), false);
 	assert.deepEqual(f.writes, [{ code: 'KeyQ', down: true }, { code: 'KeyQ', down: false }]);
@@ -133,7 +134,7 @@ test('moving keyboard selection cannot retarget held keys, and different keys st
 	t.after(() => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.moveHorizontal(1);
-	f.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.keyboard.command(2, OnScreenKeyboardCommand.Backspace);
 	f.poll();
 	assert.equal(f.pressed('KeyQ'), true);
@@ -145,7 +146,7 @@ test('moving keyboard selection cannot retarget held keys, and different keys st
 	assert.equal(f.pressed('KeyQ'), false);
 	assert.equal(f.pressed('Backspace'), false);
 	assert.equal(f.pressed('KeyW'), true);
-	f.keyboard.releaseSource(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
 	f.poll();
 	assert.equal(f.pressed('KeyW'), false);
 });
@@ -211,7 +212,7 @@ test('closing the keyboard releases every source, special key and sticky or capt
 	f.keyboard.activate(0);
 	f.keyboard.command(1, OnScreenKeyboardCommand.Home);
 	f.keyboard.command(2, OnScreenKeyboardCommand.End);
-	f.keyboard.activate(HostOnScreenKeyboard.POINTER_SOURCE);
+	f.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
 	f.poll();
 	assert.equal(f.pressed('KeyQ'), true);
 	assert.equal(f.pressed('Home'), true);

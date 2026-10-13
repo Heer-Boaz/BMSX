@@ -30,6 +30,9 @@ import type { StudioConfiguration } from '../common/studio_configuration';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
+import { BrowserOnscreenKeyboard } from '../../hosts/browser/onscreen_keyboard';
+import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
 import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import {
@@ -40,7 +43,7 @@ import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostAudioDevice } from '../../hosts/common/audio_device';
 import { HostFrameRunResult } from '../../hosts/common/host_frame';
 import { HostFrameSession } from '../../hosts/common/frame_session';
-import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostKeyboardPresentation, HostOverlayMenu, HostOverlayOutcome } from '../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { runWorkbenchHostFrame } from '../workbench/host_frame';
@@ -98,9 +101,13 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			execution,
 			options.menuOptions,
+			new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES),
+			HostKeyboardPresentation.External,
 		);
+		options.browserInput.setOnscreenKeyboard(new BrowserOnscreenKeyboard(
+			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
+		));
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
-		if (options.controlView) hostOverlayMenu.setKeyboardVisibilityListener(options.controlView.setKeyboardVisible);
 		const workspace = configuration.workspace;
 		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
 		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));

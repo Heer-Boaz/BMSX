@@ -427,7 +427,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 	menu.queueRenderCommands();
 	const keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
 	const titleGlyphs = keyboardFrame.commandRefs[1] as GlyphRenderSubmission;
-	assert.equal(titleGlyphs.items, 'ON-SCREEN KEYBOARD');
+	assert.equal(titleGlyphs.items, 'KEYBOARD: TEXT');
 	input.dispose();
 });
 
@@ -571,7 +571,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	}
 	assert.equal(helpLines.has('A TYPE  B SPACE  X BKSP  Y SHIFT'), true);
 	assert.equal(helpLines.has('L/R CURSOR  LT/RT HOME/END'), true);
-	assert.equal(helpLines.has('START ENTER  SEL+B DEL'), true);
+	assert.equal(helpLines.has('START ENTER  SEL+B DEL  SEL+Y PAGE'), true);
 	assert.equal(helpLines.has('SEL+X CLOSE  SEL+L/R HOME/END'), true);
 	assert.ok(qGlyph);
 	input.inputAxis2(

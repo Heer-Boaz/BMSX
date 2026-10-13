@@ -73,7 +73,8 @@ private:
 	Font timelineFont{FontVariant::Tiny};
 	TimelineState timelineState;
 	Page m_page = Page::Closed;
-	HostOnScreenKeyboard m_keyboard;
+	OnScreenKeyboard m_keyboard;
+	HostOnScreenKeyboard m_keyboardView;
 	bool m_showFps = false;
 	i32 m_selected = 0;
 	bool m_dirtyText = true;

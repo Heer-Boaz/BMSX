@@ -8,9 +8,8 @@ import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/device
 const SELECT = 1 << 8;
 const LB = 1 << 4;
 const CONTROLLER_BUTTONS = { a_knop: InputControllerGamepadButtonBit.A, b_knop: InputControllerGamepadButtonBit.B, x_knop: InputControllerGamepadButtonBit.X, y_knop: InputControllerGamepadButtonBit.Y, ls_knop: InputControllerGamepadButtonBit.LeftStick, rs_knop: InputControllerGamepadButtonBit.RightStick, select_knop: InputControllerGamepadButtonBit.Select, start_knop: InputControllerGamepadButtonBit.Start, lb_knop: InputControllerGamepadButtonBit.LeftBumper, rb_knop: InputControllerGamepadButtonBit.RightBumper, lt_knop: InputControllerGamepadButtonBit.LeftTrigger, rt_knop: InputControllerGamepadButtonBit.RightTrigger };
-const KEYBOARD_COMMANDS = { a_knop: 'KeyW', b_knop: 'Space', x_knop: 'Backspace', start_knop: 'Enter', lb_knop: 'ArrowLeft', rb_knop: 'ArrowRight', lt_knop: 'Home', rt_knop: 'End' };
 
-test('foreground keyboard acquires overlapping contacts before the touch gamepad without changing existing leases', async t => {
+test('bitmap keyboard composition acquires foreground contacts without changing existing canvas/gamepad leases', async t => {
 	const template = await readFile('gamebase.html', 'utf8');
 	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
 	const css = await readFile('gamebase.css', 'utf8');
@@ -71,7 +70,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const presenter = new api.VideoPresenter(video, backend, 256, sourceHeight);
 				presenter.default_font = new api.Font();
 				const menu = new api.HostOverlayMenu(presenter, {}, input, {}, new api.HostExecutionControl({ mutePause() {} }));
-				menu.setKeyboardVisibilityListener(view.setKeyboardVisible);
 				let admissionCalls = 0;
 				hub.setForegroundPointerCapture((x: number, y: number) => { admissionCalls += 1; return menu.capturesPointer(x, y); });
 				const snapshot = api.createInputControllerSnapshot();
@@ -104,7 +102,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					keyMmio(code: string) { const usage = api.hidKeyUsageForCode(code); return (memory.readIoU32(api.IO_INP_KEYS + (usage >>> 5) * 4) & (1 << (usage & 31))) !== 0; },
 					centers() { return { select: { id: 1, ...display.center('select_knop') }, x: { id: 2, ...display.center('x_knop') } }; },
 					positions() {
-						const keyboard = menu.keyboard;
+						const keyboard = menu.keyboardView;
 						const panel = keyboard.panelRect.area;
 						const keys = { point(label: string, lowerRight = false) { const index = keyboard.keyGlyphs.findIndex((glyph: any) => glyph.items === label); const area = keyboard.keyRects[index].area; return display.client(lowerRight ? area.right - 2 : area.left + 2, lowerRight ? area.bottom - 2 : area.top + 2); } };
 						const lb = pad.geometry.actions.find((action: any) => action.buttons === (1 << 4));
@@ -144,7 +142,6 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.panelOutside), false);
 			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.outsideLb), false, 'outside-panel shoulder remains a gamepad target');
 			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.q), true);
-			for (const point of positions.controllerButtons) assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), point), false, `${point.id} binding remains reachable while keyboard is visible`);
 			let id = 10;
 			if (profile.fit === 'overscan') {
 				const overlap = { id: id++, ...positions.keyAndFaceOverlap };
@@ -180,25 +177,12 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				assert.equal(released[key], false); assert.equal(released[key === 'q' ? 'qMmio' : 'wMmio'], false);
 				assert.equal(released.pointerHeld, false); assert.equal(released.model, 0);
 			}
-			for (const point of positions.controllerButtons) {
-				const contact = { id: id++, x: point.x, y: point.y };
-				await touch('touchStart', [contact]);
-				const pressed = await poll();
-				assert.equal(pressed.model, 1 << CONTROLLER_BUTTONS[point.id], `${point.id} native binding remains independently usable`);
-				assert.equal(pressed.physical, pressed.model);
-				const code = KEYBOARD_COMMANDS[point.id];
-				if (code !== undefined) assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyPressed(code), code), true);
-				await touch('touchEnd', [contact]);
-				const released = await poll();
-				assert.equal(released.model, 0);
-				if (code !== undefined) assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyPressed(code), code), false);
-			}
 			const padRight = { id: id++, ...positions.padRight };
 			await touch('touchStart', [padRight]);
 			assert.equal((await poll()).model, 1 << InputControllerGamepadButtonBit.Right, 'digital D-pad navigation remains available outside keyboard keys');
 			await touch('touchEnd', [padRight]); await poll();
-			// A keyboard-context hand reflow may remove a held button contribution,
-			// but it cannot cancel that finger or claim an existing canvas lease.
+			// Bitmap foreground ownership changes do not cancel an acquired
+			// controller contact or reinterpret an existing canvas lease.
 			await toggle();
 			centers = await page.evaluate(() => (globalThis as any).keyboardTouch.centers());
 			const openingSelect = centers.select;
@@ -210,7 +194,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const qPoint = { id: id++, ...positions.q };
 			await touch('touchStart', [openingSelect, qPoint]);
 			let held = await poll();
-			assert.equal(held.model, (await artworkAt([openingSelect])).word, 'the old held coordinate follows actual post-reflow button surfaces');
+			assert.equal(held.model, (await artworkAt([openingSelect])).word, 'the old held coordinate follows actual current button surfaces');
 			assert.equal(held.physical, held.model);
 			assert.equal(held.controllerLeases, 1, 'losing coverage does not end the original Select contact lease');
 			assert.equal(held.q, true); assert.equal(held.qMmio, true); assert.equal(held.pointerHeld, true);
@@ -229,12 +213,12 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			assert.equal(held.q, true); assert.equal(held.qMmio, true);
 			await touch('touchStart', [qPoint, closingSelect, closingX]);
 			held = await poll();
-			assert.equal(held.model, (await artworkAt([closingSelect, closingX])).word, 'closing resamples the existing fingers against actual gameplay artwork');
+			assert.equal(held.model, (await artworkAt([closingSelect, closingX])).word, 'closing preserves the existing fingers against unchanged gameplay artwork');
 			assert.equal(held.physical, held.model);
-			assert.equal(held.controllerLeases, 2, 'closing reflows art but never steals the actual controller leases'); assert.equal(held.q, false, 'closing releases generated keys immediately, not browser contacts');
+			assert.equal(held.controllerLeases, 2, 'closing never steals the actual controller leases'); assert.equal(held.q, false, 'closing releases generated keys immediately, not browser contacts');
 			assert.equal(held.qMmio, false);
 			assert.equal(held.pointerHeld, true);
-			assert.equal(held.sampledPad, 0, 'closing host UI cannot leak a held action into gameplay after reflow');
+			assert.equal(held.sampledPad, 0, 'closing host UI cannot leak a held action into gameplay after transition');
 			assert.equal(held.padMmio, 0, 'the armed ICU likewise sees no unintended action');
 			await touch('touchEnd', [closingX]); await poll();
 			await touch('touchEnd', [closingSelect]);
@@ -264,7 +248,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			if (profile.fit === 'overscan') {
 				const formerKey = { id: id++, ...positions.keyAndFaceOverlap };
 				assert.equal((await artworkAt([formerKey])).word, 1 << InputControllerGamepadButtonBit.X,
-					'the former ArrowRight coordinate also lies in the genuine gameplay X silhouette after context reflow');
+					'the former ArrowRight coordinate also lies in the genuine gameplay X silhouette after the page transition');
 				await touch('touchStart', [formerKey]);
 				const gameplayX = await poll();
 				assert.deepEqual([gameplayX.model, gameplayX.physical, gameplayX.sampledPad, gameplayX.padMmio], [4, 4, 4, 4],
@@ -278,7 +262,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			await touch('touchEnd', [gameplayA]);
 			const gameplayUp = await poll();
 			assert.deepEqual([gameplayUp.model, gameplayUp.physical, gameplayUp.sampledPad, gameplayUp.padMmio], [0, 0, 0, 0]);
-			assert.ok((await page.evaluate(() => (globalThis as any).keyboardTouch.native)).every((event: { trusted: boolean; type: string }) => event.trusted && event.type !== 'pointercancel'), 'context reflow never fabricates native cancellation');
+			assert.ok((await page.evaluate(() => (globalThis as any).keyboardTouch.native)).every((event: { trusted: boolean; type: string }) => event.trusted && event.type !== 'pointercancel'), 'page transitions never fabricate native cancellation');
 			assert.deepEqual(errors, []);
 		});
 	}

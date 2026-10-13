@@ -15,12 +15,16 @@ const DPAD_DIAGONAL_SLOPE = 1 / Math.sqrt(3);
 
 export type OnscreenDirectionalMode = 'dpad' | 'stick';
 
+/** One rolling thumb can chord adjacent surfaces within an authored physical unit. */
+export enum OnscreenActionBank { Face, LeftShoulder, RightShoulder, LeftUtility, RightUtility }
+
 export interface OnscreenActionGeometry {
 	x: number;
 	y: number;
 	/** Exact for a circle; circumbound metadata when an outline is present. */
 	radius: number;
 	buttons: number;
+	bank: OnscreenActionBank;
 	/** Absence identifies a circular control; shoulders supply their actual curved arc. */
 	outline?: RoundedCircularArc;
 }
@@ -61,6 +65,9 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	private readonly contactContributions: number[] = [];
 	private contactCount = 0;
 	private readonly buttonCounts = new Uint32Array(GAMEPAD_BUTTON_IDS.length);
+	private readonly sampledBankButtons = new Uint32Array(5);
+	private readonly sampledActions: number[] = [];
+	private sampledButtonDistance = Infinity;
 	private readonly pressIds = new Float64Array(GAMEPAD_BUTTON_IDS.length);
 	private nextPressId = 1;
 	private activeButtons = 0;
@@ -107,6 +114,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public setGeometry(geometry: OnscreenGamepadGeometry): void {
 		const previousButtons = this.activeButtons;
 		this.geometry = geometry;
+		// Reserve contact-query storage at the layout boundary, never on moves.
+		while (this.sampledActions.length < geometry.actions.length) this.sampledActions.push(0);
 		this.geometryVersion += 1;
 		for (let index = 0; index < this.contactCount; index += 1) {
 			this.setContribution(index, this.contactActive[index]
@@ -140,39 +149,17 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	/** Capture a directional gesture or acquire live buttons, including their neutral face area. */
 	public beginContact(id: number, x: number, y: number, halfWidth: number, halfHeight: number, active: boolean): boolean {
 		const geometry = this.geometry;
-		let buttons = 0;
-		for (let index = 0; index < geometry.actions.length; index += 1) {
-			const action = geometry.actions[index];
-			const dx = x - action.x;
-			const dy = y - action.y;
-			if (action.outline
-				? contactIntersectsRoundedCircularArc(dx, dy, halfWidth, halfHeight, action.outline)
-				: contactIntersectsCircle(dx, dy, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
-		}
 		const padX = x - geometry.padX;
 		const padY = y - geometry.padY;
 		const padDistanceSquared = padX * padX + padY * padY;
+		const padContact = contactIntersectsCircle(padX, padY, halfWidth, halfHeight, geometry.padRadius);
+		const buttons = this.sampleButtonContact(x, y, halfWidth, halfHeight, padContact);
 		let purpose = ContactPurpose.Buttons;
-		if (contactIntersectsCircle(padX, padY, halfWidth, halfHeight, geometry.padRadius)) {
-			// Only an ambiguous pad/button footprint needs actual surface distances.
-			// Circumbounds cannot steal a direct hit or invent a nearest shoulder.
-			let directButton = false;
-			let nearestButton = Infinity;
-			for (let index = 0; index < geometry.actions.length; index += 1) {
-				const action = geometry.actions[index];
-				if ((buttons & action.buttons) === 0) continue;
-				const dx = x - action.x;
-				const dy = y - action.y;
-				const distance = action.outline ? pointDistanceToRoundedCircularArc(dx, dy, action.outline)
-					: Math.max(0, Math.hypot(dx, dy) - action.radius);
-				if (distance === 0) {
-					directButton = true;
-					break;
-				}
-				nearestButton = Math.min(nearestButton, distance);
-			}
-			if (!directButton && (padDistanceSquared <= geometry.padRadius * geometry.padRadius
-				|| Math.sqrt(padDistanceSquared) - geometry.padRadius <= nearestButton)) purpose = ContactPurpose.Pad;
+		if (padContact) {
+			// A direct button surface wins; otherwise the nearest true surface
+			// acquires the directional lease. Its ownership remains fixed until up.
+			if (this.sampledButtonDistance !== 0 && (padDistanceSquared <= geometry.padRadius * geometry.padRadius
+				|| Math.sqrt(padDistanceSquared) - geometry.padRadius <= this.sampledButtonDistance)) purpose = ContactPurpose.Pad;
 		} else if (buttons === 0 && !contactIntersectsCircle(x - geometry.faceX, y - geometry.faceY,
 			halfWidth, halfHeight, geometry.faceRadius)) {
 			return false;
@@ -264,15 +251,56 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	private contactButtons(purpose: ContactPurpose, x: number, y: number, halfWidth: number, halfHeight: number): number {
 		if (purpose === ContactPurpose.Pad) return this.padMode === 'dpad' ? this.padButtons(x, y) : 0;
 		if (purpose === ContactPurpose.SuppressedPad) return 0;
+		return this.sampleButtonContact(x, y, halfWidth, halfHeight, false);
+	}
+
+	/**
+	 * A contact selects one physical button bank, not one button. Its footprint
+	 * chords every touched member of that bank, while another finger selects its
+	 * own bank independently. Eligibility follows the center's nearest actual
+	 * surface on every move, so deliberate cross-bank gliding needs no fresh down.
+	 *
+	 * Descriptor overlap arbitration and independent per-touch contributions:
+	 * https://github.com/libretro/RetroArch/blob/4709c07f39ab05d88d4831d9a9267fef5cebedb2/input/input_driver.c#L5721-L5763
+	 * RetroArch is coordinate-only; BMSX applies the policy to contact footprints.
+	 */
+	private sampleButtonContact(x: number, y: number, halfWidth: number, halfHeight: number, directionalAmbiguity: boolean): number {
 		const actions = this.geometry.actions;
-		let buttons = 0;
+		const banks = this.sampledBankButtons;
+		banks.fill(0);
+		let bank = OnscreenActionBank.Face;
+		let hitBanks = 0;
+		let hitCount = 0;
+		this.sampledButtonDistance = Infinity;
 		for (let index = 0; index < actions.length; index += 1) {
 			const action = actions[index];
 			if (action.outline
 				? contactIntersectsRoundedCircularArc(x - action.x, y - action.y, halfWidth, halfHeight, action.outline)
-				: contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) buttons |= action.buttons;
+				: contactIntersectsCircle(x - action.x, y - action.y, halfWidth, halfHeight, action.radius)) {
+				banks[action.bank] |= action.buttons;
+				bank = action.bank;
+				hitBanks |= 1 << action.bank;
+				this.sampledActions[hitCount++] = index;
+			}
 		}
-		return buttons;
+		// The unambiguous path intersects each silhouette once and does not pay
+		// for distance queries. Five retained words avoid per-event allocations.
+		if (hitBanks !== 0 && (directionalAmbiguity || (hitBanks & (hitBanks - 1)) !== 0)) {
+			for (let index = 0; index < hitCount; index += 1) {
+				const action = actions[this.sampledActions[index]];
+				const dx = x - action.x;
+				const dy = y - action.y;
+				const distance = action.outline ? pointDistanceToRoundedCircularArc(dx, dy, action.outline)
+					: Math.max(0, Math.hypot(dx, dy) - action.radius);
+				if (distance < this.sampledButtonDistance) {
+					this.sampledButtonDistance = distance;
+					bank = action.bank;
+					// Direct hits win; authored order resolves overlapping solids.
+					if (distance === 0) break;
+				}
+			}
+		}
+		return banks[bank];
 	}
 
 	/**

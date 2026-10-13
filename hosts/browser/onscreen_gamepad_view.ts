@@ -1,23 +1,23 @@
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
-import type { BrowserOnscreenGamepad, OnscreenActionGeometry, OnscreenGamepadGeometry, OnscreenDirectionalMode } from './onscreen_gamepad';
+import { OnscreenActionBank, type BrowserOnscreenGamepad, type OnscreenActionGeometry, type OnscreenGamepadGeometry, type OnscreenDirectionalMode } from './onscreen_gamepad';
 import type { BrowserInputDiagnostics } from './input_trace_contract';
 import { layoutShoulderOutline } from './onscreen_control_shapes';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick, LeftBumper, RightBumper, LeftTrigger, RightTrigger }
 
 const ACTIONS = [
-	{ id: 'a_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.A },
-	{ id: 'b_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.B },
-	{ id: 'x_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.X },
-	{ id: 'y_knop', surface: ActionSurfaceIndex.Face, buttons: 1 << InputControllerGamepadButtonBit.Y },
-	{ id: 'select_knop', surface: ActionSurfaceIndex.Select, buttons: 1 << InputControllerGamepadButtonBit.Select },
-	{ id: 'start_knop', surface: ActionSurfaceIndex.Start, buttons: 1 << InputControllerGamepadButtonBit.Start },
-	{ id: 'ls_knop', surface: ActionSurfaceIndex.LeftStick, buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
-	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
-	{ id: 'lb_knop', surface: ActionSurfaceIndex.LeftBumper, buttons: 1 << InputControllerGamepadButtonBit.LeftBumper },
-	{ id: 'rb_knop', surface: ActionSurfaceIndex.RightBumper, buttons: 1 << InputControllerGamepadButtonBit.RightBumper },
-	{ id: 'lt_knop', surface: ActionSurfaceIndex.LeftTrigger, buttons: 1 << InputControllerGamepadButtonBit.LeftTrigger },
-	{ id: 'rt_knop', surface: ActionSurfaceIndex.RightTrigger, buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
+	{ id: 'a_knop', surface: ActionSurfaceIndex.Face, bank: OnscreenActionBank.Face, buttons: 1 << InputControllerGamepadButtonBit.A },
+	{ id: 'b_knop', surface: ActionSurfaceIndex.Face, bank: OnscreenActionBank.Face, buttons: 1 << InputControllerGamepadButtonBit.B },
+	{ id: 'x_knop', surface: ActionSurfaceIndex.Face, bank: OnscreenActionBank.Face, buttons: 1 << InputControllerGamepadButtonBit.X },
+	{ id: 'y_knop', surface: ActionSurfaceIndex.Face, bank: OnscreenActionBank.Face, buttons: 1 << InputControllerGamepadButtonBit.Y },
+	{ id: 'select_knop', surface: ActionSurfaceIndex.Select, bank: OnscreenActionBank.LeftUtility, buttons: 1 << InputControllerGamepadButtonBit.Select },
+	{ id: 'start_knop', surface: ActionSurfaceIndex.Start, bank: OnscreenActionBank.RightUtility, buttons: 1 << InputControllerGamepadButtonBit.Start },
+	{ id: 'ls_knop', surface: ActionSurfaceIndex.LeftStick, bank: OnscreenActionBank.LeftUtility, buttons: 1 << InputControllerGamepadButtonBit.LeftStick },
+	{ id: 'rs_knop', surface: ActionSurfaceIndex.RightStick, bank: OnscreenActionBank.RightUtility, buttons: 1 << InputControllerGamepadButtonBit.RightStick },
+	{ id: 'lb_knop', surface: ActionSurfaceIndex.LeftBumper, bank: OnscreenActionBank.LeftShoulder, buttons: 1 << InputControllerGamepadButtonBit.LeftBumper },
+	{ id: 'rb_knop', surface: ActionSurfaceIndex.RightBumper, bank: OnscreenActionBank.RightShoulder, buttons: 1 << InputControllerGamepadButtonBit.RightBumper },
+	{ id: 'lt_knop', surface: ActionSurfaceIndex.LeftTrigger, bank: OnscreenActionBank.LeftShoulder, buttons: 1 << InputControllerGamepadButtonBit.LeftTrigger },
+	{ id: 'rt_knop', surface: ActionSurfaceIndex.RightTrigger, bank: OnscreenActionBank.RightShoulder, buttons: 1 << InputControllerGamepadButtonBit.RightTrigger },
 ] as const;
 
 const PAD_DIRECTIONS = [
@@ -40,8 +40,9 @@ const CONTROL_MARGIN = 4;
 const MIN_GAMEPLAY_SHOULDER_THICKNESS = 44;
 const SHOULDER_PAINT_RADIUS = 1.5;
 const PAINT_CLEARANCE = 4;
-const KEYBOARD_SHOULDER_START = 10 * Math.PI / 180;
-const KEYBOARD_SHOULDER_SWEEP = 40 * Math.PI / 180;
+const PORTRAIT_SHOULDER_WIDTH = 88;
+const PORTRAIT_SHOULDER_RADIUS = 100;
+const PORTRAIT_SHOULDER_PRIMARY_GAP = 24;
 
 interface ActionSurface {
 	element: HTMLElement;
@@ -76,16 +77,13 @@ interface ControlLayoutMetrics {
 	rightInner: number;
 	leftSplit: number;
 	rightSplit: number;
-	keyboardHalfWidth: number;
-	leftKeyboardRing: number;
-	rightKeyboardRing: number;
-	leftKeyboardGap: number;
-	rightKeyboardGap: number;
-	keyboardSplit: number;
 	utilityDrop: number;
 	leftGap: number;
 	rightGap: number;
 	topReach: number;
+	portraitShoulderWidth: number;
+	portraitShoulderHalfAngle: number;
+	portraitTopReach: number;
 	portraitDeckHeight: number;
 }
 
@@ -116,9 +114,9 @@ export class BrowserOnscreenGamepadView {
 		menuScale: 1, menuSize: 0, clickSize: 0, padRadius: 0, faceRadius: 0, primaryRadius: 0,
 		halfWidth: 0, leftRing: 0, rightRing: 0, leftOuter: 0, rightOuter: 0,
 		leftInner: 0, rightInner: 0, leftSplit: 0, rightSplit: 0,
-		keyboardHalfWidth: 0, leftKeyboardRing: 0, rightKeyboardRing: 0, leftKeyboardGap: 0, rightKeyboardGap: 0,
-		keyboardSplit: 0, utilityDrop: 0,
-		leftGap: 0, rightGap: 0, topReach: 0, portraitDeckHeight: 0,
+		utilityDrop: 0,
+		leftGap: 0, rightGap: 0, topReach: 0, portraitShoulderWidth: 0, portraitShoulderHalfAngle: 0,
+		portraitTopReach: 0, portraitDeckHeight: 0,
 	};
 	private readonly layoutObserver: BrowserInputDiagnostics | undefined;
 	private readonly unsubscribeView: () => void;
@@ -134,7 +132,6 @@ export class BrowserOnscreenGamepadView {
 	private layoutHeight = -1;
 	private portraitControlTop: number | null = null;
 	private allocatedPortraitDeckTop: number | undefined;
-	private keyboardVisible = false;
 
 	public constructor(
 		document: Document,
@@ -170,11 +167,11 @@ export class BrowserOnscreenGamepadView {
 				const circle = element as SVGCircleElement;
 				this.nominalActions.push({
 					x: circle.cx.baseVal.value, y: circle.cy.baseVal.value,
-					radius: circle.r.baseVal.value, buttons: action.buttons,
+					radius: circle.r.baseVal.value, bank: action.bank, buttons: action.buttons,
 				});
-				this.actions.push({ x: 0, y: 0, radius: 0, buttons: action.buttons });
+				this.actions.push({ x: 0, y: 0, radius: 0, bank: action.bank, buttons: action.buttons });
 			} else {
-				const geometry: OnscreenActionGeometry = { x: 0, y: 0, radius: 0, buttons: action.buttons, outline: {
+				const geometry: OnscreenActionGeometry = { x: 0, y: 0, radius: 0, bank: action.bank, buttons: action.buttons, outline: {
 					centerX: 0, centerY: 0, radius: 0, halfWidth: 0,
 					startX: 0, startY: 0, endX: 0, endY: 0, quarterTurns: 0, startT: 0, endT: 0,
 					left: 0, top: 0, right: 0, bottom: 0,
@@ -196,15 +193,6 @@ export class BrowserOnscreenGamepadView {
 		return this.prepareLayoutMetrics(width, height).portraitDeckHeight;
 	}
 
-	/** Host keyboard context keeps the touch gamepad at the surrounding hand edges. */
-	public readonly setKeyboardVisible = (visible: boolean): void => {
-		if (visible === this.keyboardVisible) return;
-		this.keyboardVisible = visible;
-		const width = this.layoutWidth;
-		this.layoutWidth = -1;
-		this.layout(this.layoutLeft, this.layoutTop, width, this.layoutHeight, this.allocatedPortraitDeckTop);
-	};
-
 	/** Layout and acquisition share the same uniform CSS-client transforms. */
 	public layout(left: number, top: number, width: number, height: number, portraitDeckTop?: number): void {
 		if (left === this.layoutLeft && top === this.layoutTop && width === this.layoutWidth && height === this.layoutHeight
@@ -216,7 +204,6 @@ export class BrowserOnscreenGamepadView {
 		this.allocatedPortraitDeckTop = portraitDeckTop;
 		const metrics = this.prepareLayoutMetrics(width, height);
 		const landscape = metrics.landscape;
-		const gameplayLandscape = landscape && !this.keyboardVisible;
 		// Delta's four-button handheld deck keeps both primary controls on one
 		// hand row. Its geometry is a reference, not a source of copied artwork:
 		// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L509
@@ -230,11 +217,10 @@ export class BrowserOnscreenGamepadView {
 		const clickSize = metrics.clickSize;
 		const primaryRadius = metrics.primaryRadius;
 		const allocatedDeckTop = portraitDeckTop === undefined ? top + height - metrics.portraitDeckHeight : portraitDeckTop;
-		const primaryY = gameplayLandscape
+		const primaryY = landscape
 			? top + Math.max(PAINT_CLEARANCE + metrics.topReach,
 				Math.min(height / 2, height - PAINT_CLEARANCE - primaryRadius))
-			: landscape ? top + height - PAINT_CLEARANCE - menuSize / 2 - metrics.utilityDrop
-				: allocatedDeckTop + metrics.topReach;
+			: allocatedDeckTop + metrics.portraitTopReach;
 		const menuY = landscape ? Math.min(primaryY + metrics.utilityDrop, top + height - PAINT_CLEARANCE - menuSize / 2)
 			: primaryY + metrics.utilityDrop;
 		const padLeft = left + margin;
@@ -290,21 +276,26 @@ export class BrowserOnscreenGamepadView {
 		// and the trigger inward. No full outer flank displaces the primary bank.
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
-		const compactKeyboard = landscape && this.keyboardVisible;
-		const halfWidth = compactKeyboard ? metrics.keyboardHalfWidth : metrics.halfWidth;
-		const leftShoulderRadius = compactKeyboard ? metrics.leftKeyboardRing : metrics.leftRing;
-		const rightShoulderRadius = compactKeyboard ? metrics.rightKeyboardRing : metrics.rightRing;
-		if (compactKeyboard) {
-			// Foreground keyboard context rotates the finite shoulder sectors to
-			// the inward hand sides; no input lease is canceled or reassigned.
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-				leftShoulderRadius, halfWidth, KEYBOARD_SHOULDER_START, metrics.keyboardSplit - metrics.leftKeyboardGap);
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-				leftShoulderRadius, halfWidth, metrics.keyboardSplit + metrics.leftKeyboardGap, KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, Math.PI - metrics.keyboardSplit + metrics.rightKeyboardGap, Math.PI - KEYBOARD_SHOULDER_START);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, Math.PI - KEYBOARD_SHOULDER_START - KEYBOARD_SHOULDER_SWEEP, Math.PI - metrics.keyboardSplit - metrics.rightKeyboardGap);
+		const halfWidth = metrics.halfWidth;
+		const leftShoulderRadius = metrics.leftRing;
+		const rightShoulderRadius = metrics.rightRing;
+		if (!landscape) {
+			// Portrait owns a detached handheld shoulder strip. Unlike landscape's
+			// wrapping ring, the strip leaves a real empty band above both thumb banks.
+			// Delta likewise authors independent orientation representations:
+			// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L673
+			const width = metrics.portraitShoulderWidth;
+			const angle = metrics.portraitShoulderHalfAngle;
+			const centerY = allocatedDeckTop + halfWidth + PORTRAIT_SHOULDER_RADIUS;
+			const upward = -Math.PI / 2;
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper, left + margin + width / 2, centerY,
+				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, left + margin + width * 1.5 + CONTROL_GAP, centerY,
+				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper, left + metrics.width - margin - width / 2, centerY,
+				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger, left + metrics.width - margin - width * 1.5 - CONTROL_GAP, centerY,
+				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - angle, upward + angle);
 		} else {
 			const upward = -Math.PI / 2;
 			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
@@ -318,7 +309,7 @@ export class BrowserOnscreenGamepadView {
 		}
 		// Shoulder paths already use CSS-client units (their SVG scale is 1).
 		// Scale their labels with the controller just like the other artwork.
-		for (const label of this.shoulderLabels) label.style.fontSize = `${17 * viewportScale}px`;
+		for (const label of this.shoulderLabels) label.style.fontSize = `${13 * viewportScale}px`;
 		this.portraitControlTop = landscape ? null
 			: Math.min(this.shoulderActions[0].y + this.shoulderActions[0].outline.top,
 				this.shoulderActions[1].y + this.shoulderActions[1].outline.top) - CONTROL_GAP;
@@ -397,16 +388,8 @@ export class BrowserOnscreenGamepadView {
 		metrics.faceRadius = nominalFaceRadius * scale;
 		metrics.primaryRadius = nominalPrimaryRadius * scale;
 		metrics.halfWidth = Math.max(MIN_GAMEPLAY_SHOULDER_THICKNESS / 2, nominalHalfWidth * scale);
-		// The compact foreground keyboard is a separate host-UI hand pose. Its
-		// established tiny-frame thickness keeps all twelve bindings available
-		// without reducing the unchanged primary banks. Gameplay keeps 44px.
-		metrics.keyboardHalfWidth = nominalHalfWidth * scale;
 		metrics.leftRing = metrics.padRadius + metrics.gap + metrics.halfWidth;
 		metrics.rightRing = metrics.faceRadius + metrics.gap + metrics.halfWidth;
-		metrics.leftKeyboardRing = metrics.padRadius + metrics.gap + metrics.keyboardHalfWidth;
-		metrics.rightKeyboardRing = metrics.faceRadius + metrics.gap + metrics.keyboardHalfWidth;
-		metrics.leftKeyboardGap = Math.asin((metrics.keyboardHalfWidth + metrics.gap / 2) / metrics.leftKeyboardRing);
-		metrics.rightKeyboardGap = Math.asin((metrics.keyboardHalfWidth + metrics.gap / 2) / metrics.rightKeyboardRing);
 		const halfWidth = metrics.halfWidth;
 		const halfLane = (width - metrics.margin * 2 - metrics.padRadius - metrics.faceRadius - metrics.gap) / 2;
 		const inwardSine = Math.sin(SHOULDER_INWARD_SWEEP);
@@ -421,7 +404,6 @@ export class BrowserOnscreenGamepadView {
 		metrics.rightOuter = Math.asin((metrics.faceRadius + metrics.margin - SHOULDER_PAINT_RADIUS - halfWidth) / metrics.rightRing);
 		metrics.leftSplit = (metrics.leftInner - metrics.leftOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
 		metrics.rightSplit = (metrics.rightInner - metrics.rightOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
-		metrics.keyboardSplit = KEYBOARD_SHOULDER_START + KEYBOARD_SHOULDER_SWEEP / 2 - BUMPER_SWEEP_ADVANTAGE;
 		metrics.topReach = Math.max(metrics.leftRing * Math.cos(Math.max(0, metrics.leftGap - Math.abs(metrics.leftSplit))),
 			metrics.rightRing * Math.cos(Math.max(0, metrics.rightGap - Math.abs(metrics.rightSplit)))) + halfWidth;
 		const pairHalf = nominalPairSpacing * metrics.menuScale / 2;
@@ -429,7 +411,11 @@ export class BrowserOnscreenGamepadView {
 		const a = this.nominalActions[0];
 		metrics.utilityDrop = Math.max(Math.sqrt((metrics.padRadius + menuRadius + metrics.gap) ** 2 - pairHalf ** 2),
 			(a.y - face.artworkHeight / 2) * scale + Math.sqrt((a.radius * scale + menuRadius + metrics.gap) ** 2 - pairHalf ** 2));
-		metrics.portraitDeckHeight = metrics.topReach + metrics.utilityDrop + metrics.menuSize / 2 + metrics.bottom;
+		metrics.portraitShoulderWidth = Math.min(PORTRAIT_SHOULDER_WIDTH, (width - CONTROL_MARGIN * 2 - CONTROL_GAP * 3) / 4);
+		metrics.portraitShoulderHalfAngle = Math.asin((metrics.portraitShoulderWidth / 2 - halfWidth) / PORTRAIT_SHOULDER_RADIUS);
+		const stripHeight = halfWidth * 2 + PORTRAIT_SHOULDER_RADIUS * (1 - Math.cos(metrics.portraitShoulderHalfAngle));
+		metrics.portraitTopReach = stripHeight + PORTRAIT_SHOULDER_PRIMARY_GAP + metrics.primaryRadius;
+		metrics.portraitDeckHeight = metrics.portraitTopReach + metrics.utilityDrop + metrics.menuSize / 2 + metrics.bottom;
 		return metrics;
 	}
 

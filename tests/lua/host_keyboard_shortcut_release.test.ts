@@ -31,7 +31,12 @@ for (const hostHz of [60, 120]) {
 				hostOverlayQueue: queue } as VideoPresenter;
 			const menu = new HostOverlayMenu(presenter, {} as Runtime, input, {} as HostRewind, createHostFrameFixture().execution);
 			const visibilityChanges: boolean[] = [];
-			menu.setKeyboardVisibilityListener(visible => visibilityChanges.push(visible));
+			let visible = menu.keyboard.visible;
+			t.after(menu.keyboard.subscribe(() => {
+				if (visible === menu.keyboard.visible) return;
+				visible = menu.keyboard.visible;
+				visibilityChanges.push(visible);
+			}));
 			const gamepad = input.getPlayerInput(1).inputHandlers.gamepad!;
 			const snapshot = createInputControllerSnapshot();
 			let pressId = 0;
@@ -94,7 +99,7 @@ for (const hostHz of [60, 120]) {
 					assert.equal(keyboardVisible(), open);
 				}
 			}
-			assert.deepEqual(visibilityChanges, [true, false], 'only actual page transitions notify control presentation');
+			assert.deepEqual(visibilityChanges, [true, false], 'the keyboard owner publishes actual visibility transitions');
 			button('a', true);
 			tick();
 			assert.equal(gamepad.physicalGamepadButtonsWord(), A);
