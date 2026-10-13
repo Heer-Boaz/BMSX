@@ -467,7 +467,9 @@ export class HostOverlayMenu {
 			this.onScreenKeyboardShortcutRequested = false;
 			this.transitionTo(this.page === HostOverlayPage.Keyboard ? HostOverlayPage.Closed : HostOverlayPage.Keyboard);
 		}
-		this.uiInput.update(this.input.getPlayerInput(1).pollTimestampMs);
+		const currentTimeMs = this.input.getPlayerInput(1).pollTimestampMs;
+		this.uiInput.update(currentTimeMs);
+		if (this.page === HostOverlayPage.Keyboard) this.keyboard.updateFeedback(currentTimeMs);
 		const result = this.handleInput();
 		this.uiInput.consume();
 		return result;

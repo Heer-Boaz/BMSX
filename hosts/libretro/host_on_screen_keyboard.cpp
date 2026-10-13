@@ -7,6 +7,7 @@
 #include "render/host_overlay/overlay_queue.h"
 #include "render/video_presenter.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -148,9 +149,10 @@ constexpr i32 kHelpGap = 3;
 constexpr i32 kHelpLineGap = 1;
 constexpr u32 kPanelColor = 0xe0101010u;
 constexpr u32 kKeyColor = 0xff252525u;
-constexpr u32 kActiveKeyColor = 0xff35551fu;
 constexpr u32 kSelectedKeyColor = 0xff1e6a95u;
-constexpr u32 kPressedKeyColor = 0xff2d91c5u;
+constexpr u32 kPressedKeyColor = 0xffffca55u;
+constexpr u32 kPressedTextColor = 0xff101010u;
+constexpr f64 kReleaseFeedbackMs = 120;
 constexpr u32 kTextColor = 0xffefefefu;
 constexpr u32 kDimColor = 0xffb2b2b2u;
 constexpr u32 kTitleColor = 0xff5bc6ffu;
@@ -207,6 +209,8 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 void HostOnScreenKeyboard::open() {
 	m_selected_row = kInitialRow;
 	m_selected_key = kInitialKey;
+	m_feedback_until_ms.fill(0);
+	m_next_feedback_expiry_ms = std::numeric_limits<f64>::infinity();
 	updateKeyColors();
 }
 
@@ -222,6 +226,21 @@ void HostOnScreenKeyboard::close(LibretroInput& input) {
 			input.setVirtualKeyboardKey(kModifierUsages[modifier], false);
 		}
 	}
+	m_feedback_until_ms.fill(0);
+	m_next_feedback_expiry_ms = std::numeric_limits<f64>::infinity();
+	updateKeyColors();
+}
+
+// Presentation time never stretches the key's actual input lifetime.
+void HostOnScreenKeyboard::updateFeedback(f64 currentTimeMs) {
+	m_feedback_time_ms = currentTimeMs;
+	if (currentTimeMs < m_next_feedback_expiry_ms) return;
+	f64 nextExpiry = std::numeric_limits<f64>::infinity();
+	for (f64& expiry : m_feedback_until_ms) {
+		if (expiry <= currentTimeMs) expiry = 0;
+		else nextExpiry = std::min(nextExpiry, expiry);
+	}
+	m_next_feedback_expiry_ms = nextExpiry;
 	updateKeyColors();
 }
 
@@ -229,7 +248,10 @@ void HostOnScreenKeyboard::releaseSource(LibretroInput& input, size_t source) {
 	const i16 key = m_source_keys[source];
 	if (key < 0) return;
 	m_source_keys[source] = -1;
-	if (--m_key_counts[static_cast<size_t>(key)] == 0u) input.setVirtualKeyboardKey(kForwardedUsages[static_cast<size_t>(key)], false);
+	if (--m_key_counts[static_cast<size_t>(key)] == 0u) {
+		input.setVirtualKeyboardKey(kForwardedUsages[static_cast<size_t>(key)], false);
+		recordKeyFeedback(static_cast<size_t>(key), false);
+	}
 	const u8 modifiers = m_source_modifiers[source];
 	m_source_modifiers[source] = 0u;
 	bool shiftEnded = false;
@@ -240,7 +262,10 @@ void HostOnScreenKeyboard::releaseSource(LibretroInput& input, size_t source) {
 		if (modifier == static_cast<size_t>(kModifierShift) && m_modifier_states[modifier]) {
 			setShift(input, false);
 			shiftEnded = true;
-		} else if (!m_modifier_states[modifier]) input.setVirtualKeyboardKey(kModifierUsages[modifier], false);
+		} else if (!m_modifier_states[modifier]) {
+			input.setVirtualKeyboardKey(kModifierUsages[modifier], false);
+			recordKeyFeedback(static_cast<size_t>(kKeyIndexByUsage[kModifierUsages[modifier]] - 1u), false);
+		}
 	}
 	if (!shiftEnded) updateKeyColors();
 }
@@ -280,7 +305,10 @@ void HostOnScreenKeyboard::activate(LibretroInput& input, size_t source) {
 		const size_t modifier = static_cast<size_t>(key.modifier);
 		const bool down = !m_modifier_states[modifier];
 		m_modifier_states[modifier] = down;
-		if (m_modifier_counts[modifier] == 0u) input.setVirtualKeyboardKey(key.usage, down);
+		if (m_modifier_counts[modifier] == 0u) {
+			input.setVirtualKeyboardKey(key.usage, down);
+			recordKeyFeedback(static_cast<size_t>(m_selected_key), down);
+		}
 		updateKeyColors();
 		return;
 	}
@@ -378,13 +406,29 @@ i32 HostOnScreenKeyboard::keyCenterUnits(i32 rowIndex, i32 keyIndex) const {
 void HostOnScreenKeyboard::updateKeyColors() {
 	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
 		const i32 modifier = kKeys[index].modifier;
-		m_key_rects[index].color = m_key_counts[index] != 0u
+		const bool pressed = m_key_counts[index] != 0u || m_feedback_until_ms[index] != 0
+			|| (modifier != kNoModifier && (m_modifier_states[static_cast<size_t>(modifier)]
+				|| m_modifier_counts[static_cast<size_t>(modifier)] != 0u));
+		m_key_rects[index].color = pressed
 			? kPressedKeyColor
 			: static_cast<i32>(index) == m_selected_key
 			? kSelectedKeyColor
-			: modifier != kNoModifier && m_modifier_states[static_cast<size_t>(modifier)]
-				? kActiveKeyColor
-				: kKeyColor;
+			: kKeyColor;
+		m_key_glyphs[index].color = pressed ? kPressedTextColor : kTextColor;
+	}
+	// Home/End have controller bindings but no key rectangle in this layout.
+	constexpr size_t home = KeyCount, end = home + 1u;
+	m_help_glyphs[1].color = m_key_counts[home] != 0u || m_key_counts[end] != 0u
+		|| m_feedback_until_ms[home] != 0 || m_feedback_until_ms[end] != 0 ? kPressedKeyColor : kDimColor;
+}
+
+// A visual acknowledgement of the already-published edge, not another input producer.
+void HostOnScreenKeyboard::recordKeyFeedback(size_t key, bool down) {
+	if (down) m_feedback_until_ms[key] = 0;
+	else {
+		const f64 expiry = m_feedback_time_ms + kReleaseFeedbackMs;
+		m_feedback_until_ms[key] = expiry;
+		m_next_feedback_expiry_ms = std::min(m_next_feedback_expiry_ms, expiry);
 	}
 }
 
@@ -399,7 +443,10 @@ void HostOnScreenKeyboard::pressKey(LibretroInput& input, size_t source, u8 usag
 		}
 	}
 	m_source_modifiers[source] = modifiers;
-	if (++m_key_counts[key] == 1u) input.setVirtualKeyboardKey(usage, true);
+	if (++m_key_counts[key] == 1u) {
+		input.setVirtualKeyboardKey(usage, true);
+		recordKeyFeedback(key, true);
+	}
 	updateKeyColors();
 }
 
@@ -408,7 +455,10 @@ void HostOnScreenKeyboard::setShift(LibretroInput& input, bool down) {
 	const bool previous = m_modifier_states[modifier] || m_modifier_counts[modifier] != 0u;
 	m_modifier_states[static_cast<size_t>(kModifierShift)] = down;
 	const bool pressed = down || m_modifier_counts[modifier] != 0u;
-	if (previous != pressed) input.setVirtualKeyboardKey(hid_key_usage::ShiftLeft, pressed);
+	if (previous != pressed) {
+		input.setVirtualKeyboardKey(hid_key_usage::ShiftLeft, pressed);
+		recordKeyFeedback(static_cast<size_t>(kKeyIndexByUsage[hid_key_usage::ShiftLeft] - 1u), pressed);
+	}
 	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
 		const KeyDefinition& key = kKeys[index];
 		const char* label = down && key.shiftLabel != nullptr

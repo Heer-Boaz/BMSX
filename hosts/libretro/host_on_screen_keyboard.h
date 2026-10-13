@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <limits>
 
 namespace bmsx {
 
@@ -41,6 +42,7 @@ public:
 	HostOnScreenKeyboard();
 	void open();
 	void close(LibretroInput& input);
+	void updateFeedback(f64 currentTimeMs);
 	void releaseSource(LibretroInput& input, size_t source);
 	void moveHorizontal(i32 direction);
 	void moveVertical(i32 direction);
@@ -53,6 +55,7 @@ private:
 	i32 keyCenterUnits(i32 rowIndex, i32 keyIndex) const;
 	void pressKey(LibretroInput& input, size_t source, u8 usage);
 	void setShift(LibretroInput& input, bool down);
+	void recordKeyFeedback(size_t key, bool down);
 	void updateKeyColors();
 	void layoutKeys(VideoPresenter& presenter);
 
@@ -63,6 +66,9 @@ private:
 	std::array<u8, ForwardedKeyCount> m_key_counts{};
 	std::array<u8, ModifierCount> m_modifier_counts{};
 	std::array<bool, ModifierCount> m_modifier_states{};
+	std::array<f64, ForwardedKeyCount> m_feedback_until_ms{};
+	f64 m_feedback_time_ms = 0;
+	f64 m_next_feedback_expiry_ms = std::numeric_limits<f64>::infinity();
 	RectRenderSubmission m_panel_rect;
 	GlyphRenderSubmission m_title_glyphs;
 	std::array<GlyphRenderSubmission, HelpLineCount> m_help_glyphs;

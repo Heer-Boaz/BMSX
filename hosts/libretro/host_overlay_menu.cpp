@@ -306,6 +306,7 @@ HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input,
 		transitionTo(m_page == Page::Closed ? Page::Options : Page::Closed, input, rewind);
 	}
 	uiInput.update(currentTimeMs);
+	if (m_page == Page::Keyboard) m_keyboard.updateFeedback(currentTimeMs);
 	const HostMenuInput result = handleInput(runtime, input, presenter, rewind);
 	uiInput.consume();
 	return result;

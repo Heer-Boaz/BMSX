@@ -1,5 +1,79 @@
 # Browser touch-controller ownership
 
+## Visible on-screen keyboard forwarding feedback, 2026-10-13
+
+Selection and forwarding now have clearly different presentation. Selection
+remains blue with light text; actually held virtual keys use a bright amber
+background and dark glyph. Actual final release keeps that treatment for
+120ms as a visual acknowledgement, then restores the current selected/idle
+appearance. It never delays the input up or changes sampled-device semantics.
+Feedback remains on the captured key when selection moves; independent keys
+have independent release deadlines. Sticky/captured modifiers outrank
+selection, and Home/End tint their existing help legend because this keyboard
+has no dedicated Home/End rectangles. Close/reopen clears transient feedback.
+
+Before implementation, pinned [PPSSPP visual transitions](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/Common/UI/View.cpp#L199-L215)
+and [focus versus held rendering](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/Common/UI/View.cpp#L932-L940),
+plus [VICE's forwarded key coloring](https://github.com/libretro/vice-libretro/blob/f63b56688f3133a2bb17499db9eebb7ab81df5f5/libretro/libretro-vkbd.c#L739-L760),
+were inspected. The 120ms BMSX afterglow is a presentation choice, not a
+copied VICE behavior or an input-lifetime workaround.
+
+| Retained presentation representation | TypeScript | C++ |
+| --- | --- | --- |
+| Published key identity | existing authored key index | same authored index |
+| Per-key visual deadline | fixed `Float64Array` monotonic milliseconds | fixed `std::array<f64>` monotonic milliseconds |
+| Inactive deadline | zero; next expiry infinity | same scalar states |
+| Draw state | existing retained rect/glyph packed color words | same retained commands and raw color words |
+| Real input | existing source-held keys/modifier counts | unchanged mirrored held state |
+
+Hot callers are TS `HostOverlayMenu.tickInput` and C++
+`HostOverlayMenu::tickInput`, which already own host poll time. They advance
+keyboard feedback before handling source edges; the existing publication
+sites record the visual acknowledgement only alongside the actual key
+transition. Idle/unexpired ticks do not rescan key colors. The existing
+`queueRenderCommands` path publishes retained commands; there are no timers,
+per-press allocations, additional UI command buffers, interpolator frameworks
+or machine/ICU changes. This acknowledges host forwarding, not proof that
+guest firmware consumed a particular edge.
+
+### Keyboard-feedback validation
+
+The focused routing/lifetime/presentation suite passes 34 tests; the complete
+touch/input/package bundle passes **276 tests**. Three C++ keyboard/UI/environment
+tests, all four browser/node/scripts/tests typechecks, the release build and
+diff checks also pass. Published-command tests cover held/selected contrast,
+exact deadline expiry, repeated short presses, independent sources, modifiers,
+Home/End, close/reopen and unchanged raw input release. Command arrays remain
+retained, and idle/unexpired updates are verified not to rewrite key colors.
+
+Native Chromium WebGPU and WebGL2 each capture 17 real presentation states in
+phone portrait, phone landscape and tablet landscape. Trusted touch edges
+open the actual keyboard and exercise controller/pointer press, release,
+afterglow, settled state, independent Q/Backspace and controller-Q/pointer-W.
+The surviving source is checked beyond 120ms so a visual tail cannot conceal
+an accidentally released key. Selection movement alone leaves the new key
+blue, while its independent actual activation makes it amber. Rendered PNGs
+were inspected; no script/GPU errors occurred. This is browser presentation
+evidence, not physical iPhone acceptance or guest delivery proof.
+
+Separate real host-menu routing checks at 60/120Hz verify one unchanged down/up
+pair for controller and pointer: raw HID releases at the first eligible input
+poll while the visual acknowledgement is still active. The initial exploratory
+native script mistakenly treated CDP partial-up points as retained IDs;
+corrected runs use the actual changed up IDs and record trusted native edges.
+No application input workaround was added for that test error.
+Evidence: `.bmsx/hosting/keyboard-feedback-evidence/` and
+`.bmsx/hosting/keyboard-feedback-cpp-{build,tests}.log`.
+
+Azure publication is complete on the existing game and `/ios/` URLs.
+All 43 public package/route/header receipts match the staged release, and the
+public native WebGPU run repeats all 17 states in each of the three profiles
+without script/GPU errors. Public held/afterglow/settled PNGs were inspected.
+Engine SHA-256:
+`48d94ead6d2df2c0852c37050bf0d1ce1ec69d78bdd8ef57693aa61318660e76`.
+Paired BIOS/cart media, artwork/layout, input tracing and routes are unchanged;
+no GitHub media or source push is part of this publication.
+
 ## Adjacent shoulder pairs, selectable analog stick and held keyboard keys, 2026-10-13
 
 The user rejected stacked shoulder rows. Each hand now has one circular

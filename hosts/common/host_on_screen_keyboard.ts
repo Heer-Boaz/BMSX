@@ -144,9 +144,10 @@ const HELP_GAP = 3;
 const HELP_LINE_GAP = 1;
 const COLOR_PANEL = 0xe0101010;
 const COLOR_KEY = 0xff252525;
-const COLOR_KEY_ACTIVE = 0xff35551f;
 const COLOR_KEY_SELECTED = 0xff1e6a95;
-const COLOR_KEY_PRESSED = 0xff2d91c5;
+const COLOR_KEY_PRESSED = 0xffffca55;
+const COLOR_TEXT_PRESSED = 0xff101010;
+const RELEASE_FEEDBACK_MS = 120;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
@@ -162,6 +163,9 @@ export class HostOnScreenKeyboard {
 	private readonly keyCounts = new Uint8Array(FORWARDED_CODES.length);
 	private readonly modifierCounts = new Uint8Array(MODIFIER_CODES.length);
 	private readonly modifierStates = [false, false, false];
+	private readonly feedbackUntilMs = new Float64Array(FORWARDED_CODES.length);
+	private feedbackTimeMs = 0;
+	private nextFeedbackExpiryMs = Infinity;
 	private readonly panelRect: RectRenderSubmission = {
 		kind: RectRenderKind.Fill,
 		area: { left: 0, top: 0, right: 1, bottom: 1, z: 920 },
@@ -240,6 +244,8 @@ export class HostOnScreenKeyboard {
 	public open(): void {
 		this.selectedRow = INITIAL_ROW;
 		this.selectedKey = INITIAL_KEY;
+		this.feedbackUntilMs.fill(0);
+		this.nextFeedbackExpiryMs = Infinity;
 		this.updateKeyColors();
 	}
 
@@ -254,6 +260,22 @@ export class HostOnScreenKeyboard {
 				this.input.setVirtualKeyboardKey(MODIFIER_CODES[modifier], false);
 			}
 		}
+		this.feedbackUntilMs.fill(0);
+		this.nextFeedbackExpiryMs = Infinity;
+		this.updateKeyColors();
+	}
+
+	/** Presentation time never stretches the key's actual input lifetime. */
+	public updateFeedback(currentTimeMs: number): void {
+		this.feedbackTimeMs = currentTimeMs;
+		if (currentTimeMs < this.nextFeedbackExpiryMs) return;
+		let nextExpiry = Infinity;
+		for (let key = 0; key < this.feedbackUntilMs.length; key += 1) {
+			const expiry = this.feedbackUntilMs[key];
+			if (expiry <= currentTimeMs) this.feedbackUntilMs[key] = 0;
+			else nextExpiry = Math.min(nextExpiry, expiry);
+		}
+		this.nextFeedbackExpiryMs = nextExpiry;
 		this.updateKeyColors();
 	}
 
@@ -262,7 +284,10 @@ export class HostOnScreenKeyboard {
 		const key = this.sourceKeys[source];
 		if (key < 0) return;
 		this.sourceKeys[source] = -1;
-		if (--this.keyCounts[key] === 0) this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], false);
+		if (--this.keyCounts[key] === 0) {
+			this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], false);
+			this.recordKeyFeedback(key, false);
+		}
 		const modifiers = this.sourceModifiers[source];
 		this.sourceModifiers[source] = 0;
 		let shiftEnded = false;
@@ -273,7 +298,10 @@ export class HostOnScreenKeyboard {
 			if (modifier === MODIFIER_SHIFT && this.modifierStates[modifier]) {
 				this.setShift(false);
 				shiftEnded = true;
-			} else if (!this.modifierStates[modifier]) this.input.setVirtualKeyboardKey(MODIFIER_CODES[modifier], false);
+			} else if (!this.modifierStates[modifier]) {
+				this.input.setVirtualKeyboardKey(MODIFIER_CODES[modifier], false);
+				this.recordKeyFeedback(KEY_INDEX_BY_CODE.get(MODIFIER_CODES[modifier]), false);
+			}
 		}
 		if (!shiftEnded) this.updateKeyColors();
 	}
@@ -311,7 +339,10 @@ export class HostOnScreenKeyboard {
 			}
 			const down = !this.modifierStates[key.modifier];
 			this.modifierStates[key.modifier] = down;
-			if (this.modifierCounts[key.modifier] === 0) this.input.setVirtualKeyboardKey(key.code, down);
+			if (this.modifierCounts[key.modifier] === 0) {
+				this.input.setVirtualKeyboardKey(key.code, down);
+				this.recordKeyFeedback(this.selectedKey, down);
+			}
 			this.updateKeyColors();
 			return;
 		}
@@ -400,13 +431,28 @@ export class HostOnScreenKeyboard {
 	private updateKeyColors(): void {
 		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
 			const modifier = KEY_DEFINITIONS[index].modifier;
-			this.keyRects[index].color = this.keyCounts[index] !== 0
+			const pressed = this.keyCounts[index] !== 0 || this.feedbackUntilMs[index] !== 0
+				|| modifier !== NO_MODIFIER && (this.modifierStates[modifier] || this.modifierCounts[modifier] !== 0);
+			this.keyRects[index].color = pressed
 				? COLOR_KEY_PRESSED
 				: index === this.selectedKey
 				? COLOR_KEY_SELECTED
-				: modifier !== NO_MODIFIER && this.modifierStates[modifier]
-					? COLOR_KEY_ACTIVE
-					: COLOR_KEY;
+				: COLOR_KEY;
+			this.keyGlyphs[index].color = pressed ? COLOR_TEXT_PRESSED : COLOR_TEXT;
+		}
+		// Home/End have controller bindings but no key rectangle in this layout.
+		const home = KEY_DEFINITIONS.length, end = home + 1;
+		this.helpGlyphs[1].color = this.keyCounts[home] !== 0 || this.keyCounts[end] !== 0
+			|| this.feedbackUntilMs[home] !== 0 || this.feedbackUntilMs[end] !== 0 ? COLOR_KEY_PRESSED : COLOR_DIM;
+	}
+
+	/** A visual acknowledgement of the already-published edge, not another input producer. */
+	private recordKeyFeedback(key: number, down: boolean): void {
+		if (down) this.feedbackUntilMs[key] = 0;
+		else {
+			const expiry = this.feedbackTimeMs + RELEASE_FEEDBACK_MS;
+			this.feedbackUntilMs[key] = expiry;
+			this.nextFeedbackExpiryMs = Math.min(this.nextFeedbackExpiryMs, expiry);
 		}
 	}
 
@@ -420,7 +466,10 @@ export class HostOnScreenKeyboard {
 			}
 		}
 		this.sourceModifiers[source] = modifiers;
-		if (++this.keyCounts[key] === 1) this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], true);
+		if (++this.keyCounts[key] === 1) {
+			this.input.setVirtualKeyboardKey(FORWARDED_CODES[key], true);
+			this.recordKeyFeedback(key, true);
+		}
 		this.updateKeyColors();
 	}
 
@@ -428,7 +477,10 @@ export class HostOnScreenKeyboard {
 		const previous = this.modifierStates[MODIFIER_SHIFT] || this.modifierCounts[MODIFIER_SHIFT] !== 0;
 		this.modifierStates[MODIFIER_SHIFT] = down;
 		const pressed = down || this.modifierCounts[MODIFIER_SHIFT] !== 0;
-		if (previous !== pressed) this.input.setVirtualKeyboardKey(MODIFIER_CODES[MODIFIER_SHIFT], pressed);
+		if (previous !== pressed) {
+			this.input.setVirtualKeyboardKey(MODIFIER_CODES[MODIFIER_SHIFT], pressed);
+			this.recordKeyFeedback(KEY_INDEX_BY_CODE.get(MODIFIER_CODES[MODIFIER_SHIFT]), pressed);
+		}
 		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
 			const definition = KEY_DEFINITIONS[index];
 			const label = down && definition.shiftLabel !== undefined

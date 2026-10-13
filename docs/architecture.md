@@ -5013,6 +5013,14 @@ minimum hold/FIFO; guest firmware owns typematic and ICU samples the ordinary
 raw HID bitmap. Closing the keyboard releases its virtual contributions only,
 without releasing an independently held physical keyboard key.
 
+Keyboard forwarding feedback is separate presentation state: held keys have
+a distinct bright background/dark glyph, and their actual final up retains
+that appearance for a short visual-only acknowledgement. Per-key monotonic
+deadlines live beside the retained draw commands and advance from host UI
+poll time. Selection changes cannot move that feedback, and idle ticks do
+not rescan key colors. The feedback deadline never extends real key lifetime,
+injects another edge or proves guest consumption.
+
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed
