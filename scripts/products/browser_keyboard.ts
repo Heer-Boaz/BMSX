@@ -56,7 +56,6 @@ export function expandBrowserKeyboardTemplate(html: string): string {
 		pages.push(applyTemplateValues(fragments.page, {
 			'@@PAGE@@': String(pageIndex),
 			'@@UNITS@@': String(units),
-			'@@ROW_COUNT@@': String(page.rows.length),
 			'@@ROWS@@': rows.join('\n'),
 		}));
 	}

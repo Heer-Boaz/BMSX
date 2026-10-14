@@ -30,7 +30,7 @@ export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'cssFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidence = '.bmsx/hosting/browser-gamebase-css-evidence';
+	const evidence = '.bmsx/hosting/conventional-keyboard-evidence/embedded';
 	await mkdir(evidence, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -95,6 +95,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const keyboardView = new api.BrowserOnscreenKeyboard(document, keyboard, () => keyboard.close());
 			hub.setOnscreenKeyboard(keyboardView);
 			(globalThis as any).cssProbe = { pad, keyboard, video, input,
+				frame() { input.pollInput(); keyboard.updateFeedback(clock.now()); },
 				measure() { return [...document.querySelectorAll('#gamescreen, .control-surface')].map(element => {
 					const bounds = element.getBoundingClientRect();
 					return { id: element.id, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
@@ -149,23 +150,39 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const panel = await page.locator('#bmsx-touch-keyboard').boundingBox();
 			assert.ok(panel!.y >= surfaceBounds.y && panel!.y + panel!.height <= surfaceBounds.y + surfaceBounds.height);
 			assert.ok(panel!.x >= surfaceBounds.x && panel!.x + panel!.width <= surfaceBounds.x + surfaceBounds.width);
-			if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}.png` });
-			const keyGeometry = await page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key').evaluateAll(keys => keys.map(key => {
-				const bounds = key.getBoundingClientRect(), text = document.createRange();
-				text.selectNodeContents(key);
-				return { code: key.getAttribute('data-code'), width: bounds.width, height: bounds.height, textWidth: text.getBoundingClientRect().width };
-			}));
+			if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}.png`, scale: 'css' });
 			const shortSurface = surfaceBounds.height === 239;
-			const keyHeight = shortSurface && selectedPage === 0 ? 218 / 6 : profile.keyHeight;
-			for (const key of keyGeometry) {
-				assert.ok(Math.abs(key.height - keyHeight) <= 1 / 64, 'key pitch follows the containing player surface and authored page row count, not the outer browser window');
-				assert.ok(key.textWidth <= key.width - 2, `${key.code} text (${key.textWidth}px) fits its actual border (${key.width}px), including embedded phone-sized players`);
+			for (const shifted of [false, true]) {
+				if (shifted) {
+					await page.keyboard.down('Shift');
+					await page.evaluate(() => (globalThis as any).cssProbe.frame());
+					await settle();
+				}
+				const keyGeometry = await page.locator('.bmsx-touch-keyboard-page:not([hidden]) button').evaluateAll(keys => keys.map(key => {
+					const bounds = key.getBoundingClientRect(), text = document.createRange();
+					text.selectNodeContents(key);
+					return { code: key.getAttribute('data-code'), label: key.textContent!, width: bounds.width, height: bounds.height,
+						fontSize: parseFloat(getComputedStyle(key).fontSize), textWidth: text.getBoundingClientRect().width };
+				}));
+				assert.deepEqual(keyGeometry.filter(key => key.textWidth > key.width - 2).map(key => ({ code: key.code, label: key.label, textWidth: key.textWidth, width: key.width })), [],
+					`${shifted ? 'shifted' : 'base'} legends fit their actual borders, including embedded phone-sized players`);
+				for (const key of keyGeometry) {
+					assert.ok(Math.abs(key.height - profile.keyHeight) <= 1 / 64, 'key height follows the player surface, not the outer browser window');
+					if (key.label.length === 1) assert.equal(key.fontSize, surfaceBounds.width < 375 ? 15 : profile.keyHeight === 56 ? 21 : 18,
+						'character legends retain the specified 15/18/21px typography instead of shrinking arbitrarily to fit');
+				}
+				if (shifted) {
+					if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}-shifted.png`, scale: 'css' });
+					await page.keyboard.up('Shift');
+					await page.evaluate(() => (globalThis as any).cssProbe.frame());
+					await settle();
+				}
 			}
 			const rowCount = BROWSER_KEYBOARD_PAGES[selectedPage].rows.length;
 			const padding = surfaceBounds.width < 600 ? 8 : 16;
-			const panelHeight = shortSurface ? 236 : rowCount * profile.keyHeight + (rowCount - 1) * (profile.keyHeight === 56 ? 8 : 6) + padding;
+			const panelHeight = shortSurface ? rowCount * 44 + (rowCount - 1) * 2 + 8 : rowCount * profile.keyHeight + (rowCount - 1) * (profile.keyHeight === 56 ? 8 : 6) + padding;
 			assert.ok(Math.abs(panel!.height - panelHeight) <= rowCount / 64,
-				'normal surfaces gain a full coding row; short embedded and full-screen surfaces share the explicit 236px height budget');
+				'the primary five rows and supplementary three rows keep normal target heights, even on short surfaces');
 
 			const selected = page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-selected="true"]');
 			const keyIdle = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, code: element.getAttribute('data-code'), bounds: element.getBoundingClientRect().toJSON() }));

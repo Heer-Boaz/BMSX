@@ -9,60 +9,58 @@ export type BrowserKeyboardControl = {
 export type BrowserKeyboardRow = OnScreenKeyboardRow & {
 	readonly controls: readonly BrowserKeyboardControl[];
 };
-export type BrowserKeyboardPage = OnScreenKeyboardPage & {
+export type BrowserKeyboardPage = Omit<OnScreenKeyboardPage, 'rows'> & {
 	readonly label: string;
 	readonly description: string;
 	readonly rows: readonly BrowserKeyboardRow[];
 };
 
-/** Hacker's Keyboard's extra coding row keeps punctuation on the primary page
- * without displacing letters, navigation or modifier keys. Its compact layout
- * supplies the number/QWERTY pitch and integrated Fn key; its
- * full layout supplies the full-height inverted-T rather than half-height arrows.
- * https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml
+/** Conventional US typing rows and inverted-T navigation, following Hacker's
+ * Keyboard's full layout rather than its separate coding-symbol extension.
  * https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml
+ * BMSX keeps Escape above Tab, every printable key at one unit, and a dedicated
+ * supplementary Fn page. Those choices require a 15.75-unit number row.
  * These same rows drive packaged geometry and physical-gamepad navigation.
  * UI commands occupy authored gaps; they are not fake physical key identities.
  */
-const BOTTOM_ROW: BrowserKeyboardRow = {
-	keys: [53, 54, 55, 49, 50, 56, 57, 59],
-	starts: [1.5, 2.5, 3.5, 5.5, 6.5, 9, 10, 11],
-	spans: [1, 1, 2, 1, 1, 1, 1, 1],
-	units: 12,
-	controls: [
-		{ action: BrowserKeyboardAction.NextPage, start: 0, span: 1.5 },
-		{ action: BrowserKeyboardAction.Close, start: 7.5, span: 1.5 },
-	],
-};
-
 export const BROWSER_KEYBOARD_PAGES: readonly BrowserKeyboardPage[] = [
-	{ label: 'ABC', description: 'letters and numbers', initialKey: 15, rows: [
-		{ keys: [74, 11, 12, 25, 26, 27, 38, 39],
-			starts: [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5],
-			spans: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5], units: 12, controls: [] },
-		{ keys: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13],
-			starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 12, controls: [] },
-		{ keys: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 51],
-			starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 12, controls: [] },
-		{ keys: [0, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40],
-			starts: [0, 1.25, 2.25, 3.25, 4.25, 5.25, 6.25, 7.25, 8.25, 9.25, 10.25],
-			spans: [1.25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.75], units: 12, controls: [] },
-		{ keys: [41, 42, 43, 44, 45, 46, 47, 48, 58],
-			starts: [0, 1.75, 2.75, 3.75, 4.75, 5.75, 6.75, 7.75, 10],
-			spans: [1.75, 1, 1, 1, 1, 1, 1, 1, 1], units: 12, controls: [] },
-		BOTTOM_ROW,
+	{ label: 'ABC', description: 'letters, numbers and punctuation', initialKey: 15, rows: [
+		{ keys: [0, 74, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+			starts: [0, 1.25, 2.25, 3.25, 4.25, 5.25, 6.25, 7.25, 8.25, 9.25, 10.25, 11.25, 12.25, 13.25, 14.25],
+			spans: [1.25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5], units: 15.75, controls: [] },
+		{ keys: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+			starts: [0, 1.25, 2.25, 3.25, 4.25, 5.25, 6.25, 7.25, 8.25, 9.25, 10.25, 11.25, 12.25, 13.25],
+			spans: [1.25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 14.25, controls: [] },
+		{ keys: [53, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+			starts: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+			spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.25], units: 15.25, controls: [] },
+		{ keys: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 58],
+			starts: [0, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 13.5],
+			spans: [2.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 15.25, controls: [] },
+		{
+			keys: [54, 55, 60, 61, 56, 57, 59],
+			starts: [1.5, 3, 7.25, 9.25, 12.75, 13.75, 14.75],
+			spans: [1.5, 4.25, 2, 2, 1, 1, 1],
+			units: 15.75,
+			controls: [
+				{ action: BrowserKeyboardAction.NextPage, start: 0, span: 1.5 },
+				{ action: BrowserKeyboardAction.Close, start: 11.25, span: 1.5 },
+			],
+		},
 	] },
-	{ label: 'Fn', description: 'function keys and symbols', initialKey: 62, rows: [
-		{ keys: [62, 63, 64, 65, 66, 67, 0, 13],
-			starts: [0, 1.5, 3, 4.5, 6, 7.5, 9, 10], spans: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1, 2], units: 12, controls: [] },
-		{ keys: [14, 68, 69, 70, 71, 72, 73, 52],
-			starts: [0, 1, 2.5, 4, 5.5, 7, 8.5, 10], spans: [1, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 2], units: 12, controls: [] },
-		{ keys: [28, 11, 12, 25, 26, 27, 38, 39, 40],
-			starts: [0, 1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10.25],
-			spans: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.75], units: 12, controls: [] },
-		{ keys: [41, 60, 61, 51, 58], starts: [0, 1.75, 4, 6.25, 10],
-			spans: [1.75, 2.25, 2.25, 2.5, 1], units: 12, controls: [] },
-		BOTTOM_ROW,
+	{ label: 'Fn', description: 'function keys and forward delete', initialKey: 62, rows: [
+		{ keys: [62, 63, 64, 65, 66, 67, 52, 40],
+			starts: [0, 2, 4, 6, 8, 10, 12, 13.5], spans: [2, 2, 2, 2, 2, 2, 1.5, 2.25], units: 15.75, controls: [] },
+		{ keys: [68, 69, 70, 71, 72, 73, 13, 58],
+			starts: [0, 2, 4, 6, 8, 10, 12, 13.75], spans: [2, 2, 2, 2, 2, 2, 1.75, 1], units: 15.75, controls: [] },
+		{ keys: [53, 54, 41, 55, 56, 57, 59],
+			starts: [1.5, 3, 4.5, 6.25, 12.75, 13.75, 14.75],
+			spans: [1.5, 1.5, 1.75, 5, 1, 1, 1], units: 15.75,
+			controls: [
+				{ action: BrowserKeyboardAction.NextPage, start: 0, span: 1.5 },
+				{ action: BrowserKeyboardAction.Close, start: 11.25, span: 1.5 },
+			],
+		},
 	] },
 ];
 

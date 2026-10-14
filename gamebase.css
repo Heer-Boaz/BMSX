@@ -339,6 +339,11 @@ html {
 @container keyboard-surface (max-width: 599px) {
 	.bmsx-touch-keyboard { padding: 4px; --keyboard-slot-padding: 1px; }
 }
+@container keyboard-surface (max-width: 374px) {
+	.bmsx-touch-key { font-size: 15px; }
+	.bmsx-touch-key[data-wide-label="true"] { font-size: 11px; }
+	.bmsx-touch-keyboard-command { font-size: 12px; }
+}
 @container keyboard-surface (min-width: 600px) and (min-height: 500px) {
 	.bmsx-touch-keyboard { --keyboard-key-height: 56px; --keyboard-row-gap: 8px; }
 	.bmsx-touch-key { font-size: 21px; }
@@ -348,11 +353,8 @@ html {
 	.bmsx-touch-keyboard {
 		--keyboard-bottom: env(safe-area-inset-bottom);
 		padding: 4px;
+		--keyboard-key-height: 44px;
 		--keyboard-row-gap: 2px;
 		--keyboard-slot-padding: 1.5px;
-	}
-	.bmsx-touch-keyboard-page {
-		/* Share the same compact content budget across the authored row count. */
-		--keyboard-key-height: calc((228px - var(--keyboard-row-gap) * (var(--page-rows) - 1)) / var(--page-rows));
 	}
 }

@@ -5114,21 +5114,28 @@ and modifier highlighting include the routed physical modifier bits without
 republishing hardware modifiers as virtual keys. The feedback tick compares
 only that retained modifier byte to notify presentation changes.
 
-The browser has two twelve-unit layouts: a six-row primary keyboard with letters,
-digits and a permanent coding row, and a five-row function keyboard. The coding
-row exposes Backquote, Minus, Equal, both brackets, Backslash, Semicolon and Quote
-without switching pages. Its eight 1.5-unit keys preserve all previous letter,
-modifier and navigation widths. Every printable ASCII character is reachable
-on the primary page through its ordinary physical key and Shift. Shift uses the existing raw
-modifier/key identities and shifted labels for both letters and symbols; the view
-does not inject characters. Backspace is upper-right, Tab left of Q, and Enter
-right of the home row. Enter and Shift are wider than Ctrl/Alt. Up sits above Down
-in a full-height inverted-T, not in a horizontal strip or half-height pair.
-One Fn/ABC key and Close occupy real bottom-row slots alongside Space and
-punctuation; there is no separate toolbar. This combines the compact number/letter
-layout and extra coding row from [Hacker's Keyboard](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml)
-with its [full layout's inverted-T](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml#L276-L407),
-without copying a fourteen-column desktop grid onto a phone.
+The browser primary page has five conventional US typing rows. Escape precedes
+Backquote and digits; Minus/Equal follow 0. Brackets and Backslash follow P,
+Semicolon/Quote follow L, and Comma/Period/Slash follow M. All 47 printable
+physical keys have the same one-unit pitch; punctuation is neither enlarged nor
+repeated on Fn. All 95 printable ASCII characters are reachable on the primary
+page through real physical key identities and Shift, without character injection.
+A separate Escape and a wider Backspace require a 15.75-unit number row. Centered
+shorter typing rows retain quarter-/half-unit Q–A–Z staggering without widening
+Ctrl beyond Enter. This is an adapted compact US arrangement, not an exact ANSI
+number-row reproduction. Enter and Shift are wider than Ctrl/Alt on both pages.
+Ctrl sits left of A, as in [Hacker's Keyboard's full layout](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml#L53-L411).
+Caps Lock is not advertised as a browser typing mode: canonical key 28/HID 57 and
+native raw input remain intact, but BIOS and IDE text consumers do not implement
+lock-state semantics. It is not simulated using sticky Shift.
+
+Fn is a three-row supplementary page with F1–F12 and forward Delete. It repeats
+only the real modifier, Space, Backspace, Enter and arrow utilities needed to use
+those functions. Escape, Tab, Home and End are on the primary page. Mode/Close and
+the full-height inverted-T remain at the same horizontal positions across pages;
+they occupy real row slots, not a toolbar. The primary Space is 4.25 units rather
+than a widened filler for the removed punctuation. Actual row counts determine
+content height; Fn has no vacant rows added to match the primary page.
 
 The shared TS/C++ row representation carries physical key indices, explicit
 unit starts, spans and row extent. Constructors precompute navigation centers;
@@ -5139,12 +5146,14 @@ Native frontends retain their existing bitmap layout and page names. Physical
 gamepad navigation skips nonkey gaps, and SELECT+Y cycles the supplied pages.
 No new allocation or geometry calculation enters the key-source hot path.
 
-Phone letters are necessarily narrower than 44px. Normal-height surfaces retain
-48px keys (56px on tablets); the primary coding row increases panel height, not
-column count. At a short 239px player, the authored row count divides a 228px
-content budget with 2px gaps: five function rows remain 44px, while six primary
-rows are approximately 36.33px. Both panels occupy 236px. This is an explicit
-vertical touch-target tradeoff, not a claim that six 44px rows fit that surface.
+This complete keyboard is dense on a phone: with the normal gutters its ordinary
+keys are approximately 21.9px wide at 393px and 17.3px at 320px. They are not
+44px-wide thumb targets, and a screenshot or geometry test does not prove
+comfortable rapid thumb typing. Normal-height surfaces retain 48px key heights
+(56px on tablets). At a short 239px player, five 44px rows, four 2px gaps and 8px
+padding occupy 236px; the three-row Fn page occupies 144px. Narrow surfaces below
+375px use 15px glyphs, 11px key captions and 12px command captions. Regression
+checks measure both base and shifted legends against actual button content bounds.
 If safe insets or an embedded player leave still less height, flex rows share the
 actual available height rather than clipping keys. Pane gutters retain keyboard
 ownership rather than leaking through to hidden controls.
