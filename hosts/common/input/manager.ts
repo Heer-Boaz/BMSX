@@ -36,7 +36,6 @@ import type { InputControllerPlayback } from './controller_playback';
 import type { InputRecipient } from './channel';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
-const HOST_OVERLAY_KEYBOARD_SOURCE = 'keyboard:host-overlay';
 
 /**
  * Returns the pressed state of a key or button, and optionally checks if it was clicked.
@@ -150,7 +149,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private inputControllerPlayback: InputControllerPlayback | null = null;
 	public resetInput(deviceId?: string): void {
 		if (deviceId !== undefined) {
-			this.deviceBindings.get(deviceId)!.handler.reset();
+			const binding = this.deviceBindings.get(deviceId)!;
+			if (binding.source === 'keyboard') binding.handler.disconnectSource(binding.deviceId);
+			else binding.handler.reset();
 			return;
 		}
 		this.globalShortcuts.reset();
@@ -373,11 +374,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	/** Publishes one host-owned virtual keyboard source through PlayerInput and the ICU snapshot. */
 	public setVirtualKeyboardKey(code: string, down: boolean): void {
-		if (down) {
-			this.keyboardInput.keydown(HOST_OVERLAY_KEYBOARD_SOURCE, code);
-		} else {
-			this.keyboardInput.keyup(HOST_OVERLAY_KEYBOARD_SOURCE, code);
-		}
+		this.keyboardInput.setVirtualKey(code, down);
 	}
 
 	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {

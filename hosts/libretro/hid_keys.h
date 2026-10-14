@@ -4,6 +4,11 @@
 
 namespace bmsx::hid_key_usage {
 
+constexpr u8 ModifierFirstUsage = 0xe0u;
+constexpr u8 ModifierMaskShift = 0x22u;
+constexpr u8 ModifierMaskControl = 0x11u;
+constexpr u8 ModifierMaskAlt = 0x44u;
+
 constexpr u8 A = 4u;
 constexpr u8 B = 5u;
 constexpr u8 C = 6u;

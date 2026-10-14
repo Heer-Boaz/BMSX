@@ -14,6 +14,7 @@ inline constexpr i32 kModifierControl = 1;
 inline constexpr i32 kModifierAlt = 2;
 inline constexpr size_t MAIN_KEY_COUNT = 60;
 inline constexpr std::array<u8, 3> MODIFIER_USAGES{hid_key_usage::ShiftLeft, hid_key_usage::ControlLeft, hid_key_usage::AltLeft};
+inline constexpr std::array<u8, 3> MODIFIER_HID_MASKS{hid_key_usage::ModifierMaskShift, hid_key_usage::ModifierMaskControl, hid_key_usage::ModifierMaskAlt};
 inline constexpr std::array<i16, 3> MODIFIER_KEY_INDICES{41, 53, 54};
 struct OnScreenKeyDefinition { const char* label; u8 usage; i32 modifier; const char* shiftLabel = nullptr; };
 inline constexpr std::array<OnScreenKeyDefinition, 74> ON_SCREEN_KEY_DEFINITIONS{{

@@ -1,3 +1,5 @@
+import { HID_MODIFIER_MASK_ALT, HID_MODIFIER_MASK_CONTROL, HID_MODIFIER_MASK_SHIFT } from './hid_keys';
+
 export type OnScreenKeyDefinition = {
 	readonly label: string;
 	readonly shiftLabel?: string;
@@ -16,6 +18,7 @@ export const MODIFIER_SHIFT = 0;
 export const MODIFIER_CONTROL = 1;
 export const MODIFIER_ALT = 2;
 export const MODIFIER_CODES = ['ShiftLeft', 'ControlLeft', 'AltLeft'] as const;
+export const MODIFIER_HID_MASKS = [HID_MODIFIER_MASK_SHIFT, HID_MODIFIER_MASK_CONTROL, HID_MODIFIER_MASK_ALT] as const;
 export const MAIN_KEY_COUNT = 60;
 
 export const ON_SCREEN_KEY_DEFINITIONS: readonly OnScreenKeyDefinition[] = [

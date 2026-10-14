@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -20,7 +20,6 @@ test('gamebase CSS preserves boot, control and keyboard presentation across play
 		stdin: { contents: `export { BrowserOnscreenKeyboard } from './hosts/browser/onscreen_keyboard';
 export { BROWSER_KEYBOARD_PAGES } from './hosts/browser/onscreen_keyboard_layout';
 export { OnScreenKeyboard } from './hosts/common/input/on_screen_keyboard';
-export { ON_SCREEN_KEY_INDEX_BY_CODE } from './hosts/common/input/on_screen_keyboard_keys';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserInputTraceBuffer } from './hosts/browser/input_trace_buffer';
 export { BrowserInputTraceView } from './hosts/browser/input_trace_view';
@@ -31,15 +30,27 @@ export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'cssFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
+	const evidence = '.bmsx/hosting/browser-gamebase-css-evidence';
+	await mkdir(evidence, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
-	for (const profile of [
-		{ name: 'phone portrait', width: 393, height: 852, insets: [47, 0, 34, 0] },
-		{ name: 'phone landscape', width: 852, height: 393, insets: [0, 47, 21, 47] },
-		{ name: 'short landscape', width: 568, height: 239, insets: [0, 0, 0, 0] },
-		{ name: 'tablet', width: 768, height: 1024, insets: [24, 0, 20, 0] },
-		{ name: 'embedded player', width: 1024, height: 900, insets: [0, 0, 0, 0], embedded: true },
-	]) await t.test(profile.name, async p => {
+	const profiles: Array<{
+		name: string;
+		width: number;
+		height: number;
+		insets: number[];
+		keyHeight: number;
+		embedded?: { width: number; height: number };
+	}> = [
+		{ name: 'phone portrait', width: 393, height: 852, insets: [47, 0, 34, 0], keyHeight: 48 },
+		{ name: 'phone landscape', width: 852, height: 393, insets: [0, 47, 21, 47], keyHeight: 48 },
+		{ name: 'short landscape', width: 568, height: 239, insets: [0, 0, 0, 0], keyHeight: 44 },
+		{ name: 'tablet', width: 768, height: 1024, insets: [24, 0, 20, 0], keyHeight: 56 },
+		{ name: 'embedded player', width: 1024, height: 900, insets: [0, 0, 0, 0], keyHeight: 48, embedded: { width: 360, height: 620 } },
+		{ name: 'embedded narrow player', width: 1024, height: 900, insets: [0, 0, 0, 0], keyHeight: 48, embedded: { width: 320, height: 620 } },
+		{ name: 'embedded short player', width: 1024, height: 900, insets: [0, 0, 0, 0], keyHeight: 44, embedded: { width: 568, height: 239 } },
+	];
+	for (const profile of profiles) await t.test(profile.name, async p => {
 		const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
 		p.after(() => page.close());
 		await page.setContent(template);
@@ -65,7 +76,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			document.body.classList.add('game-started');
 			const surface = document.getElementById('player-surface')!;
 			surface.style.padding = profile.insets.map(value => `${value}px`).join(' ');
-			if (profile.embedded) Object.assign(surface.style, { left: '60px', top: '35px', right: 'auto', bottom: 'auto', width: '360px', height: '620px' });
+			if (profile.embedded) Object.assign(surface.style, { left: '60px', top: '35px', right: 'auto', bottom: 'auto', width: `${profile.embedded.width}px`, height: `${profile.embedded.height}px` });
 			const api = (globalThis as any).cssFixture;
 			if (profile.name === 'short landscape') {
 				new api.BrowserInputTraceView(document, new api.BrowserInputTraceBuffer());
@@ -83,18 +94,22 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const keyboard = new api.OnScreenKeyboard(input, api.BROWSER_KEYBOARD_PAGES);
 			const keyboardView = new api.BrowserOnscreenKeyboard(document, keyboard, () => keyboard.close());
 			hub.setOnscreenKeyboard(keyboardView);
-			(globalThis as any).cssProbe = { pad, keyboard, video, input, key: api.ON_SCREEN_KEY_INDEX_BY_CODE, source: keyboard.allocateSource(),
+			(globalThis as any).cssProbe = { pad, keyboard, video, input,
 				measure() { return [...document.querySelectorAll('#gamescreen, .control-surface')].map(element => {
 					const bounds = element.getBoundingClientRect();
 					return { id: element.id, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
 				}); } };
 		}, profile);
+		const cdp = await page.context().newCDPSession(page);
 		const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 		await settle();
 		const geometry = await page.evaluate(() => (globalThis as any).cssProbe.measure());
 		const canvas = geometry.find((entry: { id: string }) => entry.id === 'gamescreen');
 		assert.ok(Math.abs(canvas.width / canvas.height - 4 / 3) < 0.001);
-		if (profile.width < profile.height || profile.embedded) {
+		const surfaceBounds = (await page.locator('#player-surface').boundingBox())!;
+		assert.ok(Math.abs(canvas.x + canvas.width / 2 - surfaceBounds.x - surfaceBounds.width / 2) < 0.02,
+			'the keyboard container cannot change the globally positioned canvas containing block');
+		if (surfaceBounds.width < surfaceBounds.height) {
 			const visibleTop = await page.evaluate(() => (globalThis as any).cssProbe.video.visibleViewportBounds.top);
 			assert.ok(Math.abs(canvas.y + visibleTop * canvas.height / 240 - (profile.embedded ? 35 : 0) - profile.insets[0]) < 0.02,
 				'the clipped portrait image starts at the safe top, including permitted overscan');
@@ -132,16 +147,30 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			assert.equal(await page.locator('.bmsx-touch-keyboard-page:visible').count(), 1);
 			assert.equal(await page.locator('.bmsx-touch-keyboard-page:not([hidden])').getAttribute('data-page'), String(selectedPage));
 			const panel = await page.locator('#bmsx-touch-keyboard').boundingBox();
-			assert.ok(panel!.y >= 0 && panel!.y + panel!.height <= profile.height);
+			assert.ok(panel!.y >= surfaceBounds.y && panel!.y + panel!.height <= surfaceBounds.y + surfaceBounds.height);
+			assert.ok(panel!.x >= surfaceBounds.x && panel!.x + panel!.width <= surfaceBounds.x + surfaceBounds.width);
+			if (profile.embedded) await page.screenshot({ path: `${evidence}/${profile.embedded.width}x${profile.embedded.height}-page${selectedPage}.png` });
+			const keyGeometry = await page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key').evaluateAll(keys => keys.map(key => {
+				const bounds = key.getBoundingClientRect(), text = document.createRange();
+				text.selectNodeContents(key);
+				return { code: key.getAttribute('data-code'), width: bounds.width, height: bounds.height, textWidth: text.getBoundingClientRect().width };
+			}));
+			for (const key of keyGeometry) {
+				assert.equal(key.height, profile.keyHeight, 'key pitch follows the containing player surface, not the outer browser window');
+				assert.ok(key.textWidth <= key.width - 2, `${key.code} text (${key.textWidth}px) fits its actual border (${key.width}px), including embedded phone-sized players`);
+			}
+			if (surfaceBounds.height === 239) assert.equal(panel!.height, 236, 'a short embedded player gets the same five full-height rows as a short full-screen player');
+
 			const selected = page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-selected="true"]');
 			const keyIdle = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, code: element.getAttribute('data-code'), bounds: element.getBoundingClientRect().toJSON() }));
 			const topmost = await selected.evaluate(element => { const b = element.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) === element; });
 			assert.equal(topmost, true, 'keyboard keys own hit testing above canvas and control artwork');
-			await page.evaluate(code => { const probe = (globalThis as any).cssProbe; probe.keyboard.pressKey(probe.source, probe.key.get(code)); }, keyIdle.code);
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1,
+				x: keyIdle.bounds.x + keyIdle.bounds.width / 2, y: keyIdle.bounds.y + keyIdle.bounds.height / 2, radiusX: 3, radiusY: 3 }] });
 			await settle();
 			const heldKey = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, pressed: element.getAttribute('aria-pressed'), bounds: element.getBoundingClientRect().toJSON() }));
 			assert.equal(heldKey.pressed, 'true'); assert.notEqual(heldKey.color, keyIdle.color); assert.deepEqual(heldKey.bounds, keyIdle.bounds);
-			await page.evaluate(() => (globalThis as any).cssProbe.keyboard.releaseSource((globalThis as any).cssProbe.source));
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 			await settle();
 			assert.equal(await selected.getAttribute('aria-pressed'), 'false');
 			assert.equal(await selected.getAttribute('data-highlighted'), 'true', 'release feedback is visible without falsely holding the key');

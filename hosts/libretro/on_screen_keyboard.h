@@ -22,7 +22,7 @@ public:
 	i16 selectedKey() const { return m_selected; }
 	bool visible() const { return m_visible; }
 	u64 revision() const { return m_revision; }
-	bool shiftActive() const { return m_modifierPressed[kModifierShift]; }
+	bool shiftActive() const { return isKeyPressed(MODIFIER_KEY_INDICES[kModifierShift]); }
 	size_t allocateSource();
 	void open();
 	void close();
@@ -49,6 +49,8 @@ private:
 	std::vector<u8> m_sourceModifiers;
 	std::vector<u8> m_sourceModifierTapEligible;
 	std::vector<u64> m_sourceModifierTapGeneration;
+	std::vector<u64> m_sourcePhysicalTapGeneration;
+	u8 m_displayedPhysicalModifiers = 0;
 	size_t m_ordinaryHeldSources = 0;
 	u64 m_ordinaryPressGeneration = 0;
 	std::array<u32, KeyCount> m_keyCounts{};

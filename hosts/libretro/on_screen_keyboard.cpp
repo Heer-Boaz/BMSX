@@ -7,7 +7,7 @@ namespace bmsx {
 namespace { constexpr f64 kReleaseFeedbackMs = 120; }
 OnScreenKeyboard::OnScreenKeyboard(LibretroInput& input, std::span<const OnScreenKeyboardPage> pages)
 	: m_input(input), m_pages(pages), m_sourceKeys(InitialSourceCount, -1), m_sourceModifiers(InitialSourceCount, 0),
-	  m_sourceModifierTapEligible(InitialSourceCount, 0), m_sourceModifierTapGeneration(InitialSourceCount, 0),
+	  m_sourceModifierTapEligible(InitialSourceCount, 0), m_sourceModifierTapGeneration(InitialSourceCount, 0), m_sourcePhysicalTapGeneration(InitialSourceCount, 0),
 	  m_selected(pages[0].initialKey), m_selectedRow(0) {
 	m_pageSelections.reserve(pages.size());
 	m_pageKeyRows.resize(pages.size());
@@ -31,7 +31,7 @@ OnScreenKeyboard::OnScreenKeyboard(LibretroInput& input, std::span<const OnScree
 size_t OnScreenKeyboard::allocateSource() {
 	const size_t source = m_sourceKeys.size();
 	m_sourceKeys.push_back(-1); m_sourceModifiers.push_back(0);
-	m_sourceModifierTapEligible.push_back(0); m_sourceModifierTapGeneration.push_back(0);
+	m_sourceModifierTapEligible.push_back(0); m_sourceModifierTapGeneration.push_back(0); m_sourcePhysicalTapGeneration.push_back(0);
 	return source;
 }
 void OnScreenKeyboard::open() {
@@ -92,7 +92,8 @@ void OnScreenKeyboard::pressKey(size_t source, i16 key) {
 	releaseKeySource(source); m_sourceKeys[source] = key;
 	const auto& definition = ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)];
 	if (definition.modifier != kNoModifier) {
-		m_sourceModifierTapEligible[source] = m_ordinaryHeldSources == 0 ? 1 : 0;
+		m_sourceModifierTapEligible[source] = m_ordinaryHeldSources == 0 && m_input.physicalOrdinaryHeldCount() == 0 ? 1 : 0;
+		m_sourcePhysicalTapGeneration[source] = m_input.physicalOrdinaryPressGeneration();
 		m_sourceModifierTapGeneration[source] = m_ordinaryPressGeneration;
 		++m_keyCounts[static_cast<size_t>(key)]; publishModifier(static_cast<size_t>(definition.modifier));
 	} else {
@@ -111,7 +112,8 @@ void OnScreenKeyboard::pressKey(size_t source, i16 key) {
 void OnScreenKeyboard::releaseSource(size_t source, bool completeModifierTap) {
 	const i16 key = m_sourceKeys[source];
 	if (completeModifierTap && key >= 0 && m_sourceModifierTapEligible[source] != 0
-		&& m_sourceModifierTapGeneration[source] == m_ordinaryPressGeneration) {
+		&& m_sourceModifierTapGeneration[source] == m_ordinaryPressGeneration
+		&& m_sourcePhysicalTapGeneration[source] == m_input.physicalOrdinaryPressGeneration()) {
 		const size_t modifier = static_cast<size_t>(ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)].modifier);
 		m_modifierStates[modifier] = !m_modifierStates[modifier];
 	}
@@ -139,12 +141,19 @@ const char* OnScreenKeyboard::label(i16 key) const {
 }
 bool OnScreenKeyboard::isKeyPressed(i16 key) const {
 	const auto modifier = ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)].modifier;
-	return modifier == kNoModifier ? m_keyCounts[static_cast<size_t>(key)] != 0 : m_modifierPressed[static_cast<size_t>(modifier)];
+	return modifier == kNoModifier ? m_keyCounts[static_cast<size_t>(key)] != 0 : (m_modifierPressed[static_cast<size_t>(modifier)]
+		|| (m_input.routedPhysicalModifierMask() & MODIFIER_HID_MASKS[static_cast<size_t>(modifier)]) != 0);
 }
 bool OnScreenKeyboard::isKeyHighlighted(i16 key) const { return isKeyPressed(key) || m_feedbackUntilMs[static_cast<size_t>(key)] != 0; }
 void OnScreenKeyboard::updateFeedback(f64 time) {
 	m_feedbackTimeMs = time;
-	if (time < m_nextFeedbackExpiryMs) return;
+	const u8 physicalModifiers = m_input.routedPhysicalModifierMask();
+	const bool modifiersChanged = physicalModifiers != m_displayedPhysicalModifiers;
+	m_displayedPhysicalModifiers = physicalModifiers;
+	if (time < m_nextFeedbackExpiryMs) {
+		if (modifiersChanged) ++m_revision;
+		return;
+	}
 	f64 next = std::numeric_limits<f64>::infinity();
 	for (auto& expiry : m_feedbackUntilMs) { if (expiry <= time) expiry = 0; else next = std::min(next, expiry); }
 	m_nextFeedbackExpiryMs = next; ++m_revision;

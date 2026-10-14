@@ -63,12 +63,16 @@ export class BrowserOnscreenKeyboard {
 
 	/** Every new panel contact is owned, including key gutters and page/close commands. */
 	public beginContact(id: number, target: EventTarget, active: boolean): boolean {
-		if (!this.model.visible || !this.panel.contains(target as Node)) return false;
+		if (!this.panel.contains(target as Node)) return false;
 		const index = this.contactCount++;
 		if (index === this.contactSources.length) this.contactSources.push(this.model.allocateSource());
 		this.contactIds[index] = id;
 		this.contactKeys[index] = -1;
 		this.contactActive[index] = active;
+		// The native target owns this contact even when an earlier event in the
+		// same batch closed the model. Keep the lease inert until actual up/cancel;
+		// neither delayed painting nor a reopen may hand it to underlying controls.
+		if (!this.model.visible) return true;
 		const button = (target as Element).closest<HTMLButtonElement>('button');
 		const keyTarget = this.keyByButton.get(button);
 		if (keyTarget !== undefined) {

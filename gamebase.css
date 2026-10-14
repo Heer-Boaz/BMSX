@@ -246,6 +246,14 @@ html {
 
 .bmsx-touch-keyboard-visible #player-surface { z-index: 11000; }
 .bmsx-touch-keyboard-visible #controller-viewport { visibility: hidden; }
+#bmsx-touch-keyboard-surface {
+	position: absolute;
+	inset: 0;
+	container-name: keyboard-surface;
+	container-type: size;
+	pointer-events: none;
+	z-index: 11000;
+}
 .bmsx-touch-keyboard {
 	position: absolute;
 	left: max(4px, env(safe-area-inset-left));
@@ -263,6 +271,7 @@ html {
 	background: #151a22;
 	border-radius: 12px;
 	font-family: system-ui, sans-serif;
+	pointer-events: auto;
 	--keyboard-key-height: 48px;
 	--keyboard-row-gap: 6px;
 	--keyboard-slot-padding: 2px;
@@ -327,15 +336,15 @@ html {
 .bmsx-touch-key[data-wide-label="true"] { font-size: 12px; }
 .bmsx-touch-key[data-selected="true"] { border-color: #7eb4d9; background: #26465d; }
 .bmsx-touch-key[data-highlighted="true"] { border-color: #ffe09a; background: #f0c15f; color: #191b20; }
-@media (max-width: 599px) {
+@container keyboard-surface (max-width: 599px) {
 	.bmsx-touch-keyboard { padding: 4px; --keyboard-slot-padding: 1px; }
 }
-@media (min-width: 600px) and (min-height: 500px) {
+@container keyboard-surface (min-width: 600px) and (min-height: 500px) {
 	.bmsx-touch-keyboard { --keyboard-key-height: 56px; --keyboard-row-gap: 8px; }
 	.bmsx-touch-key { font-size: 21px; }
 	.bmsx-touch-key[data-wide-label="true"] { font-size: 14px; }
 }
-@media (max-height: 280px) {
+@container keyboard-surface (max-height: 280px) {
 	.bmsx-touch-keyboard {
 		--keyboard-bottom: env(safe-area-inset-bottom);
 		padding: 4px;

@@ -1,3 +1,9 @@
+/** USB keyboard modifier byte: usages 0xe0..0xe7, left then right Ctrl/Shift/Alt/GUI. */
+export const HID_MODIFIER_FIRST_USAGE = 0xe0;
+export const HID_MODIFIER_MASK_SHIFT = 0x22;
+export const HID_MODIFIER_MASK_CONTROL = 0x11;
+export const HID_MODIFIER_MASK_ALT = 0x44;
+
 // KeyboardEvent.code -> USB HID usage ID (usage page 0x07, Keyboard/Keypad).
 // The ICU keyboard bitmap is indexed by these usage IDs; this table is the
 // host-side translation from W3C UI Events codes to that hardware bit index.

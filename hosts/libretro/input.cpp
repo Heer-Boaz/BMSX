@@ -196,7 +196,8 @@ void LibretroInput::poll(
 
 	m_input_poll_callback();
 	m_host_supervisor_request_high = m_supervisor_request_line();
-	m_routed_keyboard_usage_words = m_keyboard_usage_words;
+	m_routed_physical_keyboard_usage_words = m_keyboard_usage_words;
+	m_polled_virtual_keyboard_usage_words = m_virtual_keyboard_usage_words;
 	u32 keyboardButtons = 0u;
 	if (keyUsagePressed(m_keyboard_usage_words, hid_key_usage::ControlRight)) {
 		keyboardButtons |= kHostShortcutModifier;
@@ -221,9 +222,6 @@ void LibretroInput::poll(
 	}
 	if ((keyboardShortcuts.routed_buttons & kMenuShortcutMask) == 0u) {
 		consumePhysicalKeyboardUsage(hid_key_usage::AltRight);
-	}
-	for (size_t word = 0u; word < m_routed_keyboard_usage_words.size(); word += 1u) {
-		m_routed_keyboard_usage_words[word] |= m_virtual_keyboard_usage_words[word];
 	}
 	u32 activeHostShortcuts = keyboardShortcuts.active_targets;
 	m_just_pressed_host_shortcuts = keyboardShortcuts.just_pressed_targets;
@@ -391,7 +389,7 @@ bool LibretroInput::physicalKeyboardUsagePressed(u8 usage) const {
 
 void LibretroInput::consumePhysicalKeyboardUsage(u8 usage) {
 	const size_t word = static_cast<size_t>(usage) >> 5u;
-	m_routed_keyboard_usage_words[word] &=
+	m_routed_physical_keyboard_usage_words[word] &=
 		~(1u << (static_cast<u32>(usage) & 31u));
 }
 
@@ -475,7 +473,10 @@ bool LibretroInput::hostShortcutJustPressed(
 void LibretroInput::sampleInputControllerSnapshot(
 		InputControllerSnapshot& snapshot,
 		InputControllerSampleContext) {
-	snapshot.keyWords = m_routed_keyboard_usage_words;
+	for (size_t word = 0u; word < snapshot.keyWords.size(); word += 1u) {
+		snapshot.keyWords[word] = m_routed_physical_keyboard_usage_words[word]
+			| m_polled_virtual_keyboard_usage_words[word];
+	}
 	snapshot.pointerButtons = m_routed_pointer_buttons;
 	snapshot.pointerXQ16 = m_pointer_x_q16;
 	snapshot.pointerYQ16 = m_pointer_y_q16;
@@ -572,6 +573,11 @@ void LibretroInput::postKeyboardEvent(unsigned keycode, bool down) {
 	}
 	const size_t word = static_cast<size_t>(usage) >> 5u;
 	const u32 mask = 1u << (static_cast<u32>(usage) & 31u);
+	if (((m_keyboard_usage_words[word] & mask) != 0u) == down) return;
+	if (usage < hid_key_usage::ModifierFirstUsage) {
+		if (down) { ++m_ordinary_held_count; ++m_ordinary_press_generation; }
+		else --m_ordinary_held_count;
+	}
 	m_keyboard_usage_words[word] = down
 		? m_keyboard_usage_words[word] | mask
 		: m_keyboard_usage_words[word] & ~mask;
@@ -592,9 +598,11 @@ void LibretroInput::reset() {
 		}
 	}
 	m_active_rumble_mask = 0u;
+	m_ordinary_held_count = 0;
 	m_keyboard_usage_words.fill(0u);
 	m_virtual_keyboard_usage_words.fill(0u);
-	m_routed_keyboard_usage_words.fill(0u);
+	m_polled_virtual_keyboard_usage_words.fill(0u);
+	m_routed_physical_keyboard_usage_words.fill(0u);
 	m_physical_gamepad_buttons.fill(0u);
 	for (auto& axes : m_physical_gamepad_axes_q16) {
 		axes.fill(0u);

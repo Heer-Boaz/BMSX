@@ -128,9 +128,11 @@
 					</svg>
 				</div>
 			</div>
-			<section id="bmsx-touch-keyboard" class="bmsx-touch-keyboard" aria-label="On-screen keyboard" hidden>
-				@@BMSX_TOUCH_KEYBOARD_PAGES@@
-			</section>
+			<div id="bmsx-touch-keyboard-surface">
+				<section id="bmsx-touch-keyboard" class="bmsx-touch-keyboard" aria-label="On-screen keyboard" hidden>
+					@@BMSX_TOUCH_KEYBOARD_PAGES@@
+				</section>
+			</div>
 			<!-- Package-time fragments. The build expands layout data here and removes these templates. -->
 			<template data-bmsx-keyboard="page">
 				<div class="bmsx-touch-keyboard-page" data-page="@@PAGE@@" style="--page-units:@@UNITS@@" hidden>

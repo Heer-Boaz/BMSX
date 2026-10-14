@@ -2,6 +2,7 @@
 
 #include "bmsx_libretro.h"
 #include "host_shortcuts.h"
+#include "hid_keys.h"
 #include "machine/devices/input/contracts.h"
 
 #include <array>
@@ -22,6 +23,9 @@ public:
 	void setVirtualKeyboardKey(u8 usage, bool down);
 	void reset();
 
+	size_t physicalOrdinaryHeldCount() const { return m_ordinary_held_count; }
+	u64 physicalOrdinaryPressGeneration() const { return m_ordinary_press_generation; }
+	u8 routedPhysicalModifierMask() const { return static_cast<u8>(m_routed_physical_keyboard_usage_words[hid_key_usage::ModifierFirstUsage >> 5] & 0xffu); }
 	bool physicalKeyboardUsagePressed(u8 usage) const;
 	void consumePhysicalKeyboardUsage(u8 usage);
 	bool gamepadButtonPressed(
@@ -67,9 +71,12 @@ private:
 	retro_rumble_interface m_rumble_interface{};
 	std::array<unsigned, INPUT_CONTROLLER_PAD_COUNT> m_controller_devices{};
 	std::array<f64, INPUT_CONTROLLER_PAD_COUNT> m_rumble_deadlines_ms{};
+	size_t m_ordinary_held_count = 0;
+	u64 m_ordinary_press_generation = 0;
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_keyboard_usage_words{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_virtual_keyboard_usage_words{};
-	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_keyboard_usage_words{};
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_polled_virtual_keyboard_usage_words{};
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_physical_keyboard_usage_words{};
 	std::array<u32, INPUT_CONTROLLER_PAD_COUNT> m_physical_gamepad_buttons{};
 	std::array<std::array<u32, INPUT_CONTROLLER_PAD_AXIS_COUNT>, INPUT_CONTROLLER_PAD_COUNT>
 		m_physical_gamepad_axes_q16{};

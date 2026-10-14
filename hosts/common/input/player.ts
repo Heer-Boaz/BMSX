@@ -66,18 +66,16 @@ export class PlayerInput {
 			return KeyModifier.none;
 		}
 		let modifiers = KeyModifier.none;
-		if (keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed) {
-			modifiers |= KeyModifier.shift;
-		}
-		if (keyboard.getKeyState('ControlLeft').pressed) {
-			modifiers |= KeyModifier.ctrl;
-		}
-		if (keyboard.getKeyState('AltLeft').pressed) {
-			modifiers |= KeyModifier.alt;
-		}
-		if (keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed) {
-			modifiers |= KeyModifier.meta;
-		}
+		const leftShift = keyboard.getKeyState('ShiftLeft');
+		const rightShift = keyboard.getKeyState('ShiftRight');
+		const control = keyboard.getKeyState('ControlLeft');
+		const alt = keyboard.getKeyState('AltLeft');
+		const leftMeta = keyboard.getKeyState('MetaLeft');
+		const rightMeta = keyboard.getKeyState('MetaRight');
+		if ((leftShift.pressed && !leftShift.consumed) || (rightShift.pressed && !rightShift.consumed)) modifiers |= KeyModifier.shift;
+		if (control.pressed && !control.consumed) modifiers |= KeyModifier.ctrl;
+		if (alt.pressed && !alt.consumed) modifiers |= KeyModifier.alt;
+		if ((leftMeta.pressed && !leftMeta.consumed) || (rightMeta.pressed && !rightMeta.consumed)) modifiers |= KeyModifier.meta;
 		return modifiers;
 	}
 

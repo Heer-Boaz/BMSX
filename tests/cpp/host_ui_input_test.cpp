@@ -96,6 +96,15 @@ int main() {
 		require(snapshot.pads[0].axesQ16[static_cast<size_t>(InputControllerGamepadAxis::LeftX)] == 0x10000u, "button exit ownership leaves stick axes independent");
 		require(snapshot.pads[0].axesQ16[static_cast<size_t>(InputControllerGamepadAxis::LeftTrigger)] == 0x10000u, "button exit ownership leaves trigger axes independent");
 	}
+	input.setVirtualKeyboardKey(hid_key_usage::Enter, true);
+	for (int frame = 0; frame < 3; ++frame) {
+		tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+		require(keyPressed(hid_key_usage::Enter), "late physical focus-exit consumption preserves a virtual Enter contact");
+	}
+	input.setVirtualKeyboardKey(hid_key_usage::Enter, false);
+	tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+	require(!keyPressed(hid_key_usage::Enter), "virtual UP cannot reveal the still-captured physical Enter");
+
 	buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_B; input.postKeyboardEvent(RETROK_KP_ENTER, true);
 	tick(); ui.consume(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
 	require(snapshot.pads[0].buttons == (1u << static_cast<u32>(InputControllerGamepadButtonBit::B)), "fresh button remains independent of captured holds");

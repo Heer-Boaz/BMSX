@@ -185,10 +185,10 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 				const video = new api.BrowserVideoOutput(canvas, gamepadView, 'overscan');
 				video.refreshLayout();
-				const native: Array<{ type: string; id: number; trusted: boolean }> = [];
+				const native: Array<{ type: string; id: number; trusted: boolean; code: string | null }> = [];
 				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, event => {
 					const pointer = event as PointerEvent;
-					if (pointer.pointerType === 'touch') native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted });
+					if (pointer.pointerType === 'touch') native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted, code: (pointer.target as Element).getAttribute('data-code') });
 				}, true);
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, gamepad, 'F2');
 				const input = new api.Input(clock, hub, gamepad.gamepadIndex);
@@ -213,6 +213,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 						}).map((key: any) => key.code).sort(), pointer: snapshot.pointerButtons,
 							gamepad: gamepad.buttons, supervisor: input.supervisorRequestLineHigh() };
 					},
+					hostFrame() { input.pollInput(); model.updateFeedback(clock.now()); },
 					controller(code: string, down: boolean) {
 						if (down) model.pressKey(controllerSource, api.ON_SCREEN_KEY_INDEX_BY_CODE.get(code));
 						else model.releaseSource(controllerSource);
@@ -404,6 +405,41 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				await touch('touchEnd', []);
 				assert.deepEqual((await poll()).codes, [], 'a modifier begun during a controller key is not an unused tap');
 			});
+			await p.test('physical Shift updates touch labels and survives a separately released touch key', async () => {
+				const cap = page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-code="Digit1"]');
+				await page.keyboard.down('Shift');
+				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+				await settle();
+				assert.equal(await cap.textContent(), '!');
+				assert.deepEqual((await poll()).codes, ['ShiftLeft']);
+				const digit = await point('Digit1', 1);
+				await touch('touchStart', [digit]);
+				assert.deepEqual((await poll()).codes, ['Digit1', 'ShiftLeft']);
+				await touch('touchEnd', []);
+				assert.deepEqual((await poll()).codes, ['ShiftLeft'], 'the hardware modifier survives release of the independent virtual key');
+				await page.keyboard.up('Shift');
+				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+				await settle();
+				assert.deepEqual((await poll()).codes, []);
+				assert.equal(await cap.textContent(), '1');
+			});
+			await p.test('physical letter chords prevent an unused-touch-modifier latch in both source orders', async () => {
+				for (const physicalFirst of [false, true]) {
+					const shift = await point('ShiftLeft', 1);
+					if (physicalFirst) await page.keyboard.down('q');
+					await touch('touchStart', [shift]);
+					if (!physicalFirst) await page.keyboard.down('q');
+					await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+					assert.deepEqual((await poll()).codes, ['KeyQ', 'ShiftLeft']);
+					await page.keyboard.up('q');
+					await touch('touchEnd', []);
+					await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+					await settle();
+					assert.deepEqual((await poll()).codes, [], 'a virtual Shift used with a physical key was not an unused modifier tap');
+					assert.equal(await page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-code="Digit1"]').textContent(), '1');
+				}
+			});
+
 			await p.test('one native batch preserves origin-page keys in either mode/key event order', async () => {
 				for (const firstPage of [true, false]) {
 					assert.equal(await page.evaluate(() => (globalThis as any).keyboardProbe.model.page), 0);
@@ -515,6 +551,40 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				}
 				await tapControl('ABC');
 			});
+			await p.test('Close and key contacts in one native batch never leak through to the underlying gamepad', async () => {
+				const sourceHighWater = (await measure()).sources;
+				for (const closeFirst of [true, false]) {
+					await page.evaluate(() => (globalThis as any).keyboardProbe.model.open());
+					await settle();
+					const firstEvent = await page.evaluate(() => (globalThis as any).keyboardProbe.native.length);
+					const key = await point('Digit9', closeFirst ? 2 : 1);
+					const bounds = await page.locator('.bmsx-touch-keyboard-close:visible').boundingBox();
+					const close = { id: closeFirst ? 1 : 2, x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
+					await touch('touchStart', closeFirst ? [close, key] : [key, close]);
+					const batch = await page.evaluate(first => (globalThis as any).keyboardProbe.native.slice(first)
+						.filter((event: any) => event.type === 'pointerdown'), firstEvent);
+					assert.equal(batch.length, 2);
+					assert.ok(batch.every((event: any) => event.trusted));
+					assert.equal(batch[closeFirst ? 1 : 0].code, 'Digit9', 'the browser pre-targeted a real keyboard key, not an underlying gamepad surface');
+					assert.equal(await page.evaluate(() => (globalThis as any).keyboardProbe.model.visible), false);
+					const closed = await poll();
+					assert.deepEqual(closed.codes, []);
+					assert.equal(closed.gamepad, 0, 'a keyboard-targeted contact cannot become a gamepad press after another contact closes its model');
+					assert.equal(closed.pointer, 0);
+					for (const event of batch) assert.equal(await page.evaluate(id => (globalThis as any).keyboardProbe.view.ownsContact(id), event.id), true);
+					await page.evaluate(() => (globalThis as any).keyboardProbe.model.open());
+					await settle();
+					await touch('touchMove', [close, { ...key, x: key.x + 1 }]);
+					const reopened = await poll();
+					assert.deepEqual(reopened.codes, [], 'reopening cannot rearm a contact admitted to the closing keyboard');
+					assert.equal(reopened.gamepad, 0);
+					assert.equal(reopened.pointer, 0);
+					await touch(closeFirst ? 'touchEnd' : 'touchCancel', []);
+					for (const event of batch) assert.equal(await page.evaluate(id => (globalThis as any).keyboardProbe.view.ownsContact(id), event.id), false);
+					assert.equal((await measure()).sources, sourceHighWater, 'closed-target contacts reuse the same completed contact slots');
+				}
+			});
+
 			await p.test('closing hides but retains native contact identities until actual release', async () => {
 				const q = await point('KeyQ', 1);
 				await touch('touchStart', [q]);

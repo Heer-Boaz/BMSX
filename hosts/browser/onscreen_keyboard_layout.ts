@@ -68,7 +68,7 @@ export const BROWSER_KEYBOARD_KEY_LABELS: readonly string[] = ON_SCREEN_KEY_DEFI
 		case 'ControlLeft': return 'Ctrl';
 		case 'AltLeft': return 'Alt';
 		case 'Tab': return 'Tab';
-		case 'CapsLock': return 'Caps';
+		case 'CapsLock': return '⇪';
 		case 'Escape': return 'Esc';
 		case 'Delete': return 'Del';
 		case 'Home': return 'Home';

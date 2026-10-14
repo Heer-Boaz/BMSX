@@ -71,7 +71,7 @@ export class HostUiInput {
 			const keyboard = clock.inputHandlers.keyboard!;
 			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
 				const binding = KEYBOARD_BINDINGS[index];
-				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.getKeyState(binding.code).pressed) keyboardButtons |= binding.mask;
+				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.physicalKeyPressed(binding.code)) keyboardButtons |= binding.mask;
 			}
 		}
 		this.updateButtons(0, keyboardButtons, currentTimeMs, clock.frameDurationMs, clock.pollFrame);
@@ -174,7 +174,7 @@ export class HostUiInput {
 			const keyboard = this.input.getPlayerInput(1).inputHandlers.keyboard!;
 			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
 				const binding = KEYBOARD_BINDINGS[index];
-				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.getKeyState(binding.code).pressed) {
+				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.physicalKeyPressed(binding.code)) {
 					this.exitCapturedKeyboardKeys |= 1 << index;
 				}
 			}
@@ -208,8 +208,8 @@ export class HostUiInput {
 				const mask = 1 << index;
 				keys &= keys - 1;
 				const binding = KEYBOARD_BINDINGS[index];
-				if (!keyboard.getKeyState(binding.code).pressed) this.exitCapturedKeyboardKeys &= ~mask;
-				else if ((this.sources & HostUiInputSource.Keyboard) === 0 || (this.keyboardButtons & binding.mask) === 0) keyboard.consumeKey(binding.code);
+				if (!keyboard.physicalKeyPressed(binding.code)) this.exitCapturedKeyboardKeys &= ~mask;
+				else if ((this.sources & HostUiInputSource.Keyboard) === 0 || (this.keyboardButtons & binding.mask) === 0) keyboard.consumePhysicalKey(binding.code);
 			}
 			if (this.exitCapturedKeyboardKeys === 0) this.exitCapturedSources &= ~HostUiInputSource.Keyboard;
 		}
@@ -228,7 +228,7 @@ export class HostUiInput {
 			const keyboard = this.input.getPlayerInput(1).inputHandlers.keyboard!;
 			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
 				const binding = KEYBOARD_BINDINGS[index];
-				if ((keyboardButtons & binding.mask) !== 0) keyboard.consumeKey(binding.code);
+				if ((keyboardButtons & binding.mask) !== 0) keyboard.consumePhysicalKey(binding.code);
 			}
 		}
 		if ((sources & HostUiInputSource.Pointer) !== 0) this.input.getPlayerInput(1).inputHandlers.pointer!.consumeButton('pointer_primary');

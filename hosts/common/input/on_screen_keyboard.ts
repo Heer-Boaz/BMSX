@@ -1,8 +1,9 @@
 import { Input } from './manager';
+import type { KeyboardInput } from './keyboard';
 import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import {
 	OnScreenKeyboardCommand, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE,
-	type OnScreenKeyboardPage, type OnScreenKeyboardRow, MODIFIER_CODES, MODIFIER_KEY_INDICES, MODIFIER_SHIFT, NO_MODIFIER,
+	type OnScreenKeyboardPage, type OnScreenKeyboardRow, MODIFIER_CODES, MODIFIER_KEY_INDICES, MODIFIER_HID_MASKS, MODIFIER_SHIFT, NO_MODIFIER,
 } from './on_screen_keyboard_keys';
 
 const RELEASE_FEEDBACK_MS = 120;
@@ -16,6 +17,8 @@ export class OnScreenKeyboard {
 	private sourceModifiers = new Uint8Array(this.sourceCount);
 	private sourceModifierTapEligible = new Uint8Array(this.sourceCount);
 	private sourceModifierTapGeneration = new Float64Array(this.sourceCount);
+	private sourcePhysicalTapGeneration = new Float64Array(this.sourceCount);
+	private displayedPhysicalModifiers = 0;
 	private ordinaryHeldSources = 0;
 	private ordinaryPressGeneration = 0;
 	private readonly keyCounts = new Uint32Array(ON_SCREEN_KEY_DEFINITIONS.length);
@@ -34,8 +37,10 @@ export class OnScreenKeyboard {
 	private opened = false;
 	private changeRevision = 0;
 	private readonly listeners: Array<(() => void) | null> = [];
+	private readonly keyboardInput: KeyboardInput;
 
 	public constructor(private readonly input: Input, private readonly pages: readonly OnScreenKeyboardPage[]) {
+		this.keyboardInput = input.getPlayerInput(1).inputHandlers.keyboard!;
 		this.pageSelections = pages.map(page => page.initialKey);
 		for (const page of pages) {
 			let maxUnits = 0;
@@ -61,7 +66,7 @@ export class OnScreenKeyboard {
 	public get selectedKey(): number { return this.selected; }
 	public get visible(): boolean { return this.opened; }
 	public get revision(): number { return this.changeRevision; }
-	public get shiftActive(): boolean { return this.modifierPressed[MODIFIER_SHIFT]; }
+	public get shiftActive(): boolean { return this.isKeyPressed(MODIFIER_KEY_INDICES[MODIFIER_SHIFT]); }
 
 	public subscribe(listener: () => void): () => void {
 		let slot = this.listeners.indexOf(null);
@@ -90,6 +95,9 @@ export class OnScreenKeyboard {
 			const generations = new Float64Array(keys.length);
 			generations.set(this.sourceModifierTapGeneration);
 			this.sourceModifierTapGeneration = generations;
+			const physicalGenerations = new Float64Array(keys.length);
+			physicalGenerations.set(this.sourcePhysicalTapGeneration);
+			this.sourcePhysicalTapGeneration = physicalGenerations;
 		}
 		return this.sourceCount++;
 	}
@@ -174,7 +182,9 @@ export class OnScreenKeyboard {
 		this.sourceKeys[source] = key;
 		const definition = ON_SCREEN_KEY_DEFINITIONS[key];
 		if (definition.modifier !== NO_MODIFIER) {
-			this.sourceModifierTapEligible[source] = this.ordinaryHeldSources === 0 ? 1 : 0;
+			const physical = this.keyboardInput;
+			this.sourceModifierTapEligible[source] = this.ordinaryHeldSources === 0 && physical.physicalOrdinaryHeldCount === 0 ? 1 : 0;
+			this.sourcePhysicalTapGeneration[source] = physical.physicalOrdinaryPressGeneration;
 			this.sourceModifierTapGeneration[source] = this.ordinaryPressGeneration;
 			this.keyCounts[key] += 1;
 			this.publishModifier(definition.modifier);
@@ -198,7 +208,8 @@ export class OnScreenKeyboard {
 	public releaseSource(source: number, completeModifierTap = false): void {
 		const key = this.sourceKeys[source];
 		if (completeModifierTap && key >= 0 && this.sourceModifierTapEligible[source] !== 0
-			&& this.sourceModifierTapGeneration[source] === this.ordinaryPressGeneration) {
+			&& this.sourceModifierTapGeneration[source] === this.ordinaryPressGeneration
+			&& this.sourcePhysicalTapGeneration[source] === this.keyboardInput.physicalOrdinaryPressGeneration) {
 			const modifier = ON_SCREEN_KEY_DEFINITIONS[key].modifier;
 			this.modifierStates[modifier] = !this.modifierStates[modifier];
 		}
@@ -228,14 +239,22 @@ export class OnScreenKeyboard {
 	}
 	public isKeyPressed(key: number): boolean {
 		const modifier = ON_SCREEN_KEY_DEFINITIONS[key].modifier;
-		return modifier === NO_MODIFIER ? this.keyCounts[key] !== 0 : this.modifierPressed[modifier];
+		// Ordinary highlights show virtual ownership; modifier legends also reflect attached hardware.
+		return modifier === NO_MODIFIER ? this.keyCounts[key] !== 0 : this.modifierPressed[modifier]
+			|| (this.keyboardInput.routedPhysicalModifierMask & MODIFIER_HID_MASKS[modifier]) !== 0;
 	}
 	public isKeyHighlighted(key: number): boolean { return this.isKeyPressed(key) || this.feedbackUntilMs[key] !== 0; }
 
 	/** Feedback deadlines affect presentation only, never input lifetime. */
 	public updateFeedback(currentTimeMs: number): void {
 		this.feedbackTimeMs = currentTimeMs;
-		if (currentTimeMs < this.nextFeedbackExpiryMs) return;
+		const physicalModifiers = this.keyboardInput.routedPhysicalModifierMask;
+		const modifiersChanged = physicalModifiers !== this.displayedPhysicalModifiers;
+		this.displayedPhysicalModifiers = physicalModifiers;
+		if (currentTimeMs < this.nextFeedbackExpiryMs) {
+			if (modifiersChanged) this.changed();
+			return;
+		}
 		let nextExpiry = Infinity;
 		for (let key = 0; key < this.feedbackUntilMs.length; key += 1) {
 			const expiry = this.feedbackUntilMs[key];

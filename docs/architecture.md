@@ -5090,6 +5090,29 @@ peer-contact approximation. Cancellations cannot latch modifiers. Closing the
 keyboard releases its owned key state, but retained native contacts stay owned
 until actual up/cancel, including across a reopen. It never releases an
 independently held physical keyboard key or fabricates browser pointer events.
+Native DOM targeting also determines ownership of new contacts: another contact
+in the same browser batch may already target the keyboard when Close runs.
+That contact retains an inert keyboard lease until actual up/cancel; model
+visibility never reassigns an already targeted keyboard touch to controls below.
+
+Physical keyboard ingress and virtual typing retain separate source state and
+HID banks. Physical control shortcuts and host-menu keyboard navigation read and
+consume only hardware contributions. Intentional raw-key IDE commands retain
+the merged typing view, including virtual Ctrl+S; the ICU snapshot merges the
+routed physical and virtual words only at its owning output boundary. This also
+preserves virtual Enter or Shift when host UI consumes the same physical usage.
+A device-local reset releases only that physical source, not other keyboards
+or the virtual keyboard. This follows the source-attribution principle in
+[SDL's keyboard owner](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/events/SDL_keyboard.c#L490-L527),
+without adopting SDL's autorelease or text-commit semantics.
+
+Hardware ordinary-key held counts and press generations advance at ingress,
+not by scanning keys in the UI tick. Modifier-tap completion compares both
+virtual and physical chord histories, so a physical letter used with touch
+Shift cannot turn that completed chord into a sticky Shift tap. Key-cap labels
+and modifier highlighting include the routed physical modifier bits without
+republishing hardware modifiers as virtual keys. The feedback tick compares
+only that retained modifier byte to notify presentation changes.
 
 The browser has two five-row, twelve-unit layouts: letters **and digits** together,
 and function keys with the remaining punctuation. Shift uses the existing raw
@@ -5117,6 +5140,13 @@ short-player layout by reducing gaps to 2px and removing the toolbar. If safe
 insets or an embedded player leave still less height, flex rows share the actual
 available height rather than clipping keys. Pane gutters retain keyboard
 ownership rather than leaking through to hidden controls.
+Keyboard breakpoints consume the owning player surface's width and height,
+not the surrounding browser window. A dedicated static size-query container
+contains only the keyboard, leaving the fixed-position canvas and gamepad
+geometry outside CSS layout containment. As in
+[MathLive's virtual keyboard](https://github.com/arnog/mathlive/blob/8d148b4227ca057fa1aefe89c2149cdcf0591443/css/virtual-keyboard.less#L340-L388),
+container queries keep embedded/narrow keys and labels sized to their actual
+surface without runtime resize listeners or per-frame DOM measurements.
 
 `gamebase.html` owns all base-player/control/keyboard markup, including the
 page, row, key, mode and close-button fragments and their SVG artwork;

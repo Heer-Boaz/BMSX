@@ -138,19 +138,16 @@ export class GlobalShortcutRegistry {
 	}
 
 	public pollPlayer(player: PlayerInput): void {
+		// Physical host chords route their contribution before editor key commands.
+		const shortcuts = this.controlShortcuts.get(player.playerIndex);
+		if (shortcuts) this.pollControlShortcut(player, shortcuts);
 		const keyboardEntries = this.keyboardShortcuts.get(player.playerIndex);
 		const keyboard = player.inputHandlers['keyboard'];
 		if (keyboardEntries && keyboard) {
 			for (let i = 0; i < keyboardEntries.length; i++) {
 				const entry = keyboardEntries[i];
-				const shift = keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed;
-				const ctrl = keyboard.getKeyState('ControlLeft').pressed;
-				const alt = keyboard.getKeyState('AltLeft').pressed;
-				const meta = keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed;
-				if (((entry.modifiers & KeyModifier.shift) !== 0 && !shift)
-					|| ((entry.modifiers & KeyModifier.ctrl) !== 0 && !ctrl)
-					|| ((entry.modifiers & KeyModifier.alt) !== 0 && !alt)
-					|| ((entry.modifiers & KeyModifier.meta) !== 0 && !meta)) {
+				const modifiers = player.getModifiers();
+				if ((modifiers & entry.modifiers) !== entry.modifiers) {
 					this.release(entry.latchKey);
 					continue;
 				}
@@ -159,10 +156,6 @@ export class GlobalShortcutRegistry {
 					entry.handler();
 				}
 			}
-		}
-		const shortcuts = this.controlShortcuts.get(player.playerIndex);
-		if (shortcuts) {
-			this.pollControlShortcut(player, shortcuts);
 		}
 	}
 
@@ -266,7 +259,7 @@ export class GlobalShortcutRegistry {
 	}
 
 	private shouldAccept(code: string, state?: ButtonState): boolean {
-		if (!state?.pressed) {
+		if (!state?.pressed || state.consumed) {
 			this.latch.delete(code);
 			return false;
 		}

@@ -261,12 +261,72 @@ void testTwoAuthoredPages() {
 	f.keyboard.close(); f.keyboard.open();
 	require(f.keyboard.page() == 0 && f.keyboard.selectedKey() == pages[0].initialKey, "open resets to the authored first page");
 }
+void testHardwareAndVirtualRouting() {
+	Fixture f;
+	const size_t modifier = f.keyboard.allocateSource(), letter = f.keyboard.allocateSource();
+	f.input.postKeyboardEvent(RETROK_RCTRL, true);
+	f.keyboard.pressKey(modifier, shift); f.keyboard.pressKey(letter, q); f.sample();
+	require(!f.input.supervisorRequestLineHigh() && f.pressed(hid_key_usage::ShiftLeft) && f.pressed(hid_key_usage::Q), "virtual Shift is typing, not a physical host control chord");
+	f.input.postKeyboardEvent(RETROK_LSHIFT, true); f.sample();
+	require(f.input.supervisorRequestLineHigh() && f.pressed(hid_key_usage::ShiftLeft), "physical host chord still triggers without stealing same-key virtual Shift");
+	f.input.postKeyboardEvent(RETROK_RCTRL, false); f.sample();
+	require(!f.input.supervisorRequestLineHigh() && f.pressed(hid_key_usage::ShiftLeft), "physical modifier release preserves virtual Shift");
+	f.keyboard.close(); f.sample();
+	require(!f.pressed(hid_key_usage::ShiftLeft) && !f.pressed(hid_key_usage::Q), "virtual close preserves physical chord capture until the hardware releases");
+	f.input.postKeyboardEvent(RETROK_LSHIFT, false); f.sample();
+	f.input.postKeyboardEvent(RETROK_LSHIFT, true); f.input.postKeyboardEvent(RETROK_q, true);
+	f.keyboard.open(); f.keyboard.pressKey(modifier, shift); f.keyboard.pressKey(letter, q); f.sample();
+	f.keyboard.close(); f.sample();
+	require(f.pressed(hid_key_usage::ShiftLeft) && f.pressed(hid_key_usage::Q), "virtual close cannot release ordinary or modifier hardware contributions");
+	f.keyboard.open(); f.keyboard.pressKey(modifier, shift); f.keyboard.pressKey(letter, q);
+	f.input.postKeyboardEvent(RETROK_LSHIFT, false); f.input.postKeyboardEvent(RETROK_q, false); f.sample();
+	require(f.pressed(hid_key_usage::ShiftLeft) && f.pressed(hid_key_usage::Q), "hardware UP cannot release independent virtual contributors");
+	f.keyboard.close(); f.input.reset(); f.sample();
+	require(!f.pressed(hid_key_usage::ShiftLeft) && !f.pressed(hid_key_usage::Q), "close and host reset retire both sources");
+}
+
+void testHybridModifierOwnership() {
+	for (const bool physicalFirst : {false, true}) {
+		Fixture f; const size_t source = f.keyboard.allocateSource();
+		if (physicalFirst) f.input.postKeyboardEvent(RETROK_q, true);
+		f.keyboard.pressKey(source, shift);
+		if (!physicalFirst) f.input.postKeyboardEvent(RETROK_q, true);
+		f.sample();
+		require(f.pressed(hid_key_usage::Q) && f.pressed(hid_key_usage::ShiftLeft), "hybrid chord reaches guest input");
+		f.input.postKeyboardEvent(RETROK_q, false); f.keyboard.releaseSource(source, true); f.sample();
+		require(!f.keyboard.shiftActive() && !f.pressed(hid_key_usage::ShiftLeft), "a touch modifier used by hardware cannot become an unused sticky tap");
+	}
+	Fixture f;
+	constexpr i16 digit = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Digit1];
+	const u64 revision = f.keyboard.revision();
+	f.input.postKeyboardEvent(RETROK_RSHIFT, true); f.sample(); f.keyboard.updateFeedback(f.time);
+	require(std::string_view(f.keyboard.label(digit)) == "!" && f.keyboard.isKeyPressed(shift), "routed hardware modifiers update labels and modifier highlight");
+	require(f.keyboard.revision() == revision + 1, "hardware modifier transition invalidates presentation once");
+	const u64 stableRevision = f.keyboard.revision();
+	f.sample(); f.keyboard.updateFeedback(f.time);
+	require(f.keyboard.revision() == stableRevision, "unchanged hardware modifier has no per-frame revision churn");
+	const size_t letter = f.keyboard.allocateSource(); f.keyboard.pressKey(letter, digit); f.sample();
+	require(f.pressed(hid_key_usage::ShiftRight) && !f.pressed(hid_key_usage::ShiftLeft), "hardware modifier is never republished as virtual HID");
+	f.keyboard.releaseSource(letter); f.input.postKeyboardEvent(RETROK_RSHIFT, false); f.sample(); f.keyboard.updateFeedback(f.time);
+	require(std::string_view(f.keyboard.label(digit)) == "1", "hardware UP updates the symbol legend");
+	f.input.postKeyboardEvent(RETROK_RCTRL, true); f.input.postKeyboardEvent(RETROK_LSHIFT, true);
+	f.keyboard.pressKey(letter, digit); f.sample(); f.keyboard.updateFeedback(f.time);
+	require(f.input.supervisorRequestLineHigh() && !f.pressed(hid_key_usage::ShiftLeft) && f.pressed(hid_key_usage::Digit1), "physical host chord consumes only hardware input");
+	require(std::string_view(f.keyboard.label(digit)) == "1" && !f.keyboard.isKeyPressed(shift), "consumed hardware Shift cannot advertise shifted virtual typing");
+	f.input.postKeyboardEvent(RETROK_q, true);
+	const u64 generation = f.input.physicalOrdinaryPressGeneration();
+	f.input.postKeyboardEvent(RETROK_q, true);
+	require(f.input.physicalOrdinaryHeldCount() == 1 && f.input.physicalOrdinaryPressGeneration() == generation, "native repeats cannot change ordinary hardware generation");
+	f.keyboard.close(); f.input.reset();
+	require(f.input.physicalOrdinaryHeldCount() == 0 && f.input.physicalOrdinaryPressGeneration() == generation, "reset clears hardware holds without aliasing an old gesture generation");
+}
+
 } // namespace
 int main() {
 	try {
 		testContactOwnership(); testHeldAndLatchedModifiers(); testModifierTapAcrossControllerSources();
-		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation(); testExplicitRowStarts(); testTwoAuthoredPages();
-		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 8 owner scenarios\n";
+		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation(); testExplicitRowStarts(); testTwoAuthoredPages(); testHardwareAndVirtualRouting(); testHybridModifierOwnership();
+		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 10 owner scenarios\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
