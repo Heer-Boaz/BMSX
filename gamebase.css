@@ -348,8 +348,11 @@ html {
 	.bmsx-touch-keyboard {
 		--keyboard-bottom: env(safe-area-inset-bottom);
 		padding: 4px;
-		--keyboard-key-height: 44px;
 		--keyboard-row-gap: 2px;
 		--keyboard-slot-padding: 1.5px;
+	}
+	.bmsx-touch-keyboard-page {
+		/* Share the same compact content budget across the authored row count. */
+		--keyboard-key-height: calc((228px - var(--keyboard-row-gap) * (var(--page-rows) - 1)) / var(--page-rows));
 	}
 }

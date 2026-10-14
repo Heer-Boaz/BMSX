@@ -5114,15 +5114,19 @@ and modifier highlighting include the routed physical modifier bits without
 republishing hardware modifiers as virtual keys. The feedback tick compares
 only that retained modifier byte to notify presentation changes.
 
-The browser has two five-row, twelve-unit layouts: letters **and digits** together,
-and function keys with the remaining punctuation. Shift uses the existing raw
+The browser has two twelve-unit layouts: a six-row primary keyboard with letters,
+digits and a permanent coding row, and a five-row function keyboard. The coding
+row exposes Backquote, Minus, Equal, both brackets, Backslash, Semicolon and Quote
+without switching pages. Its eight 1.5-unit keys preserve all previous letter,
+modifier and navigation widths. Every printable ASCII character is reachable
+on the primary page through its ordinary physical key and Shift. Shift uses the existing raw
 modifier/key identities and shifted labels for both letters and symbols; the view
 does not inject characters. Backspace is upper-right, Tab left of Q, and Enter
 right of the home row. Enter and Shift are wider than Ctrl/Alt. Up sits above Down
 in a full-height inverted-T, not in a horizontal strip or half-height pair.
 One Fn/ABC key and Close occupy real bottom-row slots alongside Space and
 punctuation; there is no separate toolbar. This combines the compact number/letter
-layout from [Hacker's Keyboard](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml)
+layout and extra coding row from [Hacker's Keyboard](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml)
 with its [full layout's inverted-T](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml#L276-L407),
 without copying a fourteen-column desktop grid onto a phone.
 
@@ -5135,10 +5139,14 @@ Native frontends retain their existing bitmap layout and page names. Physical
 gamepad navigation skips nonkey gaps, and SELECT+Y cycles the supplied pages.
 No new allocation or geometry calculation enters the key-source hot path.
 
-Phone letters are necessarily narrower than 44px. Five 44px rows fit the 239px
-short-player layout by reducing gaps to 2px and removing the toolbar. If safe
-insets or an embedded player leave still less height, flex rows share the actual
-available height rather than clipping keys. Pane gutters retain keyboard
+Phone letters are necessarily narrower than 44px. Normal-height surfaces retain
+48px keys (56px on tablets); the primary coding row increases panel height, not
+column count. At a short 239px player, the authored row count divides a 228px
+content budget with 2px gaps: five function rows remain 44px, while six primary
+rows are approximately 36.33px. Both panels occupy 236px. This is an explicit
+vertical touch-target tradeoff, not a claim that six 44px rows fit that surface.
+If safe insets or an embedded player leave still less height, flex rows share the
+actual available height rather than clipping keys. Pane gutters retain keyboard
 ownership rather than leaking through to hidden controls.
 Keyboard breakpoints consume the owning player surface's width and height,
 not the surrounding browser window. A dedicated static size-query container

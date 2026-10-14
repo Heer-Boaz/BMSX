@@ -155,11 +155,17 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 				text.selectNodeContents(key);
 				return { code: key.getAttribute('data-code'), width: bounds.width, height: bounds.height, textWidth: text.getBoundingClientRect().width };
 			}));
+			const shortSurface = surfaceBounds.height === 239;
+			const keyHeight = shortSurface && selectedPage === 0 ? 218 / 6 : profile.keyHeight;
 			for (const key of keyGeometry) {
-				assert.equal(key.height, profile.keyHeight, 'key pitch follows the containing player surface, not the outer browser window');
+				assert.ok(Math.abs(key.height - keyHeight) <= 1 / 64, 'key pitch follows the containing player surface and authored page row count, not the outer browser window');
 				assert.ok(key.textWidth <= key.width - 2, `${key.code} text (${key.textWidth}px) fits its actual border (${key.width}px), including embedded phone-sized players`);
 			}
-			if (surfaceBounds.height === 239) assert.equal(panel!.height, 236, 'a short embedded player gets the same five full-height rows as a short full-screen player');
+			const rowCount = BROWSER_KEYBOARD_PAGES[selectedPage].rows.length;
+			const padding = surfaceBounds.width < 600 ? 8 : 16;
+			const panelHeight = shortSurface ? 236 : rowCount * profile.keyHeight + (rowCount - 1) * (profile.keyHeight === 56 ? 8 : 6) + padding;
+			assert.ok(Math.abs(panel!.height - panelHeight) <= rowCount / 64,
+				'normal surfaces gain a full coding row; short embedded and full-screen surfaces share the explicit 236px height budget');
 
 			const selected = page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-selected="true"]');
 			const keyIdle = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, code: element.getAttribute('data-code'), bounds: element.getBoundingClientRect().toJSON() }));

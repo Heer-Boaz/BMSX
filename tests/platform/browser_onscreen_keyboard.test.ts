@@ -12,16 +12,22 @@ import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_la
 import { ON_SCREEN_KEY_DEFINITIONS } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
 
-// Hacker's Keyboard authors a five-row compact layout with digits and QWERTY
-// together, and its full layout keeps Up above Down rather than a cursor strip.
+// Hacker's Keyboard's compact layout supplies a coding-symbol extension above
+// digits and QWERTY, and its full layout keeps Up above Down rather than a strip.
 // https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml
 // https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml
 
-test('two five-row browser pages cover physical keys with digits and letters together', () => {
+const CODING_KEYS = [
+	['Backquote', '`', '~', 53], ['Minus', '-', '_', 45], ['Equal', '=', '+', 46],
+	['BracketLeft', '[', '{', 47], ['BracketRight', ']', '}', 48], ['Backslash', '\\', '|', 49],
+	['Semicolon', ';', ':', 51], ['Quote', "'", '"', 52],
+] as const;
+
+test('six-row coding and five-row function pages cover physical keys without replacing letters or digits', () => {
 	const keys = new Set<number>();
 	assert.equal(BROWSER_KEYBOARD_PAGES.length, 2);
+	assert.deepEqual(BROWSER_KEYBOARD_PAGES.map(page => page.rows.length), [6, 5]);
 	for (const page of BROWSER_KEYBOARD_PAGES) {
-		assert.equal(page.rows.length, 5);
 		assert.ok(page.rows.some(row => row.keys.includes(page.initialKey)));
 		for (const row of page.rows) {
 			assert.equal(row.keys.length, row.spans.length);
@@ -45,26 +51,29 @@ test('two five-row browser pages cover physical keys with digits and letters tog
 	}
 	assert.deepEqual([...keys].sort((a, b) => a - b), ON_SCREEN_KEY_DEFINITIONS.map((_, index) => index));
 	const mainRows = BROWSER_KEYBOARD_PAGES[0].rows;
-	assert.equal(mainRows[0].keys.slice(0, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), '1234567890');
-	assert.equal(mainRows[1].keys.slice(1, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'qwertyuiop');
-	assert.equal(mainRows[2].keys.slice(1, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'asdfghjkl');
+	assert.deepEqual(mainRows[0].keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code), CODING_KEYS.map(([code]) => code));
+	assert.deepEqual(mainRows[0].spans, CODING_KEYS.map(() => 1.5), 'coding punctuation has larger targets without narrowing the existing typing rows');
+	assert.equal(mainRows[1].keys.slice(0, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), '1234567890');
+	assert.equal(mainRows[2].keys.slice(1, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'qwertyuiop');
+	assert.equal(mainRows[3].keys.slice(1, -1).map(key => ON_SCREEN_KEY_DEFINITIONS[key].label).join(''), 'asdfghjkl');
 });
 
 test('special keys and the inverted-T cursor cluster occupy authored positions rather than a footer', () => {
 	for (const page of BROWSER_KEYBOARD_PAGES) {
-		const codes = page.rows.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code));
+		const typingRows = page.rows.slice(-5);
+		const codes = typingRows.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code));
 		assert.equal(codes[0].at(-1), 'Backspace', 'Backspace stays on the upper-right edge');
 		assert.equal(codes[1][0], 'Tab', 'Tab stays on the left-middle edge');
 		assert.equal(codes[2].at(-1), 'Enter', 'Enter stays on the right-middle edge');
 		assert.equal(codes[3].at(-1), 'ArrowUp');
 		assert.deepEqual(codes[4].slice(-3), ['ArrowLeft', 'ArrowDown', 'ArrowRight']);
 		const up = codes[3].indexOf('ArrowUp'), down = codes[4].indexOf('ArrowDown');
-		assert.equal(page.rows[3].starts[up], page.rows[4].starts[down]);
-		assert.equal(page.rows[3].spans[up], page.rows[4].spans[down]);
+		assert.equal(typingRows[3].starts[up], typingRows[4].starts[down]);
+		assert.equal(typingRows[3].spans[up], typingRows[4].spans[down]);
 		assert.equal(new Set(page.rows.flatMap(row => row.keys)).size, page.rows.reduce((total, row) => total + row.keys.length, 0),
 			'each key appears once per page so controller key identity has one real position');
 	}
-	const main = BROWSER_KEYBOARD_PAGES[0].rows;
+	const main = BROWSER_KEYBOARD_PAGES[0].rows.slice(-5);
 	assert.equal(main[0].spans.at(-1), 2);
 	assert.equal(main[2].spans.at(-1), 1.75);
 	assert.equal(main[3].spans[0], 1.75);
@@ -210,7 +219,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 						return { codes: api.ON_SCREEN_KEY_DEFINITIONS.filter((key: any) => {
 							const usage = api.hidKeyUsageForCode(key.code);
 							return (snapshot.keyWords[usage >>> 5] & (1 << (usage & 31))) !== 0;
-						}).map((key: any) => key.code).sort(), pointer: snapshot.pointerButtons,
+						}).map((key: any) => key.code).sort(), keyWords: [...snapshot.keyWords], pointer: snapshot.pointerButtons,
 							gamepad: gamepad.buttons, supervisor: input.supervisorRequestLineHigh() };
 					},
 					hostFrame() { input.pollInput(); model.updateFeedback(clock.now()); },
@@ -272,32 +281,37 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			await page.evaluate(() => (globalThis as any).keyboardProbe.model.open());
 			await settle();
 			const opening = await measure();
+			const shortSurface = profile.height === 239;
+			const mainKeyHeight = shortSurface ? 218 / 6 : profile.name.startsWith('tablet') ? 56 : 48;
 			assert.equal(opening.controllerVisible, 'hidden', 'keyboard replaces touch controls visually, not their input leases or geometry');
 			assert.equal(opening.geometryRevision, beforeRevision);
 			assert.deepEqual(await picture(), beforePicture, 'opening the CSS keyboard does not change picture policy, scale or clipping');
 			assert.ok(opening.panel.y >= -1 / 32 && opening.panel.y + opening.panel.height <= profile.height + 1 / 32);
-			assert.equal(opening.rows.length, 5);
-			assert.equal(opening.close.y, opening.rows[4][0].y, 'Close shares the bottom key row, without a separate command bar');
+			assert.equal(opening.rows.length, 6);
+			assert.equal(opening.close.y, opening.rows.at(-1)[0].y, 'Close shares the bottom key row, without a separate command bar');
 			assert.equal(await page.locator('.bmsx-touch-keyboard-toolbar').count(), 0);
 			assert.equal(await page.locator('.bmsx-touch-keyboard-mode:visible').count(), 1);
 			assert.equal(await page.locator('.bmsx-touch-keyboard-close:visible').count(), 1);
-			assert.ok(opening.close.x < opening.rows[0].at(-1).x && opening.close.width >= 44 && opening.close.height >= 44);
-			assert.deepEqual(opening.rows.slice(0, 2).map((row: any[]) => row.map(key => key.code)), BROWSER_KEYBOARD_PAGES[0].rows.slice(0, 2)
+			assert.ok(opening.close.x < opening.rows[1].at(-1).x && opening.close.width >= 44);
+			assert.ok(Math.abs(opening.close.height - mainKeyHeight) <= 1 / 64);
+			assert.deepEqual(opening.rows.map((row: any[]) => row.map(key => key.code)), BROWSER_KEYBOARD_PAGES[0].rows
 				.map(row => row.keys.map(key => ON_SCREEN_KEY_DEFINITIONS[key].code)));
 			await page.screenshot({ path: `${folder}/${profile.name}-text.png` });
 			for (const row of opening.rows) for (const key of row) {
-				assert.ok(key.height >= 44, 'all real key targets retain their touch height');
+				assert.ok(Math.abs(key.height - mainKeyHeight) <= 1 / 64,
+					'only the short surface compresses its six rows; ordinary phone and tablet target heights do not shrink');
 				assert.ok(key.textWidth <= key.width - 2, `${key.code} label (${key.textWidth}px) stays inside its real border (${key.width}px) rather than overflowing a narrow phone key`);
 			}
 			const mainKeys = opening.rows.flat();
 			const keyWidth = (code: string) => mainKeys.find((key: any) => key.code === code).width;
 			assert.ok(keyWidth('Backspace') > keyWidth('Enter') && keyWidth('Enter') > keyWidth('ControlLeft'));
 			assert.ok(keyWidth('ShiftLeft') > keyWidth('AltLeft'));
-			if (profile.name === 'compact-landscape') assert.equal(opening.panel.height, 236,
-				'five 44px rows, four 2px gaps and 8px padding fit the short viewport without a footer');
-			if (profile.name === 'phone-portrait') for (const key of opening.rows[1]) assert.ok(key.width >= 28 && key.width <= 32,
+			const panelHeight = shortSurface ? 236 : profile.name.startsWith('tablet') ? 392 : profile.name === 'phone-portrait' ? 326 : 334;
+			assert.ok(Math.abs(opening.panel.height - panelHeight) <= 6 / 64,
+				'the coding row adds normal key height except on the explicitly height-bounded short surface');
+			if (profile.name === 'phone-portrait') for (const key of opening.rows[2]) assert.ok(key.width >= 28 && key.width <= 32,
 				'the 12-unit phone row exposes its real narrow pitch rather than claiming impossible 44px widths');
-			if (profile.name.startsWith('tablet')) for (const key of opening.rows[0]) assert.ok(key.width >= 44 && key.height >= 56);
+			if (profile.name.startsWith('tablet')) for (const key of opening.rows[1]) assert.ok(key.width >= 44 && key.height >= 56);
 
 			await p.test('two fingers and controller source retain independent key leases', async () => {
 				const q = await point('KeyQ', 1), w = await point('KeyW', 2);
@@ -369,19 +383,56 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					assert.equal(await q.textContent(), 'q');
 				}
 			});
+			await p.test('all coding punctuation is directly touchable on the main page and preserves base HID identity under every Shift source', async () => {
+				const sourceHighWater = (await measure()).sources;
+				for (const [code, base, shifted, usage] of CODING_KEYS) {
+					const cap = page.locator(`.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-code="${code}"]`);
+					const key = await point(code, 2), shift = await point('ShiftLeft', 1);
+					for (const mode of ['plain', 'held', 'latched', 'hardware']) {
+						if (mode === 'held' || mode === 'latched') {
+							await touch('touchStart', [shift]);
+							if (mode === 'latched') await touch('touchEnd', []);
+						} else if (mode === 'hardware') {
+							await page.keyboard.down('Shift');
+							await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+						}
+						await settle();
+						assert.equal(await cap.textContent(), mode === 'plain' ? base : shifted);
+						assert.equal(await cap.getAttribute('data-code'), code, 'Shift changes the cap, not the physical key identity');
+						assert.equal(await page.evaluate(() => (globalThis as any).keyboardProbe.model.page), 0, 'coding punctuation requires no Fn page switch');
+						await touch('touchStart', mode === 'held' ? [shift, key] : [key]);
+						const pressed = await poll();
+						assert.deepEqual(pressed.codes, (mode === 'plain' ? [code] : [code, 'ShiftLeft']).sort());
+						assert.deepEqual(pressed.keyWords, [0, 1 << (usage & 31), 0, 0, 0, 0, 0, mode === 'plain' ? 0 : 2],
+							`${code}/${mode} publishes its USB usage and real Shift225, never a character code`);
+						await touch('touchEnd', mode === 'held' ? [key] : []);
+						assert.deepEqual((await poll()).codes, mode === 'held' || mode === 'hardware' ? ['ShiftLeft'] : [], 'ordinary UP releases only its own source');
+						if (mode === 'held') await touch('touchCancel', []);
+						if (mode === 'hardware') {
+							await page.keyboard.up('Shift');
+							await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
+						}
+						await settle();
+						assert.deepEqual((await poll()).codes, []);
+						assert.equal(await cap.textContent(), base);
+					}
+				}
+				assert.equal((await measure()).sources, sourceHighWater, 'the coding row uses the same retained contact slots');
+			});
 			await p.test('digits and letters share one native page and the cursor gutters remain non-keys', async () => {
 				const digit = await point('Digit1', 1), q = await point('KeyQ', 2);
 				await touch('touchStart', [digit, q]);
 				assert.deepEqual((await poll()).codes, ['Digit1', 'KeyQ']);
 				await touch('touchEnd', []);
 				const layout = await measure();
-				const up = layout.rows[3].find((key: any) => key.code === 'ArrowUp');
-				const down = layout.rows[4].find((key: any) => key.code === 'ArrowDown');
-				const left = layout.rows[4].find((key: any) => key.code === 'ArrowLeft');
-				const right = layout.rows[4].find((key: any) => key.code === 'ArrowRight');
+				const keys = layout.rows.flat();
+				const up = keys.find((key: any) => key.code === 'ArrowUp');
+				const down = keys.find((key: any) => key.code === 'ArrowDown');
+				const left = keys.find((key: any) => key.code === 'ArrowLeft');
+				const right = keys.find((key: any) => key.code === 'ArrowRight');
 				assert.ok(Math.abs(up.x - down.x) <= 1 / 64 && up.y + up.height < down.y);
 				assert.ok(left.x + left.width < down.x && down.x + down.width < right.x);
-				assert.ok(up.height >= 44 && down.height >= 44, 'the inverted T has full-height targets');
+				assert.ok(Math.abs(up.height - mainKeyHeight) <= 1 / 64 && up.height === down.height, 'the inverted T keeps the same full row height as typing keys');
 				const gutter = { id: 3, x: right.x + right.width / 2, y: up.y + up.height / 2 };
 				await touch('touchStart', [gutter]);
 				assert.deepEqual((await poll()).codes, []);
@@ -496,7 +547,10 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				for (const [pageIndex, label] of ['ABC', 'Fn'].entries()) {
 					await tapControl(label);
 					const current = await measure();
-					assert.equal(current.rows.length, 5);
+					assert.equal(current.rows.length, pageIndex === 0 ? 6 : 5);
+					const keyHeight = pageIndex === 0 ? mainKeyHeight : shortSurface ? 44 : mainKeyHeight;
+					const expectedPanel = pageIndex === 0 || shortSurface ? panelHeight : panelHeight - keyHeight - (profile.name.startsWith('tablet') ? 8 : 6);
+					assert.ok(Math.abs(current.panel.height - expectedPanel) <= current.rows.length / 64);
 					const definition = BROWSER_KEYBOARD_PAGES[pageIndex];
 					const maximumUnits = Math.max(...definition.rows.map(row => row.units));
 					const centers = definition.rows.map(row => row.spans.map((span, column) => maximumUnits - row.units + row.starts[column] * 2 + span));
@@ -540,7 +594,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 						}
 					}
 					for (const row of current.rows) for (const key of row) {
-						assert.ok(key.height >= 44);
+						assert.ok(Math.abs(key.height - keyHeight) <= 1 / 64);
 						assert.ok(key.textWidth <= key.width - 2, `${label}/${key.code} cap text remains inside its actual key`);
 						const contact = await point(key.code, 7);
 						await touch('touchStart', [contact]);

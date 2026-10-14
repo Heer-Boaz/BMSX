@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { KeyboardPage, OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardCommand, MAIN_KEY_COUNT, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
@@ -28,10 +28,83 @@ function fixture(pages: readonly OnScreenKeyboardPage[] = NATIVE_KEYBOARD_PAGES)
 	let cycle = 0;
 	keyboard.open();
 	return { input, keyboard, clock, memory,
+		physical(code: string, down: boolean) { input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), 1); },
 		poll() { clock.advance(20); input.pollInput(); memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM); machine.inputController.onVblankEdge(++cycle); },
 		pressed(code: string) { const usage = hidKeyUsageForCode(code); return (memory.readIoU32(IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE) & (1 << (usage & 31))) !== 0; },
 	};
 }
+
+test('Backquote appends a physical key identity without renumbering existing keys or the native Text page', () => {
+	const codes = ('Escape Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Minus Equal Backspace '
+		+ 'Tab KeyQ KeyW KeyE KeyR KeyT KeyY KeyU KeyI KeyO KeyP BracketLeft BracketRight Backslash '
+		+ 'CapsLock KeyA KeyS KeyD KeyF KeyG KeyH KeyJ KeyK KeyL Semicolon Quote Enter '
+		+ 'ShiftLeft KeyZ KeyX KeyC KeyV KeyB KeyN KeyM Comma Period Slash Delete '
+		+ 'ControlLeft AltLeft Space ArrowLeft ArrowDown ArrowUp ArrowRight Home End '
+		+ 'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 Backquote').split(' ');
+	assert.deepEqual(ON_SCREEN_KEY_DEFINITIONS.map(key => key.code), codes);
+	for (let key = 0; key < codes.length; key += 1) assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.get(codes[key]), key);
+	assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.get('Backquote'), 74);
+	assert.equal(MAIN_KEY_COUNT, 60);
+	assert.deepEqual(NATIVE_KEYBOARD_PAGES[0].rows.flatMap(row => row.keys), Array.from({ length: 60 }, (_, key) => key));
+});
+
+for (const [code, usage, base, shifted] of [
+	['Backquote', 53, '`', '~'], ['Minus', 45, '-', '_'], ['Equal', 46, '=', '+'],
+	['BracketLeft', 47, '[', '{'], ['BracketRight', 48, ']', '}'], ['Backslash', 49, '\\', '|'],
+	['Semicolon', 51, ';', ':'], ['Quote', 52, "'", '"'],
+] as const) {
+	test(`${code} forwards its raw HID with base, held/sticky Shift and hardware Shift through independent source lifetimes`, t => {
+		const f = fixture(); t.after(() => f.input.dispose());
+		const key = ON_SCREEN_KEY_INDEX_BY_CODE.get(code);
+		const first = f.keyboard.allocateSource(), second = f.keyboard.allocateSource(), modifier = f.keyboard.allocateSource();
+		assert.equal(hidKeyUsageForCode(code), usage);
+		assert.equal(f.keyboard.label(key), base);
+		f.keyboard.pressKey(first, key); f.keyboard.pressKey(second, key); f.poll();
+		assert.equal(f.memory.readIoU32(IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE), 1 << (usage & 31));
+		assert.equal(f.pressed('ShiftLeft'), false);
+		f.keyboard.releaseSource(first); f.poll(); assert.equal(f.pressed(code), true);
+		f.keyboard.releaseSource(second); f.poll(); assert.equal(f.pressed(code), false);
+
+		f.keyboard.pressKey(modifier, SHIFT); f.keyboard.pressKey(first, key); f.poll();
+		assert.equal(f.keyboard.label(key), shifted); assert.equal(f.pressed(code), true); assert.equal(f.pressed('ShiftLeft'), true);
+		f.keyboard.releaseSource(first); f.poll(); assert.equal(f.pressed(code), false); assert.equal(f.pressed('ShiftLeft'), true);
+		f.keyboard.releaseSource(modifier, true); f.poll();
+		assert.equal(f.pressed('ShiftLeft'), false, 'a used modifier contact does not become a sticky tap');
+		assert.equal(f.keyboard.label(key), base);
+
+		f.keyboard.activateKey(modifier, SHIFT); f.keyboard.pressKey(first, key); f.keyboard.pressKey(second, key); f.poll();
+		assert.equal(f.keyboard.label(key), shifted); assert.equal(f.pressed(code), true); assert.equal(f.pressed('ShiftLeft'), true);
+		f.keyboard.releaseSource(first); f.poll(); assert.equal(f.pressed(code), true); assert.equal(f.pressed('ShiftLeft'), true);
+		f.keyboard.releaseSource(second); f.poll(); assert.equal(f.pressed(code), false); assert.equal(f.pressed('ShiftLeft'), false);
+
+		f.physical('ShiftRight', true); f.keyboard.pressKey(first, key); f.poll(); f.keyboard.updateFeedback(f.clock.now());
+		assert.equal(f.keyboard.label(key), shifted); assert.equal(f.pressed(code), true);
+		assert.equal(f.pressed('ShiftRight'), true); assert.equal(f.pressed('ShiftLeft'), false, 'hardware is not republished as virtual Shift');
+		f.keyboard.releaseSource(first); f.poll(); assert.equal(f.pressed(code), false); assert.equal(f.pressed('ShiftRight'), true);
+		f.physical('ShiftRight', false); f.poll(); assert.equal(f.keyboard.label(key), base);
+	});
+}
+
+test('Backquote is navigable, painted, hit-tested and activated from the native Symbols page', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	const key = ON_SCREEN_KEY_INDEX_BY_CODE.get('Backquote');
+	f.keyboard.setPage(KeyboardPage.Symbols); f.keyboard.moveVertical(1);
+	assert.equal(f.keyboard.selectedKey, key);
+	f.keyboard.moveHorizontal(-1); assert.equal(f.keyboard.selectedKey, ON_SCREEN_KEY_INDEX_BY_CODE.get('Slash'));
+	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, key);
+	const { presenter, queue } = createHostOverlayFixture(256, 192); presenter.default_font = new Font();
+	const view = new HostOnScreenKeyboard(presenter, f.keyboard); view.queueRenderCommands();
+	let frame = queue.consumeHostMenuFrame();
+	const command = 2 + f.keyboard.rows[0].keys.length * 2;
+	const rect = frame.commandRefs[command] as RectRenderSubmission;
+	assert.equal((frame.commandRefs[command + 1] as GlyphRenderSubmission).items, '`');
+	assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
+	f.keyboard.activate(0); f.poll(); assert.equal(f.pressed('Backquote'), true);
+	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, SHIFT); view.queueRenderCommands(); frame = queue.consumeHostMenuFrame();
+	assert.equal((frame.commandRefs[command + 1] as GlyphRenderSubmission).items, '~');
+	assert.equal(frame.commandRefs[command], rect, 'shifted rendering reuses the appended physical key rectangle');
+	f.keyboard.close(); f.poll(); assert.equal(f.pressed('Backquote'), false); assert.equal(f.pressed('ShiftLeft'), false);
+});
 
 test('extra contact slots retain independent key lifetimes through real MMIO, including same-key overlap', t => {
 	const f = fixture(); t.after(() => f.input.dispose());

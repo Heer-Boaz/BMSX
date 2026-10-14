@@ -59,6 +59,85 @@ public:
 	}
 };
 
+void testCodingPunctuationIdentitiesAndSources() {
+	constexpr std::array<u8, 75> usages{
+		41, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 45, 46, 42,
+		43, 20, 26, 8, 21, 23, 28, 24, 12, 18, 19, 47, 48, 49,
+		57, 4, 22, 7, 9, 10, 11, 13, 14, 15, 51, 52, 40,
+		225, 29, 27, 6, 25, 5, 17, 16, 54, 55, 56, 76,
+		224, 226, 44, 80, 81, 82, 79, 74, 77,
+		58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 53,
+	};
+	require(ON_SCREEN_KEY_DEFINITIONS.size() == usages.size(), "Backquote appends to the key identity bank");
+	for (size_t key = 0; key < usages.size(); ++key) {
+		require(ON_SCREEN_KEY_DEFINITIONS[key].usage == usages[key], "all existing physical key indices remain stable");
+		require(ON_SCREEN_KEY_INDEX_BY_USAGE[usages[key]] == static_cast<i16>(key), "usage lookup includes the appended key identity");
+	}
+	require(MAIN_KEY_COUNT == 60, "native Text page retains its existing sixty keys");
+	i16 textKey = 0;
+	for (const auto& row : NATIVE_KEYBOARD_PAGES[0].rows) for (i16 key : row.keys) require(key == textKey++, "native Text geometry remains in unchanged physical key order");
+	require(textKey == 60, "new Symbols key does not alter the native Text page");
+	struct Punctuation { i16 key; u8 usage; const char* base; const char* shifted; };
+	constexpr std::array<Punctuation, 8> punctuation{{
+		{74, 53, "`", "~"}, {11, 45, "-", "_"}, {12, 46, "=", "+"},
+		{25, 47, "[", "{"}, {26, 48, "]", "}"}, {27, 49, "\\", "|"},
+		{38, 51, ";", ":"}, {39, 52, "'", "\""},
+	}};
+	for (const auto& symbol : punctuation) {
+		Fixture f;
+		const size_t first = f.keyboard.allocateSource(), second = f.keyboard.allocateSource(), modifier = f.keyboard.allocateSource();
+		require(ON_SCREEN_KEY_INDEX_BY_USAGE[symbol.usage] == symbol.key, "coding row uses canonical physical key indices");
+		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.base, "unshifted label belongs to the physical key");
+		f.keyboard.pressKey(first, symbol.key); f.keyboard.pressKey(second, symbol.key); f.sample();
+		require(f.memory.readIoU32(IO_INP_KEYS + (symbol.usage >> 5) * IO_WORD_SIZE) == (1u << (symbol.usage & 31)), "base punctuation forwards the exact raw HID word, not text");
+		require(!f.pressed(hid_key_usage::ShiftLeft), "base punctuation never invents a modifier");
+		f.keyboard.releaseSource(first); f.sample(); require(f.pressed(symbol.usage), "releasing one contact preserves its same-key peer");
+		f.keyboard.releaseSource(second); f.sample(); require(!f.pressed(symbol.usage), "last contact releases the punctuation key");
+
+		f.keyboard.pressKey(modifier, shift); f.keyboard.pressKey(first, symbol.key); f.sample();
+		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.shifted && f.pressed(symbol.usage) && f.pressed(hid_key_usage::ShiftLeft), "held Shift retains the ordinary HID identity and changes its label");
+		f.keyboard.releaseSource(first); f.sample(); require(!f.pressed(symbol.usage) && f.pressed(hid_key_usage::ShiftLeft), "punctuation UP does not release the held modifier");
+		f.keyboard.releaseSource(modifier, true); f.sample();
+		require(!f.pressed(hid_key_usage::ShiftLeft) && std::string_view(f.keyboard.label(symbol.key)) == symbol.base, "used modifier UP cannot become a sticky tap");
+
+		f.keyboard.activateKey(modifier, shift); f.keyboard.pressKey(first, symbol.key); f.keyboard.pressKey(second, symbol.key); f.sample();
+		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.shifted && f.pressed(symbol.usage) && f.pressed(hid_key_usage::ShiftLeft), "sticky Shift captures each real punctuation source");
+		f.keyboard.releaseSource(first); f.sample(); require(f.pressed(symbol.usage) && f.pressed(hid_key_usage::ShiftLeft), "remaining punctuation source retains its one-shot modifier lease");
+		f.keyboard.releaseSource(second); f.sample(); require(!f.pressed(symbol.usage) && !f.pressed(hid_key_usage::ShiftLeft), "last punctuation UP retires the one-shot Shift lease");
+
+		f.input.postKeyboardEvent(RETROK_RSHIFT, true); f.keyboard.pressKey(first, symbol.key); f.sample(); f.keyboard.updateFeedback(f.time);
+		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.shifted && f.pressed(symbol.usage), "routed hardware Shift changes the same physical punctuation label");
+		require(f.pressed(hid_key_usage::ShiftRight) && !f.pressed(hid_key_usage::ShiftLeft), "hardware Shift is never republished as virtual Shift");
+		f.keyboard.releaseSource(first); f.sample(); require(!f.pressed(symbol.usage) && f.pressed(hid_key_usage::ShiftRight), "punctuation UP preserves hardware Shift");
+		f.input.postKeyboardEvent(RETROK_RSHIFT, false); f.sample();
+		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.base, "hardware UP restores the base punctuation label");
+	}
+}
+
+void testBackquoteNativeNavigationAndView() {
+	Fixture f;
+	constexpr i16 key = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Backquote];
+	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Symbols)); f.keyboard.moveVertical(1);
+	require(f.keyboard.selectedKey() == key, "Symbols vertical navigation reaches appended Backquote");
+	f.keyboard.moveHorizontal(-1); require(f.keyboard.selectedKey() == ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Slash], "row wrap follows the authored punctuation keys");
+	f.keyboard.moveHorizontal(1); require(f.keyboard.selectedKey() == key, "horizontal navigation returns to appended Backquote");
+	TestVideoOutput output(256, 192);
+	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
+	Font font; presenter.default_font = &font;
+	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
+	auto frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	const size_t command = 2 + f.keyboard.rows()[0].keys.size() * 2;
+	const auto* rect = frame.commandRefs[command].rect;
+	require(frame.commandRefs[command + 1].glyphs->items[0] == "`", "appended key receives a retained real glyph command");
+	const auto& area = rect->area;
+	require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key, "paint and hit testing share the appended key rectangle");
+	f.keyboard.activate(0); f.sample(); require(f.pressed(hid_key_usage::Backquote), "native activation forwards raw Backquote");
+	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, shift); view.queueRenderCommands(presenter); frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	require(frame.commandRefs[command + 1].glyphs->items[0] == "~", "same retained key renders tilde with Shift");
+	require(frame.commandRefs[command].rect == rect, "shifted rendering reuses the appended physical rectangle");
+	f.keyboard.close(); f.sample(); require(!f.pressed(hid_key_usage::Backquote) && !f.pressed(hid_key_usage::ShiftLeft), "close retires appended-key and modifier sources");
+}
+
 void testContactOwnership() {
 	Fixture f;
 	const size_t a = f.keyboard.allocateSource(), b = f.keyboard.allocateSource(), c = f.keyboard.allocateSource();
@@ -324,9 +403,10 @@ void testHybridModifierOwnership() {
 } // namespace
 int main() {
 	try {
+		testCodingPunctuationIdentitiesAndSources(); testBackquoteNativeNavigationAndView();
 		testContactOwnership(); testHeldAndLatchedModifiers(); testModifierTapAcrossControllerSources();
 		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation(); testExplicitRowStarts(); testTwoAuthoredPages(); testHardwareAndVirtualRouting(); testHybridModifierOwnership();
-		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 10 owner scenarios\n";
+		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 12 owner scenarios\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

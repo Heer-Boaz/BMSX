@@ -15,8 +15,9 @@ export type BrowserKeyboardPage = OnScreenKeyboardPage & {
 	readonly rows: readonly BrowserKeyboardRow[];
 };
 
-/** Five useful rows, not four rows plus a page toolbar. Hacker's Keyboard's
- * compact layout supplies the number/QWERTY pitch and integrated Fn key; its
+/** Hacker's Keyboard's extra coding row keeps punctuation on the primary page
+ * without displacing letters, navigation or modifier keys. Its compact layout
+ * supplies the number/QWERTY pitch and integrated Fn key; its
  * full layout supplies the full-height inverted-T rather than half-height arrows.
  * https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml
  * https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml
@@ -36,6 +37,9 @@ const BOTTOM_ROW: BrowserKeyboardRow = {
 
 export const BROWSER_KEYBOARD_PAGES: readonly BrowserKeyboardPage[] = [
 	{ label: 'ABC', description: 'letters and numbers', initialKey: 15, rows: [
+		{ keys: [74, 11, 12, 25, 26, 27, 38, 39],
+			starts: [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5],
+			spans: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5], units: 12, controls: [] },
 		{ keys: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13],
 			starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 12, controls: [] },
 		{ keys: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 51],

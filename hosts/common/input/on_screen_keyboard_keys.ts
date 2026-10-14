@@ -100,6 +100,7 @@ export const ON_SCREEN_KEY_DEFINITIONS: readonly OnScreenKeyDefinition[] = [
 	{ label: 'F10', code: 'F10', modifier: NO_MODIFIER },
 	{ label: 'F11', code: 'F11', modifier: NO_MODIFIER },
 	{ label: 'F12', code: 'F12', modifier: NO_MODIFIER },
+	{ label: '`', shiftLabel: '~', code: 'Backquote', modifier: NO_MODIFIER },
 ];
 
 export const ON_SCREEN_KEY_INDEX_BY_CODE = new Map<string, number>();
@@ -130,7 +131,7 @@ export const NATIVE_KEYBOARD_PAGES: readonly OnScreenKeyboardPage[] = [
 	] },
 	{ initialKey: 1, rows: [
 		{ keys: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
-		{ keys: [11, 12, 25, 26, 27, 38, 39, 49, 50, 51], starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
+		{ keys: [74, 11, 12, 25, 26, 27, 38, 39, 49, 50, 51], starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 11 },
 		{ keys: [0, 14, 13, 52, 40, 60, 61], starts: [0, 2, 4, 6, 8, 10, 12], spans: [2, 2, 2, 2, 2, 2, 2], units: 14 },
 		{ keys: [41, 53, 54, 28, 55], starts: [0, 2, 4, 6, 8], spans: [2, 2, 2, 2, 6], units: 14 },
 	] },

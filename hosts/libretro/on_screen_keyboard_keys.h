@@ -17,7 +17,7 @@ inline constexpr std::array<u8, 3> MODIFIER_USAGES{hid_key_usage::ShiftLeft, hid
 inline constexpr std::array<u8, 3> MODIFIER_HID_MASKS{hid_key_usage::ModifierMaskShift, hid_key_usage::ModifierMaskControl, hid_key_usage::ModifierMaskAlt};
 inline constexpr std::array<i16, 3> MODIFIER_KEY_INDICES{41, 53, 54};
 struct OnScreenKeyDefinition { const char* label; u8 usage; i32 modifier; const char* shiftLabel = nullptr; };
-inline constexpr std::array<OnScreenKeyDefinition, 74> ON_SCREEN_KEY_DEFINITIONS{{
+inline constexpr std::array<OnScreenKeyDefinition, 75> ON_SCREEN_KEY_DEFINITIONS{{
 	{"ESC", hid_key_usage::Escape, kNoModifier},
 	{"1", hid_key_usage::Digit1, kNoModifier, "!"},
 	{"2", hid_key_usage::Digit2, kNoModifier, "@"},
@@ -96,6 +96,7 @@ inline constexpr std::array<OnScreenKeyDefinition, 74> ON_SCREEN_KEY_DEFINITIONS
 	{"F10", static_cast<u8>(hid_key_usage::F1 + 9), kNoModifier},
 	{"F11", static_cast<u8>(hid_key_usage::F1 + 10), kNoModifier},
 	{"F12", static_cast<u8>(hid_key_usage::F1 + 11), kNoModifier},
+	{"`", hid_key_usage::Backquote, kNoModifier, "~"},
 }};
 
 inline constexpr auto ON_SCREEN_KEY_INDEX_BY_USAGE = [] {
@@ -131,9 +132,9 @@ inline constexpr std::array<OnScreenKeyboardRow, 5> nativePage0Rows{{
 inline constexpr std::array<i16, 10> nativePage1Row0Keys{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 inline constexpr std::array<f32, 10> nativePage1Row0Starts{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 inline constexpr std::array<f32, 10> nativePage1Row0Spans{1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-inline constexpr std::array<i16, 10> nativePage1Row1Keys{11, 12, 25, 26, 27, 38, 39, 49, 50, 51};
-inline constexpr std::array<f32, 10> nativePage1Row1Starts{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-inline constexpr std::array<f32, 10> nativePage1Row1Spans{1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+inline constexpr std::array<i16, 11> nativePage1Row1Keys{74, 11, 12, 25, 26, 27, 38, 39, 49, 50, 51};
+inline constexpr std::array<f32, 11> nativePage1Row1Starts{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+inline constexpr std::array<f32, 11> nativePage1Row1Spans{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 inline constexpr std::array<i16, 7> nativePage1Row2Keys{0, 14, 13, 52, 40, 60, 61};
 inline constexpr std::array<f32, 7> nativePage1Row2Starts{0, 2, 4, 6, 8, 10, 12};
 inline constexpr std::array<f32, 7> nativePage1Row2Spans{2, 2, 2, 2, 2, 2, 2};
@@ -142,7 +143,7 @@ inline constexpr std::array<f32, 5> nativePage1Row3Starts{0, 2, 4, 6, 8};
 inline constexpr std::array<f32, 5> nativePage1Row3Spans{2, 2, 2, 2, 6};
 inline constexpr std::array<OnScreenKeyboardRow, 4> nativePage1Rows{{
 	{nativePage1Row0Keys, nativePage1Row0Starts, nativePage1Row0Spans, 10},
-	{nativePage1Row1Keys, nativePage1Row1Starts, nativePage1Row1Spans, 10},
+	{nativePage1Row1Keys, nativePage1Row1Starts, nativePage1Row1Spans, 11},
 	{nativePage1Row2Keys, nativePage1Row2Starts, nativePage1Row2Spans, 14},
 	{nativePage1Row3Keys, nativePage1Row3Starts, nativePage1Row3Spans, 14},
 }};
