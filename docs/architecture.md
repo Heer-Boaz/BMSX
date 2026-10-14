@@ -5091,21 +5091,40 @@ keyboard releases its owned key state, but retained native contacts stay owned
 until actual up/cancel, including across a reopen. It never releases an
 independently held physical keyboard key or fabricates browser pointer events.
 
-The browser view retains four-row Text, Symbols and Fn pages, not the native
-bitmap sixteen-unit grid or a full desktop keyboard. Eleven-unit authored rows
-place Backspace upper-right, Tab left-middle and Enter right-middle. A smaller
-Space shares every page's bottom row with four cursor keys. Close is a separate
-bottom-left footer command, away from Backspace. Phone letters are narrower than
-44px; all real key/footer targets remain at least 44px high, including the 239px
-short-player layout. Pane gutters retain keyboard ownership rather than leaking
-through to hidden controls. Physical gamepad navigation uses these actual rows,
-and SELECT+Y cycles pages. Native frontends retain their separate bitmap layout.
+The browser has two five-row, twelve-unit layouts: letters **and digits** together,
+and function keys with the remaining punctuation. Shift uses the existing raw
+modifier/key identities and shifted labels for both letters and symbols; the view
+does not inject characters. Backspace is upper-right, Tab left of Q, and Enter
+right of the home row. Enter and Shift are wider than Ctrl/Alt. Up sits above Down
+in a full-height inverted-T, not in a horizontal strip or half-height pair.
+One Fn/ABC key and Close occupy real bottom-row slots alongside Space and
+punctuation; there is no separate toolbar. This combines the compact number/letter
+layout from [Hacker's Keyboard](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_compact.xml)
+with its [full layout's inverted-T](https://github.com/klausw/hackerskeyboard/blob/9202d9d8b1d379f1a20edf08ed7e7149038c8e43/app/src/main/res/xml/kbd_full.xml#L276-L407),
+without copying a fourteen-column desktop grid onto a phone.
 
-`gamebase.html` owns the static browser player/control/keyboard shell;
+The shared TS/C++ row representation carries physical key indices, explicit
+unit starts, spans and row extent. Constructors precompute navigation centers;
+bitmap presenters and packaged CSS consume those same starts. Browser-only
+mode/close controls occupy gaps, not synthetic key identities. Page identity is
+an index into the supplied layout, not the native three-page naming enum.
+Native frontends retain their existing bitmap layout and page names. Physical
+gamepad navigation skips nonkey gaps, and SELECT+Y cycles the supplied pages.
+No new allocation or geometry calculation enters the key-source hot path.
+
+Phone letters are necessarily narrower than 44px. Five 44px rows fit the 239px
+short-player layout by reducing gaps to 2px and removing the toolbar. If safe
+insets or an embedded player leave still less height, flex rows share the actual
+available height rather than clipping keys. Pane gutters retain keyboard
+ownership rather than leaking through to hidden controls.
+
+`gamebase.html` owns all base-player/control/keyboard markup, including the
+page, row, key, mode and close-button fragments and their SVG artwork;
 `gamebase.css` owns its styling. The common Player/Studio package renderer calls
-`scripts/products/browser_keyboard.ts` to emit keyboard rows from the sole
-`BROWSER_KEYBOARD_PAGES` layout producer. Browser navigation consumes that same
-row/span data, not a duplicated grid. Central key identities and one browser
+`scripts/products/browser_keyboard.ts` to expand those authored fragments from
+the sole `BROWSER_KEYBOARD_PAGES` layout producer and removes the build templates.
+The build supplies data and escaped labels, not HTML literals. Browser navigation consumes that same
+row/start/span data, not a duplicated grid. Central key identities and one browser
 key-cap label producer supply package-time attributes/glyphs and later state
 updates. The browser view binds the existing emitted nodes once, consumes owned
 numeric page/key identities and updates only visibility, labels and changed

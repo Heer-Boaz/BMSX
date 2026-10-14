@@ -1,7 +1,7 @@
 import { Input } from './manager';
 import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import {
-	KeyboardPage, OnScreenKeyboardCommand, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE,
+	OnScreenKeyboardCommand, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE,
 	type OnScreenKeyboardPage, type OnScreenKeyboardRow, MODIFIER_CODES, MODIFIER_KEY_INDICES, MODIFIER_SHIFT, NO_MODIFIER,
 } from './on_screen_keyboard_keys';
 
@@ -25,7 +25,7 @@ export class OnScreenKeyboard {
 	private readonly feedbackUntilMs = new Float64Array(ON_SCREEN_KEY_DEFINITIONS.length);
 	private feedbackTimeMs = 0;
 	private nextFeedbackExpiryMs = Infinity;
-	private currentPage = KeyboardPage.Text;
+	private currentPage = 0;
 	private selected: number;
 	private selectedRow: number;
 	private readonly pageSelections: number[];
@@ -44,21 +44,19 @@ export class OnScreenKeyboard {
 			const keyCenters = new Float64Array(ON_SCREEN_KEY_DEFINITIONS.length);
 			for (let rowIndex = 0; rowIndex < page.rows.length; rowIndex += 1) {
 				const row = page.rows[rowIndex];
-				let units = 0;
 				for (let column = 0; column < row.keys.length; column += 1) {
 					const key = row.keys[column];
 					keyRows[key] = rowIndex;
-					keyCenters[key] = maxUnits - row.units + units * 2 + row.spans[column];
-					units += row.spans[column];
+					keyCenters[key] = maxUnits - row.units + row.starts[column] * 2 + row.spans[column];
 				}
 			}
 			this.pageKeyRows.push(keyRows);
 			this.pageKeyCenters.push(keyCenters);
 		}
-		this.selected = this.pageSelections[KeyboardPage.Text];
+		this.selected = this.pageSelections[0];
 		this.selectedRow = this.pageKeyRows[this.currentPage][this.selected];
 	}
-	public get page(): KeyboardPage { return this.currentPage; }
+	public get page(): number { return this.currentPage; }
 	public get rows(): readonly OnScreenKeyboardRow[] { return this.pages[this.currentPage].rows; }
 	public get selectedKey(): number { return this.selected; }
 	public get visible(): boolean { return this.opened; }
@@ -98,7 +96,7 @@ export class OnScreenKeyboard {
 
 	public open(): void {
 		this.opened = true;
-		this.currentPage = KeyboardPage.Text;
+		this.currentPage = 0;
 		for (let page = 0; page < this.pages.length; page += 1) this.pageSelections[page] = this.pages[page].initialKey;
 		this.selected = this.pageSelections[this.currentPage];
 		this.selectedRow = this.pageKeyRows[this.currentPage][this.selected];
@@ -119,7 +117,7 @@ export class OnScreenKeyboard {
 		this.changed();
 	}
 
-	public setPage(page: KeyboardPage): void {
+	public setPage(page: number): void {
 		if (page === this.currentPage) return;
 		this.currentPage = page;
 		this.selected = this.pageSelections[page];

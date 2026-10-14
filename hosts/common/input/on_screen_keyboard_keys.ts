@@ -5,6 +5,7 @@ export type OnScreenKeyDefinition = {
 	readonly modifier: number;
 };
 
+/** Page indices of NATIVE_KEYBOARD_PAGES; other presentations author their own pages. */
 export const enum KeyboardPage { Text, Symbols, Functions }
 export const enum OnScreenKeyboardCommand {
 	None, Activate, Backspace, Delete, Space, Shift, Left, Right, Home, End, Enter, TogglePage,
@@ -106,6 +107,8 @@ export const MODIFIER_KEY_INDICES = MODIFIER_CODES.map(code => ON_SCREEN_KEY_IND
 
 export type OnScreenKeyboardRow = {
 	readonly keys: readonly number[];
+	/** Left edge in row units; gaps reserve space without inventing key identities. */
+	readonly starts: readonly number[];
 	readonly spans: readonly number[];
 	readonly units: number;
 };
@@ -116,22 +119,22 @@ export type OnScreenKeyboardPage = {
 
 export const NATIVE_KEYBOARD_PAGES: readonly OnScreenKeyboardPage[] = [
 	{ initialKey: 15, rows: [
-		{ keys: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 16 },
-		{ keys: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 15 },
-		{ keys: [28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 15 },
-		{ keys: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 14 },
-		{ keys: [53, 54, 55, 56, 57, 58, 59], spans: [2, 2, 6, 1, 1, 1, 1], units: 14 },
+		{ keys: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], starts: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 16 },
+		{ keys: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], starts: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 15 },
+		{ keys: [28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40], starts: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 15 },
+		{ keys: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], starts: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], spans: [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], units: 14 },
+		{ keys: [53, 54, 55, 56, 57, 58, 59], starts: [0, 2, 4, 10, 11, 12, 13], spans: [2, 2, 6, 1, 1, 1, 1], units: 14 },
 	] },
 	{ initialKey: 1, rows: [
-		{ keys: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
-		{ keys: [11, 12, 25, 26, 27, 38, 39, 49, 50, 51], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
-		{ keys: [0, 14, 13, 52, 40, 60, 61], spans: [2, 2, 2, 2, 2, 2, 2], units: 14 },
-		{ keys: [41, 53, 54, 28, 55], spans: [2, 2, 2, 2, 6], units: 14 },
+		{ keys: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
+		{ keys: [11, 12, 25, 26, 27, 38, 39, 49, 50, 51], starts: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], spans: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], units: 10 },
+		{ keys: [0, 14, 13, 52, 40, 60, 61], starts: [0, 2, 4, 6, 8, 10, 12], spans: [2, 2, 2, 2, 2, 2, 2], units: 14 },
+		{ keys: [41, 53, 54, 28, 55], starts: [0, 2, 4, 6, 8], spans: [2, 2, 2, 2, 6], units: 14 },
 	] },
 	{ initialKey: 62, rows: [
-		{ keys: [62, 63, 64, 65, 66, 67], spans: [2, 2, 2, 2, 2, 2], units: 12 },
-		{ keys: [68, 69, 70, 71, 72, 73], spans: [2, 2, 2, 2, 2, 2], units: 12 },
-		{ keys: [0, 13, 60, 61, 52, 40], spans: [2, 2, 2, 2, 2, 2], units: 12 },
-		{ keys: [41, 53, 54, 28, 55], spans: [2, 2, 2, 2, 6], units: 14 },
+		{ keys: [62, 63, 64, 65, 66, 67], starts: [0, 2, 4, 6, 8, 10], spans: [2, 2, 2, 2, 2, 2], units: 12 },
+		{ keys: [68, 69, 70, 71, 72, 73], starts: [0, 2, 4, 6, 8, 10], spans: [2, 2, 2, 2, 2, 2], units: 12 },
+		{ keys: [0, 13, 60, 61, 52, 40], starts: [0, 2, 4, 6, 8, 10], spans: [2, 2, 2, 2, 2, 2], units: 12 },
+		{ keys: [41, 53, 54, 28, 55], starts: [0, 2, 4, 6, 8], spans: [2, 2, 2, 2, 6], units: 14 },
 	] },
 ];

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { KeyboardPage, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
@@ -103,8 +103,8 @@ test('F1-F12 identities, injected page navigation and held-source page switching
 
 test('navigation follows the active presentation centered rows and fractional widths, not the old bitmap order', t => {
 	const pages: readonly OnScreenKeyboardPage[] = [{ initialKey: Q, rows: [
-		{ keys: [Q, W], spans: [1, 1], units: 2 },
-		{ keys: [SHIFT], spans: [1.5], units: 1.5 },
+		{ keys: [Q, W], starts: [0, 1], spans: [1, 1], units: 2 },
+		{ keys: [SHIFT], starts: [0], spans: [1.5], units: 1.5 },
 	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
 	const f = fixture(pages); t.after(() => f.input.dispose());
 	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, W);
@@ -113,6 +113,67 @@ test('navigation follows the active presentation centered rows and fractional wi
 	f.keyboard.setPage(KeyboardPage.Functions); f.keyboard.selectKey(73);
 	f.keyboard.setPage(KeyboardPage.Text); assert.equal(f.keyboard.selectedKey, Q);
 	f.keyboard.setPage(KeyboardPage.Functions); assert.equal(f.keyboard.selectedKey, 73, 'each visible page retains its real selection');
+});
+
+test('explicit row starts preserve arrow gaps in navigation, bitmap drawing and hit testing', t => {
+	const UP = ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowUp'), DOWN = ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowDown');
+	const LEFT = ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowLeft'), RIGHT = ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowRight');
+	const pages: readonly OnScreenKeyboardPage[] = [{ initialKey: UP, rows: [
+		{ keys: [Q, UP, W], starts: [0, 3, 5], spans: [1, 1, 1], units: 6 },
+		{ keys: [CONTROL, LEFT, DOWN, RIGHT, 55], starts: [0, 2, 3, 4, 5], spans: [1, 1, 1, 1, 1], units: 6 },
+	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
+	const f = fixture(pages); t.after(() => f.input.dispose());
+	f.keyboard.moveVertical(1); assert.equal(f.keyboard.selectedKey, DOWN, 'Up aligns directly over Down, not the compressed second-column Left');
+	f.keyboard.moveVertical(-1); assert.equal(f.keyboard.selectedKey, UP);
+	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, W, 'a non-key gap cannot become controller selection');
+	f.keyboard.moveHorizontal(1); assert.equal(f.keyboard.selectedKey, Q, 'horizontal wrap follows only authored key identities');
+	f.keyboard.moveHorizontal(-1); assert.equal(f.keyboard.selectedKey, W);
+	const { presenter, queue } = createHostOverlayFixture(256, 192); presenter.default_font = new Font();
+	const view = new HostOnScreenKeyboard(presenter, f.keyboard); view.queueRenderCommands();
+	const frame = queue.consumeHostMenuFrame();
+	const qRect = (frame.commandRefs[2] as RectRenderSubmission).area;
+	const upRect = (frame.commandRefs[4] as RectRenderSubmission).area;
+	const downRect = (frame.commandRefs[12] as RectRenderSubmission).area;
+	assert.equal(upRect.left - qRect.left, 3 * (qRect.right - qRect.left + 1));
+	assert.equal(upRect.left, downRect.left, 'bitmap arrow hit rectangles use the same authored column');
+	assert.equal(view.selectAt((upRect.left + upRect.right) / 2, (upRect.top + upRect.bottom) / 2), UP);
+	const gapX = qRect.right + (qRect.right - qRect.left) / 2;
+	assert.equal(view.selectAt(gapX, (qRect.top + qRect.bottom) / 2), -1, 'reserved command space does not acquire an unrelated physical key');
+	assert.equal(view.containsPoint(gapX, (qRect.top + qRect.bottom) / 2), false);
+});
+
+test('native row starts retain the existing contiguous physical keyboard geometry', () => {
+	for (const page of NATIVE_KEYBOARD_PAGES) for (const row of page.rows) {
+		assert.equal(row.starts.length, row.keys.length);
+		assert.equal(row.spans.length, row.keys.length);
+		let units = 0;
+		for (let column = 0; column < row.keys.length; column += 1) {
+			assert.equal(row.starts[column], units);
+			units += row.spans[column];
+		}
+		assert.equal(units, row.units);
+	}
+});
+
+test('two authored pages cycle independently of native page names and retain real key sources', t => {
+	const pages = [NATIVE_KEYBOARD_PAGES[0], NATIVE_KEYBOARD_PAGES[2]];
+	const f = fixture(pages); t.after(() => f.input.dispose());
+	const textSource = f.keyboard.allocateSource(), functionSource = f.keyboard.allocateSource(), shiftSource = f.keyboard.allocateSource();
+	f.keyboard.pressKey(shiftSource, SHIFT); f.keyboard.pressKey(textSource, Q); f.keyboard.selectKey(W);
+	f.keyboard.command(0, OnScreenKeyboardCommand.TogglePage);
+	assert.equal(f.keyboard.page, 1); assert.equal(f.keyboard.selectedKey, 62);
+	f.keyboard.pressKey(functionSource, 62); f.keyboard.selectKey(63);
+	f.keyboard.command(0, OnScreenKeyboardCommand.TogglePage); f.poll();
+	assert.equal(f.keyboard.page, 0); assert.equal(f.keyboard.selectedKey, W, 'the main page restores its own selected key');
+	assert.equal(f.pressed('KeyQ'), true); assert.equal(f.pressed('F1'), true); assert.equal(f.pressed('ShiftLeft'), true);
+	f.keyboard.command(0, OnScreenKeyboardCommand.TogglePage);
+	assert.equal(f.keyboard.page, 1); assert.equal(f.keyboard.selectedKey, 63, 'the auxiliary page restores its own selected key');
+	f.keyboard.releaseSource(textSource); f.poll();
+	assert.equal(f.pressed('KeyQ'), false); assert.equal(f.pressed('F1'), true); assert.equal(f.pressed('ShiftLeft'), true);
+	f.keyboard.releaseSource(functionSource); f.keyboard.releaseSource(shiftSource); f.poll();
+	assert.equal(f.pressed('F1'), false); assert.equal(f.pressed('ShiftLeft'), false);
+	f.keyboard.close(); f.keyboard.open();
+	assert.equal(f.keyboard.page, 0); assert.equal(f.keyboard.selectedKey, pages[0].initialKey);
 });
 
 test('revision observers cover visibility, held/latched state, selection, pages and afterglow without idle churn', t => {
@@ -187,8 +248,8 @@ test('retained observer slots permit self-unsubscribe and old disposers cannot r
 
 test('fractional injected centers stay fractional throughout directional navigation', t => {
 	const pages: readonly OnScreenKeyboardPage[] = [{ initialKey: W, rows: [
-		{ keys: [Q, W, 17], spans: [1.6, 0.6, 1.4], units: 3.6 },
-		{ keys: [SHIFT, CONTROL, 54, 55], spans: [1.35, 0.4, 0.5, 1.35], units: 3.6 },
+		{ keys: [Q, W, 17], starts: [0, 1.6, 2.2], spans: [1.6, 0.6, 1.4], units: 3.6 },
+		{ keys: [SHIFT, CONTROL, 54, 55], starts: [0, 1.35, 1.75, 2.25], spans: [1.35, 0.4, 0.5, 1.35], units: 3.6 },
 	] }, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]];
 	const f = fixture(pages); t.after(() => f.input.dispose());
 	f.keyboard.moveVertical(1); assert.equal(f.keyboard.selectedKey, 54, '3.8-unit W is closer to 4.0-unit ALT than 3.1-unit CTRL; truncation would incorrectly select CTRL');

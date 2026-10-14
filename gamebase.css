@@ -250,7 +250,11 @@ html {
 	position: absolute;
 	left: max(4px, env(safe-area-inset-left));
 	right: max(4px, env(safe-area-inset-right));
-	bottom: max(8px, env(safe-area-inset-bottom));
+	--keyboard-bottom: max(8px, env(safe-area-inset-bottom));
+	bottom: var(--keyboard-bottom);
+	max-height: calc(100% - var(--keyboard-bottom) - env(safe-area-inset-top));
+	display: flex;
+	flex-direction: column;
 	max-width: 780px;
 	margin-inline: auto;
 	padding: 8px;
@@ -267,45 +271,29 @@ html {
 	user-select: none;
 }
 .bmsx-touch-keyboard[hidden], .bmsx-touch-keyboard-page[hidden] { display: none; }
-.bmsx-touch-keyboard-toolbar {
+.bmsx-touch-keyboard-page {
 	display: flex;
-	height: 44px;
-	gap: 16px;
-	margin-top: 8px;
+	flex-direction: column;
+	min-height: 0;
 }
-.bmsx-touch-keyboard-tabs {
-	display: flex;
-	flex: 1;
-	gap: 4px;
-	min-width: 0;
-}
-.bmsx-touch-keyboard-tab, .bmsx-touch-keyboard-close {
-	flex: 1 1 0;
-	min-width: 44px;
-	border: 1px solid #404b5a;
-	border-radius: 8px;
-	padding: 0 8px;
-	font: 500 14px system-ui, sans-serif;
-	color: #d0d8e2;
-	background: #222a36;
-}
-.bmsx-touch-keyboard-tab[aria-pressed="true"] { background: #244b66; border-color: #70a6cd; }
-.bmsx-touch-keyboard-close { flex: 0 0 64px; border-color: #667487; background: #18202b; }
 .bmsx-touch-keyboard-row {
-	display: flex;
-	justify-content: center;
+	position: relative;
 	width: calc(100% * var(--row-units) / var(--page-units));
 	height: var(--keyboard-key-height);
+	flex: 0 1 var(--keyboard-key-height);
+	min-height: 0;
 	margin-inline: auto;
 }
 .bmsx-touch-keyboard-row + .bmsx-touch-keyboard-row { margin-top: var(--keyboard-row-gap); }
 .bmsx-touch-keyboard-slot {
-	flex: 0 0 calc(100% * var(--key-span) / var(--row-units));
-	min-width: 0;
+	position: absolute;
+	left: calc(100% * var(--key-start) / var(--row-units));
+	width: calc(100% * var(--key-span) / var(--row-units));
+	height: 100%;
 	padding-inline: var(--keyboard-slot-padding);
 	box-sizing: border-box;
 }
-.bmsx-touch-key {
+.bmsx-touch-key, .bmsx-touch-keyboard-command {
 	display: block;
 	width: 100%;
 	height: 100%;
@@ -318,6 +306,24 @@ html {
 	font: 500 18px system-ui, sans-serif;
 	touch-action: none;
 }
+.bmsx-touch-keyboard-command {
+	background: #202a36;
+	color: #c6d3e1;
+	font-size: 14px;
+}
+.bmsx-touch-keyboard-close svg {
+	display: block;
+	width: 24px;
+	height: 24px;
+	margin-inline: auto;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.5;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	pointer-events: none;
+}
+.bmsx-touch-key[data-code^="Arrow"] { background: #202a36; }
 .bmsx-touch-key[data-wide-label="true"] { font-size: 12px; }
 .bmsx-touch-key[data-selected="true"] { border-color: #7eb4d9; background: #26465d; }
 .bmsx-touch-key[data-highlighted="true"] { border-color: #ffe09a; background: #f0c15f; color: #191b20; }
@@ -331,11 +337,10 @@ html {
 }
 @media (max-height: 280px) {
 	.bmsx-touch-keyboard {
-		bottom: env(safe-area-inset-bottom);
+		--keyboard-bottom: env(safe-area-inset-bottom);
 		padding: 4px;
 		--keyboard-key-height: 44px;
-		--keyboard-row-gap: 3px;
+		--keyboard-row-gap: 2px;
 		--keyboard-slot-padding: 1.5px;
 	}
-	.bmsx-touch-keyboard-toolbar { margin-top: 0; }
 }

@@ -130,15 +130,42 @@
 			</div>
 			<section id="bmsx-touch-keyboard" class="bmsx-touch-keyboard" aria-label="On-screen keyboard" hidden>
 				@@BMSX_TOUCH_KEYBOARD_PAGES@@
-				<nav class="bmsx-touch-keyboard-toolbar" aria-label="Keyboard pages">
-					<button id="bmsx-touch-keyboard-close" type="button" tabindex="-1" class="bmsx-touch-keyboard-close" aria-label="Close on-screen keyboard">Close</button>
-					<div class="bmsx-touch-keyboard-tabs">
-						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="0" aria-pressed="false">Letters</button>
-						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="1" aria-pressed="false">123</button>
-						<button type="button" tabindex="-1" class="bmsx-touch-keyboard-tab" data-page="2" aria-pressed="false">Fn</button>
-					</div>
-				</nav>
 			</section>
+			<!-- Package-time fragments. The build expands layout data here and removes these templates. -->
+			<template data-bmsx-keyboard="page">
+				<div class="bmsx-touch-keyboard-page" data-page="@@PAGE@@" style="--page-units:@@UNITS@@" hidden>
+					@@ROWS@@
+				</div>
+			</template>
+			<template data-bmsx-keyboard="row">
+				<div class="bmsx-touch-keyboard-row" style="--row-units:@@UNITS@@">
+					@@SLOTS@@
+				</div>
+			</template>
+			<template data-bmsx-keyboard="key">
+				<div class="bmsx-touch-keyboard-slot" style="--key-start:@@START@@;--key-span:@@SPAN@@">
+					<button type="button" tabindex="-1" class="bmsx-touch-key" data-key="@@KEY@@" data-page="@@PAGE@@"
+						data-code="@@CODE@@" aria-label="@@DESCRIPTION@@" aria-pressed="false"
+						data-selected="false" data-highlighted="false" data-wide-label="@@WIDE@@">@@LABEL@@</button>
+				</div>
+			</template>
+			<template data-bmsx-keyboard="mode">
+				<div class="bmsx-touch-keyboard-slot" style="--key-start:@@START@@;--key-span:@@SPAN@@">
+					<button type="button" tabindex="-1" class="bmsx-touch-keyboard-command bmsx-touch-keyboard-mode"
+						data-keyboard-action="@@ACTION@@" aria-label="Show @@DESCRIPTION@@">@@LABEL@@</button>
+				</div>
+			</template>
+			<template data-bmsx-keyboard="close">
+				<div class="bmsx-touch-keyboard-slot" style="--key-start:@@START@@;--key-span:@@SPAN@@">
+					<button type="button" tabindex="-1" class="bmsx-touch-keyboard-command bmsx-touch-keyboard-close"
+						data-keyboard-action="@@ACTION@@" aria-label="Close on-screen keyboard">
+						<svg viewBox="0 0 24 24" aria-hidden="true">
+							<rect x="2" y="3" width="20" height="12" rx="2" />
+							<path d="M6 7h.01M10 7h.01M14 7h.01M18 7h.01M6 11h.01M9 11h6M18 11h.01M8 19l4 3 4-3" />
+						</svg>
+					</button>
+				</div>
+			</template>
 			<div id="gameContainer">
 				<canvas id="gamescreen" hidden></canvas>
 			</div>

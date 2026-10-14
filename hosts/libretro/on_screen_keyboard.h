@@ -17,8 +17,8 @@ public:
 	static constexpr size_t PointerSource = INPUT_CONTROLLER_PAD_COUNT * INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
 	static constexpr size_t InitialSourceCount = PointerSource + 1;
 	OnScreenKeyboard(LibretroInput& input, std::span<const OnScreenKeyboardPage> pages);
-	KeyboardPage page() const { return m_page; }
-	std::span<const OnScreenKeyboardRow> rows() const { return m_pages[static_cast<size_t>(m_page)].rows; }
+	size_t page() const { return m_page; }
+	std::span<const OnScreenKeyboardRow> rows() const { return m_pages[m_page].rows; }
 	i16 selectedKey() const { return m_selected; }
 	bool visible() const { return m_visible; }
 	u64 revision() const { return m_revision; }
@@ -26,8 +26,8 @@ public:
 	size_t allocateSource();
 	void open();
 	void close();
-	void setPage(KeyboardPage page);
-	void selectKey(i16 key, KeyboardPage page);
+	void setPage(size_t page);
+	void selectKey(i16 key, size_t page);
 	void moveHorizontal(i32 direction);
 	void moveVertical(i32 direction);
 	void activate(size_t source);
@@ -57,7 +57,7 @@ private:
 	std::array<f64, KeyCount> m_feedbackUntilMs{};
 	f64 m_feedbackTimeMs = 0;
 	f64 m_nextFeedbackExpiryMs = std::numeric_limits<f64>::infinity();
-	KeyboardPage m_page = KeyboardPage::Text;
+	size_t m_page = 0;
 	i16 m_selected;
 	i32 m_selectedRow;
 	std::vector<i16> m_pageSelections;

@@ -34,7 +34,7 @@ private:
 	std::array<Host2DRef, CommandCapacity> m_command_refs;
 	size_t m_commandCount = 0;
 	u64 m_renderedRevision = std::numeric_limits<u64>::max();
-	KeyboardPage m_renderedPage = KeyboardPage::Text;
+	size_t m_renderedPage = 0;
 	bool m_pageRendered = false;
 	bool m_renderedShift = false;
 	f32 m_layout_left = -1, m_layout_top = -1, m_layout_width = -1;

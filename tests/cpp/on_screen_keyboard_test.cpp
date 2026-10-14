@@ -117,13 +117,13 @@ void testModifierTapAcrossControllerSources() {
 void testFunctionPagesAndView() {
 	Fixture f;
 	const size_t text = f.keyboard.allocateSource(), fn = f.keyboard.allocateSource();
-	f.keyboard.pressKey(text, q); f.keyboard.setPage(KeyboardPage::Functions);
+	f.keyboard.pressKey(text, q); f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions));
 	require(f.keyboard.selectedKey() == 62, "function page owns its genuine F1 initial selection");
 	f.keyboard.moveHorizontal(-1); require(f.keyboard.selectedKey() == 67, "horizontal wrap follows actual function row");
 	f.keyboard.moveVertical(1); require(f.keyboard.selectedKey() == 73, "vertical navigation follows actual F12 painted column");
 	f.keyboard.activate(fn); f.sample();
 	require(f.pressed(static_cast<u8>(hid_key_usage::F1 + 11)) && f.pressed(hid_key_usage::Q), "function and hidden-page text sources retain independent real MMIO lifetimes");
-	f.keyboard.setPage(KeyboardPage::Text); f.sample(); require(f.pressed(static_cast<u8>(hid_key_usage::F1 + 11)), "page switch never fabricates native UP");
+	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Text)); f.sample(); require(f.pressed(static_cast<u8>(hid_key_usage::F1 + 11)), "page switch never fabricates native UP");
 	f.keyboard.releaseSource(fn);
 	for (u8 index = 0; index < 12; ++index) {
 		const u8 usage = static_cast<u8>(hid_key_usage::F1 + index);
@@ -131,7 +131,7 @@ void testFunctionPagesAndView() {
 		f.keyboard.releaseSource(fn); f.sample(); require(!f.pressed(usage), "every function-key source retires through existing MMIO sampling");
 	}
 	f.keyboard.close(); f.sample(); require(!f.pressed(hid_key_usage::Q), "close clears hidden-page sources");
-	f.keyboard.open(); f.keyboard.setPage(KeyboardPage::Functions);
+	f.keyboard.open(); f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions));
 	TestVideoOutput output(256, 192);
 	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
 	Font font; presenter.default_font = &font;
@@ -151,7 +151,7 @@ void testFunctionPagesAndView() {
 	}
 	require(frame.commandCount == command + HostOnScreenKeyboard::HelpLineCount, "function page publishes only active keys and fixed help");
 	require(frame.commandRefs[command + 2].glyphs->items[0] == "START ENTER  SEL+B DEL  SEL+Y PAGE", "native page transition binding is discoverable in the unchanged help row");
-	f.keyboard.setPage(KeyboardPage::Symbols); view.queueRenderCommands(presenter);
+	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Symbols)); view.queueRenderCommands(presenter);
 	require(presenter.hostOverlayQueue.consumeHostMenuFrame().commandRefs[1].glyphs->items[0] == "KEYBOARD: SYMBOLS", "retained title follows the active symbols page");
 }
 
@@ -160,48 +160,113 @@ void testQueuedOriginPageTargets() {
 	const size_t contact = f.keyboard.allocateSource();
 	for (bool pageFirst : {true, false}) {
 		f.keyboard.open();
-		if (pageFirst) f.keyboard.setPage(KeyboardPage::Functions);
-		f.keyboard.selectKey(w, KeyboardPage::Text); f.keyboard.pressKey(contact, w);
-		if (!pageFirst) f.keyboard.setPage(KeyboardPage::Functions);
+		if (pageFirst) f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions));
+		f.keyboard.selectKey(w, static_cast<size_t>(KeyboardPage::Text)); f.keyboard.pressKey(contact, w);
+		if (!pageFirst) f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions));
 		f.sample();
-		require(f.keyboard.page() == KeyboardPage::Functions && f.keyboard.selectedKey() == 62,
+		require(f.keyboard.page() == static_cast<size_t>(KeyboardPage::Functions) && f.keyboard.selectedKey() == 62,
 			"queued old Text target cannot replace active function selection in either native batch order");
 		require(f.pressed(hid_key_usage::W), "queued original-page key still forwards its exact physical identity");
 		f.keyboard.moveHorizontal(1); require(f.keyboard.selectedKey() == 63, "genuine active function navigation remains valid");
-		f.keyboard.setPage(KeyboardPage::Text); require(f.keyboard.selectedKey() == w, "queued target retains the selection of its real origin page");
+		f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Text)); require(f.keyboard.selectedKey() == w, "queued target retains the selection of its real origin page");
 		f.keyboard.releaseSource(contact); f.sample(); require(!f.pressed(hid_key_usage::W), "origin-page source UP retires normally");
 	}
 }
 
 void testFractionalCenteredNavigation() {
 	constexpr std::array<i16, 2> row0Keys{q, w};
+	constexpr std::array<f32, 2> row0Starts{0, 1};
 	constexpr std::array<f32, 2> row0Spans{1, 1};
 	constexpr std::array<i16, 1> row1Keys{shift};
+	constexpr std::array<f32, 1> row1Starts{0};
 	constexpr std::array<f32, 1> row1Spans{1.5F};
-	const std::array<OnScreenKeyboardRow, 2> textRows{{{row0Keys, row0Spans, 2}, {row1Keys, row1Spans, 1.5F}}};
+	const std::array<OnScreenKeyboardRow, 2> textRows{{{row0Keys, row0Starts, row0Spans, 2}, {row1Keys, row1Starts, row1Spans, 1.5F}}};
 	const std::array<OnScreenKeyboardPage, 3> pages{{{textRows, q}, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]}};
 	Fixture f(pages);
 	f.keyboard.moveHorizontal(1); require(f.keyboard.selectedKey() == w, "injected presentation owns horizontal ordering");
 	f.keyboard.moveVertical(1); require(f.keyboard.selectedKey() == shift, "fractional centered row is directly navigable");
 	f.keyboard.moveVertical(-1); require(f.keyboard.selectedKey() == q, "exact centered tie retains authored left-first order");
-	f.keyboard.setPage(KeyboardPage::Functions); f.keyboard.selectKey(73, f.keyboard.page()); f.keyboard.setPage(KeyboardPage::Text);
+	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions)); f.keyboard.selectKey(73, f.keyboard.page()); f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Text));
 	require(f.keyboard.selectedKey() == q, "page switch restores real text selection");
-	f.keyboard.setPage(KeyboardPage::Functions); require(f.keyboard.selectedKey() == 73, "page switch restores real function selection");
+	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions)); require(f.keyboard.selectedKey() == 73, "page switch restores real function selection");
 	constexpr std::array<i16, 3> fractionalKeys0{q, w, 17};
+	constexpr std::array<f32, 3> fractionalStarts0{0, 1.6F, 2.2F};
 	constexpr std::array<f32, 3> fractionalSpans0{1.6F, 0.6F, 1.4F};
 	constexpr std::array<i16, 4> fractionalKeys1{shift, control, alt, 55};
+	constexpr std::array<f32, 4> fractionalStarts1{0, 1.35F, 1.75F, 2.25F};
 	constexpr std::array<f32, 4> fractionalSpans1{1.35F, 0.4F, 0.5F, 1.35F};
-	const std::array<OnScreenKeyboardRow, 2> fractionalRows{{{fractionalKeys0, fractionalSpans0, 3.6F}, {fractionalKeys1, fractionalSpans1, 3.6F}}};
+	const std::array<OnScreenKeyboardRow, 2> fractionalRows{{{fractionalKeys0, fractionalStarts0, fractionalSpans0, 3.6F}, {fractionalKeys1, fractionalStarts1, fractionalSpans1, 3.6F}}};
 	const std::array<OnScreenKeyboardPage, 3> fractionalPages{{{fractionalRows, w}, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]}};
 	Fixture fractional(fractionalPages); fractional.keyboard.moveVertical(1);
 	require(fractional.keyboard.selectedKey() == alt, "3.8-unit W is closer to 4.0-unit ALT than 3.1-unit CTRL; owner never truncates UI spans/centers");
+}
+
+void testExplicitRowStarts() {
+	constexpr i16 up = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowUp];
+	constexpr i16 down = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowDown];
+	constexpr i16 left = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowLeft];
+	constexpr i16 right = ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowRight];
+	constexpr std::array<i16, 3> topKeys{q, up, w};
+	constexpr std::array<f32, 3> topStarts{0, 3, 5}, topSpans{1, 1, 1};
+	constexpr std::array<i16, 5> bottomKeys{control, left, down, right, 55};
+	constexpr std::array<f32, 5> bottomStarts{0, 2, 3, 4, 5}, bottomSpans{1, 1, 1, 1, 1};
+	const std::array<OnScreenKeyboardRow, 2> rows{{{topKeys, topStarts, topSpans, 6}, {bottomKeys, bottomStarts, bottomSpans, 6}}};
+	const std::array<OnScreenKeyboardPage, 3> pages{{{rows, up}, NATIVE_KEYBOARD_PAGES[1], NATIVE_KEYBOARD_PAGES[2]}};
+	Fixture f(pages);
+	f.keyboard.moveVertical(1); require(f.keyboard.selectedKey() == down, "Up aligns directly over Down, not compressed second-column Left");
+	f.keyboard.moveVertical(-1); require(f.keyboard.selectedKey() == up, "vertical navigation follows the authored inverted T");
+	f.keyboard.moveHorizontal(1); require(f.keyboard.selectedKey() == w, "horizontal navigation skips non-key holes");
+	f.keyboard.moveHorizontal(1); require(f.keyboard.selectedKey() == q, "horizontal wrap follows only physical key identities");
+	f.keyboard.moveHorizontal(-1); require(f.keyboard.selectedKey() == w, "reverse horizontal navigation preserves authored ordering");
+	TestVideoOutput output(256, 192);
+	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
+	Font font; presenter.default_font = &font;
+	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
+	const auto frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	const auto& qRect = frame.commandRefs[2].rect->area;
+	const auto& upRect = frame.commandRefs[4].rect->area;
+	const auto& downRect = frame.commandRefs[12].rect->area;
+	require(upRect.left - qRect.left == 3 * (qRect.right - qRect.left + 1), "bitmap geometry retains the two-column authored gap");
+	require(upRect.left == downRect.left, "bitmap Up and Down share the same authored column");
+	require(view.selectAt(static_cast<i32>((upRect.left + upRect.right) / 2), static_cast<i32>((upRect.top + upRect.bottom) / 2)) == up, "authored Up rectangle owns Up input");
+	require(view.selectAt(static_cast<i32>(qRect.right + (qRect.right - qRect.left) / 2), static_cast<i32>((qRect.top + qRect.bottom) / 2)) == -1, "reserved command space does not acquire a physical key");
+	for (const auto& page : NATIVE_KEYBOARD_PAGES) for (const auto& row : page.rows) {
+		f32 units = 0;
+		require(row.keys.size() == row.starts.size() && row.keys.size() == row.spans.size(), "all native physical keys own explicit geometry");
+		for (size_t column = 0; column < row.keys.size(); ++column) {
+			require(row.starts[column] == units, "native row starts retain their original contiguous positions");
+			units += row.spans[column];
+		}
+		require(units == row.units, "native row extents remain unchanged");
+	}
+}
+
+void testTwoAuthoredPages() {
+	const std::array<OnScreenKeyboardPage, 2> pages{NATIVE_KEYBOARD_PAGES[0], NATIVE_KEYBOARD_PAGES[2]};
+	Fixture f(pages);
+	const size_t textSource = f.keyboard.allocateSource(), functionSource = f.keyboard.allocateSource(), shiftSource = f.keyboard.allocateSource();
+	f.keyboard.pressKey(shiftSource, shift); f.keyboard.pressKey(textSource, q); f.keyboard.selectKey(w, 0);
+	f.keyboard.command(0, OnScreenKeyboardCommand::TogglePage);
+	require(f.keyboard.page() == 1 && f.keyboard.selectedKey() == 62, "generic page index follows the authored second page, not native Symbols");
+	f.keyboard.pressKey(functionSource, 62); f.keyboard.selectKey(63, 1);
+	f.keyboard.command(0, OnScreenKeyboardCommand::TogglePage); f.sample();
+	require(f.keyboard.page() == 0 && f.keyboard.selectedKey() == w, "two-page cycle restores the main page selection");
+	require(f.pressed(hid_key_usage::Q) && f.pressed(hid_key_usage::F1) && f.pressed(hid_key_usage::ShiftLeft), "page cycling retains ordinary and modifier source lifetimes");
+	f.keyboard.command(0, OnScreenKeyboardCommand::TogglePage);
+	require(f.keyboard.page() == 1 && f.keyboard.selectedKey() == 63, "the auxiliary page retains its own selection");
+	f.keyboard.releaseSource(textSource); f.sample();
+	require(!f.pressed(hid_key_usage::Q) && f.pressed(hid_key_usage::F1) && f.pressed(hid_key_usage::ShiftLeft), "one hidden-page source UP cannot clear other sources");
+	f.keyboard.releaseSource(functionSource); f.keyboard.releaseSource(shiftSource); f.sample();
+	require(!f.pressed(hid_key_usage::F1) && !f.pressed(hid_key_usage::ShiftLeft), "actual final source releases reach guest input");
+	f.keyboard.close(); f.keyboard.open();
+	require(f.keyboard.page() == 0 && f.keyboard.selectedKey() == pages[0].initialKey, "open resets to the authored first page");
 }
 } // namespace
 int main() {
 	try {
 		testContactOwnership(); testHeldAndLatchedModifiers(); testModifierTapAcrossControllerSources();
-		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation();
-		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 6 owner scenarios\n";
+		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation(); testExplicitRowStarts(); testTwoAuthoredPages();
+		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 8 owner scenarios\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

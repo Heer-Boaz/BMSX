@@ -106,7 +106,7 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 	presenter.hostOverlayQueue.publishHostMenuFrame(HostMenuFrame{m_command_kinds.data(), m_command_refs.data(), m_commandCount});
 }
 void HostOnScreenKeyboard::rebuildPageCommands() {
-	m_title_glyphs.items[0] = kTitles[static_cast<size_t>(m_model.page())];
+	m_title_glyphs.items[0] = kTitles[m_model.page()];
 	m_title_glyphs.item_end = static_cast<i32>(m_title_glyphs.items[0].size());
 	size_t command = 2;
 	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
@@ -162,11 +162,12 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	for (size_t rowIndex = 0u; rowIndex < pageRows.size(); rowIndex += 1u) {
 		const auto& row = pageRows[rowIndex];
 		const f32 rowWidth = row.units * (unitWidth + kKeyGap) - kKeyGap;
-		f32 keyLeft = bounds.left + static_cast<i32>((viewportWidth - rowWidth) / 2);
+		const f32 rowLeft = bounds.left + static_cast<i32>((viewportWidth - rowWidth) / 2);
 		const f32 keyY = keyTop + static_cast<i32>(rowIndex) * (keyHeight + kRowGap);
 		for (size_t column = 0; column < row.keys.size(); ++column) {
 			const i16 index = row.keys[column];
 			const size_t offset = static_cast<size_t>(index);
+			const f32 keyLeft = rowLeft + row.starts[column] * (unitWidth + kKeyGap);
 			const f32 width = row.spans[column] * (unitWidth + kKeyGap) - kKeyGap;
 			m_key_rects[offset].area = RectBounds{
 				static_cast<f32>(keyLeft),
@@ -180,7 +181,6 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 			glyphs.x = static_cast<f32>(
 				keyLeft + static_cast<i32>((width - font->measure(glyphs.items[0])) / 2));
 			glyphs.y = static_cast<f32>(keyY + (keyHeight - lineHeight) / 2);
-			keyLeft += width + kKeyGap;
 		}
 	}
 	const f32 helpTop = keyTop + keysHeight + kHelpGap;

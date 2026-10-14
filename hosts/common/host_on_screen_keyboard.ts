@@ -212,10 +212,11 @@ export class HostOnScreenKeyboard {
 		for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
 			const row = rows[rowIndex];
 			const rowWidth = row.units * (unitWidth + KEY_GAP) - KEY_GAP;
-			let keyLeft = bounds.left + (((viewportWidth - rowWidth) / 2) | 0);
+			const rowLeft = bounds.left + (((viewportWidth - rowWidth) / 2) | 0);
 			const keyY = keyTop + rowIndex * (keyHeight + ROW_GAP);
 			for (let column = 0; column < row.keys.length; column += 1) {
 				const index = row.keys[column];
+				const keyLeft = rowLeft + row.starts[column] * (unitWidth + KEY_GAP);
 				const width = row.spans[column] * (unitWidth + KEY_GAP) - KEY_GAP;
 				const rect = this.keyRects[index];
 				rect.area.left = keyLeft;
@@ -227,7 +228,6 @@ export class HostOnScreenKeyboard {
 				glyphs.font = font;
 				glyphs.x = keyLeft + (((width - textWidth) / 2) | 0);
 				glyphs.y = keyY + (((keyHeight - lineHeight) / 2) | 0);
-				keyLeft += width + KEY_GAP;
 			}
 		}
 		const helpTop = keyTop + keysHeight + HELP_GAP;

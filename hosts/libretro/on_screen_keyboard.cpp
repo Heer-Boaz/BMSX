@@ -19,12 +19,10 @@ OnScreenKeyboard::OnScreenKeyboard(LibretroInput& input, std::span<const OnScree
 		for (const auto& row : page.rows) maxUnits = std::max(maxUnits, row.units);
 		for (size_t rowIndex = 0; rowIndex < page.rows.size(); ++rowIndex) {
 			const auto& row = page.rows[rowIndex];
-			f32 units = 0;
 			for (size_t column = 0; column < row.keys.size(); ++column) {
 				const size_t key = static_cast<size_t>(row.keys[column]);
 				m_pageKeyRows[pageIndex][key] = static_cast<i16>(rowIndex);
-				m_pageKeyCenters[pageIndex][key] = maxUnits - row.units + units * 2 + row.spans[column];
-				units += row.spans[column];
+				m_pageKeyCenters[pageIndex][key] = maxUnits - row.units + row.starts[column] * 2 + row.spans[column];
 			}
 		}
 	}
@@ -37,9 +35,9 @@ size_t OnScreenKeyboard::allocateSource() {
 	return source;
 }
 void OnScreenKeyboard::open() {
-	m_visible = true; m_page = KeyboardPage::Text;
+	m_visible = true; m_page = 0;
 	for (size_t page = 0; page < m_pages.size(); ++page) m_pageSelections[page] = m_pages[page].initialKey;
-	m_selected = m_pageSelections[0]; m_selectedRow = m_pageKeyRows[static_cast<size_t>(m_page)][static_cast<size_t>(m_selected)];
+	m_selected = m_pageSelections[0]; m_selectedRow = m_pageKeyRows[m_page][static_cast<size_t>(m_selected)];
 	m_feedbackUntilMs.fill(0); m_nextFeedbackExpiryMs = std::numeric_limits<f64>::infinity();
 	++m_revision;
 }
@@ -51,15 +49,15 @@ void OnScreenKeyboard::close() {
 	m_visible = false; m_feedbackUntilMs.fill(0); m_nextFeedbackExpiryMs = std::numeric_limits<f64>::infinity();
 	++m_revision;
 }
-void OnScreenKeyboard::setPage(KeyboardPage page) {
+void OnScreenKeyboard::setPage(size_t page) {
 	if (page == m_page) return;
-	m_page = page; m_selected = m_pageSelections[static_cast<size_t>(page)]; m_selectedRow = m_pageKeyRows[static_cast<size_t>(m_page)][static_cast<size_t>(m_selected)];
+	m_page = page; m_selected = m_pageSelections[page]; m_selectedRow = m_pageKeyRows[m_page][static_cast<size_t>(m_selected)];
 	++m_revision;
 }
-void OnScreenKeyboard::selectKey(i16 key, KeyboardPage page) {
-	if (m_pageSelections[static_cast<size_t>(page)] == key) return;
-	m_pageSelections[static_cast<size_t>(page)] = key;
-	if (page == m_page) { m_selected = key; m_selectedRow = m_pageKeyRows[static_cast<size_t>(m_page)][static_cast<size_t>(key)]; }
+void OnScreenKeyboard::selectKey(i16 key, size_t page) {
+	if (m_pageSelections[page] == key) return;
+	m_pageSelections[page] = key;
+	if (page == m_page) { m_selected = key; m_selectedRow = m_pageKeyRows[m_page][static_cast<size_t>(key)]; }
 	++m_revision;
 }
 void OnScreenKeyboard::moveHorizontal(i32 direction) {
@@ -70,7 +68,7 @@ void OnScreenKeyboard::moveHorizontal(i32 direction) {
 }
 void OnScreenKeyboard::moveVertical(i32 direction) {
 	const auto pageRows = rows();
-	const auto& centers = m_pageKeyCenters[static_cast<size_t>(m_page)];
+	const auto& centers = m_pageKeyCenters[m_page];
 	const f32 center = centers[static_cast<size_t>(m_selected)];
 	const i32 rowIndex = (m_selectedRow + static_cast<i32>(pageRows.size()) + direction) % static_cast<i32>(pageRows.size());
 	const auto& row = pageRows[static_cast<size_t>(rowIndex)];
@@ -124,7 +122,7 @@ void OnScreenKeyboard::command(size_t source, OnScreenKeyboardCommand command) {
 		case OnScreenKeyboardCommand::None: return;
 		case OnScreenKeyboardCommand::Activate: activate(source); return;
 		case OnScreenKeyboardCommand::Shift: activateKey(source, MODIFIER_KEY_INDICES[kModifierShift]); return;
-		case OnScreenKeyboardCommand::TogglePage: setPage(static_cast<KeyboardPage>((static_cast<size_t>(m_page) + 1) % m_pages.size())); return;
+		case OnScreenKeyboardCommand::TogglePage: setPage((m_page + 1) % m_pages.size()); return;
 		case OnScreenKeyboardCommand::Backspace: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Backspace]); return;
 		case OnScreenKeyboardCommand::Delete: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Delete]); return;
 		case OnScreenKeyboardCommand::Space: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Space]); return;

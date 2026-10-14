@@ -3,16 +3,16 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
-import { renderBrowserKeyboardPages } from '../../scripts/products/browser_keyboard';
+import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
+import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
 
 // Like noVNC's display tests, assert effective geometry and retained presentation
 // across owner transitions, not stylesheet order or selector implementation.
 // https://github.com/novnc/noVNC/blob/b17d04c1a1a926a59f4a04bb866332b429f2ce37/tests/test.display.js
 
 test('gamebase CSS preserves boot, control and keyboard presentation across player sizes', async t => {
-	const template = (await readFile('gamebase.html', 'utf8'))
+	const template = expandBrowserKeyboardTemplate(await readFile('gamebase.html', 'utf8'))
 		.replace('/*#css*/', await readFile('gamebase.css', 'utf8'))
-		.replace('@@BMSX_TOUCH_KEYBOARD_PAGES@@', renderBrowserKeyboardPages())
 		.replace('@@BMSX_LOGO@@', `data:image/png;base64,${(await readFile('rom/bmsx.png')).toString('base64')}`)
 		.replace(/<link\b[^>]*>/g, '').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '')
 		.replace(/@@BMSX_[A-Z_]+@@/g, '');
@@ -126,7 +126,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		await settle();
 		assert.equal(await page.locator('#controller-viewport').evaluate(element => getComputedStyle(element).visibility), 'hidden');
 		assert.deepEqual(await page.evaluate(() => (globalThis as any).cssProbe.measure()), geometry, 'keyboard foreground does not rescale the underlying picture or controls');
-		for (let selectedPage = 0; selectedPage < 3; selectedPage++) {
+		for (let selectedPage = 0; selectedPage < BROWSER_KEYBOARD_PAGES.length; selectedPage++) {
 			await page.evaluate(index => (globalThis as any).cssProbe.keyboard.setPage(index), selectedPage);
 			await settle();
 			assert.equal(await page.locator('.bmsx-touch-keyboard-page:visible').count(), 1);

@@ -1,22 +1,20 @@
 import type { OnScreenKeyboard } from '../common/input/on_screen_keyboard';
-import { KeyboardPage, ON_SCREEN_KEY_DEFINITIONS } from '../common/input/on_screen_keyboard_keys';
-import { BROWSER_KEYBOARD_KEY_LABELS } from './onscreen_keyboard_layout';
+import { OnScreenKeyboardCommand, ON_SCREEN_KEY_DEFINITIONS } from '../common/input/on_screen_keyboard_keys';
+import { BrowserKeyboardAction, BROWSER_KEYBOARD_KEY_LABELS } from './onscreen_keyboard_layout';
 
 /** CSS keyboard presentation and native contact leases; shared model owns every key edge. */
 export class BrowserOnscreenKeyboard {
 	private readonly window: Window;
 	private readonly panel: HTMLElement;
 	private readonly pages: HTMLElement[] = [];
-	private readonly pageButtons: HTMLButtonElement[] = [];
-	private readonly pageByButton = new Map<HTMLButtonElement, KeyboardPage>();
-	private readonly keyByButton = new Map<HTMLButtonElement, { readonly key: number; readonly page: KeyboardPage }>();
+	private readonly actionByButton = new Map<HTMLButtonElement, BrowserKeyboardAction>();
+	private readonly keyByButton = new Map<HTMLButtonElement, { readonly key: number; readonly page: number }>();
 	private readonly keyButtons: HTMLButtonElement[] = [];
 	private readonly keyIndices: number[] = [];
 	private readonly keyLabels: string[] = [];
 	private readonly renderedPressed: boolean[] = [];
 	private readonly renderedHighlighted: boolean[] = [];
 	private readonly renderedSelected: boolean[] = [];
-	private readonly closeButton: HTMLButtonElement;
 	private readonly unsubscribe: () => void;
 	private readonly contactIds: number[] = [];
 	private readonly contactSources: number[] = [];
@@ -38,13 +36,11 @@ export class BrowserOnscreenKeyboard {
 		this.modelVisible = model.visible;
 		// gamebase.html and the package builder own the nodes; this view binds once.
 		this.panel = document.getElementById('bmsx-touch-keyboard');
-		this.closeButton = document.getElementById('bmsx-touch-keyboard-close') as HTMLButtonElement;
 		const pages = this.panel.querySelectorAll<HTMLElement>('.bmsx-touch-keyboard-page');
 		for (let index = 0; index < pages.length; index += 1) this.pages.push(pages[index]);
-		const tabs = this.panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-keyboard-tab');
-		for (let index = 0; index < tabs.length; index += 1) {
-			this.pageButtons.push(tabs[index]);
-			this.pageByButton.set(tabs[index], Number(tabs[index].dataset.page));
+		const commands = this.panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-keyboard-command');
+		for (let index = 0; index < commands.length; index += 1) {
+			this.actionByButton.set(commands[index], Number(commands[index].dataset.keyboardAction));
 		}
 		const buttons = this.panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-key');
 		for (let index = 0; index < buttons.length; index += 1) {
@@ -84,9 +80,12 @@ export class BrowserOnscreenKeyboard {
 				this.model.pressKey(this.contactSources[index], keyTarget.key);
 			}
 		} else if (active) {
-			const page = this.pageByButton.get(button);
-			if (page !== undefined) this.model.setPage(page);
-			else if (button === this.closeButton) this.onClose();
+			switch (this.actionByButton.get(button)) {
+				case BrowserKeyboardAction.NextPage:
+					this.model.command(this.contactSources[index], OnScreenKeyboardCommand.TogglePage);
+					break;
+				case BrowserKeyboardAction.Close: this.onClose(); break;
+			}
 		}
 		return true;
 	}
@@ -168,7 +167,6 @@ export class BrowserOnscreenKeyboard {
 		if (model.page !== this.renderedPage) {
 			for (let page = 0; page < this.pages.length; page += 1) {
 				this.pages[page].hidden = page !== model.page;
-				this.pageButtons[page].setAttribute('aria-pressed', page === model.page ? 'true' : 'false');
 			}
 			this.renderedPage = model.page;
 		}
