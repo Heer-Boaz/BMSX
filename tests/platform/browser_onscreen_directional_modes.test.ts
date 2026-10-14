@@ -6,12 +6,12 @@ import { chromium } from 'playwright';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { roundContactBankWord } from './touch_gamepad_geometry_oracle';
 
-function expectedStickAxes(geometry: { padX: number; padY: number; padRadius: number; neutral: number }, pointer: { x: number; y: number }): [number, number] {
+function expectedStickAxes(geometry: { padX: number; padY: number; stickTravelRadius: number; neutral: number }, pointer: { x: number; y: number }): [number, number] {
 	const dx = pointer.x - geometry.padX;
 	const dy = pointer.y - geometry.padY;
 	const distance = Math.hypot(dx, dy);
 	if (distance <= geometry.neutral) return [0, 0];
-	const magnitude = Math.min(1, (distance - geometry.neutral) / (geometry.padRadius - geometry.neutral));
+	const magnitude = Math.min(1, (distance - geometry.neutral) / (geometry.stickTravelRadius - geometry.neutral));
 	return [encodeSignedFix16(dx / distance * magnitude), encodeSignedFix16(dy / distance * magnitude)];
 }
 
@@ -92,7 +92,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 							artwork: { dpadHidden: getComputedStyle(dpad).visibility === 'hidden', stickHidden: getComputedStyle(stick).visibility === 'hidden',
 								tip: [tip.cx.baseVal.value, tip.cy.baseVal.value],
 								filledSurfaces: Array.from(document.querySelectorAll('#d-pad-svg path,#d-pad-svg circle,.action-button')).filter(shape => getComputedStyle(shape).fill !== 'none').length },
-							geometry: { padX: pad.geometry.padX, padY: pad.geometry.padY, padRadius: pad.geometry.padRadius, neutral: pad.geometry.padNeutralRadius,
+							geometry: { padX: pad.geometry.padX, padY: pad.geometry.padY, padRadius: pad.geometry.padRadius, neutral: pad.geometry.padNeutralRadius, stickTravelRadius: pad.geometry.stickTravelRadius,
 								a: pad.geometry.actions.find(action => action.buttons === 1), b: pad.geometry.actions.find(action => action.buttons === 2),
 								shoulders: pad.geometry.actions.filter(action => action.bank === 1) },
 							revision: pad.geometryRevision,
@@ -154,11 +154,11 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					{ x: -1, y: 0, bits: 0x4000, next: 0x1000 },
 					{ x: 0, y: -1, bits: 0x1000, next: 0x8000 },
 				]) {
-					for (const roll of [0.5, 0.7, 0.5]) {
+					for (const roll of [0.5, 1, 0.5]) {
 						thumb.x = geometry.padX + radius * (cardinal.x - cardinal.y * roll);
 						thumb.y = geometry.padY + radius * (cardinal.y + cardinal.x * roll);
 						await touch('touchMove', [thumb]);
-						await assertState(cardinal.bits | (roll === 0.7 ? cardinal.next : 0)
+						await assertState(cardinal.bits | (roll === 1 ? cardinal.next : 0)
 							| roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
 					}
 				}
@@ -166,7 +166,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				thumb.y = geometry.padY - geometry.padRadius * 0.95;
 				await touch('touchMove', [thumb]);
 				await assertState(0x8000 | roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
-				thumb.y = geometry.padY - geometry.padRadius * 1.4;
+				thumb.y = geometry.padY - geometry.padRadius * 2;
 				await touch('touchMove', [thumb]);
 				await assertState(0x9000 | roundContactBankWord(geometry.shoulders, thumb.x, thumb.y, thumb.radiusX), 0, 0);
 				await touch('touchEnd', []);
@@ -265,7 +265,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			await orientation.test('real layout changes resample held client coordinates immediately through the common encoder', async () => {
 				await setMode('stick');
 				const { geometry } = await measure();
-				const thumb = { id: 1, x: geometry.padX + geometry.neutral + (geometry.padRadius - geometry.neutral) / 2, y: geometry.padY, radiusX: 14, radiusY: 14 };
+				const thumb = { id: 1, x: geometry.padX + geometry.neutral + (geometry.stickTravelRadius - geometry.neutral) / 2, y: geometry.padY, radiusX: 14, radiusY: 14 };
 				await touch('touchStart', [thumb]);
 				const admitted = await measure();
 				const initialAxes = expectedStickAxes(admitted.geometry, admitted.nativeSample);

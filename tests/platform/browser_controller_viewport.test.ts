@@ -81,6 +81,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 	for (const profile of [
 		{ name: 'landscape', viewport: { width: 852, height: 393 }, insets: [0, 0, 0, 0] },
 		{ name: 'portrait', viewport: { width: 393, height: 852 }, insets: [47, 0, 34, 0] },
+		{ name: 'wide-portrait', viewport: { width: 768, height: 1024 }, insets: [24, 0, 20, 0] },
 	]) {
 		await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 });
 		await page.setViewportSize(profile.viewport);

@@ -9,10 +9,10 @@ import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDist
 // allows genuine neighbouring shoulder footprints and deliberate button gliding:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
 const enum ContactPurpose { Pad, Buttons, LeftShoulder, SuppressedPad }
-// BMSX's 60-degree cardinal regions leave a deliberate 30-degree region for
-// each diagonal. Center-relative selection remains stateless, as in PSPDpad:
-// https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L396-L448
-const DPAD_DIAGONAL_SLOPE = 1 / Math.sqrt(3);
+// BMSX gives each cardinal 70 degrees and each diagonal 20 degrees. Absolute
+// slope regions remain stateless; diagonal sensitivity is a touch-pad policy:
+// https://github.com/libretro/RetroArch/blob/bbb40cc9a8f72795e2b6dd60dbc4f5fc633c9389/input/input_driver.c#L5445-L5515
+const DPAD_DIAGONAL_SLOPE = Math.tan(35 * Math.PI / 180);
 
 export type OnscreenDirectionalMode = 'dpad' | 'stick';
 
@@ -36,6 +36,8 @@ export interface OnscreenGamepadGeometry {
 	padY: number;
 	padRadius: number;
 	padNeutralRadius: number;
+	/** Full-scale stick travel, independent of the directional acquisition disc. */
+	stickTravelRadius: number;
 	faceX: number;
 	faceY: number;
 	faceRadius: number;
@@ -374,7 +376,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 
 	/**
 	 * One retained pointer drives a fixed-base, circular L-stick, including motion outside the artwork.
-	 * https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L552-L646
+	 * https://github.com/hrydgard/ppsspp/blob/61e60ee6ff650e6fa2ff9b0019bc9fbb652d7fcb/UI/GamepadEmu.cpp#L551-L637
 	 */
 	private updateStick(index: number): void {
 		this.tipActive = this.contactActive[index];
@@ -394,7 +396,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 			return;
 		}
 		const distance = Math.sqrt(distanceSquared);
-		const magnitude = Math.min(1, (distance - neutralRadius) / (geometry.padRadius - neutralRadius));
+		const magnitude = Math.min(1, (distance - neutralRadius) / (geometry.stickTravelRadius - neutralRadius));
 		this.tipX = dx / distance * magnitude;
 		this.tipY = dy / distance * magnitude;
 	}

@@ -82,7 +82,7 @@ export { Input } from './hosts/common/input/manager';`,
 		const trace = window.bmsxInputTrace as any;
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
-		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, padNeutralRadius: 14,
+		pad.setGeometry({ padX: 140, padY: 260, padRadius: 80, padNeutralRadius: 14, stickTravelRadius: 38.4,
 			faceX: 660, faceY: 235, faceRadius: 100,
 			actions: [{ x: 605, y: 235, radius: 35, buttons: 1, bank: api.OnscreenActionBank.Face }, { x: 715, y: 235, radius: 35, buttons: 2, bank: api.OnscreenActionBank.Face }] });
 		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, pad, 'F2');

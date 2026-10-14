@@ -127,6 +127,7 @@ const measure = (page: Page): Promise<Presentation> => page.evaluate(() => (glob
 function assertPresentation(presentation: Presentation, nativeWidth: number, overscan: boolean): void {
 	const { style: image, frame, dpr } = presentation;
 	const factor = image.width * dpr / nativeWidth;
+	assert.ok(image.width > 0 && image.height > 0, 'the selected composition always gives the game a positive picture');
 	// CSSOM serializes authored fractional lengths with finite decimal
 	// precision; the DOM additionally quantizes layout to 1/64 CSS pixels.
 	assert.ok(Math.abs(factor * 2 - Math.round(factor * 2)) < 1e-5, `scale is an integer/half step in physical display pixels: ${JSON.stringify({ factor, dpr, width: image.width, nativeWidth })}`);
@@ -225,6 +226,35 @@ test('browser video fitting uses physical half steps, bounded selected policy an
 		} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
 	});
 	assert.deepEqual(errors, []);
+});
+
+test('short portrait players retain a full-frame quantized picture rather than an impossible reserved deck', async t => {
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	for (const viewport of [{ width: 320, height: 321 }, { width: 320, height: 360 }, { width: 393, height: 394 }, { width: 600, height: 601 }]) {
+		for (const dpr of [1, 2.625]) await t.test(`${viewport.width}x${viewport.height} at DPR ${dpr}`, async () => {
+			const page = await openFixture(browser, dpr, viewport, true, [0, 0, 0, 0], 'fit');
+			try {
+				const initial = await measure(page);
+				assert.equal(await page.evaluate(() => (globalThis as any).videoProbe.view.layoutProfile), 'compact-overlay');
+				assert.equal(initial.portrait, false, 'portrait orientation alone does not reserve an unusable deck');
+				assert.deepEqual(initial.frame, { left: 0, top: 0, ...viewport }, 'the composition owner gives the picture the whole usable player');
+				for (const width of FRAMEBUFFERS) for (const policy of ['fit', 'overscan'] as const) {
+					await page.evaluate(({ width, policy }) => {
+						const video = (globalThis as any).videoProbe.video;
+						video.setDisplaySize(width, 239);
+						video.setScreenFit(policy);
+						video.refreshLayout();
+					}, { width, policy });
+					const current = await measure(page);
+					assertPresentation(current, width, policy === 'overscan');
+					assertVisibleViewport(current, width, 239);
+					assert.deepEqual(current.controls, initial.controls, 'changing picture policy or odd scanout dimensions never rearranges controls');
+					assert.equal(current.revision, initial.revision);
+				}
+			} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
+		});
+	}
 });
 
 test('explicit Overscan construction preserves the selected picture policy independently of viewport publication', async t => {

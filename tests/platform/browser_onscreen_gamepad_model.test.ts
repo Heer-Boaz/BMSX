@@ -13,7 +13,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { RoundedCircularArc } from '../../hosts/browser/touch_geometry';
 
 const geometry: OnscreenGamepadGeometry = {
-	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9,
+	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9, stickTravelRadius: 24,
 	faceX: 325, faceY: 100, faceRadius: 50,
 	actions: [{ x: 300, y: 100, radius: 20, buttons: 1, bank: OnscreenActionBank.Face }, { x: 350, y: 100, radius: 20, buttons: 2, bank: OnscreenActionBank.Face }],
 };
@@ -293,13 +293,13 @@ test('rolling contact crosses overlapping digital direction regions without trav
 	assert.equal(pad.buttons, 0x8000);
 	pad.moveContact(1, 125, 89, 14, 14, true);
 	assert.equal(pad.buttons, 0x8000, 'a modest thumb roll stays in the wider cardinal region');
-	pad.moveContact(1, 125, 83, 14, 14, true);
+	pad.moveContact(1, 125, 82, 14, 14, true);
 	assert.equal(pad.buttons, 0x9000, 'the rocker enters the shared right/up region');
 	pad.moveContact(1, 100, 65, 14, 14, true);
 	assert.equal(pad.buttons, 0x1000);
 });
 
-test('digital pad gives every cardinal a 60-degree region while preserving deliberate diagonals', () => {
+test('digital pad gives every cardinal a 70-degree region while preserving deliberate diagonals', () => {
 	const { pad, axes } = createFixture();
 	pad.beginContact(1, 100, 100, 14, 14, true);
 	const cardinals = [
@@ -309,11 +309,11 @@ test('digital pad gives every cardinal a 60-degree region while preserving delib
 		{ x: 0, y: -1, bits: 0x1000, clockwise: 0x8000, counterclockwise: 0x4000 },
 	];
 	for (const cardinal of cardinals) {
-		for (const degrees of [-59, -45, -31, -29, 0, 29, 31, 45, 59]) {
+		for (const degrees of [-54, -45, -36, -34, -31, 0, 31, 34, 36, 45, 54]) {
 			const radians = degrees * Math.PI / 180;
 			const dx = 40 * (cardinal.x * Math.cos(radians) - cardinal.y * Math.sin(radians));
 			const dy = 40 * (cardinal.y * Math.cos(radians) + cardinal.x * Math.sin(radians));
-			const expected = cardinal.bits | (degrees < -30 ? cardinal.counterclockwise : degrees > 30 ? cardinal.clockwise : 0);
+			const expected = cardinal.bits | (degrees < -35 ? cardinal.counterclockwise : degrees > 35 ? cardinal.clockwise : 0);
 			pad.moveContact(1, 100 + dx, 100 + dy, 100, 100, true);
 			assert.equal(pad.buttons, expected, `cardinal ${cardinal.bits} at ${degrees} degrees`);
 		}
@@ -326,7 +326,7 @@ test('digital pad sector boundaries are inclusive diagonals in every quadrant an
 	pad.setGeometry({ ...geometry, padX: 0, padY: 0 });
 	pad.beginContact(1, 0, 0, 0, 0, true);
 	for (const radius of [20, 40, 400]) {
-		const boundary = radius / Math.sqrt(3);
+		const boundary = radius * Math.tan(35 * Math.PI / 180);
 		for (const sx of [-1, 1]) {
 			for (const sy of [-1, 1]) {
 				const horizontal = sx < 0 ? 0x4000 : 0x8000;
@@ -590,6 +590,8 @@ test('one-contact directional shoulder chords reach ordinary common snapshots an
 	pad.beginContact(1, 100, 45, 14, 14, true);
 	assertWord(0x1010);
 	pad.moveContact(1, 65, 49, 14, 14, true);
+	assertWord(0x1040);
+	pad.moveContact(1, 63, 49, 14, 14, true);
 	assertWord(0x5040);
 	pad.endContact(1);
 	assertWord(0);
@@ -964,12 +966,12 @@ test('switchable fixed-base L-stick publishes true axes, a radial neutral zone a
 	assert.equal(pad.stickX, 0);
 	assert.equal(axes.length, 0, 'the neutral radius is inclusive');
 	advance();
-	pad.moveContact(1, 129.5, 100, 14, 14, true);
+	pad.moveContact(1, 116.5, 100, 14, 14, true);
 	assert.equal(pad.stickX, 0.5);
 	assert.equal(pad.stickY, 0);
 	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0.5, y: 0, time: 1 });
-	pad.moveContact(1, 150, 100, 14, 14, true);
-	assert.equal(pad.stickX, 1);
+	pad.moveContact(1, 124, 100, 14, 14, true);
+	assert.equal(pad.stickX, 1, 'full-scale follows the authored travel, not the wider acquisition disc');
 	pad.moveContact(1, 600, 100, 14, 14, true);
 	assert.equal(pad.stickX, 1, 'captured motion beyond the artwork saturates without ending ownership');
 	assert.equal(pad.ownsContact(1), true);
@@ -1009,7 +1011,7 @@ test('one stick owner survives contact-slot swaps, other pad fingers do not stea
 	pad.moveContact(4, 150, 100, 14, 14, true);
 	assert.equal(axes.length, before, 'a previously occupied finger is not promoted on movement');
 	assert.equal(pad.ownsContact(4), true, 'its route remains owned until its own release');
-	pad.beginContact(5, 129.5, 100, 14, 14, true);
+	pad.beginContact(5, 116.5, 100, 14, 14, true);
 	assert.equal(pad.stickX, 0.5, 'a fresh down can acquire the free physical unit');
 	pad.endContact(4);
 	assert.equal(pad.stickX, 0.5, 'ending an unrelated retained pointer cannot release the owner');
@@ -1050,22 +1052,22 @@ test('mode changes release only directional contributions and require new pad ge
 test('stick geometry resampling, active transitions and cancellation publish only changed numerical state', () => {
 	const { pad, axes, views, unsubscribe } = createFixture();
 	pad.setDirectionalMode('stick');
-	pad.beginContact(1, 129.5, 100, 14, 14, true);
+	pad.beginContact(1, 116.5, 100, 14, 14, true);
 	const before = views();
-	for (let move = 0; move < 10000; move += 1) pad.moveContact(1, 129.5, 100, 14, 14, true);
+	for (let move = 0; move < 10000; move += 1) pad.moveContact(1, 116.5, 100, 14, 14, true);
 	pad.setGeometry(geometry);
 	assert.equal(views(), before);
 	assert.equal(axes.length, 1);
-	pad.setGeometry({ ...geometry, padX: 120.5 });
+	pad.setGeometry({ ...geometry, padX: 107.5 });
 	assert.equal(pad.stickX, 0);
 	assert.equal(pad.stickActive, true, 'a geometry edit does not lose the captured active source');
 	assert.equal(axes.length, 2);
 	pad.setGeometry(geometry);
 	assert.equal(pad.stickX, 0.5, 'layout resamples the retained coordinates without a fresh native move');
-	pad.moveContact(1, 129.5, 100, 14, 14, false);
+	pad.moveContact(1, 116.5, 100, 14, 14, false);
 	assert.equal(pad.stickActive, false);
 	assert.equal(pad.stickX, 0);
-	pad.moveContact(1, 129.5, 100, 14, 14, true);
+	pad.moveContact(1, 116.5, 100, 14, 14, true);
 	assert.equal(pad.stickX, 0.5);
 	pad.beginContact(2, 300, 100, 14, 14, true);
 	unsubscribe();
@@ -1088,14 +1090,14 @@ test('true L-stick axes use the common encoder and the existing armed ICU cadenc
 		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_LY_OFFSET), y);
 	};
 	pad.setDirectionalMode('stick');
-	pad.beginContact(1, 129.5, 100, 14, 14, true);
+	pad.beginContact(1, 116.5, 100, 14, 14, true);
 	pad.beginContact(2, 325, 100, 14, 14, true);
 	sample(3, 0x8000, 0);
-	pad.moveContact(1, 70.5, 100, 14, 14, true);
+	pad.moveContact(1, 83.5, 100, 14, 14, true);
 	sample(3, 0xffff8000, 0);
-	pad.moveContact(1, 100, 129.5, 14, 14, true);
+	pad.moveContact(1, 100, 116.5, 14, 14, true);
 	sample(3, 0, 0x8000);
-	pad.moveContact(1, 100, 70.5, 14, 14, true);
+	pad.moveContact(1, 100, 83.5, 14, 14, true);
 	sample(3, 0, 0xffff8000);
 	pad.setDirectionalMode('dpad');
 	sample(3, 0, 0);
@@ -1103,5 +1105,77 @@ test('true L-stick axes use the common encoder and the existing armed ICU cadenc
 	sample(0x8003, 0, 0);
 	pad.cancelContacts();
 	sample(0, 0, 0);
+	input.dispose();
+});
+
+
+test('stick acquisition, neutral and full-scale travel are independent authored dimensions', () => {
+	const { pad, axes } = createFixture();
+	pad.setDirectionalMode('stick');
+	pad.beginContact(1, 100, 100, 14, 14, true);
+	for (const [x, expected] of [[109, 0], [110.5, 0.1], [116.5, 0.5], [124, 1], [150, 1], [83.5, -0.5], [76, -1]]) {
+		pad.moveContact(1, x, 100, 14, 14, true);
+		assert.equal(pad.stickX, expected, `authored travel response at x=${x}`);
+		assert.equal(pad.stickY, 0);
+		assert.equal(pad.buttons, 0);
+	}
+	pad.moveContact(1, 116.5, 100, 14, 14, true);
+	pad.setGeometry({ ...geometry, stickTravelRadius: 39 });
+	assert.equal(pad.stickX, 0.25, 'a layout change resamples travel without changing the acquisition or neutral discs');
+	pad.setGeometry(geometry);
+	assert.equal(pad.stickX, 0.5);
+	pad.endContact(1);
+	pad.beginContact(2, 145, 100, 0, 0, true);
+	assert.equal(pad.stickX, 1, 'a fresh down outside the tip travel still acquires the full directional unit');
+	assert.equal(pad.ownsContact(2), true);
+	pad.endContact(2);
+	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0, y: 0, time: 0 });
+});
+
+test('retained stick travel over curved shoulders, triggers and every other bank never contributes button bits', () => {
+	const { pad, input, snapshot, memory, sample } = createInputControllerFixture();
+	const curvedGeometry: OnscreenGamepadGeometry = { ...geometry, actions: [
+		...geometry.actions,
+		{ x: 100, y: 25, radius: 52, buttons: 0x10, bank: OnscreenActionBank.LeftShoulder, outline: wideShoulder },
+		{ x: 25, y: 100, radius: 20, buttons: 0x40, bank: OnscreenActionBank.LeftShoulder },
+		{ x: 300, y: 25, radius: 52, buttons: 0x20, bank: OnscreenActionBank.RightShoulder, outline: wideShoulder },
+		{ x: 375, y: 100, radius: 20, buttons: 0x80, bank: OnscreenActionBank.RightShoulder },
+		{ x: 100, y: 200, radius: 20, buttons: 0x100, bank: OnscreenActionBank.LeftUtility },
+		{ x: 300, y: 200, radius: 20, buttons: 0x200, bank: OnscreenActionBank.RightUtility },
+	] };
+	pad.setGeometry(curvedGeometry);
+	pad.setDirectionalMode('stick');
+	pad.beginContact(1, 100, 100, 14, 14, true);
+	for (const [x, y] of [[100, 25], [25, 100], [300, 25], [375, 100], [300, 100], [350, 100],
+		[100, 200], [300, 200], [100, -1000], [-1000, 100]]) {
+		pad.moveContact(1, x, y, 28, 28, true);
+		sample();
+		assert.equal(pad.ownsContact(1), true, `retained stick at ${x},${y}`);
+		assert.equal(pad.stickActive, true);
+		assert.equal(pad.buttons, 0);
+		assert.equal(snapshot.pads[0].buttons, 0);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), 0);
+	}
+	pad.moveContact(1, 100, 25, 28, 28, true);
+	pad.setGeometry({ ...curvedGeometry, padX: 101 });
+	assert.equal(pad.buttons, 0, 'layout resampling cannot turn the retained stick into a shoulder contact');
+	pad.setGeometry(curvedGeometry);
+	pad.beginContact(2, 100, 25, 14, 14, true);
+	for (const [x, y, word] of [[100, 25, 0x10], [25, 100, 0x40], [300, 100, 1]]) {
+		pad.moveContact(2, x, y, 14, 14, true);
+		sample();
+		assert.equal(pad.buttons, word, 'an independent finger retains ordinary button-bank gliding');
+		assert.equal(snapshot.pads[0].buttons, word);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET), word);
+		assert.equal(memory.readIoU32(IO_INP_PADS + IO_INP_PAD_LY_OFFSET), 0xffff0000, 'the original contact remains the stick owner');
+	}
+	pad.endContact(2);
+	sample();
+	assert.equal(snapshot.pads[0].buttons, 0, 'the stick footprint cannot keep the independently released button held');
+	pad.cancelContacts();
+	sample();
+	assert.equal(pad.ownsContact(1), false);
+	assert.equal(snapshot.pads[0].buttons, 0);
+	assert.deepEqual([...snapshot.pads[0].axesQ16], [0, 0, 0, 0, 0, 0]);
 	input.dispose();
 });

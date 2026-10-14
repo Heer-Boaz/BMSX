@@ -40,7 +40,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 export { Memory } from './machine/ts/machine/memory/memory';
 export { InputController } from './machine/ts/machine/devices/input/controller';
 export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
-export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_PAD_LT_OFFSET, IO_INP_PAD_RT_OFFSET } from './machine/ts/spec/bmsx/io';`,
+export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_PAD_LX_OFFSET, IO_INP_PAD_LY_OFFSET, IO_INP_PAD_LT_OFFSET, IO_INP_PAD_RT_OFFSET } from './machine/ts/spec/bmsx/io';`,
 			resolveDir: process.cwd(),
 		},
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
@@ -87,16 +87,18 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
 				input.getGlobalShortcutRegistry().registerControlShortcut(1, api.HOST_IDE_BUTTON,
 					() => { ideRequests += 1; }, () => { ideReleases += 1; });
-				const nativeEvents: Array<{ type: string; trusted: boolean; pointerType: string; width: number; height: number; x: number; y: number }> = [];
+				const nativeEvents: Array<{ type: string; id: number; trusted: boolean; pointerType: string; width: number; height: number; x: number; y: number }> = [];
 				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
 					window.addEventListener(type, event => {
 						const pointer = event as PointerEvent;
-						nativeEvents.push({ type, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height, x: pointer.clientX, y: pointer.clientY });
+						nativeEvents.push({ type, id: pointer.pointerId, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height, x: pointer.clientX, y: pointer.clientY });
 					}, true);
 				}
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
 					menu,
+					setDirectionalMode(mode) { pad.setDirectionalMode(mode); },
+					ownsContact(id) { return pad.ownsContact(id); },
 					directionalGeometry() {
 						return { x: pad.geometry.padX, y: pad.geometry.padY, radius: pad.geometry.padRadius };
 					},
@@ -115,6 +117,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						return {
 							model: pad.buttons, physical: common.physicalGamepadButtonsWord(), snapshot: snapshot.pads[0].buttons,
 							axes: Array.from(snapshot.pads[0].axesQ16).slice(4),
+							stickActive: pad.stickActive, stickAxes: Array.from(snapshot.pads[0].axesQ16).slice(0, 2),
+							mmioStickAxes: [memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_LX_OFFSET), memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_LY_OFFSET)],
 							mmio: memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_BUTTONS_OFFSET),
 							mmioAxes: [memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_LT_OFFSET), memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_RT_OFFSET)],
 							pointer: snapshot.pointerButtons, supervisor: input.supervisorRequestLineHigh(), supervisorEdges,
@@ -133,16 +137,20 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			}), BUTTONS.map(button => button.bit));
 			const cdp = await page.context().newCDPSession(page);
 			let nativeContactCount = 0;
-			const touch = async (type: 'touchStart' | 'touchEnd', touchPoints: typeof points) => {
+			const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', touchPoints: typeof points) => {
 				await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
-				nativeContactCount = type === 'touchStart' ? touchPoints.length
-					: touchPoints.length === 0 ? 0 : nativeContactCount - touchPoints.length;
+				if (type === 'touchStart') nativeContactCount = touchPoints.length;
+				else if (type === 'touchEnd') nativeContactCount = touchPoints.length === 0 ? 0 : nativeContactCount - touchPoints.length;
+				else if (type === 'touchCancel') nativeContactCount = 0;
 			};
 			const poll = () => page.evaluate(() => (globalThis as any).shoulderTest.poll());
 			const point = (id: string) => points[BUTTONS.findIndex(button => button.id === id)];
 			orientation.afterEach(async () => {
 				if (nativeContactCount !== 0) await touch('touchEnd', []);
-				await page.evaluate(() => (globalThis as any).shoulderTest.menu.dismiss());
+				await page.evaluate(() => {
+					const fixture = (globalThis as any).shoulderTest;
+					fixture.menu.dismiss(); fixture.setDirectionalMode('dpad');
+				});
 				const state = await poll();
 				assert.equal(state.model, 0, 'ending all native contacts clears the model');
 				assert.equal(state.physical, 0, 'ending all native contacts clears the physical common word');
@@ -196,6 +204,55 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				}
 			});
 
+			await orientation.test('a native retained L-stick cannot press shoulders or faces while its owner drags over them', async () => {
+				const padShape = await page.evaluate(() => (globalThis as any).shoulderTest.directionalGeometry());
+				await page.evaluate(() => (globalThis as any).shoulderTest.setDirectionalMode('stick'));
+				await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+				assert.equal(await page.locator('#left-stick-artwork').getAttribute('visibility'), 'visible');
+				assert.equal(await page.locator('#d-pad-artwork').getAttribute('visibility'), 'hidden');
+				const finger = { id: 91, x: padShape.x, y: padShape.y, radiusX: 14, radiusY: 14 };
+				await touch('touchStart', [finger]);
+				const neutral = await poll();
+				assert.deepEqual([neutral.model, neutral.physical, neutral.snapshot, neutral.mmio, neutral.pointer], [0, 0, 0, 0, 0]);
+				assert.equal(neutral.stickActive, true);
+				assert.deepEqual(neutral.stickAxes, [0, 0]);
+				const owner = await page.evaluate(() => (globalThis as any).shoulderTest.nativeEvents.at(-1).id);
+				for (const target of [...points.slice(0, 8), { x: -40, y: padShape.y }, { x: profile.width + 40, y: padShape.y }]) {
+					finger.x = target.x; finger.y = target.y;
+					await touch('touchMove', [finger]);
+					const moved = await poll();
+					assert.deepEqual([moved.model, moved.physical, moved.snapshot, moved.mmio, moved.pointer], [0, 0, 0, 0, 0],
+						'captured analog motion never becomes button gliding, even over an actual button silhouette');
+					assert.equal(moved.stickActive, true);
+					assert.ok(moved.stickAxes.some(axis => axis !== 0));
+					assert.deepEqual(moved.mmioStickAxes, moved.stickAxes);
+					assert.equal(await page.evaluate(id => (globalThis as any).shoulderTest.ownsContact(id), owner), true);
+				}
+				const heldAxes = (await poll()).stickAxes;
+				await touch('touchStart', [finger, point('lb_knop')]);
+				const independent = await poll();
+				assert.deepEqual([independent.model, independent.physical, independent.snapshot, independent.mmio], [0x10, 0x10, 0x10, 0x10]);
+				assert.deepEqual(independent.stickAxes, heldAxes, 'a second shoulder finger cannot steal the captured analog owner');
+				await touch('touchEnd', [point('lb_knop')]);
+				const releasedShoulder = await poll();
+				assert.equal(releasedShoulder.model, 0);
+				assert.deepEqual(releasedShoulder.stickAxes, heldAxes);
+				await touch('touchCancel', []);
+				const cancelled = await poll();
+				assert.equal(cancelled.stickActive, false);
+				assert.deepEqual(cancelled.stickAxes, [0, 0]);
+				assert.deepEqual(cancelled.mmioStickAxes, [0, 0]);
+				finger.x = padShape.x + padShape.radius * 0.4; finger.y = padShape.y;
+				await touch('touchStart', [finger]);
+				const shortTravel = await poll();
+				assert.ok(shortTravel.stickAxes[0] >= 0x8000 && shortTravel.stickAxes[0] < 0x10000,
+					'a short 40%-radius thumb movement crosses the existing digital axis threshold without needing the old long throw');
+				assert.equal(shortTravel.model, 0, 'host digital interpretation does not manufacture raw D-pad bits');
+				await touch('touchEnd', []);
+				assert.deepEqual((await poll()).stickAxes, [0, 0]);
+				await page.evaluate(() => (globalThis as any).shoulderTest.setDirectionalMode('dpad'));
+			});
+
 			await orientation.test('one trusted rolling thumb bridges the digital D-pad and both actual neighboring shoulders', async () => {
 				const padShape = await page.evaluate(() => (globalThis as any).shoulderTest.directionalGeometry());
 				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
@@ -235,7 +292,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					}
 					const nearestGap = Math.hypot(coreX - padShape.x, coreY - padShape.y) - arc.halfWidth - padShape.radius;
 					assert.ok(nearestGap > 0 && nearestGap <= 14, `${profile.name} ${id} has a genuinely usable 28px contact bridge, not invisible hit inflation`);
-					if (profile.width < profile.height) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
+					if (profile.width < profile.height && profile.width < 600) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
 						`${profile.name} ${id} preserves the authored 12px physical portrait clearance`);
 					// Test the physical corridor just inside a finite cap, not exactly on
 					// a directional sector seam. Boundary classification is tested separately;
@@ -253,9 +310,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						// arc ray can lie exactly on a sector seam; native coordinate rounding
 						// is part of the producer, not a reason to freeze a mathematical ray.
 						const degrees = (Math.atan2(native.y - padShape.y, native.x - padShape.x) * 180 / Math.PI + 360) % 360;
-						const direction = degrees < 30 || degrees > 330 ? 0x8000
-							: degrees <= 60 ? 0xa000 : degrees < 120 ? 0x2000 : degrees <= 150 ? 0x6000
-								: degrees < 210 ? 0x4000 : degrees <= 240 ? 0x5000 : degrees < 300 ? 0x1000 : 0x9000;
+						const direction = degrees < 35 || degrees > 325 ? 0x8000
+							: degrees <= 55 ? 0xa000 : degrees < 125 ? 0x2000 : degrees <= 145 ? 0x6000
+								: degrees < 215 ? 0x4000 : degrees <= 235 ? 0x5000 : degrees < 305 ? 0x1000 : 0x9000;
 						await assertWord(direction | shoulders, message);
 					};
 					for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {

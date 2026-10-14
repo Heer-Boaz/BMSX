@@ -1,5 +1,79 @@
 # Browser touch-controller ownership
 
+## Phone deck, digital sectors and calibrated stick travel, 2026-10-14
+
+This slice supersedes the shared portrait scaling and the 60/30-degree sector
+policy below. It does not redesign the keyboard, the common input ABI or the
+frame-by-frame gamepad sample.
+
+### Layout owns the device family
+
+`onscreen_gamepad_layout.ts` is the retained numerical measure owner; the passive
+SVG view arranges and paints it, and video consumes its measured deck boundary.
+Phone portrait below 600 CSS pixels has independent target budgets, not a scaled
+landscape controller. At 320px the pad is 144px and all face buttons are 60px;
+at 393px they are 180px and approximately 74.2px. They cap at 180/80px instead
+of growing with screen height. Clicks stay 44px, menus 48px and shoulders 44px
+thick. The face bank is 24px higher; each shoulder pair has its own hand-lane
+width and position. Both left shoulders retain their real 12px thumb-bridge
+clearance, while right shoulders remain isolated from accidental Y presses.
+
+Wide portrait uses the aligned hands and wrapped shoulders of landscape but
+retains a measured lower deck under top-aligned video. Near-square embedded
+players cannot contain both a phone-sized deck and a useful picture: the layout
+owner selects a compact full-frame overlay if a reserved deck would leave less
+than a half-width 4:3 picture plus 12px separation. This is authored responsive
+composition, not negative-size clamping in video. Fit/Overscan selection, raw
+render targets and physical-display-pixel half-step scaling are unchanged.
+
+The family-specific ownership follows inspected production examples:
+[PPSSPP's portrait positions and shoulder reach](https://github.com/hrydgard/ppsspp/blob/61e60ee6ff650e6fa2ff9b0019bc9fbb652d7fcb/UI/GamepadEmu.cpp#L842-L965)
+and [Delta's separately authored phone/tablet representations](https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L673).
+The exact BMSX stagger, sizes and breakpoints are our usability choices; those
+references do not prove physical iPhone comfort, and their smaller utility
+targets are not copied.
+
+### Input geometry, not a global threshold patch
+
+The immediate center-relative D-pad has 70-degree cardinal sectors and
+20-degree diagonals. This modestly favors straight presses without timers,
+hysteresis, exclusive direction capture or removing intentional diagonals.
+[RetroArch's angular sensitivity](https://github.com/libretro/RetroArch/blob/bbb40cc9a8f72795e2b6dd60dbc4f5fc633c9389/input/input_driver.c#L5445-L5515)
+supports this explicit policy model, not any universally correct numeric setting.
+
+Analog acquisition and travel are now distinct geometry. The view derives full
+travel from the static ring/knob radii and the artwork's 1.11 transform once;
+the model uses that required `stickTravelRadius` directly. Full travel is
+0.5328 of the acquisition radius. The existing neutral radius remains 0.18,
+so the ordinary 0.5 digital-axis threshold occurs at approximately 0.3564 of
+the acquisition radius, rather than 0.59. Host and cart thresholds and common
+Q16 encoding remain unchanged.
+
+The alleged held-stick shoulder leak could not be reproduced in the current
+model: stick-owned contacts already return no button contribution. Native
+browser and packaged-app tests must exercise that routing rather than introduce
+a speculative input reset. Intentional D-pad/shoulder chords remain enabled;
+independent fingers remain independently reference-counted.
+
+### Release evidence and limits
+
+The final owner slice passes 470 distinct tests: 419 browser/platform tests plus
+51 numerical model tests. All five TypeScript projects and `git diff --check`
+pass. An independent comparison against the previous committed owners confirms
+unchanged landscape image geometry on nine profiles; control geometry differs
+only by floating-point arithmetic noise, at most 5.7e-14 CSS pixels.
+
+The final packaged engine passes ten phone/tablet orientations in each of
+Chromium WebGPU and WebGL2, twenty actual-product WPE/WebKit cases, and four
+focused one-thumb bridge cases. These include actual native menu navigation,
+independent contacts, calibrated stick axes and stick motion over button banks.
+Receipts and visually inspected screenshots are under
+`.bmsx/hosting/portrait-gamepad-evidence/`; final platform evidence is under
+`.bmsx/hosting/touch-control-redesign-evidence/platform-release.log`.
+Chromium/Linux WPE is not UIKit or physical iPhone hand-comfort acceptance.
+Compact embedded overlays intentionally have smaller targets than the normal
+phone deck; ordinary requested mobile/tablet profiles retain their authored sizes.
+
 ## One-thumb directional/shoulder contact, 2026-10-14
 
 Digital D-pad capture is no longer exclusive of the left shoulder bank. Its

@@ -98,8 +98,8 @@ export class BrowserVideoOutput implements VideoOutput {
 			const controls = this.controllerViewport.getBoundingClientRect();
 			const controlWidth = Math.max(0, controls.width - insetLeft - insetRight);
 			const controlHeight = Math.max(0, controls.height - insetTop - insetBottom);
-			const portrait = controlWidth < controlHeight;
-			const deckHeight = portrait ? this.controlView.measurePortraitDeckHeight(controlWidth, controlHeight) : 0;
+			const deckHeight = this.controlView.measurePortraitDeckHeight(controlWidth, controlHeight);
+			const portrait = deckHeight !== 0;
 			// A width-derived video slot keeps control placement independent of
 			// scanout resolution, DPR, overscan and visual-only viewport changes.
 			// Portrait has vertical room: reserve the tallest permitted width

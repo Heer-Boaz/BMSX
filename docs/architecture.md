@@ -4959,7 +4959,7 @@ contacts use exact point-to-arc dilation; anisotropic contacts use endpoint disk
 containment and finite inner/outer arc tests with scalar polynomial root isolation.
 The joined rocker uses immediate absolute contact-center direction regions
 over the whole disc, with a neutral center and up to two adjacent bits per
-contact. Cardinals occupy 60-degree regions and intentional diagonals 30;
+contact. Cardinals occupy 70-degree regions and intentional diagonals 20;
 boundary equality selects the diagonal. There is no analog origin, moving tip
 or exclusive first-finger owner.
 Captured pad contacts continue outside the artwork until their native release;
@@ -4969,7 +4969,12 @@ surrounding ring, with four independent cardinal highlights. Opposing raw
 direction bits light both arms; the view never rewrites controller words. The
 same directional acquisition frame can instead host an analog left stick:
 one pointer retains it until release, with radial neutral/travel mapping and
-captured movement outside the frame. Normalized host axes enter the ordinary
+captured movement outside the frame. Its full-scale travel is the visible knob's
+authored travel, including its SVG transform, not the larger acquisition disc.
+The view measures that template geometry once and publishes CSS-client travel;
+the model consumes it directly. A retained stick contact never glides onto
+buttons, including when crossing a shoulder silhouette. Independent shoulder
+contacts still work. Normalized host axes enter the ordinary
 `ls` input sink; common input owns Q16 conversion and carts own directional
 bindings. The browser does not synthesize D-pad bits from the analog stick.
 Changing the unit releases directional output and suppresses already-held
@@ -4979,7 +4984,7 @@ there is no additional gameplay toggle, guest shortcut or storage facade.
 The shared browser page producer
 needs no D-pad raster assets. Every control's interior remains unfilled even
 while held; only contour, direction and label feedback covers the game image.
-Artwork changes do not change numerical acquisition geometry or control layout.
+Pressed-state feedback does not change acquisition geometry or control layout.
 
 Per-button reference counts combine contacts without releasing another
 finger's controls. Leaving buttons releases their contribution, not the
@@ -4995,20 +5000,31 @@ The handheld deck anchors D-pad and equal face buttons at the safe side edges,
 targets the landscape middle hand row and fits asymmetric same-ring shoulders
 inside the available reach. Shoulder envelopes never push the primary groups
 inward. Landscape bumpers use the larger outward/topward segments; triggers use inward
-segments. Portrait has an independently authored detached shoulder strip:
-LB/LT above the left primary group, RT/RB above the right. The left arcs retain
+segments. `onscreen_gamepad_layout.ts` owns the retained numerical layout family,
+intrinsic deck measure and physical target budgets. Phone portrait, below a
+600 CSS-pixel safe-player width, has independently sized thumb banks: the pad
+caps at 180px, equal face buttons at 80px, stick clicks stay 44px and menu buttons
+48px. Width determines the two hand lanes, not one global scale; viewport height
+does not grow the controls. The face hand sits 24px above the pad hand. Each
+shoulder pair follows its own hand lane, with at least 44px thickness. The left arcs retain
 12 CSS pixels of actual surface clearance from the pad, derived from each
 nearest round cap, so one thumb can genuinely bridge them. The right strip
 retains its 24 CSS-pixel empty band above the complete face acquisition bank.
-This hand-specific reach does not alter the video slot or deck measure. It does not scale
-or transplant the landscape shoulder ring into a portrait controller.
+Wide portrait uses landscape's aligned primary banks and wrapping shoulder
+rings, still in a measured lower deck below top-aligned video. When either
+portrait deck cannot leave at least a half-width 4:3 picture plus the 12px gap,
+the layout owner selects a compact full-frame overlay instead of reserving a
+negative/tiny video slot. That constrained embedded-player profile uses smaller
+ring targets; the fixed phone minima apply to the phone-deck profile, not every
+possible player size. The final profile
+owns both arrange and video reservation; video does not reclassify orientation.
 LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
 Transparent control interiors retain the scene; restrained translucent contours
 and smaller medium-weight labels use only a thin contrast stroke. Held labels
 and contours brighten without changing target size or painting an opaque fill.
 Actual bounds constrain short players; capped control sizes are not scaled up
 with screen area or shrunk to reserve video columns.
-The view retains finite portrait-deck metrics for measure/arrange. The video
+The view consumes those retained layout metrics for measure/arrange. The video
 owner composes a stable width-derived 4:3 video slot, including the permitted
 overscan extent, a 12px separation and that deck. This publishes geometry once,
 without a provisional bottom layout. Scanout/DPR/picture-mode changes do not

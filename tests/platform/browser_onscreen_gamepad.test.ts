@@ -218,8 +218,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			await touch('touchMove', [{ id: points.pad.id, x: points.pad.x + Math.cos(angle) * radius,
 				y: points.pad.y - Math.sin(angle) * radius, radiusX: 14, radiusY: 14 }]);
 			const word = (await poll()).buttons;
-			const expected = (angle >= Math.PI / 6 ? 0x1000 : 0) | (angle <= Math.PI / 3 ? 0x8000 : 0);
-			assert.equal(word, expected, 'the native outer arc follows the absolute 60-degree cardinal/30-degree diagonal sectors');
+			const expected = (angle >= 35 * Math.PI / 180 ? 0x1000 : 0) | (angle <= 55 * Math.PI / 180 ? 0x8000 : 0);
+			assert.equal(word, expected, 'the native outer arc follows the absolute 70-degree cardinal/20-degree diagonal sectors');
 			assert.ok(word === 0x8000 || word === 0x9000 || word === 0x1000, 'every arc sample presses a cardinal or joined adjacent pair, never neutral or an opposite');
 			const nextPhase = word === 0x8000 ? 0 : word === 0x9000 ? 1 : 2;
 			assert.ok(nextPhase >= phase, 'the quarter arc cannot drop back into a previous pressure region');
