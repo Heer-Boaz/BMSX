@@ -31,6 +31,8 @@ interface TouchPoint {
 
 interface NativeContactEvent {
 	type: string;
+	x: number;
+	y: number;
 	width: number;
 	height: number;
 	trusted: boolean;
@@ -91,6 +93,15 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
 		trace.setController(pad);
 		hub.setTraceObserver(trace);
+		// Observe the native boundary before Input subscribes its controller handler,
+		// which intentionally stops immediate propagation for owned contacts.
+		const events: Array<{ type: string; x: number; y: number; width: number; height: number; trusted: boolean }> = [];
+		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+			window.addEventListener(type, event => {
+				const pointer = event as PointerEvent;
+				events.push({ type, x: pointer.clientX, y: pointer.clientY, width: pointer.width, height: pointer.height, trusted: pointer.isTrusted });
+			}, true);
+		}
 		const input = new api.Input(clock, hub, pad.gamepadIndex);
 		trace.setCommonGamepad(input.getPlayerInput(1).inputHandlers.gamepad);
 		const snapshot = api.createInputControllerSnapshot();
@@ -99,13 +110,6 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			supervisorContextActive() { return false; }, requestSupervisorLineEdge() {},
 		});
 		controller.reset();
-		const events: Array<{ type: string; width: number; height: number; trusted: boolean }> = [];
-		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
-			window.addEventListener(type, event => {
-				const pointer = event as PointerEvent;
-				events.push({ type, width: pointer.width, height: pointer.height, trusted: pointer.isTrusted });
-			}, true);
-		}
 		let cycle = 0;
 		(globalThis as any).touchAcceptance = {
 			poll() {
@@ -122,6 +126,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			},
 			refreshLayout() { video.refreshLayout(); },
 			takeEvents() { return events.splice(0); },
+			latestEvent() { return events.at(-1); },
 			clearTrace() { trace.buffer.clear(); },
 			layoutRows() {
 				const rows = [];
@@ -300,17 +305,29 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 			const { pad, actions: shapes } = await measure();
 			const leftShoulders = shapes.filter(shape => shape.bank === 1);
 			for (const [radiusX, radiusY] of [[1, 1], [14, 14], [24, 4], [30, 30]]) {
+				await takeEvents();
+				let observedDirections = 0;
 				for (let degrees = 0; degrees <= 360; degrees += 10) {
 					const angle = degrees * Math.PI / 180;
 					const contact = { id: 1, x: pad.x + pad.radius * 0.8 * Math.cos(angle),
 						y: pad.y - pad.radius * 0.8 * Math.sin(angle), radiusX, radiusY };
 					await touch(degrees === 0 ? 'touchStart' : 'touchMove', [contact]);
-					const state = await poll();
+					// Read the actual delivered contact and its contribution atomically.
+					// Requested CDP doubles are not the browser's client coordinates.
+					const { native, state } = await page.evaluate(() => {
+						const probe = (globalThis as any).touchAcceptance;
+						return { native: probe.latestEvent(), state: probe.poll() };
+					});
 					const location = `${viewport.width}x${viewport.height}, ${degrees}deg, ${radiusX}x${radiusY} contact radii`;
-					const shoulderWord = ellipseContactWord(leftShoulders, contact.x, contact.y, radiusX, radiusY);
+					// Chromium delivers float32 client coordinates. Exact outer-arc
+					// tangencies must use those real contact values, not the requested doubles.
+					assert.ok(native.trusted && (native.type === 'pointerdown' || native.type === 'pointermove'));
+					const shoulderWord = ellipseContactWord(leftShoulders, native.x, native.y, native.width / 2, native.height / 2);
+
 					assert.equal(state.model & 0x50, shoulderWord, `only actually touched left shoulders contribute at ${location}`);
 					assert.equal(state.model & ~0xf050, 0, `no utility, right-shoulder or face-bank spill at ${location}`);
 					assert.notEqual(state.model, 0, `no dead gap at ${location}`);
+					observedDirections |= state.model & 0xf000;
 					assert.notEqual(state.model & 0x3000, 0x3000, `no one-thumb Up+Down at ${location}`);
 					assert.notEqual(state.model & 0xc000, 0xc000, `no one-thumb Left+Right at ${location}`);
 					assert.equal(state.common, state.model);
@@ -318,6 +335,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 					assert.equal(state.mmio, state.model);
 					assert.equal(state.pointer, 0);
 				}
+				assert.equal(observedDirections, 0xf000, 'the actual native roll traverses all four directional regions');
 				await touch('touchEnd', []);
 				await assertWord(0);
 			}

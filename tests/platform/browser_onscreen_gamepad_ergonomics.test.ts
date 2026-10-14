@@ -85,7 +85,7 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/touch-control-redesign-evidence';
+	const evidenceDirectory = '.bmsx/hosting/portrait-lower-fan-test-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -383,18 +383,17 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'every phone face key remains thumb sized without consuming a tablet-sized lane');
 				if (width === 320) assert.ok(Math.abs(pad.bounds.width - 144) < coordinateTolerance);
 				if (width >= 393) assert.ok(Math.abs(pad.bounds.width - 180) < coordinateTolerance);
-				assert.ok(Math.abs(pad.y - faceCenter.y - 24) < coordinateTolerance,
-					'the independent phone face bank sits one 24px step above the directional hand');
 			} else {
-				assert.ok(Math.abs(pad.y - faceCenter.y) < coordinateTolerance, 'wide hand decks align both thumbs');
 				assert.ok(Math.abs(pad.bounds.width / faceDiameter - 180 / 80) < 0.0001,
 					'wide portrait retains the established landscape artwork proportions');
 			}
+			assert.ok(Math.abs(pad.y - faceCenter.y) < coordinateTolerance, 'both main thumb banks share one hand row in every layout family');
 			const [select, start, ls, rs, lb, rb, lt, rt] = targets.slice(5);
 			const middle = (safe.left + safe.right) / 2;
 			assert.ok(select.x < middle && start.x > middle, 'SELECT and START straddle the handheld center');
-			assert.ok(Math.abs(select.y - start.y) < coordinateTolerance, 'menu controls share one bottom row');
-			assert.ok(select.y > pad.y && start.y > faceCenter.y, 'menu controls lie below the main hand row');
+			assert.ok(Math.abs(select.y - start.y) < coordinateTolerance, 'menu controls share one utility row');
+			assert.ok(phonePortrait ? select.y < pad.y && start.y < faceCenter.y : select.y > pad.y && start.y > faceCenter.y,
+				'phone utilities lie above both hands; established ring layouts retain lower utilities');
 			assert.ok(ls.x < select.x && rs.x > start.x, 'each hand has its own LS/SELECT or START/RS pair');
 			assert.ok(select.x - ls.x >= select.radius + ls.radius + 12 * (phonePortrait ? 1 : scale) - coordinateTolerance
 				&& rs.x - start.x >= rs.radius + start.radius + 12 * (phonePortrait ? 1 : scale) - coordinateTolerance,
@@ -414,32 +413,22 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				'the face cluster remains at its authored primary edge, with only the actual bezel paint extending beyond the acquisition frame');
 			assert.ok(lb.x < middle && lt.x < middle && rb.x > middle && rt.x > middle, 'each shoulder pair stays with its corresponding hand');
 			for (const [bumper, trigger, primary] of [[lb, lt, pad], [rb, rt, faceCenter]]) {
-				if (!phonePortrait) {
-					assert.ok(Math.abs(bumper.x + bumper.outline.centerX - primary.x) < coordinateTolerance
+				assert.ok(Math.abs(bumper.x + bumper.outline.centerX - primary.x) < coordinateTolerance
 					&& Math.abs(trigger.x + trigger.outline.centerX - primary.x) < coordinateTolerance,
-						'both adjacent shoulders share the same horizontal center as their primary control');
-					assert.ok(Math.abs(bumper.y + bumper.outline.centerY - primary.y) < coordinateTolerance
-						&& Math.abs(trigger.y + trigger.outline.centerY - primary.y) < coordinateTolerance,
-						'bumpers and triggers follow one circle, not vertically stacked concentric rings');
-					assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
-					assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
-					assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) < 0,
-						'the easier bumper owns the outer/top ring segment and the trigger stays inward in both orientations');
-					const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
-					const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
-					assert.ok(bumperSweep > triggerSweep, 'the easier landscape bumper has a genuinely larger finite curved target, not just a swapped label');
-				} else {
-					assert.ok(Math.abs(bumper.bounds.width - trigger.bounds.width) < coordinateTolerance,
-						'the two shoulders of each phone hand have equal widths, without imposing one four-across toolbar');
-					assert.ok(bumper.bounds.width >= 66 - coordinateTolerance, 'even a compact phone keeps a broad 66px shoulder target');
-					if (primary === pad) {
-						for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - 12) < coordinateTolerance,
-							'each left portrait shoulder keeps an actual 12px thumb bridge from the smaller pad disk');
-					} else {
-						assert.ok(Math.abs(bumper.y - trigger.y) < coordinateTolerance, 'the right phone hand retains a paired shoulder row');
-						assert.ok(bumper.y + bumper.outline.bottom + 24 <= targets[4].bounds.top + coordinateTolerance,
-							'the right strip retains its 24px empty band above the face bank, protecting Y');
-					}
+					'both adjacent shoulders share the same horizontal center as their primary control');
+				assert.ok(Math.abs(bumper.y + bumper.outline.centerY - primary.y) < coordinateTolerance
+					&& Math.abs(trigger.y + trigger.outline.centerY - primary.y) < coordinateTolerance,
+					'bumpers and triggers follow one circle, not vertically stacked concentric rings');
+				assert.equal(bumper.outline.radius, trigger.outline.radius, 'the pair has one exact centerline radius');
+				assert.equal(bumper.outline.halfWidth, trigger.outline.halfWidth, 'neither shoulder in the pair has a smaller contact thickness');
+				assert.ok((bumper.x - trigger.x) * (primary.x < middle ? 1 : -1) < 0,
+					'the easier bumper owns the outer ring segment and the trigger stays inward in both orientations');
+				const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
+				const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
+				assert.ok(bumperSweep > triggerSweep, 'the easier bumper has a genuinely larger finite curved target, not just a swapped label');
+				if (phonePortrait && primary === pad) {
+					for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - 12) < coordinateTolerance,
+						'each lower phone shoulder retains an actual 12px thumb bridge from the unchanged pad disk');
 				}
 				const direction = primary.x < middle ? -1 : 1;
 				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;
@@ -466,7 +455,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(shoulder.outline.halfWidth * 2 >= 44 - coordinateTolerance,
 					`${shoulder.id} keeps a real radial target thickness inside the common viewport budget`);
 				const primary = shoulder === lb || shoulder === lt ? pad : faceCenter;
-				assert.ok(shoulder.y < primary.y, `${shoulder.id} is reachable above its own hand, not placed at the viewport top`);
+				assert.ok(phonePortrait ? shoulder.y > primary.y : shoulder.y < primary.y,
+					`${shoulder.id} wraps below phone hands and above established wide/overlay hands`);
 				secondaryOffsets.push({ id: shoulder.id, x: (shoulder.x - primary.x) / scale, y: (shoulder.y - primary.y) / scale });
 			}
 			const imageWidth = resting.canvas.right - resting.canvas.left;
@@ -502,8 +492,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'intrinsic deck measurement has bounded padding, not viewport-height whitespace');
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
-				assert.ok(lb.y < pad.y && rb.y < faceCenter.y,
-					'portrait shoulders remain above their corresponding thumb unit inside the measured lower deck');
+				assert.ok(phonePortrait ? lb.y > pad.y && rb.y > faceCenter.y : lb.y < pad.y && rb.y < faceCenter.y,
+					'each portrait family retains its authored shoulder side inside the measured lower deck');
 				assert.ok(lb.x < lt.x && rt.x < rb.x, 'portrait keeps bumpers on each hand outer side, independently of its profile');
 			}
 			const fillSamples: Array<{ id: string; x: number; y: number }> = [];

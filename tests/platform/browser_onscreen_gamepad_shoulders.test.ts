@@ -99,6 +99,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					menu,
 					setDirectionalMode(mode) { pad.setDirectionalMode(mode); },
 					ownsContact(id) { return pad.ownsContact(id); },
+					layoutProfile() { return view.layoutProfile; },
 					directionalGeometry() {
 						return { x: pad.geometry.padX, y: pad.geometry.padY, radius: pad.geometry.padRadius };
 					},
@@ -255,6 +256,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 
 			await orientation.test('one trusted rolling thumb bridges the digital D-pad and both actual neighboring shoulders', async () => {
 				const padShape = await page.evaluate(() => (globalThis as any).shoulderTest.directionalGeometry());
+				const phonePortrait = await page.evaluate(() => (globalThis as any).shoulderTest.layoutProfile() === 'phone-portrait');
 				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
 				const assertWord = async (word: number, message: string) => {
 					const state = await poll();
@@ -292,7 +294,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					}
 					const nearestGap = Math.hypot(coreX - padShape.x, coreY - padShape.y) - arc.halfWidth - padShape.radius;
 					assert.ok(nearestGap > 0 && nearestGap <= 14, `${profile.name} ${id} has a genuinely usable 28px contact bridge, not invisible hit inflation`);
-					if (profile.width < profile.height && profile.width < 600) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
+					if (phonePortrait) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
 						`${profile.name} ${id} preserves the authored 12px physical portrait clearance`);
 					// Test the physical corridor just inside a finite cap, not exactly on
 					// a directional sector seam. Boundary classification is tested separately;
@@ -313,6 +315,10 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						const direction = degrees < 35 || degrees > 325 ? 0x8000
 							: degrees <= 55 ? 0xa000 : degrees < 125 ? 0x2000 : degrees <= 145 ? 0x6000
 								: degrees < 215 ? 0x4000 : degrees <= 235 ? 0x5000 : degrees < 305 ? 0x1000 : 0x9000;
+						if (phonePortrait) {
+							assert.equal(direction & 0x2000, 0x2000, 'lower phone shoulder corridors are reached by rolling DOWN');
+							assert.equal(direction & 0x1000, 0, 'the lower fan cannot require an UP shoulder chord');
+						}
 						await assertWord(direction | shoulders, message);
 					};
 					for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
@@ -349,7 +355,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				}
 			});
 
-			await orientation.test('complete shoulder silhouettes isolate estimated and measured thumb footprints from face and directional banks', async () => {
+			await orientation.test('neighboring face and shoulder silhouettes isolate estimated and measured thumb footprints across banks', async () => {
 				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
 				for (const id of ['lb_knop', 'rb_knop', 'lt_knop', 'rt_knop']) {
 					const button = BUTTONS.find(button => button.id === id)!;
@@ -384,7 +390,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 							await touch('touchStart', [contact]);
 							const entered = await poll();
 							assert.notEqual(entered.model & shape.buttons, 0, `${id} direct surface entry is never intercepted by another bank`);
-							assert.equal(entered.model & ~bankMask, 0, `${id} ${radiusX * 2}x${radiusY * 2} footprint cannot invent Y/up/utility contributions`);
+							assert.equal(entered.model & ~bankMask, 0, `${id} ${radiusX * 2}x${radiusY * 2} footprint cannot invent face/direction/utility contributions`);
 							assert.deepEqual([entered.physical, entered.snapshot, entered.mmio], [entered.model, entered.model, entered.model]);
 							const axes = [(entered.model & 0x40) !== 0 ? 0x10000 : 0, (entered.model & 0x80) !== 0 ? 0x10000 : 0];
 							assert.deepEqual(entered.axes, axes);
@@ -401,31 +407,54 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						}
 					}
 				}
+				const phonePortrait = await page.evaluate(() => (globalThis as any).shoulderTest.layoutProfile() === 'phone-portrait');
+				const faceId = phonePortrait ? 'a_knop' : 'y_knop';
+				const face = shapes.find(shape => shape.buttons === (phonePortrait ? 1 : 8));
+				for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
+					for (let step = 0; step < 16; step += 1) {
+						const angle = step * Math.PI / 8;
+						const contact = { ...point(faceId), x: face.x + Math.cos(angle) * face.radius * 0.999,
+							y: face.y + Math.sin(angle) * face.radius * 0.999, radiusX, radiusY };
+						assert.ok(controlContainsPoint(face, contact.x, contact.y));
+						await touch('touchStart', [contact]);
+						const entered = await poll();
+						assert.notEqual(entered.model & face.buttons, 0, 'the adjacent face keeps its own edge contacts');
+						assert.equal(entered.model & ~0x0f, 0,
+							`${faceId} ${radiusX * 2}x${radiusY * 2} contact cannot acquire the neighboring shoulder or utility bank`);
+						assert.deepEqual([entered.physical, entered.snapshot, entered.mmio], Array(3).fill(entered.model));
+						await touch('touchEnd', []);
+						assert.equal((await poll()).mmio, 0);
+					}
+				}
+
 			});
 
-			await orientation.test('independent Y and RB contacts survive cross-bank slides, viewport relayout and either release order', async () => {
+			await orientation.test('independent adjacent face and RB contacts survive cross-bank slides, viewport relayout and either release order', async () => {
+				const phonePortrait = await page.evaluate(() => (globalThis as any).shoulderTest.layoutProfile() === 'phone-portrait');
+				const faceId = phonePortrait ? 'a_knop' : 'y_knop';
+				const faceWord = phonePortrait ? 1 : 8;
 				for (const releaseShoulderFirst of [false, true]) {
 					const rb = point('rb_knop');
-					const y = point('y_knop');
+					const face = point(faceId);
 					await touch('touchStart', [rb]);
 					assert.equal((await poll()).model, 0x20);
-					await touch('touchStart', [rb, y]);
+					await touch('touchStart', [rb, face]);
 					const both = await poll();
-					assert.deepEqual([both.model, both.physical, both.snapshot, both.mmio], [0x28, 0x28, 0x28, 0x28]);
-					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...rb, x: y.x, y: y.y }, y] });
-					assert.equal((await poll()).model, 8, 'the first native pointer deliberately enters the face bank without lifting');
-					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [rb, y] });
-					assert.equal((await poll()).model, 0x28);
+					assert.deepEqual([both.model, both.physical, both.snapshot, both.mmio], Array(4).fill(0x20 | faceWord));
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...rb, x: face.x, y: face.y }, face] });
+					assert.equal((await poll()).model, faceWord, 'the first native pointer deliberately enters the face bank without lifting');
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [rb, face] });
+					assert.equal((await poll()).model, 0x20 | faceWord);
 					await page.setViewportSize({ width: profile.width + 18, height: profile.height });
 					await page.evaluate(() => (globalThis as any).shoulderTest.refreshLayout());
 					const resizedShapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
 					const rbWord = roundContactBankWord(resizedShapes, rb.x, rb.y, 14);
-					const yWord = roundContactBankWord(resizedShapes, y.x, y.y, 14);
+					const resizedFaceWord = roundContactBankWord(resizedShapes, face.x, face.y, 14);
 					const resized = await poll();
-					assert.deepEqual([resized.model, resized.physical, resized.snapshot, resized.mmio], Array(4).fill(rbWord | yWord),
+					assert.deepEqual([resized.model, resized.physical, resized.snapshot, resized.mmio], Array(4).fill(rbWord | resizedFaceWord),
 						'relayout resamples the two real retained contacts using new surfaces, not synthetic releases or captured banks');
-					await touch('touchEnd', [releaseShoulderFirst ? rb : y]);
-					const remainingWord = releaseShoulderFirst ? yWord : rbWord;
+					await touch('touchEnd', [releaseShoulderFirst ? rb : face]);
+					const remainingWord = releaseShoulderFirst ? resizedFaceWord : rbWord;
 					const remaining = await poll();
 					assert.deepEqual([remaining.model, remaining.physical, remaining.snapshot, remaining.mmio], Array(4).fill(remainingWord));
 					await touch('touchEnd', []);
@@ -465,15 +494,25 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				for (const [firstId, secondId, word] of [['lb_knop', 'lt_knop', 0x50], ['rb_knop', 'rt_knop', 0xa0]] as const) {
 					const first = shapes.find(shape => shape.buttons === 1 << BUTTONS.find(button => button.id === firstId)!.bit);
 					const second = shapes.find(shape => shape.buttons === 1 << BUTTONS.find(button => button.id === secondId)!.bit);
-					let bridge: { x: number; y: number } | undefined;
-					for (let row = -28; row <= 28 && bridge === undefined; row += 2) {
-						for (let column = -28; column <= 28; column += 2) {
-							const candidate = { x: (first.x + second.x) / 2 + column, y: (first.y + second.y) / 2 + row };
-							const touched = shapes.reduce((mask, shape) => distanceToControl(shape, candidate.x, candidate.y) < 14 ? mask | shape.buttons : mask, 0);
-							if (touched === word) { bridge = candidate; break; }
+					let bridge: { x: number; y: number };
+					let closestCaps = Infinity;
+					for (const [ax, ay] of [[first.outline.startX, first.outline.startY], [first.outline.endX, first.outline.endY]]) {
+						for (const [bx, by] of [[second.outline.startX, second.outline.startY], [second.outline.endX, second.outline.endY]]) {
+							const a = { x: first.x + first.outline.centerX + first.outline.radius * ax,
+								y: first.y + first.outline.centerY + first.outline.radius * ay };
+							const b = { x: second.x + second.outline.centerX + second.outline.radius * bx,
+								y: second.y + second.outline.centerY + second.outline.radius * by };
+							const distance = Math.hypot(a.x - b.x, a.y - b.y);
+							if (distance < closestCaps) {
+								closestCaps = distance;
+								bridge = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+							}
 						}
 					}
-					assert.ok(bridge, `${firstId}/${secondId} have a reachable true-contact chord, not overlapping target rectangles`);
+					assert.ok(distanceToControl(first, bridge.x, bridge.y) < 14 && distanceToControl(second, bridge.x, bridge.y) < 14,
+						`${firstId}/${secondId} share a real 28px thumb corridor between their finite caps, not overlapping target rectangles`);
+					assert.equal(roundContactBankWord(shapes, bridge.x, bridge.y, 14), word);
+
 					await touch('touchStart', [{ ...point(firstId), ...bridge }]);
 					const paired = await poll();
 					assert.equal(paired.model, word);

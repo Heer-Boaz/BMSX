@@ -5005,11 +5005,19 @@ intrinsic deck measure and physical target budgets. Phone portrait, below a
 600 CSS-pixel safe-player width, has independently sized thumb banks: the pad
 caps at 180px, equal face buttons at 80px, stick clicks stay 44px and menu buttons
 48px. Width determines the two hand lanes, not one global scale; viewport height
-does not grow the controls. The face hand sits 24px above the pad hand. Each
-shoulder pair follows its own hand lane, with at least 44px thickness. The left arcs retain
-12 CSS pixels of actual surface clearance from the pad, derived from each
-nearest round cap, so one thumb can genuinely bridge them. The right strip
-retains its 24 CSS-pixel empty band above the complete face acquisition bank.
+does not grow the controls. Both primary hands align. Each shoulder pair wraps
+around the lower rim of its own hand bank, in adjacent segments of one circle
+with at least 44px thickness: bumpers are outward and triggers inward. The
+hand-side LS/SELECT and START/RS pairs sit above the primary controls instead
+of a lower utility footer. The left shoulder arcs retain 12 CSS pixels of real
+surface clearance from the pad, so one thumb can roll downward into a genuine
+direction/shoulder chord. Face/shoulder bank ownership remains distinct near A;
+geometry never indiscriminately unions the two banks. The same finite arc
+budgets author upper wide rings and lower phone rings, including round caps,
+paint bounds, inter-hand gaps and matching SVG/hit surfaces. Utility clearance
+consumes the actual template Y circle above phone controls and A circle below
+wider controls, not a guessed mirrored position. Phone shoulder captions retain
+their physical size independently of the face-bank scale.
 Wide portrait uses landscape's aligned primary banks and wrapping shoulder
 rings, still in a measured lower deck below top-aligned video. When either
 portrait deck cannot leave at least a half-width 4:3 picture plus the 12px gap,

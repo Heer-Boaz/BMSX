@@ -1,5 +1,69 @@
 # Browser touch-controller ownership
 
+## Approved phone portrait lower fans, 2026-10-15
+
+This is a structural replacement of the portrait arrangement below, not another
+size adjustment: narrow-phone primary controls align, both shoulder/trigger
+pairs wrap around their **lower** rims, and LS/SELECT plus START/RS move above
+their hand banks. Bumpers remain on the outward portions of the two circles;
+triggers remain inward. The familiar ABXY diamond, equal action sizes, outlined
+D-pad/stick artwork and transparent interiors are retained. The keyboard,
+gamepad polling/input model, axis calibration, landscape and wide-portrait
+arrangements are unchanged.
+
+The approved concept was informed by
+[NeoRetropad's portrait lower shoulder fans](https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/neo-retropad.cfg#L480-L609).
+That is a production precedent for placement, not an ergonomic guarantee or a
+source for copied artwork, inflated hit regions or BMSX's contact policy.
+
+### Numerical ownership and honest constraints
+
+The existing retained layout owner produces the intrinsic deck and the same
+finite ring/cap budgets for either rim orientation. Phone sizing remains
+independent: 144px pad and 60px face targets at 320px; 180px pad and approximately
+74.2px faces at 393px. Clicks stay 44px, menus 48px and shoulders 44px thick.
+The complete deck measures approximately 277.9px / 316.2px respectively,
+around 37px shorter than the preceding portrait deck. Utility clearance uses the
+actual authored Y geometry above the face bank, not the old lower A offset.
+Phone shoulder captions match the independently sized shoulder targets rather
+than shrinking with face width. Measure/arrange remain cached; native contact
+movement allocates no new geometry and reads no DOM layout.
+
+The left rings retain their actual 12px directional/shoulder contact corridor.
+Natural one-thumb combinations now involve downward rolls rather than upward
+rolls. The right lower rings approach A, so the existing nearest-bank selection
+must keep a shoulder thumb from accidentally pressing A; independent A plus
+shoulder fingers still combine normally. Analog-stick capture remains exclusive.
+Upper utilities are less frequent controls and require more reach; this
+intentionally prioritizes gameplay shoulders over the utility footer.
+
+The original 4:3 / physical-pixel half-step / bounded-overscan policies remain.
+A shorter deck can give the game more actual picture room on short phones; it
+does not change the sampling policy or crop allowance. Tall phones still have
+aspect-ratio slack: fixed thumb targets and a width-limited 4:3 picture cannot
+fill all vertical space without different grip spacing, enlarged targets or
+more crop. No hidden stretching, deeper overscan or relocated-gap claim is made.
+
+### Validation
+
+470 distinct tests pass: 419 browser/platform tests and the separate 51 model
+tests. All five TypeScript projects and the player/Studio builds pass. Native
+tests cover lower directional/shoulder thumb corridors, shoulder pairs, adjacent
+A isolation, independent fingers, retained stick capture, keyboard behavior and
+quantized video fitting. The adversarial observer now registers before input
+consumption and checks delivered native coordinates, not requested driver doubles;
+no collision tolerance or production input patch was added to pass that test.
+
+Packaged WebGPU and WebGL2 each pass ten phone/tablet orientations; WPE passes
+twenty game/profile cases. An independent baseline comparison verifies 48,690
+unchanged non-phone layout measurements and 268 browser view operations exactly.
+Actual game screenshots were visually inspected, not just shape bounds. Evidence:
+`.bmsx/hosting/portrait-lower-fan-evidence/` and
+`.bmsx/hosting/portrait-lower-fan-test-evidence/platform-release.log`.
+These prove browser behavior and the implemented layout, not physical iPhone
+comfort. The purpose of this approved iteration remains a real-device usability
+trial.
+
 ## Phone deck, digital sectors and calibrated stick travel, 2026-10-14
 
 This slice supersedes the shared portrait scaling and the 60/30-degree sector

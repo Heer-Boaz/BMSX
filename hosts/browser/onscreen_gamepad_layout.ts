@@ -5,7 +5,6 @@ export const PAD_SIZE = 180;
 export const MENU_SIZE = 52;
 export const STICK_CLICK_SIZE = 44;
 export const PAINT_CLEARANCE = 4;
-export const PORTRAIT_SHOULDER_RADIUS = 100;
 const WIDE_PORTRAIT_WIDTH = 600;
 const SHOULDER_THICKNESS = 56;
 const MIN_SHOULDER_THICKNESS = 44;
@@ -13,9 +12,7 @@ const SHOULDER_INWARD_SWEEP = Math.PI / 3;
 const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
 const SHOULDER_PAINT_RADIUS = 1.5;
 const CONTROL_MARGIN = 4;
-const PHONE_FACE_RISE = 24;
 const PHONE_MENU_SIZE = 48;
-const PHONE_SHOULDER_PRIMARY_GAP = 24;
 // A reserved deck must leave at least a half-width 4:3 picture. Near-square
 // embedded players instead use the same full-frame overlay as landscape.
 const MIN_PORTRAIT_PICTURE_HEIGHT_PER_WIDTH = 3 / 8;
@@ -28,7 +25,6 @@ export class OnscreenGamepadLayout {
 	public scale = 1;
 	public padSize = 0;
 	public faceScale = 1;
-	public faceRise = 0;
 	public margin = CONTROL_MARGIN;
 	public bottom = 0;
 	public gap = 0;
@@ -46,14 +42,10 @@ export class OnscreenGamepadLayout {
 	public rightInner = 0;
 	public leftSplit = 0;
 	public rightSplit = 0;
-	public utilityDrop = 0;
+	public utilityReach = 0;
 	public leftGap = 0;
 	public rightGap = 0;
-	public topReach = 0;
-	public leftShoulderWidth = 0;
-	public rightShoulderWidth = 0;
-	public leftShoulderHalfAngle = 0;
-	public rightShoulderHalfAngle = 0;
+	public shoulderReach = 0;
 	public portraitTopReach = 0;
 	public portraitDeckHeight = 0;
 
@@ -62,6 +54,8 @@ export class OnscreenGamepadLayout {
 		private readonly faceHeight: number,
 		private readonly bottomButtonY: number,
 		private readonly bottomButtonRadius: number,
+		private readonly topButtonY: number,
+		private readonly topButtonRadius: number,
 	) {}
 
 	public measure(width: number, height: number): this {
@@ -84,7 +78,7 @@ export class OnscreenGamepadLayout {
 		return this;
 	}
 
-	/** Fixed phone targets and staggered thumb banks, composed below the picture. */
+	/** Aligned phone hands, upper utilities and lower shoulder fans below the picture. */
 	private measurePhone(): void {
 		const width = this.width;
 		// A thumb-sized D-pad gets its own width budget; the equal face keys
@@ -92,22 +86,18 @@ export class OnscreenGamepadLayout {
 		this.padSize = Math.min(PAD_SIZE, (width - 32) / 2);
 		this.faceScale = Math.min(1, (width - this.padSize - CONTROL_MARGIN * 2 - CONTROL_GAP) / this.faceWidth);
 		this.scale = this.faceScale;
-		this.faceRise = PHONE_FACE_RISE;
 		this.menuSize = PHONE_MENU_SIZE;
 		this.clickSize = STICK_CLICK_SIZE;
 		this.gap = CONTROL_GAP;
 		this.halfWidth = MIN_SHOULDER_THICKNESS / 2;
 		this.bottom = 16;
-		this.measureHandClearances();
-		// Each shoulder pair belongs to its hand lane. The right hand sits a
-		// little higher, so these are not an artificial four-button toolbar.
-		this.leftShoulderWidth = (this.padSize - CONTROL_GAP) / 2;
-		this.rightShoulderWidth = (this.faceWidth * this.faceScale - CONTROL_GAP) / 2;
-		this.leftShoulderHalfAngle = Math.asin((this.leftShoulderWidth / 2 - this.halfWidth) / PORTRAIT_SHOULDER_RADIUS);
-		this.rightShoulderHalfAngle = Math.asin((this.rightShoulderWidth / 2 - this.halfWidth) / PORTRAIT_SHOULDER_RADIUS);
-		const stripHeight = this.halfWidth * 2 + PORTRAIT_SHOULDER_RADIUS * (1 - Math.cos(this.rightShoulderHalfAngle));
-		this.portraitTopReach = this.faceRise + stripHeight + PHONE_SHOULDER_PRIMARY_GAP + this.faceHeight * this.faceScale / 2;
-		this.portraitDeckHeight = this.portraitTopReach + this.utilityDrop + this.menuSize / 2 + this.bottom;
+		this.measureHandClearances(this.faceHeight / 2 - this.topButtonY, this.topButtonRadius);
+		this.measureShoulderRings();
+		// Neo-Retropad's portrait places thumb-operated shoulders below the
+		// primary banks. BMSX retains its own finite arcs and contact ownership:
+		// https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/neo-retropad.cfg#L576-L609
+		this.portraitTopReach = this.utilityReach + this.menuSize / 2;
+		this.portraitDeckHeight = this.portraitTopReach + this.shoulderReach + this.bottom;
 	}
 
 	/** Wrapping shoulders with aligned hands for wide decks and overlay players. */
@@ -125,16 +115,22 @@ export class OnscreenGamepadLayout {
 		this.scale = Math.min(1.1, width / fullWidth, height / fullHeight);
 		this.padSize = PAD_SIZE * this.scale;
 		this.faceScale = this.scale;
-		this.faceRise = 0;
 		this.menuSize = MENU_SIZE * this.scale;
 		this.clickSize = STICK_CLICK_SIZE * this.scale;
 		this.gap = CONTROL_GAP * this.scale;
 		this.halfWidth = Math.max(MIN_SHOULDER_THICKNESS / 2, halfWidth * this.scale);
 		this.bottom = 16 * this.scale;
-		this.measureHandClearances();
+		this.measureHandClearances(this.bottomButtonY - this.faceHeight / 2, this.bottomButtonRadius);
+		this.measureShoulderRings();
+		this.portraitTopReach = this.shoulderReach + PAINT_CLEARANCE;
+		this.portraitDeckHeight = this.portraitTopReach + this.utilityReach + this.menuSize / 2 + this.bottom;
+	}
+
+	/** Both rim orientations share the same true arc, cap and hand-lane budgets. */
+	private measureShoulderRings(): void {
 		this.leftRing = this.padRadius + this.gap + this.halfWidth;
 		this.rightRing = this.faceRadius + this.gap + this.halfWidth;
-		const halfLane = (width - this.margin * 2 - this.padRadius - this.faceRadius - this.gap) / 2;
+		const halfLane = (this.width - this.margin * 2 - this.padRadius - this.faceRadius - this.gap) / 2;
 		const inwardSine = Math.sin(SHOULDER_INWARD_SWEEP);
 		this.leftInner = Math.asin((Math.min(halfLane, this.leftRing * inwardSine + this.halfWidth) - this.halfWidth) / this.leftRing);
 		this.rightInner = Math.asin((Math.min(halfLane, this.rightRing * inwardSine + this.halfWidth) - this.halfWidth) / this.rightRing);
@@ -144,21 +140,18 @@ export class OnscreenGamepadLayout {
 		this.rightOuter = Math.asin((this.faceRadius + this.margin - SHOULDER_PAINT_RADIUS - this.halfWidth) / this.rightRing);
 		this.leftSplit = (this.leftInner - this.leftOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
 		this.rightSplit = (this.rightInner - this.rightOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
-		this.topReach = Math.max(this.leftRing * Math.cos(Math.max(0, this.leftGap - Math.abs(this.leftSplit))),
+		this.shoulderReach = Math.max(this.leftRing * Math.cos(Math.max(0, this.leftGap - Math.abs(this.leftSplit))),
 			this.rightRing * Math.cos(Math.max(0, this.rightGap - Math.abs(this.rightSplit)))) + this.halfWidth;
-		this.portraitTopReach = this.topReach + PAINT_CLEARANCE;
-		this.portraitDeckHeight = this.portraitTopReach + this.utilityDrop + this.menuSize / 2 + this.bottom;
 	}
 
 	/** Circle-to-circle utility clearance uses each authored bank's actual size. */
-	private measureHandClearances(): void {
+	private measureHandClearances(buttonOffset: number, buttonRadius: number): void {
 		this.padRadius = this.padSize / 2;
 		this.faceRadius = this.faceWidth * this.faceScale / 2;
 		this.primaryRadius = Math.max(this.padRadius, this.faceHeight * this.faceScale / 2);
 		const pairHalf = (this.clickSize / 2 + this.menuSize / 2 + this.gap) / 2;
 		const menuRadius = this.menuSize / 2;
-		this.utilityDrop = Math.max(Math.sqrt((this.padRadius + menuRadius + this.gap) ** 2 - pairHalf ** 2),
-			(this.bottomButtonY - this.faceHeight / 2) * this.faceScale - this.faceRise
-				+ Math.sqrt((this.bottomButtonRadius * this.faceScale + menuRadius + this.gap) ** 2 - pairHalf ** 2));
+		this.utilityReach = Math.max(Math.sqrt((this.padRadius + menuRadius + this.gap) ** 2 - pairHalf ** 2),
+			buttonOffset * this.faceScale + Math.sqrt((buttonRadius * this.faceScale + menuRadius + this.gap) ** 2 - pairHalf ** 2));
 	}
 }

@@ -2,7 +2,7 @@ import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/device
 import { OnscreenActionBank, type BrowserOnscreenGamepad, type OnscreenActionGeometry, type OnscreenGamepadGeometry, type OnscreenDirectionalMode } from './onscreen_gamepad';
 import type { BrowserInputDiagnostics } from './input_trace_contract';
 import { layoutShoulderOutline } from './onscreen_control_shapes';
-import { OnscreenGamepadLayout, CONTROL_GAP, PAINT_CLEARANCE, PORTRAIT_SHOULDER_RADIUS, type OnscreenGamepadLayoutProfile } from './onscreen_gamepad_layout';
+import { OnscreenGamepadLayout, CONTROL_GAP, PAINT_CLEARANCE, type OnscreenGamepadLayoutProfile } from './onscreen_gamepad_layout';
 
 const enum ActionSurfaceIndex { Face, Select, Start, LeftStick, RightStick, LeftBumper, RightBumper, LeftTrigger, RightTrigger }
 
@@ -133,7 +133,9 @@ export class BrowserOnscreenGamepadView {
 		}
 		const face = this.actionSurfaces[ActionSurfaceIndex.Face];
 		const bottomButton = this.nominalActions[0];
-		this.metrics = new OnscreenGamepadLayout(face.artworkWidth, face.artworkHeight, bottomButton.y, bottomButton.radius);
+		const topButton = this.nominalActions[3];
+		this.metrics = new OnscreenGamepadLayout(face.artworkWidth, face.artworkHeight,
+			bottomButton.y, bottomButton.radius, topButton.y, topButton.radius);
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 		this.scheduleRender();
 	}
@@ -171,11 +173,12 @@ export class BrowserOnscreenGamepadView {
 		const primaryRadius = metrics.primaryRadius;
 		const allocatedDeckTop = portraitDeckTop === undefined ? top + height - metrics.portraitDeckHeight : portraitDeckTop;
 		const primaryY = overlay
-			? top + Math.max(PAINT_CLEARANCE + metrics.topReach,
+			? top + Math.max(PAINT_CLEARANCE + metrics.shoulderReach,
 				Math.min(height / 2, height - PAINT_CLEARANCE - primaryRadius))
 			: allocatedDeckTop + metrics.portraitTopReach;
-		const menuY = overlay ? Math.min(primaryY + metrics.utilityDrop, top + height - PAINT_CLEARANCE - menuSize / 2)
-			: primaryY + metrics.utilityDrop;
+		const menuY = phonePortrait ? primaryY - metrics.utilityReach
+			: overlay ? Math.min(primaryY + metrics.utilityReach, top + height - PAINT_CLEARANCE - menuSize / 2)
+				: primaryY + metrics.utilityReach;
 		const padLeft = left + margin;
 		const padTop = primaryY - this.nominalPadY * padScale;
 		const padX = padLeft + this.nominalPadX * padScale;
@@ -183,7 +186,7 @@ export class BrowserOnscreenGamepadView {
 		const padRadius = this.nominalPadRadius * padScale;
 		const faceLeft = left + width - margin - faceSurface.artworkWidth * faceScale;
 		const faceCenterX = faceLeft + faceSurface.artworkWidth * faceScale / 2;
-		const faceCenterY = primaryY - metrics.faceRise;
+		const faceCenterY = primaryY;
 		const faceTop = faceCenterY - faceSurface.artworkHeight * faceScale / 2;
 		this.padSurface.style.left = '0px';
 		this.padSurface.style.top = '0px';
@@ -207,13 +210,13 @@ export class BrowserOnscreenGamepadView {
 		const leftOuterRoom = padX - left - clickRadius - PAINT_CLEARANCE;
 		const leftClickX = leftClickOffset <= leftOuterRoom ? padX - leftClickOffset : padX + leftClickOffset;
 		const selectX = leftClickOffset <= leftOuterRoom ? padX + leftSelectOffset : leftClickX + pairSpacing;
-		const a = this.nominalActions[0];
-		const aOffset = (a.y - faceSurface.artworkHeight / 2) * faceScale - metrics.faceRise;
-		const aRadius = a.radius * faceScale;
+		const utilityFaceButton = this.nominalActions[phonePortrait ? 3 : 0];
+		const buttonOffset = (utilityFaceButton.y - faceSurface.artworkHeight / 2) * faceScale;
+		const buttonRadius = utilityFaceButton.radius * faceScale;
 		const startOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(aRadius + menuRadius + metrics.gap) ** 2 - (utilityDY - aOffset) ** 2)));
+			(buttonRadius + menuRadius + metrics.gap) ** 2 - (utilityDY - buttonOffset) ** 2)));
 		const rightClickOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(aRadius + clickRadius + metrics.gap) ** 2 - (utilityDY - aOffset) ** 2)));
+			(buttonRadius + clickRadius + metrics.gap) ** 2 - (utilityDY - buttonOffset) ** 2)));
 		const rightOuterRoom = left + width - faceCenterX - clickRadius - PAINT_CLEARANCE;
 		const rightClickX = rightClickOffset <= rightOuterRoom ? faceCenterX + rightClickOffset : faceCenterX - rightClickOffset;
 		const startX = rightClickOffset <= rightOuterRoom ? faceCenterX - startOffset : rightClickX - pairSpacing;
@@ -225,41 +228,23 @@ export class BrowserOnscreenGamepadView {
 			leftClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
 			rightClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
-		// Gameplay puts the easier bumper on the outer/top part of one ring
-		// and the trigger inward. No full outer flank displaces the primary bank.
+		// Bumpers occupy each ring's outer half, triggers its inner half. Phone
+		// portrait wraps below the hand; wider layouts keep their upper rings.
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
 		const halfWidth = metrics.halfWidth;
 		const leftShoulderRadius = metrics.leftRing;
 		const rightShoulderRadius = metrics.rightRing;
 		if (phonePortrait) {
-			const leftWidth = metrics.leftShoulderWidth;
-			const rightWidth = metrics.rightShoulderWidth;
-			const leftAngle = metrics.leftShoulderHalfAngle;
-			const rightAngle = metrics.rightShoulderHalfAngle;
-			const centerY = allocatedDeckTop + halfWidth + PORTRAIT_SHOULDER_RADIUS;
-			const upward = -Math.PI / 2;
-			const bumperX = left + margin + leftWidth / 2;
-			const triggerX = left + margin + leftWidth * 1.5 + CONTROL_GAP;
-			// The inward end caps of these convex arcs face the smaller pad disk.
-			// Align each from that disk, not the taller face bank, retaining the
-			// same physical clearance and a genuine thumb-width bridge for both.
-			// Right shoulders retain their larger Y-button clearance.
-			const capReach = PORTRAIT_SHOULDER_RADIUS * Math.sin(leftAngle);
-			const bumperCapOffset = Math.abs(padX - bumperX) - capReach;
-			const triggerCapOffset = Math.abs(padX - triggerX) - capReach;
-			const capHeight = PORTRAIT_SHOULDER_RADIUS * Math.cos(leftAngle);
-			const capDistanceSquared = (padRadius + halfWidth + CONTROL_GAP) ** 2;
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper, bumperX,
-				padY + capHeight - Math.sqrt(capDistanceSquared - bumperCapOffset ** 2),
-				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - leftAngle, upward + leftAngle);
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, triggerX,
-				padY + capHeight - Math.sqrt(capDistanceSquared - triggerCapOffset ** 2),
-				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - leftAngle, upward + leftAngle);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper, left + metrics.width - margin - rightWidth / 2, centerY,
-				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - rightAngle, upward + rightAngle);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger, left + metrics.width - margin - rightWidth * 1.5 - CONTROL_GAP, centerY,
-				PORTRAIT_SHOULDER_RADIUS, halfWidth, upward - rightAngle, upward + rightAngle);
+			const downward = Math.PI / 2;
+			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
+				leftShoulderRadius, halfWidth, downward - metrics.leftSplit + metrics.leftGap, downward + metrics.leftOuter);
+			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, downward - metrics.rightOuter, downward + metrics.rightSplit - metrics.rightGap);
+			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
+				leftShoulderRadius, halfWidth, downward - metrics.leftInner, downward - metrics.leftSplit - metrics.leftGap);
+			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
+				rightShoulderRadius, halfWidth, downward + metrics.rightSplit + metrics.rightGap, downward + metrics.rightInner);
 		} else {
 			const upward = -Math.PI / 2;
 			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
@@ -271,9 +256,10 @@ export class BrowserOnscreenGamepadView {
 			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, faceCenterY,
 				rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightSplit - metrics.rightGap);
 		}
-		// Shoulder paths already use CSS-client units (their SVG scale is 1).
-		// Scale their labels with the controller just like the other artwork.
-		for (const label of this.shoulderLabels) label.style.fontSize = `${13 * viewportScale}px`;
+		// Phone shoulders retain physical target and caption sizes independently
+		// of the face bank. Overlay captions retain their existing quiet scale.
+		const shoulderLabelSize = 13 * (phonePortrait ? 1 : viewportScale);
+		for (const label of this.shoulderLabels) label.style.fontSize = `${shoulderLabelSize}px`;
 		this.portraitControlTop = overlay ? null : allocatedDeckTop - CONTROL_GAP;
 		const geometry = this.geometry;
 		geometry.padX = padX;

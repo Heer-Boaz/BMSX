@@ -231,8 +231,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		const dx = points.select.x - points.pad.x;
 		const dy = points.select.y - points.pad.y;
 		const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
-		const capturedDirection = (angle >= Math.PI / 6 ? dy < 0 ? 0x1000 : 0x2000 : 0)
-			| (angle <= Math.PI / 3 ? dx < 0 ? 0x4000 : 0x8000 : 0);
+		const capturedDirection = (angle >= 35 * Math.PI / 180 ? dy < 0 ? 0x1000 : 0x2000 : 0)
+			| (angle <= 55 * Math.PI / 180 ? dx < 0 ? 0x4000 : 0x8000 : 0);
 		await assertWord(capturedDirection, 0); // Captured direction cannot become SELECT or canvas input.
 		await touch('touchStart', [{ id: points.pad.id, x: points.select.x, y: points.select.y, radiusX: 14, radiusY: 14 }, points.select]);
 		const state = await poll();
