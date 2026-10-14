@@ -37,11 +37,13 @@ async function fixture(t: TestContext) {
 	const system = Buffer.from([1, 2, 3, 4]);
 	await writeFile(join(artifactDir, 'cart.rom'), cart);
 	await writeFile(join(artifactDir, 'system/bios.rom'), system);
+	await writeFile(join(artifactDir, 'system/bios.rom.blua32-symbols'), 'build tooling');
 	const artifact: RomArtifact = {
 		id, target: 'cart',
 		system: { key: 'system', name: 'bios', inputs: 'system-inputs',
 			recipe: { domain: 'system', debug: false, optLevel: 3, projectRoot: 'machine/bios', toolchain: 'test' },
-			outputs: [{ file: 'system/bios.rom', digest: createHash('sha256').update(system).digest('hex') }] },
+			outputs: [{ file: 'system/bios.rom', digest: createHash('sha256').update(system).digest('hex') },
+				{ file: 'system/bios.rom.blua32-symbols', digest: createHash('sha256').update('build tooling').digest('hex') }] },
 		cart: { key: 'cart', name: 'cart', inputs: 'cart-inputs',
 			recipe: { domain: 'cart', debug: false, optLevel: 3, projectRoot: 'carts/cart', toolchain: 'test' },
 			outputs: [{ file: 'cart.rom', digest: createHash('sha256').update(cart).digest('hex') }] },
@@ -100,5 +102,31 @@ for (const split of [false, true]) {
 			assert.equal(createHash('sha256').update(await readFile(join(output, selected.file))).digest('hex'), selected.digest);
 		}
 		if (split) assert.deepEqual((await readdir(output)).sort(), ['bmsx_icon.png', 'engine.js', 'index.html', PLAYER_MANIFEST, 'package.json'].sort());
+		assert.deepEqual(await readdir(join(media, 'system')), ['bios.rom']);
 	});
 }
+
+test('pushed media commits only this package\'s ROMs and is idempotent', async t => {
+	const { root, id, args } = await fixture(t);
+	const remote = join(root, 'remote.git'), pages = join(root, 'pages');
+	const git = (...command: string[]) => run('git', ['-C', pages, ...command]);
+	await run('git', ['init', '--quiet', '--bare', remote]);
+	await run('git', ['clone', '--quiet', remote, pages]);
+	await git('config', 'user.name', 'Test');
+	await git('config', 'user.email', 'test@example.invalid');
+	await writeFile(join(pages, 'index.html'), 'old root');
+	await git('add', 'index.html');
+	await git('commit', '--quiet', '--message', 'root');
+	await git('push', '--quiet', '--set-upstream', 'origin', 'HEAD');
+	await writeFile(join(pages, 'index.html'), 'unrelated local edit');
+	const media = join(pages, 'bmsx-media', id);
+	const publish = (output: string) => run(process.execPath, [...args, '--output-dir', join(root, output),
+		'--media-base-url', `https://media.example/bmsx-media/${id}/`, '--media-output-dir', media, '--push-media']);
+	assert.match((await publish('first')).stdout, /pushed/);
+	const published = (await run('git', ['-C', remote, 'ls-tree', '-r', '--name-only', 'HEAD'])).stdout.trim().split('\n');
+	assert.deepEqual(published, [`bmsx-media/${id}/cart.rom`, `bmsx-media/${id}/system/bios.rom`, 'index.html']);
+	assert.equal((await run('git', ['-C', remote, 'show', 'HEAD:index.html'])).stdout, 'old root');
+	assert.match((await git('status', '--porcelain')).stdout, /^ M index\.html$/m);
+	assert.match((await publish('second')).stdout, /unchanged/);
+	assert.equal((await run('git', ['-C', remote, 'rev-list', '--count', 'HEAD'])).stdout.trim(), '2');
+});

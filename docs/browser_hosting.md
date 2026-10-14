@@ -55,11 +55,15 @@ npm run deploy:browser -- \
 
 Repeat with `game=nemesis_s` and its own artifact ID. Player package destinations
 must be new/empty. The media's content-addressed directories never replace a
-previous game's ROM or BIOS. Publish only the newly selected `bmsx-media/<id>`
-directories to GitHub Pages and wait for their deployment before publishing the
-player. Only the `.rom` files are needed publicly; the exported BIOS symbol and
-import sidecars are build tooling, not browser downloads. Do not commit
-unrelated changes in that checkout.
+previous game's ROM or BIOS. Media export writes only the two `.rom` files; BIOS
+symbol and import sidecars are build tooling and stay in the artifact store.
+
+Add `--push-media` to commit and push that package's two ROMs in the media
+output's git checkout, one game per invocation. The commit contains only those
+paths; unrelated edits in the checkout stay uncommitted. Media that is already
+committed is reported as `unchanged`. Unpushed commits in the checkout stop the
+push instead of being published with it. Waiting for GitHub Pages and the Azure
+deployment remain separate steps.
 
 ```sh
 cp deploy/azure/index.html deploy/azure/staticwebapp.config.json "$site/"

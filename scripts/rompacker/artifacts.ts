@@ -43,9 +43,10 @@ export class RomArtifactStore {
 		}
 	}
 
-	public async export(artifact: RomArtifact, outputDirectory: string): Promise<void> {
+	public async export(artifact: RomArtifact, outputDirectory: string, include: (file: string) => boolean = () => true): Promise<void> {
 		for (const unit of artifact.cart === undefined ? [artifact.system] : [artifact.system, artifact.cart]) {
 			for (const output of unit.outputs) {
+				if (!include(output.file)) continue;
 				const destination = join(outputDirectory, output.file);
 				try { if (await this.digest(destination) === output.digest) continue; }
 				catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
