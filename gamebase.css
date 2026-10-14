@@ -3,7 +3,7 @@
  * this stylesheet owns presentation. Optional input-trace UI owns its own CSS.
  *
  * Layers inside the fixed player-surface stacking context:
- *   0 canvas, 2 controls, 1000 boot mask, 1001 boot messages, 11000 keyboard.
+ *   0 canvas, 2 controls, 3 host commands, 1000 boot mask, 1001 boot messages, 11000 keyboard.
  * The optional trace is a body sibling at 10000. While the keyboard is visible,
  * the whole player-surface context rises to 11000 so it can receive touches
  * above that trace; the keyboard's child z-index alone cannot do this.
@@ -241,6 +241,41 @@ html {
 .auxiliary-label { font-size: 12px; }
 .shoulder-label { font-size: 13px; }
 .menu-label { font-size: 10px; letter-spacing: 0.1px; }
+
+/* Host commands use native buttons, never virtual guest gamepad contributions. */
+.host-control-surface {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 44px;
+	height: 44px;
+	box-sizing: border-box;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border: 1.25px solid rgba(232, 240, 247, 0.30);
+	border-radius: 50%;
+	background: transparent;
+	color: rgba(232, 240, 247, 0.44);
+	z-index: 3;
+	pointer-events: auto;
+	touch-action: none;
+	-webkit-appearance: none;
+	appearance: none;
+}
+.host-control-surface[hidden] { display: none; }
+.host-control-surface svg {
+	display: block;
+	width: 55%;
+	height: 55%;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.75;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	pointer-events: none;
+}
+.host-control-surface[aria-pressed="true"] { border-color: #e2f7ff; color: #e2f7ff; }
 
 /* Touch keyboard: packaged structure, runtime state and labels only. */
 

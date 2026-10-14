@@ -5001,25 +5001,32 @@ targets the landscape middle hand row and fits asymmetric same-ring shoulders
 inside the available reach. Shoulder envelopes never push the primary groups
 inward. Landscape bumpers use the larger outward/topward segments; triggers use inward
 segments. `onscreen_gamepad_layout.ts` owns the retained numerical layout family,
-intrinsic deck measure and physical target budgets. Phone portrait, below a
-600 CSS-pixel safe-player width, has independently sized thumb banks: the pad
+intrinsic deck measure and physical target budgets. Phone portrait, from 300 to
+599 CSS pixels of safe-player width, has independently sized thumb banks: the pad
 caps at 180px, equal face buttons at 80px, stick clicks stay 44px and menu buttons
 48px. Width determines the two hand lanes, not one global scale; viewport height
-does not grow the controls. Both primary hands align. Each shoulder pair wraps
-around the lower rim of its own hand bank, in adjacent segments of one circle
+does not grow the controls. Both primary hands align. As in landscape, each
+shoulder pair wraps above its own hand bank in adjacent segments of one circle
 with at least 44px thickness: bumpers are outward and triggers inward. The
-hand-side LS/SELECT and START/RS pairs sit above the primary controls instead
-of a lower utility footer. The left shoulder arcs retain 12 CSS pixels of real
-surface clearance from the pad, so one thumb can roll downward into a genuine
-direction/shoulder chord. Face/shoulder bank ownership remains distinct near A;
+hand-side footer orders keyboard/LS/SELECT on the left and START/RS/settings on
+the right, anchored to their respective safe edges. Host icons retain the stick
+click's target size. Footer spacing is width-derived, up to the normal control
+gap (8px on a 320px phone), rather than adding another row or shrinking targets.
+The left shoulder arcs retain 12 CSS pixels of real surface clearance from the
+pad, so one thumb can roll upward into a genuine direction/shoulder chord.
+Face/shoulder bank ownership remains distinct near Y;
 geometry never indiscriminately unions the two banks. The same finite arc
-budgets author upper wide rings and lower phone rings, including round caps,
-paint bounds, inter-hand gaps and matching SVG/hit surfaces. Utility clearance
-consumes the actual template Y circle above phone controls and A circle below
-wider controls, not a guessed mirrored position. Phone shoulder captions retain
+budgets author all upper rings, including round caps, paint bounds, inter-hand
+gaps and matching SVG/hit surfaces. Utility clearance consumes every footer
+circle and the actual template A circle below the face bank. Overlay scale is
+bounded by the complete upper-ring/primary/footer envelope, including the
+shoulder's minimum thickness, before arranging either bank. Short players do
+not repair an incomplete height budget by shifting footer groups into each
+other or moving individual buttons. Phone shoulder captions retain
 their physical size independently of the face-bank scale.
 Wide portrait uses landscape's aligned primary banks and wrapping shoulder
-rings, still in a measured lower deck below top-aligned video. When either
+rings, still in a measured lower deck below top-aligned video. Below the 300px
+six-target footer width, or when either
 portrait deck cannot leave at least a half-width 4:3 picture plus the 12px gap,
 the layout owner selects a compact full-frame overlay instead of reserving a
 negative/tiny video slot. That constrained embedded-player profile uses smaller
@@ -5027,6 +5034,16 @@ ring targets; the fixed phone minima apply to the phone-deck profile, not every
 possible player size. The final profile
 owns both arrange and video reservation; video does not reclassify orientation.
 LS/SELECT and START/RS belong to their hand-side groups, not a center footer.
+The keyboard and settings icons are static native buttons in `gamebase.html`,
+styled by `gamebase.css` and positioned by the same layout owner. They are not
+guest controller inputs. `BrowserHostControls` retains independent native
+contact leases; the input hub admits them before gamepad/canvas contacts.
+Successful inside release requests the host action once per overlapping-finger
+group; cancel, hidden controls and keyboard-obscured contacts never activate.
+Moves use retained contact bounds rather than DOM reads. Both direct actions
+and physical shortcuts request transitions through `HostOverlayMenu` at its
+ordinary input tick, preserving keyboard focus and execution ownership without
+synthetic Select/Start chords or guest key events.
 Transparent control interiors retain the scene; restrained translucent contours
 and smaller medium-weight labels use only a thin contrast stroke. Held labels
 and contours brighten without changing target size or painting an opaque fill.

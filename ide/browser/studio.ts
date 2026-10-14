@@ -31,6 +31,7 @@ import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
 import { BrowserOnscreenKeyboard } from '../../hosts/browser/onscreen_keyboard';
+import { BrowserHostControls } from '../../hosts/browser/host_controls';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
 import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
@@ -108,6 +109,9 @@ async function startBrowserStudio(): Promise<void> {
 			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
 		));
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		options.browserInput.setHostControls(new BrowserHostControls(
+			document, hostOverlayMenu.requestToggleKeyboard, hostOverlayMenu.requestToggleMenu,
+		));
 		const workspace = configuration.workspace;
 		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
 		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));

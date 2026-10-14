@@ -201,6 +201,8 @@ const enum HostOverlayPage {
 	Rewind,
 }
 
+const enum HostOverlayRequest { None, ToggleMenu, ToggleKeyboard }
+
 export const enum HostOverlayOutcome { Cancel, Accept, Discard, Retain }
 
 function boolIndex(value: boolean): number {
@@ -293,7 +295,7 @@ export class HostOverlayMenu {
 	private fpsTextWidth = 0;
 	private showFps = false;
 	private controllerPortRevision = -1;
-	private onScreenKeyboardShortcutRequested = false;
+	private pendingRequest = HostOverlayRequest.None;
 	private remapPlayerIndex = 1;
 	private rootSelection = 0;
 	private readonly rootOptions: HostMenuOption[] = [
@@ -442,12 +444,12 @@ export class HostOverlayMenu {
 			shortcuts.registerControlShortcut(
 				playerIndex,
 				HOST_MENU_BUTTON,
-				() => this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed),
+				this.requestToggleMenu,
 			);
 			shortcuts.registerControlShortcut(
 				playerIndex,
 				HOST_ON_SCREEN_KEYBOARD_BUTTON,
-				() => { this.onScreenKeyboardShortcutRequested = true; },
+				this.requestToggleKeyboard,
 			);
 		}
 		const optionCapacity = Math.max(
@@ -484,9 +486,16 @@ export class HostOverlayMenu {
 			&& this.keyboardView.containsPoint(this.pointerCapturePoint.x, this.pointerCapturePoint.y);
 	};
 
+	/** Host frontends and physical shortcuts enter the same frame-boundary transition. */
+	public readonly requestToggleMenu = (): void => { this.pendingRequest = HostOverlayRequest.ToggleMenu; };
+	public readonly requestToggleKeyboard = (): void => { this.pendingRequest = HostOverlayRequest.ToggleKeyboard; };
+
 	public tickInput(): HostMenuInput {
-		if (this.onScreenKeyboardShortcutRequested) {
-			this.onScreenKeyboardShortcutRequested = false;
+		const request = this.pendingRequest;
+		this.pendingRequest = HostOverlayRequest.None;
+		if (request === HostOverlayRequest.ToggleMenu) {
+			this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed);
+		} else if (request === HostOverlayRequest.ToggleKeyboard) {
 			this.transitionTo(this.page === HostOverlayPage.Keyboard ? HostOverlayPage.Closed : HostOverlayPage.Keyboard);
 		}
 		const currentTimeMs = this.input.getPlayerInput(1).pollTimestampMs;

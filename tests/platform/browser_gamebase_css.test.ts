@@ -18,6 +18,7 @@ test('gamebase CSS preserves boot, control and keyboard presentation across play
 		.replace(/@@BMSX_[A-Z_]+@@/g, '');
 	const bundle = await build({
 		stdin: { contents: `export { BrowserOnscreenKeyboard } from './hosts/browser/onscreen_keyboard';
+export { BrowserHostControls } from './hosts/browser/host_controls';
 export { BROWSER_KEYBOARD_PAGES } from './hosts/browser/onscreen_keyboard_layout';
 export { OnScreenKeyboard } from './hosts/common/input/on_screen_keyboard';
 export { BrowserInputHub } from './hosts/browser/input';
@@ -58,6 +59,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		assert.equal(await page.locator('#gamescreen').isVisible(), false);
 		assert.equal(await page.locator('#bmsx-touch-keyboard').isVisible(), false);
 		assert.equal(await page.locator('.control-surface:visible').count(), 0);
+		assert.equal(await page.locator('.host-control-surface:visible').count(), 0, 'host-only icons remain hidden during the boot presentation');
 		const boot = await page.evaluate(() => {
 			const image = document.getElementById('msx')!;
 			image.className = 'enter'; image.hidden = false;
@@ -90,13 +92,14 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			const video = new api.BrowserVideoOutput(canvas, gamepadView, 'overscan');
 			video.refreshLayout();
 			const hub = new api.BrowserInputHub(canvas, surface, clock, pad, 'F2');
+			hub.setHostControls(new api.BrowserHostControls(document, () => {}, () => {}));
 			const input = new api.Input(clock, hub, pad.gamepadIndex);
 			const keyboard = new api.OnScreenKeyboard(input, api.BROWSER_KEYBOARD_PAGES);
 			const keyboardView = new api.BrowserOnscreenKeyboard(document, keyboard, () => keyboard.close());
 			hub.setOnscreenKeyboard(keyboardView);
 			(globalThis as any).cssProbe = { pad, keyboard, video, input,
 				frame() { input.pollInput(); keyboard.updateFeedback(clock.now()); },
-				measure() { return [...document.querySelectorAll('#gamescreen, .control-surface')].map(element => {
+				measure() { return [...document.querySelectorAll('#gamescreen, .control-surface, .host-control-surface')].map(element => {
 					const bounds = element.getBoundingClientRect();
 					return { id: element.id, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
 				}); } };
@@ -105,6 +108,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		const settle = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 		await settle();
 		const geometry = await page.evaluate(() => (globalThis as any).cssProbe.measure());
+		assert.equal(await page.locator('.host-control-surface:visible').count(), 2);
 		const canvas = geometry.find((entry: { id: string }) => entry.id === 'gamescreen');
 		assert.ok(Math.abs(canvas.width / canvas.height - 4 / 3) < 0.001);
 		const surfaceBounds = (await page.locator('#player-surface').boundingBox())!;
@@ -124,6 +128,19 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 			pixelated: getComputedStyle(document.getElementById('gamescreen')!).imageRendering,
 		}));
 		assert.deepEqual(interaction, { page: 'manipulation', surface: 'none', canvas: 'none', artwork: 'none', selectedText: 'none', pixelated: 'pixelated' });
+		const hostIdle = await page.locator('#host-menu-control').evaluate(element => ({ border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+			background: getComputedStyle(element).backgroundColor, bounds: element.getBoundingClientRect().toJSON() }));
+		assert.equal(hostIdle.background, 'rgba(0, 0, 0, 0)');
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1,
+			x: hostIdle.bounds.x + hostIdle.bounds.width / 2, y: hostIdle.bounds.y + hostIdle.bounds.height / 2, radiusX: 3, radiusY: 3 }] });
+		await settle();
+		const hostHeld = await page.locator('#host-menu-control').evaluate(element => ({ border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+			pressed: element.getAttribute('aria-pressed'), bounds: element.getBoundingClientRect().toJSON() }));
+		assert.equal(hostHeld.pressed, 'true');
+		assert.notEqual(hostHeld.border, hostIdle.border); assert.notEqual(hostHeld.color, hostIdle.color);
+		assert.deepEqual(hostHeld.bounds, hostIdle.bounds, 'host press acknowledgement does not change target geometry');
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		assert.equal(await page.locator('#host-menu-control').getAttribute('aria-pressed'), 'false');
 		const idle = await page.locator('#a_knop').evaluate(element => ({ stroke: getComputedStyle(element).stroke, width: getComputedStyle(element).strokeWidth }));
 		await page.evaluate(() => {
 			const a = document.getElementById('a_knop')!.getBoundingClientRect();
@@ -141,6 +158,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		await page.evaluate(() => { const probe = (globalThis as any).cssProbe; probe.pad.endContact(1); probe.pad.endContact(2); probe.keyboard.open(); });
 		await settle();
 		assert.equal(await page.locator('#controller-viewport').evaluate(element => getComputedStyle(element).visibility), 'hidden');
+		assert.equal(await page.locator('.host-control-surface:visible').count(), 0, 'touch keyboard foreground hides both host-only corner icons with the gamepad');
 		assert.deepEqual(await page.evaluate(() => (globalThis as any).cssProbe.measure()), geometry, 'keyboard foreground does not rescale the underlying picture or controls');
 		for (let selectedPage = 0; selectedPage < BROWSER_KEYBOARD_PAGES.length; selectedPage++) {
 			await page.evaluate(index => (globalThis as any).cssProbe.keyboard.setPage(index), selectedPage);
@@ -205,6 +223,7 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		await page.evaluate(() => (globalThis as any).cssProbe.keyboard.close()); await settle();
 		assert.equal(await page.locator('#bmsx-touch-keyboard').isVisible(), false);
 		assert.equal(await page.locator('#controller-viewport').evaluate(element => getComputedStyle(element).visibility), 'visible');
+		assert.equal(await page.locator('.host-control-surface:visible').count(), 2, 'closing the keyboard restores the existing host-only corner geometry');
 		if (profile.name === 'short landscape') assert.equal(await page.locator('#bmsx-input-trace summary').evaluate(element => {
 			const bounds = element.getBoundingClientRect();
 			return document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === element;

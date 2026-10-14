@@ -43,6 +43,8 @@ interface ActionSurface {
 /** Passive controller artwork and its authored numerical layout. */
 export class BrowserOnscreenGamepadView {
 	private readonly padSurface: HTMLElement;
+	private readonly hostKeyboardControl: HTMLButtonElement;
+	private readonly hostMenuControl: HTMLButtonElement;
 	private readonly actionSurfaces: ActionSurface[] = [];
 	private readonly padArtworkWidth: number;
 	private readonly padArtworkHeight: number;
@@ -87,6 +89,8 @@ export class BrowserOnscreenGamepadView {
 	) {
 		this.layoutObserver = window.bmsxInputTrace;
 		this.padSurface = document.getElementById('d-pad-controls');
+		this.hostKeyboardControl = document.getElementById('host-keyboard-control') as HTMLButtonElement;
+		this.hostMenuControl = document.getElementById('host-menu-control') as HTMLButtonElement;
 		this.padArtwork = document.getElementById('d-pad-artwork') as unknown as SVGGElement;
 		this.stickArtwork = document.getElementById('left-stick-artwork') as unknown as SVGGElement;
 		this.stickTip = document.getElementById('left-stick-tip') as unknown as SVGCircleElement;
@@ -133,9 +137,8 @@ export class BrowserOnscreenGamepadView {
 		}
 		const face = this.actionSurfaces[ActionSurfaceIndex.Face];
 		const bottomButton = this.nominalActions[0];
-		const topButton = this.nominalActions[3];
 		this.metrics = new OnscreenGamepadLayout(face.artworkWidth, face.artworkHeight,
-			bottomButton.y, bottomButton.radius, topButton.y, topButton.radius);
+			bottomButton.y, bottomButton.radius);
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 		this.scheduleRender();
 	}
@@ -170,15 +173,12 @@ export class BrowserOnscreenGamepadView {
 		const faceScale = metrics.faceScale;
 		const menuSize = metrics.menuSize;
 		const clickSize = metrics.clickSize;
-		const primaryRadius = metrics.primaryRadius;
 		const allocatedDeckTop = portraitDeckTop === undefined ? top + height - metrics.portraitDeckHeight : portraitDeckTop;
 		const primaryY = overlay
 			? top + Math.max(PAINT_CLEARANCE + metrics.shoulderReach,
-				Math.min(height / 2, height - PAINT_CLEARANCE - primaryRadius))
+				Math.min(height / 2, height - PAINT_CLEARANCE - metrics.utilityReach - menuSize / 2))
 			: allocatedDeckTop + metrics.portraitTopReach;
-		const menuY = phonePortrait ? primaryY - metrics.utilityReach
-			: overlay ? Math.min(primaryY + metrics.utilityReach, top + height - PAINT_CLEARANCE - menuSize / 2)
-				: primaryY + metrics.utilityReach;
+		const menuY = primaryY + metrics.utilityReach;
 		const padLeft = left + margin;
 		const padTop = primaryY - this.nominalPadY * padScale;
 		const padX = padLeft + this.nominalPadX * padScale;
@@ -195,31 +195,10 @@ export class BrowserOnscreenGamepadView {
 		const menuArtworkWidth = this.actionSurfaces[ActionSurfaceIndex.Select].artworkWidth;
 		const menuSurfaceScale = menuSize / menuArtworkWidth;
 		const clickSurfaceScale = clickSize / this.actionSurfaces[ActionSurfaceIndex.LeftStick].artworkWidth;
-		const pairSpacing = clickSize / 2 + menuSize / 2 + metrics.gap;
-		const pairHalf = pairSpacing / 2;
-		const utilityDY = menuY - primaryY;
-		const menuRadius = menuSize / 2;
-		const clickRadius = clickSize / 2;
-		// A short viewport can compress the vertical hand deck. Retain the
-		// physical circle clearance by rolling its utility pair sideways, only
-		// when the centered below-hand pair no longer fits that actual height.
-		const leftSelectOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(padRadius + menuRadius + metrics.gap) ** 2 - utilityDY ** 2)));
-		const leftClickOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(padRadius + clickRadius + metrics.gap) ** 2 - utilityDY ** 2)));
-		const leftOuterRoom = padX - left - clickRadius - PAINT_CLEARANCE;
-		const leftClickX = leftClickOffset <= leftOuterRoom ? padX - leftClickOffset : padX + leftClickOffset;
-		const selectX = leftClickOffset <= leftOuterRoom ? padX + leftSelectOffset : leftClickX + pairSpacing;
-		const utilityFaceButton = this.nominalActions[phonePortrait ? 3 : 0];
-		const buttonOffset = (utilityFaceButton.y - faceSurface.artworkHeight / 2) * faceScale;
-		const buttonRadius = utilityFaceButton.radius * faceScale;
-		const startOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(buttonRadius + menuRadius + metrics.gap) ** 2 - (utilityDY - buttonOffset) ** 2)));
-		const rightClickOffset = Math.max(pairHalf, Math.sqrt(Math.max(0,
-			(buttonRadius + clickRadius + metrics.gap) ** 2 - (utilityDY - buttonOffset) ** 2)));
-		const rightOuterRoom = left + width - faceCenterX - clickRadius - PAINT_CLEARANCE;
-		const rightClickX = rightClickOffset <= rightOuterRoom ? faceCenterX + rightClickOffset : faceCenterX - rightClickOffset;
-		const startX = rightClickOffset <= rightOuterRoom ? faceCenterX - startOffset : rightClickX - pairSpacing;
+		const leftClickX = left + metrics.leftClickX;
+		const selectX = left + metrics.selectX;
+		const rightClickX = left + metrics.rightClickX;
+		const startX = left + metrics.startX;
 		this.placeActionSurface(ActionSurfaceIndex.Select,
 			selectX - menuSize / 2, menuY - menuSize / 2, menuSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.Start,
@@ -228,34 +207,31 @@ export class BrowserOnscreenGamepadView {
 			leftClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
 		this.placeActionSurface(ActionSurfaceIndex.RightStick,
 			rightClickX - clickSize / 2, menuY - clickSize / 2, clickSurfaceScale);
-		// Bumpers occupy each ring's outer half, triggers its inner half. Phone
-		// portrait wraps below the hand; wider layouts keep their upper rings.
+		const hostSize = metrics.hostSize;
+		this.hostKeyboardControl.style.width = `${hostSize}px`;
+		this.hostKeyboardControl.style.height = `${hostSize}px`;
+		this.hostKeyboardControl.style.transform = `translate(${left + metrics.leftHostX - hostSize / 2}px, ${menuY - hostSize / 2}px)`;
+		this.hostKeyboardControl.hidden = false;
+		this.hostMenuControl.style.width = `${hostSize}px`;
+		this.hostMenuControl.style.height = `${hostSize}px`;
+		this.hostMenuControl.style.transform = `translate(${left + metrics.rightHostX - hostSize / 2}px, ${menuY - hostSize / 2}px)`;
+		this.hostMenuControl.hidden = false;
+		// Bumpers occupy each ring's outer half, triggers its inner half, above
+		// both hand banks in portrait and landscape alike.
 		// The centerline chord between the inner round caps reserves the true
 		// gap; both halves share a center, radius and radial target thickness.
 		const halfWidth = metrics.halfWidth;
 		const leftShoulderRadius = metrics.leftRing;
 		const rightShoulderRadius = metrics.rightRing;
-		if (phonePortrait) {
-			const downward = Math.PI / 2;
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-				leftShoulderRadius, halfWidth, downward - metrics.leftSplit + metrics.leftGap, downward + metrics.leftOuter);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, downward - metrics.rightOuter, downward + metrics.rightSplit - metrics.rightGap);
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-				leftShoulderRadius, halfWidth, downward - metrics.leftInner, downward - metrics.leftSplit - metrics.leftGap);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, primaryY,
-				rightShoulderRadius, halfWidth, downward + metrics.rightSplit + metrics.rightGap, downward + metrics.rightInner);
-		} else {
-			const upward = -Math.PI / 2;
-			this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
-				leftShoulderRadius, halfWidth, upward - metrics.leftOuter, upward + metrics.leftSplit - metrics.leftGap);
-			this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, faceCenterY,
-				rightShoulderRadius, halfWidth, upward - metrics.rightSplit + metrics.rightGap, upward + metrics.rightOuter);
-			this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
-				leftShoulderRadius, halfWidth, upward + metrics.leftSplit + metrics.leftGap, upward + metrics.leftInner);
-			this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, faceCenterY,
-				rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightSplit - metrics.rightGap);
-		}
+		const upward = -Math.PI / 2;
+		this.placeShoulder(ActionSurfaceIndex.LeftBumper, padX, primaryY,
+			leftShoulderRadius, halfWidth, upward - metrics.leftOuter, upward + metrics.leftSplit - metrics.leftGap);
+		this.placeShoulder(ActionSurfaceIndex.RightBumper, faceCenterX, faceCenterY,
+			rightShoulderRadius, halfWidth, upward - metrics.rightSplit + metrics.rightGap, upward + metrics.rightOuter);
+		this.placeShoulder(ActionSurfaceIndex.LeftTrigger, padX, primaryY,
+			leftShoulderRadius, halfWidth, upward + metrics.leftSplit + metrics.leftGap, upward + metrics.leftInner);
+		this.placeShoulder(ActionSurfaceIndex.RightTrigger, faceCenterX, faceCenterY,
+			rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightSplit - metrics.rightGap);
 		// Phone shoulders retain physical target and caption sizes independently
 		// of the face bank. Overlay captions retain their existing quiet scale.
 		const shoulderLabelSize = 13 * (phonePortrait ? 1 : viewportScale);
@@ -291,6 +267,8 @@ export class BrowserOnscreenGamepadView {
 		if (this.animationFrameId) this.window.cancelAnimationFrame(this.animationFrameId);
 		this.animationFrameId = 0;
 		this.padSurface.hidden = true;
+		this.hostKeyboardControl.hidden = true;
+		this.hostMenuControl.hidden = true;
 		for (const surface of this.actionSurfaces) surface.element.hidden = true;
 	}
 

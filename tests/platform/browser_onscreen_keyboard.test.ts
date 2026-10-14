@@ -110,7 +110,9 @@ test('package expansion uses every authored HTML fragment, including the close-b
 		assert.ok(source.includes(opening));
 		source = source.replace(opening, `${opening}<!-- authored-${fragment}-probe -->`);
 	}
-	source = source.replace('<svg viewBox="0 0 24 24"', '<svg data-authored-artwork="keyboard-hide" viewBox="0 0 24 24"');
+	const closeArtwork = source.indexOf('<svg ', source.indexOf('<template data-bmsx-keyboard="close">'));
+	source = source.slice(0, closeArtwork) + source.slice(closeArtwork)
+		.replace('<svg viewBox="0 0 24 24"', '<svg data-authored-artwork="keyboard-hide" viewBox="0 0 24 24"');
 	const expanded = expandBrowserKeyboardTemplate(source);
 	const pageCount = BROWSER_KEYBOARD_PAGES.length;
 	const rowCount = BROWSER_KEYBOARD_PAGES.reduce((count, page) => count + page.rows.length, 0);
@@ -280,7 +282,10 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const measure = () => page.evaluate(() => (globalThis as any).keyboardProbe.measure());
 			const cdp = await context.newCDPSession(page);
 			const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', points: Array<{ id: number; x: number; y: number }>) => {
+				const before = type === 'touchCancel' ? await page.evaluate(() => (globalThis as any).keyboardProbe.native.length) : 0;
 				await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(point => ({ ...point, radiusX: 3, radiusY: 3 })) });
+				if (type === 'touchCancel') await page.waitForFunction(before => (globalThis as any).keyboardProbe.native.slice(before)
+					.some((event: { type: string; trusted: boolean }) => event.type === 'pointercancel' && event.trusted), before);
 			};
 			const point = async (code: string, id: number) => {
 				const bounds = await page.locator(`.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-code="${code}"]`).boundingBox();

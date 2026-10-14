@@ -13,6 +13,8 @@ const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
 const SHOULDER_PAINT_RADIUS = 1.5;
 const CONTROL_MARGIN = 4;
 const PHONE_MENU_SIZE = 48;
+// Six footer targets (44/44/48 per hand), two 4px edges and five 4px gaps.
+const MIN_PHONE_WIDTH = 300;
 // A reserved deck must leave at least a half-width 4:3 picture. Near-square
 // embedded players instead use the same full-frame overlay as landscape.
 const MIN_PORTRAIT_PICTURE_HEIGHT_PER_WIDTH = 3 / 8;
@@ -30,6 +32,14 @@ export class OnscreenGamepadLayout {
 	public gap = 0;
 	public menuSize = 0;
 	public clickSize = 0;
+	public hostSize = 0;
+	public utilityGap = 0;
+	public leftHostX = 0;
+	public leftClickX = 0;
+	public selectX = 0;
+	public startX = 0;
+	public rightClickX = 0;
+	public rightHostX = 0;
 	public padRadius = 0;
 	public faceRadius = 0;
 	public primaryRadius = 0;
@@ -54,19 +64,17 @@ export class OnscreenGamepadLayout {
 		private readonly faceHeight: number,
 		private readonly bottomButtonY: number,
 		private readonly bottomButtonRadius: number,
-		private readonly topButtonY: number,
-		private readonly topButtonRadius: number,
 	) {}
 
 	public measure(width: number, height: number): this {
 		if (this.width === width && this.height === height) return this;
 		this.width = width;
 		this.height = height;
-		this.profile = width >= height ? 'landscape' : width < WIDE_PORTRAIT_WIDTH ? 'phone-portrait' : 'wide-portrait';
-		// PPSSPP and Delta author orientation/device-family layouts, rather than
-		// fitting a landscape controller into a phone with one global scale:
-		// https://github.com/hrydgard/ppsspp/blob/61e60ee6ff650e6fa2ff9b0019bc9fbb652d7fcb/UI/GamepadEmu.cpp#L842-L965
-		// https://github.com/rileytestut/SNESDeltaCore/blob/ed3a432616bfabaa376c554f7d352958e5bfb13b/SNESDeltaCore/Controller%20Skin/info.json#L343-L673
+		this.profile = width >= height ? 'landscape' : width < MIN_PHONE_WIDTH ? 'compact-overlay'
+			: width < WIDE_PORTRAIT_WIDTH ? 'phone-portrait' : 'wide-portrait';
+		// Lemuroid's complete PSX controller keeps the same upper radial shoulder
+		// pairs in separately composed portrait and landscape hand banks:
+		// https://github.com/Swordfish90/Lemuroid/blob/93e321d08f3dc0776bb0545da975d2cd7cd1f78f/lemuroid-touchinput/src/main/java/com/swordfish/touchinput/radial/layouts/shared/Controls.kt#L25-L63
 		if (this.profile === 'phone-portrait') this.measurePhone();
 		else this.measureRing();
 		if (this.profile !== 'landscape'
@@ -78,7 +86,7 @@ export class OnscreenGamepadLayout {
 		return this;
 	}
 
-	/** Aligned phone hands, upper utilities and lower shoulder fans below the picture. */
+	/** Aligned phone hands with upper shoulder pairs and a single utility footer. */
 	private measurePhone(): void {
 		const width = this.width;
 		// A thumb-sized D-pad gets its own width budget; the equal face keys
@@ -91,13 +99,10 @@ export class OnscreenGamepadLayout {
 		this.gap = CONTROL_GAP;
 		this.halfWidth = MIN_SHOULDER_THICKNESS / 2;
 		this.bottom = 16;
-		this.measureHandClearances(this.faceHeight / 2 - this.topButtonY, this.topButtonRadius);
+		this.measureHandClearances();
 		this.measureShoulderRings();
-		// Neo-Retropad's portrait places thumb-operated shoulders below the
-		// primary banks. BMSX retains its own finite arcs and contact ownership:
-		// https://github.com/libretro/common-overlays/blob/42c21b99889468a8e77fd7f002229ec16e2f9fa2/gamepads/neo-retropad/neo-retropad.cfg#L576-L609
-		this.portraitTopReach = this.utilityReach + this.menuSize / 2;
-		this.portraitDeckHeight = this.portraitTopReach + this.shoulderReach + this.bottom;
+		this.portraitTopReach = this.shoulderReach + PAINT_CLEARANCE;
+		this.portraitDeckHeight = this.portraitTopReach + this.utilityReach + this.menuSize / 2 + this.bottom;
 	}
 
 	/** Wrapping shoulders with aligned hands for wide decks and overlay players. */
@@ -109,10 +114,21 @@ export class OnscreenGamepadLayout {
 		const halfWidth = SHOULDER_THICKNESS / 2;
 		const leftRing = padRadius + CONTROL_GAP + halfWidth;
 		const rightRing = faceRadius + CONTROL_GAP + halfWidth;
-		const topReach = Math.sqrt(rightRing ** 2 - (halfWidth + CONTROL_GAP / 2) ** 2) + halfWidth;
 		const fullWidth = 32 + padRadius + faceRadius + leftRing + rightRing + halfWidth * 2 + CONTROL_GAP;
-		const fullHeight = 32 + topReach + Math.max(PAD_SIZE, this.faceHeight) / 2;
-		this.scale = Math.min(1.1, width / fullWidth, height / fullHeight);
+		const menuRadius = MENU_SIZE / 2;
+		const utilityReach = Math.max(padRadius + menuRadius + CONTROL_GAP,
+			this.bottomButtonY - this.faceHeight / 2 + this.bottomButtonRadius + menuRadius + CONTROL_GAP);
+		// PadKit measures the complete primary/secondary footprint before choosing
+		// its scale; BMSX additionally retains a fixed minimum shoulder thickness:
+		// https://github.com/Swordfish90/PadKit/blob/99b5753818d7c8bf2398b7791bfa00b8909908b1/lib/src/commonMain/kotlin/gg/padkit/layouts/radial/LayoutRadial.kt#L75-L109
+		// Budget the complete upper ring and footer before arranging either hand.
+		// The vertical envelope is linear except for the shoulder's 44px minimum:
+		// available >= scale * verticalReach + max(44, scale * 56).
+		const verticalReach = Math.max(padRadius, faceRadius) + CONTROL_GAP + utilityReach + menuRadius;
+		const availableHeight = height - PAINT_CLEARANCE * 2;
+		this.scale = Math.min(1.1, width / fullWidth,
+			availableHeight / (verticalReach + SHOULDER_THICKNESS),
+			(availableHeight - MIN_SHOULDER_THICKNESS) / verticalReach);
 		this.padSize = PAD_SIZE * this.scale;
 		this.faceScale = this.scale;
 		this.menuSize = MENU_SIZE * this.scale;
@@ -120,13 +136,13 @@ export class OnscreenGamepadLayout {
 		this.gap = CONTROL_GAP * this.scale;
 		this.halfWidth = Math.max(MIN_SHOULDER_THICKNESS / 2, halfWidth * this.scale);
 		this.bottom = 16 * this.scale;
-		this.measureHandClearances(this.bottomButtonY - this.faceHeight / 2, this.bottomButtonRadius);
+		this.measureHandClearances();
 		this.measureShoulderRings();
 		this.portraitTopReach = this.shoulderReach + PAINT_CLEARANCE;
 		this.portraitDeckHeight = this.portraitTopReach + this.utilityReach + this.menuSize / 2 + this.bottom;
 	}
 
-	/** Both rim orientations share the same true arc, cap and hand-lane budgets. */
+	/** Both hand banks share the same true arc, cap and hand-lane budgets. */
 	private measureShoulderRings(): void {
 		this.leftRing = this.padRadius + this.gap + this.halfWidth;
 		this.rightRing = this.faceRadius + this.gap + this.halfWidth;
@@ -144,14 +160,35 @@ export class OnscreenGamepadLayout {
 			this.rightRing * Math.cos(Math.max(0, this.rightGap - Math.abs(this.rightSplit)))) + this.halfWidth;
 	}
 
-	/** Circle-to-circle utility clearance uses each authored bank's actual size. */
-	private measureHandClearances(buttonOffset: number, buttonRadius: number): void {
+	/** One footer per hand: host action, stick click and menu key, all with true circle clearance. */
+	private measureHandClearances(): void {
 		this.padRadius = this.padSize / 2;
 		this.faceRadius = this.faceWidth * this.faceScale / 2;
 		this.primaryRadius = Math.max(this.padRadius, this.faceHeight * this.faceScale / 2);
-		const pairHalf = (this.clickSize / 2 + this.menuSize / 2 + this.gap) / 2;
+		this.hostSize = this.clickSize;
+		this.utilityGap = Math.min(this.gap,
+			(this.width - this.margin * 2 - 2 * (this.hostSize + this.clickSize + this.menuSize)) / 5);
+		const hostRadius = this.hostSize / 2;
+		const clickRadius = this.clickSize / 2;
 		const menuRadius = this.menuSize / 2;
-		this.utilityReach = Math.max(Math.sqrt((this.padRadius + menuRadius + this.gap) ** 2 - pairHalf ** 2),
-			buttonOffset * this.faceScale + Math.sqrt((buttonRadius * this.faceScale + menuRadius + this.gap) ** 2 - pairHalf ** 2));
+		this.leftHostX = this.margin + hostRadius;
+		this.leftClickX = this.leftHostX + hostRadius + this.utilityGap + clickRadius;
+		this.selectX = this.leftClickX + clickRadius + this.utilityGap + menuRadius;
+		this.rightHostX = this.width - this.leftHostX;
+		this.rightClickX = this.width - this.leftClickX;
+		this.startX = this.width - this.selectX;
+		const padX = this.margin + this.padRadius;
+		const faceX = this.width - this.margin - this.faceRadius;
+		const buttonOffset = (this.bottomButtonY - this.faceHeight / 2) * this.faceScale;
+		const buttonRadius = this.bottomButtonRadius * this.faceScale;
+		this.utilityReach = 0;
+		for (let index = 0; index < 3; index += 1) {
+			const radius = index === 0 ? hostRadius : index === 1 ? clickRadius : menuRadius;
+			const leftX = index === 0 ? this.leftHostX : index === 1 ? this.leftClickX : this.selectX;
+			const rightX = this.width - leftX;
+			this.utilityReach = Math.max(this.utilityReach,
+				Math.sqrt(Math.max(0, (this.padRadius + radius + this.gap) ** 2 - (leftX - padX) ** 2)),
+				buttonOffset + Math.sqrt(Math.max(0, (buttonRadius + radius + this.gap) ** 2 - (rightX - faceX) ** 2)));
+		}
 	}
 }

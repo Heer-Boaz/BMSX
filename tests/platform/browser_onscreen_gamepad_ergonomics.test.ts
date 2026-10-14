@@ -36,6 +36,8 @@ const profiles: readonly {
 	{ name: 'small-landscape-height-boundary-below', width: 568, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
 	{ name: 'small-wide-landscape-height-boundary-below', width: 852, height: 238, insets: [0, 0, 0, 0], screenshot: false, smallPlayer: true },
 	{ name: 'compact-portrait', width: 320, height: 568, insets: [0, 0, 0, 0], screenshot: true },
+	{ name: 'phone-footer-width-boundary-below', width: 299, height: 852, insets: [0, 0, 0, 0], screenshot: true, layoutProfile: 'compact-overlay' },
+	{ name: 'phone-footer-width-boundary-at', width: 300, height: 852, insets: [0, 0, 0, 0], screenshot: true },
 	...[{ width: 320, height: 321 }, { width: 320, height: 360 }, { width: 393, height: 394 }, { width: 600, height: 601 }].map(size => ({
 		name: `short-portrait-${size.width}x${size.height}`, ...size, insets: [0, 0, 0, 0], screenshot: true, layoutProfile: 'compact-overlay' as const,
 	})),
@@ -60,6 +62,7 @@ const profiles: readonly {
 	{ name: 'short-landscape-640', width: 640, height: 240, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'short-landscape-568', width: 568, height: 239, insets: [0, 0, 0, 0], screenshot: true },
 	{ name: 'short-landscape-852', width: 852, height: 239, insets: [0, 0, 0, 0], screenshot: true },
+	{ name: 'wide-short-player-1200', width: 1200, height: 212, insets: [0, 0, 0, 0], screenshot: true, smallPlayer: true },
 	{ name: 'landscape-height-profile-boundary-below', width: 852, height: 319, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'landscape-height-profile-boundary-at', width: 852, height: 320, insets: [0, 0, 0, 0], screenshot: false },
 	{ name: 'tablet-portrait', width: 768, height: 1024, insets: [24, 0, 20, 0], screenshot: true },
@@ -77,6 +80,7 @@ test('handheld gamepad uses device-family hand decks, equal faces, complete shou
 
 	const bundle = await build({
 		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+export { BrowserHostControls } from './hosts/browser/host_controls';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
 export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserInputHub } from './hosts/browser/input';
@@ -85,7 +89,7 @@ export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'ergonomicsFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
-	const evidenceDirectory = '.bmsx/hosting/portrait-lower-fan-test-evidence';
+	const evidenceDirectory = '.bmsx/hosting/portrait-upper-fan-test-evidence';
 	await mkdir(evidenceDirectory, { recursive: true });
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
@@ -103,6 +107,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 		video.refreshLayout();
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, model, 'F2');
+		hub.setHostControls(new api.BrowserHostControls(document, () => {}, () => {}));
 		const pointerEvents: Array<{ type: string; id: number; trusted: boolean }> = [];
 		for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
 			window.addEventListener(type, event => {
@@ -157,6 +162,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				};
 				return {
 					targets: [pad, ...actionIds.map((id, index) => read.target(id, index))],
+					hosts: ['host-keyboard-control', 'host-menu-control'].map(id => {
+						const element = document.getElementById(id)!;
+						const bounds = element.getBoundingClientRect();
+						return { id, x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2,
+							radius: bounds.width / 2, hidden: element.hidden, label: element.getAttribute('aria-label'),
+							background: getComputedStyle(element).backgroundColor,
+							bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom, width: bounds.width, height: bounds.height } };
+					}),
 					layoutProfile: view.layoutProfile,
 					deckTop: view.portraitDeckTop,
 					canvas: (() => { const rect = canvas.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }; })(),
@@ -263,10 +276,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		// Sentinel magenta is neither glyph color, so untouched background and
 		// anti-aliased ink can be distinguished without a text-bbox paint claim.
 		await page.evaluate(() => (globalThis as any).ergonomicsProbe.background('glyph-mask'));
-		const isolation = await page.addStyleTag({ content: '#controller-viewport path, #controller-viewport circle { visibility: hidden !important; }' });
-		const glyphs = PNG.sync.read(await page.screenshot());
+		const isolation = await page.addStyleTag({ content: '#controller-viewport path, #controller-viewport circle, .host-control-surface { visibility: hidden !important; }' });
+		const glyphs = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-glyphs.png` }));
 		await isolation.evaluate(element => { element.textContent += ' .action-label { visibility: hidden !important; }'; });
-		const withoutGlyphs = PNG.sync.read(await page.screenshot());
+		const withoutGlyphs = PNG.sync.read(await page.screenshot({ path: `${evidenceDirectory}/${profile}-${context}-without-glyphs.png` }));
 		await isolation.evaluate(element => { element.parentNode!.removeChild(element); });
 		await isolation.dispose();
 		const ratio = glyphs.width / (await page.viewportSize())!.width;
@@ -298,7 +311,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 		for (let offset = 0; offset < glyphs.data.length; offset += 4) {
 			if (glyphs.data[offset] !== withoutGlyphs.data[offset] || glyphs.data[offset + 1] !== withoutGlyphs.data[offset + 1]
 				|| glyphs.data[offset + 2] !== withoutGlyphs.data[offset + 2]) assert.ok(checkedInk.has(offset),
-				'every browser-painted glyph pixel was inspected, including any ink beyond the unstroked text bbox');
+				`every browser-painted glyph pixel was inspected: missing pixel (${offset / 4 % glyphs.width}, ${Math.trunc(offset / 4 / glyphs.width)}) in ${profile}/${context}, including any ink beyond the unstroked text bbox`);
 		}
 		for (const background of ['white', 'dark', 'bright']) {
 			await page.evaluate(kind => (globalThis as any).ergonomicsProbe.background(kind), background);
@@ -361,12 +374,16 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const coordinateTolerance = 1 / 32;
 			assert.equal(targets.length, 13, 'the rocker plus every one of the twelve physical gamepad buttons is present');
 			assert.ok(faceDiameter <= 88.0001, 'tablets cap face growth instead of stretching with viewport height');
-			if (width >= 568 && height >= 239) assert.ok(faceDiameter >= 60 - coordinateTolerance,
-				'phone landscape and wider players retain at least a 60px face target even with browser chrome');
+			if (width >= 568 && height >= 264) assert.ok(faceDiameter >= 60 - coordinateTolerance,
+				'roomy phone landscape and wider players retain at least a 60px face target with the complete fourteen-control composition');
+			if (width >= 568 && height >= 212) assert.ok(faceDiameter >= 44 - coordinateTolerance,
+				'short handheld surfaces retain at least a 44px face target while composing the complete shoulders and utility footer');
 			if (!phonePortrait && width >= 600 && height >= 400) assert.ok(faceDiameter >= 80 - coordinateTolerance,
 				'wide portrait and roomy landscape retain the full-size face bank');
 			for (const circle of targets.slice(1, 5)) {
-				assert.ok(Math.abs(circle.bounds.width - faceDiameter) < 0.0001, `${circle.id} has the same target diameter as every other face button`);
+				assert.equal(circle.radius, targets[1].radius, `${circle.id} has exactly the same numerical target radius as every other face button`);
+				assert.equal(circle.transform.a, targets[1].transform.a, `${circle.id} artwork uses the same exact SVG scale as every other face button`);
+				assert.ok(Math.abs(circle.bounds.width - faceDiameter) < coordinateTolerance, `${circle.id} has the same rendered target diameter within the browser's subpixel layout grid`);
 				assert.equal(circle.presentation.fill, targets[1].presentation.fill, 'face buttons have no primary/secondary visual hierarchy');
 				assert.equal(circle.presentation.stroke, targets[1].presentation.stroke);
 			}
@@ -377,9 +394,9 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				if (phoneDimensionsByWidth.has(width)) assert.deepEqual(dimensions, phoneDimensionsByWidth.get(width),
 					'reducing phone height changes placement, not thumb-sized control dimensions');
 				phoneDimensionsByWidth.set(width, dimensions);
-				assert.ok(pad.bounds.width >= 144 - coordinateTolerance && pad.bounds.width <= 180 + coordinateTolerance,
+				assert.ok(pad.bounds.width >= 134 - coordinateTolerance && pad.bounds.width <= 180 + coordinateTolerance,
 					'phone directional target has its own thumb-sized budget, independent of the face bank');
-				assert.ok(faceDiameter >= 60 - coordinateTolerance && faceDiameter <= 80 + coordinateTolerance,
+				assert.ok(faceDiameter >= (width >= 320 ? 60 : 44) - coordinateTolerance && faceDiameter <= 80 + coordinateTolerance,
 					'every phone face key remains thumb sized without consuming a tablet-sized lane');
 				if (width === 320) assert.ok(Math.abs(pad.bounds.width - 144) < coordinateTolerance);
 				if (width >= 393) assert.ok(Math.abs(pad.bounds.width - 180) < coordinateTolerance);
@@ -389,15 +406,41 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			}
 			assert.ok(Math.abs(pad.y - faceCenter.y) < coordinateTolerance, 'both main thumb banks share one hand row in every layout family');
 			const [select, start, ls, rs, lb, rb, lt, rt] = targets.slice(5);
+			const [keyboard, menu] = resting.hosts;
+			const utilityGap = Math.min(12 * (phonePortrait ? 1 : scale),
+				(width - 8 - 2 * (ls.bounds.width * 2 + select.bounds.width)) / 5);
 			const middle = (safe.left + safe.right) / 2;
 			assert.ok(select.x < middle && start.x > middle, 'SELECT and START straddle the handheld center');
 			assert.ok(Math.abs(select.y - start.y) < coordinateTolerance, 'menu controls share one utility row');
-			assert.ok(phonePortrait ? select.y < pad.y && start.y < faceCenter.y : select.y > pad.y && start.y > faceCenter.y,
-				'phone utilities lie above both hands; established ring layouts retain lower utilities');
+			assert.ok(select.y > pad.y && start.y > faceCenter.y,
+				'utilities lie below both main thumb banks in every layout family');
 			assert.ok(ls.x < select.x && rs.x > start.x, 'each hand has its own LS/SELECT or START/RS pair');
-			assert.ok(select.x - ls.x >= select.radius + ls.radius + 12 * (phonePortrait ? 1 : scale) - coordinateTolerance
-				&& rs.x - start.x >= rs.radius + start.radius + 12 * (phonePortrait ? 1 : scale) - coordinateTolerance,
+			assert.ok(select.x - ls.x >= select.radius + ls.radius + utilityGap - coordinateTolerance
+				&& rs.x - start.x >= rs.radius + start.radius + utilityGap - coordinateTolerance,
 				'hand-side utility pairs retain clear physical gaps rather than overlapping when short');
+			assert.ok(keyboard.x < ls.x && menu.x > rs.x, 'dedicated keyboard and settings targets occupy the outer lower hand corners');
+			for (const host of resting.hosts) {
+				assert.equal(host.hidden, false, 'host commands are visible alongside the gamepad instead of requiring a guest chord');
+				assert.ok(host.label && host.label.length > 0, 'host-only icons retain semantic accessible names');
+				assert.equal(host.background, 'rgba(0, 0, 0, 0)', 'dedicated host buttons do not add an opaque patch over the picture');
+				assert.ok(Math.abs(host.bounds.width - ls.bounds.width) < coordinateTolerance
+					&& Math.abs(host.bounds.height - ls.bounds.height) < coordinateTolerance,
+					'host-only controls use the same target budget as stick-click controls');
+				assert.ok(host.bounds.left >= safe.left - coordinateTolerance && host.bounds.right <= safe.right + coordinateTolerance
+					&& host.bounds.top >= safe.top - coordinateTolerance && host.bounds.bottom <= safe.bottom + coordinateTolerance,
+					`${host.id} stays wholly inside the actual safe player, including offset and compact surfaces`);
+				for (const target of targets) assert.ok(controlSeparation(host, target) >= -coordinateTolerance,
+					`${host.id} does not physically overlap ${target.id}: actual separation ${controlSeparation(host, target)}`);
+			}
+			if (phonePortrait) {
+				const footer = [keyboard, ls, select, start, rs, menu];
+				assert.ok(utilityGap >= 4 - coordinateTolerance, 'a reserved phone deck retains at least a real 4px utility gap instead of shrinking 44/48px targets');
+				for (let index = 1; index < footer.length; index += 1) {
+					assert.ok(Math.abs(footer[index].y - footer[0].y) < coordinateTolerance, 'phone utilities and both host icons fit one compact footer, not a second oversized toolbar');
+					assert.ok(footer[index].x - footer[index - 1].x >= footer[index].radius + footer[index - 1].radius + utilityGap - coordinateTolerance,
+						'all six phone utility targets retain a real reachable horizontal gap');
+				}
+			}
 			if (phonePortrait) {
 				assert.ok(Math.abs(ls.bounds.width - 44) < coordinateTolerance && Math.abs(rs.bounds.width - 44) < coordinateTolerance,
 					'phone stick clicks are 44px targets independent of face or pad scale');
@@ -428,7 +471,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(bumperSweep > triggerSweep, 'the easier bumper has a genuinely larger finite curved target, not just a swapped label');
 				if (phonePortrait && primary === pad) {
 					for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - 12) < coordinateTolerance,
-						'each lower phone shoulder retains an actual 12px thumb bridge from the unchanged pad disk');
+						'each upper phone shoulder retains an actual 12px thumb bridge from the unchanged pad disk');
 				}
 				const direction = primary.x < middle ? -1 : 1;
 				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;
@@ -455,8 +498,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				assert.ok(shoulder.outline.halfWidth * 2 >= 44 - coordinateTolerance,
 					`${shoulder.id} keeps a real radial target thickness inside the common viewport budget`);
 				const primary = shoulder === lb || shoulder === lt ? pad : faceCenter;
-				assert.ok(phonePortrait ? shoulder.y > primary.y : shoulder.y < primary.y,
-					`${shoulder.id} wraps below phone hands and above established wide/overlay hands`);
+				assert.ok(shoulder.y < primary.y,
+					`${shoulder.id} follows the same upper shoulder topology in phone, wide and overlay families`);
 				secondaryOffsets.push({ id: shoulder.id, x: (shoulder.x - primary.x) / scale, y: (shoulder.y - primary.y) / scale });
 			}
 			const imageWidth = resting.canvas.right - resting.canvas.left;
@@ -483,8 +526,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const deckHeight = await page.evaluate(({ width, height }) => (globalThis as any).ergonomicsProbe.measureDeck(width, height), { width, height });
 				assert.equal(await page.evaluate(() => (globalThis as any).ergonomicsProbe.geometryRevision()), revisionBeforeMeasure,
 					'intrinsic numerical measurement does not publish a provisional input geometry');
-				const deckPaintTop = Math.min(...targets.map((target: any) => target.painted.top));
-				const deckPaintBottom = Math.max(...targets.map((target: any) => target.painted.bottom));
+				const deckPaintTop = Math.min(...targets.map((target: any) => target.painted.top), ...resting.hosts.map((host: any) => host.bounds.top));
+				const deckPaintBottom = Math.max(...targets.map((target: any) => target.painted.bottom), ...resting.hosts.map((host: any) => host.bounds.bottom));
 				assert.ok(deckPaintTop >= resting.deckTop && deckPaintBottom <= resting.deckTop + 12 + deckHeight + coordinateTolerance,
 					'the measured lower deck contains all real painted controls');
 				assert.ok(deckHeight - (deckPaintBottom - deckPaintTop) >= -coordinateTolerance
@@ -492,8 +535,8 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 					'intrinsic deck measurement has bounded padding, not viewport-height whitespace');
 				assert.ok(Math.abs(resting.canvas.top - safe.top) < coordinateTolerance, 'portrait game image is anchored at the safe top');
 				assert.ok(resting.canvas.bottom <= resting.deckTop + coordinateTolerance, 'portrait video fitting does not enter the lower controller deck');
-				assert.ok(phonePortrait ? lb.y > pad.y && rb.y > faceCenter.y : lb.y < pad.y && rb.y < faceCenter.y,
-					'each portrait family retains its authored shoulder side inside the measured lower deck');
+				assert.ok(lb.y < pad.y && rb.y < faceCenter.y,
+					'each portrait family reserves its real upper shoulders inside the measured deck');
 				assert.ok(lb.x < lt.x && rt.x < rb.x, 'portrait keeps bumpers on each hand outer side, independently of its profile');
 			}
 			const fillSamples: Array<{ id: string; x: number; y: number }> = [];
@@ -517,7 +560,10 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const paintClearance = 0;
 			for (let index = 0; index < targets.length; index += 1) {
 				const circle = targets[index];
-				if (!circle.outline) assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < 0.0001, `${circle.id} keeps uniform CSS-client scaling`);
+				if (!circle.outline) {
+					if (index !== 0) assert.equal(circle.transform.a, circle.transform.d, `${circle.id} has exact uniform SVG scaling`);
+					assert.ok(Math.abs(circle.bounds.width - circle.bounds.height) < coordinateTolerance, `${circle.id} keeps uniform CSS-client scaling within the browser's subpixel layout grid`);
+				}
 				assert.ok(circle.painted.left >= safe.left + paintClearance - 0.0001, `${circle.id} left paint clearance`);
 				assert.ok(circle.painted.top >= safe.top + paintClearance - 0.0001, `${circle.id} top paint clearance`);
 				assert.ok(circle.painted.right <= safe.right - paintClearance + 0.0001, `${circle.id} right paint clearance`);
@@ -592,6 +638,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const changed = await measure();
 				assert.deepEqual(changed.groups, resting.groups, `framebuffer ${framebufferWidth} does not change any control group`);
 				assert.deepEqual(changed.targets.map((circle: any) => circle.bounds), targets.map((circle: any) => circle.bounds));
+				assert.deepEqual(changed.hosts, resting.hosts, `framebuffer ${framebufferWidth} does not change host-only corner controls`);
 			}
 			for (let index = 0; index < actions.length; index += 1) {
 				const circle = targets[index + 1];
@@ -707,6 +754,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const stickLayout = await measure();
 				assert.deepEqual(stickLayout.targets.map((target: any) => target.bounds), targets.map((target: any) => target.bounds),
 					'switching directional mode does not move any controls');
+				assert.deepEqual(stickLayout.hosts, resting.hosts, 'switching directional mode leaves host-only commands in the same corners');
 				assert.deepEqual(stickLayout.canvas, resting.canvas, 'switching directional mode does not change picture composition');
 				await page.screenshot({ path: `${evidenceDirectory}/${profile.name}-stick-dark-rest.png`, scale: 'css' });
 				await page.evaluate(() => (globalThis as any).ergonomicsProbe.model.setDirectionalMode('dpad'));

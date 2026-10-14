@@ -12,6 +12,7 @@ import { HostFrameSession } from '../common/frame_session';
 import { HostKeyboardPresentation, HostOverlayMenu, HostOverlayOutcome } from '../common/host_overlay_menu';
 import { OnScreenKeyboard } from '../common/input/on_screen_keyboard';
 import { BrowserOnscreenKeyboard } from './onscreen_keyboard';
+import { BrowserHostControls } from './host_controls';
 import { BROWSER_KEYBOARD_PAGES } from './onscreen_keyboard_layout';
 import { RenderPresentationState } from '../common/presentation_state';
 import { SystemOutputLog } from '../common/system_output_log';
@@ -93,6 +94,9 @@ async function startBrowserPlayer(): Promise<void> {
 			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
 		));
 		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		options.browserInput.setHostControls(new BrowserHostControls(
+			document, hostOverlayMenu.requestToggleKeyboard, hostOverlayMenu.requestToggleMenu,
+		));
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
 			options.browserInput.poll(currentTime);

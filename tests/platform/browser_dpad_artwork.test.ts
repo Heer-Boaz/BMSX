@@ -184,7 +184,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			await rasterPage.addScriptTag({ content: bundle.outputFiles[0].text });
 			await rasterPage.evaluate(initializeArtwork);
 			await rasterPage.evaluate(() => (globalThis as any).artworkProbe.observer.disconnect());
-			await rasterPage.addStyleTag({ content: '.control-surface:not(#d-pad-controls) { visibility: hidden !important; }' });
+			await rasterPage.addStyleTag({ content: '.control-surface:not(#d-pad-controls), .host-control-surface { visibility: hidden !important; }' });
 			for (const [width, height] of [[320, 240], [320, 568], [568, 239], [390, 763], [750, 369], [852, 393], [768, 980], [1024, 748]]) {
 				await rasterPage.setViewportSize({ width, height });
 				await rasterPage.evaluate(({ width, height }) => (globalThis as any).artworkProbe.view.layout(0, 0, width, height), { width, height });

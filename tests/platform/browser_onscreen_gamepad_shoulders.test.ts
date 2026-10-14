@@ -316,8 +316,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 							: degrees <= 55 ? 0xa000 : degrees < 125 ? 0x2000 : degrees <= 145 ? 0x6000
 								: degrees < 215 ? 0x4000 : degrees <= 235 ? 0x5000 : degrees < 305 ? 0x1000 : 0x9000;
 						if (phonePortrait) {
-							assert.equal(direction & 0x2000, 0x2000, 'lower phone shoulder corridors are reached by rolling DOWN');
-							assert.equal(direction & 0x1000, 0, 'the lower fan cannot require an UP shoulder chord');
+							assert.equal(direction & 0x1000, 0x1000, 'upper phone shoulder corridors are reached by rolling UP');
+							assert.equal(direction & 0x2000, 0, 'the upper fan cannot require a DOWN shoulder chord');
 						}
 						await assertWord(direction | shoulders, message);
 					};
@@ -407,9 +407,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						}
 					}
 				}
-				const phonePortrait = await page.evaluate(() => (globalThis as any).shoulderTest.layoutProfile() === 'phone-portrait');
-				const faceId = phonePortrait ? 'a_knop' : 'y_knop';
-				const face = shapes.find(shape => shape.buttons === (phonePortrait ? 1 : 8));
+				const faceId = 'y_knop';
+				const face = shapes.find(shape => shape.buttons === 8);
 				for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
 					for (let step = 0; step < 16; step += 1) {
 						const angle = step * Math.PI / 8;
@@ -430,9 +429,8 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			});
 
 			await orientation.test('independent adjacent face and RB contacts survive cross-bank slides, viewport relayout and either release order', async () => {
-				const phonePortrait = await page.evaluate(() => (globalThis as any).shoulderTest.layoutProfile() === 'phone-portrait');
-				const faceId = phonePortrait ? 'a_knop' : 'y_knop';
-				const faceWord = phonePortrait ? 1 : 8;
+				const faceId = 'y_knop';
+				const faceWord = 8;
 				for (const releaseShoulderFirst of [false, true]) {
 					const rb = point('rb_knop');
 					const face = point(faceId);
@@ -570,6 +568,35 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				assert.equal(closed.menuInput, 0);
 				assert.equal(closed.menuExecution, 0);
 				assert.equal(closed.snapshot, 0);
+			});
+
+			await orientation.test('frontend host requests use the existing frame-boundary menu and keyboard transitions without synthetic input', async () => {
+				assert.equal((await poll()).menuExecution, 0);
+				assert.equal(await page.evaluate(() => {
+					const menu = (globalThis as any).shoulderTest.menu;
+					menu.requestToggleKeyboard();
+					return menu.keyboard.visible;
+				}), false, 'native callbacks only queue the host request, not an out-of-frame keyboard transition');
+				const openedKeyboard = await poll();
+				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), true);
+				assert.deepEqual([openedKeyboard.model, openedKeyboard.physical, openedKeyboard.snapshot, openedKeyboard.mmio], [0, 0, 0, 0]);
+				for (let frame = 0; frame < 3; frame += 1) {
+					await poll();
+					assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), true, 'an already consumed host request does not repeat each frame');
+				}
+				await page.evaluate(() => (globalThis as any).shoulderTest.menu.requestToggleKeyboard());
+				await poll();
+				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), false);
+				assert.equal(await page.evaluate(() => {
+					const menu = (globalThis as any).shoulderTest.menu;
+					menu.requestToggleMenu();
+					return menu.executionMode;
+				}), 0, 'menu presentation also remains owned by the next input tick');
+				const openedMenu = await poll();
+				assert.equal(openedMenu.menuInput, 1); assert.equal(openedMenu.menuExecution, 1);
+				assert.deepEqual([openedMenu.model, openedMenu.physical, openedMenu.snapshot, openedMenu.mmio], [0, 0, 0, 0]);
+				await page.evaluate(() => (globalThis as any).shoulderTest.menu.requestToggleMenu());
+				assert.equal((await poll()).menuExecution, 0);
 			});
 
 			await orientation.test('SELECT plus LB drives the existing supervisor line and one ICU edge per physical chord', async () => {

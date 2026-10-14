@@ -540,19 +540,21 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 	});
 
 	await t.test('a true controller viewport resize resamples held contact geometry and records its source', async () => {
+		await page.setViewportSize({ width: 852, height: 393 });
+		await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
 		const { actions: [a] } = await measure();
 		const contact = { id: 1, x: a.x, y: a.y + a.radius - 4, radiusX: 2, radiusY: 2 };
 		await touch('touchStart', [contact]);
 		await assertWord(1);
 		await takeEvents();
 		await page.evaluate(() => (globalThis as any).touchAcceptance.clearTrace());
-		await page.setViewportSize({ width: 852, height: 320 });
+		await page.setViewportSize({ width: 1024, height: 320 });
 		await page.evaluate(() => (globalThis as any).touchAcceptance.refreshLayout());
 		const relocated = await measure();
 		assert.ok(relocated.actions.every(action => distanceToControl(action, contact.x, contact.y) > contact.radiusX),
 			'the old physical coordinate lies outside every relocated button including its measured contact area');
 		assert.deepEqual(await takeEvents(), [], 'layout itself does not produce a native release event');
-		await assertWord(0, 0, 'a true document-height resize relocates the button and immediately resamples the retained contact');
+		await assertWord(0, 0, 'a true controller-frame resize relocates the button and immediately resamples the retained contact');
 		const rows = await page.evaluate<LayoutTraceRow[]>(() => (globalThis as any).touchAcceptance.layoutRows());
 		assert.ok(rows.some(row => row.height === 320 && row.before === 1 && row.after === 0 && row.commonBefore === 1 && row.commonAfter === 0),
 			'the trace must attribute the model/common release to authoritative control geometry, not a fabricated native event');

@@ -1,7 +1,7 @@
 import type { BrowserOnscreenGamepad } from './onscreen_gamepad';
 import type { GamepadInput } from '../common/input/gamepad';
 
-export type BrowserInputTraceRoute = 'controller' | 'keyboard' | 'canvas' | 'ignored';
+export type BrowserInputTraceRoute = 'controller' | 'keyboard' | 'host' | 'canvas' | 'ignored';
 export type BrowserInputResetReason = 'blur' | 'pagehide' | 'hidden' | 'teardown';
 
 /** Observes native routing at the browser owner; never produces game input. */
