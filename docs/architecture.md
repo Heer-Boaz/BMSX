@@ -5255,6 +5255,41 @@ Browser input teardown releases virtual sources, cancels pending paint and
 disposes the model subscription, then hides the document-owned panel. Static
 keyboard nodes/styles remain owned by the packaged page.
 
+The controller-oriented bitmap keyboard retains its native Text/Symbols/Fn
+pages. Its presentation is separate from the browser DOM keyboard: panel and
+key rectangles are outlines, not fills, and retained one-pixel glyph shadows
+keep labels readable over the scanout without covering the key interiors.
+Selection and forwarding feedback change outline/glyph colors only. Placement
+is retained host-view state: top by default, with SELECT+A toggling top/bottom
+only while the bitmap keyboard is open. This works on controllers without stick
+clicks and does not create a guest key or change held-key lifetimes. Moving the
+view updates its published drawing and pointer-hit geometry together; docking
+does not read BIOS cursor memory, resize the game image or imply a native IDE.
+The layout cache includes the viewport bottom as well as left/top/width/font.
+
+As in [UAE4All2's controller keyboard](https://github.com/rsn8887/uae4all2/blob/44955a2b8762248bb99cee71ef6ca6bc79c1f914/src/vkbd/vkbd.cpp#L695-L755),
+keyboard placement belongs to the host presentation. BMSX uses transparent
+interiors rather than fading the complete keyboard image or its labels.
+
+Bitmap-keyboard representation and execution contract (TS/C++ mirror):
+
+| State/data | TypeScript owner | C++ owner | Representation |
+| --- | --- | --- | --- |
+| Native rows and key identities | `input/on_screen_keyboard_keys.ts` | `on_screen_keyboard_keys.h` | Existing key indices, starts and spans; unchanged |
+| Key source lifetimes/feedback | `input/on_screen_keyboard.ts` | `on_screen_keyboard.cpp` | Existing source indices, refcounts and feedback deadlines; unchanged |
+| Dock placement | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained bottom-docked boolean; no machine/save-state field |
+| Dock input | `HostOverlayMenu.tickKeyboardInput` | `HostOverlayMenu::handleInput` | Same-player SELECT held plus A just-pressed; bitmap page only |
+| Drawing and hit areas | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained outline rectangles and foreground/shadow glyph submissions, raw ARGB words |
+| Bounds invalidation | `queueRenderCommands` | `queueRenderCommands` | Actual left/top/bottom/width/font and explicit placement invalidation |
+
+Affected hot callsites are the keyboard branch of
+`HostOverlayMenu.tickKeyboardInput` / `HostOverlayMenu::handleInput`,
+`HostOnScreenKeyboard.queueRenderCommands` / `queueRenderCommands`, and the
+existing outline/glyph consumers in the host-overlay software/GPU renderers.
+The renderer primitives, machine representation, keyboard model and frame input
+polling are unchanged. Placement adds no per-frame allocations or guest probes;
+the extra glyph submissions are constructed once and retained by the view.
+
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed

@@ -95,13 +95,13 @@ test('Backquote is navigable, painted, hit-tested and activated from the native 
 	const { presenter, queue } = createHostOverlayFixture(256, 192); presenter.default_font = new Font();
 	const view = new HostOnScreenKeyboard(presenter, f.keyboard); view.queueRenderCommands();
 	let frame = queue.consumeHostMenuFrame();
-	const command = 2 + f.keyboard.rows[0].keys.length * 2;
+	const command = 3 + f.keyboard.rows[0].keys.length * 3;
 	const rect = frame.commandRefs[command] as RectRenderSubmission;
-	assert.equal((frame.commandRefs[command + 1] as GlyphRenderSubmission).items, '`');
+	assert.equal((frame.commandRefs[command + 2] as GlyphRenderSubmission).items, '`');
 	assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
 	f.keyboard.activate(0); f.poll(); assert.equal(f.pressed('Backquote'), true);
 	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, SHIFT); view.queueRenderCommands(); frame = queue.consumeHostMenuFrame();
-	assert.equal((frame.commandRefs[command + 1] as GlyphRenderSubmission).items, '~');
+	assert.equal((frame.commandRefs[command + 2] as GlyphRenderSubmission).items, '~');
 	assert.equal(frame.commandRefs[command], rect, 'shifted rendering reuses the appended physical key rectangle');
 	f.keyboard.close(); f.poll(); assert.equal(f.pressed('Backquote'), false); assert.equal(f.pressed('ShiftLeft'), false);
 });
@@ -204,9 +204,9 @@ test('explicit row starts preserve arrow gaps in navigation, bitmap drawing and 
 	const { presenter, queue } = createHostOverlayFixture(256, 192); presenter.default_font = new Font();
 	const view = new HostOnScreenKeyboard(presenter, f.keyboard); view.queueRenderCommands();
 	const frame = queue.consumeHostMenuFrame();
-	const qRect = (frame.commandRefs[2] as RectRenderSubmission).area;
-	const upRect = (frame.commandRefs[4] as RectRenderSubmission).area;
-	const downRect = (frame.commandRefs[12] as RectRenderSubmission).area;
+	const qRect = (frame.commandRefs[3] as RectRenderSubmission).area;
+	const upRect = (frame.commandRefs[6] as RectRenderSubmission).area;
+	const downRect = (frame.commandRefs[18] as RectRenderSubmission).area;
 	assert.equal(upRect.left - qRect.left, 3 * (qRect.right - qRect.left + 1));
 	assert.equal(upRect.left, downRect.left, 'bitmap arrow hit rectangles use the same authored column');
 	assert.equal(view.selectAt((upRect.left + upRect.right) / 2, (upRect.top + upRect.bottom) / 2), UP);
@@ -269,21 +269,26 @@ test('bitmap consumer renders/hits every function-page key from the same actual 
 	const view = new HostOnScreenKeyboard(presenter, f.keyboard);
 	f.keyboard.setPage(KeyboardPage.Functions); view.queueRenderCommands();
 	const frame = queue.consumeHostMenuFrame();
-	assert.equal((frame.commandRefs[1] as GlyphRenderSubmission).items, 'KEYBOARD: FN');
-	let command = 2;
+	assert.equal((frame.commandRefs[2] as GlyphRenderSubmission).items, 'KEYBOARD: FN');
+	let command = 3;
 	for (const row of f.keyboard.rows) for (const key of row.keys) {
 		assert.equal(frame.commandKinds[command], Host2DKind.Rect);
 		const rect = frame.commandRefs[command++] as RectRenderSubmission;
 		assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
+		const shadow = frame.commandRefs[command++] as GlyphRenderSubmission;
+		assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
 		const glyph = frame.commandRefs[command++] as GlyphRenderSubmission;
+		assert.equal(shadow.items, glyph.items);
+		assert.equal(shadow.x, glyph.x + 1);
+		assert.equal(shadow.y, glyph.y + 1);
 		assert.equal(glyph.items, f.keyboard.label(key));
 		assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
 		assert.equal(f.keyboard.selectedKey, key);
 	}
-	assert.equal(frame.commandCount, command + 4);
-	assert.equal((frame.commandRefs[command + 2] as GlyphRenderSubmission).items, 'START ENTER  SEL+B DEL  SEL+Y PAGE');
+	assert.equal(frame.commandCount, command + 8);
+	assert.equal((frame.commandRefs[command + 5] as GlyphRenderSubmission).items, 'START ENTER  SEL+B DEL  SEL+Y PAGE');
 	f.keyboard.setPage(KeyboardPage.Symbols); view.queueRenderCommands();
-	assert.equal((queue.consumeHostMenuFrame().commandRefs[1] as GlyphRenderSubmission).items, 'KEYBOARD: SYMBOLS');
+	assert.equal((queue.consumeHostMenuFrame().commandRefs[2] as GlyphRenderSubmission).items, 'KEYBOARD: SYMBOLS');
 });
 
 test('unused modifier tap completion observes ordinary keys from every source, including gamepad activation', t => {

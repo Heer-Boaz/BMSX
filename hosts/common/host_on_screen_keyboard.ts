@@ -16,7 +16,7 @@ const HELP_LINES = [
 	'A TYPE  B SPACE  X BKSP  Y SHIFT',
 	'L/R CURSOR  LT/RT HOME/END',
 	'START ENTER  SEL+B DEL  SEL+Y PAGE',
-	'SEL+X CLOSE  SEL+L/R HOME/END',
+	'SEL+X CLOSE  SEL+A TOP/BOTTOM',
 ] as const;
 const UNIT_WIDTH = 13;
 const KEY_GAP = 1;
@@ -25,20 +25,20 @@ const PANEL_PADDING = 4;
 const TITLE_GAP = 3;
 const HELP_GAP = 3;
 const HELP_LINE_GAP = 1;
-const COLOR_PANEL = 0xe0101010;
-const COLOR_KEY = 0xff252525;
-const COLOR_KEY_SELECTED = 0xff1e6a95;
-const COLOR_KEY_PRESSED = 0xffffca55;
-const COLOR_TEXT_PRESSED = 0xff101010;
+const COLOR_PANEL = 0x60465264;
+const COLOR_KEY = 0x80bccbdb;
+const COLOR_KEY_SELECTED = 0xff7eb4d9;
+const COLOR_KEY_PRESSED = 0xffffe09a;
+const COLOR_SHADOW = 0xff080c12;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
-const COMMAND_COUNT = 2 + ON_SCREEN_KEY_DEFINITIONS.length * 2 + HELP_LINES.length;
+const COMMAND_COUNT = 3 + ON_SCREEN_KEY_DEFINITIONS.length * 3 + HELP_LINES.length * 2;
 
 /** Bitmap presentation of an explicitly owned keyboard model. */
 export class HostOnScreenKeyboard {
 	private readonly panelRect: RectRenderSubmission = {
-		kind: RectRenderKind.Fill,
+		kind: RectRenderKind.Rect,
 		area: { left: 0, top: 0, right: 1, bottom: 1, z: 920 },
 		color: COLOR_PANEL,
 		layer: LAYER_2D_IDE,
@@ -49,20 +49,25 @@ export class HostOnScreenKeyboard {
 		background_color: 0xff000000,
 		layer: LAYER_2D_IDE,
 	};
+	private readonly titleShadow: GlyphRenderSubmission = { ...this.titleGlyphs, color: COLOR_SHADOW, z: 921 };
 	private readonly helpGlyphs = new Array<GlyphRenderSubmission>(HELP_LINES.length);
+	private readonly helpShadows = new Array<GlyphRenderSubmission>(HELP_LINES.length);
 	private readonly keyRects = new Array<RectRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
 	private readonly keyGlyphs = new Array<GlyphRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
+	private readonly keyShadows = new Array<GlyphRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
 	private readonly commandKinds = new Array<Host2DKind>(COMMAND_COUNT);
 	private readonly commandRefs = new Array<Host2DRef>(COMMAND_COUNT);
 	private readonly renderFrame: HostMenuFrame = {
 		commandKinds: this.commandKinds,
 		commandRefs: this.commandRefs,
-		commandCount: COMMAND_COUNT,
+		commandCount: 0,
 	};
 	private layoutWidth = -1;
 	private layoutLeft = -1;
 	private layoutTop = -1;
+	private layoutBottom = -1;
 	private layoutFont: GlyphRenderSubmission['font'] = null;
+	private bottomDocked = false;
 
 	private renderedRevision = -1;
 	private renderedPage = -1;
@@ -75,12 +80,13 @@ export class HostOnScreenKeyboard {
 		this.commandKinds[0] = Host2DKind.Rect;
 		this.commandRefs[0] = this.panelRect;
 		this.commandKinds[1] = Host2DKind.Glyphs;
-		this.commandRefs[1] = this.titleGlyphs;
-		let command = 2;
+		this.commandRefs[1] = this.titleShadow;
+		this.commandKinds[2] = Host2DKind.Glyphs;
+		this.commandRefs[2] = this.titleGlyphs;
 		for (let index = 0; index < ON_SCREEN_KEY_DEFINITIONS.length; index += 1) {
 			const definition = ON_SCREEN_KEY_DEFINITIONS[index];
 			const rect: RectRenderSubmission = {
-				kind: RectRenderKind.Fill,
+				kind: RectRenderKind.Rect,
 				area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 },
 				color: COLOR_KEY,
 				layer: LAYER_2D_IDE,
@@ -94,12 +100,8 @@ export class HostOnScreenKeyboard {
 			};
 			this.keyRects[index] = rect;
 			this.keyGlyphs[index] = glyphs;
-			this.commandKinds[command] = Host2DKind.Rect;
-			this.commandRefs[command] = rect;
-			command += 1;
-			this.commandKinds[command] = Host2DKind.Glyphs;
-			this.commandRefs[command] = glyphs;
-			command += 1;
+			const shadow: GlyphRenderSubmission = { ...glyphs, color: COLOR_SHADOW, z: 921 };
+			this.keyShadows[index] = shadow;
 		}
 		for (let index = 0; index < HELP_LINES.length; index += 1) {
 			const line = HELP_LINES[index];
@@ -110,10 +112,14 @@ export class HostOnScreenKeyboard {
 				layer: LAYER_2D_IDE,
 			};
 			this.helpGlyphs[index] = glyphs;
-			this.commandKinds[command] = Host2DKind.Glyphs;
-			this.commandRefs[command] = glyphs;
-			command += 1;
+			const shadow: GlyphRenderSubmission = { ...glyphs, color: COLOR_SHADOW, z: 921 };
+			this.helpShadows[index] = shadow;
 		}
+	}
+
+	public togglePosition(): void {
+		this.bottomDocked = !this.bottomDocked;
+		this.layoutWidth = -1;
 	}
 
 	/** Only published interactive keys take foreground input, not labels or help text. */
@@ -142,6 +148,8 @@ export class HostOnScreenKeyboard {
 				const glyphs = this.keyGlyphs[key], label = model.label(key);
 				glyphs.items = label;
 				glyphs.item_end = label.length;
+				this.keyShadows[key].items = label;
+				this.keyShadows[key].item_end = label.length;
 			}
 			this.layoutWidth = -1;
 		}
@@ -151,8 +159,10 @@ export class HostOnScreenKeyboard {
 		}
 		const presenter = this.presenter, bounds = presenter.visibleViewportBounds, font = presenter.default_font;
 		const width = bounds.right - bounds.left;
-		if (this.layoutLeft !== bounds.left || this.layoutTop !== bounds.top || this.layoutWidth !== width || this.layoutFont !== font) {
-			this.layoutLeft = bounds.left; this.layoutTop = bounds.top; this.layoutWidth = width; this.layoutFont = font;
+		if (this.layoutLeft !== bounds.left || this.layoutTop !== bounds.top || this.layoutBottom !== bounds.bottom
+			|| this.layoutWidth !== width || this.layoutFont !== font) {
+			this.layoutLeft = bounds.left; this.layoutTop = bounds.top; this.layoutBottom = bounds.bottom;
+			this.layoutWidth = width; this.layoutFont = font;
 			this.layoutKeys();
 		}
 		presenter.hostOverlayQueue.clearHostMenuFrame();
@@ -162,13 +172,17 @@ export class HostOnScreenKeyboard {
 		const title = TITLES[this.model.page];
 		this.titleGlyphs.items = title;
 		this.titleGlyphs.item_end = title.length;
-		let command = 2;
+		this.titleShadow.items = title;
+		this.titleShadow.item_end = title.length;
+		let command = 3;
 		for (const row of this.model.rows) for (const key of row.keys) {
 			this.commandKinds[command] = Host2DKind.Rect; this.commandRefs[command++] = this.keyRects[key];
+			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyShadows[key];
 			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyGlyphs[key];
 		}
-		for (const glyphs of this.helpGlyphs) {
-			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = glyphs;
+		for (let index = 0; index < this.helpGlyphs.length; index += 1) {
+			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.helpShadows[index];
+			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.helpGlyphs[index];
 		}
 		this.renderFrame.commandCount = command;
 	}
@@ -177,7 +191,7 @@ export class HostOnScreenKeyboard {
 		for (const row of model.rows) for (const key of row.keys) {
 			const pressed = model.isKeyHighlighted(key);
 			this.keyRects[key].color = pressed ? COLOR_KEY_PRESSED : key === model.selectedKey ? COLOR_KEY_SELECTED : COLOR_KEY;
-			this.keyGlyphs[key].color = pressed ? COLOR_TEXT_PRESSED : COLOR_TEXT;
+			this.keyGlyphs[key].color = pressed ? COLOR_KEY_PRESSED : key === model.selectedKey ? COLOR_KEY_SELECTED : COLOR_TEXT;
 		}
 		this.helpGlyphs[1].color = model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_CODE.get('Home'))
 			|| model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_CODE.get('End')) ? COLOR_KEY_PRESSED : COLOR_DIM;
@@ -199,8 +213,7 @@ export class HostOnScreenKeyboard {
 		const panelWidth = keyboardWidth + PANEL_PADDING * 2;
 		const panelHeight = PANEL_PADDING * 2 + lineHeight + TITLE_GAP + keysHeight + HELP_GAP + helpHeight;
 		const left = bounds.left + (((viewportWidth - panelWidth) / 2) | 0);
-		// Keep the interactive key grid above the surrounding gamepad hand row.
-		const top = bounds.top + PANEL_PADDING;
+		const top = this.bottomDocked ? bounds.bottom - PANEL_PADDING - panelHeight : bounds.top + PANEL_PADDING;
 		this.panelRect.area.left = left;
 		this.panelRect.area.top = top;
 		this.panelRect.area.right = left + panelWidth;
@@ -208,6 +221,9 @@ export class HostOnScreenKeyboard {
 		this.titleGlyphs.font = font;
 		this.titleGlyphs.x = bounds.left + (((viewportWidth - font.measure(this.titleGlyphs.items as string)) / 2) | 0);
 		this.titleGlyphs.y = top + PANEL_PADDING;
+		this.titleShadow.font = font;
+		this.titleShadow.x = this.titleGlyphs.x + 1;
+		this.titleShadow.y = this.titleGlyphs.y + 1;
 		const keyTop = top + PANEL_PADDING + lineHeight + TITLE_GAP;
 		for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
 			const row = rows[rowIndex];
@@ -228,6 +244,10 @@ export class HostOnScreenKeyboard {
 				glyphs.font = font;
 				glyphs.x = keyLeft + (((width - textWidth) / 2) | 0);
 				glyphs.y = keyY + (((keyHeight - lineHeight) / 2) | 0);
+				const shadow = this.keyShadows[index];
+				shadow.font = font;
+				shadow.x = glyphs.x + 1;
+				shadow.y = glyphs.y + 1;
 			}
 		}
 		const helpTop = keyTop + keysHeight + HELP_GAP;
@@ -236,6 +256,10 @@ export class HostOnScreenKeyboard {
 			glyphs.font = font;
 			glyphs.x = bounds.left + (((viewportWidth - font.measure(HELP_LINES[index])) / 2) | 0);
 			glyphs.y = helpTop + index * (lineHeight + HELP_LINE_GAP);
+			const shadow = this.helpShadows[index];
+			shadow.font = font;
+			shadow.x = glyphs.x + 1;
+			shadow.y = glyphs.y + 1;
 		}
 	}
 }

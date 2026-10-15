@@ -330,6 +330,10 @@ HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& inpu
 			for (u8 button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; ++button) {
 				if (!uiInput.gamepadButtonPressed(player, static_cast<InputControllerGamepadButtonBit>(button))) m_keyboard.releaseSource(sourceBase + button);
 			}
+			if (uiInput.gamepadButtonJustPressed(player, InputControllerGamepadButtonBit::A)
+				&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select)) {
+				m_keyboardView.togglePosition();
+			}
 			for (const auto& binding : kOnScreenKeyboardCommandBindings) {
 				if (uiInput.gamepadButtonJustPressed(player, binding.button)
 					&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select) == binding.requiresSelect) {

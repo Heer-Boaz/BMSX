@@ -126,14 +126,14 @@ void testBackquoteNativeNavigationAndView() {
 	Font font; presenter.default_font = &font;
 	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
 	auto frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	const size_t command = 2 + f.keyboard.rows()[0].keys.size() * 2;
+	const size_t command = 3 + f.keyboard.rows()[0].keys.size() * 3;
 	const auto* rect = frame.commandRefs[command].rect;
-	require(frame.commandRefs[command + 1].glyphs->items[0] == "`", "appended key receives a retained real glyph command");
+	require(frame.commandRefs[command + 2].glyphs->items[0] == "`", "appended key receives a retained real glyph command");
 	const auto& area = rect->area;
 	require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key, "paint and hit testing share the appended key rectangle");
 	f.keyboard.activate(0); f.sample(); require(f.pressed(hid_key_usage::Backquote), "native activation forwards raw Backquote");
 	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, shift); view.queueRenderCommands(presenter); frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	require(frame.commandRefs[command + 1].glyphs->items[0] == "~", "same retained key renders tilde with Shift");
+	require(frame.commandRefs[command + 2].glyphs->items[0] == "~", "same retained key renders tilde with Shift");
 	require(frame.commandRefs[command].rect == rect, "shifted rendering reuses the appended physical rectangle");
 	f.keyboard.close(); f.sample(); require(!f.pressed(hid_key_usage::Backquote) && !f.pressed(hid_key_usage::ShiftLeft), "close retires appended-key and modifier sources");
 }
@@ -216,22 +216,25 @@ void testFunctionPagesAndView() {
 	Font font; presenter.default_font = &font;
 	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
 	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	require(frame.commandRefs[1].glyphs->items[0] == "KEYBOARD: FN", "bitmap title publishes the actual active function page");
-	size_t command = 2;
+	require(frame.commandRefs[2].glyphs->items[0] == "KEYBOARD: FN", "bitmap title publishes the actual active function page");
+	size_t command = 3;
 	for (const auto& row : f.keyboard.rows()) for (i16 key : row.keys) {
 		require(frame.commandKinds[command] == Host2DKind::Rect, "each function-page key publishes a retained real rectangle");
 		const auto& area = frame.commandRefs[command++].rect->area;
 		require(frame.commandKinds[command] == Host2DKind::Glyphs, "each function-page key publishes real glyphs");
+		const auto& shadow = *frame.commandRefs[command++].glyphs;
+		require(frame.commandKinds[command] == Host2DKind::Glyphs, "key foreground follows its retained shadow");
 		const auto& glyph = *frame.commandRefs[command++].glyphs;
+		require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1, "retained label shadow follows the same physical key");
 		require(glyph.items[0] == f.keyboard.label(key), "painted function label is the exact model identity");
 		require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key,
 			"bitmap hit and paint select the same actual active-page key");
 		require(f.keyboard.selectedKey() == key, "bitmap selection updates the injected owner, not an old main-row index");
 	}
-	require(frame.commandCount == command + HostOnScreenKeyboard::HelpLineCount, "function page publishes only active keys and fixed help");
-	require(frame.commandRefs[command + 2].glyphs->items[0] == "START ENTER  SEL+B DEL  SEL+Y PAGE", "native page transition binding is discoverable in the unchanged help row");
+	require(frame.commandCount == command + HostOnScreenKeyboard::HelpLineCount * 2, "function page publishes only active keys and fixed help");
+	require(frame.commandRefs[command + 5].glyphs->items[0] == "START ENTER  SEL+B DEL  SEL+Y PAGE", "native page transition binding is discoverable in the unchanged help row");
 	f.keyboard.setPage(static_cast<size_t>(KeyboardPage::Symbols)); view.queueRenderCommands(presenter);
-	require(presenter.hostOverlayQueue.consumeHostMenuFrame().commandRefs[1].glyphs->items[0] == "KEYBOARD: SYMBOLS", "retained title follows the active symbols page");
+	require(presenter.hostOverlayQueue.consumeHostMenuFrame().commandRefs[2].glyphs->items[0] == "KEYBOARD: SYMBOLS", "retained title follows the active symbols page");
 }
 
 void testQueuedOriginPageTargets() {
@@ -302,9 +305,9 @@ void testExplicitRowStarts() {
 	Font font; presenter.default_font = &font;
 	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
 	const auto frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	const auto& qRect = frame.commandRefs[2].rect->area;
-	const auto& upRect = frame.commandRefs[4].rect->area;
-	const auto& downRect = frame.commandRefs[12].rect->area;
+	const auto& qRect = frame.commandRefs[3].rect->area;
+	const auto& upRect = frame.commandRefs[6].rect->area;
+	const auto& downRect = frame.commandRefs[18].rect->area;
 	require(upRect.left - qRect.left == 3 * (qRect.right - qRect.left + 1), "bitmap geometry retains the two-column authored gap");
 	require(upRect.left == downRect.left, "bitmap Up and Down share the same authored column");
 	require(view.selectAt(static_cast<i32>((upRect.left + upRect.right) / 2), static_cast<i32>((upRect.top + upRect.bottom) / 2)) == up, "authored Up rectangle owns Up input");

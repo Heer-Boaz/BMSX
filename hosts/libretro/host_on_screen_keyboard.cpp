@@ -12,7 +12,7 @@ constexpr std::array<const char*, HostOnScreenKeyboard::HelpLineCount> kHelpLine
 	"A TYPE  B SPACE  X BKSP  Y SHIFT",
 	"L/R CURSOR  LT/RT HOME/END",
 	"START ENTER  SEL+B DEL  SEL+Y PAGE",
-	"SEL+X CLOSE  SEL+L/R HOME/END",
+	"SEL+X CLOSE  SEL+A TOP/BOTTOM",
 }};
 constexpr i32 kUnitWidth = 13;
 constexpr i32 kKeyGap = 1;
@@ -21,11 +21,11 @@ constexpr i32 kPanelPadding = 4;
 constexpr i32 kTitleGap = 3;
 constexpr i32 kHelpGap = 3;
 constexpr i32 kHelpLineGap = 1;
-constexpr u32 kPanelColor = 0xe0101010u;
-constexpr u32 kKeyColor = 0xff252525u;
-constexpr u32 kSelectedKeyColor = 0xff1e6a95u;
-constexpr u32 kPressedKeyColor = 0xffffca55u;
-constexpr u32 kPressedTextColor = 0xff101010u;
+constexpr u32 kPanelColor = 0x60465264u;
+constexpr u32 kKeyColor = 0x80bccbdbu;
+constexpr u32 kSelectedKeyColor = 0xff7eb4d9u;
+constexpr u32 kPressedKeyColor = 0xffffe09au;
+constexpr u32 kShadowColor = 0xff080c12u;
 constexpr u32 kTextColor = 0xffefefefu;
 constexpr u32 kDimColor = 0xffb2b2b2u;
 constexpr u32 kTitleColor = 0xff5bc6ffu;
@@ -33,7 +33,7 @@ constexpr u32 kTitleColor = 0xff5bc6ffu;
 } // namespace
 
 HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(model) {
-	m_panel_rect.kind = RectRenderKind::Fill;
+	m_panel_rect.kind = RectRenderKind::Rect;
 	m_panel_rect.color = kPanelColor;
 	m_panel_rect.layer = Layer2D::IDE;
 	m_title_glyphs.items.emplace_back(kTitles[0]);
@@ -41,14 +41,18 @@ HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(mo
 	m_title_glyphs.z = 922.0f;
 	m_title_glyphs.color = kTitleColor;
 	m_title_glyphs.layer = Layer2D::IDE;
+	m_title_shadow = m_title_glyphs;
+	m_title_shadow.color = kShadowColor;
+	m_title_shadow.z = 921.0f;
 	m_command_kinds[0] = Host2DKind::Rect;
 	m_command_refs[0] = Host2DRef{.rect = &m_panel_rect};
 	m_command_kinds[1] = Host2DKind::Glyphs;
-	m_command_refs[1] = Host2DRef{.glyphs = &m_title_glyphs};
-	size_t command = 2u;
+	m_command_refs[1] = Host2DRef{.glyphs = &m_title_shadow};
+	m_command_kinds[2] = Host2DKind::Glyphs;
+	m_command_refs[2] = Host2DRef{.glyphs = &m_title_glyphs};
 	for (size_t index = 0u; index < ON_SCREEN_KEY_DEFINITIONS.size(); index += 1u) {
 		RectRenderSubmission& rect = m_key_rects[index];
-		rect.kind = RectRenderKind::Fill;
+		rect.kind = RectRenderKind::Rect;
 		rect.color = kKeyColor;
 		rect.layer = Layer2D::IDE;
 		GlyphRenderSubmission& glyphs = m_key_glyphs[index];
@@ -57,12 +61,9 @@ HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(mo
 		glyphs.z = 922.0f;
 		glyphs.color = kTextColor;
 		glyphs.layer = Layer2D::IDE;
-		m_command_kinds[command] = Host2DKind::Rect;
-		m_command_refs[command] = Host2DRef{.rect = &rect};
-		command += 1u;
-		m_command_kinds[command] = Host2DKind::Glyphs;
-		m_command_refs[command] = Host2DRef{.glyphs = &glyphs};
-		command += 1u;
+		m_key_shadows[index] = glyphs;
+		m_key_shadows[index].color = kShadowColor;
+		m_key_shadows[index].z = 921.0f;
 	}
 	for (size_t index = 0u; index < kHelpLines.size(); index += 1u) {
 		GlyphRenderSubmission& glyphs = m_help_glyphs[index];
@@ -71,10 +72,15 @@ HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(mo
 		glyphs.z = 922.0f;
 		glyphs.color = kDimColor;
 		glyphs.layer = Layer2D::IDE;
-		m_command_kinds[command] = Host2DKind::Glyphs;
-		m_command_refs[command] = Host2DRef{.glyphs = &glyphs};
-		command += 1u;
+		m_help_shadows[index] = glyphs;
+		m_help_shadows[index].color = kShadowColor;
+		m_help_shadows[index].z = 921.0f;
 	}
+}
+
+void HostOnScreenKeyboard::togglePosition() {
+	m_bottomDocked = !m_bottomDocked;
+	m_layout_width = -1;
 }
 
 i32 HostOnScreenKeyboard::selectAt(i32 x, i32 y) {
@@ -93,14 +99,18 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 		m_renderedShift = m_model.shiftActive();
 		for (size_t key = 0; key < m_key_glyphs.size(); ++key) {
 			auto& glyphs = m_key_glyphs[key]; glyphs.items[0] = m_model.label(static_cast<i16>(key)); glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
+			m_key_shadows[key].items[0] = glyphs.items[0];
+			m_key_shadows[key].item_end = glyphs.item_end;
 		}
 		m_layout_width = -1;
 	}
 	if (m_model.revision() != m_renderedRevision) { m_renderedRevision = m_model.revision(); updateKeyColors(); }
 	const auto& bounds = presenter.visibleViewportBounds;
 	const f32 width = bounds.right - bounds.left;
-	if (m_layout_left != bounds.left || m_layout_top != bounds.top || m_layout_width != width || m_layout_font != presenter.default_font) {
-		m_layout_left = bounds.left; m_layout_top = bounds.top; m_layout_width = width; m_layout_font = presenter.default_font; layoutKeys(presenter);
+	if (m_layout_left != bounds.left || m_layout_top != bounds.top || m_layout_bottom != bounds.bottom
+		|| m_layout_width != width || m_layout_font != presenter.default_font) {
+		m_layout_left = bounds.left; m_layout_top = bounds.top; m_layout_bottom = bounds.bottom;
+		m_layout_width = width; m_layout_font = presenter.default_font; layoutKeys(presenter);
 	}
 	presenter.hostOverlayQueue.clearHostMenuFrame();
 	presenter.hostOverlayQueue.publishHostMenuFrame(HostMenuFrame{m_command_kinds.data(), m_command_refs.data(), m_commandCount});
@@ -108,13 +118,17 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 void HostOnScreenKeyboard::rebuildPageCommands() {
 	m_title_glyphs.items[0] = kTitles[m_model.page()];
 	m_title_glyphs.item_end = static_cast<i32>(m_title_glyphs.items[0].size());
-	size_t command = 2;
+	m_title_shadow.items[0] = m_title_glyphs.items[0];
+	m_title_shadow.item_end = m_title_glyphs.item_end;
+	size_t command = 3;
 	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
 		m_command_kinds[command] = Host2DKind::Rect; m_command_refs[command++] = Host2DRef{.rect = &m_key_rects[static_cast<size_t>(key)]};
+		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_shadows[static_cast<size_t>(key)]};
 		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_glyphs[static_cast<size_t>(key)]};
 	}
-	for (const auto& glyphs : m_help_glyphs) {
-		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &glyphs};
+	for (size_t index = 0; index < m_help_glyphs.size(); ++index) {
+		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_help_shadows[index]};
+		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_help_glyphs[index]};
 	}
 	m_commandCount = command;
 }
@@ -122,7 +136,7 @@ void HostOnScreenKeyboard::updateKeyColors() {
 	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
 		const bool pressed = m_model.isKeyHighlighted(key);
 		m_key_rects[static_cast<size_t>(key)].color = pressed ? kPressedKeyColor : key == m_model.selectedKey() ? kSelectedKeyColor : kKeyColor;
-		m_key_glyphs[static_cast<size_t>(key)].color = pressed ? kPressedTextColor : kTextColor;
+		m_key_glyphs[static_cast<size_t>(key)].color = pressed ? kPressedKeyColor : key == m_model.selectedKey() ? kSelectedKeyColor : kTextColor;
 	}
 	m_help_glyphs[1].color = m_model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Home])
 		|| m_model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::End]) ? kPressedKeyColor : kDimColor;
@@ -146,8 +160,7 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	const i32 panelHeight = kPanelPadding * 2 + lineHeight + kTitleGap
 		+ keysHeight + kHelpGap + helpHeight;
 	const f32 left = bounds.left + static_cast<i32>((viewportWidth - panelWidth) / 2);
-	// Keep the interactive key grid above the surrounding gamepad hand row.
-	const f32 top = bounds.top + kPanelPadding;
+	const f32 top = m_bottomDocked ? bounds.bottom - kPanelPadding - panelHeight : bounds.top + kPanelPadding;
 	m_panel_rect.area = RectBounds{
 		static_cast<f32>(left),
 		static_cast<f32>(top),
@@ -158,6 +171,9 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	m_title_glyphs.font = font;
 	m_title_glyphs.x = bounds.left + static_cast<i32>((viewportWidth - font->measure(m_title_glyphs.items[0])) / 2);
 	m_title_glyphs.y = static_cast<f32>(top + kPanelPadding);
+	m_title_shadow.font = font;
+	m_title_shadow.x = m_title_glyphs.x + 1;
+	m_title_shadow.y = m_title_glyphs.y + 1;
 	const f32 keyTop = top + kPanelPadding + lineHeight + kTitleGap;
 	for (size_t rowIndex = 0u; rowIndex < pageRows.size(); rowIndex += 1u) {
 		const auto& row = pageRows[rowIndex];
@@ -181,6 +197,9 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 			glyphs.x = static_cast<f32>(
 				keyLeft + static_cast<i32>((width - font->measure(glyphs.items[0])) / 2));
 			glyphs.y = static_cast<f32>(keyY + (keyHeight - lineHeight) / 2);
+			m_key_shadows[offset].font = font;
+			m_key_shadows[offset].x = glyphs.x + 1;
+			m_key_shadows[offset].y = glyphs.y + 1;
 		}
 	}
 	const f32 helpTop = keyTop + keysHeight + kHelpGap;
@@ -190,6 +209,9 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 		glyphs.x = bounds.left + static_cast<i32>((viewportWidth - font->measure(glyphs.items[0])) / 2);
 		glyphs.y = static_cast<f32>(
 			helpTop + static_cast<i32>(index) * (lineHeight + kHelpLineGap));
+		m_help_shadows[index].font = font;
+		m_help_shadows[index].x = glyphs.x + 1;
+		m_help_shadows[index].y = glyphs.y + 1;
 	}
 }
 

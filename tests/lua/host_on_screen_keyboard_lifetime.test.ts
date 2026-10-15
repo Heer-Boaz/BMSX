@@ -7,10 +7,11 @@ import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostKeyboardPresentation, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from '../../hosts/common/rewind';
@@ -226,3 +227,68 @@ test('closing the keyboard releases every source, special key and sticky or capt
 	assert.equal(f.pressed('KeyQ'), true);
 	assert.equal(f.pressed('ShiftLeft'), false);
 });
+
+
+for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresentation.External]) {
+	test(`Select+A docking is same-player, edge-triggered and presentation-owned (${presentation === HostKeyboardPresentation.Bitmap ? 'bitmap' : 'external'})`, t => {
+		const f = fixture(); f.keyboard.close();
+		for (let player = 0; player < 2; player += 1) {
+			f.input.connectInputDevice({ id: `gamepad:${player}`, kind: 'gamepad', gamepadIndex: player, label: 'PAD',
+				vibrationInitialization: null, supportsVibration: false, setVibration() {} });
+		}
+		const queue = new HostOverlayQueue();
+		const presenter = { viewportSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
+			default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 }, hostOverlayQueue: queue,
+			mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
+		} as VideoPresenter;
+		const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind,
+			createHostFrameFixture().execution, [], f.keyboard, presentation);
+		let pressId = 0;
+		const button = (player: number, code: string, down: boolean) => f.input.inputButton(`gamepad:${player}`, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
+		const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
+		const chord = (player: number, code: string) => { button(player, 'select', true); button(player, code, true); tick();
+			button(player, code, false); button(player, 'select', false); tick(); };
+		const frame = () => { menu.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
+		let relocations = 0;
+		const toggle = HostOnScreenKeyboard.prototype.togglePosition;
+		HostOnScreenKeyboard.prototype.togglePosition = function () { relocations += 1; toggle.call(this); };
+		t.after(() => { HostOnScreenKeyboard.prototype.togglePosition = toggle; menu.dismiss(); f.input.dispose(); });
+		tick(); chord(0, 'x');
+		assert.equal(f.keyboard.visible, true, 'unchanged Select+X opens the keyboard');
+		const original = frame();
+		const panel = presentation === HostKeyboardPresentation.Bitmap ? original.commandRefs[0] as RectRenderSubmission : undefined;
+		if (panel) assert.equal(panel.area.top, 4); else assert.equal(original, undefined, 'external presentation publishes no bitmap UI');
+		const modelRevision = f.keyboard.revision;
+		button(0, 'select', true); button(0, 'a', true); tick(); frame();
+		assert.equal(f.keyboard.revision, modelRevision, 'presentation relocation cannot mutate the keyboard model');
+		assert.deepEqual(f.writes, [], 'the docking chord forwards no synthetic guest key');
+		const expectedRelocations = presentation === HostKeyboardPresentation.Bitmap ? 1 : 0;
+		assert.equal(relocations, expectedRelocations);
+		if (panel) assert.equal(panel.area.bottom, 208);
+		for (let repeat = 0; repeat < 60; repeat += 1) tick();
+		assert.equal(relocations, expectedRelocations, 'a held chord never repeats after UI typematic delay');
+		button(0, 'a', false); button(0, 'select', false); tick();
+		button(0, 'select', true); button(1, 'a', true); tick(); frame();
+		assert.equal(relocations, expectedRelocations, 'Select from one player does not affect the other player');
+		assert.equal(f.pressed('KeyQ'), true, 'the second player still forwards ordinary A');
+		button(1, 'a', false); button(0, 'select', false); tick();
+		assert.equal(f.pressed('KeyQ'), false);
+		button(1, 'a', true); tick(); button(1, 'select', true); tick();
+		assert.equal(relocations, expectedRelocations, 'adding Select after A is already held is not a new docking edge');
+		assert.equal(f.pressed('KeyQ'), true, 'an existing actual key source stays held');
+		button(1, 'a', false); button(1, 'select', false); tick();
+		chord(1, 'a'); frame();
+		assert.equal(relocations, expectedRelocations * 2, 'controller two may independently use its own docking chord');
+		if (panel) assert.equal(panel.area.top, 4);
+		for (const [code, forwarded] of [['b', 'Space'], ['x', 'Backspace'], ['lb', 'ArrowLeft'], ['rb', 'ArrowRight'],
+			['lt', 'Home'], ['rt', 'End'], ['start', 'Enter']] as const) {
+			button(0, code, true); tick(); assert.equal(f.pressed(forwarded), true, `${code} retains ${forwarded}`);
+			button(0, code, false); tick(); assert.equal(f.pressed(forwarded), false);
+		}
+		chord(0, 'y'); frame(); assert.equal(f.keyboard.page, 1, 'existing Select+Y still switches pages');
+		chord(0, 'x'); assert.equal(f.keyboard.visible, false, 'existing close chord still releases the UI');
+		chord(0, 'x'); frame(); assert.equal(f.keyboard.visible, true);
+		if (panel) assert.equal(panel.area.top, 4, 'reopen retains the manually selected side');
+		assert.deepEqual(presenter.viewportSize, { x: 256, y: 212 });
+	});
+}

@@ -3,6 +3,9 @@
 #include "input.h"
 #include "common/rect.h"
 #include "render/shared/bmsx_font.h"
+#include "render/host_overlay/software/renderer.h"
+#include <algorithm>
+#include <vector>
 #include "render/video_presenter.h"
 #include "spec/bmsx/model.h"
 #include <iostream>
@@ -38,14 +41,14 @@ void testVisibleViewport() {
 	};
 	const HostMenuFrame normal = frame();
 	const auto* panel = normal.commandRefs[0].rect;
-	const auto* q = normal.commandRefs[32].rect;
+	const auto* q = normal.commandRefs[48].rect;
 	require(panel->area.right - panel->area.left == 231, "full native keyboard retains its existing panel width");
 	require(panel->area.top == video.visibleViewportBounds.top + 4, "actual native keyboard panel docks at the visible picture top");
 	require(q->area.right - q->area.left == 13, "full native keyboard retains its existing key unit");
 	video.visibleViewportBounds = RectBounds{12.8F, 9.6F, 243.2F, 182.4F, 0};
 	const HostMenuFrame cropped = frame();
 	require(&presenter.visibleViewportBounds == &video.visibleViewportBounds, "presenter borrows the retained actual output rectangle");
-	require(cropped.commandRefs[0].rect == panel && cropped.commandRefs[32].rect == q, "visible layout retains existing commands");
+	require(cropped.commandRefs[0].rect == panel && cropped.commandRefs[48].rect == q, "visible layout retains existing commands");
 	require(panel->area.right - panel->area.left == 215, "keyboard grid reduces its unit to fit the real cropped width");
 	require(panel->area.top == video.visibleViewportBounds.top + 4, "cropped native keyboard retains its direct top anchor");
 	require(q->area.right == q->area.left + 12, "cropped keys use the same integer grid as their glyph positions");
@@ -63,29 +66,137 @@ void testVisibleViewport() {
 		}
 	}
 	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount; ++key) {
-		const auto center = middlepoint_area(cropped.commandRefs[2 + key * 2].rect->area);
+		const auto center = middlepoint_area(cropped.commandRefs[3 + key * 3].rect->area);
 		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key),
 			"every painted cropped key remains directly selectable");
 	}
 	const f32 oldLeft = q->area.left, oldTop = q->area.top;
 	video.visibleViewportBounds.bottom -= 10;
-	require(frame().commandRefs[32].rect == q && q->area.left == oldLeft && q->area.top == oldTop,
+	require(frame().commandRefs[48].rect == q && q->area.left == oldLeft && q->area.top == oldTop,
 		"a picture-bottom change retains the actual top-docked key paint geometry");
 	const auto qCenter = middlepoint_area(q->area);
 	require(view.selectAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
 		"top-docked paint and hit testing continue sharing the same retained key rectangle");
 	video.visibleViewportBounds = RectBounds{14.8F, 12.6F, 245.2F, 185.4F, 0};
-	require(frame().commandRefs[32].rect == q, "origin-only relayout retains the key command");
+	require(frame().commandRefs[48].rect == q, "origin-only relayout retains the key command");
 	require(q->area.left == oldLeft + 2 && q->area.top == oldTop + 3, "origin-only visible changes invalidate layout cache");
 	require(presenter.viewportSize.x == 256 && presenter.viewportSize.y == 192, "host UI layout never resizes the game target");
 }
 
+void testDocking() {
+	LibretroInput input(supervisor);
+	input.setInputPollCallback(poll); input.setInputStateCallback(state);
+	TestVideoOutput video(256, 212);
+	VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 212);
+	Font font; presenter.default_font = &font;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES); HostOnScreenKeyboard view(keyboard);
+	keyboard.open();
+	video.visibleViewportBounds = RectBounds{12.8F, 9.6F, 243.2F, 202.4F, 0};
+	const auto frame = [&]() { view.queueRenderCommands(presenter); return presenter.hostOverlayQueue.consumeHostMenuFrame(); };
+	const auto original = frame();
+	const auto* panel = original.commandRefs[0].rect;
+	const auto* q = original.commandRefs[48].rect;
+	const auto* glyph = original.commandRefs[50].glyphs;
+	// The unchanged five-row 8px-font layout has an exact 125px panel height.
+	const f32 top = panel->area.top, height = 125, oldKeyY = q->area.top;
+	keyboard.pressKey(0, 15);
+	const u64 heldRevision = keyboard.revision();
+	view.togglePosition();
+	const auto bottom = frame();
+	require(keyboard.revision() == heldRevision && keyboard.isKeyPressed(15), "docking cannot mutate held input, feedback or selection");
+	require(bottom.commandRefs == original.commandRefs && bottom.commandKinds == original.commandKinds, "manual docking reuses command storage");
+	require(bottom.commandRefs[0].rect == panel && bottom.commandRefs[48].rect == q, "manual docking reuses panel and key objects");
+	require(panel->area.bottom == video.visibleViewportBounds.bottom - 4, "manual bottom position anchors inside the actual visible picture");
+	require(panel->area.top == video.visibleViewportBounds.bottom - 4 - height && q->area.top != oldKeyY, "bottom docking moves the entire existing composition without scaling it");
+	const f32 bottomKeyY = q->area.top;
+	video.visibleViewportBounds.bottom -= 5;
+	frame(); require(q->area.top == bottomKeyY - 5, "height-only target changes invalidate bottom-docked paint and hit layout");
+	keyboard.command(1, OnScreenKeyboardCommand::Shift); frame();
+	require(glyph->items[0] == "Q" && panel->area.bottom == video.visibleViewportBounds.bottom - 4, "Shift relayout retains the manual bottom anchor");
+	keyboard.setPage(static_cast<size_t>(KeyboardPage::Functions)); const auto functions = frame();
+	require(functions.commandRefs[2].glyphs->items[0] == "KEYBOARD: FN", "docked title follows actual page owner");
+	require(panel->area.bottom == video.visibleViewportBounds.bottom - 4 && panel->area.bottom - panel->area.top < height,
+		"shorter pages fit to the same bottom edge rather than retaining the old page top");
+	require(keyboard.isKeyPressed(15), "page and docking leave hidden held sources unchanged");
+	size_t command = 3;
+	for (const auto& row : keyboard.rows()) for (i16 key : row.keys) {
+		const auto center = middlepoint_area(functions.commandRefs[command].rect->area); command += 3;
+		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == key, "every docked page key uses its own painted hit rectangle");
+	}
+	keyboard.close(); keyboard.open(); frame();
+	require(panel->area.bottom == video.visibleViewportBounds.bottom - 4 && !keyboard.isKeyPressed(15), "close releases the model while reopening retains manual presentation position");
+	view.togglePosition(); frame();
+	require(panel->area.top == top, "explicit second toggle returns to the original top inset");
+	require(presenter.viewportSize.x == 256 && presenter.viewportSize.y == 212, "docking never changes guest target geometry");
+}
+
+void testTransparentPixels() {
+	constexpr i32 width = 320, height = 240;
+	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
+	TestVideoOutput video(width, height);
+	auto software = std::make_unique<SoftwareBackend>(width, height, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	SoftwareBackend* backend = software.get(); backend->resizePresentationTarget(width, height);
+	VideoPresenter presenter(video, std::move(software), width, height);
+	Font font; presenter.default_font = &font;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES); HostOnScreenKeyboard view(keyboard); keyboard.open();
+	std::vector<u32> pattern(width * height), pixels(width * height), mask(width * height);
+	for (size_t index = 0; index < pattern.size(); ++index) pattern[index] = 0xff000000u | static_cast<u32>((index * 137u + 0x35627bu) & 0xffffffu);
+	const auto render = [&](const HostMenuFrame& commands, const std::vector<u32>& background, std::vector<u32>& result) {
+		std::copy(background.begin(), background.end(), backend->framebuffer());
+		Host2DPipelineState state;
+		beginHostOverlaySoftware(*backend, state);
+		for (size_t command = 0; command < commands.commandCount; ++command) renderHost2DEntrySoftware(*backend, commands.commandKinds[command], commands.commandRefs[command]);
+		endHostOverlaySoftware(*backend);
+		std::copy_n(backend->framebuffer(), result.size(), result.begin());
+	};
+	const std::vector<u32> empty(width * height);
+	f64 time = 0;
+	for (const bool bottom : {false, true}) {
+		if (bottom) view.togglePosition();
+		for (const auto page : {KeyboardPage::Text, KeyboardPage::Symbols, KeyboardPage::Functions}) {
+			keyboard.setPage(static_cast<size_t>(page));
+			for (const bool held : {false, true}) {
+				keyboard.updateFeedback(time += 200);
+				if (held) keyboard.activate(0);
+				view.queueRenderCommands(presenter); const auto commands = presenter.hostOverlayQueue.consumeHostMenuFrame();
+				size_t visibleKeys = 0;
+				for (const auto& row : keyboard.rows()) visibleKeys += row.keys.size();
+				require(commands.commandCount == 3 + visibleKeys * 3 + 8, "each page contains only its own outlines and shadow/foreground glyph pairs");
+				for (size_t command = 0; command < commands.commandCount; ++command) {
+					if (commands.commandKinds[command] == Host2DKind::Rect) {
+						require(commands.commandRefs[command].rect->kind == RectRenderKind::Rect, "native keyboard never submits filled panel or key plates");
+					} else {
+						const auto& shadow = *commands.commandRefs[command++].glyphs;
+						const auto& glyph = *commands.commandRefs[command].glyphs;
+						require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1 && shadow.color == 0xff080c12u,
+							"title, key and help glyphs retain an exact one-pixel dark edge over the scene");
+						require(!shadow.has_background_color && !glyph.has_background_color, "glyph commands cannot paint hidden background plates");
+					}
+				}
+				render(commands, empty, mask); render(commands, pattern, pixels);
+				size_t painted = 0, preserved = 0;
+				for (size_t offset = 0; offset < pixels.size(); ++offset) {
+					if (mask[offset] == 0) { require(pixels[offset] == pattern[offset], "actual software keyboard preserves every uncovered scene pixel exactly"); ++preserved; }
+					else painted += pixels[offset] != pattern[offset];
+				}
+				require(painted > 100 && preserved > pattern.size() * 3 / 4, "transparent bitmap keyboard remains visible without washing out the scene");
+				for (size_t key = 0; key < visibleKeys; ++key) {
+					const auto& area = commands.commandRefs[3 + key * 3].rect->area;
+					const size_t offset = static_cast<size_t>((static_cast<i32>(area.top) + 1) * width + static_cast<i32>(area.left) + 1);
+					require(pixels[offset] == pattern[offset], "every selected/idle/held key interior remains fully open to underlying scene pixels");
+				}
+				keyboard.releaseSource(0);
+			}
+		}
+	}
+}
+
 void testFeedback() {
-	constexpr u32 idleColor = 0xff252525u;
-	constexpr u32 selectedColor = 0xff1e6a95u;
-	constexpr u32 pressedColor = 0xffffca55u;
+	constexpr u32 idleColor = 0x80bccbdbu;
+	constexpr u32 selectedColor = 0xff7eb4d9u;
+	constexpr u32 pressedColor = 0xffffe09au;
 	constexpr u32 textColor = 0xffefefefu;
-	constexpr u32 pressedTextColor = 0xff101010u;
+	constexpr u32 pressedTextColor = 0xffffe09au;
 	constexpr size_t q = 15u, w = 16u, backspace = 13u, shift = 41u, control = 53u;
 	TestVideoOutput video(320, 240);
 	VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(320, 240, PSX_MACHINE_SPEC.gxGpuVramBytes), 320, 240);
@@ -113,30 +224,30 @@ void testFeedback() {
 		view.queueRenderCommands(presenter);
 		return presenter.hostOverlayQueue.consumeHostMenuFrame();
 	};
-	const auto expectKey = [&](size_t key, u32 background, u32 foreground) {
+	const auto expectKey = [&](size_t key, u32 edge, u32 foreground) {
 		const HostMenuFrame commands = frame();
-		require(commands.commandKinds[2u + key * 2u] == Host2DKind::Rect, "key publishes a real rectangle command");
-		require(commands.commandKinds[3u + key * 2u] == Host2DKind::Glyphs, "key publishes a real glyph command");
-		require(commands.commandRefs[2u + key * 2u].rect->color == background, "published key background matches forwarded input feedback");
-		require(commands.commandRefs[3u + key * 2u].glyphs->color == foreground, "published key label remains legible against feedback");
+		require(commands.commandKinds[3u + key * 3u] == Host2DKind::Rect, "key publishes a real rectangle command");
+		require(commands.commandKinds[5u + key * 3u] == Host2DKind::Glyphs, "key publishes a real glyph command");
+		require(commands.commandRefs[3u + key * 3u].rect->color == edge, "published key outline matches forwarded input feedback");
+		require(commands.commandRefs[5u + key * 3u].glyphs->color == foreground, "published key label matches forwarded feedback");
 	};
 	const auto select = [&](size_t key) {
-		const RectBounds& area = frame().commandRefs[2u + key * 2u].rect->area;
+		const RectBounds& area = frame().commandRefs[3u + key * 3u].rect->area;
 		const Vec2 center = middlepoint_area(area);
 		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key), "selection comes from the published key geometry");
 	};
 	const auto expectHomeEndHelp = [&](u32 color) {
 		const HostMenuFrame commands = frame();
-		require(commands.commandRefs[2u + HostOnScreenKeyboard::KeyCount * 2u + 1u].glyphs->color == color, "Home/End forwarding highlights their existing binding help line");
+		require(commands.commandRefs[3u + HostOnScreenKeyboard::KeyCount * 3u + 3u].glyphs->color == color, "Home/End forwarding highlights their existing binding help line");
 	};
 
 	keyboard.open();
 	advance(1000);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 	select(w);
 	sample();
 	require(!pressed(hid_key_usage::W), "selection alone never forwards a key or shows pressed feedback");
-	expectKey(w, selectedColor, textColor);
+	expectKey(w, selectedColor, selectedColor);
 	expectKey(q, idleColor, textColor);
 	select(q);
 	keyboard.activate(0);
@@ -152,7 +263,7 @@ void testFeedback() {
 	advance(5119);
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(5120);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 
 	advance(5200);
 	keyboard.activate(OnScreenKeyboard::PointerSource);
@@ -161,7 +272,7 @@ void testFeedback() {
 	require(!pressed(hid_key_usage::Q), "a completed short pointer tap is already released in the sampled input");
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(5320);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 
 	advance(5400);
 	keyboard.activate(0);
@@ -175,7 +286,7 @@ void testFeedback() {
 	sample();
 	require(!pressed(hid_key_usage::Q), "the final contributor emits key up immediately");
 	advance(6120);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 
 	advance(6200);
 	keyboard.activate(0);
@@ -202,12 +313,12 @@ void testFeedback() {
 	advance(6819);
 	expectKey(q, pressedColor, pressedTextColor);
 	advance(6820);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 
 	advance(6900);
 	keyboard.command(1, OnScreenKeyboardCommand::Backspace);
 	expectKey(backspace, pressedColor, pressedTextColor);
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 	keyboard.releaseSource(1);
 	sample();
 	require(!pressed(hid_key_usage::Backspace), "command-key feedback never delays Backspace key up");
@@ -228,7 +339,7 @@ void testFeedback() {
 	advance(7219);
 	expectKey(shift, pressedColor, pressedTextColor);
 	advance(7220);
-	expectKey(shift, selectedColor, textColor);
+	expectKey(shift, selectedColor, selectedColor);
 
 	advance(7300);
 	select(control);
@@ -245,7 +356,7 @@ void testFeedback() {
 	sample();
 	require(!pressed(hid_key_usage::ControlLeft), "captured sticky modifier release is immediate");
 	advance(7420);
-	expectKey(control, selectedColor, textColor);
+	expectKey(control, selectedColor, selectedColor);
 
 	for (const auto command : {OnScreenKeyboardCommand::Home, OnScreenKeyboardCommand::End}) {
 		advance(time + 200);
@@ -265,7 +376,7 @@ void testFeedback() {
 	expectKey(q, pressedColor, pressedTextColor);
 	keyboard.close();
 	keyboard.open();
-	expectKey(q, selectedColor, textColor);
+	expectKey(q, selectedColor, selectedColor);
 	expectHomeEndHelp(0xffb2b2b2u);
 }
 }
@@ -360,6 +471,8 @@ int main() {
 		require(!pressed(hid_key_usage::Q), "final physical keyboard release clears the sampled bit");
 		testFeedback();
 		testVisibleViewport();
+		testDocking();
+		testTransparentPixels();
 		std::cout << "HOST-ON-SCREEN-KEYBOARD:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

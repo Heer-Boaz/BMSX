@@ -1012,6 +1012,11 @@ export class HostOverlayMenu {
 			for (let button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; button += 1) {
 				if (!ui.gamepadButtonPressed(player, button)) this.keyboard.releaseSource(sourceBase + button);
 			}
+			if (this.keyboardPresentation === HostKeyboardPresentation.Bitmap
+				&& ui.gamepadButtonJustPressed(player, BUTTON_A)
+				&& ui.gamepadButtonPressed(player, BUTTON_SELECT)) {
+				this.keyboardView.togglePosition();
+			}
 			for (const binding of ON_SCREEN_KEYBOARD_COMMAND_BINDINGS) {
 				if (ui.gamepadButtonJustPressed(player, binding.button)
 					&& ui.gamepadButtonPressed(player, BUTTON_SELECT) === binding.requiresSelect) {

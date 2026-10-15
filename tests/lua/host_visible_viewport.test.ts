@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -10,7 +10,7 @@ import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
@@ -38,7 +38,7 @@ function keyboardFixture() {
 	const keyboard = new HostOnScreenKeyboard(presenter, model);
 	model.open();
 	const frame = () => { keyboard.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
-	return { output, presenter, input, keyboard, frame };
+	return { output, presenter, input, model, keyboard, frame };
 }
 
 test('video presenter retains its producer visible rectangle without changing full-image mapping', () => {
@@ -59,7 +59,7 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 	const f = keyboardFixture(); t.after(() => f.input.dispose());
 	const normal = f.frame();
 	const panel = normal.commandRefs[0] as RectRenderSubmission;
-	const q = normal.commandRefs[32] as RectRenderSubmission;
+	const q = normal.commandRefs[48] as RectRenderSubmission;
 	assert.equal(panel.area.right - panel.area.left, 231);
 	assert.equal(panel.area.top, f.output.visibleViewportBounds.top + 4, 'the real panel docks to the visible picture top');
 	assert.equal(q.area.right - q.area.left, 13);
@@ -67,13 +67,13 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 	write_rect_bounds(f.output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
 	const cropped = f.frame();
 	assert.equal(cropped.commandRefs[0], panel);
-	assert.equal(cropped.commandRefs[32], q);
+	assert.equal(cropped.commandRefs[48], q);
 	assert.equal(panel.area.right - panel.area.left, 215);
 	assert.equal(panel.area.top, f.output.visibleViewportBounds.top + 4, 'cropping changes the owner anchor, not input priority');
 	assert.equal(q.area.right - q.area.left, 12);
 	assertVisible(cropped, f.presenter.visibleViewportBounds);
 	for (let key = 0; key < 60; key += 1) {
-		const rect = cropped.commandRefs[2 + key * 2] as RectRenderSubmission;
+		const rect = cropped.commandRefs[3 + key * 3] as RectRenderSubmission;
 		const x = (rect.area.left + rect.area.right) / 2, y = (rect.area.top + rect.area.bottom) / 2;
 		assert.equal(f.keyboard.containsPoint(x, y), true);
 		assert.equal(f.keyboard.selectAt(x, y), key);
@@ -85,7 +85,7 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 test('keyboard relayouts on visible origin changes and reuses its real commands without repeated font measurement', t => {
 	const f = keyboardFixture(); t.after(() => f.input.dispose());
 	write_rect_bounds(f.output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
-	const key = f.frame().commandRefs[32] as RectRenderSubmission;
+	const key = f.frame().commandRefs[48] as RectRenderSubmission;
 	const oldLeft = key.area.left, oldTop = key.area.top;
 	const font = f.presenter.default_font;
 	const measure = font.measure.bind(font);
@@ -94,13 +94,13 @@ test('keyboard relayouts on visible origin changes and reuses its real commands 
 	f.frame(); f.frame();
 	assert.equal(measurements, 0);
 	f.output.visibleViewportBounds.bottom -= 10;
-	assert.equal(f.frame().commandRefs[32], key);
+	assert.equal(f.frame().commandRefs[48], key);
 	assert.equal(key.area.top, oldTop);
 	assert.equal(key.area.left, oldLeft);
-	assert.equal(measurements, 0, 'top-docked geometry does not depend on the picture bottom');
+	assert.ok(measurements > 0, 'retained bounds include bottom because either docking position can depend on it');
 	assert.equal(f.keyboard.selectAt((key.area.left + key.area.right) / 2, (key.area.top + key.area.bottom) / 2), 15);
 	write_rect_bounds(f.output.visibleViewportBounds, 14.8, 12.6, 245.2, 185.4);
-	assert.equal(f.frame().commandRefs[32], key);
+	assert.equal(f.frame().commandRefs[48], key);
 	assert.equal(key.area.left, oldLeft + 2);
 	assert.equal(key.area.top, oldTop + 3);
 	assert.ok(measurements > 0);
@@ -191,4 +191,74 @@ test('closed-menu FPS and usage HUD translate within retained safe bounds withou
 	assert.equal(panel.area.top, 16.6);
 	assertVisible(translated, presenter.visibleViewportBounds);
 	assert.deepEqual(presenter.viewportSize, { x: 256, y: 192 });
+});
+
+
+test('native bitmap keyboard keeps every panel and key surface open, with retained one-pixel glyph shadows on all pages', t => {
+	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	for (const page of [KeyboardPage.Text, KeyboardPage.Symbols, KeyboardPage.Functions]) {
+		f.model.setPage(page);
+		const frame = f.frame();
+		const keys = f.model.rows.reduce((count, row) => count + row.keys.length, 0);
+		assert.equal(frame.commandCount, 3 + keys * 3 + 4 * 2);
+		assert.equal((frame.commandRefs[0] as RectRenderSubmission).color, 0x60465264);
+		for (let index = 0; index < frame.commandCount; index += 1) {
+			if (frame.commandKinds[index] === Host2DKind.Rect) {
+				assert.equal((frame.commandRefs[index] as RectRenderSubmission).kind, RectRenderKind.Rect, 'no filled panel or key can obscure the game');
+			} else {
+				const shadow = frame.commandRefs[index++] as GlyphRenderSubmission;
+				const glyph = frame.commandRefs[index] as GlyphRenderSubmission;
+				assert.equal(shadow.color, 0xff080c12);
+				assert.equal(shadow.items, glyph.items);
+				assert.equal(shadow.x, glyph.x + 1); assert.equal(shadow.y, glyph.y + 1);
+				assert.equal(shadow.has_background_color, false); assert.equal(glyph.has_background_color, false);
+			}
+		}
+		assertVisible(frame, f.presenter.visibleViewportBounds);
+	}
+});
+
+test('manual native keyboard docking preserves model ownership and follows live bounds, page sizes and Shift labels', t => {
+	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	write_rect_bounds(f.output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
+	const original = f.frame(), panel = original.commandRefs[0] as RectRenderSubmission;
+	const q = original.commandRefs[48] as RectRenderSubmission, glyph = original.commandRefs[50] as GlyphRenderSubmission;
+	const top = panel.area.top, height = panel.area.bottom - panel.area.top;
+	const previousQ = { ...q.area }, heldKey = 15;
+	f.model.pressKey(0, heldKey);
+	const heldRevision = f.model.revision;
+	f.keyboard.togglePosition();
+	const bottom = f.frame();
+	assert.equal(f.model.revision, heldRevision, 'docking does not mutate key state, selection or feedback');
+	assert.equal(f.model.isKeyPressed(heldKey), true);
+	assert.equal(bottom.commandRefs, original.commandRefs); assert.equal(bottom.commandKinds, original.commandKinds);
+	assert.equal(bottom.commandRefs[0], panel); assert.equal(bottom.commandRefs[48], q);
+	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4);
+	assert.equal(panel.area.top, f.output.visibleViewportBounds.bottom - 4 - height);
+	assert.notEqual(q.area.top, previousQ.top);
+	assert.equal(f.keyboard.selectAt((q.area.left + q.area.right) / 2, (q.area.top + q.area.bottom) / 2), heldKey);
+	assertVisible(bottom, f.presenter.visibleViewportBounds);
+	const oldKeyY = q.area.top;
+	f.output.visibleViewportBounds.bottom -= 5;
+	f.frame(); assert.equal(q.area.top, oldKeyY - 5, 'bottom-only output changes invalidate docked hit/paint geometry');
+	f.model.command(1, OnScreenKeyboardCommand.Shift); f.frame();
+	assert.equal(glyph.items, 'Q');
+	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4);
+	f.model.setPage(KeyboardPage.Functions);
+	const functions = f.frame();
+	assert.equal((functions.commandRefs[2] as GlyphRenderSubmission).items, 'KEYBOARD: FN');
+	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4, 'shorter pages retain the bottom anchor');
+	assert.ok(panel.area.bottom - panel.area.top < height);
+	assert.equal(f.model.isKeyPressed(heldKey), true, 'hidden-page held source remains held while relocating');
+	let command = 3;
+	for (const row of f.model.rows) for (const key of row.keys) {
+		const rect = functions.commandRefs[command] as RectRenderSubmission; command += 3;
+		assert.equal(f.keyboard.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
+	}
+	f.model.close(); f.model.open(); f.frame();
+	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4, 'close/reopen retains the manually selected side');
+	assert.equal(f.model.isKeyPressed(heldKey), false, 'model close still releases held input normally');
+	f.keyboard.togglePosition(); f.frame();
+	assert.equal(panel.area.top, top, 'the next explicit toggle returns to the unchanged top anchor');
+	assert.deepEqual(f.presenter.viewportSize, { x: 256, y: 192 });
 });

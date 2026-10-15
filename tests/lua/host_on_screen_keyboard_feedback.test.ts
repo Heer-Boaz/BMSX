@@ -11,8 +11,8 @@ import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_q
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
-const SELECTED = 0xff1e6a95, PRESSED = 0xffffca55, NORMAL = 0xff252525;
-const TEXT = 0xffefefef, PRESSED_TEXT = 0xff101010;
+const SELECTED = 0xff7eb4d9, PRESSED = 0xffffe09a, NORMAL = 0x80bccbdb;
+const TEXT = 0xffefefef;
 const Q = 15, W = 16, BACKSPACE = 13, SHIFT = 41, CONTROL = 53;
 
 function fixture() {
@@ -35,11 +35,11 @@ function fixture() {
 		key(index: number) {
 			const current = frame();
 			return {
-				fill: (current.commandRefs[2 + index * 2] as RectRenderSubmission).color,
-				text: (current.commandRefs[3 + index * 2] as GlyphRenderSubmission).color,
+				edge: (current.commandRefs[3 + index * 3] as RectRenderSubmission).color,
+				text: (current.commandRefs[5 + index * 3] as GlyphRenderSubmission).color,
 			};
 		},
-		helpColor() { return (frame().commandRefs[123] as GlyphRenderSubmission).color; },
+		helpColor() { return (frame().commandRefs[186] as GlyphRenderSubmission).color; },
 		pressed(code: string) {
 			clock.advance(1);
 			input.pollInput();
@@ -52,12 +52,12 @@ function fixture() {
 
 test('selection is visually distinct from a forwarded held key', t => {
 	const f = fixture(); t.after(() => f.input.dispose());
-	assert.deepEqual(f.key(Q), { fill: SELECTED, text: TEXT });
-	assert.deepEqual(f.key(W), { fill: NORMAL, text: TEXT });
+	assert.deepEqual(f.key(Q), { edge: SELECTED, text: SELECTED });
+	assert.deepEqual(f.key(W), { edge: NORMAL, text: TEXT });
 	f.keyboard.updateFeedback(10);
 	f.keyboard.activate(0);
 	assert.equal(f.pressed('KeyQ'), true);
-	assert.deepEqual(f.key(Q), { fill: PRESSED, text: PRESSED_TEXT });
+	assert.deepEqual(f.key(Q), { edge: PRESSED, text: PRESSED });
 });
 
 test('120ms release feedback changes presentation only, never the sampled key lifetime', t => {
@@ -67,11 +67,11 @@ test('120ms release feedback changes presentation only, never the sampled key li
 	f.keyboard.updateFeedback(110);
 	f.keyboard.releaseSource(0);
 	assert.equal(f.pressed('KeyQ'), false);
-	assert.deepEqual(f.key(Q), { fill: PRESSED, text: PRESSED_TEXT });
+	assert.deepEqual(f.key(Q), { edge: PRESSED, text: PRESSED });
 	f.keyboard.updateFeedback(229.9);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.updateFeedback(230);
-	assert.deepEqual(f.key(Q), { fill: SELECTED, text: TEXT });
+	assert.deepEqual(f.key(Q), { edge: SELECTED, text: SELECTED });
 });
 
 test('long holds stay bright and feedback begins at the actual final release', t => {
@@ -79,25 +79,25 @@ test('long holds stay bright and feedback begins at the actual final release', t
 	f.keyboard.activate(0);
 	f.keyboard.updateFeedback(5000);
 	assert.equal(f.pressed('KeyQ'), true);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.releaseSource(0);
 	f.keyboard.updateFeedback(5119);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.updateFeedback(5120);
-	assert.equal(f.key(Q).fill, SELECTED);
+	assert.equal(f.key(Q).edge, SELECTED);
 });
 
 test('selection movement does not retarget held or released feedback', t => {
 	const f = fixture(); t.after(() => f.input.dispose());
 	f.keyboard.activate(0);
 	f.keyboard.moveHorizontal(1);
-	assert.equal(f.key(Q).fill, PRESSED);
-	assert.equal(f.key(W).fill, SELECTED);
+	assert.equal(f.key(Q).edge, PRESSED);
+	assert.equal(f.key(W).edge, SELECTED);
 	f.keyboard.releaseSource(0);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.updateFeedback(120);
-	assert.equal(f.key(Q).fill, NORMAL);
-	assert.equal(f.key(W).fill, SELECTED);
+	assert.equal(f.key(Q).edge, NORMAL);
+	assert.equal(f.key(W).edge, SELECTED);
 });
 
 test('different keys have independent held colors and release deadlines', t => {
@@ -111,10 +111,10 @@ test('different keys have independent held colors and release deadlines', t => {
 	assert.equal(f.pressed('KeyQ'), false);
 	assert.equal(f.pressed('Backspace'), false);
 	f.keyboard.updateFeedback(130);
-	assert.equal(f.key(Q).fill, SELECTED);
-	assert.equal(f.key(BACKSPACE).fill, PRESSED);
+	assert.equal(f.key(Q).edge, SELECTED);
+	assert.equal(f.key(BACKSPACE).edge, PRESSED);
 	f.keyboard.updateFeedback(170);
-	assert.equal(f.key(BACKSPACE).fill, NORMAL);
+	assert.equal(f.key(BACKSPACE).edge, NORMAL);
 });
 
 test('another source keeps the shared key bright beyond the first release', t => {
@@ -124,13 +124,13 @@ test('another source keeps the shared key bright beyond the first release', t =>
 	f.keyboard.releaseSource(0);
 	f.keyboard.updateFeedback(1000);
 	assert.equal(f.pressed('KeyQ'), true);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
 	assert.equal(f.pressed('KeyQ'), false);
 	f.keyboard.updateFeedback(1119);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.updateFeedback(1120);
-	assert.equal(f.key(Q).fill, SELECTED);
+	assert.equal(f.key(Q).edge, SELECTED);
 });
 
 test('repeated presses supersede their old visual release deadline without extending input', t => {
@@ -141,39 +141,39 @@ test('repeated presses supersede their old visual release deadline without exten
 	f.keyboard.activate(0);
 	f.keyboard.updateFeedback(120);
 	assert.equal(f.pressed('KeyQ'), true);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.releaseSource(0);
 	assert.equal(f.pressed('KeyQ'), false);
 	f.keyboard.updateFeedback(239);
-	assert.equal(f.key(Q).fill, PRESSED);
+	assert.equal(f.key(Q).edge, PRESSED);
 	f.keyboard.updateFeedback(240);
-	assert.equal(f.key(Q).fill, SELECTED);
+	assert.equal(f.key(Q).edge, SELECTED);
 });
 
 test('sticky and source-retained modifiers remain visible even when selected', t => {
 	const f = fixture(); t.after(() => f.input.dispose());
 	f.keyboard.command(1, OnScreenKeyboardCommand.Shift);
 	assert.equal(f.pressed('ShiftLeft'), true);
-	assert.equal(f.key(SHIFT).fill, PRESSED);
+	assert.equal(f.key(SHIFT).edge, PRESSED);
 	f.keyboard.activate(0);
 	f.keyboard.releaseSource(0);
 	assert.equal(f.pressed('ShiftLeft'), false);
-	assert.equal(f.key(SHIFT).fill, PRESSED);
+	assert.equal(f.key(SHIFT).edge, PRESSED);
 	f.keyboard.updateFeedback(120);
-	assert.equal(f.key(SHIFT).fill, NORMAL);
+	assert.equal(f.key(SHIFT).edge, NORMAL);
 	for (let row = 0; row < 3; row += 1) f.keyboard.moveVertical(1);
 	f.keyboard.moveHorizontal(-1);
 	f.keyboard.activate(1);
-	assert.deepEqual(f.key(CONTROL), { fill: PRESSED, text: PRESSED_TEXT });
+	assert.deepEqual(f.key(CONTROL), { edge: PRESSED, text: PRESSED });
 	f.keyboard.command(0, OnScreenKeyboardCommand.Space);
 	f.keyboard.activate(1);
 	f.keyboard.updateFeedback(1000);
 	assert.equal(f.pressed('ControlLeft'), true);
-	assert.equal(f.key(CONTROL).fill, PRESSED);
+	assert.equal(f.key(CONTROL).edge, PRESSED);
 	f.keyboard.releaseSource(0);
 	assert.equal(f.pressed('ControlLeft'), false);
 	f.keyboard.updateFeedback(1120);
-	assert.deepEqual(f.key(CONTROL), { fill: SELECTED, text: TEXT });
+	assert.deepEqual(f.key(CONTROL), { edge: SELECTED, text: SELECTED });
 });
 
 test('Home and End acknowledge forwarding through their existing help legend', t => {
@@ -198,18 +198,18 @@ test('close cancels visual feedback and reopen cannot resurrect a stale flash', 
 	f.keyboard.command(1, OnScreenKeyboardCommand.Backspace);
 	f.keyboard.close();
 	assert.equal(f.pressed('KeyQ'), false);
-	assert.equal(f.key(Q).fill, SELECTED);
-	assert.equal(f.key(BACKSPACE).fill, NORMAL);
+	assert.equal(f.key(Q).edge, SELECTED);
+	assert.equal(f.key(BACKSPACE).edge, NORMAL);
 	f.keyboard.open();
 	f.keyboard.updateFeedback(30);
-	assert.equal(f.key(Q).fill, SELECTED);
-	assert.equal(f.key(BACKSPACE).fill, NORMAL);
+	assert.equal(f.key(Q).edge, SELECTED);
+	assert.equal(f.key(BACKSPACE).edge, NORMAL);
 });
 
 test('idle feedback ticks and unexpired afterglow reuse commands without rescanning colors', t => {
 	const f = fixture(); t.after(() => f.input.dispose());
 	const before = f.frame();
-	const rect = before.commandRefs[2 + Q * 2] as RectRenderSubmission;
+	const rect = before.commandRefs[3 + Q * 3] as RectRenderSubmission;
 	let color = rect.color, writes = 0;
 	Object.defineProperty(rect, 'color', { get: () => color, set: value => { color = value; writes += 1; } });
 	f.keyboard.updateFeedback(100);
