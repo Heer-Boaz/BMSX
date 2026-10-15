@@ -92,7 +92,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 							artwork: { dpadHidden: getComputedStyle(dpad).visibility === 'hidden', stickHidden: getComputedStyle(stick).visibility === 'hidden',
 								tip: [tip.cx.baseVal.value, tip.cy.baseVal.value],
 								filledSurfaces: Array.from(document.querySelectorAll('#d-pad-svg path,#d-pad-svg circle,.action-button')).filter(shape => getComputedStyle(shape).fill !== 'none').length },
-							geometry: { padX: pad.geometry.padX, padY: pad.geometry.padY, padRadius: pad.geometry.padRadius, neutral: pad.geometry.padNeutralRadius, stickTravelRadius: pad.geometry.stickTravelRadius,
+							geometry: { padX: pad.geometry.padX, padY: pad.geometry.padY, padRadius: pad.geometry.padRadius, neutral: pad.geometry.padRadius * 0.18, stickTravelRadius: pad.geometry.stickTravelRadius,
 								a: pad.geometry.actions.find(action => action.buttons === 1), b: pad.geometry.actions.find(action => action.buttons === 2),
 								shoulders: pad.geometry.actions.filter(action => action.bank === 1) },
 							revision: pad.geometryRevision,

@@ -9,6 +9,8 @@ import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDist
 // allows genuine neighbouring shoulder footprints and deliberate button gliding:
 // https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454
 const enum ContactPurpose { Pad, Buttons, LeftShoulder, SuppressedPad }
+// Neutrality is input policy; the SVG producer supplies only physical dimensions.
+const DIRECTIONAL_NEUTRAL_RADIUS_RATIO = 0.18;
 // BMSX gives each cardinal 70 degrees and each diagonal 20 degrees. Absolute
 // slope regions remain stateless; diagonal sensitivity is a touch-pad policy:
 // https://github.com/libretro/RetroArch/blob/bbb40cc9a8f72795e2b6dd60dbc4f5fc633c9389/input/input_driver.c#L5445-L5515
@@ -35,7 +37,6 @@ export interface OnscreenGamepadGeometry {
 	padX: number;
 	padY: number;
 	padRadius: number;
-	padNeutralRadius: number;
 	/** Full-scale stick travel, independent of the directional acquisition disc. */
 	stickTravelRadius: number;
 	faceX: number;
@@ -56,6 +57,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 
 	private geometry: OnscreenGamepadGeometry;
 	private geometryVersion = 0;
+	private padNeutralRadius = 0;
+	private padNeutralRadiusSquared = 0;
 	private sink: InputEventSink;
 	private viewListener: (() => void) | null = null;
 	private readonly contactIds: number[] = [];
@@ -121,6 +124,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public setGeometry(geometry: OnscreenGamepadGeometry): void {
 		const previousButtons = this.activeButtons;
 		this.geometry = geometry;
+		this.padNeutralRadius = geometry.padRadius * DIRECTIONAL_NEUTRAL_RADIUS_RATIO;
+		this.padNeutralRadiusSquared = this.padNeutralRadius * this.padNeutralRadius;
 		// Reserve contact-query storage at the layout boundary, never on moves.
 		while (this.sampledActions.length < geometry.actions.length) this.sampledActions.push(0);
 		this.leftShoulderActionCount = 0;
@@ -389,8 +394,8 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		const dx = this.contactX[index] - geometry.padX;
 		const dy = this.contactY[index] - geometry.padY;
 		const distanceSquared = dx * dx + dy * dy;
-		const neutralRadius = geometry.padNeutralRadius;
-		if (distanceSquared <= neutralRadius * neutralRadius) {
+		const neutralRadius = this.padNeutralRadius;
+		if (distanceSquared <= this.padNeutralRadiusSquared) {
 			this.tipX = 0;
 			this.tipY = 0;
 			return;
@@ -405,7 +410,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 		const geometry = this.geometry;
 		const dx = x - geometry.padX;
 		const dy = y - geometry.padY;
-		if (dx * dx + dy * dy <= geometry.padNeutralRadius * geometry.padNeutralRadius) return 0;
+		if (dx * dx + dy * dy <= this.padNeutralRadiusSquared) return 0;
 		const ax = Math.abs(dx);
 		const ay = Math.abs(dy);
 		// Absolute eight-way regions tile the disc without a drag origin. The

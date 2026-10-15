@@ -32,7 +32,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET } fro
 		const clock = new api.BrowserHostClock();
 		const pad = new api.BrowserOnscreenGamepad(clock);
 		pad.setGeometry({
-			padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9, stickTravelRadius: 24,
+			padX: 100, padY: 100, padRadius: 50, stickTravelRadius: 24,
 			faceX: 325, faceY: 100, faceRadius: 50,
 			actions: [{ x: 300, y: 100, radius: 20, buttons: 1, bank: api.OnscreenActionBank.Face }, { x: 350, y: 100, radius: 20, buttons: 2, bank: api.OnscreenActionBank.Face }],
 		});

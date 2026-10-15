@@ -13,7 +13,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { RoundedCircularArc } from '../../hosts/browser/touch_geometry';
 
 const geometry: OnscreenGamepadGeometry = {
-	padX: 100, padY: 100, padRadius: 50, padNeutralRadius: 9, stickTravelRadius: 24,
+	padX: 100, padY: 100, padRadius: 50, stickTravelRadius: 24,
 	faceX: 325, faceY: 100, faceRadius: 50,
 	actions: [{ x: 300, y: 100, radius: 20, buttons: 1, bank: OnscreenActionBank.Face }, { x: 350, y: 100, radius: 20, buttons: 2, bank: OnscreenActionBank.Face }],
 };
@@ -1109,7 +1109,7 @@ test('true L-stick axes use the common encoder and the existing armed ICU cadenc
 });
 
 
-test('stick acquisition, neutral and full-scale travel are independent authored dimensions', () => {
+test('stick acquisition and full-scale travel are independent dimensions around model-owned neutrality', () => {
 	const { pad, axes } = createFixture();
 	pad.setDirectionalMode('stick');
 	pad.beginContact(1, 100, 100, 14, 14, true);
@@ -1130,6 +1130,24 @@ test('stick acquisition, neutral and full-scale travel are independent authored 
 	assert.equal(pad.ownsContact(2), true);
 	pad.endContact(2);
 	assert.deepEqual(axes.at(-1), { code: 'ls', x: 0, y: 0, time: 0 });
+});
+
+test('directional neutral policy is derived by the contact model and resampled at geometry publication', () => {
+	const { pad } = createFixture();
+	pad.beginContact(1, 109, 100, 0, 0, true);
+	assert.equal(pad.buttons, 0, 'the model-owned 18% neutral radius includes its boundary');
+	pad.moveContact(1, 109.01, 100, 0, 0, true);
+	assert.equal(pad.buttons, 0x8000);
+	pad.setGeometry({ ...geometry, padRadius: 100, stickTravelRadius: 48 });
+	assert.equal(pad.buttons, 0, 'changing physical radius resamples the retained digital contact with the new policy radius');
+	pad.moveContact(1, 118.01, 100, 0, 0, true);
+	assert.equal(pad.buttons, 0x8000);
+	pad.cancelContacts();
+	pad.setDirectionalMode('stick');
+	pad.beginContact(2, 133, 100, 0, 0, true);
+	assert.equal(pad.stickX, 0.5, 'the same cached policy controls analog travel after publication');
+	pad.setGeometry(geometry);
+	assert.equal(pad.stickX, 1, 'retained analog owners resample when physical geometry changes');
 });
 
 test('retained stick travel over curved shoulders, triggers and every other bank never contributes button bits', () => {

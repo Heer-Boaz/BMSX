@@ -52,6 +52,8 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalPadY: number;
 	private readonly nominalPadRadius: number;
 	private readonly nominalStickTravel: number;
+	private readonly nominalStickX: number;
+	private readonly nominalStickY: number;
 	private readonly stickArtworkScale: number;
 	private readonly metrics: OnscreenGamepadLayout;
 	private readonly padDirections: SVGPathElement[] = [];
@@ -64,7 +66,7 @@ export class BrowserOnscreenGamepadView {
 	private readonly nominalActions: OnscreenActionGeometry[] = [];
 	private readonly actions: OnscreenActionGeometry[] = [];
 	private readonly geometry: OnscreenGamepadGeometry = {
-		padX: 0, padY: 0, padRadius: 0, padNeutralRadius: 0, stickTravelRadius: 0,
+		padX: 0, padY: 0, padRadius: 0, stickTravelRadius: 0,
 		faceX: 0, faceY: 0, faceRadius: 0, actions: this.actions,
 	};
 	private readonly layoutObserver: BrowserInputDiagnostics | undefined;
@@ -94,6 +96,8 @@ export class BrowserOnscreenGamepadView {
 		this.padArtwork = document.getElementById('d-pad-artwork') as unknown as SVGGElement;
 		this.stickArtwork = document.getElementById('left-stick-artwork') as unknown as SVGGElement;
 		this.stickTip = document.getElementById('left-stick-tip') as unknown as SVGCircleElement;
+		this.nominalStickX = this.stickTip.cx.baseVal.value;
+		this.nominalStickY = this.stickTip.cy.baseVal.value;
 		const stickRing = this.stickArtwork.querySelector('.stick-outline') as SVGCircleElement;
 		this.nominalStickTravel = stickRing.r.baseVal.value - this.stickTip.r.baseVal.value;
 		this.stickArtworkScale = this.stickArtwork.transform.baseVal.consolidate().matrix.a;
@@ -137,8 +141,10 @@ export class BrowserOnscreenGamepadView {
 		}
 		const face = this.actionSurfaces[ActionSurfaceIndex.Face];
 		const bottomButton = this.nominalActions[0];
+		const shoulderBezel = this.actionSurfaces[ActionSurfaceIndex.LeftBumper].artwork.firstElementChild;
+		const shoulderPaintRadius = Number.parseFloat(window.getComputedStyle(shoulderBezel).strokeWidth) / 2;
 		this.metrics = new OnscreenGamepadLayout(face.artworkWidth, face.artworkHeight,
-			bottomButton.y, bottomButton.radius);
+			bottomButton.y, bottomButton.radius, shoulderPaintRadius);
 		this.unsubscribeView = model.subscribeView(this.scheduleRender);
 		this.scheduleRender();
 	}
@@ -234,14 +240,13 @@ export class BrowserOnscreenGamepadView {
 			rightShoulderRadius, halfWidth, upward - metrics.rightInner, upward - metrics.rightSplit - metrics.rightGap);
 		// Phone shoulders retain physical target and caption sizes independently
 		// of the face bank. Overlay captions retain their existing quiet scale.
-		const shoulderLabelSize = 13 * (phonePortrait ? 1 : viewportScale);
-		for (const label of this.shoulderLabels) label.style.fontSize = `${shoulderLabelSize}px`;
+		const shoulderLabelScale = phonePortrait ? 1 : viewportScale;
+		for (const label of this.shoulderLabels) label.style.setProperty('--shoulder-label-scale', `${shoulderLabelScale}`);
 		this.portraitControlTop = overlay ? null : allocatedDeckTop - CONTROL_GAP;
 		const geometry = this.geometry;
 		geometry.padX = padX;
 		geometry.padY = padY;
 		geometry.padRadius = padRadius;
-		geometry.padNeutralRadius = padRadius * 0.18;
 		geometry.stickTravelRadius = this.nominalStickTravel * this.stickArtworkScale * padScale;
 		geometry.faceX = faceCenterX;
 		geometry.faceY = faceCenterY;
@@ -331,8 +336,8 @@ export class BrowserOnscreenGamepadView {
 			this.renderedMode = mode;
 		}
 		if (model.stickX !== this.renderedStickX || model.stickY !== this.renderedStickY) {
-			this.stickTip.cx.baseVal.value = 50 + model.stickX * this.nominalStickTravel;
-			this.stickTip.cy.baseVal.value = 50 + model.stickY * this.nominalStickTravel;
+			this.stickTip.cx.baseVal.value = this.nominalStickX + model.stickX * this.nominalStickTravel;
+			this.stickTip.cy.baseVal.value = this.nominalStickY + model.stickY * this.nominalStickTravel;
 			this.renderedStickX = model.stickX;
 			this.renderedStickY = model.stickY;
 		}

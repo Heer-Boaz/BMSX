@@ -10,7 +10,6 @@ const SHOULDER_THICKNESS = 56;
 const MIN_SHOULDER_THICKNESS = 44;
 const SHOULDER_INWARD_SWEEP = Math.PI / 3;
 const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
-const SHOULDER_PAINT_RADIUS = 1.5;
 const CONTROL_MARGIN = 4;
 const PHONE_MENU_SIZE = 48;
 const DPAD_SHOULDER_GAP = 18;
@@ -66,6 +65,7 @@ export class OnscreenGamepadLayout {
 		private readonly faceHeight: number,
 		private readonly bottomButtonY: number,
 		private readonly bottomButtonRadius: number,
+		private readonly shoulderPaintRadius: number,
 	) {}
 
 	public measure(width: number, height: number): this {
@@ -158,8 +158,8 @@ export class OnscreenGamepadLayout {
 		this.rightInner = Math.asin((Math.min(halfLane, this.rightRing * inwardSine + this.halfWidth) - this.halfWidth) / this.rightRing);
 		this.leftGap = Math.asin((this.halfWidth + this.gap / 2) / this.leftRing);
 		this.rightGap = Math.asin((this.halfWidth + this.gap / 2) / this.rightRing);
-		this.leftOuter = Math.asin((this.padRadius + this.margin - SHOULDER_PAINT_RADIUS - this.halfWidth) / this.leftRing);
-		this.rightOuter = Math.asin((this.faceRadius + this.margin - SHOULDER_PAINT_RADIUS - this.halfWidth) / this.rightRing);
+		this.leftOuter = Math.asin((this.padRadius + this.margin - this.shoulderPaintRadius - this.halfWidth) / this.leftRing);
+		this.rightOuter = Math.asin((this.faceRadius + this.margin - this.shoulderPaintRadius - this.halfWidth) / this.rightRing);
 		this.leftSplit = (this.leftInner - this.leftOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
 		this.rightSplit = (this.rightInner - this.rightOuter) / 2 + BUMPER_SWEEP_ADVANTAGE;
 		this.shoulderReach = Math.max(this.leftRing * Math.cos(Math.max(0, this.leftGap - Math.abs(this.leftSplit))),

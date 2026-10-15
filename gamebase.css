@@ -239,7 +239,10 @@ html {
 }
 
 .auxiliary-label { font-size: 12px; }
-.shoulder-label { font-size: 13px; }
+.shoulder-label {
+	--shoulder-label-scale: 1;
+	font-size: calc(13px * var(--shoulder-label-scale));
+}
 .menu-label { font-size: 10px; letter-spacing: 0.1px; }
 
 /* Host commands use native buttons, never virtual guest gamepad contributions. */

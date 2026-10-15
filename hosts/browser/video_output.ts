@@ -2,9 +2,9 @@ import type { VideoOutput } from '../../machine/ts/render/video_output';
 import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
+import { CONTROL_GAP } from './onscreen_gamepad_layout';
 
 export type BrowserScreenFit = 'fit' | 'overscan';
-const PORTRAIT_CONTROL_GAP = 12;
 // An explicit presentation policy, not a claim that carts author safe borders.
 const OVERSCAN_VISIBLE_FRACTION = 0.9;
 
@@ -106,9 +106,9 @@ export class BrowserVideoOutput implements VideoOutput {
 			// even in Fit, instead of needlessly cropping top/bottom game text.
 			const slotHeight = Math.min(controlWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT
 				/ (GX_GPU_DISPLAY_ASPECT_WIDTH * OVERSCAN_VISIBLE_FRACTION),
-				controlHeight - deckHeight - PORTRAIT_CONTROL_GAP);
+				controlHeight - deckHeight - CONTROL_GAP);
 			this.controlView.layout(controls.left + insetLeft, controls.top + insetTop,
-				controlWidth, controlHeight, portrait ? controls.top + insetTop + slotHeight + PORTRAIT_CONTROL_GAP : undefined);
+				controlWidth, controlHeight, portrait ? controls.top + insetTop + slotHeight + CONTROL_GAP : undefined);
 		}
 		// The authored portrait deck owns its boundary; canvas fitting consumes it.
 		// Landscape controls remain overlays on the full dynamic visible space.
