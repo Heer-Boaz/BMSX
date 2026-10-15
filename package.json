@@ -57,6 +57,7 @@
 		"test:terminal-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/terminal/run.ts",
 		"test:pow-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/pow/run.ts",
 		"test:symbols-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
+		"test:keyboard-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/keyboard/run.ts",
 		"test:geometry-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/geometry/run.ts",
 		"test:studio-clipboard": "node --import tsx --test tests/platform/studio_clipboard.test.ts tests/platform/studio_assistant_images.test.ts",
 		"test:studio-clipboard:os": "node --import tsx --test tests/platform/studio_external_clipboard.test.ts",

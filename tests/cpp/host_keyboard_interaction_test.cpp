@@ -174,6 +174,42 @@ void testPointerChannelGestures() {
 	contacts.clear(); f.tick();
 }
 
+void testMouseReleaseReconcilesFocusBeforeControllerCommands() {
+	{
+		Fixture f;
+		const auto q = f.center(key(hid_key_usage::Q)), w = f.center(key(hid_key_usage::W));
+		f.mouseAt(q); mousePressed = true; f.tick();
+		f.mouseAt(w); f.tick();
+		require(f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q), "held mouse movement preserves its captured key and focus");
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		require(f.model.selectedKey() == key(hid_key_usage::W) && f.held(hid_key_usage::W) && !f.held(hid_key_usage::Q),
+			"mouse up reconciles the release-position focus before a same-poll controller activation");
+		buttons = 0; f.tick(); require(!f.held(hid_key_usage::W), "controller up releases the newly activated hover target");
+	}
+	{
+		Fixture f;
+		const auto q = f.center(key(hid_key_usage::Q));
+		f.mouseAt(q); mousePressed = true; f.tick();
+		f.press(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+		require(f.model.selectedKey() == key(hid_key_usage::W), "controller navigation may change focus while a mouse key stays captured");
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		require(f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q) && !f.held(hid_key_usage::W),
+			"mouse up restores its release-position focus even when the cursor coordinates did not change");
+		buttons = 0; f.tick(); require(!f.held(hid_key_usage::Q), "same-position activation still has an independent controller lifetime");
+	}
+	{
+		Fixture f;
+		const auto q = f.center(key(hid_key_usage::Q)), position = f.center(ON_SCREEN_KEYBOARD_POSITION_TARGET);
+		const auto top = f.panelTop();
+		f.mouseAt(position); mousePressed = true; f.tick();
+		f.mouseAt(q); f.tick();
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		require(f.panelTop() != top && f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q),
+			"dock up completes once, then hover uses the published old geometry before same-poll controller activation");
+		buttons = 0; f.tick(); require(!f.held(hid_key_usage::Q), "docking does not change the controller key's real release");
+	}
+}
+
 void testDeferredGeometryActions() {
 	Fixture f;
 	const auto position = f.center(ON_SCREEN_KEYBOARD_POSITION_TARGET);
@@ -250,7 +286,7 @@ void testQueuedPageCountUsesModelSchema() {
 
 int main() {
 	try {
-		testPurePublishedHitGeometry(); testAbsoluteOccupancy(); testModifiers(); testPointerChannelGestures(); testControllerAndContactSources();
+		testPurePublishedHitGeometry(); testAbsoluteOccupancy(); testModifiers(); testPointerChannelGestures(); testMouseReleaseReconcilesFocusBeforeControllerCommands(); testControllerAndContactSources();
 		testDeferredGeometryActions(); testOpenCloseAndMouseModifiers(); testQueuedPageCountUsesModelSchema();
 		std::cout << "host_keyboard_interaction_test: ok\n";
 		return 0;

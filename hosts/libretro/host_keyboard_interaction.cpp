@@ -80,6 +80,7 @@ void HostKeyboardInteraction::tickInput(HostUiInput& ui, LibretroInput& input, f
 void HostKeyboardInteraction::tickPointerInput(LibretroInput& input) {
 	const bool absoluteDown = !input.pointerContacts().empty();
 	const bool mouseDown = input.mouseButtonPressed(INP_POINTER_BUTTON_PRIMARY);
+	const bool mouseReleased = m_pointerGesture == PointerGesture::Mouse && !mouseDown;
 	if (!absoluteDown) m_absoluteBlocked = false;
 	if (!mouseDown) m_mouseBlocked = false;
 	if (m_pointerGesture == PointerGesture::None) {
@@ -100,18 +101,16 @@ void HostKeyboardInteraction::tickPointerInput(LibretroInput& input) {
 	}
 	if (m_pointerGesture == PointerGesture::Mouse) {
 		if (absoluteDown) m_absoluteBlocked = true;
-		if (!mouseDown) {
-			model.releaseSource(OnScreenKeyboard::PointerSource, true);
-			if (m_mouseKey == ON_SCREEN_KEYBOARD_POSITION_TARGET) dispatchAction(OnScreenKeyboardAction::TogglePosition);
-			m_mouseKey = -1;
-			m_pointerGesture = PointerGesture::None;
-		}
-		return;
+		if (mouseDown) return;
+		model.releaseSource(OnScreenKeyboard::PointerSource, true);
+		if (m_mouseKey == ON_SCREEN_KEYBOARD_POSITION_TARGET) dispatchAction(OnScreenKeyboardAction::TogglePosition);
+		m_mouseKey = -1;
+		m_pointerGesture = PointerGesture::None;
 	}
 	const i32 previousX = m_mouseX, previousY = m_mouseY;
 	const bool wasValid = m_mousePositionValid;
 	m_mousePositionValid = input.mousePosition(m_mouseX, m_mouseY);
-	if (!mouseDown && m_mousePositionValid && (!wasValid || previousX != m_mouseX || previousY != m_mouseY)) {
+	if (!mouseDown && m_mousePositionValid && (mouseReleased || !wasValid || previousX != m_mouseX || previousY != m_mouseY)) {
 		const i16 key = view.hitTestAt(m_mouseX, m_mouseY);
 		if (key >= 0) model.selectKey(key, view.publishedPage());
 	}

@@ -1112,6 +1112,26 @@
 	],
 	"strict_file_pair_parity": [
 		{
+			"ts": "hosts/common/input/on_screen_keyboard.ts",
+			"cpp": ["hosts/libretro/on_screen_keyboard.h", "hosts/libretro/on_screen_keyboard.cpp"],
+			"reason": "shared_virtual_keyboard_source_lifetime_model_owner"
+		},
+		{
+			"ts": "hosts/common/input/on_screen_keyboard_keys.ts",
+			"cpp": ["hosts/libretro/on_screen_keyboard_keys.h"],
+			"reason": "native_keyboard_key_identity_and_authored_page_schema_owner"
+		},
+		{
+			"ts": "hosts/common/host_on_screen_keyboard.ts",
+			"cpp": ["hosts/libretro/host_on_screen_keyboard.h", "hosts/libretro/host_on_screen_keyboard.cpp"],
+			"reason": "shared_passive_bitmap_keyboard_presentation_owner"
+		},
+		{
+			"ts": "hosts/common/input/host_keyboard_interaction.ts",
+			"cpp": ["hosts/libretro/host_keyboard_interaction.h", "hosts/libretro/host_keyboard_interaction.cpp"],
+			"reason": "keyboard_interaction_owner_with_explicit_platform_device_boundaries"
+		},
+		{
 			"ts": "machine/ts/machine/devices/cartridge/contracts.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/cartridge/contracts.h"
@@ -2143,6 +2163,27 @@
 		}
 	],
 	"strict_runtime_method_parity": [
+		{
+			"ts": "hosts/common/input/on_screen_keyboard.ts",
+			"cpp": ["hosts/libretro/on_screen_keyboard.h", "hosts/libretro/on_screen_keyboard.cpp"],
+			"cpp_class": "OnScreenKeyboard",
+			"methods": ["OnScreenKeyboard", "allocateSource", "open", "close", "setPage", "selectKey", "moveHorizontal", "moveVertical", "activate", "activateKey", "pressKey", "releaseSource", "command", "label", "isKeyPressed", "isKeyHighlighted", "updateFeedback"],
+			"reason": "shared_keyboard_model_lifecycle_key_source_and_feedback_method_contract"
+		},
+		{
+			"ts": "hosts/common/host_on_screen_keyboard.ts",
+			"cpp": ["hosts/libretro/host_on_screen_keyboard.h", "hosts/libretro/host_on_screen_keyboard.cpp"],
+			"cpp_class": "HostOnScreenKeyboard",
+			"methods": ["togglePosition", "hitTestAt", "rebuildPageCommands", "updateKeyColors"],
+			"reason": "shared_bitmap_keyboard_docking_passive_hit_and_retained_commands_method_contract"
+		},
+		{
+			"ts": "hosts/common/input/host_keyboard_interaction.ts",
+			"cpp": ["hosts/libretro/host_keyboard_interaction.h", "hosts/libretro/host_keyboard_interaction.cpp"],
+			"cpp_class": "HostKeyboardInteraction",
+			"methods": ["close"],
+			"reason": "shared_keyboard_interaction_close_lifetime_with_platform_specific_open_and_tick_inputs"
+		},
 		{
 			"ts": "machine/ts/machine/devices/cartridge/card.ts",
 			"cpp": [

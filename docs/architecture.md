@@ -5309,6 +5309,25 @@ and retained by the view.
 
 Keyboard interaction ownership and native contact representation:
 
+Applicable keyboard parity is enforced at the shared model and published bitmap
+boundary, not by equating platform contact APIs:
+
+| Parity surface | TypeScript | C++ | Required representation/order |
+| --- | --- | --- | --- |
+| Canonical keyboard schema | `on_screen_keyboard_keys.ts` | `on_screen_keyboard_keys.h` | Key index, canonical HID usage, labels/modifier index; native page row keys/starts/spans/units |
+| Shared model transitions | `OnScreenKeyboard` | `OnScreenKeyboard` | Exact-key source slots, modifier state, selection/page/revision, raw ICU snapshot HID banks and presentation feedback |
+| Mouse capture completion | `HostKeyboardInteraction.tickInput` | `HostKeyboardInteraction::tickInput` / `tickPointerInput` | Release original key, execute captured docking, reconcile current pointer focus against published geometry, then dispatch controller commands in the same frame |
+| Bitmap publication | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained command order, key rectangles, pictogram identities/flip, colors and published-page hit targets; no layout on unchanged state |
+| Platform contacts | Stable Pointer Event leases | Indexed libretro occupancy | Intentionally separate contracts; no manufactured contact IDs or alias-guessing parity adapter |
+
+The changed runtime hot callsite is `HostKeyboardInteraction::tickPointerInput`
+(mouse-UP focus reconciliation before the existing controller loop in
+`HostKeyboardInteraction::tickInput`). The matching TS path remains
+`HostKeyboardInteraction.tickInput`; no frame polling or key-hold timer changes.
+Shared conformance traces exercise actual input/model/view owners and compare
+per-step state and HID words; schema/bitmap dumps compare the concrete published
+representations. Platform-specific touch scenarios retain their own tests.
+
 The production references are the [libretro pointer contract](https://github.com/libretro/libretro-common/blob/a3194c18ba65ef89734e1898a2f61403c255d368/include/libretro.h#L261-L299)
 (pressed indexed snapshots, no persistent contact identities),
 [MAME's menu-local event handling](https://github.com/mamedev/mame/blob/9c761818e14b447ffec65f7e5827692f8f5c34f9/src/frontend/mame/ui/menu.cpp#L996-L1170)

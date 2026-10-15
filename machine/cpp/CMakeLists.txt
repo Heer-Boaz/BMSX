@@ -893,6 +893,19 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_host_keyboard_interaction_tests PRIVATE ${BMSX_LIBRETRO_DIR})
 	add_test(NAME bmsx_host_keyboard_interaction_tests COMMAND bmsx_host_keyboard_interaction_tests)
 
+	add_executable(bmsx_keyboard_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/keyboard_conformance_runner.cpp
+		${BMSX_LIBRETRO_DIR}/host_keyboard_interaction.cpp
+		${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/ui_input.cpp
+		${BMSX_LIBRETRO_DIR}/button_repeat.cpp
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
+	)
+	target_link_libraries(bmsx_keyboard_conformance_runner PRIVATE bmsx_host_support)
+	target_include_directories(bmsx_keyboard_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+
 	add_executable(bmsx_on_screen_keyboard_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/on_screen_keyboard_test.cpp
 		${BMSX_LIBRETRO_DIR}/on_screen_keyboard.cpp

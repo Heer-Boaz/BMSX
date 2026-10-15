@@ -152,17 +152,17 @@ bool OnScreenKeyboard::isKeyPressed(i16 key) const {
 bool OnScreenKeyboard::isKeyHighlighted(i16 key) const {
 	return key != ON_SCREEN_KEYBOARD_POSITION_TARGET && (isKeyPressed(key) || m_feedbackUntilMs[static_cast<size_t>(key)] != 0);
 }
-void OnScreenKeyboard::updateFeedback(f64 time) {
-	m_feedbackTimeMs = time;
+void OnScreenKeyboard::updateFeedback(f64 currentTimeMs) {
+	m_feedbackTimeMs = currentTimeMs;
 	const u8 physicalModifiers = m_input.routedPhysicalModifierMask();
 	const bool modifiersChanged = physicalModifiers != m_displayedPhysicalModifiers;
 	m_displayedPhysicalModifiers = physicalModifiers;
-	if (time < m_nextFeedbackExpiryMs) {
+	if (currentTimeMs < m_nextFeedbackExpiryMs) {
 		if (modifiersChanged) ++m_revision;
 		return;
 	}
 	f64 next = std::numeric_limits<f64>::infinity();
-	for (auto& expiry : m_feedbackUntilMs) { if (expiry <= time) expiry = 0; else next = std::min(next, expiry); }
+	for (auto& expiry : m_feedbackUntilMs) { if (expiry <= currentTimeMs) expiry = 0; else next = std::min(next, expiry); }
 	m_nextFeedbackExpiryMs = next; ++m_revision;
 }
 bool OnScreenKeyboard::releaseKeySource(size_t source) {
