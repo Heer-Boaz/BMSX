@@ -5258,12 +5258,16 @@ The controller-oriented bitmap keyboard retains its native Text/Symbols/Fn
 pages. Its presentation is separate from the browser DOM keyboard: panel and
 key rectangles are outlines, not fills, and retained one-pixel glyph shadows
 keep labels readable over the scanout without covering the key interiors.
-Selection and forwarding feedback change outline/glyph colors only. Placement
-is retained host-view state: top by default, with a visible MOVE button on every
-native page toggling top/bottom. The same D-pad focus and ordinary A activation
+Selection and forwarding feedback change outline/artwork colors only. Placement
+is retained host-view state: top by default, with a visible dock-position icon
+button on every native page toggling top/bottom. Its arrow points toward the destination edge,
+reversing when docked. Standard native keycaps use host-atlas pictograms for
+Backspace, Tab, Caps Lock, Enter, Shift, Space and the four directions, matching
+the browser keyboard's meanings without relying on OS Unicode glyph support.
+The same D-pad focus and ordinary A activation
 reach this host control; no modifier shortcut is reserved. Its typed action is
 returned to the host menu, never entered into HID maps or held-key sources.
-Moving the view updates its published drawing and pointer-hit geometry together; docking
+Moving the view updates its drawing and pointer-hit geometry together; docking
 does not read BIOS cursor memory, resize the game image or imply a native IDE.
 The layout cache includes the viewport bottom as well as left/top/width/font.
 
@@ -5272,18 +5276,21 @@ keyboard placement belongs to the host presentation. As in
 [VICE's keyboard grid](https://github.com/libretro/vice-libretro/blob/f63b56688f3133a2bb17499db9eebb7ab81df5f5/libretro/libretro-vkbd.c#L1481-L1544),
 visible host actions use ordinary keyboard focus/activation, with separate
 semantic actions rather than fake guest keys. BMSX uses transparent
-interiors rather than fading the complete keyboard image or its labels.
+interiors rather than fading the complete keyboard image or its labels. The
+dock-to-edge meaning follows [VS Code's panel dock icon](https://github.com/microsoft/vscode-codicons/blob/8853e0b1b0e2058b099fde515d5f1f478db2f8e1/src/icons/layout-panel-dock.svg);
+native artwork is pixel-aligned for the small bitmap keyboard, not downscaled SVG.
 
 Bitmap-keyboard representation and execution contract (TS/C++ mirror):
 
 | State/data | TypeScript owner | C++ owner | Representation |
 | --- | --- | --- | --- |
-| Native navigation targets | `input/on_screen_keyboard_keys.ts` | `on_screen_keyboard_keys.h` | Existing physical key indices plus an explicit position-control target; native rows include MOVE |
+| Native navigation targets | `input/on_screen_keyboard_keys.ts` | `on_screen_keyboard_keys.h` | Existing physical key indices plus an explicit position-control target; native rows include a dock-position control |
 | Guest key identities | `ON_SCREEN_KEY_DEFINITIONS` | `ON_SCREEN_KEY_DEFINITIONS` | Existing HID mappings and physical key indices; unchanged |
 | Key source lifetimes/feedback | `input/on_screen_keyboard.ts` | `on_screen_keyboard.cpp` | Existing source indices, refcounts and feedback deadlines; unchanged |
 | Dock placement | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained bottom-docked boolean; no machine/save-state field |
 | Dock activation | `OnScreenKeyboard.activateKey` / `HostOverlayMenu.tickKeyboardInput` | `OnScreenKeyboard::activateKey` / `HostOverlayMenu::handleInput` | Typed `OnScreenKeyboardAction.TogglePosition` result; ordinary A or pointer activation; no guest key |
-| Drawing and hit areas | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained outline rectangles and foreground/shadow glyph submissions, raw ARGB words |
+| Drawing and hit areas | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained outline rectangles, foreground/shadow glyph or atlas-image submissions; raw ARGB tint words |
+| Keycap pictograms | `HostOnScreenKeyboard` / host system atlas | `HostOnScreenKeyboard` / host system atlas | Canonical transparent pixel assets in `hosts/res`, retained image commands; vertical flip indicates destination for docking |
 | Bounds invalidation | `queueRenderCommands` | `queueRenderCommands` | Actual left/top/bottom/width/font and explicit placement invalidation |
 
 Affected hot callsites are the keyboard branch of
@@ -5291,10 +5298,14 @@ Affected hot callsites are the keyboard branch of
 `OnScreenKeyboard.activateKey` / `OnScreenKeyboard::activateKey` and existing
 `command` dispatch, the horizontal/vertical focus navigation,
 `HostOnScreenKeyboard.queueRenderCommands` / `queueRenderCommands`, and the
-existing outline/glyph consumers in the host-overlay software/GPU renderers.
+existing outline/glyph/image consumers in the host-overlay software/GPU renderers.
+Keycap artwork and pixel dimensions are resolved from the host atlas at layout;
+steady frames retain the same submissions without view-level asset resolution
+or image updates. Existing renderer atlas sampling/lookup remains unchanged.
 The renderer primitives, machine representation, physical key-source lifetime
 model and frame input polling are unchanged. Placement adds no per-frame
-allocations or guest probes; the extra glyph submissions are constructed once and retained by the view.
+allocations or guest probes; glyph and image submissions are constructed once
+and retained by the view.
 
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed

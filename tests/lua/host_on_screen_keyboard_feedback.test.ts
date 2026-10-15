@@ -7,8 +7,9 @@ import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 const SELECTED = 0xff7eb4d9, PRESSED = 0xffffe09a, NORMAL = 0x80bccbdb;
@@ -36,7 +37,9 @@ function fixture() {
 			const current = frame();
 			return {
 				edge: (current.commandRefs[3 + index * 3] as RectRenderSubmission).color,
-				text: (current.commandRefs[5 + index * 3] as GlyphRenderSubmission).color,
+				text: current.commandKinds[5 + index * 3] === Host2DKind.Img
+					? (current.commandRefs[5 + index * 3] as HostImageRenderSubmission).colorize
+					: (current.commandRefs[5 + index * 3] as GlyphRenderSubmission).color,
 			};
 		},
 		helpColor() { return (frame().commandRefs[189] as GlyphRenderSubmission).color; },
@@ -244,5 +247,6 @@ test('Shift released after view construction but before first paint restores bas
 	const commands = f.presenter.hostOverlayQueue.consumeHostMenuFrame();
 	assert.equal((commands.commandRefs[50] as GlyphRenderSubmission).items, 'q');
 	assert.equal((commands.commandRefs[49] as GlyphRenderSubmission).items, 'q', 'shadow cannot retain a stale shifted label either');
-	assert.equal((commands.commandRefs[185] as GlyphRenderSubmission).items, 'MOVE');
+	assert.equal(commands.commandKinds[185], Host2DKind.Img);
+	assert.equal((commands.commandRefs[185] as HostImageRenderSubmission).imgid, 'keyboard_dock_bottom');
 });

@@ -2,14 +2,16 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
+	type HostImageRenderSubmission,
 	type RectRenderSubmission,
 } from '../../machine/ts/render/shared/submissions';
+import { hostSystemAtlasImage } from '../../machine/ts/render/host_overlay/atlas';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { point_in_rect } from '../../machine/ts/common/rect';
 import { OnScreenKeyboard } from './input/on_screen_keyboard';
-import { ON_SCREEN_KEYBOARD_TARGET_COUNT, ON_SCREEN_KEY_INDEX_BY_CODE } from './input/on_screen_keyboard_keys';
+import { ON_SCREEN_KEYBOARD_POSITION_TARGET, ON_SCREEN_KEYBOARD_TARGET_COUNT, ON_SCREEN_KEY_INDEX_BY_CODE } from './input/on_screen_keyboard_keys';
 
 const TITLES = ['KEYBOARD: TEXT', 'KEYBOARD: SYMBOLS', 'KEYBOARD: FN'] as const;
 const HELP_LINES = [
@@ -34,6 +36,19 @@ const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
 const COMMAND_COUNT = 3 + ON_SCREEN_KEYBOARD_TARGET_COUNT * 3 + HELP_LINES.length * 2;
+const KEY_ICONS = [
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('Backspace'), image: 'keyboard_backspace' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('Tab'), image: 'keyboard_tab' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('CapsLock'), image: 'keyboard_caps_lock' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('Enter'), image: 'keyboard_enter' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('ShiftLeft'), image: 'keyboard_shift' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('Space'), image: 'keyboard_space' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowLeft'), image: 'keyboard_arrow_left' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowDown'), image: 'keyboard_arrow_down' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowUp'), image: 'keyboard_arrow_up' },
+	{ target: ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowRight'), image: 'keyboard_arrow_right' },
+	{ target: ON_SCREEN_KEYBOARD_POSITION_TARGET, image: 'keyboard_dock_bottom' },
+] as const;
 
 /** Bitmap presentation of an explicitly owned keyboard model. */
 export class HostOnScreenKeyboard {
@@ -55,6 +70,9 @@ export class HostOnScreenKeyboard {
 	private readonly keyRects = new Array<RectRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
 	private readonly keyGlyphs = new Array<GlyphRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
 	private readonly keyShadows = new Array<GlyphRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
+	private readonly keyIconIndices = new Int16Array(ON_SCREEN_KEYBOARD_TARGET_COUNT).fill(-1);
+	private readonly keyIcons = new Array<HostImageRenderSubmission>(KEY_ICONS.length);
+	private readonly keyIconShadows = new Array<HostImageRenderSubmission>(KEY_ICONS.length);
 	private readonly commandKinds = new Array<Host2DKind>(COMMAND_COUNT);
 	private readonly commandRefs = new Array<Host2DRef>(COMMAND_COUNT);
 	private readonly renderFrame: HostMenuFrame = {
@@ -84,14 +102,30 @@ export class HostOnScreenKeyboard {
 		this.commandKinds[2] = Host2DKind.Glyphs;
 		this.commandRefs[2] = this.titleGlyphs;
 		this.renderedShift = model.shiftActive;
+		for (let index = 0; index < KEY_ICONS.length; index += 1) {
+			const definition = KEY_ICONS[index];
+			this.keyIconIndices[definition.target] = index;
+			this.keyIcons[index] = {
+				imgid: definition.image, pos: { x: 0, y: 0, z: 922 }, scale: { x: 1, y: 1 },
+				flip: { flip_h: false, flip_v: false }, colorize: COLOR_TEXT,
+				ambient_affected: false, ambient_factor: 1, layer: LAYER_2D_IDE,
+			};
+			this.keyIconShadows[index] = {
+				imgid: definition.image, pos: { x: 0, y: 0, z: 921 }, scale: { x: 1, y: 1 },
+				flip: { flip_h: false, flip_v: false }, colorize: COLOR_SHADOW,
+				ambient_affected: false, ambient_factor: 1, layer: LAYER_2D_IDE,
+			};
+		}
 		for (let index = 0; index < ON_SCREEN_KEYBOARD_TARGET_COUNT; index += 1) {
-			const label = model.label(index);
 			const rect: RectRenderSubmission = {
 				kind: RectRenderKind.Rect,
 				area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 },
 				color: COLOR_KEY,
 				layer: LAYER_2D_IDE,
 			};
+			this.keyRects[index] = rect;
+			if (this.keyIconIndices[index] >= 0) continue;
+			const label = model.label(index);
 			const glyphs: GlyphRenderSubmission = {
 				x: 0, y: 0, z: 922, items: label,
 				item_start: 0, item_end: label.length, font: null,
@@ -99,7 +133,6 @@ export class HostOnScreenKeyboard {
 				background_color: 0xff000000,
 				layer: LAYER_2D_IDE,
 			};
-			this.keyRects[index] = rect;
 			this.keyGlyphs[index] = glyphs;
 			const shadow: GlyphRenderSubmission = { ...glyphs, color: COLOR_SHADOW, z: 921 };
 			this.keyShadows[index] = shadow;
@@ -146,6 +179,7 @@ export class HostOnScreenKeyboard {
 		if (model.shiftActive !== this.renderedShift) {
 			this.renderedShift = model.shiftActive;
 			for (let key = 0; key < this.keyGlyphs.length; key += 1) {
+				if (this.keyIconIndices[key] >= 0) continue;
 				const glyphs = this.keyGlyphs[key], label = model.label(key);
 				glyphs.items = label;
 				glyphs.item_end = label.length;
@@ -178,8 +212,14 @@ export class HostOnScreenKeyboard {
 		let command = 3;
 		for (const row of this.model.rows) for (const key of row.keys) {
 			this.commandKinds[command] = Host2DKind.Rect; this.commandRefs[command++] = this.keyRects[key];
-			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyShadows[key];
-			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyGlyphs[key];
+			const icon = this.keyIconIndices[key];
+			if (icon >= 0) {
+				this.commandKinds[command] = Host2DKind.Img; this.commandRefs[command++] = this.keyIconShadows[icon];
+				this.commandKinds[command] = Host2DKind.Img; this.commandRefs[command++] = this.keyIcons[icon];
+			} else {
+				this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyShadows[key];
+				this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.keyGlyphs[key];
+			}
 		}
 		for (let index = 0; index < this.helpGlyphs.length; index += 1) {
 			this.commandKinds[command] = Host2DKind.Glyphs; this.commandRefs[command++] = this.helpShadows[index];
@@ -192,7 +232,10 @@ export class HostOnScreenKeyboard {
 		for (const row of model.rows) for (const key of row.keys) {
 			const pressed = model.isKeyHighlighted(key);
 			this.keyRects[key].color = pressed ? COLOR_KEY_PRESSED : key === model.selectedKey ? COLOR_KEY_SELECTED : COLOR_KEY;
-			this.keyGlyphs[key].color = pressed ? COLOR_KEY_PRESSED : key === model.selectedKey ? COLOR_KEY_SELECTED : COLOR_TEXT;
+			const color = pressed ? COLOR_KEY_PRESSED : key === model.selectedKey ? COLOR_KEY_SELECTED : COLOR_TEXT;
+			const icon = this.keyIconIndices[key];
+			if (icon >= 0) this.keyIcons[icon].colorize = color;
+			else this.keyGlyphs[key].color = color;
 		}
 		this.helpGlyphs[1].color = model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_CODE.get('Home'))
 			|| model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_CODE.get('End')) ? COLOR_KEY_PRESSED : COLOR_DIM;
@@ -240,6 +283,18 @@ export class HostOnScreenKeyboard {
 				rect.area.top = keyY;
 				rect.area.right = keyLeft + width;
 				rect.area.bottom = keyY + keyHeight;
+				const iconIndex = this.keyIconIndices[index];
+				if (iconIndex >= 0) {
+					const icon = this.keyIcons[iconIndex], shadow = this.keyIconShadows[iconIndex];
+					const source = hostSystemAtlasImage(icon.imgid);
+					icon.pos.x = keyLeft + (((width - source.width) / 2) | 0);
+					icon.pos.y = keyY + (((keyHeight - source.height) / 2) | 0);
+					icon.flip.flip_v = index === ON_SCREEN_KEYBOARD_POSITION_TARGET && this.bottomDocked;
+					shadow.pos.x = icon.pos.x + 1;
+					shadow.pos.y = icon.pos.y + 1;
+					shadow.flip.flip_v = icon.flip.flip_v;
+					continue;
+				}
 				const glyphs = this.keyGlyphs[index];
 				const textWidth = font.measure(glyphs.items as string);
 				glyphs.font = font;

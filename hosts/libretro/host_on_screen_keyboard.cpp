@@ -1,6 +1,7 @@
 #include "host_on_screen_keyboard.h"
 #include "common/rect.h"
 #include "render/shared/bitmap_font.h"
+#include "render/host_overlay/atlas.h"
 #include "render/host_overlay/overlay_queue.h"
 #include "render/video_presenter.h"
 #include <algorithm>
@@ -29,6 +30,20 @@ constexpr u32 kShadowColor = 0xff080c12u;
 constexpr u32 kTextColor = 0xffefefefu;
 constexpr u32 kDimColor = 0xffb2b2b2u;
 constexpr u32 kTitleColor = 0xff5bc6ffu;
+struct KeycapIcon { i16 target; const char* image; };
+constexpr std::array<KeycapIcon, HostOnScreenKeyboard::IconCount> kKeycapIcons{{
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Backspace], "keyboard_backspace"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Tab], "keyboard_tab"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::CapsLock], "keyboard_caps_lock"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Enter], "keyboard_enter"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ShiftLeft], "keyboard_shift"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Space], "keyboard_space"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowLeft], "keyboard_arrow_left"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowDown], "keyboard_arrow_down"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowUp], "keyboard_arrow_up"},
+	{ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowRight], "keyboard_arrow_right"},
+	{ON_SCREEN_KEYBOARD_POSITION_TARGET, "keyboard_dock_bottom"},
+}};
 
 } // namespace
 
@@ -51,11 +66,25 @@ HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(mo
 	m_command_kinds[2] = Host2DKind::Glyphs;
 	m_command_refs[2] = Host2DRef{.glyphs = &m_title_glyphs};
 	m_renderedShift = model.shiftActive();
+	m_key_icon_indices.fill(-1);
+	for (size_t index = 0; index < kKeycapIcons.size(); ++index) {
+		const auto& definition = kKeycapIcons[index];
+		m_key_icon_indices[static_cast<size_t>(definition.target)] = static_cast<i16>(index);
+		auto& icon = m_key_icons[index];
+		icon.imgid = definition.image;
+		icon.pos.z = 922.0f;
+		icon.colorize = kTextColor;
+		icon.layer = Layer2D::IDE;
+		m_key_icon_shadows[index] = icon;
+		m_key_icon_shadows[index].pos.z = 921.0f;
+		m_key_icon_shadows[index].colorize = kShadowColor;
+	}
 	for (size_t index = 0u; index < ON_SCREEN_KEYBOARD_TARGET_COUNT; index += 1u) {
 		RectRenderSubmission& rect = m_key_rects[index];
 		rect.kind = RectRenderKind::Rect;
 		rect.color = kKeyColor;
 		rect.layer = Layer2D::IDE;
+		if (m_key_icon_indices[index] >= 0) continue;
 		GlyphRenderSubmission& glyphs = m_key_glyphs[index];
 		glyphs.items.emplace_back(m_model.label(static_cast<i16>(index)));
 		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
@@ -99,6 +128,7 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 	if (m_model.shiftActive() != m_renderedShift) {
 		m_renderedShift = m_model.shiftActive();
 		for (size_t key = 0; key < m_key_glyphs.size(); ++key) {
+			if (m_key_icon_indices[key] >= 0) continue;
 			auto& glyphs = m_key_glyphs[key]; glyphs.items[0] = m_model.label(static_cast<i16>(key)); glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
 			m_key_shadows[key].items[0] = glyphs.items[0];
 			m_key_shadows[key].item_end = glyphs.item_end;
@@ -124,8 +154,14 @@ void HostOnScreenKeyboard::rebuildPageCommands() {
 	size_t command = 3;
 	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
 		m_command_kinds[command] = Host2DKind::Rect; m_command_refs[command++] = Host2DRef{.rect = &m_key_rects[static_cast<size_t>(key)]};
-		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_shadows[static_cast<size_t>(key)]};
-		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_glyphs[static_cast<size_t>(key)]};
+		const i16 icon = m_key_icon_indices[static_cast<size_t>(key)];
+		if (icon >= 0) {
+			m_command_kinds[command] = Host2DKind::Img; m_command_refs[command++] = Host2DRef{.img = &m_key_icon_shadows[static_cast<size_t>(icon)]};
+			m_command_kinds[command] = Host2DKind::Img; m_command_refs[command++] = Host2DRef{.img = &m_key_icons[static_cast<size_t>(icon)]};
+		} else {
+			m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_shadows[static_cast<size_t>(key)]};
+			m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_key_glyphs[static_cast<size_t>(key)]};
+		}
 	}
 	for (size_t index = 0; index < m_help_glyphs.size(); ++index) {
 		m_command_kinds[command] = Host2DKind::Glyphs; m_command_refs[command++] = Host2DRef{.glyphs = &m_help_shadows[index]};
@@ -136,8 +172,12 @@ void HostOnScreenKeyboard::rebuildPageCommands() {
 void HostOnScreenKeyboard::updateKeyColors() {
 	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
 		const bool pressed = m_model.isKeyHighlighted(key);
-		m_key_rects[static_cast<size_t>(key)].color = pressed ? kPressedKeyColor : key == m_model.selectedKey() ? kSelectedKeyColor : kKeyColor;
-		m_key_glyphs[static_cast<size_t>(key)].color = pressed ? kPressedKeyColor : key == m_model.selectedKey() ? kSelectedKeyColor : kTextColor;
+		const bool selected = key == m_model.selectedKey();
+		m_key_rects[static_cast<size_t>(key)].color = pressed ? kPressedKeyColor : selected ? kSelectedKeyColor : kKeyColor;
+		const u32 foreground = pressed ? kPressedKeyColor : selected ? kSelectedKeyColor : kTextColor;
+		const i16 icon = m_key_icon_indices[static_cast<size_t>(key)];
+		if (icon >= 0) m_key_icons[static_cast<size_t>(icon)].colorize = foreground;
+		else m_key_glyphs[static_cast<size_t>(key)].color = foreground;
 	}
 	m_help_glyphs[1].color = m_model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Home])
 		|| m_model.isKeyHighlighted(ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::End]) ? kPressedKeyColor : kDimColor;
@@ -193,6 +233,21 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 				static_cast<f32>(keyY + keyHeight),
 				921.0f,
 			};
+			const i16 iconIndex = m_key_icon_indices[offset];
+			if (iconIndex >= 0) {
+				auto& icon = m_key_icons[static_cast<size_t>(iconIndex)];
+				auto& shadow = m_key_icon_shadows[static_cast<size_t>(iconIndex)];
+				const auto& image = hostSystemAtlasImage(icon.imgid);
+				icon.pos.x = keyLeft + static_cast<i32>((width - image.width) / 2);
+				icon.pos.y = keyY + (keyHeight - image.height) / 2;
+				shadow.pos.x = icon.pos.x + 1;
+				shadow.pos.y = icon.pos.y + 1;
+				if (index == ON_SCREEN_KEYBOARD_POSITION_TARGET) {
+					icon.flip.flip_v = m_bottomDocked;
+					shadow.flip.flip_v = m_bottomDocked;
+				}
+				continue;
+			}
 			GlyphRenderSubmission& glyphs = m_key_glyphs[offset];
 			glyphs.font = font;
 			glyphs.x = static_cast<f32>(

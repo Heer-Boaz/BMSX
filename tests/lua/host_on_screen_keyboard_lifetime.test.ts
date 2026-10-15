@@ -11,7 +11,7 @@ import { HostKeyboardPresentation, HostOverlayMenu } from '../../hosts/common/ho
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from '../../hosts/common/rewind';
@@ -290,7 +290,8 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 					const visible = frame();
 					let move: RectRenderSubmission | undefined;
 					for (let command = 3; command < visible.commandCount - 8; command += 3) {
-						if ((visible.commandRefs[command + 2] as GlyphRenderSubmission).items === 'MOVE') move = visible.commandRefs[command] as RectRenderSubmission;
+						if (visible.commandKinds[command + 2] === Host2DKind.Img
+							&& (visible.commandRefs[command + 2] as HostImageRenderSubmission).imgid === 'keyboard_dock_bottom') move = visible.commandRefs[command] as RectRenderSubmission;
 					}
 					assert.ok(move, 'every native page paints its actual position action');
 					f.input.inputAxis2('pointer:0', 'pointer_position', (move.area.left + move.area.right) / 2, (move.area.top + move.area.bottom) / 2, f.clock.now() + 1);

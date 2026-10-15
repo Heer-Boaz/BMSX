@@ -16,6 +16,7 @@ class HostOnScreenKeyboard {
 public:
 	static constexpr size_t KeyCount = MAIN_KEY_COUNT;
 	static constexpr size_t HelpLineCount = 4;
+	static constexpr size_t IconCount = 11;
 	static constexpr size_t CommandCapacity = 3 + ON_SCREEN_KEYBOARD_TARGET_COUNT * 3 + HelpLineCount * 2;
 	explicit HostOnScreenKeyboard(OnScreenKeyboard& model);
 	void togglePosition();
@@ -34,6 +35,9 @@ private:
 	std::array<RectRenderSubmission, ON_SCREEN_KEYBOARD_TARGET_COUNT> m_key_rects;
 	std::array<GlyphRenderSubmission, ON_SCREEN_KEYBOARD_TARGET_COUNT> m_key_glyphs;
 	std::array<GlyphRenderSubmission, ON_SCREEN_KEYBOARD_TARGET_COUNT> m_key_shadows;
+	std::array<i16, ON_SCREEN_KEYBOARD_TARGET_COUNT> m_key_icon_indices;
+	std::array<HostImageRenderSubmission, IconCount> m_key_icons;
+	std::array<HostImageRenderSubmission, IconCount> m_key_icon_shadows;
 	std::array<Host2DKind, CommandCapacity> m_command_kinds;
 	std::array<Host2DRef, CommandCapacity> m_command_refs;
 	size_t m_commandCount = 0;

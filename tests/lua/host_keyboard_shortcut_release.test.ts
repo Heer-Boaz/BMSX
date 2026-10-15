@@ -8,7 +8,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { HostImageRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { createHostFrameFixture } from '../helpers/host_frame';
 
@@ -57,7 +57,7 @@ for (const hostHz of [60, 120]) {
 				if (!queue.hasPendingHostMenuFrame()) return false;
 				const frame = queue.consumeHostMenuFrame();
 				for (let index = 0; index < frame.commandCount; index += 1) {
-					if (frame.commandKinds[index] === Host2DKind.Glyphs && (frame.commandRefs[index] as GlyphRenderSubmission).items === 'BKSP') return true;
+					if (frame.commandKinds[index] === Host2DKind.Img && (frame.commandRefs[index] as HostImageRenderSubmission).imgid === 'keyboard_backspace') return true;
 				}
 				return false;
 			};

@@ -251,12 +251,19 @@ void testFunctionPagesAndView() {
 	for (const auto& row : f.keyboard.rows()) for (i16 key : row.keys) {
 		require(frame.commandKinds[command] == Host2DKind::Rect, "each function-page key publishes a retained real rectangle");
 		const auto& area = frame.commandRefs[command++].rect->area;
-		require(frame.commandKinds[command] == Host2DKind::Glyphs, "each function-page key publishes real glyphs");
-		const auto& shadow = *frame.commandRefs[command++].glyphs;
-		require(frame.commandKinds[command] == Host2DKind::Glyphs, "key foreground follows its retained shadow");
-		const auto& glyph = *frame.commandRefs[command++].glyphs;
-		require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1, "retained label shadow follows the same physical key");
-		require(glyph.items[0] == f.keyboard.label(key), "painted function label is the exact model identity");
+		if (frame.commandKinds[command] == Host2DKind::Img) {
+			const auto& shadow = *frame.commandRefs[command++].img;
+			require(frame.commandKinds[command] == Host2DKind::Img, "key pictogram foreground follows the retained image shadow");
+			const auto& icon = *frame.commandRefs[command++].img;
+			require(shadow.imgid == icon.imgid && shadow.pos.x == icon.pos.x + 1 && shadow.pos.y == icon.pos.y + 1, "retained icon and shadow belong to the same interactive target");
+		} else {
+			require(frame.commandKinds[command] == Host2DKind::Glyphs, "ordinary function-page labels publish real glyphs");
+			const auto& shadow = *frame.commandRefs[command++].glyphs;
+			require(frame.commandKinds[command] == Host2DKind::Glyphs, "key foreground follows its retained shadow");
+			const auto& glyph = *frame.commandRefs[command++].glyphs;
+			require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1, "retained label shadow follows the same physical key");
+			require(glyph.items[0] == f.keyboard.label(key), "painted function label is the exact model identity");
+		}
 		require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key,
 			"bitmap hit and paint select the same actual active-page key");
 		require(f.keyboard.selectedKey() == key, "bitmap selection updates the injected owner, not an old main-row index");

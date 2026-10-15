@@ -9,8 +9,9 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import { hostSystemAtlasImage } from '../../machine/ts/render/host_overlay/atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
-import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RectRenderKind, type GlyphRenderSubmission, type HostImageRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
@@ -20,6 +21,10 @@ function assertVisible(frame: HostMenuFrame, bounds: Readonly<RectBounds>): void
 			const { area } = frame.commandRefs[index] as RectRenderSubmission;
 			assert.ok(area.left >= bounds.left && area.right <= bounds.right, `rect ${index} stays horizontally visible`);
 			assert.ok(area.top >= bounds.top && area.bottom <= bounds.bottom, `rect ${index} stays vertically visible`);
+		} else if (frame.commandKinds[index] === Host2DKind.Img) {
+			const image = frame.commandRefs[index] as HostImageRenderSubmission, source = hostSystemAtlasImage(image.imgid);
+			assert.ok(image.pos.x >= bounds.left && image.pos.x + source.width <= bounds.right, `image ${image.imgid} stays horizontally visible`);
+			assert.ok(image.pos.y >= bounds.top && image.pos.y + source.height <= bounds.bottom, `image ${image.imgid} stays vertically visible`);
 		} else if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 			const glyph = frame.commandRefs[index] as GlyphRenderSubmission;
 			const text = (glyph.items as string).slice(glyph.item_start, glyph.item_end);
@@ -206,6 +211,12 @@ test('native bitmap keyboard keeps every panel and key surface open, with retain
 		for (let index = 0; index < frame.commandCount; index += 1) {
 			if (frame.commandKinds[index] === Host2DKind.Rect) {
 				assert.equal((frame.commandRefs[index] as RectRenderSubmission).kind, RectRenderKind.Rect, 'no filled panel or key can obscure the game');
+			} else if (frame.commandKinds[index] === Host2DKind.Img) {
+				const shadow = frame.commandRefs[index++] as HostImageRenderSubmission;
+				assert.equal(frame.commandKinds[index], Host2DKind.Img);
+				const icon = frame.commandRefs[index] as HostImageRenderSubmission;
+				assert.equal(shadow.imgid, icon.imgid); assert.equal(shadow.colorize, 0xff080c12);
+				assert.equal(shadow.pos.x, icon.pos.x + 1); assert.equal(shadow.pos.y, icon.pos.y + 1);
 			} else {
 				const shadow = frame.commandRefs[index++] as GlyphRenderSubmission;
 				const glyph = frame.commandRefs[index] as GlyphRenderSubmission;
@@ -262,4 +273,49 @@ test('manual native keyboard docking preserves model ownership and follows live 
 	f.keyboard.togglePosition(); f.frame();
 	assert.equal(panel.area.top, top, 'the next explicit toggle returns to the unchanged top anchor');
 	assert.deepEqual(f.presenter.viewportSize, { x: 256, y: 192 });
+});
+
+
+test('native keyboard pictograms replace only special-key artwork, remain centered, and indicate the destination docking edge', t => {
+	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const icons = new Map([[13, 'keyboard_backspace'], [14, 'keyboard_tab'], [28, 'keyboard_caps_lock'], [40, 'keyboard_enter'],
+		[41, 'keyboard_shift'], [55, 'keyboard_space'], [56, 'keyboard_arrow_left'], [57, 'keyboard_arrow_down'],
+		[58, 'keyboard_arrow_up'], [59, 'keyboard_arrow_right'], [75, 'keyboard_dock_bottom']]);
+	let time = 0;
+	for (const bottom of [false, true]) {
+		if (bottom) f.keyboard.togglePosition();
+		for (const page of [KeyboardPage.Text, KeyboardPage.Symbols, KeyboardPage.Functions]) {
+			f.model.setPage(page); const frame = f.frame(); let command = 3;
+			for (const row of f.model.rows) for (const target of row.keys) {
+				const rect = frame.commandRefs[command] as RectRenderSubmission;
+				if (icons.has(target)) {
+					assert.equal(frame.commandKinds[command + 1], Host2DKind.Img); assert.equal(frame.commandKinds[command + 2], Host2DKind.Img);
+					const shadow = frame.commandRefs[command + 1] as HostImageRenderSubmission, icon = frame.commandRefs[command + 2] as HostImageRenderSubmission;
+					assert.equal(icon.imgid, icons.get(target)); const source = hostSystemAtlasImage(icon.imgid);
+					assert.equal(source.width, 11); assert.equal(source.height, 7);
+					assert.equal(icon.pos.x, rect.area.left + (((rect.area.right - rect.area.left - 11) / 2) | 0));
+					assert.equal(icon.pos.y, rect.area.top + (((rect.area.bottom - rect.area.top - 7) / 2) | 0));
+					assert.ok(icon.pos.x >= rect.area.left && shadow.pos.x + 11 <= rect.area.right, 'centered icon and shadow retain their real cell margins');
+					assert.ok(icon.pos.y >= rect.area.top && shadow.pos.y + 7 <= rect.area.bottom);
+					assert.deepEqual(icon.scale, { x: 1, y: 1 }); assert.deepEqual(shadow.scale, icon.scale);
+					assert.equal(icon.flip.flip_h, false); assert.equal(icon.flip.flip_v, target === 75 && bottom);
+					assert.deepEqual(shadow.flip, icon.flip);
+					assert.equal(icon.colorize, target === f.model.selectedKey ? 0xff7eb4d9 : 0xffefefef);
+					assert.equal(shadow.colorize, 0xff080c12);
+					const originalIcon = icon;
+					f.model.selectKey(target); f.frame(); assert.equal(icon.colorize, 0xff7eb4d9);
+					if (target !== 75) {
+						f.model.pressKey(0, target); f.frame(); assert.equal(icon.colorize, 0xffffe09a);
+						f.model.releaseSource(0); f.model.updateFeedback(time += 200); f.frame();
+					}
+					assert.equal(frame.commandRefs[command + 2], originalIcon, 'selection and key feedback reuse the same retained image');
+				} else assert.equal(frame.commandKinds[command + 2], Host2DKind.Glyphs, 'ordinary letter and punctuation glyphs are unchanged');
+				command += 3;
+			}
+			for (let index = 0; index < frame.commandCount; index += 1) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+				assert.notEqual((frame.commandRefs[index] as GlyphRenderSubmission).items, 'MOVE', 'semantic action name is never visible keyboard artwork');
+			}
+			assertVisible(f.frame(), f.presenter.visibleViewportBounds);
+		}
+	}
 });

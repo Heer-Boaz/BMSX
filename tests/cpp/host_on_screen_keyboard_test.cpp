@@ -4,6 +4,7 @@
 #include "common/rect.h"
 #include "render/shared/bmsx_font.h"
 #include "render/host_overlay/software/renderer.h"
+#include "render/host_overlay/atlas.h"
 #include <algorithm>
 #include <vector>
 #include "render/video_presenter.h"
@@ -58,6 +59,10 @@ void testVisibleViewport() {
 			const auto& area = cropped.commandRefs[index].rect->area;
 			require(area.left >= bounds.left && area.right <= bounds.right && area.top >= bounds.top && area.bottom <= bounds.bottom,
 				"every keyboard panel/key rectangle stays inside the visible target");
+		} else if (cropped.commandKinds[index] == Host2DKind::Img) {
+			const auto& icon = *cropped.commandRefs[index].img; const auto& source = hostSystemAtlasImage(icon.imgid);
+			require(icon.pos.x >= bounds.left && icon.pos.x + source.width <= bounds.right && icon.pos.y >= bounds.top && icon.pos.y + source.height <= bounds.bottom,
+				"actual atlas-backed icons and shadows stay inside the visible target");
 		} else if (cropped.commandKinds[index] == Host2DKind::Glyphs) {
 			const auto& glyph = *cropped.commandRefs[index].glyphs;
 			require(glyph.x >= bounds.left && glyph.x + font.measure(glyph.items[0]) <= bounds.right
@@ -165,12 +170,21 @@ void testTransparentPixels() {
 				for (size_t command = 0; command < commands.commandCount; ++command) {
 					if (commands.commandKinds[command] == Host2DKind::Rect) {
 						require(commands.commandRefs[command].rect->kind == RectRenderKind::Rect, "native keyboard never submits filled panel or key plates");
+					} else if (commands.commandKinds[command] == Host2DKind::Img) {
+						const auto& shadow = *commands.commandRefs[command++].img;
+						require(commands.commandKinds[command] == Host2DKind::Img, "pictogram foreground follows its own image shadow");
+						const auto& icon = *commands.commandRefs[command].img;
+						require(shadow.imgid == icon.imgid && shadow.pos.x == icon.pos.x + 1 && shadow.pos.y == icon.pos.y + 1 && shadow.colorize == 0xff080c12u,
+							"actual atlas pictograms retain the same one-pixel dark shadow as ordinary labels");
+						require(icon.flip.flip_v == (icon.imgid == "keyboard_dock_bottom" && bottom) && shadow.flip.flip_v == icon.flip.flip_v,
+							"only position pictogram flips toward the destination edge");
 					} else {
 						const auto& shadow = *commands.commandRefs[command++].glyphs;
 						const auto& glyph = *commands.commandRefs[command].glyphs;
 						require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1 && shadow.color == 0xff080c12u,
 							"title, key and help glyphs retain an exact one-pixel dark edge over the scene");
 						require(!shadow.has_background_color && !glyph.has_background_color, "glyph commands cannot paint hidden background plates");
+						require(glyph.items[0] != "MOVE", "semantic MOVE name is not visible native keyboard artwork");
 					}
 				}
 				render(commands, empty, mask); render(commands, pattern, pixels);
@@ -191,6 +205,66 @@ void testTransparentPixels() {
 	}
 }
 
+void testPictogramGeometryAndFeedback() {
+	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
+	TestVideoOutput output(256, 192);
+	auto software = std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	SoftwareBackend* backend = software.get(); backend->resizePresentationTarget(256, 192);
+	VideoPresenter presenter(output, std::move(software), 256, 192);
+	Font font; presenter.default_font = &font;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES); HostOnScreenKeyboard view(keyboard); keyboard.open();
+	constexpr std::array<std::pair<i16, const char*>, 11> icons{{{13, "keyboard_backspace"}, {14, "keyboard_tab"}, {28, "keyboard_caps_lock"},
+		{40, "keyboard_enter"}, {41, "keyboard_shift"}, {55, "keyboard_space"}, {56, "keyboard_arrow_left"}, {57, "keyboard_arrow_down"},
+		{58, "keyboard_arrow_up"}, {59, "keyboard_arrow_right"}, {75, "keyboard_dock_bottom"}}};
+	f64 time = 0;
+	const auto frame = [&]() { view.queueRenderCommands(presenter); return presenter.hostOverlayQueue.consumeHostMenuFrame(); };
+	for (const bool bottom : {false, true}) {
+		if (bottom) view.togglePosition();
+		for (size_t page = 0; page < 3; ++page) {
+			keyboard.setPage(page); const auto commands = frame(); size_t command = 3;
+			for (const auto& row : keyboard.rows()) for (i16 target : row.keys) {
+				const auto expected = std::find_if(icons.begin(), icons.end(), [target](const auto& icon) { return icon.first == target; });
+				const auto& area = commands.commandRefs[command].rect->area;
+				if (expected != icons.end()) {
+					require(commands.commandKinds[command + 1] == Host2DKind::Img && commands.commandKinds[command + 2] == Host2DKind::Img, "special targets use actual retained atlas commands");
+					const auto* icon = commands.commandRefs[command + 2].img; const auto& shadow = *commands.commandRefs[command + 1].img;
+					require(icon->imgid == expected->second && shadow.imgid == icon->imgid, "every native pictogram belongs to its exact physical or host target");
+					const auto& source = hostSystemAtlasImage(icon->imgid);
+					require(source.width == 11 && source.height == 7, "pictogram owns the expected native canvas dimensions");
+					require(icon->pos.x == area.left + static_cast<i32>((area.right - area.left - 11) / 2)
+						&& icon->pos.y == area.top + static_cast<i32>((area.bottom - area.top - 7) / 2), "atlas artwork centers directly inside the unchanged painted key rectangle");
+					require(icon->pos.x >= area.left && shadow.pos.x + 11 <= area.right && icon->pos.y >= area.top && shadow.pos.y + 7 <= area.bottom,
+						"icon canvas and shadow retain their real cell margins");
+					require(icon->scale.x == 1 && icon->scale.y == 1 && !icon->flip.flip_h && icon->flip.flip_v == (target == 75 && bottom)
+						&& shadow.flip.flip_v == icon->flip.flip_v, "only docking destination changes the pictogram vertical orientation");
+					require(icon->colorize == (target == keyboard.selectedKey() ? 0xff7eb4d9u : 0xffefefefu) && shadow.colorize == 0xff080c12u,
+						"normal and selected atlas tints preserve existing feedback contrast");
+					std::fill_n(backend->framebuffer(), 256 * 192, 0);
+					Host2DPipelineState pipeline; beginHostOverlaySoftware(*backend, pipeline);
+					renderHost2DEntrySoftware(*backend, Host2DKind::Img, {.img = icon}); endHostOverlaySoftware(*backend);
+					size_t ink = 0;
+					for (i32 y = 0; y < 7; ++y) for (i32 x = 0; x < 11; ++x) {
+						const i32 sourceY = icon->flip.flip_v ? 6 - y : y;
+						const size_t sourceOffset = ((source.v + sourceY) * HOST_SYSTEM_ATLAS.width + source.u + x) * 4 + 3;
+						const bool sourceInk = HOST_SYSTEM_ATLAS.pixels[sourceOffset] != 0;
+						const size_t destination = (static_cast<i32>(icon->pos.y) + y) * 256 + static_cast<i32>(icon->pos.x) + x;
+						require((backend->framebuffer()[destination] != 0) == sourceInk, "actual software icon raster preserves the exact atlas alpha silhouette and destination flip");
+						ink += sourceInk;
+					}
+					require(ink > 0 && ink < 77, "every native pictogram contains actual ink and transparent interior pixels, never an opaque image plate");
+					keyboard.selectKey(target, page); frame(); require(icon->colorize == 0xff7eb4d9u, "controller focus highlights the actual pictogram");
+					if (target != 75) {
+						keyboard.pressKey(0, target); frame(); require(icon->colorize == 0xffffe09au, "physical key forwarding highlights its actual pictogram");
+						keyboard.releaseSource(0); keyboard.updateFeedback(time += 200); frame();
+					}
+					require(commands.commandRefs[command + 2].img == icon, "focus and held-state changes reuse retained image commands");
+				} else require(commands.commandKinds[command + 2] == Host2DKind::Glyphs, "letters and punctuation preserve their ordinary glyph artwork");
+				command += 3;
+			}
+		}
+	}
+}
+
 void testShiftReleasedBeforeFirstPaint() {
 	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
 	TestVideoOutput output(256, 192);
@@ -203,7 +277,7 @@ void testShiftReleasedBeforeFirstPaint() {
 	view.queueRenderCommands(presenter); const auto commands = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	require(commands.commandRefs[50].glyphs->items[0] == "q" && commands.commandRefs[49].glyphs->items[0] == "q",
 		"first paint restores base foreground and shadow labels rather than retaining the constructor's shifted cache");
-	require(commands.commandRefs[185].glyphs->items[0] == "MOVE", "host action label is never shifted into a physical-key interpretation");
+	require(commands.commandKinds[185] == Host2DKind::Img && commands.commandRefs[185].img->imgid == "keyboard_dock_bottom", "host action retains its atlas pictogram instead of shifted physical-key artwork");
 }
 
 void testFeedback() {
@@ -242,9 +316,10 @@ void testFeedback() {
 	const auto expectKey = [&](size_t key, u32 edge, u32 foreground) {
 		const HostMenuFrame commands = frame();
 		require(commands.commandKinds[3u + key * 3u] == Host2DKind::Rect, "key publishes a real rectangle command");
-		require(commands.commandKinds[5u + key * 3u] == Host2DKind::Glyphs, "key publishes a real glyph command");
+		require(commands.commandKinds[5u + key * 3u] == Host2DKind::Glyphs || commands.commandKinds[5u + key * 3u] == Host2DKind::Img, "key publishes its real retained foreground artwork");
 		require(commands.commandRefs[3u + key * 3u].rect->color == edge, "published key outline matches forwarded input feedback");
-		require(commands.commandRefs[5u + key * 3u].glyphs->color == foreground, "published key label matches forwarded feedback");
+		require((commands.commandKinds[5u + key * 3u] == Host2DKind::Img ? commands.commandRefs[5u + key * 3u].img->colorize : commands.commandRefs[5u + key * 3u].glyphs->color) == foreground,
+			"published glyph or pictogram matches forwarded feedback");
 	};
 	const auto select = [&](size_t key) {
 		const RectBounds& area = frame().commandRefs[3u + key * 3u].rect->area;
@@ -489,6 +564,7 @@ int main() {
 		testDocking();
 		testTransparentPixels();
 		testShiftReleasedBeforeFirstPaint();
+		testPictogramGeometryAndFeedback();
 		std::cout << "HOST-ON-SCREEN-KEYBOARD:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

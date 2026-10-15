@@ -13,7 +13,7 @@ import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
@@ -274,14 +274,19 @@ test('bitmap consumer renders/hits every function-page key from the same actual 
 	for (const row of f.keyboard.rows) for (const key of row.keys) {
 		assert.equal(frame.commandKinds[command], Host2DKind.Rect);
 		const rect = frame.commandRefs[command++] as RectRenderSubmission;
-		assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
-		const shadow = frame.commandRefs[command++] as GlyphRenderSubmission;
-		assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
-		const glyph = frame.commandRefs[command++] as GlyphRenderSubmission;
-		assert.equal(shadow.items, glyph.items);
-		assert.equal(shadow.x, glyph.x + 1);
-		assert.equal(shadow.y, glyph.y + 1);
-		assert.equal(glyph.items, f.keyboard.label(key));
+		if (frame.commandKinds[command] === Host2DKind.Img) {
+			const shadow = frame.commandRefs[command++] as HostImageRenderSubmission;
+			assert.equal(frame.commandKinds[command], Host2DKind.Img);
+			const icon = frame.commandRefs[command++] as HostImageRenderSubmission;
+			assert.equal(shadow.imgid, icon.imgid); assert.equal(shadow.pos.x, icon.pos.x + 1); assert.equal(shadow.pos.y, icon.pos.y + 1);
+		} else {
+			assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
+			const shadow = frame.commandRefs[command++] as GlyphRenderSubmission;
+			assert.equal(frame.commandKinds[command], Host2DKind.Glyphs);
+			const glyph = frame.commandRefs[command++] as GlyphRenderSubmission;
+			assert.equal(shadow.items, glyph.items); assert.equal(shadow.x, glyph.x + 1); assert.equal(shadow.y, glyph.y + 1);
+			assert.equal(glyph.items, f.keyboard.label(key));
+		}
 		assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
 		assert.equal(f.keyboard.selectedKey, key);
 	}

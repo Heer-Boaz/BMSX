@@ -72,7 +72,7 @@ void testNativeMoveTarget() {
 	const auto moveRect = [&]() {
 		const auto commands = frame(); const RectRenderSubmission* rect = nullptr;
 		for (size_t command = 3; command < commands.commandCount - 8; command += 3) {
-			if (commands.commandRefs[command + 2].glyphs->items[0] == "MOVE") rect = commands.commandRefs[command].rect;
+			if (commands.commandKinds[command + 2] == Host2DKind::Img && commands.commandRefs[command + 2].img->imgid == "keyboard_dock_bottom") rect = commands.commandRefs[command].rect;
 		}
 		require(rect != nullptr, "each native page paints MOVE as an actual interactive target"); return rect;
 	};
