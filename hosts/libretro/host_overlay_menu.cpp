@@ -320,7 +320,8 @@ HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& inpu
 		if (!uiInput.pointerHeld()) m_keyboard.releaseSource(OnScreenKeyboard::PointerSource);
 		const i32 pointerKey = uiInput.pointerValid && uiInput.pointerChanged
 			? m_keyboardView.selectAt(uiInput.pointerX, uiInput.pointerY) : -1;
-		if (uiInput.pointerJustPressed() && pointerKey >= 0) m_keyboard.activate(OnScreenKeyboard::PointerSource);
+		if (uiInput.pointerJustPressed() && pointerKey >= 0
+			&& m_keyboard.activate(OnScreenKeyboard::PointerSource) == OnScreenKeyboardAction::TogglePosition) m_keyboardView.togglePosition();
 		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Up)) m_keyboard.moveVertical(-1);
 		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Down)) m_keyboard.moveVertical(1);
 		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Left)) m_keyboard.moveHorizontal(-1);
@@ -330,14 +331,11 @@ HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& inpu
 			for (u8 button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; ++button) {
 				if (!uiInput.gamepadButtonPressed(player, static_cast<InputControllerGamepadButtonBit>(button))) m_keyboard.releaseSource(sourceBase + button);
 			}
-			if (uiInput.gamepadButtonJustPressed(player, InputControllerGamepadButtonBit::A)
-				&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select)) {
-				m_keyboardView.togglePosition();
-			}
 			for (const auto& binding : kOnScreenKeyboardCommandBindings) {
 				if (uiInput.gamepadButtonJustPressed(player, binding.button)
 					&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select) == binding.requiresSelect) {
-					m_keyboard.command(sourceBase + static_cast<size_t>(binding.button), binding.command);
+					if (m_keyboard.command(sourceBase + static_cast<size_t>(binding.button), binding.command)
+						== OnScreenKeyboardAction::TogglePosition) m_keyboardView.togglePosition();
 				}
 			}
 		}

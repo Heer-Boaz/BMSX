@@ -30,11 +30,11 @@ public:
 	void selectKey(i16 key, size_t page);
 	void moveHorizontal(i32 direction);
 	void moveVertical(i32 direction);
-	void activate(size_t source);
-	void activateKey(size_t source, i16 key);
+	OnScreenKeyboardAction activate(size_t source);
+	OnScreenKeyboardAction activateKey(size_t source, i16 key);
 	void pressKey(size_t source, i16 key);
 	void releaseSource(size_t source, bool completeModifierTap = false);
-	void command(size_t source, OnScreenKeyboardCommand command);
+	OnScreenKeyboardAction command(size_t source, OnScreenKeyboardCommand command);
 	const char* label(i16 key) const;
 	bool isKeyPressed(i16 key) const;
 	bool isKeyHighlighted(i16 key) const;
@@ -63,8 +63,8 @@ private:
 	i16 m_selected;
 	i32 m_selectedRow;
 	std::vector<i16> m_pageSelections;
-	std::vector<std::array<i16, KeyCount>> m_pageKeyRows;
-	std::vector<std::array<f32, KeyCount>> m_pageKeyCenters;
+	std::vector<std::array<i16, ON_SCREEN_KEYBOARD_TARGET_COUNT>> m_pageKeyRows;
+	std::vector<std::array<f32, ON_SCREEN_KEYBOARD_TARGET_COUNT>> m_pageKeyCenters;
 	bool m_visible = false;
 	u64 m_revision = 0;
 };

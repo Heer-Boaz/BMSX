@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { KeyboardPage, OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -72,8 +72,9 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 	assert.equal(panel.area.top, f.output.visibleViewportBounds.top + 4, 'cropping changes the owner anchor, not input priority');
 	assert.equal(q.area.right - q.area.left, 12);
 	assertVisible(cropped, f.presenter.visibleViewportBounds);
-	for (let key = 0; key < 60; key += 1) {
-		const rect = cropped.commandRefs[3 + key * 3] as RectRenderSubmission;
+	for (let index = 0; index < 61; index += 1) {
+		const key = index === 60 ? ON_SCREEN_KEYBOARD_POSITION_TARGET : index;
+		const rect = cropped.commandRefs[3 + index * 3] as RectRenderSubmission;
 		const x = (rect.area.left + rect.area.right) / 2, y = (rect.area.top + rect.area.bottom) / 2;
 		assert.equal(f.keyboard.containsPoint(x, y), true);
 		assert.equal(f.keyboard.selectAt(x, y), key);

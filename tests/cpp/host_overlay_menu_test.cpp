@@ -46,10 +46,10 @@ void assertVisible(const HostMenuFrame& frame, const RectBounds& bounds, Font& f
 		}
 	}
 }
-void testNativeDockingChord() {
+void testNativeMoveTarget() {
 	constexpr i32 w = 320, h = 240;
 	constexpr u16 select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT, a = 1u << RETRO_DEVICE_ID_JOYPAD_A;
-	buttons = secondButtons = 0;
+	buttons = secondButtons = 0; pointerPressed = false; pointerX = pointerY = 0;
 	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
 	input.setControllerDevice(0, RETRO_DEVICE_JOYPAD); input.setControllerDevice(1, RETRO_DEVICE_JOYPAD);
 	Runtime runtime({{}, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -59,52 +59,64 @@ void testNativeDockingChord() {
 	HostRewind rewind(runtime, presenter, presentation); HostOverlayMenu menu(input); f64 time = 0;
 	InputControllerSnapshot snapshot{};
 	const auto tick = [&]() { time += 20; input.poll(w, h, time); menu.tickInput(runtime, input, presenter, rewind, time); };
+	const auto press = [&](u16 mask) { buttons = mask; tick(); buttons = 0; tick(); };
 	const auto frame = [&]() { menu.queueRenderCommands(runtime, presenter, rewind); return presenter.hostOverlayQueue.consumeHostMenuFrame(); };
 	const auto noKeys = [&]() {
 		tick(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
-		for (const auto word : snapshot.keyWords) require(word == 0, "manual docking cannot synthesize any guest key");
+		for (const auto word : snapshot.keyWords) require(word == 0, "MOVE cannot synthesize any guest key");
 	};
 	const auto held = [&](u8 usage) {
 		tick(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
 		return (snapshot.keyWords[usage >> 5] & (1u << (usage & 31))) != 0;
 	};
-	tick();
-	buttons = select | (1u << RETRO_DEVICE_ID_JOYPAD_X); tick(); buttons = 0; tick();
+	const auto moveRect = [&]() {
+		const auto commands = frame(); const RectRenderSubmission* rect = nullptr;
+		for (size_t command = 3; command < commands.commandCount - 8; command += 3) {
+			if (commands.commandRefs[command + 2].glyphs->items[0] == "MOVE") rect = commands.commandRefs[command].rect;
+		}
+		require(rect != nullptr, "each native page paints MOVE as an actual interactive target"); return rect;
+	};
+	tick(); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 	const auto initial = frame(); const auto* panel = initial.commandRefs[0].rect;
-	require(initial.commandRefs[2].glyphs->items[0] == "KEYBOARD: TEXT" && panel->area.top == 4, "ordinary native open keeps text layout and default top position");
-	const f32 height = panel->area.bottom - panel->area.top;
-	buttons = select | a; tick(); noKeys(); frame();
-	require(panel->area.bottom == h - 4, "same-player Select+A changes native keyboard to bottom");
-	for (int step = 0; step < 60; ++step) { tick(); frame(); require(panel->area.bottom == h - 4, "held docking chord cannot repeat through UI navigation typematic"); }
-	buttons = 0; tick(); noKeys();
-	buttons = select; secondButtons = a; tick(); frame();
-	require(panel->area.bottom == h - 4 && held(hid_key_usage::Q), "one player's Select cannot move another player's ordinary A key");
-	buttons = secondButtons = 0; tick(); noKeys();
-	secondButtons = select | a; tick(); frame(); noKeys();
-	require(panel->area.top == 4, "second controller can dock through its own genuine Select+A edge");
-	secondButtons = 0; tick();
-	buttons = a; tick(); require(held(hid_key_usage::Q), "ordinary A still activates the selected key");
-	buttons |= select; tick(); frame();
-	require(panel->area.top == 4 && held(hid_key_usage::Q), "adding Select to an already-held A neither relocates nor releases the existing source");
-	buttons = 0; tick(); noKeys();
-	buttons = select | a; tick(); frame(); buttons = 0; tick();
-	require(panel->area.top == h - 4 - height, "a fresh press is a genuine second docking command");
+	require(initial.commandRefs[2].glyphs->items[0] == "KEYBOARD: TEXT" && panel->area.top == 4, "ordinary native open retains text page and default top position");
+	press(select | a); frame(); noKeys();
+	require(panel->area.top == 4, "removed Select+A chord no longer docks the native view");
+	for (size_t page = 0; page < 3; ++page) {
+		for (int row = 0; row < 3; ++row) press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		for (int key = 0; key < 16 && moveRect()->color != 0xff7eb4d9u; ++key) press(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+		require(moveRect()->color == 0xff7eb4d9u, "ordinary D-pad navigation reaches the visible MOVE target without directly mutating selection");
+		buttons = a; tick(); frame(); noKeys();
+		require(panel->area.bottom == h - 4, "actual gamepad A on MOVE dispatches bottom docking immediately");
+		for (int repeat = 0; repeat < 60; ++repeat) { tick(); frame(); require(panel->area.bottom == h - 4, "held A never repeats the MOVE action through navigation typematic"); }
+		buttons = 0; tick(); noKeys();
+		secondButtons = a; tick(); frame(); secondButtons = 0; tick(); noKeys();
+		require(panel->area.top == 4, "another controller independently activates the same focused host action");
+		press(select | a); frame();
+		require(panel->area.top == 4, "focused MOVE still requires ordinary activation, never the removed modifier chord");
+		for (int pointerPress = 0; pointerPress < 2; ++pointerPress) {
+			const auto center = middlepoint_area(moveRect()->area);
+			pointerX = static_cast<i16>(static_cast<i32>(center.x) * 65534 / (w - 1) - 32767);
+			pointerY = static_cast<i16>(static_cast<i32>(center.y) * 65534 / (h - 1) - 32767);
+			pointerPressed = true; tick(); frame(); noKeys();
+			require(pointerPress == 0 ? panel->area.bottom == h - 4 : panel->area.top == 4, "actual native pointer activation dispatches the visible MOVE target");
+			const f32 top = panel->area.top;
+			for (int hold = 0; hold < 5; ++hold) { tick(); frame(); require(panel->area.top == top, "moving the view underneath a held pointer cannot retrigger MOVE"); }
+			pointerPressed = false; tick(); noKeys();
+		}
+		const auto commands = frame();
+		require(commands.commandRefs[commands.commandCount - 1].glyphs->items[0] == "SEL+X CLOSE  SEL+L/R HOME/END", "help keeps physical host shortcuts while the visible action replaces the hidden docking chord");
+		press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+	}
 	for (const auto binding : {std::pair{RETRO_DEVICE_ID_JOYPAD_B, hid_key_usage::Space},
 		std::pair{RETRO_DEVICE_ID_JOYPAD_X, hid_key_usage::Backspace}, std::pair{RETRO_DEVICE_ID_JOYPAD_L, hid_key_usage::ArrowLeft},
 		std::pair{RETRO_DEVICE_ID_JOYPAD_R, hid_key_usage::ArrowRight}, std::pair{RETRO_DEVICE_ID_JOYPAD_L2, hid_key_usage::Home},
 		std::pair{RETRO_DEVICE_ID_JOYPAD_R2, hid_key_usage::End}, std::pair{RETRO_DEVICE_ID_JOYPAD_START, hid_key_usage::Enter}}) {
-		buttons = 1u << binding.first; tick(); require(held(binding.second), "docking preserves existing native controller keyboard bindings");
+		buttons = 1u << binding.first; tick(); require(held(binding.second), "visible MOVE preserves existing native controller keyboard bindings");
 		buttons = 0; tick(); noKeys();
 	}
-	buttons = select | (1u << RETRO_DEVICE_ID_JOYPAD_X); tick(); buttons = 0; tick();
-	buttons = select | (1u << RETRO_DEVICE_ID_JOYPAD_X); tick(); buttons = 0; tick(); frame();
-	require(panel->area.bottom == h - 4, "native keyboard reopen retains the deliberately selected docking side");
-	buttons = select | (1u << RETRO_DEVICE_ID_JOYPAD_Y); tick(); buttons = 0; tick();
-	const auto symbols = frame();
-	require(symbols.commandRefs[2].glyphs->items[0] == "KEYBOARD: SYMBOLS" && panel->area.bottom == h - 4, "native page shortcut retains its functionality and bottom anchor");
-	const auto help = symbols.commandRefs[symbols.commandCount - 1].glyphs;
-	require(help->items[0] == "SEL+X CLOSE  SEL+A TOP/BOTTOM", "native keyboard makes the controller relocation shortcut discoverable");
-	buttons = select | (1u << RETRO_DEVICE_ID_JOYPAD_X); tick(); buttons = 0; tick();
+	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X)); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X)); frame();
+	require(panel->area.top == 4, "native reopen retains the manual presentation side");
+	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 }
 
 }
@@ -186,7 +198,7 @@ int main() {
 		require((keyboardSnapshot.keyWords[hid_key_usage::F1 >> 5] & (1u << (hid_key_usage::F1 & 31))) == 0, "actual native A UP releases function key");
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 		require(!menu.active(), "actual native close chord retires function-page UI without guest presentation changes");
-		testNativeDockingChord();
+		testNativeMoveTarget();
 		std::cout << "HOST-VISIBLE-MENU:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

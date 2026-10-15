@@ -9,10 +9,10 @@ namespace bmsx {
 namespace {
 constexpr std::array<const char*, 3> kTitles{"KEYBOARD: TEXT", "KEYBOARD: SYMBOLS", "KEYBOARD: FN"};
 constexpr std::array<const char*, HostOnScreenKeyboard::HelpLineCount> kHelpLines{{
-	"A TYPE  B SPACE  X BKSP  Y SHIFT",
+	"A PRESS  B SPACE  X BKSP  Y SHIFT",
 	"L/R CURSOR  LT/RT HOME/END",
 	"START ENTER  SEL+B DEL  SEL+Y PAGE",
-	"SEL+X CLOSE  SEL+A TOP/BOTTOM",
+	"SEL+X CLOSE  SEL+L/R HOME/END",
 }};
 constexpr i32 kUnitWidth = 13;
 constexpr i32 kKeyGap = 1;
@@ -50,13 +50,14 @@ HostOnScreenKeyboard::HostOnScreenKeyboard(OnScreenKeyboard& model) : m_model(mo
 	m_command_refs[1] = Host2DRef{.glyphs = &m_title_shadow};
 	m_command_kinds[2] = Host2DKind::Glyphs;
 	m_command_refs[2] = Host2DRef{.glyphs = &m_title_glyphs};
-	for (size_t index = 0u; index < ON_SCREEN_KEY_DEFINITIONS.size(); index += 1u) {
+	m_renderedShift = model.shiftActive();
+	for (size_t index = 0u; index < ON_SCREEN_KEYBOARD_TARGET_COUNT; index += 1u) {
 		RectRenderSubmission& rect = m_key_rects[index];
 		rect.kind = RectRenderKind::Rect;
 		rect.color = kKeyColor;
 		rect.layer = Layer2D::IDE;
 		GlyphRenderSubmission& glyphs = m_key_glyphs[index];
-		glyphs.items.emplace_back(ON_SCREEN_KEY_DEFINITIONS[index].label);
+		glyphs.items.emplace_back(m_model.label(static_cast<i16>(index)));
 		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
 		glyphs.z = 922.0f;
 		glyphs.color = kTextColor;

@@ -31,7 +31,7 @@ function fixture() {
 	const snapshot = createInputControllerSnapshot();
 	const frame = () => { view.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
 	return {
-		input, keyboard, frame,
+		input, keyboard, presenter, frame,
 		key(index: number) {
 			const current = frame();
 			return {
@@ -39,7 +39,7 @@ function fixture() {
 				text: (current.commandRefs[5 + index * 3] as GlyphRenderSubmission).color,
 			};
 		},
-		helpColor() { return (frame().commandRefs[186] as GlyphRenderSubmission).color; },
+		helpColor() { return (frame().commandRefs[189] as GlyphRenderSubmission).color; },
 		pressed(code: string) {
 			clock.advance(1);
 			input.pollInput();
@@ -230,4 +230,19 @@ test('idle feedback ticks and unexpired afterglow reuse commands without rescann
 	const after = f.frame();
 	assert.equal(after.commandRefs, before.commandRefs);
 	assert.equal(after.commandKinds, before.commandKinds);
+});
+
+
+test('Shift released after view construction but before first paint restores base labels and retains MOVE', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	f.keyboard.pressKey(0, SHIFT);
+	assert.equal(f.keyboard.shiftActive, true);
+	const view = new HostOnScreenKeyboard(f.presenter, f.keyboard);
+	f.keyboard.releaseSource(0);
+	assert.equal(f.keyboard.shiftActive, false);
+	view.queueRenderCommands();
+	const commands = f.presenter.hostOverlayQueue.consumeHostMenuFrame();
+	assert.equal((commands.commandRefs[50] as GlyphRenderSubmission).items, 'q');
+	assert.equal((commands.commandRefs[49] as GlyphRenderSubmission).items, 'q', 'shadow cannot retain a stale shifted label either');
+	assert.equal((commands.commandRefs[185] as GlyphRenderSubmission).items, 'MOVE');
 });

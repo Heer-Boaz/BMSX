@@ -80,12 +80,14 @@ void OnScreenKeyboard::moveVertical(i32 direction) {
 	}
 	selectKey(closest, m_page);
 }
-void OnScreenKeyboard::activate(size_t source) { activateKey(source, m_selected); }
-void OnScreenKeyboard::activateKey(size_t source, i16 key) {
+OnScreenKeyboardAction OnScreenKeyboard::activate(size_t source) { return activateKey(source, m_selected); }
+OnScreenKeyboardAction OnScreenKeyboard::activateKey(size_t source, i16 key) {
+	if (key == ON_SCREEN_KEYBOARD_POSITION_TARGET) return OnScreenKeyboardAction::TogglePosition;
 	const i32 modifier = ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)].modifier;
-	if (modifier == kNoModifier) { pressKey(source, key); return; }
+	if (modifier == kNoModifier) { pressKey(source, key); return OnScreenKeyboardAction::None; }
 	m_modifierStates[static_cast<size_t>(modifier)] = !m_modifierStates[static_cast<size_t>(modifier)];
 	publishModifier(static_cast<size_t>(modifier)); ++m_revision;
+	return OnScreenKeyboardAction::None;
 }
 void OnScreenKeyboard::pressKey(size_t source, i16 key) {
 	if (m_sourceKeys[source] == key) return;
@@ -119,32 +121,37 @@ void OnScreenKeyboard::releaseSource(size_t source, bool completeModifierTap) {
 	}
 	if (releaseKeySource(source)) ++m_revision;
 }
-void OnScreenKeyboard::command(size_t source, OnScreenKeyboardCommand command) {
+OnScreenKeyboardAction OnScreenKeyboard::command(size_t source, OnScreenKeyboardCommand command) {
 	switch (command) {
-		case OnScreenKeyboardCommand::None: return;
-		case OnScreenKeyboardCommand::Activate: activate(source); return;
-		case OnScreenKeyboardCommand::Shift: activateKey(source, MODIFIER_KEY_INDICES[kModifierShift]); return;
-		case OnScreenKeyboardCommand::TogglePage: setPage((m_page + 1) % m_pages.size()); return;
-		case OnScreenKeyboardCommand::Backspace: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Backspace]); return;
-		case OnScreenKeyboardCommand::Delete: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Delete]); return;
-		case OnScreenKeyboardCommand::Space: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Space]); return;
-		case OnScreenKeyboardCommand::Left: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowLeft]); return;
-		case OnScreenKeyboardCommand::Right: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowRight]); return;
-		case OnScreenKeyboardCommand::Home: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Home]); return;
-		case OnScreenKeyboardCommand::End: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::End]); return;
-		case OnScreenKeyboardCommand::Enter: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Enter]); return;
+		case OnScreenKeyboardCommand::None: return OnScreenKeyboardAction::None;
+		case OnScreenKeyboardCommand::Activate: return activate(source);
+		case OnScreenKeyboardCommand::Shift: return activateKey(source, MODIFIER_KEY_INDICES[kModifierShift]);
+		case OnScreenKeyboardCommand::TogglePage: setPage((m_page + 1) % m_pages.size()); break;
+		case OnScreenKeyboardCommand::Backspace: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Backspace]); break;
+		case OnScreenKeyboardCommand::Delete: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Delete]); break;
+		case OnScreenKeyboardCommand::Space: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Space]); break;
+		case OnScreenKeyboardCommand::Left: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowLeft]); break;
+		case OnScreenKeyboardCommand::Right: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::ArrowRight]); break;
+		case OnScreenKeyboardCommand::Home: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Home]); break;
+		case OnScreenKeyboardCommand::End: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::End]); break;
+		case OnScreenKeyboardCommand::Enter: pressKey(source, ON_SCREEN_KEY_INDEX_BY_USAGE[hid_key_usage::Enter]); break;
 	}
+	return OnScreenKeyboardAction::None;
 }
 const char* OnScreenKeyboard::label(i16 key) const {
+	if (key == ON_SCREEN_KEYBOARD_POSITION_TARGET) return "MOVE";
 	const auto& definition = ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)];
 	return shiftActive() && definition.shiftLabel ? definition.shiftLabel : definition.label;
 }
 bool OnScreenKeyboard::isKeyPressed(i16 key) const {
+	if (key == ON_SCREEN_KEYBOARD_POSITION_TARGET) return false;
 	const auto modifier = ON_SCREEN_KEY_DEFINITIONS[static_cast<size_t>(key)].modifier;
 	return modifier == kNoModifier ? m_keyCounts[static_cast<size_t>(key)] != 0 : (m_modifierPressed[static_cast<size_t>(modifier)]
 		|| (m_input.routedPhysicalModifierMask() & MODIFIER_HID_MASKS[static_cast<size_t>(modifier)]) != 0);
 }
-bool OnScreenKeyboard::isKeyHighlighted(i16 key) const { return isKeyPressed(key) || m_feedbackUntilMs[static_cast<size_t>(key)] != 0; }
+bool OnScreenKeyboard::isKeyHighlighted(i16 key) const {
+	return key != ON_SCREEN_KEYBOARD_POSITION_TARGET && (isKeyPressed(key) || m_feedbackUntilMs[static_cast<size_t>(key)] != 0);
+}
 void OnScreenKeyboard::updateFeedback(f64 time) {
 	m_feedbackTimeMs = time;
 	const u8 physicalModifiers = m_input.routedPhysicalModifierMask();

@@ -9,14 +9,14 @@ import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { point_in_rect } from '../../machine/ts/common/rect';
 import { OnScreenKeyboard } from './input/on_screen_keyboard';
-import { ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE } from './input/on_screen_keyboard_keys';
+import { ON_SCREEN_KEYBOARD_TARGET_COUNT, ON_SCREEN_KEY_INDEX_BY_CODE } from './input/on_screen_keyboard_keys';
 
 const TITLES = ['KEYBOARD: TEXT', 'KEYBOARD: SYMBOLS', 'KEYBOARD: FN'] as const;
 const HELP_LINES = [
-	'A TYPE  B SPACE  X BKSP  Y SHIFT',
+	'A PRESS  B SPACE  X BKSP  Y SHIFT',
 	'L/R CURSOR  LT/RT HOME/END',
 	'START ENTER  SEL+B DEL  SEL+Y PAGE',
-	'SEL+X CLOSE  SEL+A TOP/BOTTOM',
+	'SEL+X CLOSE  SEL+L/R HOME/END',
 ] as const;
 const UNIT_WIDTH = 13;
 const KEY_GAP = 1;
@@ -33,7 +33,7 @@ const COLOR_SHADOW = 0xff080c12;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
-const COMMAND_COUNT = 3 + ON_SCREEN_KEY_DEFINITIONS.length * 3 + HELP_LINES.length * 2;
+const COMMAND_COUNT = 3 + ON_SCREEN_KEYBOARD_TARGET_COUNT * 3 + HELP_LINES.length * 2;
 
 /** Bitmap presentation of an explicitly owned keyboard model. */
 export class HostOnScreenKeyboard {
@@ -52,9 +52,9 @@ export class HostOnScreenKeyboard {
 	private readonly titleShadow: GlyphRenderSubmission = { ...this.titleGlyphs, color: COLOR_SHADOW, z: 921 };
 	private readonly helpGlyphs = new Array<GlyphRenderSubmission>(HELP_LINES.length);
 	private readonly helpShadows = new Array<GlyphRenderSubmission>(HELP_LINES.length);
-	private readonly keyRects = new Array<RectRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
-	private readonly keyGlyphs = new Array<GlyphRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
-	private readonly keyShadows = new Array<GlyphRenderSubmission>(ON_SCREEN_KEY_DEFINITIONS.length);
+	private readonly keyRects = new Array<RectRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
+	private readonly keyGlyphs = new Array<GlyphRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
+	private readonly keyShadows = new Array<GlyphRenderSubmission>(ON_SCREEN_KEYBOARD_TARGET_COUNT);
 	private readonly commandKinds = new Array<Host2DKind>(COMMAND_COUNT);
 	private readonly commandRefs = new Array<Host2DRef>(COMMAND_COUNT);
 	private readonly renderFrame: HostMenuFrame = {
@@ -83,8 +83,9 @@ export class HostOnScreenKeyboard {
 		this.commandRefs[1] = this.titleShadow;
 		this.commandKinds[2] = Host2DKind.Glyphs;
 		this.commandRefs[2] = this.titleGlyphs;
-		for (let index = 0; index < ON_SCREEN_KEY_DEFINITIONS.length; index += 1) {
-			const definition = ON_SCREEN_KEY_DEFINITIONS[index];
+		this.renderedShift = model.shiftActive;
+		for (let index = 0; index < ON_SCREEN_KEYBOARD_TARGET_COUNT; index += 1) {
+			const label = model.label(index);
 			const rect: RectRenderSubmission = {
 				kind: RectRenderKind.Rect,
 				area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 },
@@ -92,8 +93,8 @@ export class HostOnScreenKeyboard {
 				layer: LAYER_2D_IDE,
 			};
 			const glyphs: GlyphRenderSubmission = {
-				x: 0, y: 0, z: 922, items: definition.label,
-				item_start: 0, item_end: definition.label.length, font: null,
+				x: 0, y: 0, z: 922, items: label,
+				item_start: 0, item_end: label.length, font: null,
 				color: COLOR_TEXT, has_background_color: false,
 				background_color: 0xff000000,
 				layer: LAYER_2D_IDE,

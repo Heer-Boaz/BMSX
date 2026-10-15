@@ -65,9 +65,9 @@ void testVisibleViewport() {
 				"actual font key labels, title and help stay inside the visible target");
 		}
 	}
-	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount; ++key) {
+	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount + 1; ++key) {
 		const auto center = middlepoint_area(cropped.commandRefs[3 + key * 3].rect->area);
-		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key),
+		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key == HostOnScreenKeyboard::KeyCount ? ON_SCREEN_KEYBOARD_POSITION_TARGET : key),
 			"every painted cropped key remains directly selectable");
 	}
 	const f32 oldLeft = q->area.left, oldTop = q->area.top;
@@ -191,6 +191,21 @@ void testTransparentPixels() {
 	}
 }
 
+void testShiftReleasedBeforeFirstPaint() {
+	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
+	TestVideoOutput output(256, 192);
+	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
+	Font font; presenter.default_font = &font;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES); keyboard.open();
+	keyboard.pressKey(0, 41); require(keyboard.shiftActive(), "actual Shift is held before view construction");
+	HostOnScreenKeyboard view(keyboard);
+	keyboard.releaseSource(0); require(!keyboard.shiftActive(), "Shift source has ended before the first paint");
+	view.queueRenderCommands(presenter); const auto commands = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	require(commands.commandRefs[50].glyphs->items[0] == "q" && commands.commandRefs[49].glyphs->items[0] == "q",
+		"first paint restores base foreground and shadow labels rather than retaining the constructor's shifted cache");
+	require(commands.commandRefs[185].glyphs->items[0] == "MOVE", "host action label is never shifted into a physical-key interpretation");
+}
+
 void testFeedback() {
 	constexpr u32 idleColor = 0x80bccbdbu;
 	constexpr u32 selectedColor = 0xff7eb4d9u;
@@ -238,7 +253,7 @@ void testFeedback() {
 	};
 	const auto expectHomeEndHelp = [&](u32 color) {
 		const HostMenuFrame commands = frame();
-		require(commands.commandRefs[3u + HostOnScreenKeyboard::KeyCount * 3u + 3u].glyphs->color == color, "Home/End forwarding highlights their existing binding help line");
+		require(commands.commandRefs[3u + (HostOnScreenKeyboard::KeyCount + 1u) * 3u + 3u].glyphs->color == color, "Home/End forwarding highlights their existing binding help line");
 	};
 
 	keyboard.open();
@@ -473,6 +488,7 @@ int main() {
 		testVisibleViewport();
 		testDocking();
 		testTransparentPixels();
+		testShiftReleasedBeforeFirstPaint();
 		std::cout << "HOST-ON-SCREEN-KEYBOARD:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

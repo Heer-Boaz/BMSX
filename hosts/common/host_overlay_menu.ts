@@ -26,7 +26,7 @@ import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HostOnScreenKeyboard } from './host_on_screen_keyboard';
 import { OnScreenKeyboard } from './input/on_screen_keyboard';
-import { OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from './input/on_screen_keyboard_keys';
+import { OnScreenKeyboardAction, OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from './input/on_screen_keyboard_keys';
 import {
 	create_rect_bounds,
 	point_in_rect,
@@ -1001,7 +1001,10 @@ export class HostOverlayMenu {
 			if (!ui.pointerHeld) this.keyboard.releaseSource(OnScreenKeyboard.POINTER_SOURCE);
 			const pointerKey = ui.pointerValid && ui.pointerChanged
 				? this.keyboardView.selectAt(ui.pointerPosition.x, ui.pointerPosition.y) : -1;
-			if (ui.pointerJustPressed && pointerKey >= 0) this.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE);
+			if (ui.pointerJustPressed && pointerKey >= 0
+				&& this.keyboard.activate(OnScreenKeyboard.POINTER_SOURCE) === OnScreenKeyboardAction.TogglePosition) {
+				this.keyboardView.togglePosition();
+			}
 		}
 		if (ui.buttonRepeatEdge(BUTTON_UP)) this.keyboard.moveVertical(-1);
 		if (ui.buttonRepeatEdge(BUTTON_DOWN)) this.keyboard.moveVertical(1);
@@ -1012,15 +1015,13 @@ export class HostOverlayMenu {
 			for (let button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; button += 1) {
 				if (!ui.gamepadButtonPressed(player, button)) this.keyboard.releaseSource(sourceBase + button);
 			}
-			if (this.keyboardPresentation === HostKeyboardPresentation.Bitmap
-				&& ui.gamepadButtonJustPressed(player, BUTTON_A)
-				&& ui.gamepadButtonPressed(player, BUTTON_SELECT)) {
-				this.keyboardView.togglePosition();
-			}
 			for (const binding of ON_SCREEN_KEYBOARD_COMMAND_BINDINGS) {
 				if (ui.gamepadButtonJustPressed(player, binding.button)
 					&& ui.gamepadButtonPressed(player, BUTTON_SELECT) === binding.requiresSelect) {
-					this.keyboard.command(sourceBase + binding.button, binding.command);
+					const action = this.keyboard.command(sourceBase + binding.button, binding.command);
+					if (action === OnScreenKeyboardAction.TogglePosition && this.keyboardPresentation === HostKeyboardPresentation.Bitmap) {
+						this.keyboardView.togglePosition();
+					}
 				}
 			}
 		}

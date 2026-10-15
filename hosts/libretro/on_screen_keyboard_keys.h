@@ -8,6 +8,7 @@ namespace bmsx {
 // Page indices of NATIVE_KEYBOARD_PAGES; other presentations author their own pages.
 enum class KeyboardPage : u8 { Text, Symbols, Functions };
 enum class OnScreenKeyboardCommand : u8 { None, Activate, Backspace, Delete, Space, Shift, Left, Right, Home, End, Enter, TogglePage };
+enum class OnScreenKeyboardAction : u8 { None, TogglePosition };
 inline constexpr i32 kNoModifier = -1;
 inline constexpr i32 kModifierShift = 0;
 inline constexpr i32 kModifierControl = 1;
@@ -98,6 +99,8 @@ inline constexpr std::array<OnScreenKeyDefinition, 75> ON_SCREEN_KEY_DEFINITIONS
 	{"F12", static_cast<u8>(hid_key_usage::F1 + 11), kNoModifier},
 	{"`", hid_key_usage::Backquote, kNoModifier, "~"},
 }};
+inline constexpr i16 ON_SCREEN_KEYBOARD_POSITION_TARGET = static_cast<i16>(ON_SCREEN_KEY_DEFINITIONS.size());
+inline constexpr size_t ON_SCREEN_KEYBOARD_TARGET_COUNT = ON_SCREEN_KEY_DEFINITIONS.size() + 1;
 
 inline constexpr auto ON_SCREEN_KEY_INDEX_BY_USAGE = [] {
 	std::array<i16, 256> keys{};
@@ -119,15 +122,15 @@ inline constexpr std::array<f32, 13> nativePage0Row2Spans{2, 1, 1, 1, 1, 1, 1, 1
 inline constexpr std::array<i16, 12> nativePage0Row3Keys{41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52};
 inline constexpr std::array<f32, 12> nativePage0Row3Starts{0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 inline constexpr std::array<f32, 12> nativePage0Row3Spans{2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2};
-inline constexpr std::array<i16, 7> nativePage0Row4Keys{53, 54, 55, 56, 57, 58, 59};
-inline constexpr std::array<f32, 7> nativePage0Row4Starts{0, 2, 4, 10, 11, 12, 13};
-inline constexpr std::array<f32, 7> nativePage0Row4Spans{2, 2, 6, 1, 1, 1, 1};
+inline constexpr std::array<i16, 8> nativePage0Row4Keys{53, 54, 55, 56, 57, 58, 59, ON_SCREEN_KEYBOARD_POSITION_TARGET};
+inline constexpr std::array<f32, 8> nativePage0Row4Starts{0, 2, 4, 10, 11, 12, 13, 14};
+inline constexpr std::array<f32, 8> nativePage0Row4Spans{2, 2, 6, 1, 1, 1, 1, 2};
 inline constexpr std::array<OnScreenKeyboardRow, 5> nativePage0Rows{{
 	{nativePage0Row0Keys, nativePage0Row0Starts, nativePage0Row0Spans, 16},
 	{nativePage0Row1Keys, nativePage0Row1Starts, nativePage0Row1Spans, 15},
 	{nativePage0Row2Keys, nativePage0Row2Starts, nativePage0Row2Spans, 15},
 	{nativePage0Row3Keys, nativePage0Row3Starts, nativePage0Row3Spans, 14},
-	{nativePage0Row4Keys, nativePage0Row4Starts, nativePage0Row4Spans, 14},
+	{nativePage0Row4Keys, nativePage0Row4Starts, nativePage0Row4Spans, 16},
 }};
 inline constexpr std::array<i16, 10> nativePage1Row0Keys{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 inline constexpr std::array<f32, 10> nativePage1Row0Starts{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -138,9 +141,9 @@ inline constexpr std::array<f32, 11> nativePage1Row1Spans{1, 1, 1, 1, 1, 1, 1, 1
 inline constexpr std::array<i16, 7> nativePage1Row2Keys{0, 14, 13, 52, 40, 60, 61};
 inline constexpr std::array<f32, 7> nativePage1Row2Starts{0, 2, 4, 6, 8, 10, 12};
 inline constexpr std::array<f32, 7> nativePage1Row2Spans{2, 2, 2, 2, 2, 2, 2};
-inline constexpr std::array<i16, 5> nativePage1Row3Keys{41, 53, 54, 28, 55};
-inline constexpr std::array<f32, 5> nativePage1Row3Starts{0, 2, 4, 6, 8};
-inline constexpr std::array<f32, 5> nativePage1Row3Spans{2, 2, 2, 2, 6};
+inline constexpr std::array<i16, 6> nativePage1Row3Keys{41, 53, 54, 28, 55, ON_SCREEN_KEYBOARD_POSITION_TARGET};
+inline constexpr std::array<f32, 6> nativePage1Row3Starts{0, 2, 4, 6, 8, 12};
+inline constexpr std::array<f32, 6> nativePage1Row3Spans{2, 2, 2, 2, 4, 2};
 inline constexpr std::array<OnScreenKeyboardRow, 4> nativePage1Rows{{
 	{nativePage1Row0Keys, nativePage1Row0Starts, nativePage1Row0Spans, 10},
 	{nativePage1Row1Keys, nativePage1Row1Starts, nativePage1Row1Spans, 11},
@@ -156,9 +159,9 @@ inline constexpr std::array<f32, 6> nativePage2Row1Spans{2, 2, 2, 2, 2, 2};
 inline constexpr std::array<i16, 6> nativePage2Row2Keys{0, 13, 60, 61, 52, 40};
 inline constexpr std::array<f32, 6> nativePage2Row2Starts{0, 2, 4, 6, 8, 10};
 inline constexpr std::array<f32, 6> nativePage2Row2Spans{2, 2, 2, 2, 2, 2};
-inline constexpr std::array<i16, 5> nativePage2Row3Keys{41, 53, 54, 28, 55};
-inline constexpr std::array<f32, 5> nativePage2Row3Starts{0, 2, 4, 6, 8};
-inline constexpr std::array<f32, 5> nativePage2Row3Spans{2, 2, 2, 2, 6};
+inline constexpr std::array<i16, 6> nativePage2Row3Keys{41, 53, 54, 28, 55, ON_SCREEN_KEYBOARD_POSITION_TARGET};
+inline constexpr std::array<f32, 6> nativePage2Row3Starts{0, 2, 4, 6, 8, 12};
+inline constexpr std::array<f32, 6> nativePage2Row3Spans{2, 2, 2, 2, 4, 2};
 inline constexpr std::array<OnScreenKeyboardRow, 4> nativePage2Rows{{
 	{nativePage2Row0Keys, nativePage2Row0Starts, nativePage2Row0Spans, 12},
 	{nativePage2Row1Keys, nativePage2Row1Starts, nativePage2Row1Spans, 12},

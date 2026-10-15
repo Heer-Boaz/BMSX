@@ -2,7 +2,8 @@ import { Input } from './manager';
 import type { KeyboardInput } from './keyboard';
 import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import {
-	OnScreenKeyboardCommand, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE,
+	OnScreenKeyboardCommand, OnScreenKeyboardAction, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE,
+	ON_SCREEN_KEYBOARD_POSITION_TARGET, ON_SCREEN_KEYBOARD_TARGET_COUNT,
 	type OnScreenKeyboardPage, type OnScreenKeyboardRow, MODIFIER_CODES, MODIFIER_KEY_INDICES, MODIFIER_HID_MASKS, MODIFIER_SHIFT, NO_MODIFIER,
 } from './on_screen_keyboard_keys';
 
@@ -45,8 +46,8 @@ export class OnScreenKeyboard {
 		for (const page of pages) {
 			let maxUnits = 0;
 			for (const row of page.rows) maxUnits = Math.max(maxUnits, row.units);
-			const keyRows = new Int16Array(ON_SCREEN_KEY_DEFINITIONS.length);
-			const keyCenters = new Float64Array(ON_SCREEN_KEY_DEFINITIONS.length);
+			const keyRows = new Int16Array(ON_SCREEN_KEYBOARD_TARGET_COUNT);
+			const keyCenters = new Float64Array(ON_SCREEN_KEYBOARD_TARGET_COUNT);
 			for (let rowIndex = 0; rowIndex < page.rows.length; rowIndex += 1) {
 				const row = page.rows[rowIndex];
 				for (let column = 0; column < row.keys.length; column += 1) {
@@ -166,13 +167,15 @@ export class OnScreenKeyboard {
 	}
 
 	/** Sticky activation remains available to gamepad/mouse users. Touch uses pressKey instead. */
-	public activate(source: number): void { this.activateKey(source, this.selected); }
-	public activateKey(source: number, key: number): void {
+	public activate(source: number): OnScreenKeyboardAction { return this.activateKey(source, this.selected); }
+	public activateKey(source: number, key: number): OnScreenKeyboardAction {
+		if (key === ON_SCREEN_KEYBOARD_POSITION_TARGET) return OnScreenKeyboardAction.TogglePosition;
 		const modifier = ON_SCREEN_KEY_DEFINITIONS[key].modifier;
-		if (modifier === NO_MODIFIER) { this.pressKey(source, key); return; }
+		if (modifier === NO_MODIFIER) { this.pressKey(source, key); return OnScreenKeyboardAction.None; }
 		this.modifierStates[modifier] = !this.modifierStates[modifier];
 		this.publishModifier(modifier);
 		this.changed();
+		return OnScreenKeyboardAction.None;
 	}
 
 	/** A source transition releases its old key, then retains the newly pressed exact key identity. */
@@ -216,34 +219,39 @@ export class OnScreenKeyboard {
 		if (this.releaseKeySource(source)) this.changed();
 	}
 
-	public command(source: number, command: OnScreenKeyboardCommand): void {
+	public command(source: number, command: OnScreenKeyboardCommand): OnScreenKeyboardAction {
 		switch (command) {
-			case OnScreenKeyboardCommand.None: return;
-			case OnScreenKeyboardCommand.Activate: this.activate(source); return;
-			case OnScreenKeyboardCommand.Shift: this.activateKey(source, MODIFIER_KEY_INDICES[MODIFIER_SHIFT]); return;
-			case OnScreenKeyboardCommand.TogglePage: this.setPage((this.currentPage + 1) % this.pages.length); return;
-			case OnScreenKeyboardCommand.Backspace: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Backspace')); return;
-			case OnScreenKeyboardCommand.Delete: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Delete')); return;
-			case OnScreenKeyboardCommand.Space: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Space')); return;
-			case OnScreenKeyboardCommand.Left: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowLeft')); return;
-			case OnScreenKeyboardCommand.Right: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowRight')); return;
-			case OnScreenKeyboardCommand.Home: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Home')); return;
-			case OnScreenKeyboardCommand.End: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('End')); return;
-			case OnScreenKeyboardCommand.Enter: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Enter')); return;
+			case OnScreenKeyboardCommand.None: break;
+			case OnScreenKeyboardCommand.Activate: return this.activate(source);
+			case OnScreenKeyboardCommand.Shift: return this.activateKey(source, MODIFIER_KEY_INDICES[MODIFIER_SHIFT]);
+			case OnScreenKeyboardCommand.TogglePage: this.setPage((this.currentPage + 1) % this.pages.length); break;
+			case OnScreenKeyboardCommand.Backspace: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Backspace')); break;
+			case OnScreenKeyboardCommand.Delete: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Delete')); break;
+			case OnScreenKeyboardCommand.Space: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Space')); break;
+			case OnScreenKeyboardCommand.Left: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowLeft')); break;
+			case OnScreenKeyboardCommand.Right: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('ArrowRight')); break;
+			case OnScreenKeyboardCommand.Home: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Home')); break;
+			case OnScreenKeyboardCommand.End: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('End')); break;
+			case OnScreenKeyboardCommand.Enter: this.pressKey(source, ON_SCREEN_KEY_INDEX_BY_CODE.get('Enter')); break;
 		}
+		return OnScreenKeyboardAction.None;
 	}
 
 	public label(key: number): string {
+		if (key === ON_SCREEN_KEYBOARD_POSITION_TARGET) return 'MOVE';
 		const definition = ON_SCREEN_KEY_DEFINITIONS[key];
 		return this.shiftActive && definition.shiftLabel !== undefined ? definition.shiftLabel : definition.label;
 	}
 	public isKeyPressed(key: number): boolean {
+		if (key === ON_SCREEN_KEYBOARD_POSITION_TARGET) return false;
 		const modifier = ON_SCREEN_KEY_DEFINITIONS[key].modifier;
 		// Ordinary highlights show virtual ownership; modifier legends also reflect attached hardware.
 		return modifier === NO_MODIFIER ? this.keyCounts[key] !== 0 : this.modifierPressed[modifier]
 			|| (this.keyboardInput.routedPhysicalModifierMask & MODIFIER_HID_MASKS[modifier]) !== 0;
 	}
-	public isKeyHighlighted(key: number): boolean { return this.isKeyPressed(key) || this.feedbackUntilMs[key] !== 0; }
+	public isKeyHighlighted(key: number): boolean {
+		return key !== ON_SCREEN_KEYBOARD_POSITION_TARGET && (this.isKeyPressed(key) || this.feedbackUntilMs[key] !== 0);
+	}
 
 	/** Feedback deadlines affect presentation only, never input lifetime. */
 	public updateFeedback(currentTimeMs: number): void {

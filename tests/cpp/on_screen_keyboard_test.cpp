@@ -75,8 +75,8 @@ void testCodingPunctuationIdentitiesAndSources() {
 	}
 	require(MAIN_KEY_COUNT == 60, "native Text page retains its existing sixty keys");
 	i16 textKey = 0;
-	for (const auto& row : NATIVE_KEYBOARD_PAGES[0].rows) for (i16 key : row.keys) require(key == textKey++, "native Text geometry remains in unchanged physical key order");
-	require(textKey == 60, "new Symbols key does not alter the native Text page");
+	for (const auto& row : NATIVE_KEYBOARD_PAGES[0].rows) for (i16 key : row.keys) if (key != ON_SCREEN_KEYBOARD_POSITION_TARGET) require(key == textKey++, "native Text geometry remains in unchanged physical key order");
+	require(textKey == 60, "native Text still retains sixty physical keys beside its host action");
 	struct Punctuation { i16 key; u8 usage; const char* base; const char* shifted; };
 	constexpr std::array<Punctuation, 8> punctuation{{
 		{74, 53, "`", "~"}, {11, 45, "-", "_"}, {12, 46, "=", "+"},
@@ -112,6 +112,36 @@ void testCodingPunctuationIdentitiesAndSources() {
 		f.input.postKeyboardEvent(RETROK_RSHIFT, false); f.sample();
 		require(std::string_view(f.keyboard.label(symbol.key)) == symbol.base, "hardware UP restores the base punctuation label");
 	}
+}
+
+void testNativePositionAction() {
+	Fixture f;
+	require(ON_SCREEN_KEY_DEFINITIONS.size() == 75 && ON_SCREEN_KEYBOARD_POSITION_TARGET == 75 && ON_SCREEN_KEYBOARD_TARGET_COUNT == 76,
+		"native action target is outside the unchanged 75-key HID definition bank");
+	for (size_t page = 0; page < NATIVE_KEYBOARD_PAGES.size(); ++page) {
+		f.keyboard.setPage(page);
+		const auto& rows = f.keyboard.rows(); const auto& last = rows.back();
+		size_t count = 0; for (const auto& row : rows) for (i16 key : row.keys) count += key == ON_SCREEN_KEYBOARD_POSITION_TARGET;
+		require(count == 1 && last.keys.back() == ON_SCREEN_KEYBOARD_POSITION_TARGET, "every native page authors MOVE exactly once at bottom right");
+		require(last.starts.back() == (page == 0 ? 14 : 12) && last.spans.back() == 2 && last.units == (page == 0 ? 16 : 14),
+			"MOVE occupies an ordinary two-unit footer cell rather than covering guest keys");
+		f.keyboard.selectKey(last.keys.front(), page); f.keyboard.moveHorizontal(-1);
+		require(f.keyboard.selectedKey() == ON_SCREEN_KEYBOARD_POSITION_TARGET && std::string_view(f.keyboard.label(ON_SCREEN_KEYBOARD_POSITION_TARGET)) == "MOVE",
+			"ordinary controller row navigation can focus the visible position action");
+		const auto revision = f.keyboard.revision();
+		require(f.keyboard.activate(0) == OnScreenKeyboardAction::TogglePosition
+			&& f.keyboard.command(1, OnScreenKeyboardCommand::Activate) == OnScreenKeyboardAction::TogglePosition,
+			"actual activation returns a typed host action instead of forwarding a HID key");
+		require(!f.keyboard.isKeyPressed(ON_SCREEN_KEYBOARD_POSITION_TARGET) && !f.keyboard.isKeyHighlighted(ON_SCREEN_KEYBOARD_POSITION_TARGET)
+			&& f.keyboard.revision() == revision, "MOVE never acquires physical-key counts, modifiers or release afterglow");
+		f.sample(); for (size_t word = 0; word < 8; ++word) require(f.memory.readIoU32(IO_INP_KEYS + word * IO_WORD_SIZE) == 0, "MOVE leaves all guest HID words empty");
+	}
+	f.keyboard.pressKey(0, q); f.sample(); require(f.pressed(hid_key_usage::Q), "ordinary source is held before invoking the host action");
+	const auto revision = f.keyboard.revision();
+	require(f.keyboard.activateKey(0, ON_SCREEN_KEYBOARD_POSITION_TARGET) == OnScreenKeyboardAction::TogglePosition, "direct actual target activation returns the same typed action");
+	f.sample(); require(f.pressed(hid_key_usage::Q) && f.keyboard.revision() == revision, "host action cannot cancel an already-held source or mutate feedback");
+	f.keyboard.releaseSource(0); f.sample(); require(!f.pressed(hid_key_usage::Q), "ordinary source still retires through its original lifetime owner");
+	require(f.keyboard.activateKey(0, q) == OnScreenKeyboardAction::None, "ordinary key activation has no host action result");
 }
 
 void testBackquoteNativeNavigationAndView() {
@@ -407,6 +437,7 @@ void testHybridModifierOwnership() {
 int main() {
 	try {
 		testCodingPunctuationIdentitiesAndSources(); testBackquoteNativeNavigationAndView();
+		testNativePositionAction();
 		testContactOwnership(); testHeldAndLatchedModifiers(); testModifierTapAcrossControllerSources();
 		testFunctionPagesAndView(); testQueuedOriginPageTargets(); testFractionalCenteredNavigation(); testExplicitRowStarts(); testTwoAuthoredPages(); testHardwareAndVirtualRouting(); testHybridModifierOwnership();
 		std::cout << "ON-SCREEN-KEYBOARD-MODEL:PASS 12 owner scenarios\n";

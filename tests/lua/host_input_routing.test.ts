@@ -569,10 +569,10 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 			}
 		}
 	}
-	assert.equal(helpLines.has('A TYPE  B SPACE  X BKSP  Y SHIFT'), true);
+	assert.equal(helpLines.has('A PRESS  B SPACE  X BKSP  Y SHIFT'), true);
 	assert.equal(helpLines.has('L/R CURSOR  LT/RT HOME/END'), true);
 	assert.equal(helpLines.has('START ENTER  SEL+B DEL  SEL+Y PAGE'), true);
-	assert.equal(helpLines.has('SEL+X CLOSE  SEL+A TOP/BOTTOM'), true);
+	assert.equal(helpLines.has('SEL+X CLOSE  SEL+L/R HOME/END'), true);
 	assert.ok(qGlyph);
 	input.inputAxis2(
 		'pointer:0',

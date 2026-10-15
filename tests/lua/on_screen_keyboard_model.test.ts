@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { KeyboardPage, OnScreenKeyboardCommand, MAIN_KEY_COUNT, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardAction, OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, ON_SCREEN_KEYBOARD_TARGET_COUNT, MAIN_KEY_COUNT, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_DEFINITIONS, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardPage } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
@@ -34,7 +34,7 @@ function fixture(pages: readonly OnScreenKeyboardPage[] = NATIVE_KEYBOARD_PAGES)
 	};
 }
 
-test('Backquote appends a physical key identity without renumbering existing keys or the native Text page', () => {
+test('Backquote retains physical key identities and native Text appends only its host action target', () => {
 	const codes = ('Escape Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Minus Equal Backspace '
 		+ 'Tab KeyQ KeyW KeyE KeyR KeyT KeyY KeyU KeyI KeyO KeyP BracketLeft BracketRight Backslash '
 		+ 'CapsLock KeyA KeyS KeyD KeyF KeyG KeyH KeyJ KeyK KeyL Semicolon Quote Enter '
@@ -45,7 +45,7 @@ test('Backquote appends a physical key identity without renumbering existing key
 	for (let key = 0; key < codes.length; key += 1) assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.get(codes[key]), key);
 	assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.get('Backquote'), 74);
 	assert.equal(MAIN_KEY_COUNT, 60);
-	assert.deepEqual(NATIVE_KEYBOARD_PAGES[0].rows.flatMap(row => row.keys), Array.from({ length: 60 }, (_, key) => key));
+	assert.deepEqual(NATIVE_KEYBOARD_PAGES[0].rows.flatMap(row => row.keys), [...Array.from({ length: 60 }, (_, key) => key), ON_SCREEN_KEYBOARD_POSITION_TARGET]);
 });
 
 for (const [code, usage, base, shifted] of [
@@ -349,4 +349,41 @@ test('queued origin-page key targets preserve active page navigation in both nat
 		f.keyboard.setPage(KeyboardPage.Text); assert.equal(f.keyboard.selectedKey, W, 'origin-page selection is retained for the genuine Text page');
 		f.keyboard.releaseSource(contact); f.poll(); assert.equal(f.pressed('KeyW'), false);
 	}
+});
+
+
+test('MOVE is an authored native action target, not a physical key or held feedback identity', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	assert.equal(ON_SCREEN_KEY_DEFINITIONS.length, 75);
+	assert.equal(ON_SCREEN_KEYBOARD_POSITION_TARGET, 75); assert.equal(ON_SCREEN_KEYBOARD_TARGET_COUNT, 76);
+	assert.equal(ON_SCREEN_KEY_INDEX_BY_CODE.has('MOVE'), false);
+	for (let page = 0; page < NATIVE_KEYBOARD_PAGES.length; page += 1) {
+		f.keyboard.setPage(page);
+		const rows = NATIVE_KEYBOARD_PAGES[page].rows, last = rows[rows.length - 1];
+		assert.equal(rows.flatMap(row => row.keys).filter(key => key === ON_SCREEN_KEYBOARD_POSITION_TARGET).length, 1);
+		assert.equal(last.keys[last.keys.length - 1], ON_SCREEN_KEYBOARD_POSITION_TARGET);
+		assert.equal(last.starts[last.starts.length - 1], page === KeyboardPage.Text ? 14 : 12);
+		assert.equal(last.spans[last.spans.length - 1], 2);
+		assert.equal(last.units, page === KeyboardPage.Text ? 16 : 14);
+		f.keyboard.selectKey(last.keys[0]); f.keyboard.moveHorizontal(-1);
+		assert.equal(f.keyboard.selectedKey, ON_SCREEN_KEYBOARD_POSITION_TARGET, 'controller row navigation reaches the actual visible action');
+		assert.equal(f.keyboard.label(ON_SCREEN_KEYBOARD_POSITION_TARGET), 'MOVE');
+		const revision = f.keyboard.revision;
+		assert.equal(f.keyboard.activate(0), OnScreenKeyboardAction.TogglePosition);
+		assert.equal(f.keyboard.command(1, OnScreenKeyboardCommand.Activate), OnScreenKeyboardAction.TogglePosition);
+		assert.equal(f.keyboard.isKeyPressed(ON_SCREEN_KEYBOARD_POSITION_TARGET), false);
+		assert.equal(f.keyboard.isKeyHighlighted(ON_SCREEN_KEYBOARD_POSITION_TARGET), false);
+		assert.equal(f.keyboard.revision, revision, 'action activation cannot schedule held-key feedback or publish model changes');
+		f.poll();
+		for (let word = 0; word < 8; word += 1) assert.equal(f.memory.readIoU32(IO_INP_KEYS + word * IO_WORD_SIZE), 0, 'host action emits no guest HID words');
+	}
+	f.keyboard.pressKey(0, Q); f.poll(); assert.equal(f.pressed('KeyQ'), true);
+	const heldRevision = f.keyboard.revision;
+	assert.equal(f.keyboard.activateKey(0, ON_SCREEN_KEYBOARD_POSITION_TARGET), OnScreenKeyboardAction.TogglePosition);
+	f.poll(); assert.equal(f.pressed('KeyQ'), true, 'a host action never retires an existing physical key source');
+	assert.equal(f.keyboard.revision, heldRevision);
+	f.keyboard.releaseSource(0); f.poll(); assert.equal(f.pressed('KeyQ'), false);
+	assert.equal(f.keyboard.activateKey(0, Q), OnScreenKeyboardAction.None, 'ordinary activation retains its normal no-action result');
+	f.poll(); assert.equal(f.pressed('KeyQ'), true);
+	f.keyboard.releaseSource(0);
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { OnScreenKeyboardCommand, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
@@ -230,7 +230,7 @@ test('closing the keyboard releases every source, special key and sticky or capt
 
 
 for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresentation.External]) {
-	test(`Select+A docking is same-player, edge-triggered and presentation-owned (${presentation === HostKeyboardPresentation.Bitmap ? 'bitmap' : 'external'})`, t => {
+	test(`visible MOVE activation is edge-triggered and presentation-owned (${presentation === HostKeyboardPresentation.Bitmap ? 'bitmap' : 'external'})`, t => {
 		const f = fixture(); f.keyboard.close();
 		for (let player = 0; player < 2; player += 1) {
 			f.input.connectInputDevice({ id: `gamepad:${player}`, kind: 'gamepad', gamepadIndex: player, label: 'PAD',
@@ -243,52 +243,81 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 		} as VideoPresenter;
 		const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind,
 			createHostFrameFixture().execution, [], f.keyboard, presentation);
-		let pressId = 0;
-		const button = (player: number, code: string, down: boolean) => f.input.inputButton(`gamepad:${player}`, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
-		const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
-		const chord = (player: number, code: string) => { button(player, 'select', true); button(player, code, true); tick();
-			button(player, code, false); button(player, 'select', false); tick(); };
-		const frame = () => { menu.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
-		let relocations = 0;
+		let pressId = 0, relocations = 0;
 		const toggle = HostOnScreenKeyboard.prototype.togglePosition;
 		HostOnScreenKeyboard.prototype.togglePosition = function () { relocations += 1; toggle.call(this); };
 		t.after(() => { HostOnScreenKeyboard.prototype.togglePosition = toggle; menu.dismiss(); f.input.dispose(); });
+		const button = (player: number, code: string, down: boolean) => f.input.inputButton(`gamepad:${player}`, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
+		const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
+		const press = (player: number, code: string) => { button(player, code, true); tick(); button(player, code, false); tick(); };
+		const chord = (player: number, code: string) => { button(player, 'select', true); button(player, code, true); tick();
+			button(player, code, false); button(player, 'select', false); tick(); };
+		const frame = () => { menu.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
+		const navigateMove = (player: number) => {
+			const last = f.keyboard.rows[f.keyboard.rows.length - 1];
+			for (let row = 0; row < f.keyboard.rows.length && !last.keys.includes(f.keyboard.selectedKey); row += 1) press(player, 'down');
+			for (let key = 0; key < last.keys.length && f.keyboard.selectedKey !== ON_SCREEN_KEYBOARD_POSITION_TARGET; key += 1) press(player, 'right');
+			assert.equal(f.keyboard.selectedKey, ON_SCREEN_KEYBOARD_POSITION_TARGET, 'ordinary D-pad navigation reaches MOVE, without a direct selection mutation');
+		};
 		tick(); chord(0, 'x');
-		assert.equal(f.keyboard.visible, true, 'unchanged Select+X opens the keyboard');
+		assert.equal(f.keyboard.visible, true);
 		const original = frame();
-		const panel = presentation === HostKeyboardPresentation.Bitmap ? original.commandRefs[0] as RectRenderSubmission : undefined;
+		const bitmap = presentation === HostKeyboardPresentation.Bitmap;
+		const panel = bitmap ? original.commandRefs[0] as RectRenderSubmission : undefined;
 		if (panel) assert.equal(panel.area.top, 4); else assert.equal(original, undefined, 'external presentation publishes no bitmap UI');
-		const modelRevision = f.keyboard.revision;
-		button(0, 'select', true); button(0, 'a', true); tick(); frame();
-		assert.equal(f.keyboard.revision, modelRevision, 'presentation relocation cannot mutate the keyboard model');
-		assert.deepEqual(f.writes, [], 'the docking chord forwards no synthetic guest key');
-		const expectedRelocations = presentation === HostKeyboardPresentation.Bitmap ? 1 : 0;
-		assert.equal(relocations, expectedRelocations);
-		if (panel) assert.equal(panel.area.bottom, 208);
-		for (let repeat = 0; repeat < 60; repeat += 1) tick();
-		assert.equal(relocations, expectedRelocations, 'a held chord never repeats after UI typematic delay');
-		button(0, 'a', false); button(0, 'select', false); tick();
-		button(0, 'select', true); button(1, 'a', true); tick(); frame();
-		assert.equal(relocations, expectedRelocations, 'Select from one player does not affect the other player');
-		assert.equal(f.pressed('KeyQ'), true, 'the second player still forwards ordinary A');
-		button(1, 'a', false); button(0, 'select', false); tick();
-		assert.equal(f.pressed('KeyQ'), false);
-		button(1, 'a', true); tick(); button(1, 'select', true); tick();
-		assert.equal(relocations, expectedRelocations, 'adding Select after A is already held is not a new docking edge');
-		assert.equal(f.pressed('KeyQ'), true, 'an existing actual key source stays held');
-		button(1, 'a', false); button(1, 'select', false); tick();
-		chord(1, 'a'); frame();
-		assert.equal(relocations, expectedRelocations * 2, 'controller two may independently use its own docking chord');
-		if (panel) assert.equal(panel.area.top, 4);
+		chord(0, 'a'); frame();
+		assert.equal(relocations, 0, 'the retired Select+A shortcut no longer relocates any presentation');
+		assert.deepEqual(f.writes, [], 'retired chord does not forward a key either');
+		for (let page = 0; page < NATIVE_KEYBOARD_PAGES.length; page += 1) {
+			assert.equal(f.keyboard.page, page);
+			navigateMove(0);
+			const before = relocations, revision = f.keyboard.revision;
+			button(0, 'a', true); tick(); frame();
+			assert.equal(relocations, before + (bitmap ? 1 : 0));
+			assert.equal(f.keyboard.revision, revision, 'MOVE dispatch does not create held feedback or keyboard changes');
+			if (panel) assert.equal(panel.area.bottom, 208);
+			for (let repeat = 0; repeat < 60; repeat += 1) tick();
+			assert.equal(relocations, before + (bitmap ? 1 : 0), 'held A cannot repeat MOVE after UI typematic delay');
+			button(0, 'a', false); tick();
+			assert.equal(f.keyboard.isKeyHighlighted(ON_SCREEN_KEYBOARD_POSITION_TARGET), false);
+			press(1, 'a'); frame();
+			assert.equal(relocations, before + (bitmap ? 2 : 0), 'another controller may activate the same visible host action independently');
+			if (panel) assert.equal(panel.area.top, 4);
+			chord(0, 'a'); frame();
+			assert.equal(relocations, before + (bitmap ? 2 : 0), 'even focused MOVE requires ordinary A, not the removed Select+A chord');
+			if (bitmap) {
+				for (let pointerPress = 0; pointerPress < 2; pointerPress += 1) {
+					const visible = frame();
+					let move: RectRenderSubmission | undefined;
+					for (let command = 3; command < visible.commandCount - 8; command += 3) {
+						if ((visible.commandRefs[command + 2] as GlyphRenderSubmission).items === 'MOVE') move = visible.commandRefs[command] as RectRenderSubmission;
+					}
+					assert.ok(move, 'every native page paints its actual position action');
+					f.input.inputAxis2('pointer:0', 'pointer_position', (move.area.left + move.area.right) / 2, (move.area.top + move.area.bottom) / 2, f.clock.now() + 1);
+					f.input.inputButton('pointer:0', 'pointer_primary', true, 1, f.clock.now() + 1, ++pressId); tick(); frame();
+					assert.equal(relocations, before + 3 + pointerPress, 'actual pointer activation dispatches MOVE immediately through the host menu');
+					for (let hold = 0; hold < 5; hold += 1) tick();
+					assert.equal(relocations, before + 3 + pointerPress, 'relocation under a held pointer cannot retrigger itself');
+					f.input.inputButton('pointer:0', 'pointer_primary', false, 0, f.clock.now() + 1, ++pressId); tick();
+				}
+				assert.equal(panel.area.top, 4);
+			}
+			assert.deepEqual(f.writes, [], 'MOVE never creates virtual keyboard source writes');
+			chord(0, 'y'); frame();
+		}
+		assert.equal(f.keyboard.page, 0, 'page cycling retains its existing controller shortcut');
+		// Return to an ordinary key only through actual controller navigation.
+		press(0, 'down');
+		for (let key = 0; key < f.keyboard.rows[0].keys.length && f.keyboard.selectedKey !== 0; key += 1) press(0, 'right');
+		assert.equal(f.keyboard.selectedKey, 0);
 		for (const [code, forwarded] of [['b', 'Space'], ['x', 'Backspace'], ['lb', 'ArrowLeft'], ['rb', 'ArrowRight'],
 			['lt', 'Home'], ['rt', 'End'], ['start', 'Enter']] as const) {
 			button(0, code, true); tick(); assert.equal(f.pressed(forwarded), true, `${code} retains ${forwarded}`);
 			button(0, code, false); tick(); assert.equal(f.pressed(forwarded), false);
 		}
-		chord(0, 'y'); frame(); assert.equal(f.keyboard.page, 1, 'existing Select+Y still switches pages');
-		chord(0, 'x'); assert.equal(f.keyboard.visible, false, 'existing close chord still releases the UI');
+		chord(0, 'x'); assert.equal(f.keyboard.visible, false);
 		chord(0, 'x'); frame(); assert.equal(f.keyboard.visible, true);
-		if (panel) assert.equal(panel.area.top, 4, 'reopen retains the manually selected side');
+		if (panel) assert.equal(panel.area.top, 4, 'reopen retains manual presentation position');
 		assert.deepEqual(presenter.viewportSize, { x: 256, y: 212 });
 	});
 }
