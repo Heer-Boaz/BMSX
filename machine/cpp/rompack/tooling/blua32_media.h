@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rompack/toc.h"
 #include "rompack/tooling/blua32_image.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/blua32/execution_domain.h"
@@ -13,7 +14,6 @@
 namespace bmsx {
 
 struct RomImage;
-struct RomTocEntry;
 
 struct Blua32ToolingImage {
 	Blua32ImageLayout layout;
