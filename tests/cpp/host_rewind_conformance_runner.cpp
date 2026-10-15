@@ -6,10 +6,14 @@
 #include "presentation_state.h"
 #include "rewind.h"
 #include "video_output.h"
+#include "common/serializer/binencoder.h"
+#include "machine/runtime/save_state/codec.h"
+#include "machine/runtime/save_state/schema.h"
 #include "render/backend/pass/library.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cmath>
 #include <cstdio>
@@ -108,8 +112,13 @@ int main(int argc, char** argv) {
 		f64 totalTime = 0;
 		size_t audioFrames = 0;
 		bool audible = false;
+		bool checkRetention = true;
+		i64 firstCheckpointCycles = -1;
+		i64 minimumRetainedCycles = runtime.timing.cpuHz * 36;
+		size_t checkedRetentionBoundaries = 0;
 		const auto frame = [&]() {
 			const auto publishedSequence = presenter.gameFrameSequence();
+			const auto journalEndBeforeFrame = history.inputJournal.endSequence;
 			const f64 delta = runtime.timing.frameDurationMs / 1000.0;
 			input.setFrameDurationMs(runtime.timing.frameDurationMs);
 			input.poll(static_cast<i32>(presenter.viewportSize.x), static_cast<i32>(presenter.viewportSize.y), (totalTime + delta) * 1000.0);
@@ -127,6 +136,18 @@ int main(int argc, char** argv) {
 			audioFrames += audio.frameCount();
 			for (size_t index = 0; index < audio.frameCount() * 2; ++index) audible |= audio.data()[index] != 0;
 			require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 0u && errors == 0, "real cart fault");
+			if (checkRetention && history.mode == HistoryMode::Recording && history.checkpointCount() != 0) {
+				if (firstCheckpointCycles < 0) firstCheckpointCycles = history.earliestCycles();
+				require(history.checkpointCount() <= 6 && history.inputJournal.capacity() == 4096
+					&& history.inputJournal.storageBytes() == 4096 * 176, "default history remains bounded by six reusable slots and 4096 fixed records");
+				if (history.inputJournal.endSequence != journalEndBeforeFrame
+					&& history.latestCycles() - firstCheckpointCycles >= runtime.timing.cpuHz * 30) {
+					const auto retained = history.latestCycles() - history.earliestCycles();
+					require(retained >= runtime.timing.cpuHz * 30, "every warmed recording boundary retains at least thirty emulated seconds, including capture and ring eviction");
+					minimumRetainedCycles = std::min(minimumRetainedCycles, retained);
+					++checkedRetentionBoundaries;
+				}
+			}
 		};
 		const auto press = [&](u16 mask) { buttons = mask; frame(); buttons = 0; frame(); };
 		const auto settle = [&]() {
@@ -184,8 +205,32 @@ int main(int argc, char** argv) {
 				stream.write(rgb, 3);
 			}
 		};
-		for (int index = 0; index < 1100; ++index) frame();
-		require(history.checkpointCount() == 2 && history.earliestCycles() > runtime.timing.cpuHz * 6, "continuous two-slot collection must wrap");
+		for (int index = 0; index < 12000 && history.latestCycles() < runtime.timing.cpuHz * 60; ++index) frame();
+		require(history.latestCycles() >= runtime.timing.cpuHz * 60 && history.checkpointCount() == 6
+			&& history.earliestCycles() > firstCheckpointCycles, "continuous six-slot collection wraps repeatedly after sixty machine seconds");
+		const i64 checkpointBeforeReference = history.checkpointCycles(history.checkpointCount() - 1);
+		for (int index = 0; index < 1000 && history.checkpointCycles(history.checkpointCount() - 1) == checkpointBeforeReference; ++index) frame();
+		const i64 referenceCheckpoint = history.checkpointCycles(history.checkpointCount() - 1);
+		require(referenceCheckpoint > checkpointBeforeReference, "choose the old reference immediately after a fresh periodic checkpoint");
+		for (int index = 0; index < 1000 && history.latestCycles() < referenceCheckpoint + runtime.timing.cpuHz / 4; ++index) frame();
+		require(history.latestCycles() >= referenceCheckpoint + runtime.timing.cpuHz / 4, "record a reference beyond its preceding checkpoint");
+		const i64 selectedReference = history.latestCycles();
+		rewind.seekTo(selectedReference); settle();
+		require(runtime.machine.scheduler.currentNowCycles() == selectedReference, "the existing seek owner resolves the reference to its exact recorded input boundary");
+		software.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+		const RuntimeSaveState referenceState = captureRuntimeSaveState(runtime);
+		const i64 referenceCycles = referenceState.machineState.schedulerNowCycles;
+		for (size_t index = 0; index < history.checkpointCount(); ++index) {
+			require(history.checkpointCycles(index) != referenceCycles, "the thirty-second reference requires journal reconstruction, not direct checkpoint restore");
+		}
+		rewind.returnToPresent(); returnLive();
+		for (int index = 0; index < 12000 && history.latestCycles() < referenceCycles + runtime.timing.cpuHz * 32; ++index) frame();
+		require(history.latestCycles() >= referenceCycles + runtime.timing.cpuHz * 32,
+			"continue more than ninety machine seconds with a thirty-second-old exact boundary reference");
+		require(history.earliestCycles() <= referenceCycles && checkedRetentionBoundaries > 1000
+			&& history.inputJournal.endSequence > static_cast<i64>(history.inputJournal.capacity()),
+			"checkpoint and journal rings both wrap while preserving the old reference and continuously verified retention");
+		checkRetention = false;
 		require(audible && audioFrames > 48000, "ordinary gameplay delivers real audio");
 		snapshot("live");
 		openRewind();
@@ -193,6 +238,31 @@ int main(int argc, char** argv) {
 		const i64 oldest = history.earliestCycles();
 		const auto lastVideoTick = runtime.frameScheduler.lastTickSequence;
 		const auto journalEnd = history.inputJournal.endSequence;
+		rewind.seekTo(latest); settle();
+		software.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+		const RuntimeSaveState presentState = captureRuntimeSaveState(runtime);
+		const auto compareGuestState = [&](const RuntimeSaveState& expected) {
+			software.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+			const RuntimeSaveState actual = captureRuntimeSaveState(runtime);
+			require(actual.machineState.schedulerNowCycles == expected.machineState.schedulerNowCycles
+				&& actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence,
+				"long-window reconstruction returns to the exact machine cycle and PCRTC sequence");
+			const auto expectedImage = decodeBinaryWithPropTable(encodeRuntimeSaveState(expected), RUNTIME_SAVE_STATE_PROP_NAMES);
+			const auto actualImage = decodeBinaryWithPropTable(encodeRuntimeSaveState(actual), RUNTIME_SAVE_STATE_PROP_NAMES);
+			require(encodeBinary(actualImage.require("cpuState")) == encodeBinary(expectedImage.require("cpuState")),
+				"long-window reconstruction reproduces the complete CPU owner state");
+			require(encodeBinary(actualImage.require("machineState").require("machine"))
+				== encodeBinary(expectedImage.require("machineState").require("machine")),
+				"long-window reconstruction reproduces every device and memory owner state");
+			require(actual.pendingEntryCall == expected.pendingEntryCall, "long-window reconstruction preserves pending entry ownership");
+		};
+		require(latest - referenceCycles > runtime.timing.cpuHz * 30, "the reference is actually more than thirty emulated seconds old");
+		rewind.seekTo(referenceCycles); settle();
+		compareGuestState(referenceState);
+		rewind.seekTo(latest); settle();
+		compareGuestState(presentState);
+		require(history.latestCycles() == latest && history.inputJournal.endSequence == journalEnd,
+			"long-window reconstruction preserves the entire recorded future");
 		for (int index = 0; index < 3; ++index) {
 			press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
 			require(runtime.frameScheduler.lastTickSequence == lastVideoTick - 1, "LB selects the previous recorded video boundary");
@@ -218,7 +288,7 @@ int main(int argc, char** argv) {
 			require(settle() == latest && rewind.positionCycles() == latest, "Left/Right round trip has no rounding drift");
 		}
 		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_LEFT;
-		for (int index = 0; index < 80; ++index) frame();
+		for (int index = 0; index < 400; ++index) frame();
 		buttons = 0; frame();
 		require(settle() == oldest, "holding Left reaches the oldest boundary");
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
@@ -247,7 +317,7 @@ int main(int argc, char** argv) {
 		require(restoredStates == playbackRestores && software.vramCaptures == playbackCaptures, "Play/Pause does not restore or capture");
 		snapshot("playback-paused");
 		press(menuKeyboard);
-		for (int index = 0; index < 800 && rewind.playing(); ++index) frame();
+		for (int index = 0; index < 4000 && rewind.playing(); ++index) frame();
 		require(runtime.machine.scheduler.currentNowCycles() == latest && !rewind.playing() && menu.active() && rewind.active, "recorded end pauses, not live takeover");
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		const auto retained = runtime.machine.scheduler.currentNowCycles();
@@ -279,6 +349,10 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard); returnLive();
 		require(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
+		std::cout << "{\"host\":\"cpp-retention\",\"recordedSeconds\":" << static_cast<f64>(latest - firstCheckpointCycles) / runtime.timing.cpuHz
+			<< ",\"minimumRetainedSeconds\":" << static_cast<f64>(minimumRetainedCycles) / runtime.timing.cpuHz
+			<< ",\"referenceAgeSeconds\":" << static_cast<f64>(latest - referenceCycles) / runtime.timing.cpuHz
+			<< ",\"checkedBoundaries\":" << checkedRetentionBoundaries << ",\"inputBytes\":" << 4096 * 176 << "}\n";
 		std::cout << "RUNTIME-HOST-REWIND:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {

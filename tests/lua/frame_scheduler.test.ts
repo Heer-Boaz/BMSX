@@ -40,12 +40,37 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import {
+	GX_GPU_PCRTC_SMODE1_HIGH,
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
+	GX_GPU_PCRTC_SMODE2_LOW,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_HIGH,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/spec/gx/pcrtc';
+import {
+	GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_NTSC_WORDS,
+	GX_GPU_DISPLAY_TIMING_PAL_WORDS,
+	GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD,
+} from '../../machine/ts/spec/gx/display_presets';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { createHostFrameFixture } from '../helpers/host_frame';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 
 const TEST_KEY_USAGE = 59;
@@ -775,3 +800,63 @@ test('runtime reset notifies host inspectors after replacing execution state', (
 	runtime.boot();
 	assert.equal(resets, 2);
 });
+
+for (const { standard, preset, timing, refreshUfpsScaled } of [
+	{ standard: 'PAL', preset: GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, refreshUfpsScaled: 50_000_000 },
+	{ standard: 'NTSC', preset: GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, refreshUfpsScaled: 59_940_059 },
+]) {
+	test(`default host rewind retains thirty seconds at every ${standard} eviction across a minute`, async t => {
+		const host = createHostFrameFixture();
+		const { runtime, rewind, tasks } = host;
+		t.after(() => {
+			rewind.service(false);
+			host.audio.dispose();
+			host.input.dispose();
+		});
+		for (const [register, word] of [
+			[GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCH1_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD]],
+			[GX_GPU_PCRTC_SYNCH1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCH2_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD]],
+			[GX_GPU_PCRTC_SYNCH2_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCV_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD]],
+			[GX_GPU_PCRTC_SYNCV_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE2_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD]],
+			[GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD]],
+		]) runtime.machine.memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(register), word);
+		runDueRuntimeTimers(runtime);
+		assert.equal(runtime.timing.ufpsScaled, refreshUfpsScaled, 'the real PCRTC owns the selected video timing');
+
+		rewind.service(true);
+		await tasks.join();
+		assert.deepEqual(host.errors, []);
+		const history = runtime.history;
+		assert.equal(history.mode, HistoryMode.Recording, 'the host service starts its actual default policy');
+		const start = history.earliestCycles;
+		const requiredCycles = runtime.timing.cpuHz * 30;
+		const end = start + runtime.timing.cpuHz * 60;
+		let oldest = start;
+		let evictions = 0;
+		while (history.latestCycles < end) {
+			assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+			runtime.machine.audioController.synchronizeOutput().clear();
+			if (history.checkpointPending) {
+				rewind.service(true);
+				await tasks.join();
+				assert.deepEqual(host.errors, []);
+			}
+			if (history.earliestCycles !== oldest) {
+				oldest = history.earliestCycles;
+				evictions += 1;
+				assert.ok(history.latestCycles - oldest >= requiredCycles,
+					'checkpoint eviction cannot shorten continuous recording below thirty emulated seconds');
+			}
+			if (history.latestCycles - start >= requiredCycles) {
+				assert.ok(history.latestCycles - history.earliestCycles >= requiredCycles,
+					'every filled tick retains at least thirty seconds, not only selected points between evictions');
+			}
+		}
+		assert.ok(evictions >= 4, 'the test reaches repeated default-policy wraparound rather than only initial filling');
+	});
+}

@@ -10,6 +10,10 @@ import { RuntimeTaskKind, type RuntimeTaskQueue } from './runtime_task_queue';
 const enum RewindRequest { None, Seek, Resume, Pause, Play, Step }
 const REPLAY_CYCLE_GRANT = 16384;
 const REPLAY_WORK_MS = 8;
+// Periodic PAL/NTSC recording retains at least 30 seconds once these six slots fill.
+const CHECKPOINT_CAPACITY = 6;
+const CHECKPOINT_INTERVAL_SECONDS = 6;
+const INPUT_JOURNAL_CAPACITY = 4096;
 
 /** Host operations/output policy. The runtime owns checkpoints and input replay. */
 export class HostRewind {
@@ -34,7 +38,11 @@ export class HostRewind {
 		private readonly audioOutput: HostAudioOutput,
 		private readonly logOutput: LogOutput,
 	) {
-		this.options = { checkpointCapacity: 2, inputCapacity: 1024, checkpointIntervalCycles: runtime.timing.cpuHz * 6 };
+		this.options = {
+			checkpointCapacity: CHECKPOINT_CAPACITY,
+			inputCapacity: INPUT_JOURNAL_CAPACITY,
+			checkpointIntervalCycles: runtime.timing.cpuHz * CHECKPOINT_INTERVAL_SECONDS,
+		};
 	}
 
 	public get available(): boolean { return this.runtime.history.checkpointCount !== 0; }

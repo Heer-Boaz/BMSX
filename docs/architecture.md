@@ -2377,8 +2377,14 @@ checkpoint and executes the existing scheduler with recorded input and
 explicit machine-cycle grants. Review preserves future history; live takeover
 branches. Hosts own GPU synchronization, cooperative scheduling and output
 delivery, not a parallel simulation. TS player/Studio and libretro continuously
-record ordinary gameplay with the same two-slot policy: a checkpoint every six
-emulated seconds and 1,024 fixed-size ICU input records. The runtime starts
+record ordinary gameplay with the same six-slot policy: a checkpoint every six
+emulated seconds and 4,096 fixed-size ICU input records. Filled periodic PAL/NTSC
+history retains at least 30 emulated seconds (nominally 30–36), including
+immediately after slot eviction.
+The journal occupies 704 KiB; snapshot sizes depend on the guest heap and installed
+cartridge RAM. Capture frequency and per-input work are unchanged. This is still
+a bounded slot/record policy: new timelines must fill, and branching or unusually
+fast guest-programmed PCRTC timing can shorten the retained range. The runtime starts
 collection only when its host has assumed GPU synchronization ownership.
 Scenario test sessions do not collect ordinary player history.
 Studio-controlled supervisor-return and annotated-init batches also suspend

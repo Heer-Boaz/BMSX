@@ -19,6 +19,8 @@ import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
 import { SystemOutputLog } from '../../../hosts/common/system_output_log';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../../hosts/node/headless/input';
+import { encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
+import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -67,6 +69,12 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	let hostFrames = 0;
+	let verifyRetention = true;
+	let retentionWarmed = false;
+	let retentionFrames = 0;
+	let checkpointEvictions = 0;
+	let previousOldest = 0;
+	let minimumSpanCycles = runtime.timing.cpuHz * 36;
 	const frame = async () => {
 		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
@@ -76,6 +84,21 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 		if (rewind.seeking && !rewind.playing) require(presenter.gameFrameSequence === publishedSequence, 'seek reconstruction must retain the published game image');
 		require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0, 'real cart fault');
 		require(errors.length === 0, errors.join('\n'));
+		if (verifyRetention && history.mode !== HistoryMode.Disabled) {
+			require(history.checkpointCount <= 6, 'history storage remains bounded to six checkpoint slots');
+			require(history.inputJournal.storageBytes === 4096 * 176, 'input journal keeps its fixed storage bound');
+			require(history.inputJournal.endSequence - history.inputJournal.firstSequence <= 4096, 'input-record count remains bounded');
+			if (history.checkpointCount === 6) retentionWarmed = true;
+			if (retentionWarmed) {
+				const span = history.latestCycles - history.earliestCycles;
+				require(history.checkpointCount === 6, 'recording and review retain all six warmed checkpoint slots');
+				require(span >= runtime.timing.cpuHz * 30, 'every warmed frame retains at least thirty emulated seconds, including checkpoint eviction');
+				minimumSpanCycles = Math.min(minimumSpanCycles, span);
+				retentionFrames += 1;
+				if (history.earliestCycles !== previousOldest) checkpointEvictions += 1;
+			}
+			previousOldest = history.earliestCycles;
+		}
 	};
 	const settle = async () => {
 		for (let count = 0; count < 8000 && (!tasks.ready || rewind.seeking); count += 1) await frame();
@@ -96,8 +119,40 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	};
 	runtime.boot();
 	audioOutput.device.select(audioOutput);
-	for (let count = 0; count < 8000 && history.latestCycles < runtime.timing.cpuHz * 22; count += 1) await frame();
-	require(history.checkpointCount === 2 && history.earliestCycles > runtime.timing.cpuHz * 6, 'continuous two-slot collection must wrap');
+	for (let count = 0; count < 12000 && history.latestCycles < runtime.timing.cpuHz * 68; count += 1) await frame();
+	require(history.latestCycles >= runtime.timing.cpuHz * 68, 'continuous gameplay runs beyond sixty emulated seconds');
+	require(history.checkpointCount === 6 && checkpointEvictions >= 5, 'continuous six-slot collection repeatedly evicts old checkpoints');
+	// Capture a real journal boundary between checkpoints. A host frame may
+	// have executed farther than this last completed guest video boundary.
+	const referenceCycles = history.latestCycles;
+	require(referenceCycles > history.checkpointCycles(5) + runtime.timing.cpuHz / 4, 'the reference lies between checkpoints');
+	rewind.seekTo(referenceCycles); await settle();
+	require(runtime.machine.scheduler.currentNowCycles() === referenceCycles, 'reference seek reaches the exact recorded boundary');
+	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const oldReference = captureRuntimeSaveState(runtime);
+	const expectedReferenceCpu = encodeBinary(oldReference.cpuState);
+	const expectedReferenceMachine = encodeBinary(oldReference.machineState.machine);
+	rewind.returnToPresent(); await settle(); await frame();
+	require(!rewind.active, 'capturing the reference rejoins the retained end without branching');
+	for (let count = 0; count < 8000 && history.latestCycles < referenceCycles + runtime.timing.cpuHz * 32; count += 1) await frame();
+	const referenceAgeSeconds = (history.latestCycles - referenceCycles) / runtime.timing.cpuHz;
+	require(referenceAgeSeconds >= 32, 'the reference is more than thirty emulated seconds old');
+	require(history.inputJournal.endSequence > 4096, 'the physical input-record ring has wrapped');
+	require(referenceCycles > history.earliestCycles, 'the noncheckpoint reference remains in retained history');
+	const referenceFuture = history.latestCycles;
+	rewind.seekTo(referenceCycles); await settle();
+	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const replayedReference = captureRuntimeSaveState(runtime);
+	require(replayedReference.machineState.schedulerNowCycles === referenceCycles, 'old-reference replay reaches the exact recorded cycle');
+	require(replayedReference.machineState.frameScheduler.lastTickSequence === oldReference.machineState.frameScheduler.lastTickSequence, 'old-reference replay reaches the exact video tick');
+	const actualReferenceCpu = encodeBinary(replayedReference.cpuState);
+	const actualReferenceMachine = encodeBinary(replayedReference.machineState.machine);
+	require(actualReferenceCpu.length === expectedReferenceCpu.length && actualReferenceCpu.every((byte, index) => byte === expectedReferenceCpu[index]), 'thirty-two-second replay reproduces the complete CPU state');
+	require(actualReferenceMachine.length === expectedReferenceMachine.length && actualReferenceMachine.every((byte, index) => byte === expectedReferenceMachine[index]), 'thirty-two-second replay reproduces every device, RAM, VRAM and APU field');
+	require(replayedReference.pendingEntryCall === oldReference.pendingEntryCall, 'old-reference replay preserves pending entry-call state');
+	require(history.latestCycles === referenceFuture, 'old-reference verification preserves the recorded future');
+	rewind.returnToPresent(); await settle(); await frame();
+	require(!rewind.active, 'old-reference verification returns to live recording');
 	require(audible && audioFrames > 48000, 'ordinary play produces real audio');
 	await openRewind();
 	const latest = history.latestCycles;
@@ -140,6 +195,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 	const actualVram = runtime.machine.gxGpu.readVramSnapshotBytes();
 	require(actualVram.every((byte, index) => byte === expectedVram[index]), 'asynchronous restore preserves every VRAM byte');
+	verifyRetention = false; // Accept deliberately branches; its shorter new history has not warmed yet.
 	await press('Enter'); await settle();
 	for (let index = 0; index < 20; index += 1) await frame();
 	require(!rewind.active && history.latestCycles < branchEnd, 'accept branches instead of returning to the future');
@@ -150,5 +206,6 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	await testWebGpuReadbackLifetime(runtime, backend);
 	await backend.device.queue.onSubmittedWorkDone();
 	require(errors.length === 0, errors.join('\n'));
-	return { backend: backend.type, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length };
+	return { backend: backend.type, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length,
+		referenceAgeSeconds, minimumSpanSeconds: minimumSpanCycles / runtime.timing.cpuHz, retentionFrames, checkpointEvictions };
 }

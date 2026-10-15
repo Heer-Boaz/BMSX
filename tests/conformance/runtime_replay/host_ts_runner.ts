@@ -82,6 +82,12 @@ async function main(): Promise<void> {
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
+	let verifyRetention = true;
+	let retentionWarmed = false;
+	let retentionFrames = 0;
+	let checkpointEvictions = 0;
+	let previousOldest = 0;
+	let minimumSpanCycles = runtime.timing.cpuHz * 36;
 	const frame = async () => {
 		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
@@ -90,6 +96,21 @@ async function main(): Promise<void> {
 		if (rewind.seeking && !rewind.playing) assert.equal(presenter.gameFrameSequence, publishedSequence, 'seek reconstruction must retain the published game image');
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0, 'real cart fault');
 		assert.equal(errors.length, 0, errors.join('\n'));
+		if (verifyRetention && history.mode !== HistoryMode.Disabled) {
+			assert.ok(history.checkpointCount <= 6, 'history storage remains bounded to six checkpoint slots');
+			assert.equal(history.inputJournal.storageBytes, 4096 * 176, 'input journal keeps its fixed storage bound');
+			assert.ok(history.inputJournal.endSequence - history.inputJournal.firstSequence <= 4096);
+			if (history.checkpointCount === 6) retentionWarmed = true;
+			if (retentionWarmed) {
+				const span = history.latestCycles - history.earliestCycles;
+				assert.equal(history.checkpointCount, 6, 'recording and review retain all six warmed checkpoint slots');
+				assert.ok(span >= runtime.timing.cpuHz * 30, 'every warmed frame retains at least thirty emulated seconds, including checkpoint eviction');
+				minimumSpanCycles = Math.min(minimumSpanCycles, span);
+				retentionFrames += 1;
+				if (history.earliestCycles !== previousOldest) checkpointEvictions += 1;
+			}
+			previousOldest = history.earliestCycles;
+		}
 	};
 	const settle = async () => {
 		for (let count = 0; count < 4000 && (!tasks.ready || rewind.seeking); count += 1) await frame();
@@ -168,10 +189,37 @@ async function main(): Promise<void> {
 	runtime.boot();
 	audioOutput.device.select(audioOutput);
 	await assertOptionsPause();
-	for (let count = 0; count < 1100; count += 1) await frame();
-	assert.equal(history.checkpointCount, 2, 'continuous history uses the common two-slot policy');
-	assert.equal(history.inputJournal.storageBytes, 1024 * 176);
-	assert.ok(history.earliestCycles > runtime.timing.cpuHz * 6, 'continuous recording wraps without menu activation');
+	for (let count = 0; count < 12000 && history.latestCycles < runtime.timing.cpuHz * 68; count += 1) await frame();
+	assert.ok(history.latestCycles >= runtime.timing.cpuHz * 68, 'continuous gameplay runs beyond sixty emulated seconds');
+	assert.equal(history.checkpointCount, 6, 'continuous history uses six checkpoint slots');
+	assert.ok(checkpointEvictions >= 5, 'continuous recording repeatedly evicts old checkpoints without menu activation');
+	// Host frames can end past the last recorded video boundary. Capture the
+	// reference at an actual journal boundary, not a rounded host-frame state.
+	const referenceCycles = history.latestCycles;
+	assert.ok(referenceCycles > history.checkpointCycles(5) + runtime.timing.cpuHz / 4, 'the reference lies between checkpoints');
+	rewind.seekTo(referenceCycles); await settle();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), referenceCycles);
+	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const oldReference = captureRuntimeSaveState(runtime);
+	rewind.returnToPresent(); await settle(); await frame();
+	assert.equal(rewind.active, false, 'capturing the reference rejoins the retained end without branching');
+	for (let count = 0; count < 8000 && history.latestCycles < referenceCycles + runtime.timing.cpuHz * 32; count += 1) await frame();
+	const referenceAgeSeconds = (history.latestCycles - referenceCycles) / runtime.timing.cpuHz;
+	assert.ok(referenceAgeSeconds >= 32, 'the reference is more than thirty emulated seconds old');
+	assert.ok(history.inputJournal.endSequence > 4096, 'the physical input-record ring has wrapped');
+	assert.ok(referenceCycles > history.earliestCycles, 'the noncheckpoint reference remains in retained history');
+	const referenceFuture = history.latestCycles;
+	rewind.seekTo(referenceCycles); await settle();
+	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const replayedReference = captureRuntimeSaveState(runtime);
+	assert.equal(replayedReference.machineState.schedulerNowCycles, referenceCycles);
+	assert.equal(replayedReference.machineState.frameScheduler.lastTickSequence, oldReference.machineState.frameScheduler.lastTickSequence);
+	assert.deepEqual(replayedReference.machineState.machine, oldReference.machineState.machine, 'thirty-two-second replay reproduces every device, RAM, VRAM and APU field');
+	assert.deepEqual(replayedReference.cpuState, oldReference.cpuState, 'thirty-two-second replay reproduces the complete CPU state');
+	assert.equal(replayedReference.pendingEntryCall, oldReference.pendingEntryCall);
+	assert.equal(history.latestCycles, referenceFuture, 'old-reference verification preserves the recorded future');
+	rewind.returnToPresent(); await settle(); await frame();
+	assert.equal(rewind.active, false);
 	assert.equal(runtime.machine.cpu.activeCartridgeSlot(), 0);
 	assert.ok(audible && audioFrames > 48000, 'ordinary gameplay produces real audio');
 	snapshot('live');
@@ -221,7 +269,7 @@ async function main(): Promise<void> {
 	}
 	// Holding a direction uses the host repeat cadence and clamps at the oldest boundary.
 	input.inputButton('gamepad:0', 'left', true, 1, clock.now() + 1, pressId++);
-	for (let index = 0; index < 80; index += 1) await frame();
+	for (let index = 0; index < 400; index += 1) await frame();
 	input.inputButton('gamepad:0', 'left', false, 0, clock.now() + 1, pressId++);
 	await frame(); await settle();
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest);
@@ -268,7 +316,7 @@ async function main(): Promise<void> {
 	clock.advance(600_000);
 	await press('x');
 	assert.ok(runtime.machine.scheduler.currentNowCycles() - previewPaused <= runtime.timing.cycleBudgetPerFrame * 2, 'Play discards paused wall time');
-	for (let index = 0; index < 800 && rewind.playing; index += 1) await frame();
+	for (let index = 0; index < 4000 && rewind.playing; index += 1) await frame();
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), playbackEnd, 'playback stops exactly at the recorded end');
 	assert.ok(!rewind.playing && rewind.active, 'end of replay does not silently take live control');
 	assert.equal(history.inputJournal.endSequence, playbackSequence);
@@ -289,6 +337,7 @@ async function main(): Promise<void> {
 	assert.equal(rewind.playing, false, 'preview pauses without accepting');
 	const branchCycles = runtime.machine.scheduler.currentNowCycles();
 	const branchEnd = history.latestCycles;
+	verifyRetention = false; // Accept deliberately discards recorded future; a branch cannot retain unrecorded past.
 	await clickTimeline('OK', 5); await settle();
 	for (let index = 0; index < 3; index += 1) await frame();
 	assert.equal(history.mode, HistoryMode.Recording);
@@ -363,6 +412,7 @@ async function main(): Promise<void> {
 	assert.equal(history.checkpointCount, 1, 'new revision starts a new history');
 	assert.ok(suspensions >= 2, 'rewind transitions suspend audio transport');
 	console.log(JSON.stringify({ host: 'ts-host-rewind', selected, latest, branchCycles, audioFrames, suspensions,
+		referenceAgeSeconds, minimumSpanSeconds: minimumSpanCycles / runtime.timing.cpuHz, retentionFrames, checkpointEvictions,
 		reviewedObjects: reviewed.cpuState.snapshot.objectCount, checkpoints: history.checkpointCount }));
 	console.log('RUNTIME-HOST-REWIND:PASS');
 	input.dispose();

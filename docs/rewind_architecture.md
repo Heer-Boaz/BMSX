@@ -67,6 +67,46 @@ see [current timeline ownership](studio_runtime_timeline.md).
    shortcut is reserved. Collection/seek state and retained range must be
    visible; a seek must not freeze host event processing.
 
+## Default retention window
+
+The shared TS/native host policy retains six reusable checkpoints, six emulated
+seconds apart, and 4,096 fixed-size ICU records. After periodic PAL/NTSC recording
+fills the slots, its available window is at least 30 emulated seconds (nominally
+30–36): evicting the oldest checkpoint leaves five complete six-second intervals.
+Capture occurs at the next recorded input boundary, so the interval can be
+slightly longer than six seconds. The journal must cover the whole
+oldest-checkpoint-to-present continuation, not just thirty
+seconds; 4,096 records cover that continuation at PAL/NTSC rates and occupy
+720,896 bytes (704 KiB). Menu endpoints still come from the actual retained
+machine-cycle range, never a synthetic thirty-second UI limit.
+
+Representation/callsite inventory before this policy change:
+
+| Host policy | TypeScript | C++ |
+| --- | --- | --- |
+| Retained checkpoints | `checkpointCapacity: number`, six slots | `size_t checkpointCapacity`, six slots |
+| ICU journal records | `inputCapacity: number`, 4,096 records | `size_t inputCapacity`, 4,096 records |
+| Capture interval | `checkpointIntervalCycles: number`, `cpuHz * 6` | `i64 checkpointIntervalCycles`, `cpuHz * 6` |
+
+`HostRewind.service` / `HostRewind::service` start the existing history owner and
+service its synchronized captures. The VBlank -> ICU -> history input-source ->
+`RuntimeHistory.recordInputBoundary` / `InputJournal.recordLine` hot chain and
+its native mirror are unchanged; no extra serialization, allocation or polling
+is added there. Capture and replay use their existing owners and buffer reuse.
+More retained slots cost memory, not more frequent captures or longer replay
+between periodic checkpoints. This follows the separate frequency/slot choices
+in [DuckStation's memory-state policy](https://github.com/stenzek/duckstation/blob/master/src/core/system.cpp),
+without adding a second store or enabling an unmeasured compressor.
+
+This remains a bounded **slot/record policy**, not a hard byte arena or an
+unconditional duration guarantee for arbitrary register configurations. Startup,
+reset and a newly established timeline cannot provide unrecorded past; branch
+checkpoints and unusually high programmable PCRTC rates can shorten retention.
+Snapshot memory varies with CPU object/string storage and cartridge RAM. Six
+slots need at least 39 MiB for main RAM, VRAM and APU sample RAM alone; CPU and
+other device metadata add to that. Physical iPhone/iPad and SNES Mini memory and
+frame-time headroom have not been measured by this policy change.
+
 ## Seek presentation boundary
 
 Representation/callsite inventory established before the mirrored host edits:
@@ -238,10 +278,11 @@ and worldtick stepping remain separate, unproved surfaces.
   indentation audits pass. The broad tests typecheck still has the same
   **52 pre-existing diagnostics**; it is not reported as green.
 
-Two six-second checkpoint slots, 1,024 input records and the save-state format
-are unchanged. No new physical SNES Mini or ARM performance measurement is
-claimed for this slice. The playback work does not complete W04-W09 or add
-frame/worldtick stepping.
+That playback slice left two six-second checkpoint slots, 1,024 input records
+and the save-state format unchanged. The current retention policy is specified
+in [Default retention window](#default-retention-window). No new physical SNES
+Mini or ARM performance measurement is claimed for this slice. The playback
+work does not complete W04-W09 or add frame/worldtick stepping.
 
 ## Prerequisite: exact CPU restore
 
@@ -807,18 +848,19 @@ Production references checked before the host diff:
 | Audio delivery | Existing output ring/resampler plus rewind mute reason | Existing output ring/resampler plus rewind mute reason | Host audio owner; discard replay output, reset transport at transitions, execute APU normally |
 | Restored image | Explicit committed presentation request | Same presentation request | Presentation owner overwrites held-frame texture from restored VRAM; backend replacement serial already invalidates interlace fields |
 
-Initial retention policy deliberately uses the already measured reusable raw
+The initial retention policy deliberately used the already measured reusable raw
 slots, as DuckStation does, rather than silently enabling the failed historical
-compressor. All hosts, including SNES Mini:
-two checkpoints, six emulated seconds apart. The journal uses 1,024 fixed input records
-(180,224 bytes). Nominal retained time after warmup is 6–12 emulated seconds; unusual PCRTC timings can exhaust the input ring earlier.
-The actual retained endpoints, not these nominal durations, drive the menu.
+compressor. All hosts, including SNES Mini, originally used two checkpoints,
+six emulated seconds apart, and 1,024 fixed input records (180,224 bytes), giving
+a nominal 6–12-second window. The current six-slot policy is specified in
+[Default retention window](#default-retention-window) above. Actual retained
+endpoints, not nominal durations, drive the menu.
 
 This is a bounded **slot policy**, not a hard byte arena: CPU graph/string size
 and cartridge RAM determine snapshot size. The measured four-slot Nemesis case
 is about 44 MiB, excluding the live runtime, renderer and transient capture
-scratch. The common policy halves that measured number of resident checkpoints and
-trades that for longer replay. ARM build/functional evidence is not proof of
+scratch. The original two-slot policy halved that measured number of resident
+checkpoints and traded that for longer replay. ARM build/functional evidence is not proof of
 real SNES Mini frame-time or total-RSS headroom. Compression and a hard byte
 arena require their own measured storage representation; neither a misleading
 fixed-MiB label nor corrupt-data compatibility is introduced to claim that gate.
@@ -962,7 +1004,9 @@ menu chord cancels and returns to the recorded end. Pointer hit targets expose
 scrubbing, accept and cancel; preview remains a secondary X/Space action.
 No new activation shortcut is introduced.
 
-The two-checkpoint capacity and six-second capture interval are unchanged.
+At the time of that slice, the two-checkpoint capacity and six-second capture
+interval were unchanged. The current default retains six checkpoints at that
+same interval; see [Default retention window](#default-retention-window).
 Navigating between checkpoints reuses the existing input replay; it does not
 capture every frame, increase capacity or expose guest objects to the UI.
 
