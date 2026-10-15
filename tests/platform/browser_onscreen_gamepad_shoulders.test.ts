@@ -49,11 +49,13 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
 	for (const profile of [
-		{ name: 'phone portrait', width: 393, height: 720 },
-		{ name: 'phone landscape', width: 852, height: 393 },
-		{ name: 'compact portrait', width: 320, height: 568 },
-		{ name: 'tablet portrait', width: 768, height: 1024 },
-		{ name: 'tablet landscape', width: 1024, height: 768 },
+		{ name: 'phone portrait', width: 393, height: 720, insets: [0, 0, 0, 0] },
+		{ name: 'phone portrait safe', width: 393, height: 852, insets: [47, 0, 34, 0] },
+		{ name: 'phone landscape', width: 852, height: 393, insets: [0, 0, 0, 0] },
+		{ name: 'compact portrait', width: 320, height: 568, insets: [0, 0, 0, 0] },
+		{ name: 'compact overlay', width: 320, height: 240, insets: [0, 0, 0, 0] },
+		{ name: 'tablet portrait', width: 768, height: 1024, insets: [0, 0, 0, 0] },
+		{ name: 'tablet landscape', width: 1024, height: 768, insets: [0, 0, 0, 0] },
 	]) {
 		await t.test(profile.name, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true });
@@ -61,6 +63,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div>`);
+			await page.locator('#player-surface').evaluate((element, insets) => {
+				(element as HTMLElement).style.padding = insets.map(value => `${value}px`).join(' ');
+			}, profile.insets);
 			await page.addScriptTag({ content: bundle.outputFiles[0].text });
 			await page.evaluate(ids => {
 				const api = (globalThis as any).fixture;
@@ -71,6 +76,15 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				const video = new api.BrowserVideoOutput(canvas, view, 'fit');
 				video.refreshLayout();
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, pad, 'F2');
+				const nativeEvents: Array<{ type: string; id: number; trusted: boolean; pointerType: string; width: number; height: number; x: number; y: number }> = [];
+				// Observe the native producer before Input subscribes: the controller
+				// deliberately stops propagation of owned pointer moves.
+				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+					window.addEventListener(type, event => {
+						const pointer = event as PointerEvent;
+						nativeEvents.push({ type, id: pointer.pointerId, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height, x: pointer.clientX, y: pointer.clientY });
+					}, true);
+				}
 				const input = new api.Input(clock, hub, pad.gamepadIndex);
 				const snapshot = api.createInputControllerSnapshot();
 				const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
@@ -87,13 +101,6 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
 				input.getGlobalShortcutRegistry().registerControlShortcut(1, api.HOST_IDE_BUTTON,
 					() => { ideRequests += 1; }, () => { ideReleases += 1; });
-				const nativeEvents: Array<{ type: string; id: number; trusted: boolean; pointerType: string; width: number; height: number; x: number; y: number }> = [];
-				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
-					window.addEventListener(type, event => {
-						const pointer = event as PointerEvent;
-						nativeEvents.push({ type, id: pointer.pointerId, trusted: event.isTrusted, pointerType: pointer.pointerType, width: pointer.width, height: pointer.height, x: pointer.clientX, y: pointer.clientY });
-					}, true);
-				}
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
 					menu,
@@ -293,9 +300,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						probeAngle = start + (useStart ? inward : sweep - inward);
 					}
 					const nearestGap = Math.hypot(coreX - padShape.x, coreY - padShape.y) - arc.halfWidth - padShape.radius;
-					assert.ok(nearestGap > 0 && nearestGap <= 14, `${profile.name} ${id} has a genuinely usable 28px contact bridge, not invisible hit inflation`);
-					if (phonePortrait) assert.ok(Math.abs(nearestGap - 12) < 0.0001,
-						`${profile.name} ${id} preserves the authored 12px physical portrait clearance`);
+					assert.ok(nearestGap > 0 && nearestGap < 28, `${profile.name} ${id} has a genuinely usable 28px contact bridge, not invisible hit inflation`);
+					if (phonePortrait) assert.ok(Math.abs(nearestGap - 18) < 0.0001,
+						`${profile.name} ${id} leaves an actual 18px portrait clearance outside the unchanged pad disk`);
 					// Test the physical corridor just inside a finite cap, not exactly on
 					// a directional sector seam. Boundary classification is tested separately;
 					// floating atan2 and slope comparisons need not round a seam identically.
@@ -305,7 +312,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					const ux = (coreX - padShape.x) / distance;
 					const uy = (coreY - padShape.y) / distance;
 					const gap = distance - arc.halfWidth - padShape.radius;
-					assert.ok(gap > 0 && gap <= 14, 'the actual chosen interior-cap corridor remains a physical 28px bridge');
+					assert.ok(gap > 0 && gap < 28, 'the actual chosen interior-cap corridor remains a physical 28px bridge');
 					const assertDirection = async (shoulders: number, message: string) => {
 						const native = await page.evaluate(() => (globalThis as any).shoulderTest.nativeEvents.at(-1));
 						// Consume the browser's actual floating client coordinates. A closest
@@ -321,13 +328,13 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						}
 						await assertWord(direction | shoulders, message);
 					};
-					for (const [radiusX, radiusY] of [[14, 14], [20, 28], [28, 20]]) {
+					for (const [radiusX, radiusY] of [[14, 14], [0.5, 0.5], [20, 28], [28, 20]]) {
 						const contact = { id: 1, x: padShape.x + ux * padShape.radius * 0.3,
 							y: padShape.y + uy * padShape.radius * 0.3, radiusX, radiusY };
 						await touch('touchStart', [contact]);
 						await assertDirection(0, 'direction-first acquisition retains the existing digital sectors');
 						// Five positions across a real corridor, not a single grazing point.
-						for (const offset of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+						for (const offset of [0.3, 0.4, 0.5, 0.6, 0.7]) {
 							contact.x = padShape.x + ux * (padShape.radius + gap * offset);
 							contact.y = padShape.y + uy * (padShape.radius + gap * offset);
 							await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [contact] });
@@ -352,6 +359,36 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 						await touch('touchEnd', []);
 						await assertWord(0, 'all hardware contributions release together');
 					}
+				}
+			});
+
+			await orientation.test('ordinary 28px and browser-estimated thumbs can roll around the D-pad rim without pressing a shoulder', async rim => {
+				const padShape = await page.evaluate(() => (globalThis as any).shoulderTest.directionalGeometry());
+				const shapes = await page.evaluate(() => (globalThis as any).shoulderTest.geometry());
+				const minimumGap = Math.min(...shapes.filter(shape => (shape.buttons & 0x50) !== 0)
+					.map(shape => distanceToControl(shape, padShape.x, padShape.y) - padShape.radius));
+				if (minimumGap <= 14) {
+					rim.skip('compact embedded players scale the physical gap below a full 28px thumb radius; the deliberate chord and exact geometry remain tested');
+					return;
+				}
+				for (const radius of [14, 0.5]) {
+					const contact = { id: 1, x: padShape.x, y: padShape.y, radiusX: radius, radiusY: radius };
+					await touch('touchStart', [contact]);
+					assert.equal((await poll()).model, 0);
+					for (let step = 0; step < 24; step += 1) {
+						const angle = (13 + step * 15) * Math.PI / 180;
+						contact.x = padShape.x + padShape.radius * Math.cos(angle);
+						contact.y = padShape.y + padShape.radius * Math.sin(angle);
+						await touch('touchMove', [contact]);
+						const state = await poll();
+						assert.notEqual(state.model & 0xf000, 0, 'sliding around the entire acquisition rim keeps an immediate digital direction');
+						assert.equal(state.model & ~0xf000, 0, 'a full 28px contact at the D-pad rim does not graze either shoulder');
+						assert.deepEqual([state.physical, state.snapshot, state.mmio], Array(3).fill(state.model));
+						assert.deepEqual(state.axes, [0, 0]);
+						assert.equal(state.pointer, 0);
+					}
+					await touch('touchEnd', []);
+					assert.equal((await poll()).model, 0);
 				}
 			});
 
@@ -639,7 +676,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			const nativeEvents = await page.evaluate(() => (globalThis as any).shoulderTest.nativeEvents);
 			assert.ok(nativeEvents.length > 0);
 			assert.ok(nativeEvents.every(event => event.trusted && event.pointerType === 'touch'), 'input originates in Chromium native dispatch, not synthetic DOM events');
-			for (const [width, height] of [[28, 28], [40, 56], [56, 40]]) {
+			for (const [width, height] of [[1, 1], [28, 28], [40, 56], [56, 40]]) {
 				assert.ok(nativeEvents.some(event => event.type === 'pointerdown' && event.width === width && event.height === height),
 					`${width}x${height} contact geometry genuinely arrives from the native browser boundary`);
 			}

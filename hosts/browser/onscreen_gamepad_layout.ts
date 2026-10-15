@@ -13,6 +13,7 @@ const BUMPER_SWEEP_ADVANTAGE = 2 * Math.PI / 180;
 const SHOULDER_PAINT_RADIUS = 1.5;
 const CONTROL_MARGIN = 4;
 const PHONE_MENU_SIZE = 48;
+const DPAD_SHOULDER_GAP = 18;
 // Six footer targets (44/44/48 per hand), two 4px edges and five 4px gaps.
 const MIN_PHONE_WIDTH = 300;
 // A reserved deck must leave at least a half-width 4:3 picture. Near-square
@@ -30,6 +31,7 @@ export class OnscreenGamepadLayout {
 	public margin = CONTROL_MARGIN;
 	public bottom = 0;
 	public gap = 0;
+	public padShoulderGap = 0;
 	public menuSize = 0;
 	public clickSize = 0;
 	public hostSize = 0;
@@ -97,6 +99,7 @@ export class OnscreenGamepadLayout {
 		this.menuSize = PHONE_MENU_SIZE;
 		this.clickSize = STICK_CLICK_SIZE;
 		this.gap = CONTROL_GAP;
+		this.padShoulderGap = DPAD_SHOULDER_GAP;
 		this.halfWidth = MIN_SHOULDER_THICKNESS / 2;
 		this.bottom = 16;
 		this.measureHandClearances();
@@ -112,9 +115,9 @@ export class OnscreenGamepadLayout {
 		const padRadius = PAD_SIZE / 2;
 		const faceRadius = this.faceWidth / 2;
 		const halfWidth = SHOULDER_THICKNESS / 2;
-		const leftRing = padRadius + CONTROL_GAP + halfWidth;
-		const rightRing = faceRadius + CONTROL_GAP + halfWidth;
-		const fullWidth = 32 + padRadius + faceRadius + leftRing + rightRing + halfWidth * 2 + CONTROL_GAP;
+		// The hand lanes retain their width; arc angles fit the larger left
+		// radial clearance inside those same side/cross-hand bounds.
+		const fullWidth = 32 + PAD_SIZE + this.faceWidth + SHOULDER_THICKNESS * 2 + CONTROL_GAP * 3;
 		const menuRadius = MENU_SIZE / 2;
 		const utilityReach = Math.max(padRadius + menuRadius + CONTROL_GAP,
 			this.bottomButtonY - this.faceHeight / 2 + this.bottomButtonRadius + menuRadius + CONTROL_GAP);
@@ -124,7 +127,7 @@ export class OnscreenGamepadLayout {
 		// Budget the complete upper ring and footer before arranging either hand.
 		// The vertical envelope is linear except for the shoulder's 44px minimum:
 		// available >= scale * verticalReach + max(44, scale * 56).
-		const verticalReach = Math.max(padRadius, faceRadius) + CONTROL_GAP + utilityReach + menuRadius;
+		const verticalReach = Math.max(padRadius + DPAD_SHOULDER_GAP, faceRadius + CONTROL_GAP) + utilityReach + menuRadius;
 		const availableHeight = height - PAINT_CLEARANCE * 2;
 		this.scale = Math.min(1.1, width / fullWidth,
 			availableHeight / (verticalReach + SHOULDER_THICKNESS),
@@ -134,6 +137,7 @@ export class OnscreenGamepadLayout {
 		this.menuSize = MENU_SIZE * this.scale;
 		this.clickSize = STICK_CLICK_SIZE * this.scale;
 		this.gap = CONTROL_GAP * this.scale;
+		this.padShoulderGap = DPAD_SHOULDER_GAP * this.scale;
 		this.halfWidth = Math.max(MIN_SHOULDER_THICKNESS / 2, halfWidth * this.scale);
 		this.bottom = 16 * this.scale;
 		this.measureHandClearances();
@@ -144,7 +148,9 @@ export class OnscreenGamepadLayout {
 
 	/** Both hand banks share the same true arc, cap and hand-lane budgets. */
 	private measureShoulderRings(): void {
-		this.leftRing = this.padRadius + this.gap + this.halfWidth;
+		// At phone-portrait size, a 28px thumb can deliberately bridge the 18px
+		// clearance without grazing a shoulder when centered on the pad rim.
+		this.leftRing = this.padRadius + this.padShoulderGap + this.halfWidth;
 		this.rightRing = this.faceRadius + this.gap + this.halfWidth;
 		const halfLane = (this.width - this.margin * 2 - this.padRadius - this.faceRadius - this.gap) / 2;
 		const inwardSine = Math.sin(SHOULDER_INWARD_SWEEP);

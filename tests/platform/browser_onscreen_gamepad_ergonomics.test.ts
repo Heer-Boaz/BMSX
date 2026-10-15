@@ -390,7 +390,14 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			const pad = targets[0];
 			const faceCenter = { x: (targets[1].x + targets[4].x) / 2, y: (targets[1].y + targets[4].y) / 2 };
 			if (phonePortrait) {
-				const dimensions = targets.map((target: any) => target.bounds.width);
+				// Exact owner dimensions are position-independent. DOMRect widths of
+				// transformed arc paths subtract float32 absolute endpoints, so an
+				// inset origin can change their final bit without changing the shape.
+				const dimensions = targets.flatMap((target: any) => target.outline
+					? [target.radius, target.outline.radius, target.outline.halfWidth,
+						target.outline.startX, target.outline.startY, target.outline.endX, target.outline.endY,
+						target.outline.left, target.outline.top, target.outline.right, target.outline.bottom]
+					: [target.radius]);
 				if (phoneDimensionsByWidth.has(width)) assert.deepEqual(dimensions, phoneDimensionsByWidth.get(width),
 					'reducing phone height changes placement, not thumb-sized control dimensions');
 				phoneDimensionsByWidth.set(width, dimensions);
@@ -469,9 +476,13 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				const bumperSweep = Math.acos(bumper.outline.startX * bumper.outline.endX + bumper.outline.startY * bumper.outline.endY);
 				const triggerSweep = Math.acos(trigger.outline.startX * trigger.outline.endX + trigger.outline.startY * trigger.outline.endY);
 				assert.ok(bumperSweep > triggerSweep, 'the easier bumper has a genuinely larger finite curved target, not just a swapped label');
-				if (phonePortrait && primary === pad) {
-					for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - 12) < coordinateTolerance,
-						'each upper phone shoulder retains an actual 12px thumb bridge from the unchanged pad disk');
+				if (primary === pad) {
+					const directionalShoulderGap = 18 * (phonePortrait ? 1 : scale);
+					for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(controlSeparation(shoulder, pad) - directionalShoulderGap) < coordinateTolerance,
+						'each left shoulder has its authored 18px clearance, scaled only for ring profiles, outside the unchanged acquisition disk');
+				} else {
+					for (const shoulder of [bumper, trigger]) assert.ok(Math.abs(shoulder.outline.radius - shoulder.outline.halfWidth - 104 * scale - 12 * (phonePortrait ? 1 : scale)) < coordinateTolerance,
+						'the action-side radial shoulder clearance remains on its existing 12px policy');
 				}
 				const direction = primary.x < middle ? -1 : 1;
 				const holdingRadius = direction < 0 ? pad.radius : targets[2].x + targets[2].radius - faceCenter.x;

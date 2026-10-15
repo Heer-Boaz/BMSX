@@ -5012,8 +5012,12 @@ hand-side footer orders keyboard/LS/SELECT on the left and START/RS/settings on
 the right, anchored to their respective safe edges. Host icons retain the stick
 click's target size. Footer spacing is width-derived, up to the normal control
 gap (8px on a 320px phone), rather than adding another row or shrinking targets.
-The left shoulder arcs retain 12 CSS pixels of real surface clearance from the
-pad, so one thumb can roll upward into a genuine direction/shoulder chord.
+The left shoulder arcs retain 18 CSS pixels of real surface clearance from the
+phone pad (scaled with the ring profile elsewhere). At phone-portrait size, the
+default 28px thumb footprint cannot graze them while centered on the pad rim,
+but can still roll upward across the gap into a genuine direction/shoulder
+chord. Right-hand shoulder clearance remains 12px before ring scaling; this
+tuning does not shrink either primary bank or change the contact rules.
 Face/shoulder bank ownership remains distinct near Y;
 geometry never indiscriminately unions the two banks. The same finite arc
 budgets author all upper rings, including round caps, paint bounds, inter-hand
