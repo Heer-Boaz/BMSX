@@ -16,6 +16,10 @@ import { HostAudioOutput } from '../../../hosts/common/audio_output';
 import { HostFrameRunResult, runHostFrame } from '../../../hosts/common/host_frame';
 import { HostFrameSession } from '../../../hosts/common/frame_session';
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../../hosts/common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../../hosts/common/input/on_screen_keyboard_keys';
 import { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../../hosts/common/system_output_log';
 import type { HostClock } from '../../../hosts/common/clock';
@@ -131,7 +135,10 @@ async function main(): Promise<void> {
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
 	audioOutput.device.select(audioOutput);
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
+	const keyboardModel = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	runtime.frameScheduler.clearQueuedTime();
 	const frameLoop = frames.start((currentTime) => {
 		const result = runHostFrame(
