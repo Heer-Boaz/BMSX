@@ -20,7 +20,7 @@ import {
 	type CartRomHeader,
 } from '../../machine/ts/rompack/format';
 import type {
-	CartridgeIndex,
+	PackedCartridgeIndex,
 	RomToolingPackage,
 } from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
@@ -66,7 +66,7 @@ function toolingPackage(projectRootPath: string): RomToolingPackage {
 	};
 }
 
-function cartridgeIndex(projectRootPath: string): CartridgeIndex {
+function cartridgeIndex(projectRootPath: string): PackedCartridgeIndex {
 	return {
 		entries: [],
 		projectRootPath,

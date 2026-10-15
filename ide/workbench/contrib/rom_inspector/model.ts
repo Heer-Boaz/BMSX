@@ -1,7 +1,7 @@
 import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import type { CartRomHeader } from '../../../../machine/ts/rompack/format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
-import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
+import type { PackedRomAsset, RomAsset } from '../../../../toolchain/ts/rompack/assets';
 import { loadBlua32ToolingImage, type Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
 import { blua32SourceRangeAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import { indexBlua32FunctionInstructions } from '../../../../toolchain/ts/rompack/disassembler';
@@ -14,7 +14,7 @@ export type RomInspectorSnapshot = {
 	readonly label: string;
 	readonly rom: Uint8Array;
 	readonly header: CartRomHeader;
-	readonly assets: readonly RomAsset[];
+	readonly assets: readonly PackedRomAsset[];
 };
 const ENTRY_ORDER = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 const NO_RANGES: readonly RomInspectorByteRange[] = [];

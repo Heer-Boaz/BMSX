@@ -1642,6 +1642,17 @@ of expanding a repeated object tree. PC lookup remains directly indexed; no
 symbol decoding or interning enters CPU dispatch. The paired wire layout and
 ownership are specified in [blua32_symbols.md](blua32_symbols.md).
 
+The TS/C++ `loadBlua32ToolingImage` tooling boundary accepts an optional
+predecoded physical ROM TOC. Omitting it decodes the supplied ROM's directory;
+supplying it, including an empty directory, uses those entries directly without
+decoding or copying them. Entry ranges always address the supplied ROM bytes,
+not authored asset buffers or layered source overlays. Packed tooling producers
+retain the complete `RomTocEntry` representation when enriching entries with
+asset metadata; inspector-only synthetic rows do not join the physical directory.
+Native callers borrow a read-only entry span for the duration of the call;
+returned executable views borrow the ROM bytes, while decoded symbols own their
+metadata. This is a load/inspection/error-reporting path, never CPU dispatch.
+
 The public BIOS link library is the separate `__blua32_bios_imports__` asset
 and `<system-rom>.blua32-imports` sidecar. It contains the cartridge static-RAM
 base plus author-facing module paths, export paths, and their physical

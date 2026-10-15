@@ -731,6 +731,14 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
 
+	add_executable(bmsx_blua32_media_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/blua32_media_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+		spec/blua32/instruction_format.cpp
+	)
+	target_link_libraries(bmsx_blua32_media_tests PRIVATE bmsx_blua32_tooling)
+	add_test(NAME bmsx_blua32_media_tests COMMAND bmsx_blua32_media_tests)
+
 	add_executable(bmsx_symbols_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/symbols_conformance_runner.cpp
 	)

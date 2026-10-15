@@ -1,5 +1,6 @@
 import { formatHexDumpRow } from '../../machine/ts/common/byte_hex_string';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RomTocEntry } from '../../machine/ts/rompack/toc';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
@@ -48,6 +49,7 @@ export type AssetModalView = {
 type BuildAssetModalViewContext = {
 	rombin: Uint8Array;
 	assetList: RomAsset[];
+	tocEntries: readonly RomTocEntry[];
 	decodedTexture: RomTextureDecodeCache;
 	manifest: CartManifest | null;
 	projectRootPath: string | null;
@@ -296,7 +298,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			break;
 		case 'code':
 			if (selected.resid === BLUA32_IMAGE_ID) {
-				const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(ctx.rombin, ctx.assetList);
+				const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(ctx.rombin, ctx.tocEntries);
 				disassembly = disassembleBlua32Image(image, symbols, sourceTextByPath);
 				metadataLines.push(`BLua32 image address: ${image.address.toString(16).toUpperCase()}h`);
 				metadataLines.push(`BLua32 functions: ${image.functions.length}`);

@@ -22,14 +22,14 @@ import { CART_ROM_HEADER_SIZE } from '../../../machine/ts/spec/bmsx/rom_package'
 import {
 	parseCartHeader,
 } from '../../../machine/ts/rompack/format';
-import type { RomAsset } from './assets';
+import { finalizePackedRomAssets, type RomAsset } from './assets';
 import type { AssetId, AssetType } from '../../../machine/ts/rompack/toc';
 import {
 	alignRomAssetOffset,
 	layoutRomAssetPayloads,
 	type RomAssetPayloadLayout,
 } from './asset_layout';
-import type { RomSourceLayer } from './source';
+import type { PackedRomSourceLayer, RomSourceLayer } from './source';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
@@ -171,19 +171,19 @@ export function buildBlua32Tail(
 	linked: LinkedSystemBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
 	changes?: Blua32PublicAssetChanges,
-): RomSourceLayer<'system'>;
+): PackedRomSourceLayer<'system'>;
 export function buildBlua32Tail(
 	layer: RomSourceLayer<'cart'>,
 	linked: LinkedCartBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
 	changes?: Blua32PublicAssetChanges,
-): RomSourceLayer<'cart'>;
+): PackedRomSourceLayer<'cart'>;
 export function buildBlua32Tail(
 	layer: RomSourceLayer,
 	linked: LinkedBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
 	changes?: Blua32PublicAssetChanges,
-): RomSourceLayer {
+): PackedRomSourceLayer {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
 	const imageEnd = imageOffset + linked.bytes.byteLength;
@@ -195,7 +195,7 @@ export function buildBlua32Tail(
 		linked.bytes.byteLength,
 		changes,
 	);
-	const entries = publicAssets.entries;
+	const entries: RomAsset[] = publicAssets.entries;
 	const systemImage = linked.domain === 'system';
 	let metadataOffset = header.metadataOffset;
 	let manifestOffset = header.manifestOffset;
@@ -297,6 +297,7 @@ export function buildBlua32Tail(
 		toolingNextOffset = diagnosticLayout.nextOffset;
 	}
 
+	finalizePackedRomAssets(entries);
 	const toc = encodeRomToc({
 		entries,
 		projectRootPath: layer.index.projectRootPath,

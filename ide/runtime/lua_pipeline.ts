@@ -36,7 +36,7 @@ import {
 	type Blua32PublicAssetChanges,
 } from '../../toolchain/ts/rompack/blua32_tail';
 import { buildLuaSourceAssetChanges } from './source_media';
-import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
+import type { PackedRomSourceLayer } from '../../toolchain/ts/rompack/source';
 import type { ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import {
@@ -83,8 +83,8 @@ export type RebuiltBlua32Media = {
 
 export type Blua32MediaInstallation = {
 	rebuilt: RebuiltBlua32Media;
-	systemLayer: RomSourceLayer<'system'> | null;
-	cartridgeLayers: [RomSourceLayer<'cart'> | null, RomSourceLayer<'cart'> | null];
+	systemLayer: PackedRomSourceLayer<'system'> | null;
+	cartridgeLayers: [PackedRomSourceLayer<'cart'> | null, PackedRomSourceLayer<'cart'> | null];
 	sourceMedia: Blua32SourceMedia;
 };
 
@@ -376,8 +376,8 @@ export function layoutBlua32MediaInstallation(
 	sources: RuntimeSourceState,
 	rebuilt: RebuiltBlua32Media,
 ): Blua32MediaInstallation {
-	let systemLayer: RomSourceLayer<'system'> | null = null;
-	const cartridgeLayers: [RomSourceLayer<'cart'> | null, RomSourceLayer<'cart'> | null] = [null, null];
+	let systemLayer: PackedRomSourceLayer<'system'> | null = null;
+	const cartridgeLayers: [PackedRomSourceLayer<'cart'> | null, PackedRomSourceLayer<'cart'> | null] = [null, null];
 	if (rebuilt.system !== null) {
 		systemLayer = buildBlua32Tail(
 			sources.systemRom,

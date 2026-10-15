@@ -7,11 +7,13 @@
 
 #include <array>
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace bmsx {
 
 struct RomImage;
+struct RomTocEntry;
 
 struct Blua32ToolingImage {
 	Blua32ImageLayout layout;
@@ -23,9 +25,11 @@ struct Blua32ToolingMedia {
 	std::array<std::optional<Blua32ToolingImage>, CARTRIDGE_SLOT_COUNT> cartridgeSlots;
 };
 
+// Omitted entries decode the ROM TOC; supplied entries (including empty) are authoritative.
 auto loadBlua32ToolingImage(
 	const RomImage& rom,
-	u32 romBaseAddress
+	u32 romBaseAddress,
+	std::optional<std::span<const RomTocEntry>> tocEntries = std::nullopt
 ) -> std::optional<Blua32ToolingImage>;
 
 auto blua32ToolingImageForDomain(

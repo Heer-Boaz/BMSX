@@ -28,6 +28,7 @@ import {
 	type CartRomHeader,
 } from '../../machine/ts/rompack/format';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RomTocEntry } from '../../machine/ts/rompack/toc';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
@@ -51,7 +52,7 @@ export function sortAssetsById(assets: RomAsset[]): RomAsset[] {
 	return [...assets].sort((left, right) => ASSET_ID_COLLATOR.compare(left.resid, right.resid));
 }
 
-export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): Map<string, string> {
+export function buildLuaSourceLookup(rombin: Uint8Array, assets: readonly RomTocEntry[]): Map<string, string> {
 	const sources = new Map<string, string>();
 	for (const asset of assets) {
 		if (asset.type !== 'lua') {
@@ -79,7 +80,7 @@ export type InspectedBlua32Image = {
 	missingSourcePaths: string[];
 };
 
-export function loadBlua32ImageFromAssets(rombin: Uint8Array, assets: RomAsset[]): InspectedBlua32Image {
+export function loadBlua32ImageFromAssets(rombin: Uint8Array, tocEntries: readonly RomTocEntry[]): InspectedBlua32Image {
 	const header = parseCartHeader(rombin);
 	if (header.blua32ImageByteCount === 0) {
 		throw new Error('ROM has no BLua32 executable image.');
@@ -87,8 +88,8 @@ export function loadBlua32ImageFromAssets(rombin: Uint8Array, assets: RomAsset[]
 	const romBaseAddress = header.blua32StartupFunctionAddress < CART_ROM_BASE
 		? SYSTEM_ROM_BASE
 		: CART_ROM_BASE;
-	const { layout: image, symbols } = loadBlua32ToolingImage({ bytes: rombin, header }, romBaseAddress, assets);
-	const sourceMap = symbols ? buildLuaSourceLookup(rombin, assets) : null;
+	const { layout: image, symbols } = loadBlua32ToolingImage({ bytes: rombin, header }, romBaseAddress, tocEntries);
+	const sourceMap = symbols ? buildLuaSourceLookup(rombin, tocEntries) : null;
 	const missingSourcePaths = new Set<string>();
 	if (symbols && sourceMap && sourceMap.size > 0) {
 		for (const range of symbols.metadata.debugRanges) {

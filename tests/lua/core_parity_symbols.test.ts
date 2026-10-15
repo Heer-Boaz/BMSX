@@ -51,3 +51,93 @@ auto decode(std::span<const u8> bytes) -> int;
 		rmSync(root, { recursive: true });
 	}
 });
+
+test('public parity compares optional parameters with native defaults and overloads', () => {
+	const root = mkdtempSync(join(tmpdir(), 'bmsx-optional-signature-parity-'));
+	try {
+		writeFileSync(join(root, 'tsconfig.base.json'), JSON.stringify({ compilerOptions: { strict: true } }));
+		writeFileSync(join(root, 'symbols.ts'), `export type Entry = { offset: number };
+export function load(bytes: Uint8Array, entries?: readonly Entry[]): Entry | null { return null; }
+`);
+		const twoArguments = 'auto load(std::span<const u8> bytes, std::span<const Entry> entries) -> std::optional<Entry>;';
+		const oneArgument = 'auto load(std::span<const u8> bytes) -> std::optional<Entry>;';
+		const entries = [{ ts: 'symbols.ts', cpp_headers: ['symbols.h'] }];
+		for (const candidate of [
+			{
+				label: 'a default parameter preserves both call forms',
+				declaration: twoArguments.replace('entries)', 'entries = {})'),
+				matches: true,
+			},
+			{
+				label: 'explicit overloads preserve both call forms',
+				declaration: `${oneArgument}\n${twoArguments}`,
+				matches: true,
+			},
+			{
+				label: 'the shorter signature alone loses the optional call form',
+				declaration: oneArgument,
+				matches: false,
+			},
+			{
+				label: 'a required parameter loses the shorter call form',
+				declaration: twoArguments,
+				matches: false,
+			},
+			{
+				label: 'a default does not conceal a different parameter type',
+				declaration: twoArguments.replace('const Entry> entries)', 'const u8> entries = {})'),
+				matches: false,
+			},
+		]) {
+			writeFileSync(join(root, 'symbols.h'), `namespace bmsx {
+struct Entry { u32 offset; };
+${candidate.declaration}
+}
+`);
+			const errors = auditPublicSymbolParity(root, entries);
+			if (candidate.matches) {
+				assert.deepEqual(errors, [], candidate.label);
+			} else {
+				assert.equal(errors.length, 1, candidate.label);
+				assert.match(errors[0], /^symbols\.ts:load: TS signatures .* differ from C\+\+ /, candidate.label);
+			}
+		}
+	} finally {
+		rmSync(root, { recursive: true });
+	}
+});
+
+test('public parity distinguishes default omission from an explicit absent sequence value', () => {
+	const root = mkdtempSync(join(tmpdir(), 'bmsx-absent-sequence-parity-'));
+	try {
+		writeFileSync(join(root, 'tsconfig.base.json'), JSON.stringify({ compilerOptions: { strict: true } }));
+		writeFileSync(join(root, 'symbols.ts'), `export type Entry = { offset: number };
+export function load(bytes: Uint8Array, entries: readonly Entry[] | undefined = undefined): Entry | null { return null; }
+`);
+		const header = `namespace bmsx {
+struct Entry { u32 offset; };
+auto load(std::span<const u8> bytes, std::optional<std::span<const Entry>> entries = std::nullopt) -> std::optional<Entry>;
+}
+`;
+		const entries = [{ ts: 'symbols.ts', cpp_headers: ['symbols.h'] }];
+		writeFileSync(join(root, 'symbols.h'), header);
+		assert.deepEqual(auditPublicSymbolParity(root, entries), []);
+		for (const candidate of [
+			{
+				label: 'default omission alone does not declare an absent sequence value',
+				header: header.replace('std::optional<std::span<const Entry>> entries = std::nullopt', 'std::span<const Entry> entries = {}'),
+			},
+			{
+				label: 'an absent sequence value does not make its parameter omittable',
+				header: header.replace(' = std::nullopt', ''),
+			},
+		]) {
+			writeFileSync(join(root, 'symbols.h'), candidate.header);
+			const errors = auditPublicSymbolParity(root, entries);
+			assert.equal(errors.length, 1, candidate.label);
+			assert.match(errors[0], /^symbols\.ts:load: TS signatures .* differ from C\+\+ /, candidate.label);
+		}
+	} finally {
+		rmSync(root, { recursive: true });
+	}
+});

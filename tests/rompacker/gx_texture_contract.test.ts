@@ -392,6 +392,7 @@ return imgdec
 		const modalContext = {
 			rombin: rom,
 			assetList: loaded.entries,
+			tocEntries: loaded.entries,
 			decodedTexture,
 			manifest: null,
 			projectRootPath: null,

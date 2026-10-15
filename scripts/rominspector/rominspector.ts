@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
-import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { PackedRomAsset, RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import { loadRomAssetList, parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
@@ -23,13 +23,14 @@ import { runNativeInspectorUI } from './native_ui';
 import { generateCycleCostReport } from './cycle_cost_analysis';
 
 let assetList: RomAsset[] = [];
+let tocEntries: PackedRomAsset[] = [];
 let romManifest: CartManifest | null = null;
 let romProjectRootPath: string | null = null;
 async function loadAssets(
 	rombin: Uint8Array,
 	header: CartRomHeader,
-): Promise<{ assets: RomAsset[]; manifest: CartManifest | null; projectRootPath: string | null }> {
-	let assets: RomAsset[] = [];
+): Promise<{ assets: PackedRomAsset[]; manifest: CartManifest | null; projectRootPath: string | null }> {
+	let assets: PackedRomAsset[] = [];
 	let manifest: CartManifest | null = null;
 	let projectRootPath: string | null = null;
 	if (header.manifestLength === 0) {
@@ -241,13 +242,14 @@ async function main() {
 	);
 
 	getTocBuffer(rombin, header);
-	({ assets: assetList, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin, header));
-	const inspection = inspectRom(rombin, header, assetList);
+	({ assets: tocEntries, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin, header));
+	const inspection = inspectRom(rombin, header, tocEntries);
+	assetList = tocEntries;
 	if (header.manifestLength > 0 && !assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
-		assetList.unshift(buildManifestAsset(header));
+		assetList = [buildManifestAsset(header), ...tocEntries];
 	}
 	if (blua32AsmFlag) {
-		const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(rombin, assetList);
+		const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(rombin, tocEntries);
 		if (missingSourcePaths.length > 0) {
 			console.warn(`Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
 		}
@@ -256,7 +258,7 @@ async function main() {
 	}
 
 	if (cycleCostFlag) {
-		const { image, symbols } = loadBlua32ImageFromAssets(rombin, assetList);
+		const { image, symbols } = loadBlua32ImageFromAssets(rombin, tocEntries);
 		console.log(generateCycleCostReport(image, symbols));
 		process.exit(0);
 	}
@@ -286,6 +288,7 @@ async function main() {
 			romfile,
 			rombin,
 			assets: assetList,
+			tocEntries,
 			inspection,
 			manifest: romManifest,
 			projectRootPath: romProjectRootPath,

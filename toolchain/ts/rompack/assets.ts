@@ -5,6 +5,7 @@ import type {
 	RomTocEntry,
 } from '../../../machine/ts/rompack/toc';
 import type { RomImageDomain } from '../../../machine/ts/rompack/image';
+import { hashAssetId } from '../../../machine/ts/rompack/tokens';
 import type { GLTFModel } from './gltf';
 import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 
@@ -86,6 +87,9 @@ export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi' | 'progra
 	payload_id?: RomImageDomain;
 };
 
+/** A physical TOC entry, enriched in place with tooling metadata. */
+export type PackedRomAsset = RomTocEntry & RomAsset;
+
 export type RomLuaAsset = RomAsset & {
 	src: string;
 	source_path: string;
@@ -98,6 +102,22 @@ export type CartridgeIndex = {
 	projectRootPath: string;
 	cart_manifest: CartManifest | null;
 };
+
+export type PackedCartridgeIndex = Omit<CartridgeIndex, 'entries'> & {
+	entries: PackedRomAsset[];
+};
+
+/** Complete an owned producer directory before publishing its physical TOC. */
+export function finalizePackedRomAssets(entries: RomAsset[]): asserts entries is PackedRomAsset[] {
+	for (const entry of entries) {
+		if (entry.id_token_lo === undefined || entry.id_token_hi === undefined) {
+			const token = hashAssetId(entry.resid);
+			entry.id_token_lo = token.lo;
+			entry.id_token_hi = token.hi;
+		}
+		entry.program_module ??= false;
+	}
+}
 
 export type RomToolingPackage = {
 	img: Record<AssetId, RomAsset>;

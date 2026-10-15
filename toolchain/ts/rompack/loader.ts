@@ -2,8 +2,10 @@ import type {
 	AudioMeta,
 	ImgMeta,
 	RomAsset,
+	PackedRomAsset,
 	RomToolingPackage,
 	CartridgeIndex,
+	PackedCartridgeIndex,
 	TextureMeta,
 	SourceMeta,
 } from './assets';
@@ -25,7 +27,7 @@ import {
 const utf8Decoder = new TextDecoder();
 
 type RomAssetList = {
-	entries: RomAsset[];
+	entries: PackedRomAsset[];
 	projectRootPath: string;
 };
 
@@ -41,7 +43,7 @@ async function loadRomAssetListFromHeader(
 ): Promise<RomAssetList> {
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
-	const entryList: RomAsset[] = decoded.entries;
+	const entryList: PackedRomAsset[] = decoded.entries;
 	const projectRootPath = decodedProjectRootPath(decoded.projectRootPath);
 	const sharedMetadata = header.metadataLength > 0
 		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
@@ -152,11 +154,11 @@ export async function loadRomAssetList(
 	return loadRomAssetListFromHeader(rom, header, domain);
 }
 
-export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
+export async function parseCartridgeIndex(payload: Uint8Array): Promise<PackedCartridgeIndex> {
 	return buildCartridgeIndex(parseCartridgePackage(payload));
 }
 
-async function buildCartridgeIndex(image: CartridgePackage): Promise<CartridgeIndex> {
+async function buildCartridgeIndex(image: CartridgePackage): Promise<PackedCartridgeIndex> {
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(
 		image.bytes,
 		image.header,
@@ -348,7 +350,7 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingP
 
 export type RomToolingLayer<TDomain extends RomImageDomain = RomImageDomain> = RomImage & {
 	id: TDomain;
-	index: CartridgeIndex;
+	index: PackedCartridgeIndex;
 	package: RomToolingPackage;
 };
 
@@ -378,7 +380,7 @@ export async function buildCartridgeToolingLayer(image: CartridgePackage): Promi
 
 export async function buildSystemToolingLayer(image: RomImage): Promise<RomToolingLayer<'system'>> {
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
-	const index: CartridgeIndex = {
+	const index: PackedCartridgeIndex = {
 		entries,
 		projectRootPath,
 		cart_manifest: null,

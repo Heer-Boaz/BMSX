@@ -2,7 +2,7 @@ import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { RomToolingPackage } from '../../toolchain/ts/rompack/assets';
 import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
-import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
+import { RomSourceStack, type PackedRomSourceLayer, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import {
 	buildLuaSources,
 	captureInstalledLuaSources,
@@ -291,8 +291,8 @@ export function runtimeSourcesSupportIde(state: RuntimeSourceState): boolean {
 
 export function installRuntimeRomLayers(
 	state: RuntimeSourceState,
-	systemLayer: RomSourceLayer<'system'> | null,
-	cartridgeLayers: [RomSourceLayer<'cart'> | null, RomSourceLayer<'cart'> | null],
+	systemLayer: PackedRomSourceLayer<'system'> | null,
+	cartridgeLayers: [PackedRomSourceLayer<'cart'> | null, PackedRomSourceLayer<'cart'> | null],
 ): void {
 	if (systemLayer !== null) {
 		state.systemRom.index = systemLayer.index;

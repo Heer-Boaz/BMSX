@@ -71,12 +71,16 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 	let stringTableLength = 0;
 	const entries = params.entries
 		.map((entry) => {
-			const token = (entry.id_token_lo !== undefined && entry.id_token_hi !== undefined)
-				? { lo: entry.id_token_lo, hi: entry.id_token_hi }
-				: hashAssetId(entry.resid);
-			return { entry, token };
+			let lo = entry.id_token_lo;
+			let hi = entry.id_token_hi;
+			if (lo === undefined || hi === undefined) {
+				const token = hashAssetId(entry.resid);
+				lo = token.lo;
+				hi = token.hi;
+			}
+			return { entry, lo, hi };
 		})
-		.sort((a, b) => (a.token.hi - b.token.hi) || (a.token.lo - b.token.lo));
+		.sort((a, b) => (a.hi - b.hi) || (a.lo - b.lo));
 
 	const intern = (value: string | null | undefined): TocStringSlice => {
 		if (!value || value.length === 0) {
@@ -99,7 +103,7 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 	const entryView = new DataView(entryBuffer.buffer, entryBuffer.byteOffset, entryBuffer.byteLength);
 
 	for (let i = 0; i < entries.length; i += 1) {
-		const { entry, token } = entries[i];
+		const { entry, lo, hi } = entries[i];
 		const base = i * ROM_TOC_ENTRY_SIZE;
 		const typeId = assetTypeToId(entry.type);
 		const opId = entry.op === 'delete' ? ROM_TOC_OP_DELETE : ROM_TOC_OP_NONE;
@@ -111,8 +115,8 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		const updateLo = updateTimestamp >>> 0;
 		const updateHi = Math.floor(updateTimestamp / 0x100000000) >>> 0;
 
-		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, token.lo);
-		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_HI_OFFSET, token.hi);
+		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, lo);
+		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_HI_OFFSET, hi);
 		writeU32(entryView, base + ROM_TOC_ENTRY_ASSET_TYPE_OFFSET, typeId);
 		writeU32(entryView, base + ROM_TOC_ENTRY_OPERATION_OFFSET, opId);
 		writeU32(entryView, base + ROM_TOC_ENTRY_RESID_OFFSET, residRef.offset);

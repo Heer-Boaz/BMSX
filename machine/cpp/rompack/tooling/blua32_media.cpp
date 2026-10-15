@@ -9,7 +9,8 @@ namespace bmsx {
 
 auto loadBlua32ToolingImage(
 	const RomImage& rom,
-	u32 romBaseAddress
+	u32 romBaseAddress,
+	std::optional<std::span<const RomTocEntry>> tocEntries
 ) -> std::optional<Blua32ToolingImage> {
 	std::optional<Blua32ImageLayout> layout =
 		decodeBlua32RomImage(rom.bytes, romBaseAddress);
@@ -17,11 +18,15 @@ auto loadBlua32ToolingImage(
 		return std::nullopt;
 	}
 	std::optional<Blua32SymbolsImage> symbols;
-	const RomTocPayload toc = decodeRomToc(rom.bytes.subspan(
-		rom.header.tocOffset,
-		rom.header.tocLength
-	));
-	for (const RomTocEntry& entry : toc.entries) {
+	RomTocPayload decodedToc;
+	if (!tocEntries) {
+		decodedToc = decodeRomToc(rom.bytes.subspan(
+			rom.header.tocOffset,
+			rom.header.tocLength
+		));
+		tocEntries = std::span<const RomTocEntry>(decodedToc.entries);
+	}
+	for (const RomTocEntry& entry : *tocEntries) {
 		if (entry.resid == BLUA32_SYMBOLS_IMAGE_ID) {
 			const size_t start = static_cast<size_t>(*entry.start);
 			const size_t byteCount = static_cast<size_t>(

@@ -5,7 +5,7 @@ import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/edi
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { encodeCollisionShapeVariants, type CollisionShapeVariant } from '../../toolchain/ts/rompack/collision_shape_codec';
 import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
@@ -35,7 +35,8 @@ const modelAsset: RomAsset = {
 	metabuffer_start: 144, metabuffer_end: 160,
 };
 
-function inspector(assets: readonly RomAsset[]): RomInspectorModel {
+function inspector(assets: RomAsset[]): RomInspectorModel {
+	finalizePackedRomAssets(assets);
 	return new RomInspectorModel({ domain: 0, label: 'Cart 0', rom: new Uint8Array(192), header, assets });
 }
 
@@ -164,7 +165,9 @@ test('preview changes retain decoded pixels and collision paths until selection 
 	const second: RomAsset = { resid: 'second', type: 'image', metabuffer_start: collisionEnd + 16, metabuffer_end: collisionEnd + 32,
 		imgmeta: { width: 1, height: 2, texture_u: 1, texture_v: 0 } };
 	const removed: RomAsset = { resid: 'removed', type: 'image', op: 'delete' };
-	const input = new RomInspectorInput({ domain: -1, label: 'System', rom, header: fixtureHeader, assets: [systemTexture, sprite, second, removed] });
+	const entries = [systemTexture, sprite, second, removed];
+	finalizePackedRomAssets(entries);
+	const input = new RomInspectorInput({ domain: -1, label: 'System', rom, header: fixtureHeader, assets: entries });
 	t.after(() => input.dispose());
 	input.model.select(input.model.rows.findIndex(row => row.asset === sprite));
 	input.updatePreview();

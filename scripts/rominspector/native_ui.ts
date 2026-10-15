@@ -1,4 +1,5 @@
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RomTocEntry } from '../../machine/ts/rompack/toc';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { romAssetByteLength, romAssetIntersectsRange, type RomInspection } from '../../toolchain/ts/rompack/inspection';
@@ -48,6 +49,7 @@ type NativeUiContext = {
 	romfile: string;
 	rombin: Uint8Array;
 	assets: RomAsset[];
+	tocEntries: readonly RomTocEntry[];
 	inspection: RomInspection;
 	manifest: any;
 	projectRootPath: string | null;
@@ -1492,6 +1494,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
 			rombin: ctx.rombin,
 			assetList: ctx.assets,
+			tocEntries: ctx.tocEntries,
 			decodedTexture,
 			manifest: ctx.manifest,
 			projectRootPath: ctx.projectRootPath,

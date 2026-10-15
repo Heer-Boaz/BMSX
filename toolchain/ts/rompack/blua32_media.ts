@@ -1,4 +1,3 @@
-import type { RomAsset } from './assets';
 import {
 	decodeBlua32RomImage,
 	blua32FunctionIndexAtAddress,
@@ -12,7 +11,7 @@ import {
 } from './blua32_symbols';
 import type { ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
 import type { RomImage } from '../../../machine/ts/rompack/image';
-import { decodeRomToc } from '../../../machine/ts/rompack/toc';
+import { decodeRomToc, type RomTocEntry } from '../../../machine/ts/rompack/toc';
 
 export type Blua32ToolingImage = {
 	readonly layout: Blua32ImageLayout;
@@ -27,19 +26,20 @@ export type Blua32ToolingMedia = {
 	];
 };
 
+/** Omitted entries decode the ROM TOC; supplied entries (including empty) are authoritative. */
 export function loadBlua32ToolingImage(
 	rom: RomImage,
 	romBaseAddress: number,
-	assets?: readonly RomAsset[],
+	tocEntries: readonly RomTocEntry[] | undefined = undefined,
 ): Blua32ToolingImage | null {
 	const layout = decodeBlua32RomImage(rom.bytes, romBaseAddress);
 	if (!layout) {
 		return null;
 	}
-	const entries = assets === undefined ? decodeRomToc(rom.bytes.subarray(
+	const entries = tocEntries === undefined ? decodeRomToc(rom.bytes.subarray(
 		rom.header.tocOffset,
 		rom.header.tocOffset + rom.header.tocLength,
-	)).entries : assets;
+	)).entries : tocEntries;
 	let symbols: Blua32SymbolsImage | null = null;
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];

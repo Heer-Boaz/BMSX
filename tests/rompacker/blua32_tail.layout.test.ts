@@ -10,6 +10,7 @@ import {
 	parseCartHeader,
 } from '../../machine/ts/rompack/format';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
@@ -170,6 +171,18 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			changed.diagnosticSources,
 		);
 		const rebuiltHeader = parseCartHeader(rebuilt.bytes);
+		const physicalDirectory = decodeRomToc(rebuilt.bytes.subarray(
+			rebuiltHeader.tocOffset, rebuiltHeader.tocOffset + rebuiltHeader.tocLength,
+		));
+		assert.equal(rebuilt.index.entries.length, physicalDirectory.entries.length);
+		for (const entry of rebuilt.index.entries) {
+			const physical = physicalDirectory.entries.find(candidate => candidate.type === entry.type && candidate.resid === entry.resid)!;
+			assert.equal(entry.id_token_lo, physical.id_token_lo, `${entry.resid} publishes its encoded low token`);
+			assert.equal(entry.id_token_hi, physical.id_token_hi, `${entry.resid} publishes its encoded high token`);
+			assert.equal(entry.program_module, physical.program_module, `${entry.resid} publishes its encoded program flag`);
+			assert.equal(entry.start, physical.start);
+			assert.equal(entry.end, physical.end);
+		}
 		const rebuiltImageEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 		const rebuiltSymbolsEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 		assert.ok(rebuilt.index.entries.every(entry => entry.payload_id === 'system'));
