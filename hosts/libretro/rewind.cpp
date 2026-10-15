@@ -10,14 +10,20 @@ namespace bmsx {
 namespace {
 constexpr i64 REPLAY_CYCLE_GRANT = 16384;
 constexpr i64 REPLAY_WORK_MS = 8;
+#if defined(BMSX_PLATFORM_SNESMINI)
+constexpr size_t CHECKPOINT_CAPACITY = 3;
+constexpr i64 CHECKPOINT_INTERVAL_MS = 7500;
+constexpr size_t INPUT_JOURNAL_CAPACITY = 2048;
+#else
 constexpr size_t CHECKPOINT_CAPACITY = 6;
-constexpr i64 CHECKPOINT_INTERVAL_SECONDS = 6;
+constexpr i64 CHECKPOINT_INTERVAL_MS = 6000;
 constexpr size_t INPUT_JOURNAL_CAPACITY = 4096;
+#endif
 }
 
 HostRewind::HostRewind(Runtime& runtime, VideoPresenter& presenter, RenderPresentationState& presentation)
 	: runtime(runtime), presenter(presenter), presentation(presentation),
-		options{CHECKPOINT_CAPACITY, INPUT_JOURNAL_CAPACITY, runtime.timing.cpuHz * CHECKPOINT_INTERVAL_SECONDS} {}
+		options{CHECKPOINT_CAPACITY, INPUT_JOURNAL_CAPACITY, runtime.timing.cpuHz * CHECKPOINT_INTERVAL_MS / 1000} {}
 
 bool HostRewind::available() const { return runtime.history.checkpointCount() != 0; }
 bool HostRewind::seeking() const { return request == RewindRequest::Seek || request == RewindRequest::Step || (request != RewindRequest::Pause && !playbackActive && runtime.history.mode == HistoryMode::Replaying); }

@@ -477,7 +477,7 @@ if(BMSX_BUILD_LIBRETRO)
 		)
 	endif()
 	if(BMSX_SNESMINI_TARGET)
-		target_compile_definitions(bmsx_libretro PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
+		target_compile_definitions(bmsx_libretro PRIVATE BMSX_PLATFORM_SNESMINI=1 BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
 		target_link_options(bmsx_libretro PRIVATE
 			-static-libstdc++
 			-static-libgcc
@@ -954,13 +954,27 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_host_overlay_menu_tests PRIVATE ${BMSX_LIBRETRO_DIR})
 	add_test(NAME bmsx_host_overlay_menu_tests COMMAND bmsx_host_overlay_menu_tests)
 
-	foreach(runner IN ITEMS host_rewind libretro_rewind)
+	foreach(runner IN ITEMS host_rewind libretro_rewind snesmini_host_rewind)
+		if(runner STREQUAL "snesmini_host_rewind")
+			set(runner_source host_rewind)
+		else()
+			set(runner_source ${runner})
+		endif()
 		add_executable(bmsx_${runner}_conformance_runner
-			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/${runner}_conformance_runner.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/${runner_source}_conformance_runner.cpp
 			${BMSX_LIBRETRO_CORE_SOURCES}
 		)
+		if(NOT runner STREQUAL "libretro_rewind")
+			target_sources(bmsx_${runner}_conformance_runner PRIVATE
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
+				${BMSX_TEST_ROM_SOURCE}
+			)
+		endif()
 		target_link_libraries(bmsx_${runner}_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
 		target_include_directories(bmsx_${runner}_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+		if(BMSX_SNESMINI_TARGET OR runner STREQUAL "snesmini_host_rewind")
+			target_compile_definitions(bmsx_${runner}_conformance_runner PRIVATE BMSX_PLATFORM_SNESMINI=1)
+		endif()
 		if(BMSX_SNESMINI_TARGET)
 			target_compile_definitions(bmsx_${runner}_conformance_runner PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
 			target_link_options(bmsx_${runner}_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)

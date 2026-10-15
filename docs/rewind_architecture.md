@@ -69,32 +69,43 @@ see [current timeline ownership](studio_runtime_timeline.md).
 
 ## Default retention window
 
-The shared TS/native host policy retains six reusable checkpoints, six emulated
-seconds apart, and 4,096 fixed-size ICU records. After periodic PAL/NTSC recording
-fills the slots, its available window is at least 30 emulated seconds (nominally
-30–36): evicting the oldest checkpoint leaves five complete six-second intervals.
+The default TS/native host policy retains six reusable checkpoints, six emulated
+seconds apart, and 4,096 fixed-size ICU records. The memory-constrained SNES Mini
+build instead retains three checkpoints, 7.5 emulated seconds apart, and 2,048
+records. After periodic PAL/NTSC recording fills the slots, the default window
+is at least 30 emulated seconds (nominally 30–36); the Mini window is at least 15
+seconds (nominally 15–22.5). Evicting the oldest checkpoint leaves five complete
+six-second intervals or two complete 7.5-second intervals, respectively.
 Capture occurs at the next recorded input boundary, so the interval can be
-slightly longer than six seconds. The journal must cover the whole
-oldest-checkpoint-to-present continuation, not just thirty
-seconds; 4,096 records cover that continuation at PAL/NTSC rates and occupy
-720,896 bytes (704 KiB). Menu endpoints still come from the actual retained
-machine-cycle range, never a synthetic thirty-second UI limit.
+slightly longer than the nominal duration. The journal must cover the whole
+oldest-checkpoint-to-present continuation. The respective 4,096/2,048 records
+cover that continuation at PAL/NTSC rates and occupy 704/352 KiB. Menu endpoints
+still come from the actual retained machine-cycle range, never a synthetic
+duration limit.
 
 Representation/callsite inventory before this policy change:
 
-| Host policy | TypeScript | C++ |
-| --- | --- | --- |
-| Retained checkpoints | `checkpointCapacity: number`, six slots | `size_t checkpointCapacity`, six slots |
-| ICU journal records | `inputCapacity: number`, 4,096 records | `size_t inputCapacity`, 4,096 records |
-| Capture interval | `checkpointIntervalCycles: number`, `cpuHz * 6` | `i64 checkpointIntervalCycles`, `cpuHz * 6` |
+| Host policy | TypeScript | C++ default | C++ SNES Mini |
+| --- | --- | --- | --- |
+| Retained checkpoints | `number`, six slots | `size_t`, six slots | `size_t`, three slots |
+| ICU journal records | `number`, 4,096 records | `size_t`, 4,096 records | `size_t`, 2,048 records |
+| Capture interval cycles | `number`, `cpuHz * 6` | `i64`, `cpuHz * 6000 / 1000` | `i64`, `cpuHz * 7500 / 1000` |
+
+The owning CMake target emits `BMSX_PLATFORM_SNESMINI` from the existing
+toolchain's `BMSX_SNESMINI_TARGET`. This selects the native host constants at
+compile time, independently of the Mini controller-layout definition; the
+constructor converts integer milliseconds into machine cycles once. No runtime
+platform detection, machine-format change or TS policy change is involved.
 
 `HostRewind.service` / `HostRewind::service` start the existing history owner and
 service its synchronized captures. The VBlank -> ICU -> history input-source ->
 `RuntimeHistory.recordInputBoundary` / `InputJournal.recordLine` hot chain and
 its native mirror are unchanged; no extra serialization, allocation or polling
 is added there. Capture and replay use their existing owners and buffer reuse.
-More retained slots cost memory, not more frequent captures or longer replay
-between periodic checkpoints. This follows the separate frequency/slot choices
+Mini uses half the checkpoint slots and journal storage, but its wider capture
+interval means reconstruction may execute nominally 7.5 rather than six
+emulated seconds after a checkpoint. This follows the separate frequency/slot
+choices
 in [DuckStation's memory-state policy](https://github.com/stenzek/duckstation/blob/master/src/core/system.cpp),
 without adding a second store or enabling an unmeasured compressor.
 
@@ -103,9 +114,16 @@ unconditional duration guarantee for arbitrary register configurations. Startup,
 reset and a newly established timeline cannot provide unrecorded past; branch
 checkpoints and unusually high programmable PCRTC rates can shorten retention.
 Snapshot memory varies with CPU object/string storage and cartridge RAM. Six
-slots need at least 39 MiB for main RAM, VRAM and APU sample RAM alone; CPU and
-other device metadata add to that. Physical iPhone/iPad and SNES Mini memory and
-frame-time headroom have not been measured by this policy change.
+slots need at least 39 MiB for main RAM, VRAM and APU sample RAM alone; three
+slots need 19.5 MiB. CPU and other device metadata add to that. Physical
+iPhone/iPad and SNES Mini memory and frame-time headroom have not been measured
+by this policy change. Paired x86-64 native Linux measurements after 100 emulated
+seconds of Nemesis recorded approximately 55.3 MiB of history-owned allocations
+for the default policy and 27.7 MiB for the Mini policy. These are example
+retention costs, not whole-process RSS, ARM measurements or hard memory limits.
+The ordinary native replay suite also builds and runs the Mini host-policy
+branch without requiring ARM hardware, checking both
+retention policies and complete guest-state reconstruction with the same owner.
 
 ## Seek presentation boundary
 

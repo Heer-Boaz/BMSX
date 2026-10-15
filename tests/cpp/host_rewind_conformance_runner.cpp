@@ -7,11 +7,15 @@
 #include "rewind.h"
 #include "video_output.h"
 #include "common/serializer/binencoder.h"
+#include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/save_state/schema.h"
 #include "render/backend/pass/library.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "spec/gx/display_presets.h"
+#include "spec/gx/pcrtc.h"
+#include "support/boot_rom_fixture.h"
 
 #include <algorithm>
 #include <cstdarg>
@@ -21,9 +25,25 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 namespace {
 using namespace bmsx;
+#if defined(BMSX_PLATFORM_SNESMINI)
+constexpr size_t EXPECTED_CHECKPOINT_CAPACITY = 3;
+constexpr size_t EXPECTED_INPUT_JOURNAL_CAPACITY = 2048;
+constexpr i64 EXPECTED_MINIMUM_SECONDS = 15;
+constexpr i64 EXPECTED_NOMINAL_WINDOW_MILLISECONDS = 22500;
+constexpr i64 INITIAL_RECORDING_SECONDS = 90;
+constexpr i64 REFERENCE_AGE_SECONDS = 17;
+#else
+constexpr size_t EXPECTED_CHECKPOINT_CAPACITY = 6;
+constexpr size_t EXPECTED_INPUT_JOURNAL_CAPACITY = 4096;
+constexpr i64 EXPECTED_MINIMUM_SECONDS = 30;
+constexpr i64 EXPECTED_NOMINAL_WINDOW_MILLISECONDS = 36000;
+constexpr i64 INITIAL_RECORDING_SECONDS = 60;
+constexpr i64 REFERENCE_AGE_SECONDS = 32;
+#endif
 #if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
 constexpr u16 menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 constexpr u16 menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_A;
@@ -69,11 +89,81 @@ int16_t inputState(unsigned port, unsigned device, unsigned index, unsigned id) 
 	return port == 0 && device == RETRO_DEVICE_JOYPAD && (buttons & (1u << id)) != 0 ? 1 : 0;
 }
 bool RETRO_CALLCONV supervisorRequest() { return false; }
+
+void testDefaultRetentionVideoStandards() {
+	for (bool pal : {true, false}) {
+		const auto system = test::makeMinimalBootRom(RomImageDomain::System);
+		LibretroInput input(supervisorRequest);
+		Runtime runtime({system, {}, PSX_MACHINE_SPEC}, input);
+		runtime.boot();
+		const auto& timing = pal ? GX_GPU_DISPLAY_TIMING_PAL_WORDS : GX_GPU_DISPLAY_TIMING_NTSC_WORDS;
+		const auto& preset = pal ? GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS : GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS;
+		const std::pair<u32, u32> timingWords[] = {
+			{GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD]},
+			{GX_GPU_PCRTC_SMODE1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD]},
+			{GX_GPU_PCRTC_SYNCH1_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD]},
+			{GX_GPU_PCRTC_SYNCH1_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD]},
+			{GX_GPU_PCRTC_SYNCH2_LOW, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD]},
+			{GX_GPU_PCRTC_SYNCH2_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD]},
+			{GX_GPU_PCRTC_SYNCV_HIGH, timing[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD]},
+			{GX_GPU_PCRTC_SYNCV_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD]},
+			{GX_GPU_PCRTC_SMODE2_LOW, preset[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD]},
+			{GX_GPU_PCRTC_SMODE1_LOW, timing[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD]},
+		};
+		for (const auto [reg, word] : timingWords) runtime.machine.memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(reg), word);
+		runDueRuntimeTimers(runtime);
+		require(runtime.timing.ufpsScaled == (pal ? 50000000 : 59940059), "the real PCRTC owns the selected PAL or NTSC timing");
+		retro_system_av_info avInfo{};
+		avInfo.geometry.base_width = 256;
+		avInfo.geometry.base_height = 212;
+		LibretroVideoOutput video(avInfo);
+		VideoPresenter presenter(video, std::make_unique<SoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 212);
+		RenderPresentationState presentation;
+		HostRewind rewind(runtime, presenter, presentation);
+		rewind.service(true);
+		auto& history = runtime.history;
+		require(history.mode == HistoryMode::Recording && history.checkpointCount() == 1, "the host starts its actual compiled default policy");
+		const i64 start = history.earliestCycles();
+		const i64 requiredCycles = runtime.timing.cpuHz * EXPECTED_MINIMUM_SECONDS;
+		const i64 end = start + runtime.timing.cpuHz * 90;
+		i64 oldest = start;
+		i64 minimumSpan = runtime.timing.cpuHz * EXPECTED_NOMINAL_WINDOW_MILLISECONDS / 1000;
+		size_t evictions = 0;
+		while (history.latestCycles() < end) {
+			require(runtime.frameScheduler.runToNextLogicalTick(runtime), "the timing fixture completes each real PCRTC boundary");
+			runtime.machine.audioController.synchronizeOutput().clear();
+			if (history.checkpointPending) rewind.service(true);
+			require(history.checkpointCount() <= EXPECTED_CHECKPOINT_CAPACITY
+				&& history.inputJournal.capacity() == EXPECTED_INPUT_JOURNAL_CAPACITY,
+				"each PAL and NTSC boundary respects the compiled platform storage bounds");
+			if (history.earliestCycles() != oldest) {
+				oldest = history.earliestCycles();
+				++evictions;
+				require(history.latestCycles() - oldest >= requiredCycles, "checkpoint eviction preserves the platform minimum at both video rates");
+			}
+			if (history.latestCycles() - start >= requiredCycles) {
+				const i64 span = history.latestCycles() - history.earliestCycles();
+				require(span >= requiredCycles, "every warmed PAL and NTSC boundary retains the platform minimum");
+				minimumSpan = std::min(minimumSpan, span);
+			}
+		}
+		require(evictions >= 5 && history.checkpointCount() == EXPECTED_CHECKPOINT_CAPACITY,
+			"the compiled policy repeatedly wraps its checkpoint ring across ninety machine seconds");
+		require(history.inputJournal.endSequence > static_cast<i64>(EXPECTED_INPUT_JOURNAL_CAPACITY)
+			&& history.inputJournal.storageBytes() == EXPECTED_INPUT_JOURNAL_CAPACITY * 176,
+			"the PAL and NTSC input rings wrap within their fixed allocation");
+		std::cout << "{\"host\":\"cpp-timing-retention\",\"standard\":\"" << (pal ? "PAL" : "NTSC")
+			<< "\",\"checkpointCapacity\":" << EXPECTED_CHECKPOINT_CAPACITY << ",\"expectedMinimumSeconds\":" << EXPECTED_MINIMUM_SECONDS
+			<< ",\"minimumRetainedSeconds\":" << static_cast<f64>(minimumSpan) / runtime.timing.cpuHz
+			<< ",\"evictions\":" << evictions << ",\"inputRecords\":" << history.inputJournal.endSequence << "}\n";
+	}
+}
 } // namespace
 
 int main(int argc, char** argv) {
 	try {
 		require(argc == 3 || argc == 4, "Usage: bmsx_host_rewind_conformance_runner SYSTEM_DIRECTORY CART_ROM [OUTPUT_DIRECTORY]");
+		testDefaultRetentionVideoStandards();
 		LibretroInput input(supervisorRequest);
 		input.setInputPollCallback(poll);
 		input.setInputStateCallback(inputState);
@@ -114,7 +204,7 @@ int main(int argc, char** argv) {
 		bool audible = false;
 		bool checkRetention = true;
 		i64 firstCheckpointCycles = -1;
-		i64 minimumRetainedCycles = runtime.timing.cpuHz * 36;
+		i64 minimumRetainedCycles = runtime.timing.cpuHz * EXPECTED_NOMINAL_WINDOW_MILLISECONDS / 1000;
 		size_t checkedRetentionBoundaries = 0;
 		const auto frame = [&]() {
 			const auto publishedSequence = presenter.gameFrameSequence();
@@ -138,12 +228,15 @@ int main(int argc, char** argv) {
 			require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 0u && errors == 0, "real cart fault");
 			if (checkRetention && history.mode == HistoryMode::Recording && history.checkpointCount() != 0) {
 				if (firstCheckpointCycles < 0) firstCheckpointCycles = history.earliestCycles();
-				require(history.checkpointCount() <= 6 && history.inputJournal.capacity() == 4096
-					&& history.inputJournal.storageBytes() == 4096 * 176, "default history remains bounded by six reusable slots and 4096 fixed records");
+				require(history.checkpointCount() <= EXPECTED_CHECKPOINT_CAPACITY
+					&& history.inputJournal.capacity() == EXPECTED_INPUT_JOURNAL_CAPACITY
+					&& history.inputJournal.storageBytes() == EXPECTED_INPUT_JOURNAL_CAPACITY * 176,
+					"default history respects the platform checkpoint and fixed-record bounds");
 				if (history.inputJournal.endSequence != journalEndBeforeFrame
-					&& history.latestCycles() - firstCheckpointCycles >= runtime.timing.cpuHz * 30) {
+					&& history.latestCycles() - firstCheckpointCycles >= runtime.timing.cpuHz * EXPECTED_MINIMUM_SECONDS) {
 					const auto retained = history.latestCycles() - history.earliestCycles();
-					require(retained >= runtime.timing.cpuHz * 30, "every warmed recording boundary retains at least thirty emulated seconds, including capture and ring eviction");
+					require(retained >= runtime.timing.cpuHz * EXPECTED_MINIMUM_SECONDS,
+						"every warmed recording boundary retains the platform minimum, including capture and ring eviction");
 					minimumRetainedCycles = std::min(minimumRetainedCycles, retained);
 					++checkedRetentionBoundaries;
 				}
@@ -205,9 +298,10 @@ int main(int argc, char** argv) {
 				stream.write(rgb, 3);
 			}
 		};
-		for (int index = 0; index < 12000 && history.latestCycles() < runtime.timing.cpuHz * 60; ++index) frame();
-		require(history.latestCycles() >= runtime.timing.cpuHz * 60 && history.checkpointCount() == 6
-			&& history.earliestCycles() > firstCheckpointCycles, "continuous six-slot collection wraps repeatedly after sixty machine seconds");
+		for (int index = 0; index < 12000 && history.latestCycles() < runtime.timing.cpuHz * INITIAL_RECORDING_SECONDS; ++index) frame();
+		require(history.latestCycles() >= runtime.timing.cpuHz * INITIAL_RECORDING_SECONDS
+			&& history.checkpointCount() == EXPECTED_CHECKPOINT_CAPACITY && history.earliestCycles() > firstCheckpointCycles,
+			"continuous platform collection wraps repeatedly over the full machine-time workload");
 		const i64 checkpointBeforeReference = history.checkpointCycles(history.checkpointCount() - 1);
 		for (int index = 0; index < 1000 && history.checkpointCycles(history.checkpointCount() - 1) == checkpointBeforeReference; ++index) frame();
 		const i64 referenceCheckpoint = history.checkpointCycles(history.checkpointCount() - 1);
@@ -221,12 +315,12 @@ int main(int argc, char** argv) {
 		const RuntimeSaveState referenceState = captureRuntimeSaveState(runtime);
 		const i64 referenceCycles = referenceState.machineState.schedulerNowCycles;
 		for (size_t index = 0; index < history.checkpointCount(); ++index) {
-			require(history.checkpointCycles(index) != referenceCycles, "the thirty-second reference requires journal reconstruction, not direct checkpoint restore");
+			require(history.checkpointCycles(index) != referenceCycles, "the old reference requires journal reconstruction, not direct checkpoint restore");
 		}
 		rewind.returnToPresent(); returnLive();
-		for (int index = 0; index < 12000 && history.latestCycles() < referenceCycles + runtime.timing.cpuHz * 32; ++index) frame();
-		require(history.latestCycles() >= referenceCycles + runtime.timing.cpuHz * 32,
-			"continue more than ninety machine seconds with a thirty-second-old exact boundary reference");
+		for (int index = 0; index < 12000 && history.latestCycles() < referenceCycles + runtime.timing.cpuHz * REFERENCE_AGE_SECONDS; ++index) frame();
+		require(history.latestCycles() >= referenceCycles + runtime.timing.cpuHz * REFERENCE_AGE_SECONDS,
+			"continue beyond ninety machine seconds with an exact boundary reference older than the platform minimum");
 		require(history.earliestCycles() <= referenceCycles && checkedRetentionBoundaries > 1000
 			&& history.inputJournal.endSequence > static_cast<i64>(history.inputJournal.capacity()),
 			"checkpoint and journal rings both wrap while preserving the old reference and continuously verified retention");
@@ -256,7 +350,8 @@ int main(int argc, char** argv) {
 				"long-window reconstruction reproduces every device and memory owner state");
 			require(actual.pendingEntryCall == expected.pendingEntryCall, "long-window reconstruction preserves pending entry ownership");
 		};
-		require(latest - referenceCycles > runtime.timing.cpuHz * 30, "the reference is actually more than thirty emulated seconds old");
+		require(latest - referenceCycles > runtime.timing.cpuHz * EXPECTED_MINIMUM_SECONDS,
+			"the reference is actually older than the platform minimum duration");
 		rewind.seekTo(referenceCycles); settle();
 		compareGuestState(referenceState);
 		rewind.seekTo(latest); settle();
@@ -350,9 +445,10 @@ int main(int argc, char** argv) {
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard); returnLive();
 		require(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
 		std::cout << "{\"host\":\"cpp-retention\",\"recordedSeconds\":" << static_cast<f64>(latest - firstCheckpointCycles) / runtime.timing.cpuHz
+			<< ",\"checkpointCapacity\":" << EXPECTED_CHECKPOINT_CAPACITY << ",\"expectedMinimumSeconds\":" << EXPECTED_MINIMUM_SECONDS
 			<< ",\"minimumRetainedSeconds\":" << static_cast<f64>(minimumRetainedCycles) / runtime.timing.cpuHz
 			<< ",\"referenceAgeSeconds\":" << static_cast<f64>(latest - referenceCycles) / runtime.timing.cpuHz
-			<< ",\"checkedBoundaries\":" << checkedRetentionBoundaries << ",\"inputBytes\":" << 4096 * 176 << "}\n";
+			<< ",\"checkedBoundaries\":" << checkedRetentionBoundaries << ",\"inputBytes\":" << EXPECTED_INPUT_JOURNAL_CAPACITY * 176 << "}\n";
 		std::cout << "RUNTIME-HOST-REWIND:PASS\n";
 		return 0;
 	} catch (const std::exception& error) {
