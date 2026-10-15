@@ -53,9 +53,11 @@ void RETRO_CALLCONV logMessage(retro_log_level level, const char* format, ...) {
 }
 void poll() {}
 int16_t pointerX = 0, pointerY = 0;
+int16_t mouseDeltaX = 0;
 bool pointerPressed = false;
-int16_t inputState(unsigned port, unsigned device, unsigned, unsigned id) {
-	if (port == 0 && device == RETRO_DEVICE_POINTER) {
+int16_t inputState(unsigned port, unsigned device, unsigned index, unsigned id) {
+	if (port == 0 && device == RETRO_DEVICE_MOUSE && id == RETRO_DEVICE_ID_MOUSE_X) return mouseDeltaX;
+	if (port == 0 && device == RETRO_DEVICE_POINTER && index == 0) {
 		if (id == RETRO_DEVICE_ID_POINTER_X) return pointerX;
 		if (id == RETRO_DEVICE_ID_POINTER_Y) return pointerY;
 		if (id == RETRO_DEVICE_ID_POINTER_PRESSED) return pointerPressed;
@@ -98,7 +100,10 @@ int main(int argc, char** argv) {
 		RenderPresentationState presentation;
 		presentation.reset(presenter, runtime);
 		HostRewind rewind(runtime, presenter, presentation);
-		HostOverlayMenu menu(input);
+		OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+		HostOnScreenKeyboard keyboardView(keyboard);
+		HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+		HostOverlayMenu menu(input, keyboardInteraction);
 		LibretroAudioOutput audio;
 		f64 totalTime = 0;
 		size_t audioFrames = 0;
@@ -108,6 +113,7 @@ int main(int argc, char** argv) {
 			const f64 delta = runtime.timing.frameDurationMs / 1000.0;
 			input.setFrameDurationMs(runtime.timing.frameDurationMs);
 			input.poll(static_cast<i32>(presenter.viewportSize.x), static_cast<i32>(presenter.viewportSize.y), (totalTime + delta) * 1000.0);
+			mouseDeltaX = 0;
 			runLibretroFrame(runtime, input, menu, rewind, presentation, presenter, totalTime, delta);
 			if (rewind.seeking() && !rewind.playing()) require(presenter.gameFrameSequence() == publishedSequence, "seek reconstruction must retain the published game image");
 			audio.setEmulationFrameTimeSec(delta);
@@ -133,7 +139,11 @@ int main(int argc, char** argv) {
 			require(!rewind.active && history.mode == HistoryMode::Recording, "controller must rejoin live recording");
 		};
 		const auto clickTimeline = [&](std::string_view labelText, int heldFrames = 1) {
-			pointerX = 1; pointerY = 1; frame();
+			// Absolute POINTER has no hover when not pressed; enter pointer UI with a real mouse move.
+			i32 mouseX = 0, mouseY = 0;
+			input.mousePosition(mouseX, mouseY);
+			mouseDeltaX = mouseX == 0 ? 1 : -1;
+			frame();
 			menu.queueRenderCommands(runtime, presenter, rewind);
 			const auto bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
 			bool found = false;

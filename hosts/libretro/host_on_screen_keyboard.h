@@ -20,7 +20,8 @@ public:
 	static constexpr size_t CommandCapacity = 3 + ON_SCREEN_KEYBOARD_TARGET_COUNT * 3 + HelpLineCount * 2;
 	explicit HostOnScreenKeyboard(OnScreenKeyboard& model);
 	void togglePosition();
-	i32 selectAt(i32 x, i32 y);
+	i16 hitTestAt(i32 x, i32 y) const;
+	size_t publishedPage() const { return m_renderedPage; }
 	void queueRenderCommands(VideoPresenter& presenter);
 private:
 	void rebuildPageCommands();
@@ -43,6 +44,7 @@ private:
 	size_t m_commandCount = 0;
 	u64 m_renderedRevision = std::numeric_limits<u64>::max();
 	size_t m_renderedPage = 0;
+	std::span<const OnScreenKeyboardRow> m_publishedRows;
 	bool m_pageRendered = false;
 	bool m_renderedShift = false;
 	bool m_bottomDocked = false;

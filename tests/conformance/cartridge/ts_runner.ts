@@ -27,6 +27,10 @@ async function main(): Promise<void> {
 		{ HostFrameSession },
 		{ RenderPresentationState },
 		{ HostOverlayMenu },
+		{ HostOnScreenKeyboard },
+		{ HostKeyboardInteraction },
+		{ OnScreenKeyboard },
+		{ NATIVE_KEYBOARD_PAGES },
 		{ HostAudioOutput },
 		{ HostAudioDevice },
 		{ SystemOutputLog },
@@ -47,6 +51,10 @@ async function main(): Promise<void> {
 		import('../../../hosts/common/frame_session'),
 		import('../../../hosts/common/presentation_state'),
 		import('../../../hosts/common/host_overlay_menu'),
+		import('../../../hosts/common/host_on_screen_keyboard'),
+		import('../../../hosts/common/input/host_keyboard_interaction'),
+		import('../../../hosts/common/input/on_screen_keyboard'),
+		import('../../../hosts/common/input/on_screen_keyboard_keys'),
 		import('../../../hosts/common/audio_output'),
 		import('../../../hosts/common/audio_device'),
 		import('../../../hosts/common/system_output_log'),
@@ -114,7 +122,10 @@ async function main(): Promise<void> {
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
 	audioOutput.device.select(audioOutput);
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
+	const keyboardModel = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	runtime.frameScheduler.clearQueuedTime();
 	let currentTimeMs = session.currentTimeMs;
 	const transcriptCount = (entry: string): number => {

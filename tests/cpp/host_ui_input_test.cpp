@@ -13,7 +13,7 @@ void poll() {}
 bool RETRO_CALLCONV supervisor() { return false; }
 i16 state(unsigned port, unsigned device, unsigned index, unsigned id) {
 	if (port != 0) return 0;
-	if (device == RETRO_DEVICE_POINTER && id == RETRO_DEVICE_ID_POINTER_PRESSED) return pointerDown ? 1 : 0;
+	if (device == RETRO_DEVICE_POINTER && index == 0 && id == RETRO_DEVICE_ID_POINTER_PRESSED) return pointerDown ? 1 : 0;
 	if (device == RETRO_DEVICE_JOYPAD) return (buttons & (1u << id)) != 0 ? 1 : 0;
 	if (device == RETRO_DEVICE_ANALOG && index == RETRO_DEVICE_INDEX_ANALOG_LEFT && id == RETRO_DEVICE_ID_ANALOG_X) return stickX;
 	return 0;

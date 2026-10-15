@@ -34,6 +34,7 @@ import { BrowserOnscreenKeyboard } from '../../hosts/browser/onscreen_keyboard';
 import { BrowserHostControls } from '../../hosts/browser/host_controls';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
 import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import {
@@ -44,7 +45,7 @@ import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostAudioDevice } from '../../hosts/common/audio_device';
 import { HostFrameRunResult } from '../../hosts/common/host_frame';
 import { HostFrameSession } from '../../hosts/common/frame_session';
-import { HostKeyboardPresentation, HostOverlayMenu, HostOverlayOutcome } from '../../hosts/common/host_overlay_menu';
+import { HostOverlayMenu, HostOverlayOutcome } from '../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { runWorkbenchHostFrame } from '../workbench/host_frame';
@@ -95,20 +96,21 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			execution,
 		);
+		const keyboardModel = new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES);
+		const keyboardInteraction = new HostKeyboardInteraction(options.input, keyboardModel, presenter, undefined);
 		const hostOverlayMenu = new HostOverlayMenu(
 			presenter,
 			runtime,
 			options.input,
 			rewind,
 			execution,
+			keyboardInteraction,
 			options.menuOptions,
-			new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES),
-			HostKeyboardPresentation.External,
 		);
 		options.browserInput.setOnscreenKeyboard(new BrowserOnscreenKeyboard(
-			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
+			document, keyboardModel, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
 		));
-		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		options.browserInput.setForegroundPointerCapture(keyboardInteraction.capturesPointer);
 		options.browserInput.setHostControls(new BrowserHostControls(
 			document, hostOverlayMenu.requestToggleKeyboard, hostOverlayMenu.requestToggleMenu,
 		));

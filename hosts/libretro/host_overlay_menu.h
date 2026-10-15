@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "host_on_screen_keyboard.h"
+#include "host_keyboard_interaction.h"
 #include "rewind_timeline.h"
 #include "ui_input.h"
 #include "machine/devices/input/contracts.h"
@@ -41,7 +41,7 @@ class HostOverlayMenu {
 	};
 public:
 	enum class Outcome { Cancel, Accept, Discard, Retain };
-	explicit HostOverlayMenu(LibretroInput& input);
+	HostOverlayMenu(LibretroInput& input, HostKeyboardInteraction& keyboard);
 	HostMenuInput tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
 	void resetInputState(LibretroInput& input, HostRewind& rewind);
 	void dismiss(LibretroInput& input, HostRewind& rewind, Outcome outcome = Outcome::Retain);
@@ -73,8 +73,7 @@ private:
 	Font timelineFont{FontVariant::Tiny};
 	TimelineState timelineState;
 	Page m_page = Page::Closed;
-	OnScreenKeyboard m_keyboard;
-	HostOnScreenKeyboard m_keyboardView;
+	HostKeyboardInteraction& m_keyboard;
 	bool m_showFps = false;
 	i32 m_selected = 0;
 	bool m_dirtyText = true;

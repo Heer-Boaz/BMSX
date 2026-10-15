@@ -5307,6 +5307,50 @@ model and frame input polling are unchanged. Placement adds no per-frame
 allocations or guest probes; glyph and image submissions are constructed once
 and retained by the view.
 
+Keyboard interaction ownership and native contact representation:
+
+The production references are the [libretro pointer contract](https://github.com/libretro/libretro-common/blob/a3194c18ba65ef89734e1898a2f61403c255d368/include/libretro.h#L261-L299)
+(pressed indexed snapshots, no persistent contact identities),
+[MAME's menu-local event handling](https://github.com/mamedev/mame/blob/9c761818e14b447ffec65f7e5827692f8f5c34f9/src/frontend/mame/ui/menu.cpp#L996-L1170)
+(foreground menu actions, not device keyboard lifetimes), and
+[PPSSPP's gamepad input ownership](https://github.com/hrydgard/ppsspp/blob/dd6bd1a53d38773c1d07985fcb7d2f56fcaa872c/UI/GamepadEmu.cpp#L133-L454)
+(device interaction independent of artwork). These are ownership references,
+not imported assumptions about BMSX's guest input ABI.
+
+| Data/state | TypeScript owner | Native owner | Representation/contract |
+| --- | --- | --- | --- |
+| Keyboard composition | Frontend/test composition roots | Libretro entry/test composition roots | Explicit model, bitmap view and interaction instances; menu borrows interaction |
+| Keyboard page count | `OnScreenKeyboard.pageCount` | `OnScreenKeyboard::pageCount()` | Page schema owns its count; deferred page cycles coalesce modulo that count before one model write |
+| Controller keyboard policy | `HostKeyboardInteraction` | `HostKeyboardInteraction` | Existing per-player raw button words, held source slots and frame-polled edges; no UI repeat for key entry |
+| Modal input eligibility | `HostUiInput` / overlay coordinator | `HostUiInput` / overlay coordinator | Open/close, capture and consumption; menu-local option/rewind interaction remains menu-owned |
+| Published bitmap geometry | `HostOnScreenKeyboard` | `HostOnScreenKeyboard` | Retained published rows/page and key rectangles; pure hit test, interaction owns focus writes |
+| Browser contacts | Browser Pointer Events keyboard adapter | Not an ABI equivalent | Existing stable pointer IDs and independent leases; browser DOM layout stays unchanged |
+| Native absolute contacts | Not manufactured from mouse bits | `LibretroInput` | Retained span of currently pressed indexed viewport points; indexes are snapshot positions, not finger IDs |
+| Native mouse | Existing logical pointer adapter | `LibretroInput` | Separately retained relative cursor/buttons, never presence inferred from touch coordinates |
+| Native keyboard contact gesture | Not applied to browser-ID leases | `HostKeyboardInteraction` | Absolute snapshot is authoritative when a gesture begins with pressed contacts; otherwise mouse capture until genuine release. No coordinate-based alias guessing |
+| Native touch key lifetime | Existing shared virtual-key model | `HostKeyboardInteraction` / `OnScreenKeyboard` | Per-key occupancy sources, not per-index leases; modifiers pressed before ordinary keys; unused modifier latch only on unambiguous all-up completion |
+| Native layout actions | Typed action result | `HostKeyboardInteraction` | Contact-activated docking and page changes commit after the absolute gesture ends, never move the keyboard underneath held contacts |
+| Guest ICU pointer | Existing raw pointer words | Existing raw pointer words | Single pointer/Q16 ABI unchanged; first active absolute contact, otherwise relative mouse movement; released coordinates are not active input |
+
+The native pointer ABI can expose the same mouse through both POINTER and MOUSE
+without an origin tag. The keyboard therefore chooses one authoritative primary
+contact gesture instead of interpreting both as independent fingers. Absolute
+multicontact sequences support independent occupied keys and compacting indexes;
+this contract does not claim simultaneous independent MOUSE/POINTER identity.
+Controller sources remain independent in either gesture mode. Contacts held when
+keyboard focus opens are ineligible until release. Native source storage grows
+only at a new observed high-water mark; no speculative contact cap is imposed.
+
+Changed hot callsites are `LibretroInput::poll`, the frontend
+`input_devices_state` pointer producer, `HostKeyboardInteraction.tickInput` /
+`HostKeyboardInteraction::tickInput`, the overlay's foreground dispatch, and
+`HostOnScreenKeyboard.queueRenderCommands` / `::queueRenderCommands` plus their
+`hitTestAt` consumers. `sampleInputControllerSnapshot` keeps its existing guest
+pointer representation.
+Bitmap layout remains invalidation-driven; keyboard hit tests consume the
+published page, not unpublished current-page geometry. There is no new cache,
+per-frame DTO, renderer ABI, guest probe or minimum key-hold timer.
+
 Native frontends normalize their external input ABI once into BMSX-owned
 numeric source/device/control records; `hosts/libretro/input` retains fixed
 keyboard, pad, and pointer state, and the native quick menu owns its own fixed

@@ -7,6 +7,10 @@ import { HostAudioOutput, type AudioOutputPuller } from '../../../hosts/common/a
 import { runHostFrame } from '../../../hosts/common/host_frame';
 import { HostFrameSession } from '../../../hosts/common/frame_session';
 import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../../hosts/common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../../hosts/common/input/manager';
 import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../../hosts/common/machine_runtime';
 import { RenderPresentationState } from '../../../hosts/common/presentation_state';
@@ -56,7 +60,10 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const execution = new HostExecutionControl(audioOutput);
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audioOutput, log);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
-	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
+	const keyboardModel = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	let hostFrames = 0;

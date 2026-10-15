@@ -21,18 +21,6 @@
 
 enum {
 	kMaximumInputDevices = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT,
-	kRetroMouseIdX = 0,
-	kRetroMouseIdY = 1,
-	kRetroMouseIdLeft = 2,
-	kRetroMouseIdRight = 3,
-	kRetroMouseIdWheelUp = 4,
-	kRetroMouseIdWheelDown = 5,
-	kRetroMouseIdMiddle = 6,
-	kRetroMouseIdButton4 = 9,
-	kRetroMouseIdButton5 = 10,
-	kRetroPointerIdX = 0,
-	kRetroPointerIdY = 1,
-	kRetroPointerIdPressed = 2,
 	kMouseButtonPrimary = 1 << 0,
 	kMouseButtonSecondary = 1 << 1,
 	kMouseButtonAux = 1 << 2,
@@ -858,7 +846,6 @@ int16_t input_devices_state(
 		unsigned index,
 		unsigned id) {
 	InputDevices* input = &g_input_devices;
-	(void)index;
 	if (port != 0) {
 		return 0;
 	}
@@ -869,36 +856,37 @@ int16_t input_devices_state(
 		const uint8_t buttons = input->mouse_buttons | input->remote.buttons;
 		const int wheel = input->mouse_wheel_y + input->remote.wheel;
 		switch (id) {
-			case kRetroMouseIdX:
+			case RETRO_DEVICE_ID_MOUSE_X:
 				return (int16_t)(input->mouse_delta_x + input->remote.delta_x);
-			case kRetroMouseIdY:
+			case RETRO_DEVICE_ID_MOUSE_Y:
 				return (int16_t)(input->mouse_delta_y + input->remote.delta_y);
-			case kRetroMouseIdLeft:
+			case RETRO_DEVICE_ID_MOUSE_LEFT:
 				return (buttons & kMouseButtonPrimary) ? 1 : 0;
-			case kRetroMouseIdRight:
+			case RETRO_DEVICE_ID_MOUSE_RIGHT:
 				return (buttons & kMouseButtonSecondary) ? 1 : 0;
-			case kRetroMouseIdWheelUp:
+			case RETRO_DEVICE_ID_MOUSE_WHEELUP:
 				return wheel < 0 ? (int16_t)-wheel : 0;
-			case kRetroMouseIdWheelDown:
+			case RETRO_DEVICE_ID_MOUSE_WHEELDOWN:
 				return wheel > 0 ? (int16_t)wheel : 0;
-			case kRetroMouseIdMiddle:
+			case RETRO_DEVICE_ID_MOUSE_MIDDLE:
 				return (buttons & kMouseButtonAux) ? 1 : 0;
-			case kRetroMouseIdButton4:
+			case RETRO_DEVICE_ID_MOUSE_BUTTON_4:
 				return (buttons & kMouseButtonBack) ? 1 : 0;
-			case kRetroMouseIdButton5:
+			case RETRO_DEVICE_ID_MOUSE_BUTTON_5:
 				return (buttons & kMouseButtonForward) ? 1 : 0;
 			default:
 				return 0;
 		}
 	}
 	if (device == RETRO_DEVICE_POINTER) {
+		if (index != 0) return 0;
 		const RemotePointer* remote = &input->remote;
 		switch (id) {
-			case kRetroPointerIdX:
+			case RETRO_DEVICE_ID_POINTER_X:
 				return remote->active ? remote->pointer_x : input->pointer_x;
-			case kRetroPointerIdY:
+			case RETRO_DEVICE_ID_POINTER_Y:
 				return remote->active ? remote->pointer_y : input->pointer_y;
-			case kRetroPointerIdPressed:
+			case RETRO_DEVICE_ID_POINTER_PRESSED:
 				return (remote->active ? remote->inside : input->pointer_inside_game_viewport) &&
 					((input->mouse_buttons | remote->buttons) & kMouseButtonPrimary)
 					? 1

@@ -36,6 +36,9 @@ export { Input } from './hosts/common/input/manager';
 export { HOST_IDE_BUTTON } from './hosts/common/input/shortcuts';
 export { HostOverlayMenu, HostMenuInput, HostMenuExecution } from './hosts/common/host_overlay_menu';
 export { HostExecutionControl } from './hosts/common/execution_control';
+export { HostKeyboardInteraction } from './hosts/common/input/host_keyboard_interaction';
+export { OnScreenKeyboard } from './hosts/common/input/on_screen_keyboard';
+export { NATIVE_KEYBOARD_PAGES } from './hosts/common/input/on_screen_keyboard_keys';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
 export { Memory } from './machine/ts/machine/memory/memory';
 export { InputController } from './machine/ts/machine/devices/input/controller';
@@ -95,7 +98,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				});
 				controller.reset();
 				const execution = new api.HostExecutionControl({ mutePause() {} });
-				const menu = new api.HostOverlayMenu({}, {}, input, {}, execution);
+				const keyboardModel = new api.OnScreenKeyboard(input, api.NATIVE_KEYBOARD_PAGES);
+				const keyboardInteraction = new api.HostKeyboardInteraction(input, keyboardModel, {}, undefined);
+				const menu = new api.HostOverlayMenu({}, {}, input, {}, execution, keyboardInteraction);
 				let ideRequests = 0;
 				let ideReleases = 0;
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
@@ -103,7 +108,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 					() => { ideRequests += 1; }, () => { ideReleases += 1; });
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
-					menu,
+					menu, keyboardModel,
 					setDirectionalMode(mode) { pad.setDirectionalMode(mode); },
 					ownsContact(id) { return pad.ownsContact(id); },
 					layoutProfile() { return view.layoutProfile; },
@@ -612,18 +617,18 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				assert.equal(await page.evaluate(() => {
 					const menu = (globalThis as any).shoulderTest.menu;
 					menu.requestToggleKeyboard();
-					return menu.keyboard.visible;
+					return (globalThis as any).shoulderTest.keyboardModel.visible;
 				}), false, 'native callbacks only queue the host request, not an out-of-frame keyboard transition');
 				const openedKeyboard = await poll();
-				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), true);
+				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.keyboardModel.visible), true);
 				assert.deepEqual([openedKeyboard.model, openedKeyboard.physical, openedKeyboard.snapshot, openedKeyboard.mmio], [0, 0, 0, 0]);
 				for (let frame = 0; frame < 3; frame += 1) {
 					await poll();
-					assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), true, 'an already consumed host request does not repeat each frame');
+					assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.keyboardModel.visible), true, 'an already consumed host request does not repeat each frame');
 				}
 				await page.evaluate(() => (globalThis as any).shoulderTest.menu.requestToggleKeyboard());
 				await poll();
-				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.menu.keyboard.visible), false);
+				assert.equal(await page.evaluate(() => (globalThis as any).shoulderTest.keyboardModel.visible), false);
 				assert.equal(await page.evaluate(() => {
 					const menu = (globalThis as any).shoulderTest.menu;
 					menu.requestToggleMenu();

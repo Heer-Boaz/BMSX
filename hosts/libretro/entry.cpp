@@ -104,6 +104,9 @@ static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
 static std::unique_ptr<bmsx::LibretroContent> g_content;
+static std::optional<bmsx::OnScreenKeyboard> g_keyboard_model;
+static std::optional<bmsx::HostOnScreenKeyboard> g_keyboard_view;
+static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
 static std::optional<bmsx::HostRewind> g_rewind;
@@ -1033,13 +1036,6 @@ void retro_set_environment(retro_environment_t cb) {
 	cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &serialization_quirks);
 
 	// Set input descriptors
-	static constexpr unsigned kRetroMouseIdLeft = 2;
-	static constexpr unsigned kRetroMouseIdRight = 3;
-	static constexpr unsigned kRetroMouseIdMiddle = 6;
-	static constexpr unsigned kRetroMouseIdButton4 = 9;
-	static constexpr unsigned kRetroMouseIdButton5 = 10;
-	static constexpr unsigned kRetroPointerIdX = 0;
-	static constexpr unsigned kRetroPointerIdY = 1;
 	static const struct retro_input_descriptor input_desc[] = {
 		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
 		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
@@ -1060,13 +1056,13 @@ void retro_set_environment(retro_environment_t cb) {
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
-		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdLeft, "Pointer Primary"},
-		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdRight, "Pointer Secondary"},
-		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdMiddle, "Pointer Aux"},
-		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton4, "Pointer Back"},
-		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton5, "Pointer Forward"},
-		{0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdX, "Pointer X"},
-		{0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdY, "Pointer Y"},
+		{0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT, "Pointer Primary"},
+		{0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT, "Pointer Secondary"},
+		{0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, "Pointer Aux"},
+		{0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_BUTTON_4, "Pointer Back"},
+		{0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_BUTTON_5, "Pointer Forward"},
+		{0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X, "Pointer X"},
+		{0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y, "Pointer Y"},
 		{0, 0, 0, 0, nullptr}};
 	cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
@@ -1325,7 +1321,10 @@ void retro_init(void) {
 	g_video_presenter->setDeviceQuantizeMode(g_device_quantize_mode);
 	g_video_presenter->showResourceUsageGizmo = g_resource_usage_gizmo_enabled;
 
-	g_overlay_menu.emplace(*g_input);
+	g_keyboard_model.emplace(*g_input, bmsx::NATIVE_KEYBOARD_PAGES);
+	g_keyboard_view.emplace(*g_keyboard_model);
+	g_keyboard_interaction.emplace(*g_keyboard_model, *g_keyboard_view);
+	g_overlay_menu.emplace(*g_input, *g_keyboard_interaction);
 	g_presentation.emplace();
 	g_total_time = 0.0;
 	g_runtime_ufps_scaled = 0;
@@ -1360,6 +1359,9 @@ void retro_deinit(void) {
 	unload_content();
 	g_presentation.reset();
 	g_overlay_menu.reset();
+	g_keyboard_interaction.reset();
+	g_keyboard_view.reset();
+	g_keyboard_model.reset();
 	g_video_presenter.reset();
 	g_default_font.reset();
 	g_video_output.reset();

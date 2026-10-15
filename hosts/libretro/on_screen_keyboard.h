@@ -18,6 +18,7 @@ public:
 	static constexpr size_t InitialSourceCount = PointerSource + 1;
 	OnScreenKeyboard(LibretroInput& input, std::span<const OnScreenKeyboardPage> pages);
 	size_t page() const { return m_page; }
+	size_t pageCount() const { return m_pages.size(); }
 	std::span<const OnScreenKeyboardRow> rows() const { return m_pages[m_page].rows; }
 	i16 selectedKey() const { return m_selected; }
 	bool visible() const { return m_visible; }

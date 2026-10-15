@@ -17,6 +17,10 @@ async function main(): Promise<void> {
 	const { runHostFrame } = await import('../../../hosts/common/host_frame');
 	const { HostFrameSession } = await import('../../../hosts/common/frame_session');
 	const { HostOverlayMenu } = await import('../../../hosts/common/host_overlay_menu');
+	const { HostOnScreenKeyboard } = await import('../../../hosts/common/host_on_screen_keyboard');
+	const { HostKeyboardInteraction } = await import('../../../hosts/common/input/host_keyboard_interaction');
+	const { OnScreenKeyboard } = await import('../../../hosts/common/input/on_screen_keyboard');
+	const { NATIVE_KEYBOARD_PAGES } = await import('../../../hosts/common/input/on_screen_keyboard_keys');
 	const { HostRewind } = await import('../../../hosts/common/rewind');
 	const { RuntimeTaskQueue } = await import('../../../hosts/common/runtime_task_queue');
 	const { RenderPresentationState } = await import('../../../hosts/common/presentation_state');
@@ -71,7 +75,10 @@ async function main(): Promise<void> {
 	const execution = new HostExecutionControl(audioOutput);
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audioOutput, log);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
-	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
+	const keyboardModel = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');

@@ -113,10 +113,10 @@ void HostOnScreenKeyboard::togglePosition() {
 	m_layout_width = -1;
 }
 
-i32 HostOnScreenKeyboard::selectAt(i32 x, i32 y) {
-	for (const auto& row : m_model.rows()) for (i16 key : row.keys) {
+i16 HostOnScreenKeyboard::hitTestAt(i32 x, i32 y) const {
+	for (const auto& row : m_publishedRows) for (i16 key : row.keys) {
 		if (point_in_rect(static_cast<f32>(x), static_cast<f32>(y), m_key_rects[static_cast<size_t>(key)].area)) {
-			m_model.selectKey(key, m_model.page()); return key;
+			return key;
 		}
 	}
 	return -1;
@@ -143,6 +143,7 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 		m_layout_left = bounds.left; m_layout_top = bounds.top; m_layout_bottom = bounds.bottom;
 		m_layout_width = width; m_layout_font = presenter.default_font; layoutKeys(presenter);
 	}
+	m_publishedRows = m_model.rows();
 	presenter.hostOverlayQueue.clearHostMenuFrame();
 	presenter.hostOverlayQueue.publishHostMenuFrame(HostMenuFrame{m_command_kinds.data(), m_command_refs.data(), m_commandCount});
 }

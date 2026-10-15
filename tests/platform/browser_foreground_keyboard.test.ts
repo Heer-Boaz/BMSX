@@ -22,6 +22,10 @@ export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';
 export { HostOverlayMenu } from './hosts/common/host_overlay_menu';
+export { HostOnScreenKeyboard } from './hosts/common/host_on_screen_keyboard';
+export { HostKeyboardInteraction } from './hosts/common/input/host_keyboard_interaction';
+export { OnScreenKeyboard } from './hosts/common/input/on_screen_keyboard';
+export { NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE } from './hosts/common/input/on_screen_keyboard_keys';
 export { HostExecutionControl } from './hosts/common/execution_control';
 export { VideoPresenter } from './machine/ts/render/video_presenter';
 export { HeadlessGPUBackend } from './machine/ts/render/headless/backend';
@@ -40,7 +44,8 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 		{ name: 'phone landscape', width: 852, height: 393, sourceHeight: 212, fit: 'fit' },
 		{ name: 'phone portrait', width: 393, height: 852, sourceHeight: 212, fit: 'fit' },
 		{ name: 'tablet landscape', width: 1024, height: 768, sourceHeight: 212, fit: 'fit' },
-		{ name: 'phone landscape overscan 256x192', width: 852, height: 393, sourceHeight: 192, fit: 'overscan' },
+		// This narrow presentation deliberately places a real bitmap key over X.
+		{ name: 'compact landscape overscan 256x192', width: 640, height: 360, sourceHeight: 192, fit: 'overscan' },
 	]) {
 		await t.test(profile.name, async orientation => {
 			const page = await browser.newPage({ viewport: { width: profile.width, height: profile.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
@@ -69,9 +74,12 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const backend = new api.HeadlessGPUBackend(256, sourceHeight, api.PSX_MACHINE_SPEC.gxGpuVramBytes);
 				const presenter = new api.VideoPresenter(video, backend, 256, sourceHeight);
 				presenter.default_font = new api.Font();
-				const menu = new api.HostOverlayMenu(presenter, {}, input, {}, new api.HostExecutionControl({ mutePause() {} }));
+				const keyboardModel = new api.OnScreenKeyboard(input, api.NATIVE_KEYBOARD_PAGES);
+				const keyboardView = new api.HostOnScreenKeyboard(presenter, keyboardModel);
+				const interaction = new api.HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+				const menu = new api.HostOverlayMenu(presenter, {}, input, {}, new api.HostExecutionControl({ mutePause() {} }), interaction);
 				let admissionCalls = 0;
-				hub.setForegroundPointerCapture((x: number, y: number) => { admissionCalls += 1; return menu.capturesPointer(x, y); });
+				hub.setForegroundPointerCapture((x: number, y: number) => { admissionCalls += 1; return interaction.capturesPointer(x, y); });
 				const snapshot = api.createInputControllerSnapshot();
 				const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
 				const controller = new api.InputController(memory, input, { supervisorContextActive() { return false; }, requestSupervisorLineEdge() {} });
@@ -82,7 +90,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				};
 				let cycle = 0;
 				(globalThis as any).keyboardTouch = {
-					menu, native,
+					menu, native, interaction,
 					poll() {
 						input.pollInput();
 						menu.tickInput();
@@ -102,12 +110,12 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 					keyMmio(code: string) { const usage = api.hidKeyUsageForCode(code); return (memory.readIoU32(api.IO_INP_KEYS + (usage >>> 5) * 4) & (1 << (usage & 31))) !== 0; },
 					centers() { return { select: { id: 1, ...display.center('select_knop') }, x: { id: 2, ...display.center('x_knop') } }; },
 					positions() {
-						const keyboard = menu.keyboardView;
+						const keyboard = keyboardView;
 						const panel = keyboard.panelRect.area;
-						const keys = { point(label: string, lowerRight = false) { const index = keyboard.keyGlyphs.findIndex((glyph: any) => glyph.items === label); const area = keyboard.keyRects[index].area; return display.client(lowerRight ? area.right - 2 : area.left + 2, lowerRight ? area.bottom - 2 : area.top + 2); } };
+						const keys = { point(code: string) { const index = api.ON_SCREEN_KEY_INDEX_BY_CODE.get(code); const area = keyboard.keyRects[index].area; return display.client(area.left + 2, area.top + 2); } };
 						const lb = pad.geometry.actions.find((action: any) => action.buttons === (1 << 4));
 						const outsideLb = { x: lb.x + lb.outline.centerX + lb.outline.radius * lb.outline.startX, y: lb.y + lb.outline.centerY + lb.outline.radius * lb.outline.startY };
-						return { controllerButtons: ['a_knop', 'b_knop', 'x_knop', 'y_knop', 'ls_knop', 'rs_knop', 'select_knop', 'start_knop', 'lb_knop', 'rb_knop', 'lt_knop', 'rt_knop'].map(id => ({ id, ...display.center(id + '_text') })), select: display.center('select_knop'), x: display.center('x_knop'), q: keys.point('q'), w: keys.point('w'), keyAndFaceOverlap: keys.point('>', true), outsideLb,
+						return { controllerButtons: ['a_knop', 'b_knop', 'x_knop', 'y_knop', 'ls_knop', 'rs_knop', 'select_knop', 'start_knop', 'lb_knop', 'rb_knop', 'lt_knop', 'rt_knop'].map(id => ({ id, ...display.center(id + '_text') })), select: display.center('select_knop'), x: display.center('x_knop'), q: keys.point('KeyQ'), w: keys.point('KeyW'), keyAndFaceOverlap: { ...keys.point('ArrowRight'), code: 'ArrowRight' }, outsideLb,
 							nonInteractive: display.client(panel.left + 1, panel.top + 1), panelOutside: display.client(panel.left - 1, panel.top + 1), padRight: { x: pad.geometry.padX + pad.geometry.padRadius * 0.7, y: pad.geometry.padY } };
 					},
 				};
@@ -138,27 +146,27 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			};
 			await poll(); await toggle();
 			const positions = await page.evaluate(() => (globalThis as any).keyboardTouch.positions());
-			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.nonInteractive), false, 'keyboard title and panel padding do not capture gamepad input');
-			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.panelOutside), false);
-			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.outsideLb), false, 'outside-panel shoulder remains a gamepad target');
-			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.q), true);
+			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), positions.nonInteractive), false, 'keyboard title and panel padding do not capture gamepad input');
+			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), positions.panelOutside), false);
+			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), positions.outsideLb), false, 'outside-panel shoulder remains a gamepad target');
+			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), positions.q), true);
 			let id = 10;
 			if (profile.fit === 'overscan') {
 				const overlap = { id: id++, ...positions.keyAndFaceOverlap };
 				assert.equal((await artworkAt([overlap])).word, 1 << InputControllerGamepadButtonBit.X,
-					'the actual top-docked ArrowRight key still genuinely overlaps the physical X rim in this authored source target');
-				assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), overlap), true);
+					'the actual top-docked key genuinely overlaps the physical X silhouette');
+				assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), overlap), true);
 				await touch('touchStart', [overlap]);
 				const pressed = await poll();
 				assert.equal(pressed.model, 0); assert.equal(pressed.physical, 0);
 				assert.equal(pressed.controllerLeases, 0); assert.equal(pressed.pointerHeld, true);
 				assert.equal(pressed.sampledPad, 0); assert.equal(pressed.padMmio, 0);
-				assert.equal(await page.evaluate(() => (globalThis as any).keyboardTouch.keyPressed('ArrowRight')), true,
+				assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyPressed(code), overlap.code), true,
 					'the true foreground key owns the overlapping native contact instead of the background X button');
-				assert.equal(await page.evaluate(() => (globalThis as any).keyboardTouch.keyMmio('ArrowRight')), true);
+				assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyMmio(code), overlap.code), true);
 				await touch('touchEnd', [overlap]); await poll();
-				assert.equal(await page.evaluate(() => (globalThis as any).keyboardTouch.keyPressed('ArrowRight')), false);
-				assert.equal(await page.evaluate(() => (globalThis as any).keyboardTouch.keyMmio('ArrowRight')), false);
+				assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyPressed(code), overlap.code), false);
+				assert.equal(await page.evaluate(code => (globalThis as any).keyboardTouch.keyMmio(code), overlap.code), false);
 			}
 			for (const key of ['q', 'w'] as const) for (const first of ['keyboard', 'gamepad'] as const) {
 				const keyPoint = { id: id++, ...positions[key] }, lbPoint = { id: id++, ...positions.outsideLb };
@@ -234,7 +242,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const allUp = await poll();
 			assert.equal(allUp.model, 0); assert.equal(allUp.physical, 0); assert.equal(allUp.controllerLeases, 0); assert.equal(allUp.pointerHeld, false);
 			assert.equal(allUp.sampledPad, 0); assert.equal(allUp.padMmio, 0);
-			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.menu.capturesPointer(point.x, point.y), positions.q), false, 'closed keyboard has no foreground claim');
+			assert.equal(await page.evaluate(point => (globalThis as any).keyboardTouch.interaction.capturesPointer(point.x, point.y), positions.q), false, 'closed keyboard has no foreground claim');
 			const closedQ = { id: id++, ...positions.q };
 			const artwork = await artworkAt([closedQ]);
 			await touch('touchStart', [closedQ]);
@@ -248,7 +256,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			if (profile.fit === 'overscan') {
 				const formerKey = { id: id++, ...positions.keyAndFaceOverlap };
 				assert.equal((await artworkAt([formerKey])).word, 1 << InputControllerGamepadButtonBit.X,
-					'the former ArrowRight coordinate also lies in the genuine gameplay X silhouette after the page transition');
+					'the former key coordinate also lies in the genuine gameplay X silhouette after the page transition');
 				await touch('touchStart', [formerKey]);
 				const gameplayX = await poll();
 				assert.deepEqual([gameplayX.model, gameplayX.physical, gameplayX.sampledPad, gameplayX.padMmio], [4, 4, 4, 4],

@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
-import { OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
+import { KeyboardPage, OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../hosts/common/input/manager';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { HostKeyboardPresentation, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
 import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
@@ -72,8 +73,8 @@ test('a controller and the logical pointer retain independent contributions to t
 	assert.deepEqual(f.writes, [{ code: 'KeyQ', down: true }, { code: 'KeyQ', down: false }]);
 });
 
-test('the actual host-menu producer forwards simultaneous controller commands and pointer holds independently', t => {
-	const f = fixture();
+test('the composed keyboard owner forwards simultaneous controller commands and pointer holds independently', t => {
+	const f = fixture(); f.keyboard.close();
 	t.after(() => f.input.dispose());
 	for (let pad = 0; pad < 2; pad += 1) {
 		f.input.connectInputDevice({ id: `gamepad:${pad}`, kind: 'gamepad', gamepadIndex: pad, label: 'PAD',
@@ -87,7 +88,9 @@ test('the actual host-menu producer forwards simultaneous controller commands an
 		hostOverlayQueue: queue,
 		mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind, createHostFrameFixture().execution);
+	const keyboardView = new HostOnScreenKeyboard(presenter, f.keyboard);
+	const keyboardInteraction = new HostKeyboardInteraction(f.input, f.keyboard, presenter, keyboardView);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind, createHostFrameFixture().execution, keyboardInteraction);
 	const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
 	let pressId = 0;
 	const button = (device: string, code: string, down: boolean) => f.input.inputButton(device, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
@@ -229,8 +232,8 @@ test('closing the keyboard releases every source, special key and sticky or capt
 });
 
 
-for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresentation.External]) {
-	test(`visible MOVE activation is edge-triggered and presentation-owned (${presentation === HostKeyboardPresentation.Bitmap ? 'bitmap' : 'external'})`, t => {
+for (const bitmap of [true, false]) {
+	test(`visible docking icon activation is edge-triggered and presentation-owned (${bitmap ? 'bitmap' : 'external'})`, t => {
 		const f = fixture(); f.keyboard.close();
 		for (let player = 0; player < 2; player += 1) {
 			f.input.connectInputDevice({ id: `gamepad:${player}`, kind: 'gamepad', gamepadIndex: player, label: 'PAD',
@@ -241,12 +244,16 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 			default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 }, hostOverlayQueue: queue,
 			mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
 		} as VideoPresenter;
+		const keyboardView = bitmap ? new HostOnScreenKeyboard(presenter, f.keyboard) : undefined;
+		const keyboardInteraction = new HostKeyboardInteraction(f.input, f.keyboard, presenter, keyboardView);
 		const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind,
-			createHostFrameFixture().execution, [], f.keyboard, presentation);
+			createHostFrameFixture().execution, keyboardInteraction);
 		let pressId = 0, relocations = 0;
-		const toggle = HostOnScreenKeyboard.prototype.togglePosition;
-		HostOnScreenKeyboard.prototype.togglePosition = function () { relocations += 1; toggle.call(this); };
-		t.after(() => { HostOnScreenKeyboard.prototype.togglePosition = toggle; menu.dismiss(); f.input.dispose(); });
+		if (keyboardView) {
+			const toggle = keyboardView.togglePosition.bind(keyboardView);
+			keyboardView.togglePosition = () => { relocations += 1; toggle(); };
+		}
+		t.after(() => { menu.dismiss(); f.input.dispose(); });
 		const button = (player: number, code: string, down: boolean) => f.input.inputButton(`gamepad:${player}`, code, down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
 		const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
 		const press = (player: number, code: string) => { button(player, code, true); tick(); button(player, code, false); tick(); };
@@ -262,7 +269,6 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 		tick(); chord(0, 'x');
 		assert.equal(f.keyboard.visible, true);
 		const original = frame();
-		const bitmap = presentation === HostKeyboardPresentation.Bitmap;
 		const panel = bitmap ? original.commandRefs[0] as RectRenderSubmission : undefined;
 		if (panel) assert.equal(panel.area.top, 4); else assert.equal(original, undefined, 'external presentation publishes no bitmap UI');
 		chord(0, 'a'); frame();
@@ -296,10 +302,11 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 					assert.ok(move, 'every native page paints its actual position action');
 					f.input.inputAxis2('pointer:0', 'pointer_position', (move.area.left + move.area.right) / 2, (move.area.top + move.area.bottom) / 2, f.clock.now() + 1);
 					f.input.inputButton('pointer:0', 'pointer_primary', true, 1, f.clock.now() + 1, ++pressId); tick(); frame();
-					assert.equal(relocations, before + 3 + pointerPress, 'actual pointer activation dispatches MOVE immediately through the host menu');
+					assert.equal(relocations, before + 2 + pointerPress, 'pointer DOWN captures the visible dock action without relocating underneath the pointer');
 					for (let hold = 0; hold < 5; hold += 1) tick();
-					assert.equal(relocations, before + 3 + pointerPress, 'relocation under a held pointer cannot retrigger itself');
-					f.input.inputButton('pointer:0', 'pointer_primary', false, 0, f.clock.now() + 1, ++pressId); tick();
+					assert.equal(relocations, before + 2 + pointerPress, 'holding the captured dock action cannot activate or repeat it');
+					f.input.inputButton('pointer:0', 'pointer_primary', false, 0, f.clock.now() + 1, ++pressId); tick(); frame();
+					assert.equal(relocations, before + 3 + pointerPress, 'actual pointer UP activates the exact captured host action once');
 				}
 				assert.equal(panel.area.top, 4);
 			}
@@ -322,3 +329,73 @@ for (const presentation of [HostKeyboardPresentation.Bitmap, HostKeyboardPresent
 		assert.deepEqual(presenter.viewportSize, { x: 256, y: 212 });
 	});
 }
+
+
+test('bitmap pointer interaction owns exact keys, real modifier holds and pending dock actions through physical UP', t => {
+	const f = fixture(); f.keyboard.close();
+	const queue = new HostOverlayQueue();
+	const presenter = { viewportSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
+		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 }, hostOverlayQueue: queue,
+		mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
+	} as VideoPresenter;
+	const view = new HostOnScreenKeyboard(presenter, f.keyboard);
+	const interaction = new HostKeyboardInteraction(f.input, f.keyboard, presenter, view);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, f.input, {} as HostRewind, createHostFrameFixture().execution, interaction);
+	t.after(() => { menu.dismiss(); f.input.dispose(); });
+	let pressId = 0, relocations = 0;
+	const toggle = view.togglePosition.bind(view);
+	view.togglePosition = () => { relocations += 1; toggle(); };
+	const tick = () => { f.poll(); menu.tickInput(); f.poll(); };
+	const frame = () => { menu.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
+	const point = (target: number) => {
+		const published = frame();
+		let command = 3;
+		for (const row of f.keyboard.rows) for (const key of row.keys) {
+			const rect = published.commandRefs[command] as RectRenderSubmission; command += 3;
+			if (key === target) return { x: (rect.area.left + rect.area.right) / 2, y: (rect.area.top + rect.area.bottom) / 2 };
+		}
+		assert.fail(`the actual published page must contain target ${target}`);
+	};
+	const move = (x: number, y: number) => f.input.inputAxis2('pointer:0', 'pointer_position', x, y, f.clock.now() + 1);
+	const primary = (down: boolean) => f.input.inputButton('pointer:0', 'pointer_primary', down, down ? 1 : 0, f.clock.now() + 1, ++pressId);
+	tick(); menu.requestToggleKeyboard(); tick();
+	const q = point(ON_SCREEN_KEY_INDEX_BY_CODE.get('KeyQ')), w = point(ON_SCREEN_KEY_INDEX_BY_CODE.get('KeyW')),
+		shift = point(ON_SCREEN_KEY_INDEX_BY_CODE.get('ShiftLeft')), dock = point(ON_SCREEN_KEYBOARD_POSITION_TARGET);
+	move(q.x, q.y); primary(true); tick();
+	assert.equal(f.pressed('KeyQ'), true);
+	move(w.x, w.y); tick();
+	assert.equal(f.pressed('KeyQ'), true, 'moving a captured pointer cannot release or retarget its held key');
+	assert.equal(f.pressed('KeyW'), false);
+	primary(false); tick();
+	assert.equal(f.pressed('KeyQ'), false, 'only the actual UP releases the captured key');
+
+	f.keyboard.setPage(KeyboardPage.Functions);
+	const functionSelection = f.keyboard.selectedKey;
+	move(q.x, q.y); primary(true); tick();
+	assert.equal(f.pressed('KeyQ'), true, 'a queued page transition cannot reinterpret the key still painted under a physical DOWN');
+	assert.equal(f.keyboard.page, KeyboardPage.Functions); assert.equal(f.keyboard.selectedKey, functionSelection,
+		'origin-page pointer selection never replaces current-page controller focus');
+	primary(false); tick(); assert.equal(f.pressed('KeyQ'), false);
+	f.keyboard.setPage(KeyboardPage.Text); frame();
+
+	move(shift.x, shift.y); primary(true); tick();
+	assert.equal(f.pressed('ShiftLeft'), true, 'mouse DOWN is a real held modifier, not an immediate sticky toggle');
+	f.input.inputButton('keyboard:0', 'KeyQ', true, 1, f.clock.now() + 1, ++pressId); tick();
+	assert.equal(f.pressed('KeyQ'), true); assert.equal(f.pressed('ShiftLeft'), true);
+	f.input.inputButton('keyboard:0', 'KeyQ', false, 0, f.clock.now() + 1, pressId); tick();
+	primary(false); tick();
+	assert.equal(f.pressed('ShiftLeft'), false, 'ordinary hardware typing during the modifier gesture prevents an unused-tap sticky latch');
+	primary(true); tick(); primary(false); tick();
+	assert.equal(f.pressed('ShiftLeft'), true, 'an unused actual pointer UP still completes the existing sticky modifier tap');
+	primary(true); tick(); primary(false); tick();
+	assert.equal(f.pressed('ShiftLeft'), false);
+
+	move(dock.x, dock.y); primary(true); tick();
+	assert.equal(relocations, 0);
+	move(0, 0); tick(); primary(false); tick(); frame();
+	assert.equal(relocations, 1, 'capture activates the exact pressed dock action on UP even outside its old footprint');
+	const bottomDock = point(ON_SCREEN_KEYBOARD_POSITION_TARGET);
+	move(bottomDock.x, bottomDock.y); primary(true); tick();
+	menu.dismiss(); primary(false); tick();
+	assert.equal(relocations, 1, 'closing the keyboard cancels a pending host action rather than completing a false tap');
+});

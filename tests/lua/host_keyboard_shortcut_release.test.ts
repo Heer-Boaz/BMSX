@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot, InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
@@ -29,12 +33,15 @@ for (const hostHz of [60, 120]) {
 		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 				default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 				hostOverlayQueue: queue } as VideoPresenter;
-			const menu = new HostOverlayMenu(presenter, {} as Runtime, input, {} as HostRewind, createHostFrameFixture().execution);
+			const keyboardModel = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+			const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+			const keyboardInteraction = new HostKeyboardInteraction(input, keyboardModel, presenter, keyboardView);
+			const menu = new HostOverlayMenu(presenter, {} as Runtime, input, {} as HostRewind, createHostFrameFixture().execution, keyboardInteraction);
 			const visibilityChanges: boolean[] = [];
-			let visible = menu.keyboard.visible;
-			t.after(menu.keyboard.subscribe(() => {
-				if (visible === menu.keyboard.visible) return;
-				visible = menu.keyboard.visible;
+			let visible = keyboardModel.visible;
+			t.after(keyboardModel.subscribe(() => {
+				if (visible === keyboardModel.visible) return;
+				visible = keyboardModel.visible;
 				visibilityChanges.push(visible);
 			}));
 			const gamepad = input.getPlayerInput(1).inputHandlers.gamepad!;

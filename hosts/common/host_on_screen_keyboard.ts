@@ -11,7 +11,7 @@ import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { point_in_rect } from '../../machine/ts/common/rect';
 import { OnScreenKeyboard } from './input/on_screen_keyboard';
-import { ON_SCREEN_KEYBOARD_POSITION_TARGET, ON_SCREEN_KEYBOARD_TARGET_COUNT, ON_SCREEN_KEY_INDEX_BY_CODE } from './input/on_screen_keyboard_keys';
+import { ON_SCREEN_KEYBOARD_POSITION_TARGET, ON_SCREEN_KEYBOARD_TARGET_COUNT, ON_SCREEN_KEY_INDEX_BY_CODE, type OnScreenKeyboardRow } from './input/on_screen_keyboard_keys';
 
 const TITLES = ['KEYBOARD: TEXT', 'KEYBOARD: SYMBOLS', 'KEYBOARD: FN'] as const;
 const HELP_LINES = [
@@ -89,6 +89,7 @@ export class HostOnScreenKeyboard {
 
 	private renderedRevision = -1;
 	private renderedPage = -1;
+	private publishedRows: readonly OnScreenKeyboardRow[] = [];
 	private renderedShift = false;
 
 	public constructor(
@@ -156,19 +157,16 @@ export class HostOnScreenKeyboard {
 		this.layoutWidth = -1;
 	}
 
-	/** Only published interactive keys take foreground input, not labels or help text. */
-	public containsPoint(x: number, y: number): boolean {
-		for (const row of this.model.rows) for (const key of row.keys) {
-			if (point_in_rect(x, y, this.keyRects[key].area)) return true;
-		}
-		return false;
-	}
-	public selectAt(x: number, y: number): number {
-		for (const row of this.model.rows) for (const key of row.keys) {
-			if (point_in_rect(x, y, this.keyRects[key].area)) { this.model.selectKey(key); return key; }
+	public get publishedPage(): number { return this.renderedPage; }
+
+	/** Hit testing consumes the published geometry and never mutates keyboard focus. */
+	public hitTestAt(x: number, y: number): number {
+		for (const row of this.publishedRows) for (const key of row.keys) {
+			if (point_in_rect(x, y, this.keyRects[key].area)) return key;
 		}
 		return -1;
 	}
+	public containsPoint(x: number, y: number): boolean { return this.hitTestAt(x, y) >= 0; }
 	public queueRenderCommands(): void {
 		const model = this.model;
 		if (model.page !== this.renderedPage) {
@@ -204,6 +202,7 @@ export class HostOnScreenKeyboard {
 		presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}
 	private rebuildPageCommands(): void {
+		this.publishedRows = this.model.rows;
 		const title = TITLES[this.model.page];
 		this.titleGlyphs.items = title;
 		this.titleGlyphs.item_end = title.length;

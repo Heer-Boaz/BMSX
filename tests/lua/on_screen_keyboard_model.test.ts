@@ -98,7 +98,7 @@ test('Backquote is navigable, painted, hit-tested and activated from the native 
 	const command = 3 + f.keyboard.rows[0].keys.length * 3;
 	const rect = frame.commandRefs[command] as RectRenderSubmission;
 	assert.equal((frame.commandRefs[command + 2] as GlyphRenderSubmission).items, '`');
-	assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
+	assert.equal(view.hitTestAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
 	f.keyboard.activate(0); f.poll(); assert.equal(f.pressed('Backquote'), true);
 	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, SHIFT); view.queueRenderCommands(); frame = queue.consumeHostMenuFrame();
 	assert.equal((frame.commandRefs[command + 2] as GlyphRenderSubmission).items, '~');
@@ -209,9 +209,9 @@ test('explicit row starts preserve arrow gaps in navigation, bitmap drawing and 
 	const downRect = (frame.commandRefs[18] as RectRenderSubmission).area;
 	assert.equal(upRect.left - qRect.left, 3 * (qRect.right - qRect.left + 1));
 	assert.equal(upRect.left, downRect.left, 'bitmap arrow hit rectangles use the same authored column');
-	assert.equal(view.selectAt((upRect.left + upRect.right) / 2, (upRect.top + upRect.bottom) / 2), UP);
+	assert.equal(view.hitTestAt((upRect.left + upRect.right) / 2, (upRect.top + upRect.bottom) / 2), UP);
 	const gapX = qRect.right + (qRect.right - qRect.left) / 2;
-	assert.equal(view.selectAt(gapX, (qRect.top + qRect.bottom) / 2), -1, 'reserved command space does not acquire an unrelated physical key');
+	assert.equal(view.hitTestAt(gapX, (qRect.top + qRect.bottom) / 2), -1, 'reserved command space does not acquire an unrelated physical key');
 	assert.equal(view.containsPoint(gapX, (qRect.top + qRect.bottom) / 2), false);
 });
 
@@ -270,6 +270,7 @@ test('bitmap consumer renders/hits every function-page key from the same actual 
 	f.keyboard.setPage(KeyboardPage.Functions); view.queueRenderCommands();
 	const frame = queue.consumeHostMenuFrame();
 	assert.equal((frame.commandRefs[2] as GlyphRenderSubmission).items, 'KEYBOARD: FN');
+	const selected = f.keyboard.selectedKey, revision = f.keyboard.revision;
 	let command = 3;
 	for (const row of f.keyboard.rows) for (const key of row.keys) {
 		assert.equal(frame.commandKinds[command], Host2DKind.Rect);
@@ -287,8 +288,9 @@ test('bitmap consumer renders/hits every function-page key from the same actual 
 			assert.equal(shadow.items, glyph.items); assert.equal(shadow.x, glyph.x + 1); assert.equal(shadow.y, glyph.y + 1);
 			assert.equal(glyph.items, f.keyboard.label(key));
 		}
-		assert.equal(view.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
-		assert.equal(f.keyboard.selectedKey, key);
+		assert.equal(view.hitTestAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
+		assert.equal(f.keyboard.selectedKey, selected, 'bitmap geometry queries are passive');
+		assert.equal(f.keyboard.revision, revision);
 	}
 	assert.equal(frame.commandCount, command + 8);
 	assert.equal((frame.commandRefs[command + 5] as GlyphRenderSubmission).items, 'START ENTER  SEL+B DEL  SEL+Y PAGE');

@@ -38,11 +38,11 @@ int16_t pointerX = 0;
 int16_t pointerY = 0;
 bool pointerPressed = false;
 
-int16_t hostInputState(unsigned port, unsigned device, unsigned, unsigned id) {
+int16_t hostInputState(unsigned port, unsigned device, unsigned index, unsigned id) {
 	if (device == RETRO_DEVICE_JOYPAD) {
 		return (gamepadStates[port] & (1u << id)) != 0u ? 1 : 0;
 	}
-	if (port == 0u && device == RETRO_DEVICE_POINTER) {
+	if (port == 0u && device == RETRO_DEVICE_POINTER && index == 0u) {
 		switch (id) {
 			case 0u: return pointerX;
 			case 1u: return pointerY;

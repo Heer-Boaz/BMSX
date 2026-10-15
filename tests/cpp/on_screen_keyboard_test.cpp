@@ -160,7 +160,7 @@ void testBackquoteNativeNavigationAndView() {
 	const auto* rect = frame.commandRefs[command].rect;
 	require(frame.commandRefs[command + 2].glyphs->items[0] == "`", "appended key receives a retained real glyph command");
 	const auto& area = rect->area;
-	require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key, "paint and hit testing share the appended key rectangle");
+	require(view.hitTestAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key, "paint and hit testing share the appended key rectangle");
 	f.keyboard.activate(0); f.sample(); require(f.pressed(hid_key_usage::Backquote), "native activation forwards raw Backquote");
 	f.keyboard.releaseSource(0); f.keyboard.pressKey(1, shift); view.queueRenderCommands(presenter); frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	require(frame.commandRefs[command + 2].glyphs->items[0] == "~", "same retained key renders tilde with Shift");
@@ -247,6 +247,7 @@ void testFunctionPagesAndView() {
 	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
 	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	require(frame.commandRefs[2].glyphs->items[0] == "KEYBOARD: FN", "bitmap title publishes the actual active function page");
+	const auto selected = f.keyboard.selectedKey();
 	size_t command = 3;
 	for (const auto& row : f.keyboard.rows()) for (i16 key : row.keys) {
 		require(frame.commandKinds[command] == Host2DKind::Rect, "each function-page key publishes a retained real rectangle");
@@ -264,9 +265,9 @@ void testFunctionPagesAndView() {
 			require(shadow.items == glyph.items && shadow.x == glyph.x + 1 && shadow.y == glyph.y + 1, "retained label shadow follows the same physical key");
 			require(glyph.items[0] == f.keyboard.label(key), "painted function label is the exact model identity");
 		}
-		require(view.selectAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key,
-			"bitmap hit and paint select the same actual active-page key");
-		require(f.keyboard.selectedKey() == key, "bitmap selection updates the injected owner, not an old main-row index");
+		require(view.hitTestAt(static_cast<i32>((area.left + area.right) / 2), static_cast<i32>((area.top + area.bottom) / 2)) == key,
+			"bitmap hit and paint identify the same actual active-page key");
+		require(f.keyboard.selectedKey() == selected, "bitmap hit testing does not mutate the injected keyboard owner");
 	}
 	require(frame.commandCount == command + HostOnScreenKeyboard::HelpLineCount * 2, "function page publishes only active keys and fixed help");
 	require(frame.commandRefs[command + 5].glyphs->items[0] == "START ENTER  SEL+B DEL  SEL+Y PAGE", "native page transition binding is discoverable in the unchanged help row");
@@ -347,8 +348,8 @@ void testExplicitRowStarts() {
 	const auto& downRect = frame.commandRefs[18].rect->area;
 	require(upRect.left - qRect.left == 3 * (qRect.right - qRect.left + 1), "bitmap geometry retains the two-column authored gap");
 	require(upRect.left == downRect.left, "bitmap Up and Down share the same authored column");
-	require(view.selectAt(static_cast<i32>((upRect.left + upRect.right) / 2), static_cast<i32>((upRect.top + upRect.bottom) / 2)) == up, "authored Up rectangle owns Up input");
-	require(view.selectAt(static_cast<i32>(qRect.right + (qRect.right - qRect.left) / 2), static_cast<i32>((qRect.top + qRect.bottom) / 2)) == -1, "reserved command space does not acquire a physical key");
+	require(view.hitTestAt(static_cast<i32>((upRect.left + upRect.right) / 2), static_cast<i32>((upRect.top + upRect.bottom) / 2)) == up, "authored Up rectangle owns Up input");
+	require(view.hitTestAt(static_cast<i32>(qRect.right + (qRect.right - qRect.left) / 2), static_cast<i32>((qRect.top + qRect.bottom) / 2)) == -1, "reserved command space does not acquire a physical key");
 	for (const auto& page : NATIVE_KEYBOARD_PAGES) for (const auto& row : page.rows) {
 		f32 units = 0;
 		require(row.keys.size() == row.starts.size() && row.keys.size() == row.spans.size(), "all native physical keys own explicit geometry");

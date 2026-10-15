@@ -72,7 +72,7 @@ void testVisibleViewport() {
 	}
 	for (size_t key = 0; key < HostOnScreenKeyboard::KeyCount + 1; ++key) {
 		const auto center = middlepoint_area(cropped.commandRefs[3 + key * 3].rect->area);
-		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key == HostOnScreenKeyboard::KeyCount ? ON_SCREEN_KEYBOARD_POSITION_TARGET : key),
+		require(view.hitTestAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key == HostOnScreenKeyboard::KeyCount ? ON_SCREEN_KEYBOARD_POSITION_TARGET : key),
 			"every painted cropped key remains directly selectable");
 	}
 	const f32 oldLeft = q->area.left, oldTop = q->area.top;
@@ -80,7 +80,7 @@ void testVisibleViewport() {
 	require(frame().commandRefs[48].rect == q && q->area.left == oldLeft && q->area.top == oldTop,
 		"a picture-bottom change retains the actual top-docked key paint geometry");
 	const auto qCenter = middlepoint_area(q->area);
-	require(view.selectAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
+	require(view.hitTestAt(static_cast<i32>(qCenter.x), static_cast<i32>(qCenter.y)) == 15,
 		"top-docked paint and hit testing continue sharing the same retained key rectangle");
 	video.visibleViewportBounds = RectBounds{14.8F, 12.6F, 245.2F, 185.4F, 0};
 	require(frame().commandRefs[48].rect == q, "origin-only relayout retains the key command");
@@ -126,7 +126,7 @@ void testDocking() {
 	size_t command = 3;
 	for (const auto& row : keyboard.rows()) for (i16 key : row.keys) {
 		const auto center = middlepoint_area(functions.commandRefs[command].rect->area); command += 3;
-		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == key, "every docked page key uses its own painted hit rectangle");
+		require(view.hitTestAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == key, "every docked page key uses its own painted hit rectangle");
 	}
 	keyboard.close(); keyboard.open(); frame();
 	require(panel->area.bottom == video.visibleViewportBounds.bottom - 4 && !keyboard.isKeyPressed(15), "close releases the model while reopening retains manual presentation position");
@@ -324,7 +324,9 @@ void testFeedback() {
 	const auto select = [&](size_t key) {
 		const RectBounds& area = frame().commandRefs[3u + key * 3u].rect->area;
 		const Vec2 center = middlepoint_area(area);
-		require(view.selectAt(static_cast<i32>(center.x), static_cast<i32>(center.y)) == static_cast<i32>(key), "selection comes from the published key geometry");
+		const auto target = view.hitTestAt(static_cast<i32>(center.x), static_cast<i32>(center.y));
+		require(target == static_cast<i32>(key), "selection target comes from the published key geometry");
+		keyboard.selectKey(target, view.publishedPage());
 	};
 	const auto expectHomeEndHelp = [&](u32 color) {
 		const HostMenuFrame commands = frame();

@@ -9,8 +9,9 @@ import { HostAudioOutput } from '../common/audio_output';
 import { HostAudioDevice } from '../common/audio_device';
 import { HostFrameRunResult, runHostFrame } from '../common/host_frame';
 import { HostFrameSession } from '../common/frame_session';
-import { HostKeyboardPresentation, HostOverlayMenu, HostOverlayOutcome } from '../common/host_overlay_menu';
+import { HostOverlayMenu, HostOverlayOutcome } from '../common/host_overlay_menu';
 import { OnScreenKeyboard } from '../common/input/on_screen_keyboard';
+import { HostKeyboardInteraction } from '../common/input/host_keyboard_interaction';
 import { BrowserOnscreenKeyboard } from './onscreen_keyboard';
 import { BrowserHostControls } from './host_controls';
 import { BROWSER_KEYBOARD_PAGES } from './onscreen_keyboard_layout';
@@ -75,25 +76,26 @@ async function startBrowserPlayer(): Promise<void> {
 				event.returnValue = 'Are you sure you want to exit this awesome game?';
 			});
 		}
+		const keyboardModel = new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES);
+		const keyboardInteraction = new HostKeyboardInteraction(options.input, keyboardModel, presenter, undefined);
 		const hostOverlayMenu = new HostOverlayMenu(
 			presenter,
 			runtime,
 			options.input,
 			rewind,
 			execution,
+			keyboardInteraction,
 			[...options.menuOptions, {
 				kind: 'value', label: 'PICTURE',
 				values: [{ label: 'FIT' }, { label: 'OVERSCAN 5%' }],
 				getIndex: () => options.videoOutput.screenFit === 'fit' ? 0 : 1,
 				setIndex: index => options.videoOutput.setScreenFit(index === 0 ? 'fit' : 'overscan'),
 			}],
-			new OnScreenKeyboard(options.input, BROWSER_KEYBOARD_PAGES),
-			HostKeyboardPresentation.External,
 		);
 		options.browserInput.setOnscreenKeyboard(new BrowserOnscreenKeyboard(
-			document, hostOverlayMenu.keyboard, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
+			document, keyboardModel, () => hostOverlayMenu.dismiss(HostOverlayOutcome.Cancel),
 		));
-		options.browserInput.setForegroundPointerCapture(hostOverlayMenu.capturesPointer);
+		options.browserInput.setForegroundPointerCapture(keyboardInteraction.capturesPointer);
 		options.browserInput.setHostControls(new BrowserHostControls(
 			document, hostOverlayMenu.requestToggleKeyboard, hostOverlayMenu.requestToggleMenu,
 		));

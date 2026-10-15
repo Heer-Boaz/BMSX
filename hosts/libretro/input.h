@@ -6,8 +6,15 @@
 #include "machine/devices/input/contracts.h"
 
 #include <array>
+#include <span>
+#include <vector>
 
 namespace bmsx {
+
+struct LibretroPointerContact {
+	i32 x;
+	i32 y;
+};
 
 class LibretroInput final : public InputControllerInputSource {
 public:
@@ -45,6 +52,12 @@ public:
 	bool pointerPosition(i32& x, i32& y) const;
 	bool pointerButtonPressed(u32 button) const;
 	void consumePointerButton(u32 button);
+	// Libretro pointer indexes describe this poll's contacts, not stable identities.
+	std::span<const LibretroPointerContact> pointerContacts() const {
+		return {m_pointer_contacts.data(), m_pointer_contact_count};
+	}
+	bool mousePosition(i32& x, i32& y) const;
+	bool mouseButtonPressed(u32 button) const;
 	bool hostShortcutJustPressed(InputControllerGamepadButtonBit button) const;
 	f64 frameDurationMs() const { return m_frame_duration_ms; }
 	void setFrameDurationMs(f64 frameDurationMs) {
@@ -83,6 +96,13 @@ private:
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> m_gamepads{};
 	u32 m_pointer_buttons = 0u;
 	u32 m_routed_pointer_buttons = 0u;
+	// Keep high-water storage across polls; only the published span is active.
+	std::vector<LibretroPointerContact> m_pointer_contacts;
+	size_t m_pointer_contact_count = 0;
+	u32 m_mouse_buttons = 0u;
+	i32 m_mouse_x = 0;
+	i32 m_mouse_y = 0;
+	bool m_mouse_position_valid = false;
 	i32 m_pointer_x = 0;
 	i32 m_pointer_y = 0;
 	u32 m_pointer_x_q16 = 0u;

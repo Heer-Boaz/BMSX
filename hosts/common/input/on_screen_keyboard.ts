@@ -63,6 +63,7 @@ export class OnScreenKeyboard {
 		this.selectedRow = this.pageKeyRows[this.currentPage][this.selected];
 	}
 	public get page(): number { return this.currentPage; }
+	public get pageCount(): number { return this.pages.length; }
 	public get rows(): readonly OnScreenKeyboardRow[] { return this.pages[this.currentPage].rows; }
 	public get selectedKey(): number { return this.selected; }
 	public get visible(): boolean { return this.opened; }

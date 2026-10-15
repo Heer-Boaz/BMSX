@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
 import { KeyboardPage, OnScreenKeyboardCommand, ON_SCREEN_KEYBOARD_POSITION_TARGET, NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { Input } from '../../hosts/common/input/manager';
@@ -77,15 +78,18 @@ test('real keyboard panel, glyphs, help and every interactive key fit the 5%-cro
 	assert.equal(panel.area.top, f.output.visibleViewportBounds.top + 4, 'cropping changes the owner anchor, not input priority');
 	assert.equal(q.area.right - q.area.left, 12);
 	assertVisible(cropped, f.presenter.visibleViewportBounds);
+	const selected = f.model.selectedKey, revision = f.model.revision;
 	for (let index = 0; index < 61; index += 1) {
 		const key = index === 60 ? ON_SCREEN_KEYBOARD_POSITION_TARGET : index;
 		const rect = cropped.commandRefs[3 + index * 3] as RectRenderSubmission;
 		const x = (rect.area.left + rect.area.right) / 2, y = (rect.area.top + rect.area.bottom) / 2;
 		assert.equal(f.keyboard.containsPoint(x, y), true);
-		assert.equal(f.keyboard.selectAt(x, y), key);
+		assert.equal(f.keyboard.hitTestAt(x, y), key);
 	}
+	assert.equal(f.model.selectedKey, selected, 'passive hit testing never changes keyboard focus');
+	assert.equal(f.model.revision, revision, 'passive geometry queries never publish input state');
 	assert.equal(f.keyboard.containsPoint(0, 0), false);
-	assert.equal(f.keyboard.selectAt(0, 0), -1);
+	assert.equal(f.keyboard.hitTestAt(0, 0), -1);
 });
 
 test('keyboard relayouts on visible origin changes and reuses its real commands without repeated font measurement', t => {
@@ -104,7 +108,7 @@ test('keyboard relayouts on visible origin changes and reuses its real commands 
 	assert.equal(key.area.top, oldTop);
 	assert.equal(key.area.left, oldLeft);
 	assert.ok(measurements > 0, 'retained bounds include bottom because either docking position can depend on it');
-	assert.equal(f.keyboard.selectAt((key.area.left + key.area.right) / 2, (key.area.top + key.area.bottom) / 2), 15);
+	assert.equal(f.keyboard.hitTestAt((key.area.left + key.area.right) / 2, (key.area.top + key.area.bottom) / 2), 15);
 	write_rect_bounds(f.output.visibleViewportBounds, 14.8, 12.6, 245.2, 185.4);
 	assert.equal(f.frame().commandRefs[48], key);
 	assert.equal(key.area.left, oldLeft + 2);
@@ -121,7 +125,10 @@ test('host menu uses a selected visible row window and maps pointer activation t
 	const font = new Font(); presenter.default_font = font;
 	write_rect_bounds(output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
 	let picture = 0;
-	const menu = new HostOverlayMenu(presenter, host.runtime, host.input, host.rewind, host.execution, [{
+	const keyboardModel = new OnScreenKeyboard(host.input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(host.input, keyboardModel, presenter, keyboardView);
+	const menu = new HostOverlayMenu(presenter, host.runtime, host.input, host.rewind, host.execution, keyboardInteraction, [{
 		kind: 'value', label: 'PICTURE', values: [{ label: 'FIT' }, { label: 'OVERSCAN' }],
 		getIndex: () => picture, setIndex: value => { picture = value; },
 	}]);
@@ -163,7 +170,10 @@ test('closed-menu FPS and usage HUD translate within retained safe bounds withou
 	presenter.default_font = new Font();
 	write_rect_bounds(output.visibleViewportBounds, 12.8, 9.6, 243.2, 182.4);
 	presenter.show_resource_usage_gizmo = true;
-	const menu = new HostOverlayMenu(presenter, host.runtime, host.input, host.rewind, host.execution);
+	const keyboardModel = new OnScreenKeyboard(host.input, NATIVE_KEYBOARD_PAGES);
+	const keyboardView = new HostOnScreenKeyboard(presenter, keyboardModel);
+	const keyboardInteraction = new HostKeyboardInteraction(host.input, keyboardModel, presenter, keyboardView);
+	const menu = new HostOverlayMenu(presenter, host.runtime, host.input, host.rewind, host.execution, keyboardInteraction);
 	let time = 10, pressId = 1;
 	const tick = () => { host.input.pollInput(); menu.tickInput(); };
 	const key = (code: string, down: boolean) => host.input.inputButton('keyboard:0', code, down, down ? 1 : 0, time++, pressId++);
@@ -248,7 +258,7 @@ test('manual native keyboard docking preserves model ownership and follows live 
 	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4);
 	assert.equal(panel.area.top, f.output.visibleViewportBounds.bottom - 4 - height);
 	assert.notEqual(q.area.top, previousQ.top);
-	assert.equal(f.keyboard.selectAt((q.area.left + q.area.right) / 2, (q.area.top + q.area.bottom) / 2), heldKey);
+	assert.equal(f.keyboard.hitTestAt((q.area.left + q.area.right) / 2, (q.area.top + q.area.bottom) / 2), heldKey);
 	assertVisible(bottom, f.presenter.visibleViewportBounds);
 	const oldKeyY = q.area.top;
 	f.output.visibleViewportBounds.bottom -= 5;
@@ -265,7 +275,7 @@ test('manual native keyboard docking preserves model ownership and follows live 
 	let command = 3;
 	for (const row of f.model.rows) for (const key of row.keys) {
 		const rect = functions.commandRefs[command] as RectRenderSubmission; command += 3;
-		assert.equal(f.keyboard.selectAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
+		assert.equal(f.keyboard.hitTestAt((rect.area.left + rect.area.right) / 2, (rect.area.top + rect.area.bottom) / 2), key);
 	}
 	f.model.close(); f.model.open(); f.frame();
 	assert.equal(panel.area.bottom, f.output.visibleViewportBounds.bottom - 4, 'close/reopen retains the manually selected side');
@@ -318,4 +328,23 @@ test('native keyboard pictograms replace only special-key artwork, remain center
 			assertVisible(f.frame(), f.presenter.visibleViewportBounds);
 		}
 	}
+});
+
+
+test('bitmap hit testing retains its published page until the next presentation without changing logical selection', t => {
+	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	const text = f.frame();
+	const q = text.commandRefs[48] as RectRenderSubmission;
+	const x = (q.area.left + q.area.right) / 2, y = (q.area.top + q.area.bottom) / 2;
+	assert.equal(f.keyboard.publishedPage, KeyboardPage.Text);
+	f.model.setPage(KeyboardPage.Functions);
+	const selected = f.model.selectedKey, revision = f.model.revision;
+	assert.equal(f.keyboard.publishedPage, KeyboardPage.Text, 'pending model changes do not replace the page that is still painted');
+	assert.equal(f.keyboard.hitTestAt(x, y), 15, 'queries consume the retained Text-page rows and rectangles');
+	assert.equal(f.model.selectedKey, selected); assert.equal(f.model.revision, revision);
+	const functions = f.frame();
+	assert.equal(f.keyboard.publishedPage, KeyboardPage.Functions);
+	const first = functions.commandRefs[3] as RectRenderSubmission;
+	assert.equal(f.keyboard.hitTestAt((first.area.left + first.area.right) / 2, (first.area.top + first.area.bottom) / 2), f.model.rows[0].keys[0]);
+	assert.equal(f.model.selectedKey, selected); assert.equal(f.model.revision, revision);
 });

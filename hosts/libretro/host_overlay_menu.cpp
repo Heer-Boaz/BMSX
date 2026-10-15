@@ -59,28 +59,6 @@ constexpr i32 kUsageLowPercentTenthsLimit = 100;
 constexpr i32 kUsagePercentTenthsFlag = 1000000;
 constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
-struct OnScreenKeyboardCommandBinding {
-	InputControllerGamepadButtonBit button;
-	OnScreenKeyboardCommand command;
-	bool requiresSelect;
-};
-
-constexpr auto kOnScreenKeyboardCommandBindings = std::to_array<OnScreenKeyboardCommandBinding>({
-	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Delete, true},
-	{InputControllerGamepadButtonBit::Y, OnScreenKeyboardCommand::TogglePage, true},
-	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Home, true},
-	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::End, true},
-	{InputControllerGamepadButtonBit::B, OnScreenKeyboardCommand::Space, false},
-	{InputControllerGamepadButtonBit::X, OnScreenKeyboardCommand::Backspace, false},
-	{InputControllerGamepadButtonBit::Y, OnScreenKeyboardCommand::Shift, false},
-	{InputControllerGamepadButtonBit::LeftBumper, OnScreenKeyboardCommand::Left, false},
-	{InputControllerGamepadButtonBit::RightBumper, OnScreenKeyboardCommand::Right, false},
-	{InputControllerGamepadButtonBit::LeftTrigger, OnScreenKeyboardCommand::Home, false},
-	{InputControllerGamepadButtonBit::RightTrigger, OnScreenKeyboardCommand::End, false},
-	{InputControllerGamepadButtonBit::Start, OnScreenKeyboardCommand::Enter, false},
-	{InputControllerGamepadButtonBit::A, OnScreenKeyboardCommand::Activate, false},
-});
-
 constexpr u32 menuKeyboardButtons = (1u << static_cast<u32>(InputControllerGamepadButtonBit::Up))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Down))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Left))
@@ -229,7 +207,7 @@ void formatUsagePercentCode(char* target, size_t targetSize, i32 code) {
 
 } // namespace
 
-HostOverlayMenu::HostOverlayMenu(LibretroInput& input) : uiInput(input), m_keyboard(input, NATIVE_KEYBOARD_PAGES), m_keyboardView(m_keyboard) {
+HostOverlayMenu::HostOverlayMenu(LibretroInput& input, HostKeyboardInteraction& keyboard) : uiInput(input), m_keyboard(keyboard) {
 	configureRect(m_panelRect, kPanelColor);
 	configureRect(m_highlightRect, kHighlightColor);
 	configureRect(m_usagePanelRect, kUsagePanelColor);
@@ -307,8 +285,13 @@ HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input,
 		transitionTo(m_page == Page::Closed ? Page::Options : Page::Closed, input, rewind);
 	}
 	uiInput.update(currentTimeMs);
-	if (m_page == Page::Keyboard) m_keyboard.updateFeedback(currentTimeMs);
-	const HostMenuInput result = handleInput(runtime, input, presenter, rewind);
+	HostMenuInput result;
+	if (m_page == Page::Keyboard) {
+		m_keyboard.tickInput(uiInput, input, currentTimeMs);
+		result = HostMenuInput::Inactive;
+	} else {
+		result = handleInput(runtime, input, presenter, rewind);
+	}
 	uiInput.consume();
 	return result;
 }
@@ -316,31 +299,6 @@ HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input,
 HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind) {
 	if (m_page == Page::Closed) return HostMenuInput::Inactive;
 	if (m_page == Page::Rewind) return tickTimelineInput(runtime, input, rewind);
-	if (m_page == Page::Keyboard) {
-		if (!uiInput.pointerHeld()) m_keyboard.releaseSource(OnScreenKeyboard::PointerSource);
-		const i32 pointerKey = uiInput.pointerValid && uiInput.pointerChanged
-			? m_keyboardView.selectAt(uiInput.pointerX, uiInput.pointerY) : -1;
-		if (uiInput.pointerJustPressed() && pointerKey >= 0
-			&& m_keyboard.activate(OnScreenKeyboard::PointerSource) == OnScreenKeyboardAction::TogglePosition) m_keyboardView.togglePosition();
-		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Up)) m_keyboard.moveVertical(-1);
-		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Down)) m_keyboard.moveVertical(1);
-		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Left)) m_keyboard.moveHorizontal(-1);
-		if (uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Right)) m_keyboard.moveHorizontal(1);
-		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
-			const size_t sourceBase = player * INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
-			for (u8 button = 0; button < INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT; ++button) {
-				if (!uiInput.gamepadButtonPressed(player, static_cast<InputControllerGamepadButtonBit>(button))) m_keyboard.releaseSource(sourceBase + button);
-			}
-			for (const auto& binding : kOnScreenKeyboardCommandBindings) {
-				if (uiInput.gamepadButtonJustPressed(player, binding.button)
-					&& uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select) == binding.requiresSelect) {
-					if (m_keyboard.command(sourceBase + static_cast<size_t>(binding.button), binding.command)
-						== OnScreenKeyboardAction::TogglePosition) m_keyboardView.togglePosition();
-				}
-			}
-		}
-		return HostMenuInput::Inactive;
-	}
 	const bool pointerActivated = tickPointerInput();
 	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::B)) {
 		transitionTo(Page::Closed, input, rewind);
@@ -394,7 +352,7 @@ void HostOverlayMenu::resetInputState(LibretroInput& input, HostRewind& rewind) 
 
 void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind) {
 	if (m_page == Page::Keyboard) {
-		m_keyboardView.queueRenderCommands(presenter);
+		m_keyboard.view.queueRenderCommands(presenter);
 		return;
 	}
 	if (m_page == Page::Rewind) {
@@ -627,7 +585,7 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 			m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
 			break;
 		case Page::Keyboard:
-			m_keyboard.open();
+			m_keyboard.open(input);
 			break;
 		case Page::Rewind:
 			break;
@@ -677,9 +635,6 @@ bool HostOverlayMenu::tickPointerInput() {
 }
 
 i32 HostOverlayMenu::selectPointerTargetAt(i32 x, i32 y) {
-	if (m_page == Page::Keyboard) {
-		return m_keyboardView.selectAt(x, y);
-	}
 	if (m_page == Page::Rewind) {
 		return static_cast<i32>(timeline.selectAt(x, y));
 	}

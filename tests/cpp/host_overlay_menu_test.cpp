@@ -17,8 +17,8 @@ u16 buttons = 0, secondButtons = 0;
 i16 pointerX = 0, pointerY = 0;
 bool pointerPressed = false;
 void poll() {}
-i16 state(unsigned port, unsigned device, unsigned, unsigned id) {
-	if (port == 0 && device == RETRO_DEVICE_POINTER) {
+i16 state(unsigned port, unsigned device, unsigned index, unsigned id) {
+	if (port == 0 && device == RETRO_DEVICE_POINTER && index == 0) {
 		if (id == RETRO_DEVICE_ID_POINTER_X) return pointerX;
 		if (id == RETRO_DEVICE_ID_POINTER_Y) return pointerY;
 		if (id == RETRO_DEVICE_ID_POINTER_PRESSED) return pointerPressed;
@@ -56,7 +56,11 @@ void testNativeMoveTarget() {
 	TestVideoOutput output(w, h);
 	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(w, h, PSX_MACHINE_SPEC.gxGpuVramBytes), w, h);
 	Font font; presenter.default_font = &font; RenderPresentationState presentation;
-	HostRewind rewind(runtime, presenter, presentation); HostOverlayMenu menu(input); f64 time = 0;
+	HostRewind rewind(runtime, presenter, presentation);
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard keyboardView(keyboard);
+	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+	HostOverlayMenu menu(input, keyboardInteraction); f64 time = 0;
 	InputControllerSnapshot snapshot{};
 	const auto tick = [&]() { time += 20; input.poll(w, h, time); menu.tickInput(runtime, input, presenter, rewind, time); };
 	const auto press = [&](u16 mask) { buttons = mask; tick(); buttons = 0; tick(); };
@@ -97,11 +101,11 @@ void testNativeMoveTarget() {
 			const auto center = middlepoint_area(moveRect()->area);
 			pointerX = static_cast<i16>(static_cast<i32>(center.x) * 65534 / (w - 1) - 32767);
 			pointerY = static_cast<i16>(static_cast<i32>(center.y) * 65534 / (h - 1) - 32767);
-			pointerPressed = true; tick(); frame(); noKeys();
-			require(pointerPress == 0 ? panel->area.bottom == h - 4 : panel->area.top == 4, "actual native pointer activation dispatches the visible MOVE target");
 			const f32 top = panel->area.top;
-			for (int hold = 0; hold < 5; ++hold) { tick(); frame(); require(panel->area.top == top, "moving the view underneath a held pointer cannot retrigger MOVE"); }
-			pointerPressed = false; tick(); noKeys();
+			pointerPressed = true; tick(); frame(); noKeys();
+			for (int hold = 0; hold < 5; ++hold) { tick(); frame(); require(panel->area.top == top, "native contact activation retains painted geometry until actual release"); }
+			pointerPressed = false; tick(); frame(); noKeys();
+			require(pointerPress == 0 ? panel->area.bottom == h - 4 : panel->area.top == 4, "actual native pointer release dispatches the visible MOVE target once");
 		}
 		const auto commands = frame();
 		require(commands.commandRefs[commands.commandCount - 1].glyphs->items[0] == "SEL+X CLOSE  SEL+L/R HOME/END", "help keeps physical host shortcuts while the visible action replaces the hidden docking chord");
@@ -134,7 +138,10 @@ int main() {
 		output.visibleViewportBounds = RectBounds{12.8F, 6.4F, 243.2F, 121.6F, 0};
 		RenderPresentationState presentation;
 		HostRewind rewind(runtime, presenter, presentation);
-		HostOverlayMenu menu(input);
+		OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+		HostOnScreenKeyboard keyboardView(keyboard);
+		HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+		HostOverlayMenu menu(input, keyboardInteraction);
 		f64 time = 0;
 		const auto tick = [&]() {
 			time += 20;
