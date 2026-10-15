@@ -11,37 +11,18 @@ namespace {
 
 constexpr unsigned kLibretroButtonCount = 16u;
 
-#if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
-constexpr InputControllerGamepadButtonBit kLibretroButtonA =
-	InputControllerGamepadButtonBit::B;
-constexpr InputControllerGamepadButtonBit kLibretroButtonB =
-	InputControllerGamepadButtonBit::A;
-constexpr InputControllerGamepadButtonBit kLibretroButtonX =
-	InputControllerGamepadButtonBit::Y;
-constexpr InputControllerGamepadButtonBit kLibretroButtonY =
-	InputControllerGamepadButtonBit::X;
-#else
-constexpr InputControllerGamepadButtonBit kLibretroButtonA =
-	InputControllerGamepadButtonBit::A;
-constexpr InputControllerGamepadButtonBit kLibretroButtonB =
-	InputControllerGamepadButtonBit::B;
-constexpr InputControllerGamepadButtonBit kLibretroButtonX =
-	InputControllerGamepadButtonBit::X;
-constexpr InputControllerGamepadButtonBit kLibretroButtonY =
-	InputControllerGamepadButtonBit::Y;
-#endif
-
+// RetroPad uses SNES face labels; BMSX follows the standard positional ABI.
 constexpr std::array<InputControllerGamepadButtonBit, kLibretroButtonCount> kLibretroButtons = {
-	kLibretroButtonB,
-	kLibretroButtonY,
+	InputControllerGamepadButtonBit::A,
+	InputControllerGamepadButtonBit::X,
 	InputControllerGamepadButtonBit::Select,
 	InputControllerGamepadButtonBit::Start,
 	InputControllerGamepadButtonBit::Up,
 	InputControllerGamepadButtonBit::Down,
 	InputControllerGamepadButtonBit::Left,
 	InputControllerGamepadButtonBit::Right,
-	kLibretroButtonA,
-	kLibretroButtonX,
+	InputControllerGamepadButtonBit::B,
+	InputControllerGamepadButtonBit::Y,
 	InputControllerGamepadButtonBit::LeftBumper,
 	InputControllerGamepadButtonBit::RightBumper,
 	InputControllerGamepadButtonBit::LeftTrigger,
@@ -54,13 +35,10 @@ constexpr u32 kTerminalShortcutMask =
 	1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper);
 constexpr u32 kMenuShortcutMask =
 	1u << static_cast<u32>(InputControllerGamepadButtonBit::Start);
-constexpr u32 kOnScreenKeyboardShortcutMask =
-	1u << static_cast<u32>(InputControllerGamepadButtonBit::X);
 constexpr u32 kHostShortcutModifier =
 	1u << static_cast<u32>(InputControllerGamepadButtonBit::Select);
-constexpr u32 kHostShortcutTargets = kTerminalShortcutMask
-	| kMenuShortcutMask
-	| kOnScreenKeyboardShortcutMask;
+constexpr u32 kKeyboardHostShortcutTargets = kTerminalShortcutMask
+	| kMenuShortcutMask;
 
 constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 	std::array<i16, RETROK_LAST> usages{};
@@ -165,7 +143,7 @@ bool keyUsagePressed(
 LibretroInput::LibretroInput(
 		bmsx_supervisor_request_line_t supervisorRequestLine)
 	: m_supervisor_request_line(supervisorRequestLine),
-		m_gamepad_host_shortcut_targets(kHostShortcutTargets) {
+		m_gamepad_host_shortcut_targets(HOST_GAMEPAD_SHORTCUT_TARGETS) {
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 }
 
@@ -202,7 +180,7 @@ void LibretroInput::poll(
 			&m_keyboard_shortcuts,
 			keyboardButtons,
 			kHostShortcutModifier,
-			kHostShortcutTargets);
+			kKeyboardHostShortcutTargets);
 	if ((keyboardShortcuts.routed_buttons & kHostShortcutModifier) == 0u) {
 		consumePhysicalKeyboardUsage(hid_key_usage::ControlRight);
 	}
@@ -424,20 +402,8 @@ void LibretroInput::consumeGamepadInput(u8 deviceSlot) {
 	m_gamepads[deviceSlot].axesQ16.fill(0u);
 }
 
-void LibretroInput::setExclusiveGamepadHostShortcut(
-		InputControllerGamepadButtonBit button) {
-	m_gamepad_host_shortcut_targets = 1u << static_cast<u32>(button);
-	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
-		bmsx_host_shortcuts_retarget(
-			&m_gamepad_shortcuts[player],
-			m_physical_gamepad_buttons[player],
-			kHostShortcutModifier,
-			m_gamepad_host_shortcut_targets);
-	}
-}
-
-void LibretroInput::clearExclusiveGamepadHostShortcut() {
-	m_gamepad_host_shortcut_targets = kHostShortcutTargets;
+void LibretroInput::setGamepadHostShortcutTargets(u32 targets) {
+	m_gamepad_host_shortcut_targets = targets;
 	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
 		bmsx_host_shortcuts_retarget(
 			&m_gamepad_shortcuts[player],
@@ -636,7 +602,7 @@ void LibretroInput::reset() {
 	m_host_supervisor_request_high = false;
 	m_gamepad_shortcuts.fill({});
 	m_keyboard_shortcuts = {};
-	m_gamepad_host_shortcut_targets = kHostShortcutTargets;
+	m_gamepad_host_shortcut_targets = HOST_GAMEPAD_SHORTCUT_TARGETS;
 	m_just_pressed_host_shortcuts = 0u;
 }
 

@@ -27,5 +27,5 @@ export function createHostFrameFixture() {
 	const rewind = new HostRewind(runtime, presenter, screen, tasks, audio, { log(_level, text) { errors.push(text); } });
 	const execution = new HostExecutionControl(audio);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
-	return { runtime, input, sink, audio, presenter, screen, tasks, errors, rewind, execution, session };
+	return { runtime, clock, input, sink, audio, presenter, screen, tasks, errors, rewind, execution, session };
 }

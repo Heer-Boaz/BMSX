@@ -115,11 +115,11 @@ void testPurePublishedHitGeometry() {
 void testControllerAndContactSources() {
 	Fixture f;
 	const auto q = f.center(key(hid_key_usage::Q));
-	contacts = {q}; f.tick(); buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+	contacts = {q}; f.tick(); buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; f.tick();
 	contacts.clear(); f.tick();
 	require(f.held(hid_key_usage::Q), "controller source retains the same key after its absolute contact leaves");
 	buttons = 0; f.tick(); require(!f.held(hid_key_usage::Q), "controller up releases its own contribution after contact up");
-	contacts = {q}; f.tick(); buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick(); buttons = 0; f.tick();
+	contacts = {q}; f.tick(); buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; f.tick(); buttons = 0; f.tick();
 	require(f.held(hid_key_usage::Q), "an absolute contact independently retains the key after controller up");
 	contacts.clear(); f.tick(); require(!f.held(hid_key_usage::Q), "the last independent source releases the key");
 }
@@ -181,7 +181,7 @@ void testMouseReleaseReconcilesFocusBeforeControllerCommands() {
 		f.mouseAt(q); mousePressed = true; f.tick();
 		f.mouseAt(w); f.tick();
 		require(f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q), "held mouse movement preserves its captured key and focus");
-		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; f.tick();
 		require(f.model.selectedKey() == key(hid_key_usage::W) && f.held(hid_key_usage::W) && !f.held(hid_key_usage::Q),
 			"mouse up reconciles the release-position focus before a same-poll controller activation");
 		buttons = 0; f.tick(); require(!f.held(hid_key_usage::W), "controller up releases the newly activated hover target");
@@ -192,7 +192,7 @@ void testMouseReleaseReconcilesFocusBeforeControllerCommands() {
 		f.mouseAt(q); mousePressed = true; f.tick();
 		f.press(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
 		require(f.model.selectedKey() == key(hid_key_usage::W), "controller navigation may change focus while a mouse key stays captured");
-		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; f.tick();
 		require(f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q) && !f.held(hid_key_usage::W),
 			"mouse up restores its release-position focus even when the cursor coordinates did not change");
 		buttons = 0; f.tick(); require(!f.held(hid_key_usage::Q), "same-position activation still has an independent controller lifetime");
@@ -203,7 +203,7 @@ void testMouseReleaseReconcilesFocusBeforeControllerCommands() {
 		const auto top = f.panelTop();
 		f.mouseAt(position); mousePressed = true; f.tick();
 		f.mouseAt(q); f.tick();
-		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; f.tick();
+		mousePressed = false; buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; f.tick();
 		require(f.panelTop() != top && f.model.selectedKey() == key(hid_key_usage::Q) && f.held(hid_key_usage::Q),
 			"dock up completes once, then hover uses the published old geometry before same-poll controller activation");
 		buttons = 0; f.tick(); require(!f.held(hid_key_usage::Q), "docking does not change the controller key's real release");
@@ -222,7 +222,7 @@ void testDeferredGeometryActions() {
 	require(f.panelTop() != top, "the touch docking action completes once at actual all-up");
 	const auto q = f.center(key(hid_key_usage::Q));
 	contacts = {q}; f.tick();
-	f.press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+	f.press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 	require(f.model.page() == 0 && f.held(hid_key_usage::Q), "controller page changes queue rather than replacing held absolute-contact geometry");
 	contacts.clear(); f.tick();
 	require(f.model.page() == 1 && !f.held(hid_key_usage::Q), "the queued page command runs after real contact release");
@@ -231,7 +231,7 @@ void testDeferredGeometryActions() {
 	contacts = {newQ}; f.tick();
 	f.model.selectKey(ON_SCREEN_KEYBOARD_POSITION_TARGET, 0);
 	const auto beforeControllerDock = f.panelTop();
-	f.press(1u << RETRO_DEVICE_ID_JOYPAD_A);
+	f.press(1u << RETRO_DEVICE_ID_JOYPAD_B);
 	require(f.panelTop() == beforeControllerDock && f.held(hid_key_usage::Q), "controller docking is also deferred while absolute input owns geometry");
 	contacts.clear(); f.tick(); require(f.panelTop() != beforeControllerDock, "queued controller docking runs after its independent touch releases");
 	const auto dock = f.center(ON_SCREEN_KEYBOARD_POSITION_TARGET);
@@ -263,7 +263,7 @@ void testOpenCloseAndMouseModifiers() {
 }
 
 void testQueuedPageCountUsesModelSchema() {
-	const auto pageButton = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
+	const auto pageButton = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X);
 	{
 		Fixture f;
 		contacts = {{0, 0}}; f.tick(); const auto revision = f.model.revision();

@@ -212,7 +212,7 @@ Browser Studio, Node headless tooling and native libretro products are rebuilt.
 The original transport implements seeking and live takeover, not playback of
 retained history. This slice adds that missing operation. With the current
 interaction mapping, LB/RB step recorded video frames and Left/Right seek
-seconds. A accepts the selected point; B cancels back to the retained present;
+seconds. START accepts the selected point; B cancels back to the retained present;
 X toggles recorded playback/pause. Pointer input scrubs and accepts/cancels.
 Controls exist only in the open host
 transport; no gameplay keyboard shortcut or cartlib worldtick stepping is added.
@@ -840,7 +840,12 @@ Collection is continuous during ordinary gameplay, from boot, not enabled by
 opening the rewind menu. Reboot, external load and tooling mutations establish
 a new timeline. Scenario execution is an external test session, not ordinary
 player history. The quick menu opens the transport bar described in
-`REWIND-UI-01` below; no rewind shortcut is assigned.
+`REWIND-UI-01` below. SELECT+south (canonical A) also toggles that bar when
+history is available. START takes over the chosen position; east (canonical B)
+cancels to the retained present. Enter/Escape are physical-keyboard equivalents.
+These positional bindings are identical on every controller, including SNES Mini.
+The OSK chord is SELECT+west (canonical X); both new controller bindings are
+independent of hardware-keyboard shortcuts.
 
 Production references checked before the host diff:
 
@@ -997,7 +1002,7 @@ References examined before this mirrored UI diff:
 | State | TypeScript | C++ | Owner / callsites |
 | --- | --- | --- | --- |
 | Recorded range / seek target | Existing integer cycle `number` | Existing `i64` | `RuntimeHistory`, `HostRewind.seekTo`; storage and journal unchanged |
-| Transport inputs | Normalized host LB/RB, X playback, A takeover, B cancel; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
+| Transport inputs | Normalized host LB/RB, X playback, START takeover, B cancel; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
 | Previous button state | Input owner keeps physical pressed state separate from consumption | Normalized physical button bits; keyboard navigation also includes its existing stick thresholds | `HostOverlayMenu.latchButtonStates` must not latch consumed output as a release; holding the opening button does not activate the destination page |
 | Timeline navigation | LB/RB recorded video boundaries; Left/Right second-sized seeks; pointer mapped to range | Same journal boundaries and integer-cycle targets | `HostOverlayMenu` maps input to `HostRewind.stepFrame` / `seekTo`; the passive view only maps pixels with `cyclesAt` |
 | Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.update`; the host publishes its retained frame; no per-frame buffer construction |

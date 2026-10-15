@@ -15,12 +15,14 @@ struct PointerSample {
 
 std::vector<PointerSample> contacts;
 std::array<i16, 11> mouse{};
+std::array<u16, INPUT_CONTROLLER_PAD_COUNT> joypads{};
 size_t pressedQueries = 0;
 size_t coordinateQueries = 0;
 
 void poll() {}
 bool RETRO_CALLCONV supervisor() { return false; }
 i16 state(unsigned port, unsigned device, unsigned index, unsigned id) {
+	if (device == RETRO_DEVICE_JOYPAD) return (joypads[port] & (1u << id)) != 0u;
 	if (port != 0u) return 0;
 	if (device == RETRO_DEVICE_MOUSE) return mouse[id];
 	if (device == RETRO_DEVICE_POINTER) {
@@ -46,6 +48,7 @@ struct InputFixture {
 	InputFixture() {
 		contacts.clear();
 		mouse.fill(0);
+		joypads.fill(0);
 		input.setInputPollCallback(poll);
 		input.setInputStateCallback(state);
 	}
@@ -55,6 +58,212 @@ struct InputFixture {
 		time += 20;
 	}
 };
+
+void testRetroPadPositionsUseCanonicalGamepadBits() {
+	InputFixture fixture;
+	constexpr std::array expected{
+		InputControllerGamepadButtonBit::A, InputControllerGamepadButtonBit::X,
+		InputControllerGamepadButtonBit::Select, InputControllerGamepadButtonBit::Start,
+		InputControllerGamepadButtonBit::Up, InputControllerGamepadButtonBit::Down,
+		InputControllerGamepadButtonBit::Left, InputControllerGamepadButtonBit::Right,
+		InputControllerGamepadButtonBit::B, InputControllerGamepadButtonBit::Y,
+		InputControllerGamepadButtonBit::LeftBumper, InputControllerGamepadButtonBit::RightBumper,
+		InputControllerGamepadButtonBit::LeftTrigger, InputControllerGamepadButtonBit::RightTrigger,
+		InputControllerGamepadButtonBit::LeftStick, InputControllerGamepadButtonBit::RightStick,
+	};
+	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+		for (unsigned retro = 0; retro < expected.size(); ++retro) {
+			joypads[player] = 1u << retro;
+			fixture.tick();
+			const u32 canonical = 1u << static_cast<u32>(expected[retro]);
+			require(fixture.input.physicalGamepadButtonsWord(player) == canonical,
+				"every RetroPad position maps to its canonical BMSX position on every port");
+			InputControllerSnapshot snapshot{};
+			fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+			const u32 routed = retro == RETRO_DEVICE_ID_JOYPAD_SELECT ? 0u : canonical;
+			require(snapshot.pads[player].buttons == routed,
+				"ordinary positional buttons reach the guest unchanged while Select remains the host modifier");
+			joypads[player] = 0;
+			fixture.tick();
+		}
+	}
+}
+
+void testGamepadHostTargetsKeepTheirRealReleaseLifetime() {
+	struct Shortcut {
+		unsigned retro;
+		InputControllerGamepadButtonBit canonical;
+	};
+	constexpr std::array shortcuts{
+		Shortcut{RETRO_DEVICE_ID_JOYPAD_B, InputControllerGamepadButtonBit::A},
+		Shortcut{RETRO_DEVICE_ID_JOYPAD_Y, InputControllerGamepadButtonBit::X},
+		Shortcut{RETRO_DEVICE_ID_JOYPAD_START, InputControllerGamepadButtonBit::Start},
+		Shortcut{RETRO_DEVICE_ID_JOYPAD_L, InputControllerGamepadButtonBit::LeftBumper},
+	};
+	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+		for (const auto& shortcut : shortcuts) {
+			InputFixture fixture;
+			joypads[player] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << shortcut.retro);
+			fixture.tick();
+			require(fixture.input.hostShortcutJustPressed(shortcut.canonical),
+				"Select plus bottom, west, Start or LB activates its canonical host target");
+			require(!fixture.input.gamepadButtonPressed(player, shortcut.canonical)
+				&& !fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select),
+				"the host chord is absent from routed guest gamepad input");
+			require(fixture.input.supervisorRequestLineHigh()
+				== (shortcut.canonical == InputControllerGamepadButtonBit::LeftBumper),
+				"only the terminal host target raises the supervisor request line");
+			fixture.tick();
+			require(!fixture.input.hostShortcutJustPressed(shortcut.canonical),
+				"a held chord does not repeat the host activation");
+			joypads[player] = 1u << shortcut.retro;
+			fixture.tick();
+			require(!fixture.input.gamepadButtonPressed(player, shortcut.canonical)
+				&& !fixture.input.hostShortcutJustPressed(shortcut.canonical)
+				&& !fixture.input.supervisorRequestLineHigh(),
+				"releasing Select leaves the captured target hidden until its actual up");
+			joypads[player] = 0;
+			fixture.tick();
+			joypads[player] = 1u << shortcut.retro;
+			fixture.tick();
+			require(fixture.input.gamepadButtonPressed(player, shortcut.canonical),
+				"a fresh unmodified button becomes guest input after real release");
+		}
+	}
+}
+
+void testKeyboardContextAllowsMultipleHostTargetsAndLocalCommands() {
+	InputFixture fixture;
+	constexpr u32 keyboardTargets = HOST_GAMEPAD_SHORTCUT_TARGETS
+		& ~(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper));
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
+	fixture.tick();
+	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X), "west opens the keyboard");
+	fixture.input.setGamepadHostShortcutTargets(keyboardTargets);
+	fixture.tick();
+	require(!fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X),
+		"entering the keyboard context blocks its still-held opening chord");
+	joypads[0] = 0;
+	fixture.tick();
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_L)
+		| (1u << RETRO_DEVICE_ID_JOYPAD_R) | (1u << RETRO_DEVICE_ID_JOYPAD_X);
+	fixture.tick();
+	constexpr u32 localCommands = (1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper))
+		| (1u << static_cast<u32>(InputControllerGamepadButtonBit::RightBumper))
+		| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Y));
+	InputControllerSnapshot snapshot{};
+	fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+	require(snapshot.pads[0].buttons == localCommands && !fixture.input.supervisorRequestLineHigh(),
+		"Select plus LB, RB and north remains available for local keyboard commands, not terminal capture");
+	require((fixture.input.physicalGamepadButtonsWord(0)
+		& (1u << static_cast<u32>(InputControllerGamepadButtonBit::Select))) != 0u,
+		"the local keyboard owner still sees the real physical modifier");
+	fixture.input.setGamepadHostShortcutTargets(HOST_GAMEPAD_SHORTCUT_TARGETS);
+	fixture.tick();
+	require(!fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::LeftBumper)
+		&& !fixture.input.supervisorRequestLineHigh(),
+		"restoring global targets cannot activate the already held local shoulder command");
+	joypads[0] = 0;
+	fixture.tick();
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_L);
+	fixture.tick();
+	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::LeftBumper),
+		"the restored shoulder host command rearms after real up");
+	joypads[0] = 0;
+	fixture.tick();
+	fixture.input.setGamepadHostShortcutTargets(keyboardTargets);
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_B)
+		| (1u << RETRO_DEVICE_ID_JOYPAD_START);
+	fixture.tick();
+	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)
+		&& fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start),
+		"the keyboard context permits rewind and menu simultaneously instead of one exclusive target");
+	joypads[0] = 0;
+	fixture.tick();
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
+	fixture.tick();
+	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X),
+		"a fresh west chord can still close the keyboard in its own context");
+	fixture.input.reset();
+	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_L);
+	fixture.tick();
+	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::LeftBumper),
+		"reset restores the complete default gamepad host-target policy");
+}
+
+void testOrdinaryHardwareXAndZCannotBecomeGamepadHostShortcuts() {
+	constexpr u32 ordinaryKeys = (1u << hid_key_usage::X) | (1u << hid_key_usage::Z);
+	for (bool modifierFirst : std::array{false, true}) {
+		for (u32 targets : std::array{HOST_GAMEPAD_SHORTCUT_TARGETS,
+			HOST_GAMEPAD_SHORTCUT_TARGETS & ~(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper))}) {
+			InputFixture fixture;
+			fixture.input.setGamepadHostShortcutTargets(targets);
+			if (modifierFirst) { fixture.input.postKeyboardEvent(RETROK_RCTRL, true); fixture.tick(); }
+			fixture.input.postKeyboardEvent(RETROK_x, true);
+			fixture.input.postKeyboardEvent(RETROK_z, true);
+			fixture.tick();
+			if (!modifierFirst) { fixture.input.postKeyboardEvent(RETROK_RCTRL, true); fixture.tick(); }
+			InputControllerSnapshot snapshot{};
+			fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+			require(snapshot.keyWords[0] == ordinaryKeys,
+				"physical CtrlRight plus X/Z leaves both ordinary HID keys routed to the guest");
+			require(!fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)
+				&& !fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X),
+				"hardware X/Z is not an invented rewind or onscreen-keyboard shortcut");
+			require(fixture.input.physicalOrdinaryHeldCount() == 2
+				&& fixture.input.physicalOrdinaryPressGeneration() == 2,
+				"host routing does not change the physical ordinary-key source accounting");
+			fixture.input.postKeyboardEvent(RETROK_RCTRL, false);
+			fixture.tick();
+			fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+			require(snapshot.keyWords[0] == ordinaryKeys, "releasing the host modifier cannot alter held ordinary X/Z");
+		}
+	}
+}
+
+void testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext() {
+	struct Shortcut {
+		unsigned retro;
+		u8 usage;
+		InputControllerGamepadButtonBit target;
+	};
+	constexpr std::array shortcuts{
+		Shortcut{RETROK_LSHIFT, hid_key_usage::ShiftLeft, InputControllerGamepadButtonBit::LeftBumper},
+		Shortcut{RETROK_RALT, hid_key_usage::AltRight, InputControllerGamepadButtonBit::Start},
+	};
+	for (const auto& shortcut : shortcuts) {
+		InputFixture fixture;
+		fixture.input.setGamepadHostShortcutTargets(HOST_GAMEPAD_SHORTCUT_TARGETS
+			& ~(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper)));
+		fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+		fixture.input.postKeyboardEvent(shortcut.retro, true);
+		fixture.tick();
+		require(fixture.input.hostShortcutJustPressed(shortcut.target),
+			"existing hardware CtrlRight terminal/menu chords remain enabled in the keyboard context");
+		require(fixture.input.supervisorRequestLineHigh()
+			== (shortcut.target == InputControllerGamepadButtonBit::LeftBumper),
+			"only hardware CtrlRight+ShiftLeft requests the terminal supervisor line");
+		fixture.input.setGamepadHostShortcutTargets(HOST_GAMEPAD_SHORTCUT_TARGETS);
+		fixture.tick();
+		require(!fixture.input.hostShortcutJustPressed(shortcut.target),
+			"gamepad-context changes do not retarget or repeat a held hardware chord");
+		fixture.input.postKeyboardEvent(RETROK_RCTRL, false);
+		fixture.tick();
+		InputControllerSnapshot snapshot{};
+		fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+		require((snapshot.keyWords[shortcut.usage >> 5] & (1u << (shortcut.usage & 31u))) == 0u,
+			"the hardware command key retains its capture after modifier up until its real release");
+		require(fixture.input.physicalKeyboardUsagePressed(shortcut.usage),
+			"the hardware source remains truthful while its guest contribution is captured");
+		fixture.input.postKeyboardEvent(shortcut.retro, false);
+		fixture.tick();
+		fixture.input.postKeyboardEvent(shortcut.retro, true);
+		fixture.tick();
+		fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
+		require((snapshot.keyWords[shortcut.usage >> 5] & (1u << (shortcut.usage & 31u))) != 0u,
+			"the hardware command key becomes ordinary input after actual release");
+	}
+}
 
 void testReleasedPointerCoordinatesCannotCaptureMouse() {
 	InputFixture fixture;
@@ -166,6 +375,11 @@ void testMouseButtonsDoNotRequirePriorMotion() {
 } // namespace
 
 int main() {
+	testRetroPadPositionsUseCanonicalGamepadBits();
+	testGamepadHostTargetsKeepTheirRealReleaseLifetime();
+	testKeyboardContextAllowsMultipleHostTargetsAndLocalCommands();
+	testOrdinaryHardwareXAndZCannotBecomeGamepadHostShortcuts();
+	testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext();
 	testReleasedPointerCoordinatesCannotCaptureMouse();
 	testIndexedSnapshotsDoNotInventContactIdentities();
 	testContactCountIsNotArtificiallyCapped();

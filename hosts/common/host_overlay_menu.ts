@@ -12,8 +12,10 @@ import {
 	type GamepadRemapControl,
 } from './input/gamepad_remap_controls';
 import {
+	ControlSource,
 	HOST_MENU_BUTTON,
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
+	HOST_REWIND_BUTTON,
 } from './input/shortcuts';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { clamp } from '../../machine/ts/common/clamp';
@@ -121,6 +123,8 @@ const BUTTON_B: HostMenuButton = InputControllerGamepadButtonBit.B;
 const BUTTON_X: HostMenuButton = InputControllerGamepadButtonBit.X;
 const BUTTON_LEFT_BUMPER: HostMenuButton = InputControllerGamepadButtonBit.LeftBumper;
 const BUTTON_RIGHT_BUMPER: HostMenuButton = InputControllerGamepadButtonBit.RightBumper;
+const KEYBOARD_HOST_SHORTCUT_MASK = (1 << InputControllerGamepadButtonBit.X) | (1 << InputControllerGamepadButtonBit.A)
+	| (1 << InputControllerGamepadButtonBit.Start);
 const MENU_KEYBOARD_BUTTONS = (1 << BUTTON_UP) | (1 << BUTTON_DOWN) | (1 << BUTTON_LEFT) | (1 << BUTTON_RIGHT)
 	| (1 << BUTTON_A) | (1 << BUTTON_B) | (1 << BUTTON_X) | (1 << BUTTON_LEFT_BUMPER) | (1 << BUTTON_RIGHT_BUMPER);
 
@@ -170,7 +174,7 @@ const enum HostOverlayPage {
 	Rewind,
 }
 
-const enum HostOverlayRequest { None, ToggleMenu, ToggleKeyboard }
+const enum HostOverlayRequest { None = 0, ToggleMenu = 1, ToggleKeyboard = 2, ToggleRewind = 4 }
 
 export const enum HostOverlayOutcome { Cancel, Accept, Discard, Retain }
 
@@ -415,6 +419,11 @@ export class HostOverlayMenu {
 				playerIndex,
 				HOST_ON_SCREEN_KEYBOARD_BUTTON,
 				this.requestToggleKeyboard,
+				undefined, ControlSource.Gamepad,
+			);
+			shortcuts.registerControlShortcut(
+				playerIndex, HOST_REWIND_BUTTON, this.requestToggleRewind,
+				undefined, ControlSource.Gamepad,
 			);
 		}
 		const optionCapacity = Math.max(
@@ -444,16 +453,22 @@ export class HostOverlayMenu {
 	}
 
 	/** Host frontends and physical shortcuts enter the same frame-boundary transition. */
-	public readonly requestToggleMenu = (): void => { this.pendingRequest = HostOverlayRequest.ToggleMenu; };
-	public readonly requestToggleKeyboard = (): void => { this.pendingRequest = HostOverlayRequest.ToggleKeyboard; };
+	public readonly requestToggleMenu = (): void => { this.pendingRequest |= HostOverlayRequest.ToggleMenu; };
+	public readonly requestToggleKeyboard = (): void => { this.pendingRequest |= HostOverlayRequest.ToggleKeyboard; };
+	public readonly requestToggleRewind = (): void => { this.pendingRequest |= HostOverlayRequest.ToggleRewind; };
 
 	public tickInput(): HostMenuInput {
 		const request = this.pendingRequest;
 		this.pendingRequest = HostOverlayRequest.None;
-		if (request === HostOverlayRequest.ToggleMenu) {
-			this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed);
-		} else if (request === HostOverlayRequest.ToggleKeyboard) {
+		// Match native priority even when different players request competing pages.
+		if ((request & HostOverlayRequest.ToggleRewind) !== 0) {
+			if (this.page === HostOverlayPage.Rewind || this.rewind.available) {
+				this.transitionTo(this.page === HostOverlayPage.Rewind ? HostOverlayPage.Closed : HostOverlayPage.Rewind);
+			}
+		} else if ((request & HostOverlayRequest.ToggleKeyboard) !== 0) {
 			this.transitionTo(this.page === HostOverlayPage.Keyboard ? HostOverlayPage.Closed : HostOverlayPage.Keyboard);
+		} else if ((request & HostOverlayRequest.ToggleMenu) !== 0) {
+			this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed);
 		}
 		const currentTimeMs = this.input.getPlayerInput(1).pollTimestampMs;
 		this.uiInput.update(currentTimeMs);
@@ -521,7 +536,8 @@ export class HostOverlayMenu {
 		if (this.uiInput.buttonJustPressed(BUTTON_B) || pointerAction === TimelineAction.Cancel) {
 			this.transitionTo(HostOverlayPage.Closed);
 			result = HostMenuInput.Inactive;
-		} else if (this.uiInput.buttonJustPressed(BUTTON_A) || pointerAction === TimelineAction.Resume) {
+		} else if (this.uiInput.buttonJustPressed(InputControllerGamepadButtonBit.Start)
+			|| this.uiInput.keyboardButtonJustPressed(BUTTON_A) || pointerAction === TimelineAction.Resume) {
 			this.transitionTo(HostOverlayPage.Closed, HostOverlayOutcome.Accept);
 			result = HostMenuInput.Inactive;
 		} else if (this.uiInput.buttonJustPressed(BUTTON_X)) {
@@ -576,7 +592,7 @@ export class HostOverlayMenu {
 		}
 		if (this.page === HostOverlayPage.Rewind) {
 			const source = this.uiInput.activeSource;
-			this.timeline.setActionLabel(TimelineAction.Resume, source === HostUiInputSource.Gamepad ? 'A OK' : source === HostUiInputSource.Keyboard ? 'ENTER OK' : 'OK');
+			this.timeline.setActionLabel(TimelineAction.Resume, source === HostUiInputSource.Gamepad ? 'START OK' : source === HostUiInputSource.Keyboard ? 'ENTER OK' : 'OK');
 			this.timeline.setActionLabel(TimelineAction.Cancel, source === HostUiInputSource.Gamepad ? 'B BACK' : source === HostUiInputSource.Keyboard ? 'ESC BACK' : 'BACK');
 			const state = this.timelineState, history = this.runtime.history;
 			state.earliestCycles = history.earliestCycles; state.latestCycles = history.latestCycles;
@@ -881,8 +897,8 @@ export class HostOverlayMenu {
 				| (this.keyboardInteraction.bitmapView !== undefined ? HostUiInputSource.Pointer : HostUiInputSource.None)
 				: HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
 		this.uiInput.reset(sources, MENU_KEYBOARD_BUTTONS);
-		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
-			next === HostOverlayPage.Keyboard ? HOST_ON_SCREEN_KEYBOARD_BUTTON : null,
+		this.input.getGlobalShortcutRegistry().setGamepadControlShortcutMask(
+			next === HostOverlayPage.Keyboard ? KEYBOARD_HOST_SHORTCUT_MASK : null,
 		);
 		this.dirtyText = true;
 		switch (next) {

@@ -4,12 +4,9 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 
-test('native browser contacts reach the real common input and ICU without DOM-target feedback', async t => {
-	const template = await readFile('gamebase.html', 'utf8');
-	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
-	const bundle = await build({
-		stdin: {
-			contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
+const browserInputFixture = build({
+	stdin: {
+		contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
 export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserInputHub } from './hosts/browser/input';
@@ -19,12 +16,17 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 export { Memory } from './machine/ts/machine/memory/memory';
 export { InputController } from './machine/ts/machine/devices/input/controller';
 export { PSX_MACHINE_SPEC } from './machine/ts/spec/bmsx/model';
-export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_POINTER_BUTTONS } from './machine/ts/spec/bmsx/io';`,
-			resolveDir: process.cwd(),
-		},
-		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
-		tsconfig: 'tsconfig.base.json',
-	});
+export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_STRIDE, IO_INP_PAD_BUTTONS_OFFSET, IO_INP_POINTER_BUTTONS } from './machine/ts/spec/bmsx/io';`,
+		resolveDir: process.cwd(),
+	},
+	bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
+	tsconfig: 'tsconfig.base.json',
+});
+
+test('native browser contacts reach the real common input and ICU without DOM-target feedback', async t => {
+	const template = await readFile('gamebase.html', 'utf8');
+	const controls = template.slice(template.indexOf('<div id="controller-viewport"'), template.indexOf('<div id="gameContainer">'));
+	const bundle = await browserInputFixture;
 	const browser = await chromium.launch();
 	t.after(() => browser.close());
 	const page = await browser.newPage({ viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true });
@@ -541,5 +543,72 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		await touch('touchEnd', []);
 		await assertWord(0);
 	});
+	assert.deepEqual(errors, []);
+});
+
+test('standard browser gamepad face positions reach canonical independent player and ICU bits', async t => {
+	const bundle = await browserInputFixture;
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	const errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.setContent('<div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>');
+	await page.addScriptTag({ content: bundle.outputFiles[0].text });
+	const observed = await page.evaluate(() => {
+		const api = (globalThis as any).fixture;
+		// This is the browser API boundary, not a pre-normalized Input event source.
+		const pads = [0, 1].map(index => ({
+			id: `Standard Gamepad ${index}`, index, connected: true, mapping: 'standard', timestamp: 0,
+			buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })),
+			axes: [0, 0, 0, 0], vibrationActuator: null,
+		}));
+		Object.defineProperty(navigator, 'getGamepads', { value() { return pads; } });
+		const clock = new api.BrowserHostClock();
+		const hub = new api.BrowserInputHub(document.getElementById('gamescreen'), document.getElementById('player-surface'), clock, undefined, 'ScrollLock');
+		const input = new api.Input(clock, hub, 0);
+		const snapshot = api.createInputControllerSnapshot();
+		const memory = new api.Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, api.PSX_MACHINE_SPEC.ramBytes);
+		const controller = new api.InputController(memory, input, {
+			supervisorContextActive() { return false; }, requestSupervisorLineEdge() {},
+		});
+		controller.reset();
+		const states = [
+			[0, 0], [1, 0], [0, 0], [2, 0], [0, 0], [4, 0], [0, 0], [8, 0], [0, 0],
+			[3, 4], [15, 8], [14, 9], [12, 1], [8, 0], [0, 15], [0, 14], [0, 12], [0, 8], [0, 0],
+		];
+		const result = [];
+		let cycle = 0;
+		for (const state of states) {
+			for (let pad = 0; pad < pads.length; ++pad) {
+				pads[pad].timestamp += 1;
+				for (let button = 0; button < pads[pad].buttons.length; ++button) {
+					const pressed = (state[pad] & (1 << button)) !== 0;
+					pads[pad].buttons[button] = { pressed, touched: pressed, value: pressed ? 1 : 0 };
+				}
+			}
+			hub.poll(clock.now());
+			input.pollInput();
+			input.sampleInputControllerSnapshot(snapshot, 0);
+			memory.writeMappedWord(api.IO_INP_CTRL, api.INP_CTRL_ARM);
+			controller.onVblankEdge(++cycle);
+			result.push({
+				indices: state,
+				physical: [1, 2].map(player => input.getPlayerInput(player).inputHandlers.gamepad.physicalGamepadButtonsWord()),
+				sampled: snapshot.pads.slice(0, 2).map(pad => pad.buttons),
+				mmio: [0, 1].map(pad => memory.readIoU32(api.IO_INP_PADS + pad * api.IO_INP_PAD_STRIDE + api.IO_INP_PAD_BUTTONS_OFFSET)),
+			});
+		}
+		input.dispose();
+		return result;
+	});
+	for (const [row, button, canonical] of [[1, 'bottom', 1], [3, 'right', 2], [5, 'left', 4], [7, 'top', 8]] as const) {
+		assert.deepEqual(observed[row].physical, [canonical, 0], `W3C ${button} face position maps to canonical A/B/X/Y order`);
+	}
+	for (const row of observed) {
+		assert.deepEqual(row.physical, row.indices, 'independent physical buttons retain their positional contributions');
+		assert.deepEqual(row.sampled, row.indices, 'frame polling samples simultaneous and partial-release contributions for both players');
+		assert.deepEqual(row.mmio, row.indices, 'the armed ICU exposes the same positional words to the guest');
+	}
 	assert.deepEqual(errors, []);
 });

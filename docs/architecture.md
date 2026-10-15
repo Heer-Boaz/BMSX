@@ -6652,9 +6652,52 @@ strong foreground rather than thicker bitmap glyphs, so it never changes advance
 or wrapping. The IDE's retained Markdown layout selects normal/italic fonts before
 measuring; see [assistant presentation](studio_assistant_presentation.md).
 
+### Positional host controls and source-owned shortcuts
+
+The host UI follows the modern PlayStation positional convention on every
+controller: **south confirms, east cancels**. Canonical BMSX words remain
+A=south, B=east, X=west, Y=north; guest mappings do not change host actions.
+RetroPad uses Nintendo labels, so its B/A/Y/X inputs normalize to canonical
+A/B/X/Y at the libretro input producer. The direct SDL/evdev frontend emits
+RetroPad positions, not BMSX letter names. SNES Mini has no input-layout override.
+
+References checked before this mirrored change:
+[W3C standard positions](https://w3c.github.io/gamepad/#remapping),
+[RetroPad contract](https://docs.libretro.com/guides/input-and-controls/#what-is-a-retropad),
+and [RetroArch input routing](https://github.com/libretro/RetroArch/blob/v1.20.0/input/input_driver.c)
+(source-specific hotkey enablement and held-input suppression). These inform
+input ownership; they do not imply adopting RetroArch's configurable menu policy.
+
+| Representation | TypeScript | C++ | Owner / hot callsites |
+| --- | --- | --- | --- |
+| Physical face positions | Browser/touch canonical A/B/X/Y | RetroPad B/A/Y/X to canonical A/B/X/Y | Browser poll / `LibretroInput::poll`; direct frontend SDL and evdev event producers |
+| Controller host chord | SELECT plus registered canonical target | SELECT plus canonical target mask | `GlobalShortcutRegistry.pollPlayer` / `LibretroInput::poll`, before guest remapping |
+| Source eligibility | Entry keyboard/gamepad flags, compiled button mask | Separate keyboard and gamepad target masks | Shortcut poll; no per-frame strings-to-bits conversion or allocation |
+| Modal UI input | Retained per-source words and edges | Retained per-source words and edges | `HostUiInput.update`, consumed by `HostOverlayMenu.tickInput` |
+| Rewind commit | START edge or keyboard-only Enter edge | Same | Timeline page dispatch; A alone never commits |
+
+SELECT+west (BMSX X) toggles the keyboard; SELECT+south (BMSX A) toggles
+rewind when history is available; SELECT+START toggles the menu. In rewind,
+START commits the chosen moment and east (BMSX B) cancels to the retained
+present. Enter/Escape remain the physical-keyboard equivalents. The controller
+keyboard keeps local SELECT+Y page and SELECT+LB/RB Home/End commands; only
+its global keyboard/rewind/menu chords remain eligible while it is open.
+
+Keyboard and controller shortcut sources are independent. The new keyboard
+and rewind controller chords have no physical-keyboard aliases; neither adds
+Ctrl+Z/Ctrl+X commands. Existing Right Ctrl host-modifier reservation and its
+terminal/menu/Studio chords are unchanged; Left Ctrl remains ordinary editor
+input. Still-held modal controls remain captured until physical release.
+
+The direct frontend mapping has independent evdev/SDL tests using its shipping
+adapters; the common and libretro input tests verify all controller positions,
+source eligibility and held-release routing. Real-ROM host replay additionally
+checks keyboard-to-rewind admission, no A takeover and START takeover. These are
+automated host tests, not physical-controller or real-iPhone acceptance.
+
 Quick-menu pause is host execution policy, independent of the guest's
 firmware, cartridge and supervisor state. SELECT+START opens/closes the menu;
-START alone remains guest input. `HostOverlayMenu` derives `HostMenuExecution`
+START alone remains guest input during ordinary gameplay. `HostOverlayMenu` derives `HostMenuExecution`
 from its current page in both hosts: options and controller remapping hold the machine, the virtual
 keyboard allows live execution, and the rewind page delegates explicit
 seek/playback to `HostRewind`. There is no second retained pause flag in the

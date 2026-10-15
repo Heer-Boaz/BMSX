@@ -1,6 +1,7 @@
 import type { Input } from './manager';
 import { KeyModifier, type PlayerInput } from './player';
 import type { BGamepadButton, ButtonState, InputHandler } from './models';
+import { inputControllerGamepadButtonBit } from './gamepad_buttons';
 
 export type ShortcutDisposer = () => void;
 
@@ -9,9 +10,10 @@ export const HOST_TERMINAL_BUTTON: BGamepadButton = 'lb';
 export const HOST_IDE_BUTTON: BGamepadButton = 'rb';
 export const HOST_MENU_BUTTON: BGamepadButton = 'start';
 export const HOST_ON_SCREEN_KEYBOARD_BUTTON: BGamepadButton = 'x';
+export const HOST_REWIND_BUTTON: BGamepadButton = 'a';
 export const HOST_SUPERVISOR_KEY_CODE = 'ScrollLock';
 
-const enum ControlSource {
+export const enum ControlSource {
 	Keyboard = 1,
 	Gamepad = 2,
 }
@@ -25,6 +27,8 @@ type KeyboardShortcutEntry = {
 
 type ControlShortcutEntry = {
 	button: BGamepadButton;
+	buttonMask: number;
+	sources: number;
 	onPressed: () => void;
 	onReleased?: () => void;
 	activeSources: number;
@@ -41,22 +45,23 @@ export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
 	private readonly controlShortcuts = new Map<number, ControlShortcutSet>();
 	private readonly latch = new Map<string, number | null>();
-	private exclusiveGamepadControlShortcut: BGamepadButton | null = null;
+	private gamepadControlShortcutMask: number | null = null;
 
 	public constructor(private readonly input: Input) {
 	}
 
 	public reset(): void {
 		this.latch.clear();
-		this.exclusiveGamepadControlShortcut = null;
+		this.gamepadControlShortcutMask = null;
 		this.resetControlShortcutSources(ControlSource.Keyboard | ControlSource.Gamepad);
 	}
 
-	public setExclusiveGamepadControlShortcut(button: BGamepadButton | null): void {
-		if (button === this.exclusiveGamepadControlShortcut) {
+	/** Null leaves all registered gamepad targets available; a page supplies its eligible target bits. */
+	public setGamepadControlShortcutMask(mask: number | null): void {
+		if (mask === this.gamepadControlShortcutMask) {
 			return;
 		}
-		this.exclusiveGamepadControlShortcut = button;
+		this.gamepadControlShortcutMask = mask;
 		this.resetControlShortcutSources(ControlSource.Gamepad);
 	}
 
@@ -104,6 +109,7 @@ export class GlobalShortcutRegistry {
 		button: BGamepadButton,
 		onPressed: () => void,
 		onReleased?: () => void,
+		sources = ControlSource.Keyboard | ControlSource.Gamepad,
 	): ShortcutDisposer {
 		let shortcuts = this.controlShortcuts.get(playerIndex);
 		if (!shortcuts) {
@@ -115,6 +121,8 @@ export class GlobalShortcutRegistry {
 		}
 		const entry: ControlShortcutEntry = {
 			button,
+			buttonMask: 1 << inputControllerGamepadButtonBit(button),
+			sources,
 			onPressed,
 			onReleased,
 			activeSources: 0,
@@ -192,8 +200,8 @@ export class GlobalShortcutRegistry {
 		source: ControlSource,
 	): void {
 		const entries = shortcuts.entries;
-		const exclusiveShortcut = source === ControlSource.Gamepad
-			? this.exclusiveGamepadControlShortcut
+		const allowedTargets = source === ControlSource.Gamepad
+			? this.gamepadControlShortcutMask
 			: null;
 		if (handler === null) {
 			shortcuts.capturedSources &= ~source;
@@ -210,6 +218,10 @@ export class GlobalShortcutRegistry {
 			shortcuts.capturedSources |= source;
 			for (let index = 0; index < entries.length; index += 1) {
 				const entry = entries[index];
+				if ((entry.sources & source) === 0 || (allowedTargets !== null && (entry.buttonMask & allowedTargets) === 0)) {
+					entry.blockedSources &= ~source;
+					continue;
+				}
 				const button = handler.getButtonState(entry.button);
 				if (button.pressed && !button.justpressed) {
 					entry.blockedSources |= source;
@@ -230,7 +242,7 @@ export class GlobalShortcutRegistry {
 		let anyButtonPressed = false;
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (exclusiveShortcut !== null && entry.button !== exclusiveShortcut) {
+			if ((entry.sources & source) === 0 || (allowedTargets !== null && (entry.buttonMask & allowedTargets) === 0)) {
 				entry.activeSources &= ~source;
 				entry.blockedSources &= ~source;
 				continue;

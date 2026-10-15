@@ -477,7 +477,7 @@ if(BMSX_BUILD_LIBRETRO)
 		)
 	endif()
 	if(BMSX_SNESMINI_TARGET)
-		target_compile_definitions(bmsx_libretro PRIVATE BMSX_PLATFORM_SNESMINI=1 BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
+		target_compile_definitions(bmsx_libretro PRIVATE BMSX_PLATFORM_SNESMINI=1)
 		target_link_options(bmsx_libretro PRIVATE
 			-static-libstdc++
 			-static-libgcc
@@ -633,6 +633,17 @@ if(BMSX_BUILD_TESTS)
 	)
 
 	if(UNIX AND NOT APPLE)
+		if(BMSX_BUILD_LIBRETRO_HOST AND NOT CMAKE_CROSSCOMPILING)
+			add_executable(bmsx_libretro_host_input_devices_tests
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_devices_test.c
+				${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
+				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+			)
+			target_compile_definitions(bmsx_libretro_host_input_devices_tests PRIVATE BMSX_LIBRETRO_HOST_SDL=1)
+			target_include_directories(bmsx_libretro_host_input_devices_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
+			target_link_libraries(bmsx_libretro_host_input_devices_tests PRIVATE SDL2::SDL2)
+			add_test(NAME bmsx_libretro_host_input_devices_tests COMMAND bmsx_libretro_host_input_devices_tests)
+		endif()
 		add_executable(bmsx_libretro_host_audio_queue_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_queue_test.c
 			${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
@@ -976,7 +987,6 @@ if(BMSX_BUILD_TESTS)
 			target_compile_definitions(bmsx_${runner}_conformance_runner PRIVATE BMSX_PLATFORM_SNESMINI=1)
 		endif()
 		if(BMSX_SNESMINI_TARGET)
-			target_compile_definitions(bmsx_${runner}_conformance_runner PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
 			target_link_options(bmsx_${runner}_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 	endforeach()

@@ -103,3 +103,17 @@ test('closing host pointer focus retains the existing primary hold but does not 
 	f.tick();
 	assert.equal(f.snapshot.pointerButtons, (1 << INP_POINTER_BUTTON_PRIMARY) | (1 << INP_POINTER_BUTTON_SECONDARY));
 });
+
+
+test('host actions distinguish physical Enter from controller south without remapping either input', t => {
+	const f = fixture();
+	t.after(() => f.input.dispose());
+	f.ui.reset(HostUiInputSource.Keyboard | HostUiInputSource.Gamepad, A);
+	f.tick();
+	f.button('gamepad:0', 'a', true); f.tick();
+	assert.equal(f.ui.buttonJustPressed(InputControllerGamepadButtonBit.A), true);
+	assert.equal(f.ui.keyboardButtonJustPressed(InputControllerGamepadButtonBit.A), false);
+	f.button('keyboard:0', 'Enter', true); f.tick();
+	assert.equal(f.ui.keyboardButtonJustPressed(InputControllerGamepadButtonBit.A), true);
+	assert.equal(f.ui.gamepadButtonJustPressed(0, InputControllerGamepadButtonBit.A), false);
+});

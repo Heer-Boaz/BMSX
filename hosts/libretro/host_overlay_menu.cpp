@@ -59,6 +59,10 @@ constexpr i32 kUsageLowPercentTenthsLimit = 100;
 constexpr i32 kUsagePercentTenthsFlag = 1000000;
 constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
+constexpr u32 keyboardHostShortcutTargets = (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start));
+
 constexpr u32 menuKeyboardButtons = (1u << static_cast<u32>(InputControllerGamepadButtonBit::Up))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Down))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Left))
@@ -279,7 +283,9 @@ HostMenuExecution HostOverlayMenu::executionMode() const {
 }
 
 HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
-	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
+	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)) {
+		if (m_page == Page::Rewind || rewind.available()) transitionTo(m_page == Page::Rewind ? Page::Closed : Page::Rewind, input, rewind);
+	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		transitionTo(m_page == Page::Keyboard ? Page::Closed : Page::Keyboard, input, rewind);
 	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)) {
 		transitionTo(m_page == Page::Closed ? Page::Options : Page::Closed, input, rewind);
@@ -320,7 +326,8 @@ HostMenuInput HostOverlayMenu::tickTimelineInput(Runtime& runtime, LibretroInput
 		transitionTo(Page::Closed, input, rewind);
 		return HostMenuInput::Inactive;
 	}
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Resume) {
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::Start)
+		|| uiInput.keyboardButtonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Resume) {
 		transitionTo(Page::Closed, input, rewind, Outcome::Accept);
 		return HostMenuInput::Inactive;
 	}
@@ -357,7 +364,7 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 	}
 	if (m_page == Page::Rewind) {
 		const auto source = uiInput.activeSource;
-		timeline.setActionLabel(TimelineAction::Resume, source == HostUiInputSource::Gamepad ? "A OK" : source == HostUiInputSource::Keyboard ? "ENTER OK" : "OK");
+		timeline.setActionLabel(TimelineAction::Resume, source == HostUiInputSource::Gamepad ? "START OK" : source == HostUiInputSource::Keyboard ? "ENTER OK" : "OK");
 		timeline.setActionLabel(TimelineAction::Cancel, source == HostUiInputSource::Gamepad ? "B BACK" : source == HostUiInputSource::Keyboard ? "ESC BACK" : "BACK");
 		auto& state = timelineState;
 		state.earliestCycles = runtime.history.earliestCycles(); state.latestCycles = runtime.history.latestCycles();
@@ -572,8 +579,7 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 		: next == Page::Keyboard ? HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Pointer
 			: HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Keyboard | HostUiInputSource::Pointer;
 	uiInput.reset(sources, menuKeyboardButtons);
-	if (next == Page::Keyboard) input.setExclusiveGamepadHostShortcut(InputControllerGamepadButtonBit::X);
-	else input.clearExclusiveGamepadHostShortcut();
+	input.setGamepadHostShortcutTargets(next == Page::Keyboard ? keyboardHostShortcutTargets : HOST_GAMEPAD_SHORTCUT_TARGETS);
 	m_dirtyText = true;
 	switch (next) {
 		case Page::Closed:

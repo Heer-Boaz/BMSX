@@ -135,6 +135,7 @@ export class HostUiInput {
 		for (let source = 0; source < SOURCE_COUNT; source += 1) if ((this.pressedEdges[source] & mask) !== 0) return true;
 		return false;
 	}
+	public keyboardButtonJustPressed(button: InputControllerGamepadButtonBit): boolean { return (this.pressedEdges[0] & (1 << button)) !== 0; }
 	public buttonRepeatEdge(button: InputControllerGamepadButtonBit): boolean {
 		const mask = 1 << button;
 		for (let source = 0; source < SOURCE_COUNT; source += 1) if ((this.repeatEdges[source] & mask) !== 0) return true;

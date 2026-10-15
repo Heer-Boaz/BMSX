@@ -100,6 +100,7 @@ bool HostUiInput::buttonJustPressed(InputControllerGamepadButtonBit button) cons
 	for (u32 edges : pressedEdges) if ((edges & mask) != 0) return true;
 	return false;
 }
+bool HostUiInput::keyboardButtonJustPressed(InputControllerGamepadButtonBit button) const { return (pressedEdges[0] & (1u << static_cast<u32>(button))) != 0; }
 bool HostUiInput::buttonRepeatEdge(InputControllerGamepadButtonBit button) const {
 	const u32 mask = 1u << static_cast<u32>(button);
 	for (u32 edges : repeatEdges) if ((edges & mask) != 0) return true;

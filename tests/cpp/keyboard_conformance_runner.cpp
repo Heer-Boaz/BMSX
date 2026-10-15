@@ -18,11 +18,11 @@ using namespace bmsx;
 
 // Test transport: vector pad words are canonical BMSX bits; callbacks expose the actual libretro ABI.
 constexpr std::array<InputControllerGamepadButtonBit, 16> kRetroButtons{
-	InputControllerGamepadButtonBit::B, InputControllerGamepadButtonBit::Y,
+	InputControllerGamepadButtonBit::A, InputControllerGamepadButtonBit::X,
 	InputControllerGamepadButtonBit::Select, InputControllerGamepadButtonBit::Start,
 	InputControllerGamepadButtonBit::Up, InputControllerGamepadButtonBit::Down,
 	InputControllerGamepadButtonBit::Left, InputControllerGamepadButtonBit::Right,
-	InputControllerGamepadButtonBit::A, InputControllerGamepadButtonBit::X,
+	InputControllerGamepadButtonBit::B, InputControllerGamepadButtonBit::Y,
 	InputControllerGamepadButtonBit::LeftBumper, InputControllerGamepadButtonBit::RightBumper,
 	InputControllerGamepadButtonBit::LeftTrigger, InputControllerGamepadButtonBit::RightTrigger,
 	InputControllerGamepadButtonBit::LeftStick, InputControllerGamepadButtonBit::RightStick,

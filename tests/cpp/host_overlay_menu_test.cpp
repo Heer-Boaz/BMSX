@@ -48,7 +48,7 @@ void assertVisible(const HostMenuFrame& frame, const RectBounds& bounds, Font& f
 }
 void testNativeMoveTarget() {
 	constexpr i32 w = 320, h = 240;
-	constexpr u16 select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT, a = 1u << RETRO_DEVICE_ID_JOYPAD_A;
+	constexpr u16 select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT, a = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 	buttons = secondButtons = 0; pointerPressed = false; pointerX = pointerY = 0;
 	LibretroInput input(supervisor); input.setInputPollCallback(poll); input.setInputStateCallback(state);
 	input.setControllerDevice(0, RETRO_DEVICE_JOYPAD); input.setControllerDevice(1, RETRO_DEVICE_JOYPAD);
@@ -80,7 +80,7 @@ void testNativeMoveTarget() {
 		}
 		require(rect != nullptr, "each native page paints MOVE as an actual interactive target"); return rect;
 	};
-	tick(); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+	tick(); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
 	const auto initial = frame(); const auto* panel = initial.commandRefs[0].rect;
 	require(initial.commandRefs[2].glyphs->items[0] == "KEYBOARD: TEXT" && panel->area.top == 4, "ordinary native open retains text page and default top position");
 	press(select | a); frame(); noKeys();
@@ -109,18 +109,18 @@ void testNativeMoveTarget() {
 		}
 		const auto commands = frame();
 		require(commands.commandRefs[commands.commandCount - 1].glyphs->items[0] == "SEL+X CLOSE  SEL+L/R HOME/END", "help keeps physical host shortcuts while the visible action replaces the hidden docking chord");
-		press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+		press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 	}
-	for (const auto binding : {std::pair{RETRO_DEVICE_ID_JOYPAD_B, hid_key_usage::Space},
-		std::pair{RETRO_DEVICE_ID_JOYPAD_X, hid_key_usage::Backspace}, std::pair{RETRO_DEVICE_ID_JOYPAD_L, hid_key_usage::ArrowLeft},
+	for (const auto binding : {std::pair{RETRO_DEVICE_ID_JOYPAD_A, hid_key_usage::Space},
+		std::pair{RETRO_DEVICE_ID_JOYPAD_Y, hid_key_usage::Backspace}, std::pair{RETRO_DEVICE_ID_JOYPAD_L, hid_key_usage::ArrowLeft},
 		std::pair{RETRO_DEVICE_ID_JOYPAD_R, hid_key_usage::ArrowRight}, std::pair{RETRO_DEVICE_ID_JOYPAD_L2, hid_key_usage::Home},
 		std::pair{RETRO_DEVICE_ID_JOYPAD_R2, hid_key_usage::End}, std::pair{RETRO_DEVICE_ID_JOYPAD_START, hid_key_usage::Enter}}) {
 		buttons = 1u << binding.first; tick(); require(held(binding.second), "visible MOVE preserves existing native controller keyboard bindings");
 		buttons = 0; tick(); noKeys();
 	}
-	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X)); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X)); frame();
+	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y)); press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y)); frame();
 	require(panel->area.top == 4, "native reopen retains the manual presentation side");
-	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+	press(select | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
 }
 
 }
@@ -179,7 +179,7 @@ int main() {
 		const HostMenuFrame restored = frame();
 		require(restored.commandRefs[1].glyphs->items[0] == "CORE OPTIONS [1-11/15]", "first selected row returns to the first visible window");
 		assertVisible(restored, presenter.visibleViewportBounds, font);
-		press(1u << RETRO_DEVICE_ID_JOYPAD_B);
+		press(1u << RETRO_DEVICE_ID_JOYPAD_A);
 		require(!menu.active(), "real native cancel closes the first-window menu");
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
 		const HostMenuFrame reopened = frame();
@@ -187,13 +187,13 @@ int main() {
 			"reopening at the same font, bounds and first window retains the visible range title");
 		assertVisible(reopened, presenter.visibleViewportBounds, font);
 		require(presenter.viewportSize.x == width && presenter.viewportSize.y == height, "menu lifecycle never changes the game's full presentation target");
-		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
 		require(frame().commandRefs[2].glyphs->items[0] == "KEYBOARD: TEXT", "actual native Select+X enters the model's text page");
-		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 		require(frame().commandRefs[2].glyphs->items[0] == "KEYBOARD: SYMBOLS", "actual native Select+Y changes the real logical and painted page");
-		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
 		require(frame().commandRefs[2].glyphs->items[0] == "KEYBOARD: FN", "a second actual page chord reaches function keys");
-		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_A; tick();
+		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B; tick();
 		// The native input owner composes virtual-key routed words at its next physical poll.
 		tick();
 		InputControllerSnapshot keyboardSnapshot{};
@@ -203,7 +203,7 @@ int main() {
 		buttons = 0; tick(); tick();
 		input.sampleInputControllerSnapshot(keyboardSnapshot, InputControllerSampleContext::Normal);
 		require((keyboardSnapshot.keyWords[hid_key_usage::F1 >> 5] & (1u << (hid_key_usage::F1 & 31))) == 0, "actual native A UP releases function key");
-		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_X));
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y));
 		require(!menu.active(), "actual native close chord retires function-page UI without guest presentation changes");
 		testNativeMoveTarget();
 		std::cout << "HOST-VISIBLE-MENU:PASS\n";

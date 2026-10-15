@@ -17,6 +17,7 @@ public:
 	void reset(u8 nextSources, u32 nextKeyboardButtons);
 	void update(f64 currentTimeMs);
 	bool buttonJustPressed(InputControllerGamepadButtonBit button) const;
+	bool keyboardButtonJustPressed(InputControllerGamepadButtonBit button) const;
 	bool buttonRepeatEdge(InputControllerGamepadButtonBit button) const;
 	bool gamepadButtonPressed(u8 player, InputControllerGamepadButtonBit button) const;
 	bool gamepadButtonJustPressed(u8 player, InputControllerGamepadButtonBit button) const;

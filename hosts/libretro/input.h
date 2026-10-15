@@ -11,6 +11,12 @@
 
 namespace bmsx {
 
+inline constexpr u32 HOST_GAMEPAD_SHORTCUT_TARGETS =
+	(1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper));
+
 struct LibretroPointerContact {
 	i32 x;
 	i32 y;
@@ -47,8 +53,7 @@ public:
 		InputControllerGamepadButtonBit button);
 	void consumeGamepadButtons(u8 deviceSlot, u32 buttons);
 	void consumeGamepadInput(u8 deviceSlot);
-	void setExclusiveGamepadHostShortcut(InputControllerGamepadButtonBit button);
-	void clearExclusiveGamepadHostShortcut();
+	void setGamepadHostShortcutTargets(u32 targets);
 	bool pointerPosition(i32& x, i32& y) const;
 	bool pointerButtonPressed(u32 button) const;
 	void consumePointerButton(u32 button);

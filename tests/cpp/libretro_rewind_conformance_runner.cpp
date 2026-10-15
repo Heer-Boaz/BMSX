@@ -13,15 +13,10 @@
 #include <vector>
 
 namespace {
-#if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
 constexpr uint16_t menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 constexpr uint16_t menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_A;
 constexpr uint16_t menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
-#else
-constexpr uint16_t menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_A;
-constexpr uint16_t menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_B;
-constexpr uint16_t menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_X;
-#endif
+
 std::string systemDirectory;
 std::string outputDirectory;
 unsigned errorCount = 0;

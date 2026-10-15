@@ -44,15 +44,10 @@ constexpr i64 EXPECTED_NOMINAL_WINDOW_MILLISECONDS = 36000;
 constexpr i64 INITIAL_RECORDING_SECONDS = 60;
 constexpr i64 REFERENCE_AGE_SECONDS = 32;
 #endif
-#if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
 constexpr u16 menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 constexpr u16 menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_A;
 constexpr u16 menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
-#else
-constexpr u16 menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_A;
-constexpr u16 menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_B;
-constexpr u16 menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_X;
-#endif
+
 class CountingSoftwareBackend : public SoftwareBackend {
 public:
 	using SoftwareBackend::SoftwareBackend;
@@ -327,6 +322,18 @@ int main(int argc, char** argv) {
 		checkRetention = false;
 		require(audible && audioFrames > 48000, "ordinary gameplay delivers real audio");
 		snapshot("live");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard);
+		require(menu.executionMode() == HostMenuExecution::Live, "keyboard is a live host view");
+		buttons = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuAccept; frame();
+		require(menu.executionMode() == HostMenuExecution::Rewind, "SELECT+south enters rewind directly from keyboard");
+		const i64 shortcutCycles = runtime.machine.scheduler.currentNowCycles();
+		for (int count = 0; count < 5; ++count) frame();
+		require(runtime.machine.scheduler.currentNowCycles() == shortcutCycles, "held rewind shortcut neither retriggers nor commits");
+		buttons = 0; frame();
+		press(menuAccept);
+		require(menu.executionMode() == HostMenuExecution::Rewind, "south alone never takes over rewind");
+		press(menuCancel); returnLive();
+		require(menu.executionMode() == HostMenuExecution::Live, "east cancels rewind to ordinary live execution");
 		openRewind();
 		const i64 latest = history.latestCycles();
 		const i64 oldest = history.earliestCycles();
@@ -444,6 +451,14 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard); returnLive();
 		require(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuAccept);
+		require(menu.executionMode() == HostMenuExecution::Rewind, "rewind shortcut remains available after a keyboard transition");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
+		const i64 startBranch = runtime.machine.scheduler.currentNowCycles();
+		press(1u << RETRO_DEVICE_ID_JOYPAD_START); returnLive();
+		require(!rewind.active && menu.executionMode() == HostMenuExecution::Live
+			&& history.checkpointCycles(history.checkpointCount() - 1) == startBranch,
+			"START takes over the exact selected point, independently of pointer acceptance");
 		std::cout << "{\"host\":\"cpp-retention\",\"recordedSeconds\":" << static_cast<f64>(latest - firstCheckpointCycles) / runtime.timing.cpuHz
 			<< ",\"checkpointCapacity\":" << EXPECTED_CHECKPOINT_CAPACITY << ",\"expectedMinimumSeconds\":" << EXPECTED_MINIMUM_SECONDS
 			<< ",\"minimumRetainedSeconds\":" << static_cast<f64>(minimumRetainedCycles) / runtime.timing.cpuHz
