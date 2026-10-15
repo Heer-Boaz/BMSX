@@ -5240,8 +5240,12 @@ or invents a minimum hold/FIFO; guest firmware owns typematic and ICU samples
 the ordinary raw HID bitmap. Browser Pointer Events remain the sole native
 contact producer; OS text composition is not substituted for raw game keys.
 
-Keyboard forwarding feedback is separate presentation state: held keys have a
-distinct bright background/dark glyph, and final real up keeps a short visual-only
+Keyboard forwarding feedback is separate presentation state. Browser panel,
+keycaps and commands keep fully transparent backgrounds, including selected and
+pressed states; no whole-keyboard opacity or backdrop blur hides the game.
+Readable glyphs have a small local shadow, selection uses blue borders/glyphs,
+and held keys use gold glyphs and an extra inset outline. The bitmap presenter keeps
+its existing filled feedback. Final real up keeps a short visual-only
 acknowledgement. Per-key deadlines live in the source owner and advance from host
 UI poll time. Retained listeners notify the CSS view only on revisions; its RAF
 updates existing key nodes and changed attributes, without per-frame DOM reads

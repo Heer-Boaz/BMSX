@@ -203,22 +203,37 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 				'the primary five rows and supplementary three rows keep normal target heights, even on short surfaces');
 
 			const selected = page.locator('.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-selected="true"]');
-			const keyIdle = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, code: element.getAttribute('data-code'), bounds: element.getBoundingClientRect().toJSON() }));
+			const keyIdle = await selected.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
+				border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+				outline: getComputedStyle(element).outlineStyle, code: element.getAttribute('data-code'), bounds: element.getBoundingClientRect().toJSON() }));
+			assert.equal(keyIdle.background, 'rgba(0, 0, 0, 0)');
 			const topmost = await selected.evaluate(element => { const b = element.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) === element; });
 			assert.equal(topmost, true, 'keyboard keys own hit testing above canvas and control artwork');
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1,
 				x: keyIdle.bounds.x + keyIdle.bounds.width / 2, y: keyIdle.bounds.y + keyIdle.bounds.height / 2, radiusX: 3, radiusY: 3 }] });
 			await settle();
-			const heldKey = await selected.evaluate(element => ({ color: getComputedStyle(element).backgroundColor, pressed: element.getAttribute('aria-pressed'), bounds: element.getBoundingClientRect().toJSON() }));
-			assert.equal(heldKey.pressed, 'true'); assert.notEqual(heldKey.color, keyIdle.color); assert.deepEqual(heldKey.bounds, keyIdle.bounds);
+			const heldKey = await selected.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
+				border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+				outline: getComputedStyle(element).outlineStyle, pressed: element.getAttribute('aria-pressed'), bounds: element.getBoundingClientRect().toJSON() }));
+			assert.equal(heldKey.pressed, 'true'); assert.equal(heldKey.background, keyIdle.background);
+			assert.notEqual(heldKey.border, keyIdle.border); assert.notEqual(heldKey.color, keyIdle.color);
+			assert.notEqual(heldKey.outline, keyIdle.outline); assert.equal(heldKey.outline, 'solid');
+			assert.deepEqual(heldKey.bounds, keyIdle.bounds);
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 			await settle();
 			assert.equal(await selected.getAttribute('aria-pressed'), 'false');
 			assert.equal(await selected.getAttribute('data-highlighted'), 'true', 'release feedback is visible without falsely holding the key');
-			assert.equal(await selected.evaluate(element => getComputedStyle(element).backgroundColor), heldKey.color);
+			assert.deepEqual(await selected.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
+				border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+				outline: getComputedStyle(element).outlineStyle })),
+			{ background: heldKey.background, border: heldKey.border, color: heldKey.color, outline: heldKey.outline },
+			'forwarded-key acknowledgement retains the visible outline and glyph without covering the scene');
 			await page.evaluate(time => (globalThis as any).cssProbe.keyboard.updateFeedback(time), (selectedPage + 1) * 1000);
 			await settle();
-			assert.equal(await selected.evaluate(element => getComputedStyle(element).backgroundColor), keyIdle.color);
+			assert.deepEqual(await selected.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
+				border: getComputedStyle(element).borderColor, color: getComputedStyle(element).color,
+				outline: getComputedStyle(element).outlineStyle })),
+			{ background: keyIdle.background, border: keyIdle.border, color: keyIdle.color, outline: keyIdle.outline });
 		}
 		await page.evaluate(() => (globalThis as any).cssProbe.keyboard.close()); await settle();
 		assert.equal(await page.locator('#bmsx-touch-keyboard').isVisible(), false);

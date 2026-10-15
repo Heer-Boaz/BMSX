@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { PNG } from 'pngjs';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { ON_SCREEN_KEY_DEFINITIONS } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { expandBrowserKeyboardTemplate } from '../../scripts/products/browser_keyboard';
@@ -342,6 +343,93 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			if (profile.name === 'phone-portrait') assert.ok(keyWidth('KeyQ') >= 21.5 && keyWidth('KeyQ') <= 22.5,
 				'the full conventional row exposes its genuinely narrow phone targets instead of claiming 44px widths');
 			if (profile.name.startsWith('tablet')) for (const key of opening.rows[0]) assert.ok(key.width >= 43 && key.height >= 56);
+			await p.test('every keyboard page preserves scene pixels while selected, held and acknowledged keys remain visible', async () => {
+				// A two-tone scene exposes opaque plates, key fills and backdrop blurring.
+				// Compare browser-painted pixels, not just declared stylesheet values.
+				await page.evaluate(() => {
+					const scene = document.createElement('div');
+					scene.id = 'keyboard-transparency-scene';
+					Object.assign(scene.style, { position: 'absolute', inset: '0', zIndex: '1', pointerEvents: 'none',
+						background: 'conic-gradient(#f3e6b8 25%, #172b46 0 50%, #f3e6b8 0 75%, #172b46 0) 0 0 / 24px 24px' });
+					document.getElementById('player-surface')!.append(scene);
+				});
+				for (let keyboardPage = 0; keyboardPage < BROWSER_KEYBOARD_PAGES.length; keyboardPage++) {
+					await page.evaluate(index => {
+						const model = (globalThis as any).keyboardProbe.model;
+						model.setPage(index); model.updateFeedback(0);
+					}, keyboardPage);
+					await settle();
+					const code = ON_SCREEN_KEY_DEFINITIONS[BROWSER_KEYBOARD_PAGES[keyboardPage].initialKey].code;
+					const selected = page.locator(`.bmsx-touch-keyboard-page:not([hidden]) .bmsx-touch-key[data-code="${code}"]`);
+					const contact = await point(code, 81);
+					const baseGeometry = await measure();
+					const paints: Array<{ color: string; border: string; outline: string }> = [];
+					for (const state of ['selected', 'held', 'acknowledged'] as const) {
+						if (state === 'held') await touch('touchStart', [contact]);
+						if (state === 'acknowledged') await touch('touchEnd', []);
+						await settle();
+						assert.deepEqual((await poll()).codes, state === 'held' ? [code] : [],
+							'paint acknowledgement does not prolong the actual forwarded key');
+						const presentation = await page.evaluate(() => {
+							const panel = document.getElementById('bmsx-touch-keyboard')!;
+							const surfaces = [panel.parentElement!, panel, ...panel.querySelectorAll('*')].map(element => {
+								const style = getComputedStyle(element);
+								return { background: style.backgroundColor, image: style.backgroundImage, opacity: style.opacity,
+									shadow: style.boxShadow, filter: style.filter, backdrop: style.backdropFilter };
+								});
+							const buttons = [...panel.querySelectorAll<HTMLButtonElement>('.bmsx-touch-keyboard-page:not([hidden]) button')].map(button => {
+								const bounds = button.getBoundingClientRect(), style = getComputedStyle(button);
+								const text = document.createRange(); text.selectNodeContents(button);
+								const glyph = button.querySelector('svg')?.getBoundingClientRect() ?? text.getBoundingClientRect();
+								return { label: button.getAttribute('data-code') || button.getAttribute('aria-label') || button.textContent,
+									bounds: bounds.toJSON(), glyph: glyph.toJSON(), color: style.color, border: style.borderTopStyle };
+								});
+							return { surfaces, buttons };
+						});
+						for (const surface of presentation.surfaces) assert.deepEqual(surface, { background: 'rgba(0, 0, 0, 0)', image: 'none',
+							opacity: '1', shadow: 'none', filter: 'none', backdrop: 'none' }, 'transparency belongs to backgrounds, not a faded/blurred keyboard subtree');
+						const visible = PNG.sync.read(await page.screenshot({ path: `${folder}/${profile.name}-page${keyboardPage}-${state}-transparent.png`, scale: 'css' }));
+						await page.locator('#bmsx-touch-keyboard').evaluate(panel => { panel.style.visibility = 'hidden'; });
+						const underneath = PNG.sync.read(await page.screenshot({ scale: 'css' }));
+						await page.locator('#bmsx-touch-keyboard').evaluate(panel => { panel.style.visibility = ''; });
+						for (const button of presentation.buttons) {
+							for (const y of [button.bounds.y + 6, button.bounds.y + button.bounds.height - 6]) {
+								const offset = (Math.round(y) * visible.width + Math.round(button.bounds.x + button.bounds.width / 2)) * 4;
+								assert.deepEqual(visible.data.subarray(offset, offset + 4), underneath.data.subarray(offset, offset + 4),
+									`${button.label}/${state} leaves the underlying scene unchanged inside its border`);
+							}
+							let glyphPixels = 0;
+							for (let y = Math.round(button.glyph.y); y < button.glyph.y + button.glyph.height; y++) {
+								for (let x = Math.round(button.glyph.x); x < button.glyph.x + button.glyph.width; x++) {
+									const offset = (y * visible.width + x) * 4;
+									if (!visible.data.subarray(offset, offset + 4).equals(underneath.data.subarray(offset, offset + 4))) glyphPixels++;
+								}
+							}
+							assert.ok(glyphPixels > 0, `${button.label}/${state} still has real browser-painted label or command artwork`);
+							assert.equal(button.border, 'solid');
+							assert.notEqual(button.color, 'rgba(0, 0, 0, 0)');
+						}
+						paints.push(await selected.evaluate(element => ({ color: getComputedStyle(element).color,
+							border: getComputedStyle(element).borderColor, outline: getComputedStyle(element).outlineStyle })));
+						assert.deepEqual((await measure()).rows.map((row: any[]) => row.map(({ x, y, width, height }) => ({ x, y, width, height }))),
+							baseGeometry.rows.map((row: any[]) => row.map(({ x, y, width, height }) => ({ x, y, width, height }))), 'transparent feedback does not move approved targets');
+					}
+					assert.notEqual(paints[0].border, paints[1].border);
+					assert.notEqual(paints[0].color, paints[1].color);
+					assert.equal(paints[1].outline, 'solid');
+					assert.deepEqual(paints[2], paints[1], 'released keys retain a brief, visible outline/glyph acknowledgement, not a fill');
+					await page.evaluate(() => (globalThis as any).keyboardProbe.model.updateFeedback(121));
+					await settle();
+					assert.deepEqual(await selected.evaluate(element => ({ color: getComputedStyle(element).color,
+						border: getComputedStyle(element).borderColor, outline: getComputedStyle(element).outlineStyle })), paints[0]);
+				}
+				await page.evaluate(() => {
+					document.getElementById('keyboard-transparency-scene')!.remove();
+					(globalThis as any).keyboardProbe.model.open();
+				});
+				await settle();
+				assert.deepEqual(await picture(), beforePicture, 'transparent presentation does not change the game image or viewport');
+			});
 			await p.test('shifted legends retain the same conventional positions and fit without resizing keys', async () => {
 				await page.keyboard.down('Shift');
 				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
