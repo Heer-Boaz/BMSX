@@ -3101,16 +3101,18 @@ protected heap, or supervisor-only RAM.
 The system controller also owns the cart-visible machine clock registerfile.
 `SYS_TIME_MS` decodes the scheduler's current machine-cycle count through the
 configured CPU clock and returns the low 32 bits of elapsed whole milliseconds.
-`SYS_FRAME_MS_Q16` decodes the retained current GX PCRTC microhertz timing into
-an unsigned Q16.16 frame period, and `SYS_CYCLES_PER_FRAME` exposes that same PCRTC datapath's next
-VBlank cycle budget. A stopped PCRTC drives zero on both frame registers. These
-reads consume retained machine-device state directly; `Runtime` neither maps
-the addresses nor supplies a parallel cart clock.
+`SYS_FRAME_MS_Q16` exposes the retained low 32 bits of the current GX PCRTC
+microhertz timing's unsigned Q16.16 frame period. Periods beyond the register's
+range wrap modulo 2^32; they do not clamp or change the separate full-width beam
+timing or host pacing period. `SYS_CYCLES_PER_FRAME` exposes that same PCRTC
+datapath's next VBlank cycle budget. A stopped PCRTC drives zero on both frame
+registers. These reads consume retained machine-device state directly; `Runtime`
+neither maps the addresses nor supplies a parallel cart clock.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
 | `SYS_TIME_MS` | `0x08010228` | Read low-u32 elapsed whole machine milliseconds. |
-| `SYS_FRAME_MS_Q16` | `0x0801022c` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
+| `SYS_FRAME_MS_Q16` | `0x0801022c` | Read low-u32 current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
 | `SYS_CYCLES_PER_FRAME` | `0x08010238` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
 
 Cart and firmware console output uses the system debug-transmit device. Like a

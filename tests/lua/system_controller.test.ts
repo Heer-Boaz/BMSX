@@ -30,8 +30,14 @@ import { Machine } from '../../machine/ts/machine/machine';
 import { SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR } from '../../machine/ts/machine/devices/system/controller';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import {
+	GX_GPU_PCRTC_SMODE1_HIGH,
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/spec/gx/pcrtc';
 import { decodeBlua32BootHeader } from '../../toolchain/ts/rompack/blua32_image';
@@ -280,6 +286,60 @@ test('system timing registers consume scheduler and PCRTC device state without R
 
 	machine.scheduler.setNowCycles(9_000_006_099_639_999);
 	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 409_922_903);
+});
+
+test('system frame period register retains low-u32 Q16 words without wrapping PCRTC pacing', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const machine = new Machine(memory, new SystemResetInputSource(), PSX_MACHINE_SPEC);
+	machine.resetDevices();
+	assert.equal(machine.gxGpu.readPcrtcTiming().frameDurationMillisecondsQ16, 1_317_011);
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 1_317_011);
+
+	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(smode1Address, 0x00000c0f | GX_GPU_PCRTC_SMODE1_SINT);
+	memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_HIGH), 0x00000010);
+	memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH1_LOW), 0x003fffff);
+	memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH1_HIGH), 0x07fff800);
+	memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_LOW), 0x07ffffff);
+
+	for (const vector of [
+		{ syncvLow: 0, syncvHigh: 0x00039800, refreshUfpsScaled: 15_277, frameWord: 4_289_847_483 },
+		{ syncvLow: 0, syncvHigh: 0x00039c00, refreshUfpsScaled: 15_211, frameWord: 13_493_686 },
+		{ syncvLow: 0xffffffff, syncvHigh: 0xffffffff, refreshUfpsScaled: 312, frameWord: 3_892_851_843 },
+	]) {
+		memory.writeMappedU32LE(smode1Address, 0x00000c0f | GX_GPU_PCRTC_SMODE1_SINT);
+		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCV_LOW), vector.syncvLow);
+		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCV_HIGH), vector.syncvHigh);
+		memory.writeMappedU32LE(smode1Address, 0x00000c0f);
+
+		const timing = machine.gxGpu.readPcrtcTiming();
+		assert.equal(timing.refreshUfpsScaled, vector.refreshUfpsScaled);
+		assert.equal(timing.frameDurationMillisecondsQ16, vector.frameWord);
+		assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), vector.frameWord);
+		assert.equal(memory.readMappedWord(IO_SYS_FRAME_MS_Q16), vector.frameWord);
+		assert.equal(timing.frameDurationMs, 1000 / (vector.refreshUfpsScaled / 1_000_000));
+	}
+
+	const timing = machine.gxGpu.readPcrtcTiming();
+	assert.equal(timing.halfLineClockNumerator, 3_841_908);
+	assert.equal(timing.halfLineClockDenominator, 27_000_000);
+	assert.equal(timing.totalHalfLines, 22_516);
+	assert.equal(timing.frameDurationMs, 3_205_128.205128205);
+	memory.writeMappedU32LE(smode1Address, 0x00000c0f | GX_GPU_PCRTC_SMODE1_SINT);
+	assert.equal(timing.frameDurationMillisecondsQ16, 0);
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 0);
+	assert.equal(timing.frameDurationMs, 0);
+	memory.writeMappedU32LE(smode1Address, 0x00000c0f);
+	assert.equal(timing.frameDurationMillisecondsQ16, 3_892_851_843);
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 3_892_851_843);
+
+	const saved = machine.gxGpu.captureState();
+	machine.gxGpu.reset();
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 1_317_011);
+	machine.gxGpu.restoreState(saved);
+	assert.equal(timing.frameDurationMillisecondsQ16, 3_892_851_843);
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 3_892_851_843);
+	assert.equal(timing.frameDurationMs, 3_205_128.205128205);
 });
 
 test('system print registers latch writes and publish complete host lines', () => {

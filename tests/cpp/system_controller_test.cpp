@@ -458,6 +458,10 @@ void testSystemTimingRegisters() {
 
 	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 0u, "system time starts at the scheduler reset epoch");
 	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 1'317'011u,
+		"reset PAL timing exposes its unsigned Q16.16 frame period"
+	);
+	require(
 		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16)
 			== machine.gxGpu.readPcrtcTiming().frameDurationMillisecondsQ16,
 		"system frame period is decoded from the retained PCRTC timing signal"
@@ -480,6 +484,88 @@ void testSystemTimingRegisters() {
 
 	machine.scheduler.setNowCycles(9'000'006'099'639'999);
 	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 409'922'903u, "system time retains exact low-u32 milliseconds near the TS integer boundary");
+}
+
+void testSystemFrameMillisecondsQ16WordWidth() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(
+		bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() },
+		bmsx::PSX_MACHINE_SPEC.ramBytes);
+	SystemResetInputSource input;
+	bmsx::Machine machine(memory, input, bmsx::PSX_MACHINE_SPEC);
+	machine.resetDevices();
+
+	constexpr std::array<bmsx::u32, 10> timingWords{{
+		0x00000c0fu, 0x00000010u, 0x00000000u, 0x00000000u,
+		0x003fffffu, 0x07fff800u, 0x07ffffffu, 0x00000000u,
+		0xffffffffu, 0xffffffffu,
+	}};
+	for (bmsx::u32 index = 0u; index < timingWords.size(); ++index) {
+		memory.writeMappedU32LE(
+			bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW + index),
+			timingWords[index]
+		);
+	}
+	const bmsx::GxGpuPcrtcTiming& timing = machine.gxGpu.readPcrtcTiming();
+	require(timing.running, "maximum timing fields retain a running PCRTC");
+	require(timing.refreshUfpsScaled == 312, "maximum timing fields produce 312 microhertz");
+	require(
+		timing.frameDurationMillisecondsQ16 == 3'892'851'843u,
+		"retained Q16.16 period contains the low word of 210051282051"
+	);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 3'892'851'843u,
+		"system frame MMIO exposes the wrapped Q16.16 word"
+	);
+	require(
+		memory.readMappedWord(bmsx::IO_SYS_FRAME_MS_Q16) == 3'892'851'843u,
+		"system frame word reads retain the same unsigned Q16.16 bits"
+	);
+	require(
+		timing.frameDurationMs == 3'205'128.205128205,
+		"floating frame duration retains the full period independently of the Q16.16 word"
+	);
+	const bmsx::GxGpuState state = machine.gxGpu.captureState();
+	const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(smode1Address, timingWords[0] | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+	require(memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 0u, "stopping extreme timing drives zero frame duration");
+	require(timing.frameDurationMs == 0.0, "stopping extreme timing clears the floating frame duration");
+	memory.writeMappedU32LE(smode1Address, timingWords[0]);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 3'892'851'843u,
+		"resuming extreme timing reconstructs the same raw Q16.16 word"
+	);
+	require(timing.frameDurationMs == 3'205'128.205128205, "resuming extreme timing restores the full floating period");
+
+	machine.resetDevices();
+	require(memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 1'317'011u, "device reset restores the PAL Q16.16 word");
+	machine.gxGpu.restoreState(state);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 3'892'851'843u,
+		"GPU state restore reconstructs the raw Q16.16 word from timing registers"
+	);
+	require(timing.refreshUfpsScaled == 312, "GPU state restore reconstructs the retained refresh rate");
+	require(timing.frameDurationMs == 3'205'128.205128205, "GPU state restore retains the full floating period");
+
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SYNCV_LOW), 0u);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SYNCV_HIGH), 0x00039800u);
+	require(timing.refreshUfpsScaled == 15'277, "230 display lines produce the refresh rate below the Q16.16 wrap boundary");
+	require(timing.frameDurationMillisecondsQ16 == 4'289'847'483u, "retained Q16.16 period preserves the unsigned word below the boundary");
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 4'289'847'483u,
+		"a Q16.16 period below the word boundary retains its unsigned high bit"
+	);
+	require(memory.readMappedWord(bmsx::IO_SYS_FRAME_MS_Q16) == 4'289'847'483u, "frame word reads retain the unsigned high bit below the boundary");
+	require(timing.frameDurationMs == 65'457.877855599916, "floating period remains unwrapped below the Q16.16 boundary");
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SYNCV_HIGH), 0x00039c00u);
+	require(timing.refreshUfpsScaled == 15'211, "231 display lines produce the refresh rate above the Q16.16 wrap boundary");
+	require(timing.frameDurationMillisecondsQ16 == 13'493'686u, "retained Q16.16 period wraps to the low word above the boundary");
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 13'493'686u,
+		"a Q16.16 period above the word boundary wraps instead of saturating"
+	);
+	require(memory.readMappedWord(bmsx::IO_SYS_FRAME_MS_Q16) == 13'493'686u, "frame word reads expose the wrapped low word above the boundary");
+	require(timing.frameDurationMs == 65'741.8973111564, "floating period remains unwrapped above the Q16.16 boundary");
 }
 
 void testSystemPrintRegisters() {
@@ -983,6 +1069,7 @@ int main() {
 	testSupervisorFaultPublicationBoundary();
 	testNestedSupervisorFaultPreservesExitRequest();
 	testSystemTimingRegisters();
+	testSystemFrameMillisecondsQ16WordWidth();
 	testSystemPrintRegisters();
 	testRuntimeSystemRebootBoundary();
 	testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity();
