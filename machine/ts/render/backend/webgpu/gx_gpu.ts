@@ -2730,7 +2730,11 @@ function prepareGxGpuScanoutState(gx: WebGpuGxGpuState, scanout: GxGpuPcrtcScano
 		gx.scanoutClearColor.r = (scanout.backgroundColor & 0xff) / 255;
 		gx.scanoutClearColor.g = (scanout.backgroundColor >>> 8 & 0xff) / 255;
 		gx.scanoutClearColor.b = (scanout.backgroundColor >>> 16 & 0xff) / 255;
-		gx.scanoutBlendConstant.a = scanout.blendAlpha / 255;
+		const blendAlpha = scanout.blendAlpha / 255;
+		gx.scanoutBlendConstant.r = blendAlpha;
+		gx.scanoutBlendConstant.g = blendAlpha;
+		gx.scanoutBlendConstant.b = blendAlpha;
+		gx.scanoutBlendConstant.a = blendAlpha;
 		gx.scanoutFixedStatePcrtcRevision = scanout.revision;
 		gx.scanoutFixedStateValid = true;
 	}

@@ -3566,6 +3566,10 @@ retains its bound sample program so adjacent passes do not repeat the same bind.
 Blend color is backend-owned state:
 WebGL2 retains it for the exclusive browser context, while GLES2 invalidates its
 cache at frame entry because the libretro frontend shares that context.
+WebGPU retains `ALP/255` in every component of its blend constant when the PCRTC
+revision changes: its `constant`/`one-minus-constant` RGB factors consume the
+constant's RGB components, unlike WebGL2/GLES2's constant-alpha factors. The
+selected AMOD pipeline independently replaces or preserves output alpha.
 
 PCRTC is the sole GX scanout authority. BIOS and cart producers program its raw
 MMIO words directly; there is no permanent GP1-to-PCRTC adapter, legacy/native

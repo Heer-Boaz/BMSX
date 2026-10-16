@@ -3,6 +3,7 @@ import test, { before } from 'node:test';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 import { chromium } from 'playwright';
+import type { renderPcrtcBlendCases } from '../helpers/pcrtc_scanout_fixture';
 
 let backendBundle: string;
 before(async () => {
@@ -12,6 +13,7 @@ before(async () => {
 			export { BrowserVideoOutput } from './hosts/browser/video_output';
 			export { VideoPresenter } from './machine/ts/render/video_presenter';
 			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
+			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 		`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
 		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
@@ -76,6 +78,37 @@ test('GX WebGPU pipelines specialize only the overrides used by each stage', asy
 		}
 	}
 	assert.deepEqual(errors, []);
+});
+
+test('WebGPU PCRTC constant RGB blend matches software for both AMOD settings and field modes', async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
+		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	const errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({
+		contentType: 'text/html', body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="2" height="2"></canvas></div>',
+	}));
+	await page.goto('http://localhost/renderer-test/pcrtc-blend/');
+	await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate<Awaited<ReturnType<typeof renderPcrtcBlendCases>>>(async () =>
+		(globalThis as any).backendTest.renderPcrtcBlendCases(document.getElementById('gamescreen')));
+	assert.deepEqual(errors, []);
+	assert.equal(result.validationError, undefined);
+	assert.deepEqual(result.gpuErrors, []);
+	assert.equal(result.cases.length, 48);
+	t.diagnostic(`WebGPU adapter: ${JSON.stringify(result.adapter)}`);
+	for (const witness of [result.cases[0], result.cases.find(sample => sample.smode2 === 0 && sample.amod !== 0 && sample.alpha === 128)!]) {
+		t.diagnostic(`ALP=128, AMOD=${witness.amod}: GPU=${JSON.stringify(witness.webgpu.slice(0, 4))}, software=${JSON.stringify(witness.software.slice(0, 4))}`);
+	}
+	for (const sample of result.cases) {
+		const label = `SMODE2=${sample.smode2}, AMOD=${sample.amod}, ALP=${sample.alpha}`;
+		assert.deepEqual(sample.software.slice(0, 4), [sample.alpha, 0, 0, sample.amod === 0 ? 64 : 200], `${label}: red witness and output alpha`);
+		assert.deepEqual(sample.webgpu, sample.software, `${label}: GPU readback matches software RGBA pixels`);
+	}
 });
 
 test('the browser selects WebGPU from its capabilities, not URL or page overrides', async t => {
