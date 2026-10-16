@@ -5,5 +5,12 @@
 		"chapter": "docs/book1/pcrtc.md",
 		"facts": "docs/book1/facts/pcrtc.md",
 		"review": "docs/book1/reviews/pcrtc.json"
+	},
+	"gte": {
+		"book": "I",
+		"label": "GTE",
+		"chapter": "docs/book1/gte.md",
+		"facts": "docs/book1/facts/gte.md",
+		"review": "docs/book1/reviews/gte.json"
 	}
 }

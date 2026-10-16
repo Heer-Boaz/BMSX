@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Function and data flow separates GTE register arithmetic from GPU drawing/GEO transfers, and the independent normal and PLUS datapaths. Both figures show only sourced paths.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "Register reference inventories all 76 words with byte addresses, fields, access/reset rules, signed-halfword transformations, aliases, FIFO pushes, derived RGB/leading-sign reads, ignored writes and both flag formats. Bit maps use real tables.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Normal-command arithmetic, projection and PLUS specify all 22 normal functions, ordered 44-bit accumulation/wrap, SF/LM, explicit row-to-lane indexing, color/FIFO stages, matrix3/CV2 behavior, reciprocal algorithm and all257 ROM bytes, and signed three-lane multiply-add.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Result visibility distinguishes immediate normal-command results from pending PLUS operands/results, old output visibility, deadline publication, direct word-store interlock and separate normal/PLUS state. Register-access cautions cover F64 second-word admission and word-sequence readiness preflight.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Normal CYCLES is the last nominal count, not a completion countdown. PLUS uses system cycles, five for VMAD3 or one for invalid commands; bit31 clears on publication while duration remains. No unestablished Hz conversion or automatic normal-command stall is claimed.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Interrupts states the sourced absence of GTE completion IRQs and IRQ control words. PLUS result polling and the direct command word-store interlock are distinct mechanisms, not IRQ delivery.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Register accesses and bus faults distinguishes CPU alignment rejection from mapped IO width/offset faults, ordinary modes, float-transfer encodings and successive accesses, ignored nonfaulting register writes, PLUS DMA denial, arithmetic flags and invalid-command outcomes. No DMA channel or whole-ISA policy is inferred.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "Reset clears all register words, accumulators, cycle state and pending PLUS work and releases a blocked command store. There is no guest GTE reset word. Save-state mechanics remain editorial facts only.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "The two programming examples give reset assumptions, ordered aligned raw address/word writes and derived results for RTPS and VMAD3, including exact output geometry/arithmetic, busy and publication behavior. Both sequences were also exercised through the live TS mapped-memory/GTE owner path.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/gte-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/gte-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/gte-print.md"
+		}
+	}
+}

@@ -234,3 +234,13 @@ test('CLI checks/publishes reviewed PCRTC from a different working directory', (
 	assert.equal(usage.status, 1);
 	assert.match(usage.stderr, /Usage:/);
 });
+
+test('GTE publishes through the shared pipeline without chapter-specific tooling', async t => {
+	const chapter = await loadChapter(repositoryRoot, 'gte');
+	assert.deepEqual(await publicationFailures(repositoryRoot, chapter), []);
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-gte-publication-'));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	const output = await renderChapter(chapter, 'publish', directory);
+	assert.equal(output.layout.figures, 2);
+	assert.doesNotMatch(await readFile(output.html, 'utf8'), /DRAFT/);
+});
