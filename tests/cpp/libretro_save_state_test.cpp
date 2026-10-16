@@ -380,15 +380,19 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.postKeyboardEvent(RETROK_RALT, true);
 	input.poll(256, 240, 0.0);
 	require(
-		input.hostShortcutJustPressed(quickMenuButton),
-		"keyboard Select plus Start must publish one quick-menu activation edge");
+		!input.hostShortcutJustPressed(quickMenuButton)
+			&& input.hostMenuShortcutAction() == bmsx::HostMenuShortcutAction::None,
+		"keyboard Select plus Start must defer menu activation until short release or long hold");
 	input.poll(256, 240, 0.0);
 	require(
-		!input.hostShortcutJustPressed(quickMenuButton),
-		"a held quick-menu shortcut must not retrigger");
+		input.hostMenuShortcutAction() == bmsx::HostMenuShortcutAction::None,
+		"a pending menu shortcut must not activate before the hold threshold");
 	input.postKeyboardEvent(RETROK_RCTRL, false);
 	input.postKeyboardEvent(RETROK_RALT, false);
 	input.poll(256, 240, 0.0);
+	require(
+		input.hostMenuShortcutAction() == bmsx::HostMenuShortcutAction::Menu,
+		"a short keyboard menu chord publishes its action on physical release");
 
 	input.postKeyboardEvent(RETROK_BACKSPACE, true);
 	input.postKeyboardEvent(RETROK_RETURN, true);
@@ -424,8 +428,9 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	gamepadStates[1] |= 1u << RETRO_DEVICE_ID_JOYPAD_START;
 	input.poll(256, 240, 1.0);
 	require(
-		input.hostShortcutJustPressed(quickMenuButton),
-		"a non-primary libretro port must publish the quick-menu activation edge");
+		!input.hostShortcutJustPressed(quickMenuButton)
+			&& input.hostMenuShortcutAction() == bmsx::HostMenuShortcutAction::None,
+		"a non-primary libretro port must defer the same timed menu chord");
 	input.sampleInputControllerSnapshot(
 		snapshot,
 		bmsx::InputControllerSampleContext::Normal
@@ -436,6 +441,9 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 
 	gamepadStates[1] = 0u;
 	input.poll(256, 240, 2.0);
+	require(
+		input.hostMenuShortcutAction() == bmsx::HostMenuShortcutAction::Menu,
+		"a non-primary port publishes one menu action on short release");
 	gamepadStates[1] = 1u << RETRO_DEVICE_ID_JOYPAD_RIGHT;
 	input.poll(256, 240, 3.0);
 	input.sampleInputControllerSnapshot(

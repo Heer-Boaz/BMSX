@@ -840,12 +840,16 @@ Collection is continuous during ordinary gameplay, from boot, not enabled by
 opening the rewind menu. Reboot, external load and tooling mutations establish
 a new timeline. Scenario execution is an external test session, not ordinary
 player history. The quick menu opens the transport bar described in
-`REWIND-UI-01` below. SELECT+south (canonical A) also toggles that bar when
-history is available. START takes over the chosen position; east (canonical B)
-cancels to the retained present. Enter/Escape are physical-keyboard equivalents.
-These positional bindings are identical on every controller, including SNES Mini.
-The OSK chord is SELECT+west (canonical X); both new controller bindings are
-independent of hardware-keyboard shortcuts.
+`REWIND-UI-01` below. Holding SELECT+START for 500 host milliseconds opens that
+bar when history is available; a short release toggles the quick menu instead.
+The physical keyboard's Right Ctrl + Right Alt uses the same short/hold contract.
+Recognition belongs to per-source host input, not a menu-owned timer, nominal
+frame counter, or guest time. A long release never produces a menu request.
+START takes over the chosen position only on a fresh unmodified press; east
+(canonical B) cancels to the retained present. Enter/Escape remain the keyboard
+transport controls. All controllers, including SNES Mini, use the same contract.
+The old SELECT+south host shortcut is removed. OSK remains SELECT+west (canonical
+X); no ordinary keyboard X/Z alias is added.
 
 Production references checked before the host diff:
 

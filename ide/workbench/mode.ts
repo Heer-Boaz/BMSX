@@ -152,13 +152,13 @@ export function registerRuntimeShortcuts(
 	disposers.push(registry.registerControlShortcut(
 		1,
 		HOST_IDE_BUTTON,
-		() => toggleEditor(
+		{ kind: 'press', onPressed: () => toggleEditor(
 			state.editor,
 			state.sources,
 			state.overlayRenderer,
 			runtime,
 			audioOutput,
-		),
+		) },
 	));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
 		input.getPlayerInput(1).inputHandlers.keyboard?.consumeKey('KeyT');

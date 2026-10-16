@@ -11,11 +11,18 @@
 
 namespace bmsx {
 
+inline constexpr f64 HOST_MENU_HOLD_MS = 500.0;
+
 inline constexpr u32 HOST_GAMEPAD_SHORTCUT_TARGETS =
-	(1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
-	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
+	(1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper));
+
+enum class HostMenuShortcutAction : u8 {
+	None,
+	Menu,
+	Rewind,
+};
 
 struct LibretroPointerContact {
 	i32 x;
@@ -54,6 +61,13 @@ public:
 	void consumeGamepadButtons(u8 deviceSlot, u32 buttons);
 	void consumeGamepadInput(u8 deviceSlot);
 	void setGamepadHostShortcutTargets(u32 targets);
+	void cancelControlShortcutGestures();
+	void cancelKeyboardControlShortcutGesture();
+	void cancelGamepadControlShortcutGesture(unsigned port);
+	HostMenuShortcutAction hostMenuShortcutAction() const {
+		return m_host_menu_shortcut_action;
+	}
+	f64 pollTimestampMs() const { return m_current_time_ms; }
 	bool pointerPosition(i32& x, i32& y) const;
 	bool pointerButtonPressed(u32 button) const;
 	void consumePointerButton(u32 button);
@@ -124,6 +138,7 @@ private:
 	BmsxHostShortcutState m_keyboard_shortcuts{};
 	u32 m_gamepad_host_shortcut_targets = 0u;
 	u32 m_just_pressed_host_shortcuts = 0u;
+	HostMenuShortcutAction m_host_menu_shortcut_action = HostMenuShortcutAction::None;
 };
 
 } // namespace bmsx

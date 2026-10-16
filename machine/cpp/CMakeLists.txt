@@ -636,6 +636,7 @@ if(BMSX_BUILD_TESTS)
 		if(BMSX_BUILD_LIBRETRO_HOST AND NOT CMAKE_CROSSCOMPILING)
 			add_executable(bmsx_libretro_host_input_devices_tests
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_devices_test.c
+				${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 				${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
 			)
@@ -897,6 +898,14 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_libretro_input_tests PRIVATE bmsx_core)
 	target_include_directories(bmsx_libretro_input_tests PRIVATE ${BMSX_LIBRETRO_DIR})
 	add_test(NAME bmsx_libretro_input_tests COMMAND bmsx_libretro_input_tests)
+
+	add_executable(bmsx_host_shortcuts_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_shortcuts_conformance_runner.cpp
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
+	)
+	target_link_libraries(bmsx_host_shortcuts_conformance_runner PRIVATE bmsx_core)
+	target_include_directories(bmsx_host_shortcuts_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
 
 	add_executable(bmsx_host_keyboard_interaction_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_keyboard_interaction_test.cpp

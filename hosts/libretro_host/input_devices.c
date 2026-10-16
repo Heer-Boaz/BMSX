@@ -50,6 +50,7 @@ typedef struct InputDevice {
 	bool has_hat;
 	bool has_abs_xy;
 	uint16_t pad_state;
+	uint16_t published_pad_state;
 } InputDevice;
 
 typedef struct RemotePointer {
@@ -96,6 +97,11 @@ typedef struct InputDevices {
 } InputDevices;
 
 static InputDevices g_input_devices;
+static bmsx_cancel_gamepad_input_t g_cancel_gamepad_input;
+
+void input_devices_set_cancel_gamepad_callback(bmsx_cancel_gamepad_input_t callback) {
+	g_cancel_gamepad_input = callback;
+}
 
 static uint64_t monotonic_milliseconds(void) {
 	struct timespec time;
@@ -333,11 +339,15 @@ static void open_evdev_devices(void) {
 }
 
 static void close_evdev_device(InputDevice* device, size_t index) {
+	if ((device->pad_state | device->published_pad_state) != 0 && g_cancel_gamepad_input) {
+		g_cancel_gamepad_input(0);
+	}
 	keyboard_input_release_source(
 			KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
 	close(device->fd);
 	device->fd = -1;
 	device->pad_state = 0;
+	device->published_pad_state = 0;
 }
 
 static void finalize_pad_state(uint16_t pad_state) {
@@ -533,6 +543,7 @@ static void poll_evdev_devices(void) {
 		if (device->fd < 0) {
 			continue;
 		}
+		device->published_pad_state = device->pad_state;
 		pad_state |= device->pad_state;
 		if (device->has_hat) {
 			apply_evdev_hat(device, &pad_state);
@@ -661,6 +672,7 @@ static void handle_sdl_window_event(const SDL_WindowEvent* event) {
 	InputDevices* input = &g_input_devices;
 	switch (event->event) {
 		case SDL_WINDOWEVENT_FOCUS_LOST:
+			if (g_cancel_gamepad_input) g_cancel_gamepad_input(0);
 			input->focused = false;
 			input->mouse_buttons = 0;
 			input->mouse_wheel_y = 0;
@@ -717,6 +729,7 @@ static void poll_sdl_devices(void) {
 			case SDL_CONTROLLERDEVICEREMOVED:
 				if (input->controller &&
 						event.cdevice.which == input->controller_id) {
+					if (g_cancel_gamepad_input) g_cancel_gamepad_input(0);
 					SDL_GameControllerClose(input->controller);
 					input->controller = NULL;
 					input->controller_id = -1;
@@ -781,6 +794,7 @@ void input_devices_close(void) {
 	InputDevices* input = &g_input_devices;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (input->driver == BMSX_INPUT_DRIVER_SDL) {
+		if (g_cancel_gamepad_input) g_cancel_gamepad_input(0);
 		keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_SDL);
 		if (input->controller) {
 			SDL_GameControllerClose(input->controller);
@@ -814,6 +828,8 @@ void input_devices_poll(void) {
 		video_presenter_map_surface_point(remote->x, remote->y,
 			&remote->pointer_x, &remote->pointer_y, &remote->inside);
 	}
+	// All SDL/evdev events and prior remote/timeline deliveries are now published.
+	keyboard_input_mark_sampled();
 }
 
 void input_devices_remote_pointer(int x, int y) {

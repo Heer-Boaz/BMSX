@@ -10,7 +10,7 @@ export const HOST_TERMINAL_BUTTON: BGamepadButton = 'lb';
 export const HOST_IDE_BUTTON: BGamepadButton = 'rb';
 export const HOST_MENU_BUTTON: BGamepadButton = 'start';
 export const HOST_ON_SCREEN_KEYBOARD_BUTTON: BGamepadButton = 'x';
-export const HOST_REWIND_BUTTON: BGamepadButton = 'a';
+export const HOST_MENU_HOLD_MS = 500;
 export const HOST_SUPERVISOR_KEY_CODE = 'ScrollLock';
 
 export const enum ControlSource {
@@ -25,16 +25,33 @@ type KeyboardShortcutEntry = {
 	latchKey: string;
 };
 
+type PressControlShortcutBinding = {
+	kind: 'press';
+	onPressed: () => void;
+	onReleased?: () => void;
+};
+
+type ShortHoldControlShortcutBinding = {
+	kind: 'short-hold';
+	holdDurationMs: number;
+	onShortPress: () => void;
+	onLongPress: () => void;
+};
+
+export type ControlShortcutBinding = PressControlShortcutBinding | ShortHoldControlShortcutBinding;
+
 type ControlShortcutEntry = {
 	button: BGamepadButton;
 	buttonMask: number;
 	sources: number;
-	onPressed: () => void;
-	onReleased?: () => void;
 	activeSources: number;
 	blockedSources: number;
-	notifiedActive: boolean;
-};
+} & ((PressControlShortcutBinding & { notifiedActive: boolean }) | (ShortHoldControlShortcutBinding & {
+	holdDeadlineMs: Float64Array;
+	pendingSources: number;
+	shortPressPending: boolean;
+	longPressPending: boolean;
+}));
 
 type ControlShortcutSet = {
 	entries: ControlShortcutEntry[];
@@ -67,15 +84,40 @@ export class GlobalShortcutRegistry {
 
 	private resetControlShortcutSources(sources: number): void {
 		for (const shortcuts of this.controlShortcuts.values()) {
-			shortcuts.capturedSources &= ~sources;
-			for (let index = 0; index < shortcuts.entries.length; index += 1) {
-				const entry = shortcuts.entries[index];
-				entry.activeSources &= ~sources;
-				entry.blockedSources &= ~sources;
-				if (entry.notifiedActive && entry.activeSources === 0) {
-					entry.notifiedActive = false;
-					entry.onReleased?.();
-				}
+			this.resetControlShortcutSetSources(shortcuts, sources);
+		}
+	}
+
+	/** Modal ownership changes cancel a gesture, rather than synthesizing a release. */
+	public cancelControlShortcutGestures(): void {
+		for (const shortcuts of this.controlShortcuts.values()) {
+			for (const entry of shortcuts.entries) {
+				if (entry.kind !== 'short-hold') continue;
+				entry.pendingSources = 0;
+				entry.shortPressPending = false;
+				entry.longPressPending = false;
+			}
+		}
+	}
+
+	/** Device lifecycle changes release ordinary chords, but cancel timed gestures. */
+	public cancelControlShortcutSource(playerIndex: number, source: ControlSource): void {
+		const shortcuts = this.controlShortcuts.get(playerIndex);
+		if (shortcuts) this.resetControlShortcutSetSources(shortcuts, source);
+	}
+
+	private resetControlShortcutSetSources(shortcuts: ControlShortcutSet, sources: number): void {
+		shortcuts.capturedSources &= ~sources;
+		for (const entry of shortcuts.entries) {
+			entry.activeSources &= ~sources;
+			entry.blockedSources &= ~sources;
+			if (entry.kind === 'short-hold') {
+				entry.pendingSources &= ~sources;
+				entry.shortPressPending = false;
+				entry.longPressPending = false;
+			} else if (entry.notifiedActive && entry.activeSources === 0) {
+				entry.notifiedActive = false;
+				entry.onReleased?.();
 			}
 		}
 	}
@@ -107,8 +149,7 @@ export class GlobalShortcutRegistry {
 	public registerControlShortcut(
 		playerIndex: number,
 		button: BGamepadButton,
-		onPressed: () => void,
-		onReleased?: () => void,
+		binding: ControlShortcutBinding,
 		sources = ControlSource.Keyboard | ControlSource.Gamepad,
 	): ShortcutDisposer {
 		let shortcuts = this.controlShortcuts.get(playerIndex);
@@ -119,16 +160,17 @@ export class GlobalShortcutRegistry {
 			};
 			this.controlShortcuts.set(playerIndex, shortcuts);
 		}
-		const entry: ControlShortcutEntry = {
+		const common = {
 			button,
 			buttonMask: 1 << inputControllerGamepadButtonBit(button),
 			sources,
-			onPressed,
-			onReleased,
 			activeSources: 0,
 			blockedSources: 0,
-			notifiedActive: false,
 		};
+		const entry: ControlShortcutEntry = binding.kind === 'press'
+			? { ...common, ...binding, notifiedActive: false }
+			: { ...common, ...binding, holdDeadlineMs: new Float64Array(2), pendingSources: 0,
+				shortPressPending: false, longPressPending: false };
 		shortcuts.entries.push(entry);
 		return () => {
 			const target = this.controlShortcuts.get(playerIndex);
@@ -173,14 +215,25 @@ export class GlobalShortcutRegistry {
 			player.inputHandlers.keyboard,
 			shortcuts,
 			ControlSource.Keyboard,
+			player.pollTimestampMs,
 		);
 		this.pollControlShortcutSource(
 			player.inputHandlers.gamepad,
 			shortcuts,
 			ControlSource.Gamepad,
+			player.pollTimestampMs,
 		);
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
+			if (entry.kind === 'short-hold') {
+				const shortPress = entry.shortPressPending;
+				const longPress = entry.longPressPending;
+				entry.shortPressPending = false;
+				entry.longPressPending = false;
+				if (shortPress) entry.onShortPress();
+				if (longPress) entry.onLongPress();
+				continue;
+			}
 			const active = entry.activeSources !== 0;
 			if (active === entry.notifiedActive) {
 				continue;
@@ -198,6 +251,7 @@ export class GlobalShortcutRegistry {
 		handler: InputHandler | null,
 		shortcuts: ControlShortcutSet,
 		source: ControlSource,
+		now: number,
 	): void {
 		const entries = shortcuts.entries;
 		const allowedTargets = source === ControlSource.Gamepad
@@ -208,6 +262,10 @@ export class GlobalShortcutRegistry {
 			for (let index = 0; index < entries.length; index += 1) {
 				entries[index].activeSources &= ~source;
 				entries[index].blockedSources &= ~source;
+				const entry = entries[index];
+				if (entry.kind === 'short-hold') {
+					entry.pendingSources &= ~source;
+				}
 			}
 			return;
 		}
@@ -245,6 +303,9 @@ export class GlobalShortcutRegistry {
 			if ((entry.sources & source) === 0 || (allowedTargets !== null && (entry.buttonMask & allowedTargets) === 0)) {
 				entry.activeSources &= ~source;
 				entry.blockedSources &= ~source;
+				if (entry.kind === 'short-hold') {
+					entry.pendingSources &= ~source;
+				}
 				continue;
 			}
 			const button = handler.getButtonState(entry.button);
@@ -256,12 +317,29 @@ export class GlobalShortcutRegistry {
 					entry.blockedSources |= source;
 				}
 			}
-			if (modifier.pressed
+			const wasActive = (entry.activeSources & source) !== 0;
+			const active = modifier.pressed
 				&& button.pressed
-				&& (entry.blockedSources & source) === 0) {
+				&& (entry.blockedSources & source) === 0;
+			if (active) {
 				entry.activeSources |= source;
 			} else {
 				entry.activeSources &= ~source;
+			}
+			if (entry.kind === 'short-hold') {
+				if (active && !wasActive) {
+					entry.holdDeadlineMs[source - 1] = now + entry.holdDurationMs;
+					entry.pendingSources |= source;
+				}
+				if ((entry.pendingSources & source) !== 0) {
+					if (now >= entry.holdDeadlineMs[source - 1]) {
+						entry.pendingSources &= ~source;
+						entry.longPressPending = true;
+					} else if (!active) {
+						entry.pendingSources &= ~source;
+						entry.shortPressPending = true;
+					}
+				}
 			}
 			handler.consumeButton(entry.button);
 		}

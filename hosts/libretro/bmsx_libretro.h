@@ -19,6 +19,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4271u)
 #define BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4281u)
+#define BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x4291u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 typedef bool (RETRO_CALLCONV *bmsx_supervisor_request_line_t)(void);
@@ -56,6 +58,19 @@ typedef void (RETRO_CALLCONV *bmsx_set_audio_transport_suspended_t)(bool suspend
 typedef struct BmsxAudioTransportInterface {
 	bmsx_set_audio_transport_suspended_t set_suspended;
 } BmsxAudioTransportInterface;
+
+typedef void (RETRO_CALLCONV *bmsx_cancel_keyboard_input_t)(void);
+typedef void (RETRO_CALLCONV *bmsx_cancel_gamepad_input_t)(unsigned port);
+
+/* Published by retro_init and revoked with null callbacks before retro_deinit.
+ * Frontends call synchronously before synthetic releases caused by focus loss
+ * or device removal. A normal physical button/key release is not cancellation.
+ * The keyboard is the merged physical-keyboard source; gamepad ports are the
+ * same zero-based ports supplied to the standard input callbacks. */
+typedef struct BmsxInputLifecycleInterfaceV1 {
+	bmsx_cancel_keyboard_input_t cancel_keyboard;
+	bmsx_cancel_gamepad_input_t cancel_gamepad;
+} BmsxInputLifecycleInterfaceV1;
 
 #ifdef __cplusplus
 }

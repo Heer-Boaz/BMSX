@@ -180,6 +180,8 @@ void core_session_update_timing(
 }
 
 void core_session_close(BmsxCoreSession* session) {
+	keyboard_input_set_cancel_callback(NULL);
+	input_devices_set_cancel_gamepad_callback(NULL);
 	bmsx_core_options_destroy(&session->options);
 	dlclose(session->library_handle);
 	g_active_session = NULL;
@@ -188,6 +190,12 @@ void core_session_close(BmsxCoreSession* session) {
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
+		case BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1: {
+			const BmsxInputLifecycleInterfaceV1* lifecycle = data;
+			keyboard_input_set_cancel_callback(lifecycle->cancel_keyboard);
+			input_devices_set_cancel_gamepad_callback(lifecycle->cancel_gamepad);
+			return true;
+		}
 		case BMSX_ENVIRONMENT_SET_EXECUTION_DOMAIN_INTERFACE_V1:
 			session->execution_domain =
 					*(const BmsxExecutionDomainInterfaceV1*)data;

@@ -121,13 +121,26 @@ enum {
 };
 
 static struct retro_keyboard_callback g_keyboard_callback;
+static bmsx_cancel_keyboard_input_t g_cancel_keyboard_input;
 static uint64_t g_source_pressed[KEYBOARD_INPUT_SOURCE_COUNT][KEYBOARD_INPUT_WORD_COUNT];
 static uint8_t g_key_source_count[RETROK_LAST];
+_Static_assert(KEYBOARD_INPUT_SOURCE_COUNT <= 32,
+	"unpublished keyboard transitions use one uint32_t source mask");
+static uint32_t g_unpublished_sources;
 
 void keyboard_input_set_callback(struct retro_keyboard_callback callback) {
 	g_keyboard_callback = callback;
 	memset(g_source_pressed, 0, sizeof(g_source_pressed));
 	memset(g_key_source_count, 0, sizeof(g_key_source_count));
+	g_unpublished_sources = 0;
+}
+
+void keyboard_input_set_cancel_callback(bmsx_cancel_keyboard_input_t callback) {
+	g_cancel_keyboard_input = callback;
+}
+
+void keyboard_input_mark_sampled(void) {
+	g_unpublished_sources = 0;
 }
 
 void keyboard_input_post(unsigned source, enum retro_key key, bool down) {
@@ -138,6 +151,7 @@ void keyboard_input_post(unsigned source, enum retro_key key, bool down) {
 	if (source_down == down) {
 		return;
 	}
+	g_unpublished_sources |= 1u << source;
 	if (down) {
 		*source_word |= mask;
 		g_key_source_count[key] += 1u;
@@ -156,13 +170,21 @@ void keyboard_input_post(unsigned source, enum retro_key key, bool down) {
 }
 
 void keyboard_input_release_source(unsigned source) {
+	const uint32_t source_mask = 1u << source;
+	bool cancelled = (g_unpublished_sources & source_mask) != 0;
+	if (cancelled && g_cancel_keyboard_input) g_cancel_keyboard_input();
 	for (unsigned key = RETROK_FIRST; key < RETROK_LAST; key += 1u) {
 		const unsigned word_index = key / KEYBOARD_INPUT_WORD_BITS;
 		const uint64_t mask = UINT64_C(1) << (key & (KEYBOARD_INPUT_WORD_BITS - 1));
 		if ((g_source_pressed[source][word_index] & mask) != 0) {
+			if (!cancelled) {
+				if (g_cancel_keyboard_input) g_cancel_keyboard_input();
+				cancelled = true;
+			}
 			keyboard_input_post(source, (enum retro_key)key, false);
 		}
 	}
+	g_unpublished_sources &= ~source_mask;
 }
 
 bool RETRO_CALLCONV keyboard_input_supervisor_request_line(void) {

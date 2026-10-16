@@ -18,7 +18,7 @@ import {
 	HOST_IDE_BUTTON,
 	HOST_MENU_BUTTON,
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
-	HOST_REWIND_BUTTON,
+	HOST_MENU_HOLD_MS,
 } from '../../hosts/common/input/shortcuts';
 import {
 	createInputControllerSnapshot,
@@ -122,10 +122,10 @@ function openMenuWithGamepad(
 ): void {
 	input.inputButton(deviceId, 'select', true, 1, time, selectPressId);
 	input.inputButton(deviceId, 'start', true, 1, time, startPressId);
-	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Inactive);
 	input.inputButton(deviceId, 'select', false, 0, time + 1, selectPressId);
 	input.inputButton(deviceId, 'start', false, 0, time + 1, startPressId);
-	tickMenu(input, menu);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
 }
 
 test('host control routing reserves Select without leaking split-frame shortcuts', () => {
@@ -135,8 +135,7 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	const dispose = input.getGlobalShortcutRegistry().registerControlShortcut(
 		1,
 		HOST_IDE_BUTTON,
-		() => { shortcutCount += 1; },
-		() => { releaseCount += 1; },
+		{ kind: 'press', onPressed: () => { shortcutCount += 1; }, onReleased: () => { releaseCount += 1; } },
 	);
 	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard!;
 	const snapshot = createInputControllerSnapshot();
@@ -191,8 +190,8 @@ test('on-screen keyboard shortcut mask retains physical keyboard sources and blo
 	const shortcuts = input.getGlobalShortcutRegistry();
 	let ideShortcutCount = 0;
 	let ideReleaseCount = 0;
-	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, () => { ideShortcutCount += 1; }, () => { ideReleaseCount += 1; });
-	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON, () => {}, undefined, ControlSource.Gamepad);
+	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, { kind: 'press', onPressed: () => { ideShortcutCount += 1; }, onReleased: () => { ideReleaseCount += 1; } });
+	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON, { kind: 'press', onPressed: () => {} }, ControlSource.Gamepad);
 	shortcuts.setGamepadControlShortcutMask((1 << InputControllerGamepadButtonBit.X)
 		| (1 << InputControllerGamepadButtonBit.A) | (1 << InputControllerGamepadButtonBit.Start));
 
@@ -229,139 +228,236 @@ test('on-screen keyboard shortcut mask retains physical keyboard sources and blo
 	input.dispose();
 });
 
-test('gamepad-only host shortcuts leave physical letters, function keys and Left Ctrl editing intact', () => {
-	let currentTime = 10;
+function createShortHoldFixture() {
+	let currentTime = 100;
+	let pressId = 1;
 	const { input, gamepad } = createGamepadInput({ now: () => currentTime } as HostClock);
 	const shortcuts = input.getGlobalShortcutRegistry();
-	let keyboardCount = 0, rewindCount = 0;
-	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON, () => { keyboardCount += 1; }, undefined, ControlSource.Gamepad);
-	shortcuts.registerControlShortcut(1, HOST_REWIND_BUTTON, () => { rewindCount += 1; }, undefined, ControlSource.Gamepad);
-	const snapshot = createInputControllerSnapshot();
-	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard!;
-	let pressId = 1;
-	for (const control of ['ControlRight', 'ControlLeft']) {
-		input.inputButton('keyboard:0', control, true, 1, currentTime, pressId++);
-		input.pollInput();
-		for (const code of ['KeyZ', 'KeyX', 'F5', 'F6']) {
-			currentTime += 1;
-			input.inputButton('keyboard:0', code, true, 1, currentTime, pressId++);
-			input.pollInput();
+	const events: string[] = [];
+	for (let player = 1; player <= Input.PLAYERS_MAX; player += 1) {
+		shortcuts.registerControlShortcut(player, HOST_MENU_BUTTON, {
+			kind: 'short-hold', holdDurationMs: HOST_MENU_HOLD_MS,
+			onShortPress: () => { events.push(`short:${player}`); },
+			onLongPress: () => { events.push(`long:${player}`); },
+		});
+	}
+	const button = (code: string, down: boolean, device = gamepad.id) => {
+		input.inputButton(device, code, down, down ? 1 : 0, currentTime, pressId++);
+	};
+	const advance = (elapsed: number) => { currentTime += elapsed; };
+	const poll = (elapsed = 0) => { advance(elapsed); input.pollInput(); };
+	return { input, gamepad, shortcuts, events, button, poll, advance };
+}
+
+test('host short-hold chords use the same release threshold on keyboard and gamepads', () => {
+	for (const keyboard of [false, true]) for (const modifierFirstUp of [false, true]) {
+		for (const duration of [0, HOST_MENU_HOLD_MS - 1, HOST_MENU_HOLD_MS, HOST_MENU_HOLD_MS + 100]) {
+			const { input, gamepad, events, button, poll, advance } = createShortHoldFixture();
+			const device = keyboard ? 'keyboard:0' : gamepad.id;
+			const modifier = keyboard ? 'ControlRight' : 'select';
+			const target = keyboard ? 'AltRight' : 'start';
+			button(modifier, true, device); button(target, true, device); poll();
+			assert.deepEqual(events, [], 'press does not open the menu');
+			const first = modifierFirstUp ? modifier : target;
+			const second = modifierFirstUp ? target : modifier;
+			// No intermediate held poll: release must still classify the elapsed interval.
+			advance(duration);
+			button(first, false, device); poll();
+			assert.deepEqual(events, [duration < HOST_MENU_HOLD_MS ? 'short:1' : 'long:1']);
+			const snapshot = createInputControllerSnapshot();
 			input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
-			assert.equal(keyboardCount, 0);
-			assert.equal(rewindCount, 0);
-			assert.equal(keyWordContains(snapshot.keyWords, code), true, `${control}+${code} retains its ordinary key`);
-			assert.equal(keyboard.getKeyState(code).consumed, false);
-			assert.equal(keyWordContains(snapshot.keyWords, control), control === 'ControlLeft',
-				'Left Ctrl editing remains complete; Right Ctrl itself is still the explicitly reserved host modifier');
-			currentTime += 1;
-			input.inputButton('keyboard:0', code, false, 0, currentTime, pressId++);
-			input.pollInput();
+			assert.equal(snapshot.pads[0].buttons, 0);
+			if (keyboard) {
+				assert.equal(keyWordContains(snapshot.keyWords, modifier), false);
+				assert.equal(keyWordContains(snapshot.keyWords, target), false);
+			}
+			poll(HOST_MENU_HOLD_MS * 2);
+			button(second, false, device); poll();
+			assert.equal(events.length, 1, 'remaining held members and their release cannot dispatch again');
+			input.dispose();
 		}
-		currentTime += 1;
-		input.inputButton('keyboard:0', control, false, 0, currentTime, pressId++);
-		input.pollInput();
 	}
-	for (const button of [HOST_ON_SCREEN_KEYBOARD_BUTTON, HOST_REWIND_BUTTON]) {
-		currentTime += 1;
-		input.inputButton(gamepad.id, 'select', true, 1, currentTime, pressId++);
-		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId++);
-		input.pollInput();
-		currentTime += 1;
-		input.inputButton(gamepad.id, 'select', false, 0, currentTime, pressId++);
-		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId++);
-		input.pollInput();
-	}
-	assert.equal(keyboardCount, 1, 'west gamepad chord still opens the keyboard');
-	assert.equal(rewindCount, 1, 'bottom gamepad chord still opens rewind');
+});
+
+test('a long host chord fires once at the threshold and ignores keyboard repeat', () => {
+	const { input, events, button, poll } = createShortHoldFixture();
+	button('ControlRight', true, 'keyboard:0'); button('AltRight', true, 'keyboard:0'); poll();
+	poll(HOST_MENU_HOLD_MS - 1); assert.deepEqual(events, []);
+	button('AltRight', true, 'keyboard:0'); poll(1);
+	assert.deepEqual(events, ['long:1']);
+	poll(HOST_MENU_HOLD_MS * 10); assert.deepEqual(events, ['long:1']);
+	button('AltRight', false, 'keyboard:0'); button('ControlRight', false, 'keyboard:0'); poll();
+	assert.deepEqual(events, ['long:1']);
+	button('ControlRight', true, 'keyboard:0'); button('AltRight', true, 'keyboard:0'); poll(1);
+	button('AltRight', false, 'keyboard:0'); poll(1);
+	assert.deepEqual(events, ['long:1', 'short:1'], 'a fresh physical chord is a separate gesture');
 	input.dispose();
 });
 
-test('keyboard context admits west, bottom and Start host chords while leaving local shoulder and page controls intact', () => {
-	let currentTime = 10;
-	const { input, gamepad } = createGamepadInput({ now: () => currentTime } as HostClock);
-	const shortcuts = input.getGlobalShortcutRegistry();
-	let keyboardCount = 0, rewindCount = 0, menuCount = 0, ideCount = 0, pageCount = 0;
-	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON, () => { keyboardCount += 1; }, undefined, ControlSource.Gamepad);
-	shortcuts.registerControlShortcut(1, HOST_REWIND_BUTTON, () => { rewindCount += 1; }, undefined, ControlSource.Gamepad);
-	shortcuts.registerControlShortcut(1, HOST_MENU_BUTTON, () => { menuCount += 1; });
-	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, () => { ideCount += 1; });
-	shortcuts.registerControlShortcut(1, 'y', () => { pageCount += 1; }, undefined, ControlSource.Gamepad);
-	shortcuts.setGamepadControlShortcutMask((1 << InputControllerGamepadButtonBit.X)
-		| (1 << InputControllerGamepadButtonBit.A) | (1 << InputControllerGamepadButtonBit.Start));
-	let pressId = 1;
-	input.inputButton(gamepad.id, 'select', true, 1, currentTime, pressId++);
-	input.pollInput();
-	for (const button of ['lb', 'rb', 'y']) {
-		currentTime += 1;
-		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId++);
-		input.pollInput();
-		assert.equal(input.getPlayerInput(1).inputHandlers.gamepad!.getButtonState(button).consumed, false,
-			`${button} remains available to keyboard-local Select commands`);
-		assert.equal(input.supervisorRequestLineHigh(), false);
-		assert.equal(ideCount, 0);
-		assert.equal(pageCount, 0);
-		currentTime += 1;
-		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId++);
-		input.pollInput();
-	}
-	for (const button of [HOST_ON_SCREEN_KEYBOARD_BUTTON, HOST_REWIND_BUTTON, HOST_MENU_BUTTON]) {
-		currentTime += 1;
-		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId++);
-		input.pollInput();
-		assert.equal(input.getPlayerInput(1).inputHandlers.gamepad!.getButtonState(button).consumed, true);
-		for (let held = 0; held < 3; held += 1) { currentTime += 20; input.pollInput(); }
-		currentTime += 1;
-		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId++);
-		input.pollInput();
-	}
-	assert.equal(keyboardCount, 1);
-	assert.equal(rewindCount, 1);
-	assert.equal(menuCount, 1, 'all three allowed targets remain independently available without held repeats');
+test('a gameplay Start held before Select does not become a host gesture', () => {
+	const { input, events, button, poll } = createShortHoldFixture();
+	button('start', true); poll();
+	button('select', true); poll(10); poll(HOST_MENU_HOLD_MS * 2);
+	assert.deepEqual(events, []);
+	button('start', false); poll(1);
+	assert.deepEqual(events, []);
+	button('start', true); poll(1);
+	button('start', false); poll(1);
+	assert.deepEqual(events, ['short:1']);
 	input.dispose();
 });
 
-test('gamepad-only rewind uses real target edges and captures either chord-release order', () => {
-	for (const modifierFirstUp of [false, true]) {
-		let currentTime = 10;
-		const { input, gamepad } = createGamepadInput({ now: () => currentTime } as HostClock);
-		let pressed = 0, released = 0;
-		input.getGlobalShortcutRegistry().registerControlShortcut(1, HOST_REWIND_BUTTON,
-			() => { pressed += 1; }, () => { released += 1; }, ControlSource.Gamepad);
-		const snapshot = createInputControllerSnapshot();
-		let pressId = 1;
-		input.inputButton(gamepad.id, HOST_REWIND_BUTTON, true, 1, currentTime, pressId++);
-		input.pollInput();
-		currentTime += 1;
-		input.inputButton(gamepad.id, 'select', true, 1, currentTime, pressId++);
-		input.pollInput();
-		assert.equal(pressed, 0, 'holding a gameplay button before Select cannot start a host action');
-		currentTime += 1;
-		input.inputButton(gamepad.id, HOST_REWIND_BUTTON, false, 0, currentTime, pressId++);
-		input.pollInput();
-		currentTime += 1;
-		input.inputButton(gamepad.id, HOST_REWIND_BUTTON, true, 1, currentTime, pressId++);
-		input.pollInput();
-		assert.equal(pressed, 1);
-		const first = modifierFirstUp ? 'select' : HOST_REWIND_BUTTON;
-		const second = modifierFirstUp ? HOST_REWIND_BUTTON : 'select';
-		currentTime += 1;
-		input.inputButton(gamepad.id, first, false, 0, currentTime, pressId++);
-		input.pollInput();
-		assert.equal(released, 1);
-		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
-		assert.equal(snapshot.pads[0].buttons, 0, 'the remaining chord member cannot leak after the first release');
-		currentTime += 1;
-		input.pollInput();
-		assert.equal(pressed, 1);
-		assert.equal(released, 1);
-		currentTime += 1;
-		input.inputButton(gamepad.id, second, false, 0, currentTime, pressId++);
-		input.pollInput();
+test('physical sources and players neither combine half-chords nor share hold time', () => {
+	const { input, gamepad, events, button, poll, advance } = createShortHoldFixture();
+	const second: GamepadDevice = { ...gamepad, id: 'gamepad:1', gamepadIndex: 1 };
+	input.connectInputDevice(second);
+	button('select', true); button('AltRight', true, 'keyboard:0'); poll();
+	poll(HOST_MENU_HOLD_MS); assert.deepEqual(events, [], 'different source halves are not a chord');
+	button('AltRight', false, 'keyboard:0'); poll();
+	button('start', true); poll();
+	advance(1); button('select', true, second.id); button('start', true, second.id); poll(249);
+	button('ControlRight', true, 'keyboard:0'); button('AltRight', true, 'keyboard:0'); poll();
+	// Release the gamepad, while the physical keyboard remains held on that same player.
+	button('start', false); poll(100);
+	assert.deepEqual(events, ['short:1'], 'one source release does not wait for another source');
+	poll(150);
+	assert.deepEqual(events, ['short:1'], 'new source and player timers do not inherit the older hold');
+	poll(250);
+	assert.deepEqual(events, ['short:1', 'long:1', 'long:2']);
+	input.dispose();
+});
+
+test('reset, modal retargeting and device lifecycle cancel gestures without a short action', () => {
+	for (const cancel of ['global', 'device', 'disconnect', 'replace', 'reassign', 'modal', 'retarget', 'dispose'] as const) {
+		const { input, gamepad, shortcuts, events, button, poll } = createShortHoldFixture();
+		button('select', true); button('start', true); poll(); poll(100);
+		switch (cancel) {
+			case 'global': input.resetInput(); break;
+			case 'device': input.resetInput(gamepad.id); break;
+			case 'disconnect': input.disconnectInputDevice(gamepad.id); break;
+			case 'replace': {
+				const replacement = { ...gamepad, id: 'gamepad:replacement', gamepadIndex: 8 };
+				input.connectInputDevice(replacement);
+				input.assignGamepadToPlayer(input.connectedGamepads[1], 1);
+				break;
+			}
+			case 'reassign': input.assignGamepadToPlayer(input.connectedGamepads[0], 2); break;
+			case 'modal': shortcuts.cancelControlShortcutGestures(); break;
+			case 'retarget': shortcuts.setGamepadControlShortcutMask(1 << InputControllerGamepadButtonBit.Start); break;
+			case 'dispose': input.dispose(); break;
+		}
+		if (cancel !== 'dispose') {
+			poll(HOST_MENU_HOLD_MS * 2);
+			button('start', false); button('select', false); poll(1);
+			input.dispose();
+		}
+		assert.deepEqual(events, [], cancel);
+	}
+	for (const reset of ['device', 'disconnect', 'global', 'modal'] as const) {
+		const { input, events, shortcuts, button, poll } = createShortHoldFixture();
+		button('ControlRight', true, 'keyboard:0'); button('AltRight', true, 'keyboard:0'); poll(); poll(100);
+		if (reset === 'device') input.resetInput('keyboard:0');
+		else if (reset === 'disconnect') input.disconnectInputDevice('keyboard:0');
+		else if (reset === 'global') input.resetInput();
+		else shortcuts.cancelControlShortcutGestures();
+		poll(HOST_MENU_HOLD_MS * 2);
+		button('ControlRight', false, 'keyboard:0'); button('AltRight', false, 'keyboard:0'); poll(1);
+		assert.deepEqual(events, [], `keyboard ${reset}`);
 		input.dispose();
 	}
 });
 
-test('real host keyboard-to-rewind shortcuts retain held controls and commit only with Start or physical Enter', async t => {
+test('host chord timing does not capture ordinary letters, function keys or virtual typing', () => {
+	const { input, gamepad, shortcuts, events, button, poll } = createShortHoldFixture();
+	let keyboardCount = 0;
+	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON,
+		{ kind: 'press', onPressed: () => { keyboardCount += 1; } }, ControlSource.Gamepad);
+	const snapshot = createInputControllerSnapshot();
+	for (const control of ['ControlRight', 'ControlLeft']) {
+		button(control, true, 'keyboard:0'); poll();
+		for (const code of ['KeyZ', 'KeyX', 'F5', 'F6']) {
+			button(code, true, 'keyboard:0'); poll(1);
+			input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+			assert.equal(keyWordContains(snapshot.keyWords, code), true, `${control}+${code} remains guest input`);
+			assert.equal(keyWordContains(snapshot.keyWords, control), control === 'ControlLeft');
+			button(code, false, 'keyboard:0'); poll(1);
+		}
+		button(control, false, 'keyboard:0'); poll(1);
+	}
+	input.setVirtualKeyboardKey('ControlRight', true); input.setVirtualKeyboardKey('AltRight', true);
+	poll(HOST_MENU_HOLD_MS * 2);
+	input.setVirtualKeyboardKey('ControlRight', false); input.setVirtualKeyboardKey('AltRight', false); poll();
+	assert.deepEqual(events, [], 'virtual typing never constructs a physical host chord');
+	button('select', true); button('a', true); poll(HOST_MENU_HOLD_MS);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.notEqual(snapshot.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A), 0,
+		'the removed Select+A rewind binding does not consume the bottom button');
+	button('a', false); button('x', true); poll(1);
+	assert.equal(keyboardCount, 1);
+	assert.deepEqual(events, []);
+	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad!.device, gamepad);
+	input.dispose();
+});
+
+test('gamepad target retargeting cancels only its timed source, not a physical keyboard hold', () => {
+	const { input, shortcuts, events, button, poll } = createShortHoldFixture();
+	button('select', true); button('start', true);
+	button('ControlRight', true, 'keyboard:0'); button('AltRight', true, 'keyboard:0'); poll();
+	shortcuts.setGamepadControlShortcutMask(0);
+	poll(HOST_MENU_HOLD_MS);
+	assert.deepEqual(events, ['long:1'], 'the eligible physical keyboard keeps its independent deadline');
+	shortcuts.setGamepadControlShortcutMask(null);
+	poll(HOST_MENU_HOLD_MS);
+	assert.deepEqual(events, ['long:1'], 'retargeting cannot acquire an already held gamepad target');
+	button('select', false); button('start', false);
+	button('ControlRight', false, 'keyboard:0'); button('AltRight', false, 'keyboard:0'); poll(1);
+	assert.deepEqual(events, ['long:1']);
+	input.dispose();
+});
+
+test('modal gesture cancellation leaves ordinary keyboard shortcut lifetimes intact', () => {
+	const { input, shortcuts, events, button, poll } = createShortHoldFixture();
+	let pressed = 0, released = 0;
+	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, {
+		kind: 'press', onPressed: () => { pressed += 1; }, onReleased: () => { released += 1; },
+	});
+	button('ControlRight', true, 'keyboard:0'); button('ShiftRight', true, 'keyboard:0');
+	button('select', true); button('start', true); poll();
+	assert.equal(pressed, 1);
+	shortcuts.cancelControlShortcutGestures(); poll(HOST_MENU_HOLD_MS * 2);
+	assert.equal(released, 0, 'a modal timer cancellation is not a release of a press binding');
+	assert.deepEqual(events, []);
+	button('ShiftRight', false, 'keyboard:0'); poll(1);
+	assert.equal(released, 1);
+	button('start', false); button('select', false); poll(1);
+	assert.deepEqual(events, [], 'the canceled held gesture cannot produce a short action on release');
+	input.dispose();
+});
+
+test('keyboard context keeps west and Start host gestures without consuming local shoulder and page commands', () => {
+	const { input, shortcuts, events, button, poll } = createShortHoldFixture();
+	let keyboardCount = 0, ideCount = 0, pageCount = 0;
+	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON,
+		{ kind: 'press', onPressed: () => { keyboardCount += 1; } }, ControlSource.Gamepad);
+	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, { kind: 'press', onPressed: () => { ideCount += 1; } });
+	shortcuts.registerControlShortcut(1, 'y', { kind: 'press', onPressed: () => { pageCount += 1; } }, ControlSource.Gamepad);
+	shortcuts.setGamepadControlShortcutMask((1 << InputControllerGamepadButtonBit.X) | (1 << InputControllerGamepadButtonBit.Start));
+	button('select', true); poll();
+	for (const control of ['lb', 'rb', 'y']) {
+		button(control, true); poll(1);
+		assert.equal(input.getPlayerInput(1).inputHandlers.gamepad!.getButtonState(control).consumed, false);
+		assert.equal(input.supervisorRequestLineHigh(), false);
+		button(control, false); poll(1);
+	}
+	button('x', true); poll(1); button('x', false); poll(1);
+	button('start', true); poll(1); button('start', false); poll(1);
+	button('start', true); poll(1); poll(HOST_MENU_HOLD_MS); button('start', false); poll(1);
+	assert.equal(keyboardCount, 1); assert.equal(ideCount, 0); assert.equal(pageCount, 0);
+	assert.deepEqual(events, ['short:1', 'long:1']);
+	input.dispose();
+});
+
+test('real host short-hold requests preserve rewind entry and fresh unmodified Start takeover', async t => {
 	const host = createHostFrameFixture();
 	const { runtime, clock, input, presenter, rewind, tasks } = host;
 	const gamepad: GamepadDevice = {
@@ -374,95 +470,77 @@ test('real host keyboard-to-rewind shortcuts retain held controls and commit onl
 	const interaction = new HostKeyboardInteraction(input, model, presenter, view);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, host.execution, interaction);
 	t.after(() => { model.close(); rewind.service(false); host.audio.dispose(); input.dispose(); });
-	rewind.service(true);
-	await tasks.join();
+	rewind.service(true); await tasks.join();
 	assert.equal(rewind.available, true, 'the real host service captured the initial runtime checkpoint');
 	const tick = () => { const result = tickMenu(input, menu); clock.advance(20); return result; };
 	let pressId = 1;
+	const button = (code: string, down: boolean, device = gamepad.id) => {
+		input.inputButton(device, code, down, down ? 1 : 0, clock.now(), pressId++);
+	};
 	const press = (code: string, device = gamepad.id): HostMenuInput => {
-		const id = pressId++;
-		input.inputButton(device, code, true, 1, clock.now(), id);
-		const result = tick();
-		input.inputButton(device, code, false, 0, clock.now(), id);
-		tick();
-		return result;
+		button(code, true, device); const result = tick();
+		button(code, false, device); tick(); return result;
 	};
-	const chord = (button: string): HostMenuInput => {
-		const modifier = pressId++, target = pressId++;
-		input.inputButton(gamepad.id, 'select', true, 1, clock.now(), modifier);
-		input.inputButton(gamepad.id, button, true, 1, clock.now(), target);
-		const result = tick();
-		input.inputButton(gamepad.id, 'select', false, 0, clock.now(), modifier);
-		input.inputButton(gamepad.id, button, false, 0, clock.now(), target);
-		tick();
-		return result;
+	const chord = (target: string, hold = false, keyboard = false): HostMenuInput => {
+		const device = keyboard ? 'keyboard:0' : gamepad.id;
+		const modifier = keyboard ? 'ControlRight' : 'select';
+		button(modifier, true, device); button(target, true, device); tick();
+		if (hold) { clock.advance(HOST_MENU_HOLD_MS); tick(); }
+		button(modifier, false, device); button(target, false, device); return tick();
 	};
-	const control = pressId++;
-	input.inputButton('keyboard:0', 'ControlRight', true, 1, clock.now(), control);
-	tick();
-	press('KeyZ', 'keyboard:0');
-	press('KeyX', 'keyboard:0');
-	assert.equal(model.visible, false, 'actual menu registrations do not turn physical editing letters into host commands');
+	button('ControlRight', true, 'keyboard:0'); tick();
+	press('KeyZ', 'keyboard:0'); press('KeyX', 'keyboard:0');
+	assert.equal(model.visible, false, 'actual registrations leave physical editing letters available');
 	assert.equal(menu.executionMode, HostMenuExecution.Live);
-	input.inputButton('keyboard:0', 'ControlRight', false, 0, clock.now(), control);
-	tick();
+	button('ControlRight', false, 'keyboard:0'); tick();
 
-	chord(HOST_ON_SCREEN_KEYBOARD_BUTTON);
-	assert.equal(model.visible, true);
-	const select = pressId++, bottom = pressId++;
-	input.inputButton(gamepad.id, 'select', true, 1, clock.now(), select);
-	input.inputButton(gamepad.id, HOST_REWIND_BUTTON, true, 1, clock.now(), bottom);
+	chord(HOST_ON_SCREEN_KEYBOARD_BUTTON); assert.equal(model.visible, true);
+	button('select', true); button('start', true);
+	assert.equal(tick(), HostMenuInput.Inactive, 'pending hold does not open a menu or close the keyboard');
+	clock.advance(HOST_MENU_HOLD_MS);
 	assert.equal(tick(), HostMenuInput.Active);
-	assert.equal(model.visible, false, 'rewind is available directly from the open keyboard');
+	assert.equal(model.visible, false, 'rewind opens directly from the keyboard');
 	assert.equal(menu.executionMode, HostMenuExecution.Rewind);
 	for (let held = 0; held < 5; held += 1) {
 		assert.equal(tick(), HostMenuInput.Active);
-		assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'the opening bottom-button hold cannot activate the destination');
+		assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'held opening Start cannot commit rewind');
 	}
-	input.inputButton(gamepad.id, 'select', false, 0, clock.now(), select);
-	tick();
+	button('select', false); tick();
 	const snapshot = createInputControllerSnapshot();
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
-	assert.equal(snapshot.pads[0].buttons, 0, 'releasing Select first does not leak the held bottom button');
-	input.inputButton(gamepad.id, HOST_REWIND_BUTTON, false, 0, clock.now(), bottom);
-	tick();
-	assert.equal(press('a'), HostMenuInput.Active, 'ordinary bottom confirm does not take over the rewind transport');
+	assert.equal(snapshot.pads[0].buttons, 0, 'releasing Select first does not leak held Start');
+	button('start', false); tick();
+	assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'release after long does not open the host menu');
+	assert.equal(press('a'), HostMenuInput.Active, 'ordinary bottom confirm cannot commit rewind');
+	assert.equal(chord('start', true), HostMenuInput.Active, 'another long chord is idempotent while rewind is already open');
 	assert.equal(menu.executionMode, HostMenuExecution.Rewind);
-	assert.equal(press('b'), HostMenuInput.Inactive, 'right-side cancel closes rewind');
-	assert.equal(menu.executionMode, HostMenuExecution.Live);
+	assert.equal(press('b'), HostMenuInput.Inactive, 'right-side cancel returns to the retained present');
 
-	chord(HOST_REWIND_BUTTON);
-	assert.equal(menu.executionMode, HostMenuExecution.Rewind);
-	assert.equal(press('start'), HostMenuInput.Inactive, 'Start takes over the selected rewind position');
+	chord('start', true); assert.equal(menu.executionMode, HostMenuExecution.Rewind);
+	assert.equal(press('start'), HostMenuInput.Inactive, 'fresh unmodified Start commits the chosen moment');
 	assert.equal(menu.executionMode, HostMenuExecution.Live);
-	rewind.service(true);
-	chord(HOST_REWIND_BUTTON);
-	assert.equal(menu.executionMode, HostMenuExecution.Rewind);
+	rewind.service(true); await tasks.join();
+	chord('AltRight', true, true); assert.equal(menu.executionMode, HostMenuExecution.Rewind);
 	assert.equal(press('Enter', 'keyboard:0'), HostMenuInput.Inactive, 'physical Enter keeps its independent takeover binding');
-	assert.equal(menu.executionMode, HostMenuExecution.Live);
-	rewind.service(true);
-	chord(HOST_REWIND_BUTTON);
+	rewind.service(true); await tasks.join();
+	chord('AltRight', true, true); assert.equal(menu.executionMode, HostMenuExecution.Rewind);
 	assert.equal(press('Escape', 'keyboard:0'), HostMenuInput.Inactive);
 	assert.equal(menu.executionMode, HostMenuExecution.Live);
-	chord(HOST_ON_SCREEN_KEYBOARD_BUTTON);
-	assert.equal(model.visible, true);
-	chord(HOST_MENU_BUTTON);
-	assert.equal(model.visible, false, 'Select+Start remains available while the keyboard is open');
+	chord('AltRight', false, true); assert.equal(menu.executionMode, HostMenuExecution.Paused);
+	chord('AltRight', false, true); assert.equal(menu.executionMode, HostMenuExecution.Live);
+	chord(HOST_ON_SCREEN_KEYBOARD_BUTTON); assert.equal(model.visible, true);
+	chord(HOST_MENU_BUTTON); assert.equal(model.visible, false, 'short menu chord remains available while typing');
 	assert.equal(menu.executionMode, HostMenuExecution.Live);
 	const secondGamepad: GamepadDevice = { ...gamepad, id: 'gamepad:1', gamepadIndex: 1 };
 	input.connectInputDevice(secondGamepad);
-	const firstSelect = pressId++, firstTarget = pressId++, secondSelect = pressId++, secondTarget = pressId++;
-	input.inputButton(gamepad.id, 'select', true, 1, clock.now(), firstSelect);
-	input.inputButton(gamepad.id, HOST_REWIND_BUTTON, true, 1, clock.now(), firstTarget);
-	input.inputButton(secondGamepad.id, 'select', true, 1, clock.now(), secondSelect);
-	input.inputButton(secondGamepad.id, HOST_MENU_BUTTON, true, 1, clock.now(), secondTarget);
-	tick();
-	assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'rewind wins conflicting cross-player host requests, independently of callback order');
-	input.inputButton(gamepad.id, 'select', false, 0, clock.now(), firstSelect);
-	input.inputButton(gamepad.id, HOST_REWIND_BUTTON, false, 0, clock.now(), firstTarget);
-	input.inputButton(secondGamepad.id, 'select', false, 0, clock.now(), secondSelect);
-	input.inputButton(secondGamepad.id, HOST_MENU_BUTTON, false, 0, clock.now(), secondTarget);
-	tick();
+	button('select', true); button('start', true); tick();
+	clock.advance(HOST_MENU_HOLD_MS - 40);
+	button('select', true, secondGamepad.id); button('start', true, secondGamepad.id); tick();
+	button('select', false, secondGamepad.id); button('start', false, secondGamepad.id); tick();
+	assert.equal(menu.executionMode, HostMenuExecution.Rewind,
+		'a long chord wins a simultaneous short menu release from another player');
+	button('select', false); button('start', false); tick();
+	assert.equal(menu.executionMode, HostMenuExecution.Rewind);
 });
 
 test('host key repeat survives frame-local key consumption', () => {
@@ -529,7 +607,7 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	setTime(10);
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
 	input.inputButton('keyboard:0', 'AltRight', true, 1, 10, 2);
-	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Inactive);
 
 	setTime(20);
 	input.inputButton('keyboard:0', 'ControlRight', false, 0, 20, 1);
@@ -637,7 +715,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 	setTime(currentTime);
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, currentTime, pressId++);
 	input.inputButton('keyboard:0', 'AltRight', true, 1, currentTime, pressId++);
-	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Inactive);
 	currentTime += 1;
 	setTime(currentTime);
 	input.inputButton('keyboard:0', 'ControlRight', false, 0, currentTime, 1);
@@ -877,6 +955,9 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	input.inputButton('keyboard:0', 'ControlRight', false, 0, currentTime, pressId++);
 	input.inputButton('keyboard:0', 'AltRight', false, 0, currentTime, pressId++);
 	input.inputAxis2(gamepad.id, 'ls', 0, 0, currentTime);
+	tickMenu(input, menu);
+	assert.equal(keyboardModel.visible, false, 'short release closes the keyboard');
+	currentTime += 1;
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false, 'keyboard -> closed publishes the key release on the next input poll');

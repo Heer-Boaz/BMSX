@@ -1247,7 +1247,8 @@ needed. [PPSSPP's shoulder buttons](https://github.com/hrydgard/ppsspp/blob/dd6b
 use the ordinary independent button path; [RetroArch's control names](https://github.com/libretro/RetroArch/blob/d2f24d32b976c782bca19ec4e6edfbd828a02101/input/input_driver.c#L221-L230)
 explicitly distinguish shoulders, triggers and stick clicks.
 
-Existing shortcut ownership stays unchanged: Select+Start opens the host menu,
+Existing shortcut ownership stays unchanged: a short Select+Start opens the host menu
+(holding for 500 ms opens rewind instead),
 Select+LB requests the BIOS supervisor, Select+RB selects Studio where that
 frontend registers it, and Select+X opens the host keyboard. LT/RT retain their
 ordinary game and host-keyboard Home/End functions; they are not new Studio

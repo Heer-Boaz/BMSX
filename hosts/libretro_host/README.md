@@ -87,7 +87,10 @@ Native host builds require SDL2 and provide the SDL video, audio, and input path
 
 ## Host controls
 
-- Select+Start opens or closes the core-options menu.
+- Select+Start released before 500 ms opens or closes the core-options menu;
+  holding it for 500 ms opens rewind without first opening the menu. Release
+  leaves rewind open; a fresh Start accepts, and the east action button cancels.
+  Right Ctrl+Right Alt has the same short/hold behavior on a physical keyboard.
 - Select+L opens or closes the BIOS supervisor terminal. A partial chord
   remains normal gameplay; once both buttons are held, the host consumes both
   until they are fully released. The core receives a dedicated supervisor line,

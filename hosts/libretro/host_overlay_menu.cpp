@@ -60,7 +60,6 @@ constexpr i32 kUsagePercentTenthsFlag = 1000000;
 constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
 constexpr u32 keyboardHostShortcutTargets = (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
-	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start));
 
 constexpr u32 menuKeyboardButtons = (1u << static_cast<u32>(InputControllerGamepadButtonBit::Up))
@@ -283,11 +282,11 @@ HostMenuExecution HostOverlayMenu::executionMode() const {
 }
 
 HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
-	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)) {
-		if (m_page == Page::Rewind || rewind.available()) transitionTo(m_page == Page::Rewind ? Page::Closed : Page::Rewind, input, rewind);
+	if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind) {
+		if (m_page != Page::Rewind && rewind.available()) transitionTo(Page::Rewind, input, rewind);
 	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		transitionTo(m_page == Page::Keyboard ? Page::Closed : Page::Keyboard, input, rewind);
-	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)) {
+	} else if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu) {
 		transitionTo(m_page == Page::Closed ? Page::Options : Page::Closed, input, rewind);
 	}
 	uiInput.update(currentTimeMs);
@@ -326,8 +325,12 @@ HostMenuInput HostOverlayMenu::tickTimelineInput(Runtime& runtime, LibretroInput
 		transitionTo(Page::Closed, input, rewind);
 		return HostMenuInput::Inactive;
 	}
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::Start)
-		|| uiInput.keyboardButtonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Resume) {
+	bool accept = uiInput.keyboardButtonJustPressed(InputControllerGamepadButtonBit::A);
+	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+		accept |= uiInput.gamepadButtonJustPressed(player, InputControllerGamepadButtonBit::Start)
+			&& !uiInput.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select);
+	}
+	if (accept || pointerAction == TimelineAction::Resume) {
 		transitionTo(Page::Closed, input, rewind, Outcome::Accept);
 		return HostMenuInput::Inactive;
 	}
@@ -578,6 +581,7 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 	const u8 sources = next == Page::Closed ? HostUiInputSource::None
 		: next == Page::Keyboard ? HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Pointer
 			: HostUiInputSource::Gamepad | HostUiInputSource::LeftStick | HostUiInputSource::Keyboard | HostUiInputSource::Pointer;
+	input.cancelControlShortcutGestures();
 	uiInput.reset(sources, menuKeyboardButtons);
 	input.setGamepadHostShortcutTargets(next == Page::Keyboard ? keyboardHostShortcutTargets : HOST_GAMEPAD_SHORTCUT_TARGETS);
 	m_dirtyText = true;

@@ -6,7 +6,7 @@ import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { HostAudioOutput, type AudioOutputPuller } from '../../../hosts/common/audio_output';
 import { runHostFrame } from '../../../hosts/common/host_frame';
 import { HostFrameSession } from '../../../hosts/common/frame_session';
-import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { HostOverlayMenu, HostMenuExecution } from '../../../hosts/common/host_overlay_menu';
 import { HostOnScreenKeyboard } from '../../../hosts/common/host_on_screen_keyboard';
 import { HostKeyboardInteraction } from '../../../hosts/common/input/host_keyboard_interaction';
 import { OnScreenKeyboard } from '../../../hosts/common/input/on_screen_keyboard';
@@ -112,6 +112,24 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 		for (const key of keys) input.inputButton('keyboard:0', key, false, 0, clock.now(), id);
 		await frame();
 	};
+	const holdKeyboardMenuChord = async () => {
+		const id = pressId++;
+		for (const key of ['ControlRight', 'AltRight']) input.inputButton('keyboard:0', key, true, 1, clock.now(), id);
+		await frame();
+		const deadline = clock.now() + 500;
+		const modeOnDown = menu.executionMode;
+		require(modeOnDown === HostMenuExecution.Live, 'physical keyboard chord down is not an immediate menu action');
+		while (clock.now() < deadline) {
+			await frame();
+			const modeDuringHold = menu.executionMode;
+			if (clock.now() < deadline) require(modeDuringHold === HostMenuExecution.Live, 'keyboard hold must not briefly open options');
+		}
+		require(menu.executionMode === HostMenuExecution.Rewind, 'physical keyboard uses the same hold-to-rewind command');
+		for (const key of ['ControlRight', 'AltRight']) input.inputButton('keyboard:0', key, false, 0, clock.now(), id);
+		await frame();
+		require(menu.executionMode === HostMenuExecution.Rewind, 'physical keyboard long release never opens menu');
+		await press('Escape'); await settle();
+	};
 	const openRewind = async () => {
 		await press('ControlRight', 'AltRight');
 		for (let index = 0; index < 3; index += 1) await press('ArrowUp');
@@ -154,6 +172,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	rewind.returnToPresent(); await settle(); await frame();
 	require(!rewind.active, 'old-reference verification returns to live recording');
 	require(audible && audioFrames > 48000, 'ordinary play produces real audio');
+	await holdKeyboardMenuChord();
 	await openRewind();
 	const latest = history.latestCycles;
 	const checkpoint = history.earliestCycles;

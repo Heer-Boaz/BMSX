@@ -136,8 +136,9 @@ test('host menu uses a selected visible row window and maps pointer activation t
 	const tick = () => { host.input.pollInput(); return menu.tickInput(); };
 	const key = (code: string, down: boolean) => host.input.inputButton('keyboard:0', code, down, down ? 1 : 0, time++, pressId++);
 	key('ControlRight', true); key('AltRight', true);
+	assert.equal(tick(), HostMenuInput.Inactive, 'menu tap waits for release');
+	key('ControlRight', false); key('AltRight', false);
 	assert.equal(tick(), HostMenuInput.Active);
-	key('ControlRight', false); key('AltRight', false); tick();
 	const frame = () => { menu.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
 	const first = frame();
 	assertVisible(first, presenter.visibleViewportBounds);

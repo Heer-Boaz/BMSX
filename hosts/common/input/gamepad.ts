@@ -19,7 +19,9 @@ export class GamepadInput implements GamepadInputHandler {
 	private readonly routedInputControllerAxesQ16 = new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
 	private readonly leftAxis: [number, number] = [0, 0];
 	private readonly rightAxis: [number, number] = [0, 0];
-	private lastPollTime = 0;
+	// Publication ownership is independent of event timestamps: a new event can
+	// legitimately have the same clock value as the preceding host poll.
+	private readonly unpublishedEdges: Record<string, boolean> = {};
 
 	constructor(
 		private readonly clock: HostClock,
@@ -36,25 +38,21 @@ export class GamepadInput implements GamepadInputHandler {
 
 	public pollInput(): void {
 		const now = this.clock.now();
-		const prevPollTime = this.lastPollTime;
-		this.lastPollTime = now;
 		this.routedInputControllerButtons = this.inputControllerButtons;
 		this.routedInputControllerAxesQ16.set(this.inputControllerAxesQ16);
 
 		for (const key in this.buttonStates) {
 			const state = this.buttonStates[key];
+			const unpublished = this.unpublishedEdges[key] === true;
+			this.unpublishedEdges[key] = false;
 			state.consumed = false;
 			if (state.pressed) {
 				state.presstime = now - state.pressedAtMs;
-				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
-					state.justpressed = false;
-				}
+				state.justpressed = unpublished && state.justpressed;
 				state.justreleased = false;
 			} else {
 				state.presstime = null;
-				if (prevPollTime > 0 && state.justreleased && state.timestamp <= prevPollTime) {
-					state.justreleased = false;
-				}
+				state.justreleased = unpublished && state.justreleased;
 				state.justpressed = false;
 			}
 		}
@@ -75,6 +73,7 @@ export class GamepadInput implements GamepadInputHandler {
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
 		const state = getPressedState(this.buttonStates, code);
+		this.unpublishedEdges[code] = true;
 		if (down) {
 			state.pressed = true;
 			state.justpressed = true;
@@ -115,6 +114,7 @@ export class GamepadInput implements GamepadInputHandler {
 
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
 		const state = getPressedState(this.buttonStates, code);
+		this.unpublishedEdges[code] = true;
 		let value2d = state.value2d;
 		if (code === 'ls') {
 			value2d = this.leftAxis;
@@ -203,6 +203,7 @@ export class GamepadInput implements GamepadInputHandler {
 	public reset(): void {
 		for (const key in this.buttonStates) {
 			delete this.buttonStates[key];
+			delete this.unpublishedEdges[key];
 		}
 		this.inputControllerButtons = 0;
 		this.inputControllerAxesQ16.fill(0);
@@ -214,7 +215,6 @@ export class GamepadInput implements GamepadInputHandler {
 		this.rightAxis[1] = 0;
 		getPressedState(this.buttonStates, 'ls').value2d = this.leftAxis;
 		getPressedState(this.buttonStates, 'rs').value2d = this.rightAxis;
-		this.lastPollTime = 0;
 	}
 
 	// disable-next-line single_line_method_pattern -- GamepadInputHandler routes retained player-port output to the currently attached physical device.

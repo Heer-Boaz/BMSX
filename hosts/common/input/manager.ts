@@ -8,6 +8,7 @@ import type {
 } from './models';
 import { KeyboardInput } from './keyboard';
 import {
+	ControlSource,
 	GlobalShortcutRegistry,
 	HOST_TERMINAL_BUTTON,
 } from './shortcuts';
@@ -150,6 +151,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	public resetInput(deviceId?: string): void {
 		if (deviceId !== undefined) {
 			const binding = this.deviceBindings.get(deviceId)!;
+			if (binding.assignedPlayer !== null && binding.source !== 'pointer') {
+				this.globalShortcuts.cancelControlShortcutSource(binding.assignedPlayer,
+					binding.source === 'keyboard' ? ControlSource.Keyboard : ControlSource.Gamepad);
+			}
 			if (binding.source === 'keyboard') binding.handler.disconnectSource(binding.deviceId);
 			else binding.handler.reset();
 			return;
@@ -274,8 +279,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.globalShortcuts.registerControlShortcut(
 			defaultPlayerIndex,
 			HOST_TERMINAL_BUTTON,
-			() => this.setControlSupervisorRequestLine(true),
-			() => this.setControlSupervisorRequestLine(false),
+			{ kind: 'press',
+				onPressed: () => this.setControlSupervisorRequestLine(true),
+				onReleased: () => this.setControlSupervisorRequestLine(false),
+			},
 		);
 		const player = this.getPlayerInput(defaultPlayerIndex);
 		const keyboard = new KeyboardInput(this.clock);
@@ -324,6 +331,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 */
 	public dispose(): void {
 		this.guestInputRecipient = null;
+		this.globalShortcuts.reset();
 		// Remove all player inputs
 		this.playerInputs = [];
 		this.unsubscribeHostInput();
@@ -482,6 +490,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	public disconnectInputDevice(deviceId: string): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
+		if (binding.assignedPlayer !== null && binding.source !== 'pointer') {
+			this.globalShortcuts.cancelControlShortcutSource(binding.assignedPlayer,
+				binding.source === 'keyboard' ? ControlSource.Keyboard : ControlSource.Gamepad);
+		}
 		let vacatedPlayer = 0;
 		if (binding.source === 'gamepad') {
 			if (binding.assignedPlayer) {
@@ -628,7 +640,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		const target = this.getPlayerInput(playerIndex);
 		const displaced = target.inputHandlers.gamepad;
 		const sourcePlayer = binding.assignedPlayer;
+		this.globalShortcuts.cancelControlShortcutSource(playerIndex, ControlSource.Gamepad);
 		if (sourcePlayer !== null) {
+			this.globalShortcuts.cancelControlShortcutSource(sourcePlayer, ControlSource.Gamepad);
 			this.getPlayerInput(sourcePlayer).setGamepad(displaced);
 		} else if (displaced !== null) {
 			this.deviceBindings.get(displaced.deviceId)!.assignedPlayer = null;

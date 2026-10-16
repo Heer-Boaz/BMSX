@@ -105,7 +105,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				let ideReleases = 0;
 				// This proves the actual shortcut registry route, not a rendered Studio UI.
 				input.getGlobalShortcutRegistry().registerControlShortcut(1, api.HOST_IDE_BUTTON,
-					() => { ideRequests += 1; }, () => { ideReleases += 1; });
+					{ kind: 'press', onPressed() { ideRequests += 1; }, onReleased() { ideReleases += 1; } });
 				let cycle = 0;
 				(globalThis as any).shoulderTest = {
 					menu, keyboardModel,
@@ -593,19 +593,23 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 				}
 			});
 
-			await orientation.test('SELECT plus START opens and closes the real host-menu owner without leaking the chord', async () => {
+			await orientation.test('short SELECT plus START releases open and close the real host-menu owner without leaking the chord', async () => {
 				const contacts = [point('select_knop'), point('start_knop')];
 				await touch('touchStart', contacts);
-				const opened = await poll();
-				assert.equal(opened.model, 0x300);
-				assert.equal(opened.physical, 0x300);
-				assert.equal(opened.menuInput, 1);
-				assert.equal(opened.menuExecution, 1);
-				assert.equal(opened.snapshot, 0);
-				assert.equal(opened.mmio, 0);
+				const pending = await poll();
+				assert.equal(pending.model, 0x300);
+				assert.equal(pending.physical, 0x300);
+				assert.equal(pending.menuInput, 0);
+				assert.equal(pending.menuExecution, 0);
+				assert.equal(pending.snapshot, 0);
+				assert.equal(pending.mmio, 0);
 				await touch('touchEnd', []);
-				assert.equal((await poll()).menuInput, 1, 'lifting the opening chord does not close the menu');
+				const opened = await poll();
+				assert.equal(opened.menuInput, 1);
+				assert.equal(opened.menuExecution, 1, 'short release opens the menu, not the pending down');
 				await touch('touchStart', contacts);
+				assert.equal((await poll()).menuExecution, 1, 'a second pending down keeps the menu open');
+				await touch('touchEnd', []);
 				const closed = await poll();
 				assert.equal(closed.menuInput, 0);
 				assert.equal(closed.menuExecution, 0);

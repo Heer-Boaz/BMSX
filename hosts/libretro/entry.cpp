@@ -5,6 +5,7 @@
  * uses to communicate with the BMSX machine runtime.
  */
 
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -118,6 +119,14 @@ static int64_t g_runtime_ufps_scaled = 0;
 
 static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
 	return g_content->runtime.machine.cpu.activeCartridgeSlot();
+}
+
+static void RETRO_CALLCONV cancel_keyboard_input(void) {
+	g_input->cancelKeyboardControlShortcutGesture();
+}
+
+static void RETRO_CALLCONV cancel_gamepad_input(unsigned port) {
+	g_input->cancelGamepadControlShortcutGesture(port);
 }
 
 static retro_system_av_info g_cached_av_info{};
@@ -996,6 +1005,10 @@ void retro_set_environment(retro_environment_t cb) {
 	// RetroArch may reinstall this callback inside one core session. AV publication
 	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
+	if (g_input) {
+		BmsxInputLifecycleInterfaceV1 lifecycle{cancel_keyboard_input, cancel_gamepad_input};
+		cb(BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1, &lifecycle);
+	}
 	offerGxUploadProfileInterface(cb);
 	BmsxExecutionDomainInterfaceV1 executionDomainInterface{
 		read_active_execution_domain_id,
@@ -1258,6 +1271,8 @@ void retro_init(void) {
 	g_input = std::make_unique<bmsx::LibretroInput>(g_supervisor_request_line_cb);
 	g_input->setInputPollCallback(input_poll_cb);
 	g_input->setInputStateCallback(input_state_cb);
+	BmsxInputLifecycleInterfaceV1 lifecycle{cancel_keyboard_input, cancel_gamepad_input};
+	environ_cb(BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1, &lifecycle);
 	retro_rumble_interface rumbleInterface{};
 	environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumbleInterface);
 	g_input->installRumbleInterface(rumbleInterface);
@@ -1355,6 +1370,8 @@ void retro_init(void) {
 
 void retro_deinit(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_deinit\n");
+	BmsxInputLifecycleInterfaceV1 lifecycle{};
+	environ_cb(BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1, &lifecycle);
 
 	unload_content();
 	g_presentation.reset();
@@ -1630,7 +1647,7 @@ void retro_run(void) {
 	g_input->poll(
 		static_cast<bmsx::i32>(g_video_presenter->viewportSize.x),
 		static_cast<bmsx::i32>(g_video_presenter->viewportSize.y),
-		(g_total_time + deltaTime) * 1000.0);
+		std::chrono::duration<bmsx::f64, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	bmsx::Runtime& runtime = g_content->runtime;
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;
 	try {

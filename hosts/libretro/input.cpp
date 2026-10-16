@@ -180,7 +180,10 @@ void LibretroInput::poll(
 			&m_keyboard_shortcuts,
 			keyboardButtons,
 			kHostShortcutModifier,
-			kKeyboardHostShortcutTargets);
+			kKeyboardHostShortcutTargets,
+			kMenuShortcutMask,
+			HOST_MENU_HOLD_MS,
+			currentTimeMs);
 	if ((keyboardShortcuts.routed_buttons & kHostShortcutModifier) == 0u) {
 		consumePhysicalKeyboardUsage(hid_key_usage::ControlRight);
 	}
@@ -192,6 +195,8 @@ void LibretroInput::poll(
 	}
 	u32 activeHostShortcuts = keyboardShortcuts.active_targets;
 	m_just_pressed_host_shortcuts = keyboardShortcuts.just_pressed_targets;
+	u32 shortPressedTargets = keyboardShortcuts.short_pressed_targets;
+	u32 longPressedTargets = keyboardShortcuts.long_pressed_targets;
 
 	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
 		InputControllerPadSnapshot& gamepad = m_gamepads[player];
@@ -242,10 +247,15 @@ void LibretroInput::poll(
 				&m_gamepad_shortcuts[player],
 				buttons,
 				kHostShortcutModifier,
-				m_gamepad_host_shortcut_targets);
+				m_gamepad_host_shortcut_targets,
+				kMenuShortcutMask,
+				HOST_MENU_HOLD_MS,
+				currentTimeMs);
 		buttons = shortcuts.routed_buttons;
 		activeHostShortcuts |= shortcuts.active_targets;
 		m_just_pressed_host_shortcuts |= shortcuts.just_pressed_targets;
+		shortPressedTargets |= shortcuts.short_pressed_targets;
+		longPressedTargets |= shortcuts.long_pressed_targets;
 		gamepad.buttons = buttons;
 		physicalAxes[static_cast<size_t>(InputControllerGamepadAxis::LeftTrigger)] =
 			(m_physical_gamepad_buttons[player] & (1u << static_cast<u32>(
@@ -262,6 +272,11 @@ void LibretroInput::poll(
 	m_host_supervisor_request_high =
 		m_host_supervisor_request_high ||
 		(activeHostShortcuts & kTerminalShortcutMask) != 0u;
+	m_host_menu_shortcut_action = (longPressedTargets & kMenuShortcutMask) != 0u
+		? HostMenuShortcutAction::Rewind
+		: (shortPressedTargets & kMenuShortcutMask) != 0u
+			? HostMenuShortcutAction::Menu
+			: HostMenuShortcutAction::None;
 
 	const i16 mouseDeltaX =
 		m_input_state_callback(0u, RETRO_DEVICE_MOUSE, 0u, RETRO_DEVICE_ID_MOUSE_X);
@@ -403,6 +418,7 @@ void LibretroInput::consumeGamepadInput(u8 deviceSlot) {
 }
 
 void LibretroInput::setGamepadHostShortcutTargets(u32 targets) {
+	if (targets == m_gamepad_host_shortcut_targets) return;
 	m_gamepad_host_shortcut_targets = targets;
 	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
 		bmsx_host_shortcuts_retarget(
@@ -411,6 +427,22 @@ void LibretroInput::setGamepadHostShortcutTargets(u32 targets) {
 			kHostShortcutModifier,
 			m_gamepad_host_shortcut_targets);
 	}
+}
+
+void LibretroInput::cancelControlShortcutGestures() {
+	bmsx_host_shortcuts_cancel_gesture(&m_keyboard_shortcuts);
+	for (auto& shortcuts : m_gamepad_shortcuts) {
+		bmsx_host_shortcuts_cancel_gesture(&shortcuts);
+	}
+	m_host_menu_shortcut_action = HostMenuShortcutAction::None;
+}
+
+void LibretroInput::cancelKeyboardControlShortcutGesture() {
+	bmsx_host_shortcuts_cancel_gesture(&m_keyboard_shortcuts);
+}
+
+void LibretroInput::cancelGamepadControlShortcutGesture(unsigned port) {
+	bmsx_host_shortcuts_cancel_gesture(&m_gamepad_shortcuts[port]);
 }
 
 bool LibretroInput::pointerPosition(i32& x, i32& y) const {
@@ -488,6 +520,13 @@ void LibretroInput::installRumbleInterface(
 void LibretroInput::setControllerDevice(unsigned port, unsigned device) {
 	if (port >= m_controller_devices.size()) {
 		return;
+	}
+	if (m_controller_devices[port] != device) {
+		bmsx_host_shortcuts_retarget(
+			&m_gamepad_shortcuts[port],
+			m_physical_gamepad_buttons[port],
+			kHostShortcutModifier,
+			m_gamepad_host_shortcut_targets);
 	}
 	const u32 portMask = 1u << port;
 	if ((m_active_rumble_mask & portMask) != 0u) {
@@ -604,6 +643,7 @@ void LibretroInput::reset() {
 	m_keyboard_shortcuts = {};
 	m_gamepad_host_shortcut_targets = HOST_GAMEPAD_SHORTCUT_TARGETS;
 	m_just_pressed_host_shortcuts = 0u;
+	m_host_menu_shortcut_action = HostMenuShortcutAction::None;
 }
 
 } // namespace bmsx

@@ -6676,18 +6676,68 @@ input ownership; they do not imply adopting RetroArch's configurable menu policy
 | Modal UI input | Retained per-source words and edges | Retained per-source words and edges | `HostUiInput.update`, consumed by `HostOverlayMenu.tickInput` |
 | Rewind commit | START edge or keyboard-only Enter edge | Same | Timeline page dispatch; A alone never commits |
 
-SELECT+west (BMSX X) toggles the keyboard; SELECT+south (BMSX A) toggles
-rewind when history is available; SELECT+START toggles the menu. In rewind,
-START commits the chosen moment and east (BMSX B) cancels to the retained
-present. Enter/Escape remain the physical-keyboard equivalents. The controller
-keyboard keeps local SELECT+Y page and SELECT+LB/RB Home/End commands; only
-its global keyboard/rewind/menu chords remain eligible while it is open.
+SELECT+west (BMSX X) toggles the keyboard. SELECT+START is a deferred host
+command: release before 500 host milliseconds toggles the menu; reaching 500 ms
+opens the rewind transport once, when history is available. The opening hold is
+not a continuous rewind/commit command. Releasing it leaves rewind open; a new
+unmodified START accepts the selected moment, and east (BMSX B) returns to the
+retained present. Enter/Escape remain the physical-keyboard equivalents inside
+the transport. SELECT+south has no host binding.
 
-Keyboard and controller shortcut sources are independent. The new keyboard
-and rewind controller chords have no physical-keyboard aliases; neither adds
-Ctrl+Z/Ctrl+X commands. Existing Right Ctrl host-modifier reservation and its
-terminal/menu/Studio chords are unchanged; Left Ctrl remains ordinary editor
-input. Still-held modal controls remain captured until physical release.
+The physical keyboard uses the existing Right Ctrl + Right Alt chord for this
+same short/hold command. No Ctrl+Z/Ctrl+X or ordinary F-key binding is added.
+The controller keyboard keeps local SELECT+Y page and SELECT+LB/RB Home/End
+commands; its global keyboard and deferred menu/rewind chords remain eligible.
+
+#### Deferred chord representation and hot paths
+
+Production implementations studied before this mirrored change:
+[Kodi deferred key handling](https://github.com/xbmc/xbmc/blob/1b0a95503c244d1cbdfa31d39023e5e0dbff8c22/xbmc/input/InputManager.cpp#L519-L545)
+(and its key-up dispatch at lines 702-715),
+[Kodi steady-clock key holds](https://github.com/xbmc/xbmc/blob/3892f2439f43450d7835bac6f1c7e7566348497b/xbmc/input/keyboard/KeyboardStat.cpp#L172-L211),
+and [RetroArch polled combo holds](https://github.com/libretro/RetroArch/blob/e27735f5fdbec0d74d835d40036829a5ccc2d221/input/input_driver.c#L1988-L2063).
+Short dispatch is deferred until release, long dispatch is latched once, and
+state changes precede callback dispatch. BMSX retains independent state per
+physical source/player rather than a process-global hold timer.
+
+| Concern | TypeScript | C/C++ | Owner / hot callsites |
+| --- | --- | --- | --- |
+| Chord eligibility | Physical source-local `ButtonState`, registered binding/source flags | Canonical button word, modifier/target masks | `GlobalShortcutRegistry.pollPlayer` / `LibretroInput::poll`, before guest input remapping |
+| Physical edges | Retained unpublished button/stick flags, consumed once per handler poll | Current/previous canonical source words | Physical adapters publish edges independently of clock origin or event timestamp equality |
+| Deferred state | Pending/long-reported state and absolute deadline per player/source | Retained phase/deadline per keyboard/port `BmsxHostShortcutState` | Shortcut source poll / `bmsx_host_shortcuts_update`, once per source per poll |
+| Time | Existing `PlayerInput.pollTimestampMs` from `HostClock.now()` | `steady_clock` milliseconds sampled at `retro_run` input boundary, injectable `poll` time in tests | No guest cycles, nominal frame accumulator, scheduled timer or per-frame allocation |
+| Recognition result | Explicit press or short-hold binding callbacks | Short/long target result projected to `HostMenuShortcutAction` | Input owner emits requests; `HostOverlayMenu.tickInput` only dispatches page transitions |
+| Cancellation | Source lifecycle and explicit modal gesture cancellation | Reset, retarget, explicit port change and modal cancellation | Cancellation never becomes a short press; existing capture retains held buttons until real up |
+| Rewind entry | Existing `HostUiInput.reset` held masks | Same | Transition before UI update; the opener's START is blocked until actual release |
+
+The threshold is evaluated at sampled input boundaries, including a release
+sample at or beyond 500 ms without an intervening held sample (long, never
+short). Complete sub-poll presses cannot be promised through snapshot-only
+libretro input. A frontend that reports no physical unplug event cannot
+distinguish unplug from an all-zero release snapshot; only explicit lifecycle
+signals cancel a source. No inactivity or device-identity heuristic is used.
+
+The BMSX standalone libretro frontend forwards those signals through
+`BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1` (`0x4291`, private): the core
+publishes keyboard/port cancellation callbacks after creating its input owner
+and revokes them before teardown. The SDL/evdev owners call them synchronously
+before publishing focus-loss/device-removal releases. Other libretro frontends
+can decline this capability; their ordinary snapshots retain the same short/hold
+bindings, but cannot communicate why a button became released.
+
+Physical adapters own event publication explicitly. `GamepadInput` publishes a
+new button/stick edge once, independent of a zero or repeated clock timestamp.
+The standalone keyboard retains unpublished source transitions until its poll
+finishes; evdev retains each device's last published button word. Thus key-up
+events followed by focus loss/removal within the same poll still cancel the
+previously pending gesture, without treating an unrelated empty device as an
+unplugged controller.
+
+The keyboard is the existing composed physical-keyboard channel, distinct from
+virtual typing; each gamepad has its own source/port state. Keyboard/controller
+sources cannot assemble a chord together or inherit one
+another's elapsed hold time. Physical keyboard repeats do not restart a hold.
+Still-held modal controls remain captured until their physical release.
 
 The direct frontend mapping has independent evdev/SDL tests using its shipping
 adapters; the common and libretro input tests verify all controller positions,
@@ -6695,8 +6745,17 @@ source eligibility and held-release routing. Real-ROM host replay additionally
 checks keyboard-to-rewind admission, no A takeover and START takeover. These are
 automated host tests, not physical-controller or real-iPhone acceptance.
 
+Deferred-chord validation includes 279 shared TypeScript/native input polls,
+trusted browser keyboard events with real RAF/host time, short-chord touch
+interaction across seven phone/tablet profiles, and real BIOS/Nemesis rewind
+runs through TS software, browser WebGPU, native host and the libretro ABI.
+SDL/evdev producer tests exercise release-before-focus/EOF cancellation before,
+at and after the hold deadline. The full Lua and native suites, keyboard parity,
+and SNES Mini Release core/frontend ABI and QEMU smoke checks also pass. These
+remain automated checks, not physical SNES Mini or iPhone acceptance.
+
 Quick-menu pause is host execution policy, independent of the guest's
-firmware, cartridge and supervisor state. SELECT+START opens/closes the menu;
+firmware, cartridge and supervisor state. Short SELECT+START opens/closes the menu;
 START alone remains guest input during ordinary gameplay. `HostOverlayMenu` derives `HostMenuExecution`
 from its current page in both hosts: options and controller remapping hold the machine, the virtual
 keyboard allows live execution, and the rewind page delegates explicit

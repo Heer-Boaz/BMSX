@@ -238,6 +238,22 @@ int main(int argc, char** argv) {
 			}
 		};
 		const auto press = [&](u16 mask) { buttons = mask; frame(); buttons = 0; frame(); };
+		const auto holdMenuChord = [&]() {
+			const auto initialMode = menu.executionMode();
+			buttons = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START); frame();
+			const f64 deadline = input.pollTimestampMs() + HOST_MENU_HOLD_MS;
+			require(menu.executionMode() == initialMode, "host chord down never opens menu or commits rewind");
+			while (input.pollTimestampMs() < deadline) {
+				frame();
+				if (input.pollTimestampMs() < deadline) require(menu.executionMode() == initialMode, "short action remains deferred during hold");
+			}
+			require(menu.executionMode() == HostMenuExecution::Rewind, "holding SELECT+START opens rewind without the options page");
+			const i64 heldCycles = runtime.machine.scheduler.currentNowCycles();
+			for (int count = 0; count < 5; ++count) frame();
+			require(runtime.machine.scheduler.currentNowCycles() == heldCycles, "held opening START neither retriggers nor commits");
+			buttons = 0; frame();
+			require(menu.executionMode() == HostMenuExecution::Rewind, "long release neither opens menu nor takes over");
+		};
 		const auto settle = [&]() {
 			for (unsigned count = 0; count < 4000 && rewind.seeking(); ++count) frame();
 			require(!rewind.seeking() && history.mode == HistoryMode::Reviewing, "controller must complete the seek, not merely hold cycles");
@@ -324,12 +340,8 @@ int main(int argc, char** argv) {
 		snapshot("live");
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard);
 		require(menu.executionMode() == HostMenuExecution::Live, "keyboard is a live host view");
-		buttons = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuAccept; frame();
-		require(menu.executionMode() == HostMenuExecution::Rewind, "SELECT+south enters rewind directly from keyboard");
-		const i64 shortcutCycles = runtime.machine.scheduler.currentNowCycles();
-		for (int count = 0; count < 5; ++count) frame();
-		require(runtime.machine.scheduler.currentNowCycles() == shortcutCycles, "held rewind shortcut neither retriggers nor commits");
-		buttons = 0; frame();
+		holdMenuChord();
+		holdMenuChord();
 		press(menuAccept);
 		require(menu.executionMode() == HostMenuExecution::Rewind, "south alone never takes over rewind");
 		press(menuCancel); returnLive();
@@ -451,8 +463,8 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard); returnLive();
 		require(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
-		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuAccept);
-		require(menu.executionMode() == HostMenuExecution::Rewind, "rewind shortcut remains available after a keyboard transition");
+		holdMenuChord();
+		require(menu.executionMode() == HostMenuExecution::Rewind, "rewind hold remains available after a keyboard transition");
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		const i64 startBranch = runtime.machine.scheduler.currentNowCycles();
 		press(1u << RETRO_DEVICE_ID_JOYPAD_START); returnLive();

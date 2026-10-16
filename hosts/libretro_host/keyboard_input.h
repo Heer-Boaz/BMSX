@@ -1,6 +1,6 @@
 #pragma once
 
-#include "libretro.h"
+#include "bmsx_libretro.h"
 
 #include <stdint.h>
 
@@ -18,6 +18,8 @@ enum {
 };
 
 void keyboard_input_set_callback(struct retro_keyboard_callback callback);
+void keyboard_input_set_cancel_callback(bmsx_cancel_keyboard_input_t callback);
+void keyboard_input_mark_sampled(void);
 void keyboard_input_post(unsigned source, enum retro_key key, bool down);
 void keyboard_input_release_source(unsigned source);
 bool RETRO_CALLCONV keyboard_input_supervisor_request_line(void);

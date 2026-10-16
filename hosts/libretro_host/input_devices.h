@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "libretro.h"
+#include "bmsx_libretro.h"
 #include "video_context.h"
 
 typedef enum BmsxInputDriverKind {
@@ -16,6 +16,7 @@ void input_devices_open(
 		bool initial_focus,
 		const BmsxVideoSurface* surface);
 void input_devices_close(void);
+void input_devices_set_cancel_gamepad_callback(bmsx_cancel_gamepad_input_t callback);
 
 void input_devices_poll(void);
 int16_t input_devices_state(unsigned port, unsigned device, unsigned index, unsigned id);

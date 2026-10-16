@@ -57,6 +57,10 @@ struct InputFixture {
 		input.poll(320, 240, time);
 		time += 20;
 	}
+	void tickAt(f64 now) {
+		time = now;
+		tick();
+	}
 };
 
 void testRetroPadPositionsUseCanonicalGamepadBits() {
@@ -95,9 +99,7 @@ void testGamepadHostTargetsKeepTheirRealReleaseLifetime() {
 		InputControllerGamepadButtonBit canonical;
 	};
 	constexpr std::array shortcuts{
-		Shortcut{RETRO_DEVICE_ID_JOYPAD_B, InputControllerGamepadButtonBit::A},
 		Shortcut{RETRO_DEVICE_ID_JOYPAD_Y, InputControllerGamepadButtonBit::X},
-		Shortcut{RETRO_DEVICE_ID_JOYPAD_START, InputControllerGamepadButtonBit::Start},
 		Shortcut{RETRO_DEVICE_ID_JOYPAD_L, InputControllerGamepadButtonBit::LeftBumper},
 	};
 	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
@@ -106,7 +108,7 @@ void testGamepadHostTargetsKeepTheirRealReleaseLifetime() {
 			joypads[player] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << shortcut.retro);
 			fixture.tick();
 			require(fixture.input.hostShortcutJustPressed(shortcut.canonical),
-				"Select plus bottom, west, Start or LB activates its canonical host target");
+				"Select plus west or LB activates its immediate canonical host target");
 			require(!fixture.input.gamepadButtonPressed(player, shortcut.canonical)
 				&& !fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select),
 				"the host chord is absent from routed guest gamepad input");
@@ -175,11 +177,15 @@ void testKeyboardContextAllowsMultipleHostTargetsAndLocalCommands() {
 	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_B)
 		| (1u << RETRO_DEVICE_ID_JOYPAD_START);
 	fixture.tick();
-	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)
-		&& fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start),
-		"the keyboard context permits rewind and menu simultaneously instead of one exclusive target");
+	require(!fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)
+		&& !fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)
+		&& fixture.input.gamepadButtonPressed(0, InputControllerGamepadButtonBit::A)
+		&& fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"the keyboard context reserves the timed menu chord, not the removed bottom-button shortcut");
 	joypads[0] = 0;
 	fixture.tick();
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+		"a short menu chord remains available while the keyboard is open");
 	joypads[0] = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
 	fixture.tick();
 	require(fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X),
@@ -238,8 +244,11 @@ void testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext() {
 		fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
 		fixture.input.postKeyboardEvent(shortcut.retro, true);
 		fixture.tick();
-		require(fixture.input.hostShortcutJustPressed(shortcut.target),
-			"existing hardware CtrlRight terminal/menu chords remain enabled in the keyboard context");
+		require(fixture.input.hostShortcutJustPressed(shortcut.target)
+			== (shortcut.target == InputControllerGamepadButtonBit::LeftBumper),
+			"hardware terminal is immediate while the menu chord waits for release or hold");
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"holding the physical keyboard menu chord never opens the menu immediately");
 		require(fixture.input.supervisorRequestLineHigh()
 			== (shortcut.target == InputControllerGamepadButtonBit::LeftBumper),
 			"only hardware CtrlRight+ShiftLeft requests the terminal supervisor line");
@@ -249,6 +258,10 @@ void testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext() {
 			"gamepad-context changes do not retarget or repeat a held hardware chord");
 		fixture.input.postKeyboardEvent(RETROK_RCTRL, false);
 		fixture.tick();
+		require(fixture.input.hostMenuShortcutAction()
+			== (shortcut.target == InputControllerGamepadButtonBit::Start
+				? HostMenuShortcutAction::Menu : HostMenuShortcutAction::None),
+			"gamepad context changes preserve the independent physical keyboard short menu gesture");
 		InputControllerSnapshot snapshot{};
 		fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
 		require((snapshot.keyWords[shortcut.usage >> 5] & (1u << (shortcut.usage & 31u))) == 0u,
@@ -262,6 +275,255 @@ void testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext() {
 		fixture.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
 		require((snapshot.keyWords[shortcut.usage >> 5] & (1u << (shortcut.usage & 31u))) != 0u,
 			"the hardware command key becomes ordinary input after actual release");
+	}
+}
+
+constexpr u16 Select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+constexpr u16 Start = 1u << RETRO_DEVICE_ID_JOYPAD_START;
+constexpr u16 MenuChord = Select | Start;
+
+void testEveryControllerMenuTapAndRewindHold() {
+	for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) {
+		for (u16 firstRelease : std::array<u16, 3>{Select, Start, 0}) {
+			InputFixture fixture;
+			joypads[player] = MenuChord;
+			fixture.tickAt(100);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None
+				&& !fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start),
+				"every port defers menu activation on chord down");
+			joypads[player] = firstRelease;
+			fixture.tickAt(599);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+				"either component releasing before 500 ms produces exactly one menu tap");
+			require(!fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Start)
+				&& !fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Select),
+				"the opening chord remains captured on both release orders");
+			fixture.tickAt(1000);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+				"a reported short press cannot later become a rewind hold");
+		}
+		InputFixture fixture;
+		joypads[player] = MenuChord;
+		fixture.tickAt(100);
+		fixture.tickAt(599);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"a held chord remains pending at 499 ms");
+		fixture.tickAt(600);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+			"every controller opens rewind at exactly 500 ms");
+		fixture.tickAt(1600);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"a continued hold cannot repeat rewind");
+		joypads[player] = Start;
+		fixture.tickAt(1700);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None
+			&& !fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Start),
+			"long release never becomes menu or leaks its still-held Start");
+		joypads[player] = 0;
+		fixture.tickAt(1800);
+		joypads[player] = Start;
+		fixture.tickAt(1900);
+		require(fixture.input.gamepadButtonPressed(player, InputControllerGamepadButtonBit::Start),
+			"a fresh unmodified Start works after actual release");
+	}
+}
+
+void testSparsePollAndPreheldTargetClassification() {
+	for (u16 released : std::array<u16, 3>{0, Select, Start}) {
+		InputFixture fixture;
+		joypads[0] = MenuChord;
+		fixture.tickAt(100);
+		joypads[0] = released;
+		fixture.tickAt(600);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+			"a sparse first release poll at the deadline is long, never a short menu tap");
+		fixture.tickAt(900);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"a sparse release reports only once");
+	}
+	InputFixture fixture;
+	joypads[0] = Start;
+	fixture.tickAt(100);
+	joypads[0] = MenuChord;
+	fixture.tickAt(200);
+	fixture.tickAt(1000);
+	joypads[0] = 0;
+	fixture.tickAt(1200);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"Start already held before Select cannot start a menu gesture");
+	joypads[0] = MenuChord;
+	fixture.tickAt(1300);
+	joypads[0] = 0;
+	fixture.tickAt(1400);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+		"a preheld target rearms after real release");
+}
+
+void testMenuGestureSourcesStayIndependent() {
+	InputFixture fixture;
+	joypads[0] = Select;
+	joypads[1] = Start;
+	fixture.input.postKeyboardEvent(RETROK_RALT, true);
+	fixture.tickAt(100);
+	fixture.tickAt(1000);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"Select cannot combine with Start on another port or a physical keyboard key");
+	joypads[1] = MenuChord;
+	fixture.tickAt(1100);
+	fixture.tickAt(2000);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"a target preheld on another source cannot inherit the first source's gesture");
+	joypads[1] = Select;
+	fixture.tickAt(2100);
+	joypads[1] = MenuChord;
+	fixture.tickAt(2200);
+	fixture.tickAt(2700);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+		"an independently rearmed second port recognizes its own hold");
+}
+
+void testConcurrentSourcesPreferTheLongAction() {
+	InputFixture fixture;
+	joypads[0] = MenuChord;
+	fixture.tickAt(100);
+	fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+	fixture.input.postKeyboardEvent(RETROK_RALT, true);
+	fixture.tickAt(300);
+	fixture.input.postKeyboardEvent(RETROK_RALT, false);
+	fixture.tickAt(600);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+		"a controller hold takes priority over another source's simultaneous short menu tap");
+	fixture.tickAt(900);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"the lower-priority short action is not deferred into a later frame");
+}
+
+void testKeyboardUsesTheSameMenuGesture() {
+	for (unsigned firstRelease : std::array<unsigned, 2>{RETROK_RCTRL, RETROK_RALT}) {
+		InputFixture fixture;
+		fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+		fixture.input.postKeyboardEvent(RETROK_RALT, true);
+		fixture.tickAt(100);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"Right Ctrl+Right Alt defers the physical keyboard menu");
+		fixture.input.postKeyboardEvent(firstRelease, false);
+		fixture.tickAt(599);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+			"either hardware key release before the deadline opens the menu");
+		fixture.tickAt(900);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"the keyboard tap does not turn into rewind");
+	}
+	InputFixture fixture;
+	fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+	fixture.input.postKeyboardEvent(RETROK_RALT, true);
+	fixture.tickAt(100);
+	fixture.input.setGamepadHostShortcutTargets(HOST_GAMEPAD_SHORTCUT_TARGETS
+		& ~(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper)));
+	fixture.tickAt(600);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+		"gamepad context retargeting cannot cancel the independent physical keyboard hold");
+	fixture.input.cancelControlShortcutGestures();
+	fixture.tickAt(1200);
+	fixture.input.postKeyboardEvent(RETROK_RCTRL, false);
+	fixture.tickAt(1400);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"canceling a reported hardware hold cannot fabricate a menu release");
+}
+
+void testMenuGestureCancellationAndRetargeting() {
+	for (unsigned cancellation = 0; cancellation < 4; ++cancellation) {
+		InputFixture fixture;
+		joypads[0] = MenuChord;
+		fixture.tickAt(100);
+		switch (cancellation) {
+			case 0: fixture.input.cancelControlShortcutGestures(); break;
+			case 1: fixture.input.setGamepadHostShortcutTargets(HOST_GAMEPAD_SHORTCUT_TARGETS
+				& ~(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper))); break;
+			case 2:
+				fixture.input.setControllerDevice(0, RETRO_DEVICE_NONE);
+				fixture.input.setControllerDevice(0, RETRO_DEVICE_JOYPAD);
+				break;
+			case 3:
+				fixture.input.setControllerDevice(0, RETRO_DEVICE_NONE);
+				break;
+		}
+		fixture.tickAt(900);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"modal cancellation, retargeting and topology changes discard pending holds");
+		joypads[0] = 0;
+		fixture.tickAt(1000);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+			"cancellation is not a short physical release");
+		fixture.input.setControllerDevice(0, RETRO_DEVICE_JOYPAD);
+		joypads[0] = MenuChord;
+		fixture.tickAt(1100);
+		joypads[0] = 0;
+		fixture.tickAt(1200);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Menu,
+			"a canceled source rearms after real release");
+	}
+	InputFixture fixture;
+	fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+	fixture.input.postKeyboardEvent(RETROK_RALT, true);
+	fixture.tickAt(100);
+	fixture.input.cancelControlShortcutGestures();
+	fixture.tickAt(900);
+	fixture.input.postKeyboardEvent(RETROK_RALT, false);
+	fixture.tickAt(1000);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"modal cancellation discards a pending physical keyboard gesture as well");
+	fixture.input.reset();
+	fixture.tickAt(2000);
+	require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"input reset discards previous keyboard gesture state");
+}
+
+void testRemovedBottomShortcutIsOrdinaryInput() {
+	InputFixture fixture;
+	joypads[0] = Select | (1u << RETRO_DEVICE_ID_JOYPAD_B);
+	fixture.tickAt(100);
+	fixture.tickAt(900);
+	require(fixture.input.gamepadButtonPressed(0, InputControllerGamepadButtonBit::A)
+		&& !fixture.input.hostShortcutJustPressed(InputControllerGamepadButtonBit::A)
+		&& fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+		"Select+bottom no longer opens rewind or captures the ordinary bottom button");
+}
+
+void testLifecycleCancellationIsSourceScoped() {
+	for (bool cancelKeyboard : std::array{false, true}) {
+		for (u8 port = 0; port < INPUT_CONTROLLER_PAD_COUNT; ++port) {
+			InputFixture fixture;
+			fixture.input.postKeyboardEvent(RETROK_RCTRL, true);
+			fixture.input.postKeyboardEvent(RETROK_RALT, true);
+			joypads[port] = MenuChord;
+			fixture.tickAt(100);
+			if (cancelKeyboard) {
+				fixture.input.cancelKeyboardControlShortcutGesture();
+				fixture.input.postKeyboardEvent(RETROK_RCTRL, false);
+				fixture.input.postKeyboardEvent(RETROK_RALT, false);
+			} else {
+				fixture.input.cancelGamepadControlShortcutGesture(port);
+				joypads[port] = 0;
+			}
+			fixture.tickAt(200);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::None,
+				"source lifecycle cancellation before synthetic up cannot become a short menu action");
+			fixture.tickAt(600);
+			require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+				"canceling one input source preserves another source's pending hold and original deadline");
+		}
+	}
+	for (u8 cancelledPort = 0; cancelledPort < INPUT_CONTROLLER_PAD_COUNT; ++cancelledPort) {
+		InputFixture fixture;
+		const u8 survivingPort = (cancelledPort + 1) % INPUT_CONTROLLER_PAD_COUNT;
+		joypads[cancelledPort] = joypads[survivingPort] = MenuChord;
+		fixture.tickAt(100);
+		fixture.input.cancelGamepadControlShortcutGesture(cancelledPort);
+		joypads[cancelledPort] = 0;
+		fixture.tickAt(900);
+		require(fixture.input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind,
+			"a port cancellation does not discard another controller's pending long action");
 	}
 }
 
@@ -380,6 +642,14 @@ int main() {
 	testKeyboardContextAllowsMultipleHostTargetsAndLocalCommands();
 	testOrdinaryHardwareXAndZCannotBecomeGamepadHostShortcuts();
 	testHardwareTerminalAndMenuChordsRemainIndependentOfGamepadContext();
+	testEveryControllerMenuTapAndRewindHold();
+	testSparsePollAndPreheldTargetClassification();
+	testMenuGestureSourcesStayIndependent();
+	testConcurrentSourcesPreferTheLongAction();
+	testKeyboardUsesTheSameMenuGesture();
+	testMenuGestureCancellationAndRetargeting();
+	testRemovedBottomShortcutIsOrdinaryInput();
+	testLifecycleCancellationIsSourceScoped();
 	testReleasedPointerCoordinatesCannotCaptureMouse();
 	testIndexedSnapshotsDoNotInventContactIdentities();
 	testContactCountIsNotArtificiallyCapped();

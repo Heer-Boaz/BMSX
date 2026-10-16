@@ -3,6 +3,8 @@
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
 
+#include <chrono>
+#include <thread>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -17,6 +19,8 @@ constexpr uint16_t menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 constexpr uint16_t menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_A;
 constexpr uint16_t menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
 
+BmsxInputLifecycleInterfaceV1 inputLifecycle{};
+retro_keyboard_callback keyboardCallback{};
 std::string systemDirectory;
 std::string outputDirectory;
 unsigned errorCount = 0;
@@ -66,6 +70,10 @@ bool environment(unsigned command, void* data) {
 			if (std::strcmp(variable.key, "bmsx_crt_postprocessing") == 0) { variable.value = "off"; return true; }
 			return false;
 		}
+		case BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1:
+			inputLifecycle = *static_cast<BmsxInputLifecycleInterfaceV1*>(data); return true;
+		case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK:
+			keyboardCallback = *static_cast<retro_keyboard_callback*>(data); return true;
 		case BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE:
 			static_cast<BmsxAudioTransportInterface*>(data)->set_suspended = setAudioSuspended; return true;
 		case RETRO_ENVIRONMENT_SHUTDOWN:
@@ -144,18 +152,17 @@ void checkQuickMenuPause(const char* imageName) {
 	const auto before = capture().machineState.schedulerNowCycles;
 	const auto suspendedBefore = suspensions;
 	const auto resumedBefore = resumptions;
-	buttons = quickMenu;
-	frame();
-	require(capture().machineState.schedulerNowCycles == before,
-		"opening the menu must stop execution before the next machine tick");
+	buttons = quickMenu; frame();
+	require(!audioSuspended && suspensions == suspendedBefore, "chord down is pending, not a menu pause");
+	const auto atRelease = capture().machineState.schedulerNowCycles;
+	buttons = 0; frame();
+	require(capture().machineState.schedulerNowCycles == atRelease,
+		"short chord release stops execution before the next machine tick");
 	require(audioSuspended && suspensions == suspendedBefore + 1,
-		"opening the quick menu must suspend frontend audio exactly once");
+		"short release suspends frontend audio exactly once");
 	const auto held = captureBytes();
 	const auto heldAudio = audioFrames;
 	const auto heldVideo = videoFrames;
-	// Holding the shortcut must not repeatedly close and reopen the menu.
-	for (int index = 0; index < 8; ++index) frame();
-	buttons = 0; frame();
 	press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
 	press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 	for (int index = 0; index < 60; ++index) frame();
@@ -184,10 +191,13 @@ int main(int argc, char** argv) {
 		retro_set_audio_sample_batch(audio);
 		retro_set_input_poll(poll);
 		retro_set_input_state(input);
+		require(!inputLifecycle.cancel_keyboard && !inputLifecycle.cancel_gamepad, "input cancellation is not published before input exists");
 		retro_init();
+		require(inputLifecycle.cancel_keyboard && inputLifecycle.cancel_gamepad, "live core publishes input cancellation callbacks");
 		retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
 		const retro_game_info game{argv[2], nullptr, 0, nullptr};
 		require(retro_load_game(&game), "real cartridge admission failed");
+		require(keyboardCallback.callback, "content admission publishes the physical keyboard callback");
 		checkQuickMenuPause("power-on-paused");
 		for (int index = 0; index < 6; ++index) frame();
 		require(capture().cpuState.executionCartridgeSlot == bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
@@ -200,6 +210,32 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_START);
 		require(!audioSuspended && capture().machineState.schedulerNowCycles > beforeStart,
 			"START alone must remain gameplay input");
+		const auto suspensionsBeforeCancel = suspensions;
+		buttons = quickMenu; frame();
+		inputLifecycle.cancel_gamepad(0);
+		buttons = 0; frame();
+		require(!audioSuspended && suspensions == suspensionsBeforeCancel, "frontend pad cancellation cannot fabricate a short menu release");
+		keyboardCallback.callback(true, RETROK_RCTRL, 0, 0);
+		keyboardCallback.callback(true, RETROK_RALT, 0, 0); frame();
+		inputLifecycle.cancel_keyboard();
+		keyboardCallback.callback(false, RETROK_RCTRL, 0, 0);
+		keyboardCallback.callback(false, RETROK_RALT, 0, 0); frame();
+		require(!audioSuspended && suspensions == suspensionsBeforeCancel, "frontend focus cancellation precedes synthetic keyboard releases");
+		buttons = quickMenu; frame();
+		require(!audioSuspended, "long chord does not first open the options menu");
+		// Two nominal frames cannot reach 500 ms: this tests the actual core's
+		// monotonic input clock, independently of its presentation accumulator.
+		std::this_thread::sleep_for(std::chrono::milliseconds(510));
+		frame();
+		require(audioSuspended, "real elapsed host time opens rewind without requiring twenty-five emulated frames");
+		const auto heldRewindCycles = capture().machineState.schedulerNowCycles;
+		for (int count = 0; count < 5; ++count) frame();
+		require(audioSuspended && capture().machineState.schedulerNowCycles == heldRewindCycles, "opening START remains blocked while the long chord stays down");
+		buttons = 0; frame();
+		require(audioSuspended, "long release leaves the rewind transport open");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_START);
+		for (int count = 0; count < 4000 && audioSuspended; ++count) frame();
+		require(!audioSuspended, "a fresh unmodified START takes over instead of the already-held opener");
 		const auto latest = capture().machineState.schedulerNowCycles;
 		snapshot("live");
 		openRewind();
@@ -247,6 +283,7 @@ int main(int argc, char** argv) {
 		press(menuAccept); // Exit from the paused menu.
 		require(shutdowns == 1, "the paused menu must still allow game exit");
 		retro_unload_game(); retro_deinit();
+		require(!inputLifecycle.cancel_keyboard && !inputLifecycle.cancel_gamepad, "deinit revokes callbacks before their input owner is destroyed");
 		retro_init();
 		require(retro_load_game(nullptr), "cartridge-free firmware admission failed");
 		checkQuickMenuPause("no-cart-paused");
@@ -254,6 +291,7 @@ int main(int argc, char** argv) {
 		for (int index = 0; index < 5; ++index) frame();
 		require(!audioSuspended, "frontend reset must leave audio transport running");
 		retro_unload_game(); retro_deinit();
+		require(!inputLifecycle.cancel_keyboard && !inputLifecycle.cancel_gamepad, "final teardown cannot retain a dangling input callback");
 		std::cout << "RUNTIME-LIBRETRO-MENU-PAUSE:PASS\n";
 		std::cout << "RUNTIME-LIBRETRO-REWIND-ABI:PASS\n";
 		return 0;

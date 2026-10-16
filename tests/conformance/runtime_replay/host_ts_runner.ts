@@ -125,6 +125,25 @@ async function main(): Promise<void> {
 		for (const key of keys) input.inputButton('gamepad:0', key, false, 0, clock.now() + 1, id);
 		await frame();
 	};
+	const holdMenuChord = async () => {
+		const id = pressId++;
+		const initialMode = menu.executionMode;
+		for (const key of ['select', 'start']) input.inputButton('gamepad:0', key, true, 1, clock.now() + 1, id);
+		await frame();
+		const deadline = clock.now() + 500;
+		assert.equal(menu.executionMode, initialMode, 'host chord down never opens the menu or commits rewind');
+		while (clock.now() < deadline) {
+			await frame();
+			if (clock.now() < deadline) assert.equal(menu.executionMode, initialMode, 'short action remains deferred while the chord is held');
+		}
+		assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'holding SELECT+START opens rewind, never the options page');
+		const heldCycles = runtime.machine.scheduler.currentNowCycles();
+		for (let count = 0; count < 5; count += 1) await frame();
+		assert.equal(runtime.machine.scheduler.currentNowCycles(), heldCycles, 'held opening START neither retriggers nor commits');
+		for (const key of ['select', 'start']) input.inputButton('gamepad:0', key, false, 0, clock.now() + 1, id);
+		await frame();
+		assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'releasing a long chord does not open the menu or take over');
+	};
 	const clickTimeline = async (labelText: string, heldFrames = 1) => {
 		const display = video.measureDisplay();
 		input.inputAxis2('pointer:0', 'pointer_position', display.left + 1, display.top + 1, clock.now());
@@ -225,15 +244,8 @@ async function main(): Promise<void> {
 	snapshot('live');
 	await press('select', 'x');
 	assert.equal(menu.executionMode, HostMenuExecution.Live, 'keyboard is a live host view');
-	const shortcutId = pressId++;
-	for (const key of ['select', 'a']) input.inputButton('gamepad:0', key, true, 1, clock.now() + 1, shortcutId);
-	await frame();
-	assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'SELECT+south enters rewind directly from the keyboard');
-	const shortcutCycles = runtime.machine.scheduler.currentNowCycles();
-	for (let count = 0; count < 5; count += 1) await frame();
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), shortcutCycles, 'held rewind shortcut neither retriggers nor commits');
-	for (const key of ['select', 'a']) input.inputButton('gamepad:0', key, false, 0, clock.now() + 1, shortcutId);
-	await frame();
+	await holdMenuChord();
+	await holdMenuChord();
 	await press('a');
 	assert.equal(menu.executionMode, HostMenuExecution.Rewind, 'south alone never takes over rewind');
 	await press('b'); await settle();
