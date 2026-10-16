@@ -207,6 +207,8 @@ In its layout, `R` marks retained bits with no named operational field. These bi
 not a must-zero requirement. CSR and IMR instead use the per-bit access rules in their
 entries.
 
+<section class="register-entry">
+
 ### 4.1. PMODE — Circuit enables and output control
 
 | Address | Name | Purpose | Access | Reset |
@@ -229,6 +231,10 @@ HIGH  31:0
 
 Program a circuit's `DISPFB` and `DISPLAY` words before enabling it. The circuit-1
 setting in Section 3.1 supplies a complete PMODE word for that example.
+
+</section>
+
+<section class="register-entry">
 
 ### 4.2. DISPFB1 — Circuit 1 framebuffer
 
@@ -256,6 +262,10 @@ pixels. Source X and source Y specify the source origin.
 | 18 | GPU24 |
 | 31 | GX16 |
 
+</section>
+
+<section class="register-entry">
+
 ### 4.3. DISPLAY1 — Circuit 1 signal window
 
 | Address | Name | Purpose | Access | Reset |
@@ -279,6 +289,10 @@ HIGH  31:23 | 22:12          | 11:0
 
 Set signal X/Y for the window origin. Horizontal extents use signal units, not final
 output-pixel counts; apply the signal-step boundary conversion in Section 2.1.
+
+</section>
+
+<section class="register-entry">
 
 ### 4.4. DISPFB2 — Circuit 2 framebuffer
 
@@ -305,6 +319,10 @@ pixels. Circuit 2 has its own source X/Y origin.
 | 10 | CT16S |
 | 31 | GX16 |
 
+</section>
+
+<section class="register-entry">
+
 ### 4.5. DISPLAY2 — Circuit 2 signal window
 
 | Address | Name | Purpose | Access | Reset |
@@ -324,6 +342,10 @@ magnification is 1–4, and each extent specifies one less than the correspondin
 height. Program this window independently; enabled circuit windows jointly determine the
 output bounds.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.6. BGCOLOR — Background color
 
 | Address | Name | Purpose | Access | Reset |
@@ -340,6 +362,10 @@ HIGH  31:0
 
 Write the 24-bit background color in bits 23–0. PMODE controls the output composition
 using the background and enabled reading circuits.
+
+</section>
+
+<section class="register-entry">
 
 ### 4.7. SMODE1 — Timing factors and signal step
 
@@ -379,6 +405,10 @@ select toggling; otherwise VSync sets FIELD to one.
 **Timing-write caution:** changing either word restarts the beam, even when the changed
 bits are retained bits. A restart does not acknowledge CSR events or assign FIELD.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.8. SMODE2 — Interlaced traversal
 
 | Address | Name | Purpose | Access | Reset |
@@ -402,6 +432,10 @@ HIGH  31:0
 Use the source stride and phase rules in Section 2.3. Writes to these words follow the
 display-latch rule without restarting the beam.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.9. SYNCH1 — Horizontal timing counts
 
 | Address | Name | Purpose | Access | Reset |
@@ -420,6 +454,10 @@ HFP, HBP, and HS contribute horizontal timing counts to H. Their time scale is s
 RC, LC, and the divider, not by the output-pixel magnification fields. A changed write
 to either word recalculates timing and restarts the beam.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.10. SYNCH2 — Additional horizontal timing counts
 
 | Address | Name | Purpose | Access | Reset |
@@ -437,6 +475,10 @@ HIGH  31:0
 HF and HB complete the horizontal sum H. **Changing `SYNCH2_HIGH` also restarts the
 beam**, although its bits have no named timing field. Writing its current value does not
 restart it.
+
+</section>
+
+<section class="register-entry">
 
 ### 4.11. SYNCV — Vertical timing and beam phases
 
@@ -484,6 +526,10 @@ At VSync, nonzero CMOD together with odd VFP toggles FIELD; otherwise FIELD beco
 Reset VFP is even: reset FIELD is zero, and the first VSync sets it to one. VSync also
 raises VSINT.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.12. CSR — Event acknowledgement, field status, and actions
 
 | Address | Name | Purpose | Access | Reset |
@@ -521,6 +567,10 @@ resets GPU draw/display registers, restores the PCRTC configuration and CSR/IMR 
 values, and restarts the beam. Reset display settings take effect immediately. Both
 reading circuits are then disabled.
 
+</section>
+
+<section class="register-entry">
+
 ### 4.13. IMR — PCRTC event masks
 
 | Address | Name | Purpose | Access | Reset |
@@ -529,8 +579,8 @@ reading circuits are then disabled.
 | `080103E0H` | `IMR_HIGH` | Zero high word | Read zero; writes have no action | `00000000H` |
 
 ```text
-LOW   31:15 | 14:13 | 12          | 11         | 10         | 9           | 8           | 7:0
-       Zero | Ones  | EDWINT mask | VSINT mask | HSINT mask | FINISH mask | SIGNAL mask | Zero
+LOW   31:15 | 14:13 | 12     | 11    | 10    | 9      | 8      | 7:0
+       Zero | Ones  | EDWINT | VSINT | HSINT | FINISH | SIGNAL | Zero
 HIGH  31:0
         Read zero; writes have no action
 ```
@@ -549,3 +599,5 @@ bits 13–14 always read one; bits 31–15 and 7–0 read zero. Reset masks all 
 A mask write does not acknowledge CSR. Check pending-event handling when unmasking: any
 already pending event whose mask becomes zero can request the interrupt immediately. Use
 the mask–acknowledge–unmask sequence in Section 3.2 when enabling HSINT.
+
+</section>

@@ -1,0 +1,9 @@
+{
+	"pcrtc": {
+		"book": "I",
+		"label": "PCRTC",
+		"chapter": "docs/book1/pcrtc.md",
+		"facts": "docs/book1/facts/pcrtc.md",
+		"review": "docs/book1/reviews/pcrtc.json"
+	}
+}

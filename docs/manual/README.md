@@ -1,0 +1,201 @@
+# Hardware-manual chapter standard
+
+This is the editorial and publication standard for the architecture booklet.
+[The PCRTC chapter](../book1/pcrtc.md) is the first **style baseline**, not a
+complete hardware contract and not a compulsory outline for every unit.
+
+Book I describes the installed machine. Cartridge sockets and card devices belong
+in Book II. Work on one unit at a time. Chapter order may follow the reference
+manual's progression from hardware operation to programming and registers; do not
+copy its devices, addresses, diagrams, or behavior. `docs/book1_text.pdf` is only a
+style/order reference. Do not attach it to chapter-writing prompts. Do not use
+`docs/architecture.md` as chapter input.
+
+## Author's brief
+
+1. Write English for the cartridge programmer, who sees only the console.
+2. Describe the installed unit, its boundaries, and what the programmer controls.
+3. Explain data flow before presenting an inventory of registers.
+4. Separate programmed words, latches, live state, and externally visible output.
+5. Name the sourced edge or condition that makes each write effective.
+6. Use register words and hardware units, not implementation types.
+7. Give addresses, access, bit positions, encodings, and reset words explicitly.
+8. Distinguish unnamed retained bits from reserved or must-zero bits.
+9. Give timing landmarks and IRQ/fault behavior their own readable treatment.
+10. Teach one useful operation with assumptions, ordered writes, and a result.
+11. Derive every example value and claim from the fact sheet.
+12. Draw circuits, connections, dimensions, and edges, not decorative boxes.
+13. Warn only about sourced hardware hazards; distinguish races from guarantees.
+14. Keep tools, host details, source paths, history, and design rationale out.
+15. Stop on a missing fact; record the gap in editorial material, not invented prose.
+
+## Flexible chapter shape
+
+Use an outline/function explanation, an appropriate programming sequence, and a
+local register reference. Adapt their length, order, and subsections to the unit.
+A FIFO unit may need a command protocol; a timer may need an edge diagram; a
+controller port may need a transaction sequence. Do not invent a display-like
+datapath, timing equation, or example merely to imitate PCRTC's headings. Do not
+add a chapter-local table of contents, migration note, or implementation survey.
+
+The register reference must be usable without hunting through narrative paragraphs:
+
+- Address, exact register name, access, reset word, and bit positions.
+- Legal/representable encodings and their sourced effects, including unused bits.
+- The visibility edge and any immediate side effect such as beam restart.
+- Clear-on-read/write-one-to-clear/strobe rules where actually defined.
+
+Examples state the starting state, retained assumptions, actual address/word
+writes in order, and the observable result. Distinguish a device-level sequence
+from CPU/global-interrupt setup. Show a genuine state change, not a sequence of
+reset-value writes presented as initialization. A limited example cannot close
+an incomplete register or datapath contract.
+
+## Source and review workflow
+
+1. **Extract facts.** Read the unit's mirrored spec leaf and live owners. Record
+   the exact scope, including any necessary owning callsite or constants leaf.
+   Give every fact a source path and line range in `facts/<unit>.md`. Include
+   addresses, access, resets, encodings, write visibility, timing, IRQs/faults,
+   and retained save-state words. Keep non-programmer state editorial. If the
+   spec or mirrors disagree, stop and name both locations. Do not infer a fix.
+2. **Author from the sheet only.** Supply the brief and sheet, not the owners,
+   architecture document, or reference PDF. Missing facts go back to extraction.
+3. **Audit claims.** Compare every factual sentence, table cell, example result,
+   equation, and figure label/connection against the actual source lines. Report
+   failures as the quoted claim plus the conflicting line, or explicitly no
+   supporting line. Do not rewrite the chapter during this pass. Fix findings,
+   then review the changed claims again.
+4. **Audit completeness separately.** A chapter can contain no false statements
+   yet still omit the operation of a register. Record each required topic below
+   as a sourced resolution, with any remaining questions in its `open` list.
+   A real cross-reference to an existing, complete owner chapter can resolve a
+   shared contract. A promised future chapter cannot. Absence from the current
+   source scope does not prove "not applicable" or "no faults".
+5. **Audit figures semantically.** Trace every producer, consumer, arrow, merge,
+   control input, dimension endpoint, and timing landmark. Two independent inputs
+   must not acquire a shared bus from drawing convenience. A schematic timeline
+   must say when it is not to scale; a landmark chart is not an electrical waveform.
+6. **Audit the generated PDF visually.** Inspect every page at readable size:
+   labels, arrowheads, dimensions, aligned bit columns, tables, page boundaries,
+   stranded headings, whitespace, and headers/footers. Inspect the PDF, not only
+   the SVG source, browser DOM, or overflow-check result.
+
+Extraction, authorship, and review are separate passes. They need not use
+different model brands, but the authoring pass must not silently expand its
+input sources, and a successful build must never approve its own prose.
+
+### Completeness record
+
+Copy [review-template.json](review-template.json) into the book's `reviews/`
+directory. Its required topics are:
+
+| Topic | Required resolution |
+|---|---|
+| `boundary` | Function, connections, and ownership relative to adjacent units |
+| `registers` | Complete address/access/reset/bit/encoding operation reference |
+| `datapath` | Selection, representation, units, arithmetic, and output behavior |
+| `visibility` | Immediate state, latched state, effective edges, multiword hazards |
+| `timing` | Clocks, event ordering, completion conditions, stopped/disabled modes |
+| `interrupts` | Producers, pending state, masks, acknowledgement, races, delivery |
+| `faults` | Error conditions and access policy, or a sourced external contract |
+| `reset` | Reset/strobe/flush scope and effects on in-flight work |
+| `programming` | Sourced, usable ordered examples and hardware cautions |
+
+Each topic has a `resolution` and an `open` array. An empty resolution or any open
+question blocks publication. Explain a genuinely inapplicable topic in its
+resolution, with evidence; do not silently delete checklist topics. The PCRTC
+record deliberately retains the unresolved contracts from its fact sheet.
+
+The `facts`, `figures`, and `print` reviews each require the current input
+`fingerprint` and a repository-relative evidence `report` path. Record the review
+scope, findings, and how they were resolved. A print report identifies the build
+receipt, engine, and pages inspected. Only a completed review may enter its
+fingerprint; the tool has **no approve command**. Keep pending reviews empty.
+The machine checks recorded decisions and freshness, not their truthfulness.
+
+## Shared print design and source markup
+
+[print.css](print.css) owns the common monochrome A4 layout: 19 mm top, 18 mm
+other margins, 10 pt body text, ruled headings/tables, and compact monospace bit
+layouts. Book/chapter labels and page numbers are generated in page margins.
+All previews say **DRAFT — NOT FOR PUBLICATION**, including in every page footer.
+
+Author figures as local, standalone SVG with a `viewBox`, unique IDs, and meaningful
+`title`/`desc`. Reference them using normal Markdown images. The publisher embeds
+SVG and the [bundled fonts](fonts/README.md), so the HTML has no external asset or
+system-font dependency for the authored glyphs. It applies the shared sans face
+to SVG text and the mono face to groups marked `font-family="monospace"`.
+Keep connections and coordinates in the authored SVG, not in publisher code.
+
+Use ordinary Markdown for prose and tables. For a register entry that fits on
+one page, explicitly group its Markdown rather than relying on a section number:
+
+```html
+<section class="register-entry">
+
+### Register name — purpose
+
+Register table, bit layout, encodings, effects, and cautions.
+
+</section>
+```
+
+Blank lines inside the HTML boundary let Markdown parse normally. Use
+`class="keep-together"` for another short indivisible group. If a group or table
+exceeds one printable page, split it editorially; do not shrink the whole chapter
+or hide overflow. Prose and longer sections otherwise paginate normally.
+
+## Repository commands
+
+After `npm ci`:
+
+```sh
+npm run manual:preview -- pcrtc
+npm run manual:check -- pcrtc
+npm run manual:publish -- pcrtc
+npm run test:manual
+```
+
+The preview/publish/test scripts provision the lockfile's Chromium with the
+existing Playwright installer. Preview writes `build/manual/pcrtc.preview.html`,
+`.pdf`, and `.json`; publication writes `build/manual/pcrtc.html`, `.pdf`, and
+`.json`. Build products are ignored. The HTML is self-contained. The JSON receipt
+identifies input hashes, Chromium/Node/platform, and mechanical layout results.
+
+`manual:check` exits nonzero for unresolved coverage or missing/stale reviews.
+`manual:publish` applies the same gate **before rendering**. Preview may succeed
+while reporting those publication blockers; that is not release approval.
+Missing source/asset/report files are errors, never implicit passes. A failed
+build does not make an older PDF current; use the successful command and receipt.
+
+The fingerprint covers the chapter, fact sheet, whole local source files linked
+by the sheet (reference definitions and inline links), SVGs, fonts, stylesheet,
+publication tooling/standard, lockfile, chapter metadata, and coverage decisions.
+Changing any of these invalidates recorded approvals. Line anchors alone are
+not freshness evidence. Review reports/signatures are excluded to avoid a
+self-referential hash. Use local file links in fact sheets; web links are not
+hardware-source inputs for this pipeline.
+
+Build checks detect missing input files, horizontal overflow, oversized
+indivisible blocks, and figure labels outside their viewport. They
+do not prove signal topology, register semantics, or good pagination. Rendering
+is reproducible from repository inputs and the installed locked browser; it is
+not claimed to be byte-identical across platforms or PDF creation timestamps.
+Record the engine in visual-review evidence and repeat that review on an engine
+or platform change.
+
+To add a chapter, create its chapter/sheet/SVG/review files and add one entry to
+[catalog.json](catalog.json). Choose its Book I/II membership explicitly. Do not
+pre-fill facts, reviews, or publication status to make a new entry pass.
+
+### Publishing implementation references
+
+The pipeline keeps source, shared presentation, and publication metadata separate,
+as in [MAME's documentation configuration](https://github.com/mamedev/mame/blob/master/docs/source/conf.py).
+Chromium printing, accessible PDF tagging, and outlines follow
+[Playwright's PDF tests](https://github.com/microsoft/playwright/blob/main/tests/library/pdf.spec.ts)
+and [PDF API](https://playwright.dev/docs/api/class-page#page-pdf).
+Running labels/page counters use
+[Chromium's CSS page-margin support](https://developer.chrome.com/blog/print-margins).
+These are tooling references, **not sources of BMSX hardware behavior**.

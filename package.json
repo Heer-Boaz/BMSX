@@ -36,6 +36,10 @@
 		"yaml": "^2.9.1"
 	},
 	"scripts": {
+		"manual:check": "node scripts/manual/build.mjs check",
+		"manual:preview": "playwright install chromium && node scripts/manual/build.mjs preview",
+		"manual:publish": "playwright install chromium && node scripts/manual/build.mjs publish",
+		"test:manual": "playwright install chromium && node --test tests/manual/*.test.mjs",
 		"headless:game": "node dist/host_headless.debug.js --system-rom dist/system/bmsx-bios.debug.rom",
 		"headless:tooling": "node dist/host_headless_tooling.debug.js --system-rom dist/system/bmsx-bios.debug.rom",
 		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; shift 2; node dist/host_headless_tooling.debug.js --system-rom dist/system/bmsx-bios.debug.rom --test \"$test\" \"$rom\" \"$@\"' --",

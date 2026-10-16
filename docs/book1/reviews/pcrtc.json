@@ -1,0 +1,59 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Sections 1 and 2 describe the two reading circuits, output control, and timing control. The opening figure separates their paths.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "Section 4 lists all 26 words, addresses, access rules, reset values, and decoded bit positions. Retained unnamed bits are distinguished from must-zero bits.",
+			"open": [
+				"Complete the programmer-facing MMOD, AMOD, and SLBG operation reference from the owning composition datapath; named draw paths do not establish RGB/alpha semantics."
+			]
+		},
+		"datapath": {
+			"resolution": "Sections 2.1 and 2.3 cover source/window geometry and interlaced row traversal within the fact sheet's scope.",
+			"open": [
+				"Establish storage packing, local-memory addressing/wrap, and the sampled result of the named zero path, or reference their completed owning chapter.",
+				"Establish the blend equation, color-channel order, saturation, and rounding from the owning pixel datapath.",
+				"Establish the byte size of a framebuffer local-memory word; the four-byte PCRTC register word does not establish that unit."
+			]
+		},
+		"visibility": {
+			"resolution": "Section 2.2 separates immediate programmed-word readback, the presentation latch, and immediate beam restart on changed timing writes.",
+			"open": [
+				"Identify the exact presentation-latch edge from its owning caller; the scoped method name does not establish VBlank begin versus end."
+			]
+		},
+		"timing": {
+			"resolution": "The timing-register entries give sourced timing equations, reset landmarks, FIELD behavior, and the changed-write restart hazard. The timeline is explicitly not to scale and is not a waveform.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Sections 2.4, 3.2, and the CSR/IMR entries cover pending bits, masks, acknowledgement, and the unmask race for sourced events.",
+			"open": [
+				"Establish SIGNAL, FINISH, and EDWINT producers and completion timing, or reference their completed owning chapter; the scoped service generates only HSINT and VSINT."
+			]
+		},
+		"faults": {
+			"resolution": "The current source scope does not establish a fault or bus-access policy. No fault-free guarantee is made in the chapter.",
+			"open": [
+				"Establish PCRTC fault behavior and bus width/alignment/privilege policy, or reference the completed owning bus chapter."
+			]
+		},
+		"reset": {
+			"resolution": "Register reset words and the scoped CSR RESET/FLUSH actions are documented without expanding helper names into guarantees.",
+			"open": [
+				"Establish downstream RESET/FLUSH abort and retirement behavior from the command-buffer/reset owners, or reference their completed owning chapter."
+			]
+		},
+		"programming": {
+			"resolution": "Section 3 has an ordered three-write source-window example with explicit reset assumptions and a mask/acknowledge/unmask example with its race. These are bounded examples, not a substitute for the open datapath and visibility contracts.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": { "fingerprint": "", "report": "" },
+		"figures": { "fingerprint": "", "report": "" },
+		"print": { "fingerprint": "", "report": "docs/book1/reviews/pcrtc-print.md" }
+	}
+}

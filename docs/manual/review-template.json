@@ -1,0 +1,18 @@
+{
+	"coverage": {
+		"boundary": { "resolution": "", "open": [] },
+		"registers": { "resolution": "", "open": [] },
+		"datapath": { "resolution": "", "open": [] },
+		"visibility": { "resolution": "", "open": [] },
+		"timing": { "resolution": "", "open": [] },
+		"interrupts": { "resolution": "", "open": [] },
+		"faults": { "resolution": "", "open": [] },
+		"reset": { "resolution": "", "open": [] },
+		"programming": { "resolution": "", "open": [] }
+	},
+	"reviews": {
+		"facts": { "fingerprint": "", "report": "" },
+		"figures": { "fingerprint": "", "report": "" },
+		"print": { "fingerprint": "", "report": "" }
+	}
+}
