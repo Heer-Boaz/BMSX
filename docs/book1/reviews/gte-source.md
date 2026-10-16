@@ -1,81 +1,90 @@
 # GTE source and semantic-figure review
 
-Scope: the [chapter](../gte.md), mirrored BMSX IO/memory/numeric spec leaves,
-GTE owners, and the specific CPU, mapped-memory, scheduler and machine boundary
-owners linked in [the fact sheet](../facts/gte.md). No architecture document,
-reference PDF or external console specification supplied chapter facts.
+## Scope and editorial method
 
-## Separation and completeness
+The original register/datapath audit remains the basis for the unchanged 76-word
+reference and exact arithmetic. The programmer-facing revision expands the source
+scope to the mirrored installed model, timing initialization, CPU costs, and the
+specific GPU/PCRTC paths required for a visible triangle. All source anchors and
+numeric derivations are retained in [the fact sheet](../facts/gte.md).
 
-Register/interface and operation extraction were separate passes. A fresh author
-used only their fact sheets and the manual brief. Independent source audits then
-checked the resulting claims against live TS/C++ lines. Coverage decisions are
-recorded in [gte.json](gte.json), not inferred from a successful PDF build.
+Four nonoverlapping text assignments were written in parallel and merged into the
+existing chapter. No chapter assembler, manifest, publisher branch or runtime
+feature was added:
 
-The review covers all 76 mapped words, special aliases/write/read transforms,
-reset, both flag sets, all 22 normal commands, nominal counts, integer arithmetic,
-ordered overflow, projection/divide behavior, FIFO changes, PLUS admission and
-publication, access/fault boundaries, and both programming examples.
+| Assignment | Finished text and evidence |
+|---|---|
+| Specifications writer | Capacities, clocks, CPU versus nominal cost, PLUS deadlines, bus/fault/reset programming |
+| Geometry writer | Numerical conventions, matrices/projection, triangle chain, translated projection and coordinate diagram |
+| Command writer | Purposes, choices, inputs, options, clobbers and hazards for all22 normal commands and VMAD3; NCCS/DPCS examples |
+| Integrating editor | Complete GP0 drawing and PCRTC display continuation, merge order, cross-references and publication scope |
 
-No spec/owner or mirrored-owner disagreement was found. The IO spec establishes
-placement/counts; arithmetic semantics come from the matching live owners, not
-from an absent separate arithmetic specification or a historical console manual.
-Names without a scoped canonical alias remain indexed or functionally described.
+Each writer used the existing sheet plus explicitly recorded owner/spec expansion.
+This revision is not claimed to be a fresh author's isolated facts-only pass.
+Independent cross-reviews followed: geometry reviewed specifications and commands;
+specifications reviewed the GPU/PCRTC continuation; command review checked the
+merged scale/endpoint claims. A separate reader reviewed the complete programming
+route for usability. Neither architecture.md nor the reference style PDF supplied
+hardware facts. Sony reference structure was not treated as a BMSX specification.
 
 ## Findings and resolutions
 
-An arithmetic-notation finding required correction: matrix rows were
-numbered 0–2 while MAC/IR lanes were numbered 1–3, but two stage descriptions used
-the same index for both. The source maps row r to lane r+1. The fact producer and
-chapter now distinguish row r and lane i=r+1 in the generic matrix stage, MVMVA
-cv=2 and rotation/projection. Sources:
-[TS matrix](../../../machine/ts/machine/devices/gx/gte.ts#L783-L817),
-[C++ matrix](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L680),
-[TS projection](../../../machine/ts/machine/devices/gx/gte.ts#L950-L972),
-[C++ projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L824-L846).
+The original audit corrected row-to-lane indexing (r=0–2, i=r+1) and removed an
+unsupported claim of F64 non-atomicity. The exact arithmetic/access sections retain
+those corrections.
 
-A second wording finding concerned F64: two word callbacks and partial fault
-effects did not establish the blanket statement that the access was "not atomic".
-The fact sheet and chapter now state ordered word accesses and retained earlier
-effects, without implying interleaving inside a CPU instruction. Sources:
-[TS split store](../../../machine/ts/machine/memory/memory.ts#L664-L671),
-[C++ split store](../../../machine/cpp/machine/memory/memory.cpp#L559-L567).
+The parallel rewrite found and corrected:
 
-The source-scope expansion for bus access explicitly resolves CPU alignment
-before mapped IO faults, direct-store readiness, F64's initial-address-only
-readiness, and word-sequence range readiness. The F64 second-word PLUS command
-hazard is documented without claiming that ordinary CPU instructions can be
-interleaved. Its final prose was audited against both access dispatchers and GTE
-admission owners. No access/register/reset/IRQ findings remain.
+- H was initially described in depth units. It is now an unscaled unsigned
+  projection numerator controlling screen magnification, not the scene scale.
+- Generic depth-cue endpoint claims ignored intermediate shift truncation in
+  modulated-color inputs. Exact endpoint teaching is restricted to the sourced
+  DPCS/SF=1 case; other commands explicitly retain intermediate shifts/clamps.
+- Far-color scale teaching now qualifies the SF=1 convention rather than assigning
+  it universally to raw register words.
+- NCLIP terminology now says doubled oriented area; winding/degeneracy claims are
+  qualified by the absence of signed MAC0 overflow.
+- The rendering continuation occurs before the translated projection can replace
+  the triangle's screen FIFO. Its PCRTC stores explicitly warn about an intervening
+  VBlank latch. The complete packet precedes the GPU-idle poll.
+- Nine authored anchor targets resolve the command-reference links without changing
+  the Markdown publisher.
 
-Both corrected claims were rechecked against the mirrored owners. No factual
-findings remain in the audited scope. Later print-only caption/grouping edits
-preserve the ranges, register values and arithmetic; the reformatted ROM bytes
-are compared again before publication.
+No remaining printed-claim/source conflict was found in the reviewed additions.
+That is not the same as a complete physical hardware specification.
+
+## Open specification, not an omitted number
+
+The model and owners establish the installed system frequency and logical
+word/cycle rules. They do not establish an independent GTE core clock, physical
+GTE/IO bus clock or pin width, arbitration/contended-transfer schedule, or sustained
+guaranteed bus bandwidth. The specification table states these limits explicitly;
+[gte.json](gte.json) retains the question as open and blocks final publication.
+No nominal-cycle table or DMA RAM/ROM cost is relabeled as GTE bus bandwidth.
 
 ## Semantic figures
 
-The source audit traced both SVGs. The overview preserves independent normal
-DATA/CONTROL inputs, selected result/FIFO writes, FLAG and nominal CYCLES, and a
-separate PLUS operand/pending/published path. It invents no GPU/VRAM output or
-shared upstream bus.
+The two original figures retain their reviewed independent normal/PLUS data paths
+and not-to-scale PLUS publication landmarks. The added projection figure plots the
+worked triangle exactly at twice its coordinate scale: (96,64), (160,64), (128,128),
+with projected origin(128,96), horizontal128 and vertical96 dimensions. Its axis
+convention is local to the drawing, and it is explicitly not a GTE clipping window.
 
-The VMAD3 diagram is a not-to-scale landmark chart, not an electrical waveform.
-It shows snapshot admission, five system cycles of old visible result/flag words,
-publication of all three words, busy clearing and retained duration. Input writes
-are next-command-only; the wait claim is restricted to a direct 32-bit CPU store
-addressed to PLUS COMMAND. No semantic figure findings remain.
+## Execution evidence and limits
 
-## Validation, not additional fact sources
+- All22 normal command words/counts and the NCCS/DPCS example readbacks were
+  independently checked through live mapped TS GTE owners, with independent integer
+  calculations and mirrored C++ source checks.
+- The triangle chain returns screen00400060/004000A0/00800080, doubled area4096
+  and OTZ511. The translated RTPS gives transformed(96,16,1024), screen(152,100).
+- The exact triangle continuation executes GP0 drawing, reaches a real scheduled
+  VBlank entry, and scans out256x192. Its interior(128,96) is VRAM001F/RGB255,0,0;
+  cleared(0,0) is VRAM0000/RGB0,0,0. Zero sample alpha does not suppress selected
+  direct RGB. This checks the complete derived word sequence, not merely a drawing
+  produced independently of the chapter.
+- The original PLUS example retains its mapped-owner timing evidence: old outputs
+  at cycle4 and publication at cycle5, normal GTE state unchanged.
 
-- All 22 opcode/cycle rows and all 257 ordered reciprocal ROM bytes match both
-  owners. The ROM is a literal source table, not an externally recalled formula.
-- The 43 existing GTE tests pass.
-- Both exact raw-word examples were exercised against the live TS mapped-memory
-  and GTE path: RTPS gives IR/MAC=(64,32,512), depth512 and screen pair(32,16);
-  VMAD3 retains old outputs at cycle4 and publishes 28002000H/00002800H with
-  FLAG0 and CYCLES5 at cycle5. Normal GTE state remains unchanged by PLUS.
-
-These are focused owner/test results, not a cartridge execution, native execution
-or new TS/C++ runtime-parity claim. Save-state facts remain editorial and are not
-presented as cartridge registers. PDF presentation is reviewed separately.
+These are owner-path/software-output results, not guest cartridge execution,
+native execution, physical-bus measurements or a new TS/C++ runtime-parity claim.
+A readable 37-page draft does not close the open physical timing specification.

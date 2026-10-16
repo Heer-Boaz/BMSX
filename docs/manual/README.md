@@ -15,14 +15,16 @@ style/order reference. Do not attach it to chapter-writing prompts. Do not use
 
 1. Write English for the cartridge programmer, who sees only the console.
 2. Describe the installed unit, its boundaries, and what the programmer controls.
-3. Explain data flow before presenting an inventory of registers.
+3. Explain data flow and a usable programming route before the register inventory.
 4. Separate programmed words, latches, live state, and externally visible output.
 5. Name the sourced edge or condition that makes each write effective.
 6. Use register words and hardware units, not implementation types.
 7. Give addresses, access, bit positions, encodings, and reset words explicitly.
 8. Distinguish unnamed retained bits from reserved or must-zero bits.
-9. Give timing landmarks and IRQ/fault behavior their own readable treatment.
-10. Teach one useful operation with assumptions, ordered writes, and a result.
+9. Give capacities, numerical formats, clocks, bus costs, latency and throughput
+   guarantees a recognizable specification overview; distinguish undefined rates.
+10. Teach representative operations with assumptions, ordered writes, results and
+    the connection to the adjacent units needed for the intended use.
 11. Derive every example value and claim from the fact sheet.
 12. Draw circuits, connections, dimensions, and edges, not decorative boxes.
 13. Warn only about sourced hardware hazards; distinguish races from guarantees.
@@ -52,6 +54,13 @@ reset-value writes presented as initialization. A limited example cannot close
 an incomplete register or datapath contract.
 
 ## Source and review workflow
+
+Divide substantial chapters into named sections and assign independent writers
+nonoverlapping sections, including their finished prose and source evidence. Merge
+their text into the existing chapter, then cross-review facts and the complete
+programming route. Give each writer the section-relevant facts and source ranges,
+not the whole book's context. Writers do not need a PDF build or publication
+approval to work in parallel. This is an editorial division of work, not another publishing layer.
 
 1. **Extract facts.** Read the unit's mirrored spec leaf and live owners. Record
    the exact scope, including any necessary owning callsite or constants leaf.

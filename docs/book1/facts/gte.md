@@ -422,4 +422,477 @@ Sources of derivation: [TS gte.ts:22-45](../../../machine/ts/machine/devices/gx/
 - No legacy-console names, silicon behavior, undocumented opcodes, or external/manual conformance assertion.
 - No independently executed TS/native parity test accompanies these source facts; source mirrors were compared at the listed boundaries. No performance claim.
 - No canonical scoped-source semantic label for DATA23, nor canonical historical acronyms for DATA28/29 or DATA30/31. Keep the explicit functional labels unless another authorized source defines aliases.
-- No whole-machine save-state policy claim, CPU-to-real-time Hz mapping, exception-handler policy, DMA-channel completion/fault result for a denied PLUS destination, or MMIO alias outside the inspected Memory paths.
+- No whole-machine save-state policy claim, exception-handler policy, DMA-channel completion/fault result for a denied PLUS destination, or MMIO alias outside the inspected Memory paths. The expanded timing scope below establishes the installed system-cycle frequency; it does not establish an independent physical GTE/IO bus clock or bandwidth.
+
+
+## Technical specifications and timing supplement
+
+Editorial extraction for the added specification/performance overview. Scope was
+expanded to the mirrored installed model, runtime timing initialization, CPU
+instruction costs/dispatch, scheduler time, machine advancement, and mapped IO
+admission. No architecture document, reference PDF, external-console specification,
+tests, or runtime implementation changes were used. The existing sheet remains the
+source for the complete arithmetic/register/fault contract. No disagreement was
+found between the mirrored facts below.
+
+### Installed model and storage
+
+- **SPE1 — Installed frequency and adjacent memory capacities.** The installed model
+  specifies `cpuFreqHz=33_868_800`, `ramBytes=0x00400000` and
+  `gxGpuVramBytes=0x00200000`. These are respectively 33.8688 MHz, 4 MiB and 2 MiB
+  (`1 MiB=2^20 bytes`). They are not three GTE-local resources. Sources:
+  [TS model.ts:7-12](../../../machine/ts/spec/bmsx/model.ts#L7-L12),
+  [TS model.ts:46-56](../../../machine/ts/spec/bmsx/model.ts#L46-L56);
+  [C++ model.h:12-17](../../../machine/cpp/spec/bmsx/model.h#L12-L17),
+  [C++ model.h:51-61](../../../machine/cpp/spec/bmsx/model.h#L51-L61).
+- **SPE2 — Capacities are installed at their owners.** Runtime initialization gives
+  RAM capacity to Memory; machine construction gives VRAM capacity to GPU. GTE
+  receives Memory, CPU and scheduler, not a local-memory size. Its command handlers
+  obtain operands/results from its register words; they do not fetch a vertex
+  array from RAM, access VRAM or perform a memory transfer. Thus the GTE register
+  windows are not an attached local RAM/VRAM capacity. Sources:
+  [TS runtime.ts:126-139](../../../machine/ts/machine/runtime/runtime.ts#L126-L139),
+  [TS machine.ts:68-84](../../../machine/ts/machine/machine.ts#L68-L84),
+  [TS gte.ts:182-222](../../../machine/ts/machine/devices/gx/gte.ts#L182-L222),
+  [TS gte.ts:433-649](../../../machine/ts/machine/devices/gx/gte.ts#L433-L649);
+  [C++ runtime.cpp:8-22](../../../machine/cpp/machine/runtime/runtime.cpp#L8-L22),
+  [C++ machine.cpp:7-24](../../../machine/cpp/machine/machine.cpp#L7-L24),
+  [C++ gte.h:143-162](../../../machine/cpp/machine/devices/gx/gte.h#L143-L162),
+  [C++ gte.cpp:298-514](../../../machine/cpp/machine/devices/gx/gte.cpp#L298-L514).
+- **SPE3 — Register-window sizes, not independent memory bytes.** Data and control
+  each have 32 four-byte slots: 128 bytes of address space each. Normal COMMAND and
+  CYCLES are two further four-byte slots. PLUS has ten slots: 40 bytes of address
+  space. Aliases, derived reads and output/write rules prevent treating those slots
+  as ordinary RAM. Sources:
+  [TS io.ts:117-128](../../../machine/ts/spec/bmsx/io.ts#L117-L128),
+  [TS memory_map.ts:23-33](../../../machine/ts/spec/bmsx/memory_map.ts#L23-L33),
+  [TS gte.ts:433-523](../../../machine/ts/machine/devices/gx/gte.ts#L433-L523);
+  [C++ io.h:130-141](../../../machine/cpp/spec/bmsx/io.h#L130-L141),
+  [C++ memory_map.h:29-39](../../../machine/cpp/spec/bmsx/memory_map.h#L29-L39),
+  [C++ gte.cpp:298-388](../../../machine/cpp/machine/devices/gx/gte.cpp#L298-L388).
+- **SPE4 — Normal operand/output capacities.** Three XYZ input vectors have signed
+  16-bit components; three stored 3x3 matrices have signed 16-bit coefficients;
+  their three associated XYZ control vectors have signed 32-bit components. The
+  screen history contains three packed signed-16 coordinate pairs; command-produced
+  coordinates clamp to -1024..1023. The depth history contains four unsigned-16
+  entries. The color history contains three words, each RGB8 plus CODE8. Main
+  MAC1..3 accumulation uses signed 44-bit wrap and exposes shifted low32 words;
+  IR1..3 clamp to signed16 or nonnegative signed16 according to LM. These are the
+  existing arithmetic facts summarized, not new datapath rules. Sources:
+  [TS gte.ts:116-155](../../../machine/ts/machine/devices/gx/gte.ts#L116-L155),
+  [TS gte.ts:680-761](../../../machine/ts/machine/devices/gx/gte.ts#L680-L761),
+  [TS gte.ts:983-991](../../../machine/ts/machine/devices/gx/gte.ts#L983-L991),
+  [TS gte.ts:1096-1106](../../../machine/ts/machine/devices/gx/gte.ts#L1096-L1106),
+  [TS gte.ts:1133-1140](../../../machine/ts/machine/devices/gx/gte.ts#L1133-L1140),
+  [TS gte.ts:1161-1214](../../../machine/ts/machine/devices/gx/gte.ts#L1161-L1214);
+  [C++ gte.cpp:14-53](../../../machine/cpp/machine/devices/gx/gte.cpp#L14-L53),
+  [C++ gte.cpp:545-624](../../../machine/cpp/machine/devices/gx/gte.cpp#L545-L624),
+  [C++ gte.cpp:857-865](../../../machine/cpp/machine/devices/gx/gte.cpp#L857-L865),
+  [C++ gte.cpp:969-979](../../../machine/cpp/machine/devices/gx/gte.cpp#L969-L979),
+  [C++ gte.cpp:1006-1013](../../../machine/cpp/machine/devices/gx/gte.cpp#L1006-L1013),
+  [C++ gte.cpp:1033-1086](../../../machine/cpp/machine/devices/gx/gte.cpp#L1033-L1086).
+
+### Timebase and charged cycles
+
+- **TIM1 — Installed CPU/system-cycle mapping is actually used.** TimingState
+  initializes `cpuHz=model.cpuFreqHz` and cycles-per-millisecond from that same
+  frequency. Scheduler time within a CPU slice is `sliceBase + sliceBudget -
+  instructionBudgetRemaining`; outside a slice it is committed scheduler time.
+  CPU execution advances machine/scheduler time by the consumed instruction budget.
+  The PLUS deadline is in those same cycles, not an unrelated frame counter.
+  Sources:
+  [TS state.ts:23-32](../../../machine/ts/machine/runtime/timing/state.ts#L23-L32),
+  [TS device.ts:52-67](../../../machine/ts/machine/scheduler/device.ts#L52-L67),
+  [TS cpu_executor.ts:183-190](../../../machine/ts/machine/runtime/cpu_executor.ts#L183-L190),
+  [TS machine.ts:129-132](../../../machine/ts/machine/machine.ts#L129-L132);
+  [C++ state.cpp:10-22](../../../machine/cpp/machine/runtime/timing/state.cpp#L10-L22),
+  [C++ device.cpp:33-38](../../../machine/cpp/machine/scheduler/device.cpp#L33-L38),
+  [C++ cpu_executor.cpp:164-171](../../../machine/cpp/machine/runtime/cpu_executor.cpp#L164-L171),
+  [C++ machine.cpp:72-75](../../../machine/cpp/machine/machine.cpp#L72-L75).
+- **TIM2 — Normal command cost is not charged to the CPU by GTE.** The normal
+  command handler calls execute synchronously, stores its returned nominal duration,
+  and does not debit CPU budget, set busy, arrange a deadline or synchronize PLUS.
+  The scalar CPU store dispatch checks target readiness then writes through Memory;
+  ordinary normal-GTE slots have no ready handler. The instruction loop charges
+  the CPU instruction's base cost independently. Source cost tables assign two
+  cycles to LOAD_MEM/LOAD_MEM_D and STORE_MEM/STORE_MEM_D; decoded-dispatch tables
+  copy those costs. Therefore an admitted direct word-store instruction to normal
+  COMMAND has a two-cycle instruction base cost, not that cost plus the operation's
+  nominal CYCLES. This is a source derivation, not a measured cartridge loop or a
+  bus-rate measurement. Sources:
+  [TS gte.ts:205-222](../../../machine/ts/machine/devices/gx/gte.ts#L205-L222),
+  [TS gte.ts:344-350](../../../machine/ts/machine/devices/gx/gte.ts#L344-L350),
+  [TS opcode.ts:1-15](../../../machine/ts/spec/blua32/opcode.ts#L1-L15),
+  [TS opcode.ts:51-53](../../../machine/ts/spec/blua32/opcode.ts#L51-L53),
+  [TS opcode.ts:75-84](../../../machine/ts/spec/blua32/opcode.ts#L75-L84),
+  [TS execution_image.ts:20-24](../../../machine/ts/machine/cpu/execution_image.ts#L20-L24),
+  [TS cpu.ts:1844-1849](../../../machine/ts/machine/cpu/cpu.ts#L1844-L1849),
+  [TS cpu.ts:3117-3153](../../../machine/ts/machine/cpu/cpu.ts#L3117-L3153);
+  [C++ gte.cpp:68-85](../../../machine/cpp/machine/devices/gx/gte.cpp#L68-L85),
+  [C++ gte.cpp:206-216](../../../machine/cpp/machine/devices/gx/gte.cpp#L206-L216),
+  [C++ opcode.cpp:5-19](../../../machine/cpp/spec/blua32/opcode.cpp#L5-L19),
+  [C++ opcode.cpp:55-57](../../../machine/cpp/spec/blua32/opcode.cpp#L55-L57),
+  [C++ execution_image.cpp:7-14](../../../machine/cpp/machine/cpu/execution_image.cpp#L7-L14),
+  [C++ cpu.cpp:2470-2479](../../../machine/cpp/machine/cpu/cpu.cpp#L2470-L2479),
+  [C++ cpu_dispatch.inl:646-668](../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L646-L668).
+- **TIM3 — Nominal normal cost range.** The 22 recognized functions return counts
+  from 5 through 44; RTPS returns 15, RTPT 23, MVMVA 8. An unknown low6 function
+  returns zero without arithmetic/FLAG changes; its mapped write still becomes the
+  last raw COMMAND and sets last CYCLES to zero. These counts do not establish an
+  elapsed-time or throughput formula. Sources:
+  [TS gte.ts:47-91](../../../machine/ts/machine/devices/gx/gte.ts#L47-L91),
+  [TS gte.ts:525-649](../../../machine/ts/machine/devices/gx/gte.ts#L525-L649);
+  [C++ gte.h:43-87](../../../machine/cpp/machine/devices/gx/gte.h#L43-L87),
+  [C++ gte.cpp:390-514](../../../machine/cpp/machine/devices/gx/gte.cpp#L390-L514).
+- **TIM4 — PLUS latency and one-deep admission.** VMAD3 low8=1 consumes signed16
+  operands and computes three pending saturated signed16 lanes using fixed
+  arithmetic `(4096*addend + multiplicand*scalar) ASR 12`; it starts with a five-cycle
+  deadline. Other low8 values retain old results, set pending FLAG=0x81000000 and
+  use one cycle. PLUS has one pending result set, no command queue; current input
+  words may be changed while pending without changing that pending set. At/after
+  the deadline a PLUS read, accepted-register write or CPU command readiness check
+  publishes results/FLAG together and clears CYCLES busy, retaining nominal low31.
+  A direct CPU command store while busy waits; readiness schedules deadline service
+  which publishes and releases the store. Normal accesses do not synchronize PLUS.
+  These are existing P1-P10/VMAD3 facts. Sources:
+  [TS gte.ts:307-324](../../../machine/ts/machine/devices/gx/gte.ts#L307-L324),
+  [TS gte.ts:344-431](../../../machine/ts/machine/devices/gx/gte.ts#L344-L431);
+  [C++ gte.cpp:165-182](../../../machine/cpp/machine/devices/gx/gte.cpp#L165-L182),
+  [C++ gte.cpp:206-296](../../../machine/cpp/machine/devices/gx/gte.cpp#L206-L296).
+- **TIM5 — Derived elapsed times and arithmetic ceiling.** From SPE1/TIM1/TIM4,
+  one installed system cycle is `10^9/33_868_800 = 29.5256991686 ns`; five are
+  `147.628495843 ns` (chapter rounds to 29.526 and 147.628 ns). One VMAD3 command per
+  five cycles is the arithmetic admission upper bound, `33_868_800/5 = 6_773_760`
+  commands/second, each producing three lanes. This excludes all operand writes,
+  command issue, result readout and software work; it is not a sustained bus rate,
+  a CPU-fed throughput guarantee, or permission to reuse operands/results early.
+
+### Interface and preserved cautions
+
+- **BUS1 — Logical transfer width is not a physical bandwidth contract.** The
+  GTE interface accepts mapped 32-bit words at four-byte register slots; the
+  existing B1-B8/M7 facts establish CPU alignment, byte/halfword rejection, F32/F64
+  interpretation, partial effects and word-sequence readiness. Only PLUS COMMAND
+  supplies write readiness; its DMA readiness is always false. Sources:
+  [TS gte.ts:205-222](../../../machine/ts/machine/devices/gx/gte.ts#L205-L222),
+  [TS gte.ts:372-388](../../../machine/ts/machine/devices/gx/gte.ts#L372-L388),
+  [TS memory.ts:261-282](../../../machine/ts/machine/memory/memory.ts#L261-L282),
+  [TS memory.ts:627-645](../../../machine/ts/machine/memory/memory.ts#L627-L645);
+  [C++ gte.cpp:68-85](../../../machine/cpp/machine/devices/gx/gte.cpp#L68-L85),
+  [C++ gte.cpp:240-253](../../../machine/cpp/machine/devices/gx/gte.cpp#L240-L253),
+  [C++ memory.cpp:181-201](../../../machine/cpp/machine/memory/memory.cpp#L181-L201),
+  [C++ memory.cpp:522-539](../../../machine/cpp/machine/memory/memory.cpp#L522-L539).
+- **BUS2 — Reset/IRQ conclusions unchanged.** Reset clears all GTE state, discards
+  pending PLUS, cancels its scheduled service and releases the blocked command
+  store. Neither completion path signals a GTE IRQ. Existing R1-R3 and IRQ facts
+  retain their complete scope; the new prose does not add a reset register or
+  reinterpret PLUS busy as an IRQ handshake. Sources:
+  [TS gte.ts:200-248](../../../machine/ts/machine/devices/gx/gte.ts#L200-L248),
+  [TS gte.ts:302-324](../../../machine/ts/machine/devices/gx/gte.ts#L302-L324),
+  [TS io.ts:362-372](../../../machine/ts/spec/bmsx/io.ts#L362-L372);
+  [C++ gte.cpp:64-112](../../../machine/cpp/machine/devices/gx/gte.cpp#L64-L112),
+  [C++ gte.cpp:160-182](../../../machine/cpp/machine/devices/gx/gte.cpp#L160-L182),
+  [C++ io.h:375-385](../../../machine/cpp/spec/bmsx/io.h#L375-L385).
+
+### Open clock/bandwidth contract — publication scope gap
+
+The expanded scope **does resolve** the installed CPU/system-cycle frequency,
+its actual scheduler hookup, PLUS cycle-to-time conversion, logical 32-bit GTE
+word transfers, and normal nominal versus charged CPU cycles. It **does not
+resolve** an independent GTE core clock, a physical GTE/IO bus clock or pin width,
+a GTE/IO bus arbitration/contended-transfer schedule, or sustained guaranteed
+bandwidth in bytes per second. The complete mirrored model has frequency and
+DMA-region cost fields but no GTE/IO clock or bandwidth field (SPE1); the inspected
+Memory/GTE paths dispatch words and PLUS readiness without a physical-bus transfer
+schedule (TIM2/BUS1). CPU instruction costs are not evidence of an electrical
+bus clock or a bandwidth guarantee; DMA RAM/ROM costs must not be relabeled as
+GTE-register bandwidth. A 32-bit *programming interface* is therefore all the
+public prose claims for width. This open hardware contract must remain in the
+editorial completeness record; omission of unsupported numbers does not close it.
+The old scope-limit statements that no CPU-Hz mapping was inspected should be
+replaced by this narrower, expanded-scope finding, not left as a contradictory
+blanket limit. No runtime parity or sustained-performance measurement was run.
+
+
+# Geometry programming additions: evidence and review
+
+Scope: `02-programming.md` and `gte-projection.svg`. Read the current manual standard, GTE chapter, GTE fact sheet, and the relevant mirrored owners. Neither `docs/architecture.md` nor the reference PDF was opened. No repository code was edited. The existing unrelated `docs/book1/reviews/gte.json` edit was not touched.
+
+Editorial reference: [QEMU's EDU device specification](https://github.com/qemu/qemu/blob/master/docs/specs/edu.rst), consulted for address-to-value ordered programming sequences, explicit completion visibility, and readback contracts only. No external device's arithmetic, registers, coordinates, or timing facts were imported.
+
+## Representation and source audit
+
+The following narrative conventions are derived from existing operations, not claims that all GTE words share one fixed-point encoding.
+
+| Authored subject | Existing fact-sheet basis | Audited owners |
+|---|---|---|
+| Signed vector triples; V0/V1/V2; packed row-major coefficients | Address/representation; operand selection | [TS vector inputs](../../../machine/ts/machine/devices/gx/gte.ts#L1161-L1182), [TS matrix/control decode](../../../machine/ts/machine/devices/gx/gte.ts#L1196-L1233); [C++ vector inputs](../../../machine/cpp/machine/devices/gx/gte.cpp#L1033-L1054), [C++ matrix/control decode](../../../machine/cpp/machine/devices/gx/gte.cpp#L1068-L1105) |
+| Matrix factor 4096, translation scaling, SF/LM and wrap/clamp warnings | Arithmetic primitives; projection RT | [TS dot rotation and projection](../../../machine/ts/machine/devices/gx/gte.ts#L950-L995), [TS MAC/IR stages](../../../machine/ts/machine/devices/gx/gte.ts#L680-L761), [TS projection IR3](../../../machine/ts/machine/devices/gx/gte.ts#L1036-L1050); [C++ dot rotation/projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L824-L869), [C++ MAC/IR stages](../../../machine/cpp/machine/devices/gx/gte.cpp#L543-L624), [C++ projection IR3](../../../machine/cpp/machine/devices/gx/gte.cpp#L910-L924) |
+| H unsigned; signed screen offset ×65536; depth fixed-12 regardless SF; screen clamp | Projection RT and its exact divide | [TS projection](../../../machine/ts/machine/devices/gx/gte.ts#L977-L995), [TS depth/divide/screen limits](../../../machine/ts/machine/devices/gx/gte.ts#L1052-L1106), [TS projection operand getters](../../../machine/ts/machine/devices/gx/gte.ts#L1235-L1253); [C++ projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L851-L869), [C++ limits/divide](../../../machine/cpp/machine/devices/gx/gte.cpp#L926-L979), [C++ getters](../../../machine/cpp/machine/devices/gx/gte.cpp#L1107-L1125) |
+| RTPT ordering and final IR0, flag accumulation, command-scoped status | Command table; projection last-vertex rule | [TS RTPT dispatch](../../../machine/ts/machine/devices/gx/gte.ts#L623-L629), [TS cue output](../../../machine/ts/machine/devices/gx/gte.ts#L992-L995), [TS IR0 limit](../../../machine/ts/machine/devices/gx/gte.ts#L1108-L1119); [C++ RTPT dispatch](../../../machine/cpp/machine/devices/gx/gte.cpp#L488-L494), [C++ cue output](../../../machine/cpp/machine/devices/gx/gte.cpp#L866-L869), [C++ IR0 limit](../../../machine/cpp/machine/devices/gx/gte.cpp#L981-L992) |
+| Doubled oriented area; AVSZ scaled sum; preserved histories | Direct arithmetic commands | [TS NCLIP/AVSZ](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1019); [C++ NCLIP/AVSZ](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L893) |
+| Normal/light/color roles; distinct color-byte and output ×16 scales; cue endpoints | Shared color/lighting stages; command stage table | [TS stages](../../../machine/ts/machine/devices/gx/gte.ts#L783-L869), [TS depth cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948), [TS RGB push](../../../machine/ts/machine/devices/gx/gte.ts#L1133-L1141); [C++ stages](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L732), [C++ cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822), [C++ RGB push](../../../machine/cpp/machine/devices/gx/gte.cpp#L1006-L1014) |
+
+No TS/C++ disagreement was found in this audited scope. Read/write addresses and their exact access semantics remain those already extracted in the fact sheet. The prose does not replace the exact arithmetic appendix or full register inventory.
+
+### Derived ranges and encodings
+
+- Signed halfword coordinate range: −32768…32767. Choosing coefficients / 4096 makes the coefficient range −8…`8−1/4096`; choosing signed full-word screen offset / 65536 makes the offset range −32768…`32768−1/65536`. Translation is a signed full word and is multiplied by 4096 in the operation, not stored as a Q12 word.
+- Identity writes C0/C2/C4=`0x00001000`, C1/C3=0. Mapping `(X,Y,Z)` to `(−Y,X,Z)` writes C0=`0xf0000000`, C1=`0x10000000`, C2/C3=0, C4=`0x00001000`. With SF1, zero TR, input (64,32,512), direct row equations yield (−32,64,512).
+- `128×65536=0x00800000`; `96×65536=0x00600000`; `(128+1/2)×65536=0x00808000`; `−65536/2` as a raw word is`0xffff8000`. ASR16 of −32768 is−1. These interpretations are equations derived from the sourced pre-shift addition, not extra offset register formats.
+- Positive-divide examples select only seed ROM entry T[0]=255, identical in [TS seed ROM](../../../machine/ts/machine/devices/gx/gte.ts#L120-L138) and [C++ seed ROM](../../../machine/cpp/machine/devices/gx/gte.cpp#L18-L36).
+
+## Independently derived and executed examples
+
+Validation performed in this turn:
+
+1. Independent integer-only Python derivation of quotient, transform, screen positions, area, and AVSZ product; assertions passed. It implements the sourced divide steps for these power-of-two depths, rather than substituting mathematical H/Z.
+2. Actual current TS `GxGte` + current `Memory` MMIO writes/reads, via `node --import tsx --input-type=module`. A fresh zeroed Memory and `gte.reset()` established the starting state. CPU/scheduler stubs supplied the reset callbacks only; no CPU execution, scheduler timing, or complete-machine claim is made. All normal commands were written to mapped COMMAND and observed through mapped register reads, so COMMAND and CYCLES readback were exercised too.
+3. Corresponding C++ operations were inspected, not executed for these new vectors.
+4. Additional actual mapped-MMIO assertions passed for the negative-coefficient mapping IR=(−32,64,512), OFX=−½ producing SX=−1 at zero X, and OFX=128½ producing SX=128 at zero X.
+
+### Triangle derivation
+
+Program the raw words listed in the prose. The identity rows give private sums for each vertex of 4096 times its component. For H=256 / depth=512: `s=6`, `r1=0`, `T[0]=255`, `r2=512`, `r3=65536`, `reciprocal=131072`, `q=32768`. The resulting screen pairs are (96,64),(160,64),(128,128), exactly packed as`0x00400060`,`0x004000a0`,`0x00800080`.
+
+NCLIP: `(160−96)×(128−64)−(128−96)×(64−64)=4096=0x00001000`.
+
+AVSZ3: `ZSF3=0x555=1365`; sum 512+512+512=1536; product 2096640=`0x001ffe00`; ASR12 yields 511=`0x000001ff`. This specifically documents the deliberate sub-⅓ scale and does not mislabel the output 512.
+
+Actual mapped-read snapshots (word groups in ascending index order):
+
+| Read group | After RTPT 0x00080030 | After NCLIP 0x00000006 | After AVSZ3 0x0000002d |
+|---|---|---|---|
+| D12,D13,D14 | `00400060 004000a0 00800080` | unchanged | unchanged |
+| D16,D17,D18,D19 | `00000000 00000200 00000200 00000200` | unchanged | unchanged |
+| D9,D10,D11 | `00000000 00000040 00000200` | unchanged | unchanged |
+| D25,D26,D27 | `00000000 00000040 00000200` | unchanged | unchanged |
+| D8 | `00000000` | unchanged | unchanged |
+| D24 | `00000000` | `00001000` | `001ffe00` |
+| D7 | `00000000` | `00000000` | `000001ff` |
+| C31 FLAG | `00000000` | `00000000` | `00000000` |
+| COMMAND | `00080030` | `00000006` | `0000002d` |
+| CYCLES | `00000017` | `00000008` | `00000005` |
+
+The full mapped snapshots also confirmed D0–D6, C0–C30, and RGB FIFO retention; D15 was the D14 alias. D28/D29 derived packed-IR reads were `0x00001000`; the prose correctly does not describe these as retained outputs.
+
+### Nonzero translation derivation
+
+Continue from AVSZ3. Set TR=(32,−16,512); V0=(64,32,512). Private sums are4096×(96,16,1024); with SF1 MAC/IR=(96,16,1024). H=256 / depth=1024 selects`s=5` and the same `r1/r2/r3/reciprocal` as above, yielding`q=16384`. Offset plus projection yields (152,100), packed `0x00640098`.
+
+Actual mapped reads after RTPS 0x00080001:
+
+| Read group | Words |
+|---|---|
+| D9,D10,D11 and D25,D26,D27 | `00000060 00000010 00000400` in both groups |
+| D12,D13,D14 | `004000a0 00800080 00640098` |
+| D16,D17,D18,D19 | `00000200 00000200 00000200 00000400` |
+| D8,D24 | `00000000 00000000` |
+| D7 | `000001ff` retained |
+| FLAG; CYCLES | `00000000`; `0000000f` |
+
+C6 read `0xfffffff0`; its signed32 consumption is separately sourced above. V1/V2 remained unchanged. This example demonstrates one push and the shared control lifetime, not a hidden FIFO clear.
+
+## Figure audit
+
+`gte-projection.svg` plots the above derived positions at two drawing units per screen-coordinate count: the example 256×192 coordinate area is 512×384; its top-left is(110,105). V0 is (302,233), V1 (430,233), V2 (366,361), and projected zero (366,297). The OFX dimension runs from screen X=0 to 128; OFY from screen Y=0 to 96. Arrows specify increasing SX right and SY down **for this drawing**, not a prescribed physical coordinate system. The caption explicitly denies a GTE clipping-window interpretation.
+
+Inspected a readable Chromium raster preview of the SVG. Labels are legible, triangle/dimension endpoints are correct, and no label crosses a triangle edge. Replaced the combined axis path with separate paths so both axes receive arrowheads. Final chapter PDF inspection remains the root editor's responsibility.
+
+
+## Command and representation comparison
+
+No TS/C++ mismatch was found at the inspected boundaries. Register words and packed halves are the consumed representation in both. All 22 normal function codes and nominal counts agree: [TS constants](../../../machine/ts/machine/devices/gx/gte.ts#L47-L91), [C++ constants](../../../machine/cpp/machine/devices/gx/gte.h#L43-L87). Normal dispatch clears FLAG for recognized functions, forwards SF/LM to all relevant stages, performs triple iterations in order, and returns each count: [TS dispatch](../../../machine/ts/machine/devices/gx/gte.ts#L525-L649), [C++ dispatch](../../../machine/cpp/machine/devices/gx/gte.cpp#L390-L515). Unknown functions return zero without clearing FLAG. MMIO runs that dispatch and records the returned count during the write: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L344-L350), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L206-L216). Thus each normal entry calls its cost nominal and does not promise a physical command latency or busy countdown.
+
+| Operation family / entries | TS arithmetic owner | C++ arithmetic owner | Authored conclusion |
+|---|---|---|---|
+| RTPS, RTPT | [rotation/projection](../../../machine/ts/machine/devices/gx/gte.ts#L950-L995), [IR3/depth](../../../machine/ts/machine/devices/gx/gte.ts#L1036-L1069), [divide](../../../machine/ts/machine/devices/gx/gte.ts#L1071-L1094), [screen/cue](../../../machine/ts/machine/devices/gx/gte.ts#L1096-L1119) | [rotation/projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L824-L870), [IR3/depth](../../../machine/cpp/machine/devices/gx/gte.cpp#L910-L943), [divide](../../../machine/cpp/machine/devices/gx/gte.cpp#L945-L967), [screen/cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L969-L992) | SF-selected MAC/IR versus fixed-12 depth distinguished; IR3 exceptional flag test retained; saturated vertices still pushed; third RTPT vertex alone produces IR0. |
+| NCLIP, AVSZ3, AVSZ4 | [direct calculations and MAC0](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1030), [depth clamp](../../../machine/ts/machine/devices/gx/gte.ts#L1059-L1069) | [direct calculations and MAC0](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L904), [depth clamp](../../../machine/cpp/machine/devices/gx/gte.cpp#L933-L943) | No SF/LM use, no FIFO push; full product drives depth clamp even when MAC0 wraps; NCLIP is a determinant, not clipping. |
+| OP, SQR | [OP](../../../machine/ts/machine/devices/gx/gte.ts#L763-L771), [SQR](../../../machine/ts/machine/devices/gx/gte.ts#L871-L879) | [OP](../../../machine/cpp/machine/devices/gx/gte.cpp#L626-L634), [SQR](../../../machine/cpp/machine/devices/gx/gte.cpp#L734-L742) | Signed low-halfword IR; OP only uses rotation diagonal; both explicitly supply false MAC-overflow inputs; standard SF/write-wrap/LM still apply. |
+| MVMVA | [selected product/two-pass case](../../../machine/ts/machine/devices/gx/gte.ts#L913-L937), [vector/matrix/control selection](../../../machine/ts/machine/devices/gx/gte.ts#L1161-L1215) | [selected product/two-pass case](../../../machine/cpp/machine/devices/gx/gte.cpp#L777-L811), [vector/matrix/control selection](../../../machine/cpp/machine/devices/gx/gte.cpp#L1033-L1087) | Complete mx/v/cv choices, signed32 control versus signed16 matrix distinction, defined synthetic mx=3 and overwriting cv=2 retained; no invalid-state fallback asserted. |
+| NCS/NCT, NCCS/NCCT, NCDS/NCDT | [generic matrix and application](../../../machine/ts/machine/devices/gx/gte.ts#L783-L837), [named sequences](../../../machine/ts/machine/devices/gx/gte.ts#L839-L857) | [generic matrix and application](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L700), [named sequences](../../../machine/cpp/machine/devices/gx/gte.cpp#L702-L720) | Purpose/choice described in words, stages not merely listed. Triple commands mean three input vectors; no unsourced physical light-count model. NCS uses CODE only; NCCS modulates RGB; NCDS supplies unshifted modulated terms to cue. |
+| CC, CDP, DCPL | [CC/CDP](../../../machine/ts/machine/devices/gx/gte.ts#L859-L869), [DCPL](../../../machine/ts/machine/devices/gx/gte.ts#L881-L884), [modulated cue input](../../../machine/ts/machine/devices/gx/gte.ts#L835-L837) | [CC/CDP](../../../machine/cpp/machine/devices/gx/gte.cpp#L722-L732), [DCPL](../../../machine/cpp/machine/devices/gx/gte.cpp#L744-L747), [modulated cue input](../../../machine/cpp/machine/devices/gx/gte.cpp#L698-L700) | Starting boundary of each command explicit: before color matrix, or after color matrix; CC then CDP is not CDP alone. |
+| DPCS, INTPL, DPCT | [DPCS/INTPL](../../../machine/ts/machine/devices/gx/gte.ts#L773-L781), [DPCT](../../../machine/ts/machine/devices/gx/gte.ts#L886-L892), [cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948) | [DPCS/INTPL](../../../machine/cpp/machine/devices/gx/gte.cpp#L636-L644), [DPCT](../../../machine/cpp/machine/devices/gx/gte.cpp#L749-L755), [cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822) | Byte×65536 versus signedIR×4096 input scale explicit; every cue temporary permits negative values even when final LM=1; DPCT consumes current oldest entry then pushes, three times. |
+| GPF, GPL | [scalar operations](../../../machine/ts/machine/devices/gx/gte.ts#L894-L911) | [scalar operations](../../../machine/cpp/machine/devices/gx/gte.cpp#L757-L775) | GPL reads visible signed32 MAC words, scaled by SF, not a private unshifted accumulator; both commands always push RGB. |
+| Every color push | [limit and push](../../../machine/ts/machine/devices/gx/gte.ts#L1121-L1141), [CODE input](../../../machine/ts/machine/devices/gx/gte.ts#L1283-L1285) | [limit and push](../../../machine/cpp/machine/devices/gx/gte.cpp#L994-L1014), [CODE input](../../../machine/cpp/machine/devices/gx/gte.cpp#L1155-L1157) | Signed visible MAC right-shift four, then byte clamp, not IR conversion. CODE always current RGBC including DPCT. |
+| VMAD3 | [PLUS compute/schedule/clamp](../../../machine/ts/machine/devices/gx/gte.ts#L391-L431), [publication](../../../machine/ts/machine/devices/gx/gte.ts#L318-L325) | [PLUS compute/schedule/clamp](../../../machine/cpp/machine/devices/gx/gte.cpp#L256-L296), [publication](../../../machine/cpp/machine/devices/gx/gte.cpp#L176-L183) | Independent fixed-12 add/multiply path; signed16 operands; five-system-cycle pending publication versus nominal normal-command costs; invalid one-cycle command preserves results, publishes `0x81000000`. |
+
+Shared result and flag semantics were checked against [TS MAC/write/ordered-accumulation/IR stages](../../../machine/ts/machine/devices/gx/gte.ts#L652-L761) and [C++ equivalents](../../../machine/cpp/machine/devices/gx/gte.cpp#L517-L624). The normal summary mask excludes IR3, RGB, and IR0 saturation: [TS flags/mask](../../../machine/ts/machine/devices/gx/gte.ts#L93-L114), [C++ flags/mask](../../../machine/cpp/machine/devices/gx/gte.h#L89-L110). Command outputs are enumerated using actual assignments; no input registers are relabeled outputs merely because their words are retained.
+
+PLUS command-store admission, no input queue, busy input writes, DMA denial, and no GTE completion interrupt are already sourced in the fact sheet's PLUS admission/IRQ sections. They are not broadened here into a DMA-channel policy or global machine timing claim. Relevant PLUS input writes, command admission and DMA rejection: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L353-L389), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L219-L254); completion synchronization: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L302-L325), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L160-L183).
+
+## Added arithmetic derivations
+
+### Doubled oriented area, not Euclidean area
+
+The NCLIP expression is
+
+`D = x0*y1 + x1*y2 + x2*y0 - x0*y2 - x1*y0 - x2*y1`.
+
+Expansion of `(x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)` gives exactly D. Euclidean oriented triangle area is D/2. Thus the public reference calls D the doubled oriented area, not the area itself. `(0,0),(1,0),(0,1)` gives D=1 and area=1/2; exchange points 1/2 to get D=−1. No screen-Y handedness or front-face sign is inferred. Both owner expressions agree: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1007), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L881).
+
+### Color-output scale and gain scale
+
+These are derived units, not runtime type tags. With SF=1, a generic matrix stage gives `ASR(4096*CV + sum(m*v),12)`, before word wrap/clamp. Therefore Q12 matrix coefficients preserve v's scale and add CV in that scale. A later color application gives `ASR(byte*16*gain,12)`, and P gives another `ASR(result,4)`. Hence gain4096 preserves the byte, while NCS's unmodulated final result4096 feeds P directly and gives256, which clamps to255. This supports the explicit choice distinction between NCS (already-color-scaled matrix output) and NCCS (gain-scaled matrix output), without asserting an external lighting model. Sources: [TS matrix/application/push](../../../machine/ts/machine/devices/gx/gte.ts#L783-L849), [TS push](../../../machine/ts/machine/devices/gx/gte.ts#L1133-L1141); [C++ matrix/application](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L713), [C++ push](../../../machine/cpp/machine/devices/gx/gte.cpp#L1006-L1014).
+
+### NCCS identity-matrix example
+
+Precondition: reset-zero GTE, so off-diagonal coefficients, color offsets C13/C14/C15, and FIFO entries are zero. Reset facts: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L225-L249), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L88-L112).
+
+Program C8/C10/C12 and C16/C18/C20 to `0x00001000`. Their packed layouts give two identity matrices scaled4096. Program D0=`0x08001000` → `(x,y)=(4096,2048)`, D1=`0x00000400` → z1024. Program RGBC=`0x344080a0` → CODE0x34, RGB(160,128,64). Command `0x0008041b` decodes SF1, LM1, NCCS; nominal cycles17. Address derivation uses data base `0x08010244+4n`, control base `0x080102c4+4n`, and command `0x08010344` from the existing inventory.
+
+1. Each light sum is coefficient4096 times its matching vector component; shift12 yields `(4096,2048,1024)`.
+2. Identity color matrix and zero offsets preserve exactly that triple.
+3. Color products before shift are `(160*16*4096,128*16*2048,64*16*1024)=(10485760,4194304,1048576)`.
+4. Shift12 gives MAC/IR `(2560,1024,256)` = `(0x00000a00,0x00000400,0x00000100)`.
+5. P's shift4 gives `(160,64,16)`; CODE0x34 gives new RGB2=`0x341040a0`. D22 address is `0x08010244+88=0x0801029c`. RGB0/RGB1 remain zero after one push from a zero FIFO.
+6. All sums, intermediate IR, and output bytes are in range. FLAG=`0`; normal CYCLES=`0x00000011`. Normal write visibility applies, not PLUS delay.
+
+Decoded operands: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L1161-L1182), [TS matrices](../../../machine/ts/machine/devices/gx/gte.ts#L1196-L1208), [TS RGB/CODE](../../../machine/ts/machine/devices/gx/gte.ts#L1263-L1285); [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L1033-L1054), [C++ matrices](../../../machine/cpp/machine/devices/gx/gte.cpp#L1068-L1080), [C++ RGB/CODE](../../../machine/cpp/machine/devices/gx/gte.cpp#L1135-L1157). Execution and stage sources are in the family comparison table above.
+
+### DPCS halfway-cue example
+
+Precondition: separately reset-zero GTE. Program RGBC D6=`0x56604020`, yielding CODE0x56 and RGB(32,64,96). Program IR0 D8=`0x00000800` (2048), and far-color C21/C22/C23=`0x00000a00/0x00000800/0x00000400`, corresponding to target bytes(160,128,64) multiplied16. Command `0x00080410` selects DPCS, SF1, LM1 and nominal8 cycles.
+
+1. Starting terms `in=byte*65536` are `(2097152,4194304,6291456)`.
+2. Far terms `4096*far` are `(10485760,8388608,4194304)`.
+3. Difference terms before shift are `(8388608,4194304,−2097152)`; shift12 gives `(2048,1024,−512)`. Forced temporary LM0 preserves the negative blue difference despite selected LM1.
+4. Final pre-shift terms `in +2048*d` are `(6291456,6291456,5242880)`.
+5. Shift12 gives MAC/IR `(1536,1536,1280)` = `(0x00000600,0x00000600,0x00000500)`.
+6. P's shift4 gives bytes `(96,96,80)`. CODE0x56 packs RGB2=`0x56506060`; RGB0/RGB1 remain zero. All intermediates and outputs are in range, so FLAG=`0`; IR0 remains `0x00000800`; CYCLES=`0x00000008`.
+
+The cue implementation first computes all three differences, then final writes. Thus the described temporary values do not imply temporary difference words in IR: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822). DPCS scales inputs as byte×65536: [TS](../../../machine/ts/machine/devices/gx/gte.ts#L773-L776), [C++](../../../machine/cpp/machine/devices/gx/gte.cpp#L636-L639). Final push is sourced above.
+
+### Do not idealize the modulated cue endpoints
+
+The NCDS/CDP/DCPL source term `byte*16*IR` need not be divisible by4096. Even without saturation, its first cue shift truncates the difference. For example a lane with source byte1, gain1, far16 and SF1 has `in=16`, temporary difference `ASR(65536−16,12)=15`; with IR0=4096 the final MAC is `ASR(16+4096*15,12)=15`, not far16. Accordingly the command-reference entry does not promise an exact far endpoint merely from IR0=4096. It describes the full limited difference and points back to exact arithmetic. This follows directly from [TS modulated input and cue](../../../machine/ts/machine/devices/gx/gte.ts#L835-L837), [TS cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948); [C++ modulated input](../../../machine/cpp/machine/devices/gx/gte.cpp#L698-L700), [C++ cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822). Both authored numeric examples use integral shifts and avoid this discrepancy.
+
+## Editorial checks and integration notes
+
+- Exactly22 normal function headings plus one VMAD3 heading; no invented mnemonic expansions.
+- Every entry states function encoding, SF/LM/selector applicability, nominal count or actual PLUS duration, input register sets and scaling, stored-result/FIFO/FLAG effects, purpose, choice against related commands, and a sourced caution.
+- No runtime/source-path/host-language details are included in the public command prose.
+- Cross-references target existing exact arithmetic sections. Their headings/anchors must remain or be updated during assembly; the register FLAG anchor in particular should be checked against the publisher's slug generation.
+- The current baseline NCLIP summary/table also uses “signed area” loosely. Root should make the same doubled-oriented-area correction there if it retains that summary; this draft does not re-author the arithmetic appendix.
+- No repository files, runtime code, tooling, framework, or commits were changed by this author.
+
+
+## Graphics hand-off and visible-triangle example
+
+This expands source scope only for the concrete GTE -> GP0 -> graphics memory -> PCRTC recipe; it is not a general GPU chapter or Sony compatibility claim.
+
+- GP0 and GP1 are the two IO words immediately before GTE DATA0, deriving byte addresses 0801023CH and 08010240H from the mirrored IO/memory-map leaves. Both are mapped as CPU read/write registers; GP0 has a write-ready callback. Sources: [TS IO](../../../machine/ts/spec/bmsx/io.ts#L114-L122), [TS address expressions](../../../machine/ts/spec/bmsx/io.ts#L171-L179), [C++ IO/address expressions](../../../machine/cpp/spec/bmsx/io.h#L127-L135), [C++ addresses](../../../machine/cpp/spec/bmsx/io.h#L184-L192), [TS mappings](../../../machine/ts/machine/devices/gx/gpu.ts#L462-L472), [C++ mappings](../../../machine/cpp/machine/devices/gx/gpu.cpp#L52-L64). CPU direct-store admission is covered by B1/B3 above.
+- GP0 state command opcodes E1/E3/E4/E5/E6, fill02, polygon20, texture/gouraud/quad selectors and draw-to-displayed-field bit10 are from the matching spec leaves. Inclusive bottom/right and drawing coordinates are decoded by the shared spec owner. Sources: [TS GP0](../../../machine/ts/spec/gx/gp0.ts#L1-L49), [TS area/offset decoding](../../../machine/ts/spec/gx/gp0.ts#L69-L98), [C++ GP0](../../../machine/cpp/spec/gx/gp0.h#L1-L105), [TS state command effects](../../../machine/ts/machine/devices/gx/gpu.ts#L1200-L1247), [C++ effects](../../../machine/cpp/machine/devices/gx/gpu.cpp#L780-L823).
+- Fill packet takes three words; flat untextured triangle takes four. For opcode20, texture/gouraud/quad bits are all zero. Sources: [TS packet counts](../../../machine/ts/machine/devices/gx/gpu.ts#L1723-L1753), [C++ packet counts](../../../machine/cpp/machine/devices/gx/gpu.cpp#L1206-L1235). Command-color word then three coordinates are consumed in order: [TS flat triangle](../../../machine/ts/render/backend/software/gx_gpu_commands.ts#L200-L210), [C++ flat triangle](../../../machine/cpp/render/backend/software/gx_gpu_commands.cpp#L202-L213). Red is low byte, green next, blue next, five-bit storage conversion by truncating three low bits: [TS pixel packing](../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L15-L23), [C++ pixel packing](../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L27-L36).
+- GPU status bit26 is idle only with no pending completion, no ingress/FIFO or incomplete packet/image/polyline, and idle readback. Thus polling after a whole packet waits for command idle, not while halfway through it. Sources: [TS idle bit](../../../machine/ts/machine/devices/gx/gpu.ts#L180), [TS idle logic](../../../machine/ts/machine/devices/gx/gpu.ts#L1875-L1925), [C++ idle bit](../../../machine/cpp/machine/devices/gx/gpu.h#L55), [C++ idle logic](../../../machine/cpp/machine/devices/gx/gpu.cpp#L1353-L1401).
+- The 32-bit drawing-area state word is E402FCFFH = E4000000H | (191<<10) | 255. Fill size 00C00100H = (192<<16)|256. Polygon word 200000FFH = (20H<<24) | 255. These are explicit integer derivations, no SDK alias assumptions.
+- GX16 address is base + y*framebufferWidth + x with installed-memory wrap. The example uses base0/width1024 and source0,0; word 98432 = 96*1024+128 contains001FH. Sources: [TS local memory](../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L83-L91), [C++ local memory](../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L77-L80); framebuffer/format/PMODE conversion and display geometry are in the PCRTC fact sheet. Reset words and fields: [TS PCRTC spec](../../../machine/ts/spec/gx/pcrtc.ts#L12-L51), [TS reset words](../../../machine/ts/spec/gx/pcrtc.ts#L75-L98), [C++ spec/reset](../../../machine/cpp/spec/gx/pcrtc.h#L10-L100).
+- VBlank presentation latches PCRTC words before frame delivery. Cartridge-visible recipe relies on that edge, not immediate readback. Sources: [TS GPU presentation](../../../machine/ts/machine/devices/gx/gpu.ts#L1493-L1516), [C++ GPU presentation](../../../machine/cpp/machine/devices/gx/gpu.cpp#L975-L999), [TS runtime edge ordering](../../../machine/ts/machine/runtime/vblank.ts#L45-L62), [C++ runtime edge](../../../machine/cpp/machine/runtime/vblank.cpp#L31-L45). Exact PMODE/sample/geometry semantics retain previously reviewed PCRTC facts; only the explicit example combines them here.
+
+Execution evidence (not a new fact source): the ordered raw GTE, GP0 and PCRTC sequences ran through live mapped TS owners plus software raster/scanout. Screen words00400060/004000A0/00800080, NCLIP4096, OTZ511; after first real VBlank edge at system cycle624270, output256x192; VRAM(128,96)=001F and RGB255,0,0; VRAM(0,0)=0000 and RGB0,0,0. Raw alpha is zero in both; no claim of native or cartridge instruction execution. Ephemeral run /tmp/bmsx-gte-revision/render-example.ts and log, not new publisher/harness code.
+
+### Independent source audit supplement
+
+The following fills in direct source anchors for the example's combined claims;
+it does not expand the chapter into a general GPU contract.
+
+- **CPU GP0 admission, not DMA packet readiness:** The CPU-ready callback first
+  synchronizes completed command work, then requires ingress not stopped, empty
+  DMA ingress, an available slot in the 16-word command FIFO, and no DMA owner of
+  GP0. A resumed CPU store is released under the same conditions. With the
+  example's reset/no-other-producer assumptions, this is the stated free-slot
+  interlock. Twelve transmitted words comprise five one-word state commands,
+  three fill words and four triangle words; the example does not require a
+  full-FIFO test to establish its resulting image. Sources:
+  [TS CPU ready](../../../machine/ts/machine/devices/gx/gpu.ts#L2025-L2034),
+  [C++ CPU ready](../../../machine/cpp/machine/devices/gx/gpu.cpp#L1499-L1508),
+  [TS release](../../../machine/ts/machine/devices/gx/gpu.ts#L1915-L1922),
+  [C++ release](../../../machine/cpp/machine/devices/gx/gpu.cpp#L1392-L1398),
+  [TS FIFO capacity](../../../machine/ts/spec/gx/gp0.ts#L33-L34),
+  [C++ FIFO capacity](../../../machine/cpp/spec/gx/gp0.h#L35-L36).
+- **Draw mode, mask policy, fill dimensions and polygon selectors:**
+  E1000400H has bit10=1 and bit9=0; E6000000H leaves both mask-mode bits clear.
+  Opcode20H has semitransparency, texture, quad and Gouraud bits clear. The fill
+  width decode keeps X aligned to16 and rounds width up to16, but the example's
+  X0/width256 are already aligned; height192 is direct. Sources:
+  [TS draw bits](../../../machine/ts/spec/gx/gp0.ts#L44-L49),
+  [C++ draw bits](../../../machine/cpp/spec/gx/gp0.h#L46-L51),
+  [TS render selectors](../../../machine/ts/render/backend/gx_gpu_render_rules.ts#L83-L96),
+  [C++ render selectors](../../../machine/cpp/render/backend/gx_gpu_render_rules.h#L75-L88),
+  [TS fill decode](../../../machine/ts/render/backend/gx_gpu_render_rules.ts#L125-L135),
+  [C++ fill decode](../../../machine/cpp/render/backend/gx_gpu_render_rules.h#L117-L127),
+  [TS mask decode](../../../machine/ts/render/backend/gx_gpu_render_rules.ts#L337-L343),
+  [C++ mask decode](../../../machine/cpp/render/backend/gx_gpu_render_rules.h#L341-L347).
+- **Framebuffer and output-window derivation:** DISPFB1_LOW=000FA000H gives
+  base0, width-field16 hence1024 words, storage-selector31 henceGX16;
+  DISPFB1_HIGH=0 gives source0,0. DISPLAY1_LOW reset018252A8H decodes signal
+  position680,37 and magnification4,1. Reset SMODE1 signalStepX=4. New
+  DISPLAY1_HIGH=000BF3FFH contains horizontal extent1023 and vertical extent191.
+  Therefore output starts at0,0 after the single enabled circuit's crop, has
+  width ceil((680+1024)/4)-ceil(680/4)=256 and height191+1=192; magnification4,1
+  makes source pixels advance one per output pixel in each direction. Sources:
+  [TS framebuffer/window decode](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L361-L389),
+  [C++ decode](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L120-L150),
+  [TS crop/extents](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L391-L446),
+  [C++ crop/extents](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L152-L202),
+  [TS output extent](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L461-L468),
+  [C++ output extent](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L215-L222),
+  [TS signal step](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L270-L278),
+  [C++ signal step](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L89-L97),
+  [TS GX16 selector](../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L3-L8),
+  [C++ selector](../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L7-L12),
+  [TS selector use](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L163-L171),
+  [C++ selector use](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L26-L34).
+- **PMODE and alpha:** 0000FF21H means EN1=1, EN2=0, MMOD=1,
+  AMOD=0, ALP=255. The selected circuit1 operation is raw RGBA, not source-alpha
+  blending. It copies RGB directly and keeps the sample alpha, including zero.
+  GX16 word001FH expands to255,0,0,0 because 5-bit channel31 expands to255 and
+  mask bit15 is zero; word0000H expands to0,0,0,0. Thus zero alpha does not erase
+  the red RGB in the chapter's selected composition. Sources:
+  [TS composition](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L479-L501),
+  [C++ composition](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L233-L255),
+  [TS GX16 raw-RGBA operation](../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L125-L146),
+  [C++ raw-RGBA operation](../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L130-L155),
+  [TS sample palette](../../../machine/ts/render/backend/software/gx_gpu_scanout_palette.ts#L5-L11),
+  [C++ sample palette](../../../machine/cpp/render/backend/software/gx_gpu_scanout_palette.cpp#L7-L16),
+  [TS channel expansion](../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L21-L23),
+  [C++ channel expansion](../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L33-L35).
+- **Stored red and black:** The fill consumes the three words and writes black
+  into every selected destination word. The triangle consumes the constant color
+  and three screen words, uses constant RGB at covered interior pixels, and writes
+  with dithering/semistransparency/mask forcing disabled. Consequently red255
+  stores as31 (001FH), not8000H or801FH. GPU raster addressing uses1024 words per
+  row, matching the selected PCRTC GX16 width. Sources:
+  [TS fill](../../../machine/ts/render/backend/software/gx_gpu_commands.ts#L53-L72),
+  [C++ fill](../../../machine/cpp/render/backend/software/gx_gpu_commands.cpp#L10-L37),
+  [TS constant triangle](../../../machine/ts/render/backend/software/gx_gpu_commands.ts#L201-L205),
+  [C++ constant triangle](../../../machine/cpp/render/backend/software/gx_gpu_commands.cpp#L203-L207),
+  [TS covered pixel color](../../../machine/ts/render/backend/software/gx_gpu_rasterizer.ts#L331-L347),
+  [C++ covered pixel color](../../../machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp#L323-L339),
+  [TS render word](../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L115-L139),
+  [C++ render word](../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L100-L132),
+  [C++ 8-to-5-bit conversion](../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L162-L197),
+  [TS raster address](../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L11-L13),
+  [C++ raster address](../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L18-L24),
+  [TS row size](../../../machine/ts/spec/gx/vram.ts#L1-L5),
+  [C++ row size](../../../machine/cpp/spec/gx/vram.h#L9-L14).
+- **Latch scope, not atomic stores:** At VBlank begin, presentation copies all
+  currently programmed configuration words together. Separate writes are not an
+  atomic multiword transaction; an intervening edge can latch an intermediate
+  configuration. The example retains running reset timing and must finish its
+  four display writes before the VBlank edge for that whole new configuration to
+  appear at that edge. No interrupt mask is tested in the presentation call.
+  Sources:
+  [TS configuration latch](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L723-L730),
+  [C++ configuration latch](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L446-L453),
+  [TS VBlank order](../../../machine/ts/machine/runtime/vblank.ts#L44-L61),
+  [C++ VBlank order](../../../machine/cpp/machine/runtime/vblank.cpp#L31-L45).
+
+Audit result: the example's address/word/size/color calculations and the listed
+mirrored interfaces agree. The original TS GP0 bit-range and red-byte packing
+links were widened to cover their actual definitions; the C++ VBlank link was
+narrowed from an out-of-bounds line100 to31-45. Public prose was not edited by the
+auditor. Minor author action: "next two tables" precedes three GP0 tables; say
+"following GP0 tables". For local clarity, the latch paragraph can repeat the
+already cross-referenced rule to finish all four writes before the same VBlank
+entry, rather than allowing "visible together" to suggest atomic store admission.

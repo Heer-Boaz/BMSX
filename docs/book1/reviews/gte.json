@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Function and data flow separates GTE register arithmetic from GPU drawing/GEO transfers, and the independent normal and PLUS datapaths. Both figures show only sourced paths.",
+			"resolution": "The introduction and visible-image sequence distinguish register geometry, optional GTE color calculations, explicit cartridge GP0 submission, GPU graphics-memory writes and PCRTC display sampling. The example contains the concrete adjacent-unit setup rather than a promised future chapter.",
 			"open": []
 		},
 		"registers": {
@@ -9,7 +9,7 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Normal-command arithmetic, projection and PLUS specify all 22 normal functions, ordered 44-bit accumulation/wrap, SF/LM, explicit row-to-lane indexing, color/FIFO stages, matrix3/CV2 behavior, reciprocal algorithm and all257 ROM bytes, and signed three-lane multiply-add.",
+			"resolution": "Operation-specific scale/packing guidance and per-command purpose/input/option/output entries cover all22 normal functions plus VMAD3. The retained exact arithmetic specifies44-bit ordered wrap, clamps, matrix/cv2 behavior, reciprocal algorithm and257 ROM bytes. H is an unscaled projection numerator, not a shared scene-coordinate scale; NCLIP is doubled oriented area with MAC0 overflow qualifications.",
 			"open": []
 		},
 		"visibility": {
@@ -17,8 +17,10 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Normal CYCLES is the last nominal count, not a completion countdown. PLUS uses system cycles, five for VMAD3 or one for invalid commands; bit31 clears on publication while duration remains. No unestablished Hz conversion or automatic normal-command stall is claimed.",
-			"open": []
+			"resolution": "Mirrored installed-model and live timing/CPU owners establish33,868,800 system cycles/s, two-cycle admitted scalar word-store base cost, normal nominal counts without extra GTE CPU charge, and PLUS five/one-cycle deadlines. Specification tables distinguish logical32-bit transfers and arithmetic admission ceiling from physical bus guarantees.",
+			"open": [
+				"Independent GTE core clock and physical GTE/IO bus clock, pin width, arbitration/contended-transfer schedule and sustained guaranteed bandwidth are not defined by the inspected model/owners. These require an explicit hardware-specification decision; the draft states that they are not specified and does not invent Sony values."
+			]
 		},
 		"interrupts": {
 			"resolution": "Interrupts states the sourced absence of GTE completion IRQs and IRQ control words. PLUS result polling and the direct command word-store interlock are distinct mechanisms, not IRQ delivery.",
@@ -33,7 +35,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "The two programming examples give reset assumptions, ordered aligned raw address/word writes and derived results for RTPS and VMAD3, including exact output geometry/arithmetic, busy and publication behavior. Both sequences were also exercised through the live TS mapped-memory/GTE owner path.",
+			"resolution": "Parallel-written programming sections teach matrix packing/scales/SF/LM, retained state, flags, and actual choices per command. Ordered triangle RTPT->NCLIP->AVSZ3 feeds an explicit GP0 clear/draw and PCRTC latch sequence with visible pixel results; translated RTPS, NCCS, DPCS and PLUS examples have independently checked numerical readbacks. The triangle+scanout recipe ran through mapped TS owners and software raster/scanout, not a guest cartridge or native run.",
 			"open": []
 		}
 	},
