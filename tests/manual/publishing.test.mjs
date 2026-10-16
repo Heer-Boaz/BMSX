@@ -192,11 +192,10 @@ test('layout errors prevent a PDF/receipt: overflow, oversized groups, and clipp
 	}
 });
 
-test('PCRTC uses the shared publisher without promoting its eight open contracts', async t => {
+test('reviewed PCRTC uses the shared publisher with its hardware coverage closed', async t => {
 	const chapter = await loadChapter(repositoryRoot, 'pcrtc');
-	assert.equal(Object.values(chapter.review.coverage).flatMap(topic => topic.open).length, 8);
-	const failures = await publicationFailures(repositoryRoot, chapter);
-	assert.ok(failures.some(failure => failure.startsWith('visibility:')));
+	assert.equal(Object.values(chapter.review.coverage).flatMap(topic => topic.open).length, 0);
+	assert.deepEqual(await publicationFailures(repositoryRoot, chapter), []);
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-pcrtc-preview-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const output = await renderChapter(chapter, 'preview', directory);
@@ -220,16 +219,15 @@ test('PCRTC uses the shared publisher without promoting its eight open contracts
 	}
 });
 
-test('CLI checks/publication fail for PCRTC gaps from a different working directory', () => {
+test('CLI checks/publishes reviewed PCRTC from a different working directory', () => {
 	for (const mode of ['check', 'publish']) {
 		const result = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/manual/build.mjs'), mode, 'pcrtc'], {
 			cwd: tmpdir(), encoding: 'utf8',
 		});
-		assert.equal(result.status, 1);
+		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /Fact sheet: docs\/book1\/facts\/pcrtc\.md/);
-		assert.match(result.stderr, /Publication blocked:/);
-		assert.match(result.stderr, /exact presentation-latch edge/);
-		assert.doesNotMatch(result.stdout, /Published chapter:/);
+		assert.doesNotMatch(result.stderr, /Publication blocked:/);
+		if (mode === 'publish') assert.match(result.stdout, /Published chapter:/);
 	}
 	const usage = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/manual/build.mjs')], { encoding: 'utf8' });
 	assert.equal(usage.status, 1);

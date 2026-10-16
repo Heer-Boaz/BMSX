@@ -1,15 +1,23 @@
 # PCRTC fact sheet
 
 Editorial input for one hardware-manual chapter; not chapter prose. Source scope:
-the mirrored PCRTC spec leaf, its address constants, the live PCRTC owners, and
-PCRTC integration in the GPU owners, plus the six imported local-memory format
-constant declarations. No architecture document or reference PDF was used.
-Source state includes `ed2ceff96` (`retain PCRTC frame period as raw u32`).
-No disagreement was found between the inspected spec definitions and owners.
+the mirrored PCRTC spec/address leaves and live owners; required GPU command-buffer
+and runtime VBlank callsites; local-memory addressing and TS/C++ software scanout;
+and the mapped-memory/CPU owners needed to establish PCRTC access and faults.
+No architecture document or reference PDF was used. The existing timing facts
+include `ed2ceff96` (`retain PCRTC frame period as raw u32`).
+
+**Editorial authority:** at the user's explicit direction, matching TS/C++
+software composition is the manual's pixel-behavior authority. A conflicting
+WebGPU constant-blend coefficient is recorded separately in
+[the deferred backend note](../reviews/pcrtc-webgpu-constant-blend.md), not as
+alternate hardware behavior. No runtime fix is included. No disagreement was
+found between the inspected spec definitions and TS/C++ software/device facts.
 
 ## Register words
 
-- A word occupies four bytes. PCRTC indices 0–11 use
+- A PCRTC register word occupies four bytes; a local-memory word is two bytes
+  as established below. PCRTC indices 0–11 use
   `IO_GX_PCRTC_BASE + index * 4`; indices 12–25 use
   `IO_GX_PCRTC_TIMING_BASE + (index - 12) * 4`. The bases evaluate to
   `08010354H` and `080103ACH`; ten intervening words belong to the GTE-plus
@@ -86,10 +94,29 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   presentation words together, updates presentation timing when a beam-timing
   word changed, clears the dirty flags, and publishes scanout configuration.
   Sources: [latch][latch-ts], [mirror][latch-cpp], [publication][publish-ts],
-  [mirror][publish-cpp]. The inspected GPU owner calls this latch in
-  `presentReadyFrameOnVblankEdge()`. Sources: [callsite][presentation-ts],
-  [mirror][presentation-cpp]. Which VBlank edge invokes that method is an
-  editorial gap below.
+  [mirror][publish-cpp].
+- The normal presentation latch occurs on **VBlank entry**, not field end.
+  PCRTC service reports VBlank-begin at the active-display boundary; GPU
+  service forwards the edge, and timer dispatch sends it to VBlank handling.
+  VBlank-begin invokes presentation, which calls the latch; VBlank-end is
+  ignored by that handler. Presentation precedes the system VBlank IRQ
+  request. Sources: [service][service-ts], [mirror][service-cpp],
+  [forwarding][forward-ts], [mirror][forward-cpp], [timer dispatch][timer-ts],
+  [mirror][timer-cpp], [VBlank handler][vblank-ts], [mirror][vblank-cpp],
+  [latch call][presentation-ts], [mirror][presentation-cpp]. PCRTC reset is
+  an exception to waiting for that edge: it installs both copies and publishes
+  reset configuration immediately. Sources: [reset][reset-ts], [mirror][reset-cpp].
+- A timing write changes live beam timing immediately, but displayed scanout
+  still consumes the retained presentation timing until that timing is latched.
+  Stopping the beam suppresses its timing service; it does **not** immediately
+  clear the previously published scanout. Source-derived owner witness: after
+  enabling/latching circuit 1, setting SMODE1.PRST leaves live `timing.running`
+  false and `nextDeadlineCycle()` at -1 while displayed `scanout.outputActive`
+  remains true. Do not promise immediate blanking from a beam-stop write.
+  Sources: [live timing write][read-write-ts], [mirror][read-write-cpp],
+  [stopped deadline][deadline-ts], [mirror][deadline-cpp],
+  [latched timing][latch-ts], [mirror][latch-cpp],
+  [published scanout source][publish-ts], [mirror][publish-cpp].
 
 ## Circuit datapath facts
 
@@ -103,10 +130,14 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   extent + 1)`. Its vertical height is vertical extent plus one. Horizontal
   boundaries are rounded upward to signal-step boundaries before conversion
   to output pixels. The output origin uses the minimum enabled signal X/Y;
-  output bounds cover both enabled circuits. Pixel output is active only
-  when beam timing runs, signal step X is nonzero, and a circuit is enabled.
-  Sources: [activation/crop/extents][extents-ts], [mirror][extents-cpp],
-  [output bounds][bounds-ts], [mirror][bounds-cpp].
+  output bounds cover both enabled circuits. The displayed scanout is active
+  only when its **latched presentation timing** runs, its signal step X is
+  nonzero, and a circuit is enabled. These are presentation-state conditions,
+  not a guarantee that stopping the live beam immediately blanks an already
+  latched display. Sources: [activation/crop/extents][extents-ts],
+  [mirror][extents-cpp], [output bounds][bounds-ts], [mirror][bounds-cpp],
+  [presentation timing/publication][latch-ts], [mirror][latch-cpp],
+  [scanout update][publish-ts], [mirror][publish-cpp].
 - `BGCOLOR_LOW[23:0]` becomes the background color; `PMODE_LOW[15:8]` becomes
   the constant blend alpha. `SMODE2_LOW.INT` selects interlaced traversal;
   FFMD selects frame mode only when INT is set. Interlaced output advances
@@ -114,23 +145,165 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   two and source phase is `(display signal Y XOR FIELD) AND 1`; otherwise
   source stride is one and phase zero. Sources: [decode][mode-ts],
   [mirror][mode-cpp], [field changes][field-ts], [mirror][field-cpp].
-- The storage selector dispatches as follows; selectors not listed select
-  the named zero path. This is path selection, not a claim about a sampled
-  zero path's pixel value or storage layout. Sources: [storage dispatch][storage-ts],
-  [mirror][storage-cpp], [format constants][formats-ts], [mirror][formats-cpp].
+## Local-memory words, sampling and address layout
 
-  | Selector | Circuit 1 path | Circuit 2 path |
-  |---:|---|---|
-  | 0 | CT32 | CT32 |
-  | 1 | CT24 | CT24 |
-  | 2 | CT16 | CT16 |
-  | 10 | CT16S | CT16S |
-  | 18 | GPU24 | zero |
-  | 31 | GX16 | GX16 |
-- MMOD, AMOD, SLBG and ALP select named raw/source-alpha/constant-alpha
-  output paths. The owner special-cases ALP 0 and 255. This fact sheet does
-  not derive a pixel blend equation from those path names.
-  Sources: [path selection][blend-ts], [mirror][blend-cpp].
+- Local memory contains `00200000H` bytes = `00100000H` sixteen-bit words in
+  the installed model. A local-memory word is **two bytes**, low byte first,
+  unlike a four-byte PCRTC register word. Sources: [model][model-ts],
+  [mirror][model-cpp], [word allocation][vram-state-ts], [mirror][vram-state-cpp],
+  [byte loading][vram-load-ts], [mirror][vram-load-cpp],
+  [address geometry][vram-spec-ts], [mirror][vram-spec-cpp].
+- `FBP` is the nine-bit base field. `B = FBP << 12` local-memory words, so
+  one FBP unit is 4096 words = 8192 bytes (`00002000H`). `P` is the six-bit
+  FBW field, and `W = 64 * P` pixels. FBW zero supplies zero row stride for
+  GX16 or zero pages-per-row for the tiled formats; it does not disable the
+  circuit or raise an addressing exception in these functions. Sources:
+  [base/width decode][circuit-ts], [mirror][circuit-cpp],
+  [addressing][address-layout-ts], [mirror][address-layout-cpp],
+  [word size][vram-load-ts], [mirror][vram-load-cpp].
+- Format dispatch and packing are as follows. `A` is the mapped local-memory
+  word address, `L` the word at A, `H` the word at A+1. Channels are unsigned
+  eight-bit sample values. Source selectors: [constants][formats-ts],
+  [mirror][formats-cpp], [dispatch][storage-ts], [mirror][storage-cpp].
+  Packing: [sample functions][sample-ts], [mirror][sample-cpp],
+  [RGB555 palette][palette-ts], [mirror][palette-cpp],
+  [five-bit expansion][expand-ts], [mirror][expand-cpp].
+
+  | Selector | Format | Circuit availability | RGB sample | Sample alpha |
+  |---:|---|---|---|---|
+  | 0 | CT32 | 1 and 2 | R=L[7:0], G=L[15:8], B=H[7:0] | H[15:8] |
+  | 1 | CT24 | 1 and 2 | same placement as CT32; H[15:8] ignored | 128 |
+  | 2 | CT16 | 1 and 2 | R=L[4:0], G=L[9:5], B=L[14:10], each expanded | 128 when L[15]=1, otherwise 0 |
+  | 10 | CT16S | 1 and 2 | same packing as CT16; different address layout | 128 when L[15]=1, otherwise 0 |
+  | 18 | GPU24 | 1 only | packed byte sequence described below | 128 |
+  | 31 | GX16 | 1 and 2 | same packing as CT16; linear address layout | 128 when L[15]=1, otherwise 0 |
+  | other; or 18 on circuit 2 | zero sample | both remain enabled as programmed | R=G=B=0 | 0 |
+
+- A five-bit component `c` expands as `(c << 3) | (c >> 2)`, not a shift
+  alone. Sources: [expansion][expand-ts], [mirror][expand-cpp].
+- GPU24 reads words L and H from CT16-mapped coordinates
+  `((3*x) >> 1) + k, y`, with k=0 and 1 respectively. Even x:
+  R=L[7:0], G=L[15:8], B=H[7:0]. Odd x:
+  R=L[15:8], G=H[7:0], B=H[15:8]. Sources:
+  [GPU24 address][address-layout-ts], [mirror][address-layout-cpp],
+  [sample][sample-ts], [mirror][sample-cpp].
+- Zero sampling means RGBA=(0,0,0,0), not no operation and not a disabled
+  circuit. Its result follows PMODE: raw RGB clears RGB but preserves prior
+  alpha; raw RGBA clears all channels; source-alpha blending leaves prior
+  RGB, while AMOD=0 selects the zero source alpha. Sources:
+  [selector dispatch][storage-ts], [mirror][storage-cpp],
+  [zero RGB][zero-ts], [zero RGBA][zero-rgba-ts],
+  [zero source blend][zero-source-ts], [zero source alpha][zero-source-rgba-ts],
+  [mirror][sample-cpp],
+  [operations][generic-ops-ts], [mirror][generic-ops-cpp],
+  [selection][blend-ts], [mirror][blend-cpp].
+
+### Address formulas
+
+These are source-equivalent integer/bit formulas. `x,y` are framebuffer sample
+coordinates after the circuit's source-origin/magnification/field calculation;
+`>>` denotes unsigned right shift here. `B,P,W` are defined above.
+All returned addresses are local-memory word indices, not byte addresses.
+
+- The logical mask is `M = 000FFFFFH`. Every word fetch also masks with
+  installed word count minus one, equal to M for the installed model. Thus
+  base-plus-offset wraps, and CT32/CT24's second word wraps too. FBP values
+  above the installed period are not rejected. Sources:
+  [logical geometry][vram-spec-ts], [mirror][vram-spec-cpp],
+  [address functions][address-layout-ts], [mirror][address-layout-cpp],
+  [word fetch][word-fetch-ts], [mirror][word-fetch-cpp],
+  [allocation][vram-state-ts], [mirror][vram-state-cpp],
+  [model][model-ts], [mirror][model-cpp].
+- CT32 and CT24 use the following address calculation. Sources:
+  [CT32/24 address][address32-ts], [mirror][address32-cpp].
+
+  ```text
+  page   = (y >> 5) * P + (x >> 6)
+  px     = x & 63; py = y & 31
+  bx     = px >> 3; by = py >> 3
+  block  = (bx & 1) | ((by & 1) << 1) | ((bx & 2) << 1)
+         | ((by & 2) << 2) | ((bx & 4) << 2)
+  column = (px & 1) | ((py & 1) << 1) | ((px & 6) << 1)
+         | ((py & 6) << 3)
+  A      = (B + (page << 12) + (block << 7) + (column << 1)) & M
+  ```
+
+- CT16 and CT16S share page and column calculations but use different
+  block calculations. Sources: [CT16/16S address][address16-ts],
+  [mirror][address16-cpp].
+
+  ```text
+  page   = (y >> 6) * P + (x >> 6)
+  px     = x & 63; py = y & 63
+  bx     = px >> 4; by = py >> 3
+  column = ((px & 1) << 1) | ((px & 2) << 2) | ((px & 4) << 2)
+         | ((px & 8) >> 3) | ((py & 1) << 2) | ((py & 2) << 4)
+         | ((py & 4) << 4)
+  CT16 block  = ((bx & 1) << 1) | (by & 1) | ((bx & 2) << 2)
+              | ((by & 2) << 1) | ((by & 4) << 2)
+  CT16S block = (by & 1) | ((bx & 1) << 1) | (by & 4)
+              | ((by & 2) << 2) | ((bx & 2) << 3)
+  A      = (B + (page << 12) + (block << 7) + column) & M
+  ```
+
+- GX16 is linear: `A = (B + y * W + x) & M`. GPU24 uses the CT16 address
+  formula at the two coordinates specified above. Sources:
+  [GX16/GPU24 address][address-linear-ts], [mirror][address-linear-cpp].
+
+## PMODE composition and channel arithmetic
+
+- Composition supplies background where needed, then circuit 2, then circuit 1.
+  Background R=BGCOLOR_LOW[7:0], G=[15:8], B=[23:16], alpha=0.
+  A disabled circuit performs no operation. Operations apply only inside the
+  circuit's own display rectangle and selected field rows, not the whole
+  output. Sources: [background decode][mode-ts], [mirror][mode-cpp],
+  [background/order][composition-ts], [mirror][composition-cpp],
+  [background fill][background-cpp], [windowed operations][generic-ops-ts],
+  [mirror][generic-ops-cpp], [enable/operation selection][blend-ts],
+  [mirror][blend-cpp].
+- Circuit 2 actions are the following. Prior RGB/alpha are the background
+  values at the pixel. Sources: [selector producer][blend-ts],
+  [mirror][blend-cpp], [raw RGB/RGBA/alpha actions][raw-ops-ts],
+  [mirror][generic-ops-cpp].
+
+  | SLBG | AMOD | RGB after circuit 2 | Alpha after circuit 2 |
+  |---:|---:|---|---|
+  | 0 | 0 | circuit-2 RGB | background alpha 0 |
+  | 0 | 1 | circuit-2 RGB | circuit-2 sample alpha |
+  | 1 | 0 | background RGB | background alpha 0 |
+  | 1 | 1 | background RGB | circuit-2 sample alpha |
+
+- Circuit 1 actions are the following. `D` and `Ad` mean the prior RGB
+  component and alpha after background/circuit 2 at this pixel; `C1` and
+  `A1` are circuit-1 sample channels. Sources: [selector producer][blend-ts],
+  [mirror][blend-cpp], [source-alpha operations][source-ops-ts],
+  [constant operations][constant-ops-ts], [mirror operations][generic-ops-cpp].
+
+  | MMOD | ALP | RGB action | Alpha when AMOD=0 | Alpha when AMOD=1 |
+  |---:|---|---|---|---|
+  | 0 | ignored | blend C1 over D with a=min(2*A1,255) | A1 unchanged | Ad unchanged |
+  | 1 | 0 | retain D | A1 unchanged | Ad unchanged |
+  | 1 | 1–254 | blend C1 over D with a=ALP | A1 unchanged | Ad unchanged |
+  | 1 | 255 | select C1 | A1 unchanged | Ad unchanged |
+
+- For each eight-bit R, G, B component independently:
+  `output = integer_quotient(C1*a + D*(255-a) + 127, 255)`.
+  The nonnegative quotient rounds the weighted sum to nearest. Inputs and
+  coefficient are in 0..255, so the resulting RGB also lies in 0..255;
+  no additional channel saturation is applied. MMOD=0 doubles the source
+  alpha and saturates the **coefficient** at 255; MMOD=1 uses the eight-bit
+  ALP directly, without doubling. Output alpha is selected, not blended
+  with this equation. Sources: [RGB equation][blend-equation-ts],
+  [mirror][blend-equation-cpp], [coefficient/alpha][source-ops-ts],
+  [mirror][generic-ops-cpp], [constant coefficient][constant-ops-ts].
+- In particular, A1=128 gives coefficient 255 with MMOD=0, but selected
+  output alpha remains 128 with AMOD=0. CT24/GPU24 samples and sixteen-bit
+  samples with bit15 set can therefore supply full source RGB without
+  alpha255. AMOD=1 preserves alpha0 where circuit 2 supplies no alpha,
+  even if circuit 1 supplies RGB. Sources: [sampling][sample-ts],
+  [mirror][sample-cpp], [palette][palette-ts], [mirror][palette-cpp],
+  [alpha selection][source-ops-ts], [mirror][generic-ops-cpp],
+  [background/order][composition-ts], [mirror][composition-cpp].
 
 ## Timing and events
 
@@ -211,29 +384,164 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   Sources: [event raise][raise-ts], [mirror][raise-cpp], [service][service-ts],
   [mirror][service-cpp], [forwarding][forward-ts], [mirror][forward-cpp],
   [IRQ constant][irq-ts], [mirror][irq-cpp].
+- SIGNAL, FINISH and EDWINT are named bits 0, 1 and 4, but **normal device
+  execution has no producer for them** in the searched mirrored machine/spec
+  trees. The complete CSR mutation surface is reset, CSR W1C, FIELD updates,
+  private event raising, and retained-state restoration; the only event-raise
+  callsites pass HSINT and VSINT. These three events remain clear after reset
+  during normal device execution. Do not call them hardwired zero: arbitrary
+  restored pending bits remain retained, W1C and maskable, including the
+  immediate-unmask IRQ rule. No draw-completion timing is implied by their
+  names. Sources: [bits/reset][bits-ts], [mirror][bits-cpp],
+  [reset][reset-ts], [mirror][reset-cpp], [W1C/masks][status-write-ts],
+  [mirror][status-write-cpp], [all event callsites][service-ts],
+  [mirror][service-cpp], [private event setter][raise-ts], [mirror][raise-cpp],
+  [retained restoration][restore-ts], [mirror][restore-cpp].
 - A CSR RESET action takes priority over FLUSH when both are written.
-  RESET calls the GP0 clearing path, resets GPU draw/display registers,
-  restores the complete PCRTC configuration plus CSR/IMR, restarts the beam,
+  RESET calls the GP0 clearing path, applies the bounded GPU-register reset
+  listed below, restores the complete PCRTC configuration plus CSR/IMR,
+  restarts the beam,
   and publishes reset scanout configuration immediately. The GPU then latches
   its presentation registers and marks presentation pending. Sources:
   [action dispatch][dispatch-ts], [mirror][dispatch-cpp],
   [GPU register reset][gpu-reset-ts], [mirror][gpu-reset-cpp],
   [PCRTC reset][reset-ts], [mirror][reset-cpp].
-- FLUSH calls the GP0 clearing path without the PCRTC reset call. That path
-  resets DMA ingress and FIFO, clears ingress state, flushes image-load data
-  to VRAM, calls `abortReadbackAndQueuedCommands`, conditionally completes
-  the pending accepted command target, zeroes pending completion and packet
-  counts, and clears image-load/polyline state. No statement that FLUSH
-  discards all accepted work or rolls back VRAM follows from these calls.
-  Sources: [dispatch][dispatch-ts], [mirror][dispatch-cpp],
-  [clearing path][flush-ts], [mirror][flush-cpp].
+- FLUSH uses the same GP0 clearing path as RESET, without resetting PCRTC
+  or GPU draw/display registers. Both actions drop DMA ingress and GP0 FIFO
+  contents, clear partial command/polyline parsing state and pending command
+  timing, and terminate readback. This is **not** a general cancellation or
+  undo of accepted rendering. Sources: [action dispatch][dispatch-ts],
+  [mirror][dispatch-cpp], [common clearing path][flush-ts], [mirror][flush-cpp],
+  [parser reset][parser-clear-ts], [mirror][parser-clear-cpp],
+  [readback cancellation][abort-ts], [mirror][abort-cpp].
+- The exhaustive command-buffer cancellation cases are below. The common
+  path then marks a pending accepted raster/upload target complete only if
+  it is still retained; it clears its completion deadline afterward.
+  Sources: [command-buffer branches][abort-ts], [mirror][abort-cpp],
+  [completion condition][flush-ts], [mirror][flush-cpp].
+
+  | Readback state | Effect on retained commands |
+  |---|---|
+  | idle, next unexecuted command is not VRAM-to-CPU | keep the retained raster/upload commands |
+  | idle, next unexecuted command is VRAM-to-CPU | remove that readback and subsequent commands, retain its predecessors |
+  | pending, readback fence retained | remove that readback and subsequent commands, retain its predecessors; reset readback |
+  | submitted or ready; remaining non-idle branch | clear command/word/executed/presentation counts; reset readback |
+
+- Readback reset returns the port to idle, clears its fence, dimensions and
+  cursor, changes its completion token and drops its DMA request. Completion
+  requires submitted phase plus matching token, so canceled completion does
+  not make data ready afterward. The command parser cannot advance beyond
+  an active readback. Sources: [readback reset/completion][readback-ts],
+  [mirror completion][readback-cpp], [mirror reset][readback-reset-cpp], [DMA request][readback-request-ts],
+  [mirror][readback-request-cpp], [parser stop][parser-stop-ts],
+  [mirror][parser-stop-cpp].
+- A partial CPU-to-VRAM upload with only its three-word header is removed.
+  If payload words were accepted, clearing emits the upload with its actual
+  accepted word count. Its pixel count is
+  `min(width * height, 2 * (accepted word count - 3))`; those pixels are
+  **processed** in row order, subject to the accepted command's retained
+  mask-bit mode. With mask checking enabled, destination bit15 suppresses
+  that pixel's write. When a write occurs, mask-setting mode forces bit15;
+  otherwise source bit15 is retained. The missing rectangle remainder is
+  not padded. Thus FLUSH or RESET can commit a partial upload instead of
+  undoing it, but does not guarantee a memory write for every accepted pixel.
+  Sources: [partial upload][upload-flush-ts], [mirror][upload-flush-cpp],
+  [accepted pixel count][upload-count-ts], [mirror][upload-count-cpp],
+  [retained command controls][command-controls-ts], [mirror][command-controls-cpp],
+  [software upload][upload-write-ts], [mirror][upload-write-cpp],
+  [masked write][masked-write-ts], [mirror][masked-write-cpp].
+- GPU register reset is bounded: it clears GP0/GP1 command words, drawing
+  mode, texture window, drawing-area corners, drawing offset, mask-bit mode
+  and display start; restores display mode, status, horizontal display range
+  and vertical display range defaults; and disables readback DMA mode.
+  It does **not** reset the programmed VRAM Y address extension; the current
+  extension is copied to presentation afterward. Do not generalize this into
+  "all GPU registers return to defaults." Sources:
+  [GPU reset assignments][gpu-reset-ts], [mirror][gpu-reset-cpp],
+  [extension programming][extension-write-ts], [mirror][extension-write-cpp],
+  [presentation copy][gpu-present-ts], [mirror][gpu-present-cpp].
+- This GPU register reset does not separately reset the whole command buffer.
+  A changed
+  command serial resets the software consumer's command cursor, not its
+  local-memory contents. Do not describe these actions as erasing or restoring
+  local memory. Sources: [GPU register reset][gpu-reset-ts],
+  [mirror][gpu-reset-cpp], [action path][dispatch-ts], [mirror][dispatch-cpp],
+  [software consumption][command-consumer-ts], [mirror][command-consumer-cpp].
+
+## Mapped access and faults
+
+The following facts cover ordinary CPU mapped data loads/stores to the listed
+PCRTC addresses. They do not claim a fault-free DMA, instruction-fetch or render
+path. The PCRTC callbacks provide raw word accesses; system memory and CPU owners
+supply width, alignment and exception behavior.
+
+| CPU access | Address condition | Result | Sources |
+|---|---|---|---|
+| register-word/U32 load/store | four-byte aligned | one full register-word read/write | [read][bus-read-ts], [mirror][bus-read-cpp], [write][bus-write-ts], [mirror][bus-write-cpp] |
+| U8 load | four-byte aligned | full register read, returning bits7:0 | [byte read][bus-u8-read-ts], [mirror][bus-u8-read-cpp] |
+| U8 load | word offset1,2,3 | UNALIGNED_IO bus fault, no PCRTC callback | [byte read][bus-u8-read-ts], [mirror][bus-u8-read-cpp] |
+| U8 store | any PCRTC byte address | UNALIGNED_IO bus fault, no PCRTC callback | [byte write][bus-u8-write-ts], [mirror][bus-u8-write-cpp] |
+| U16 load/store | even | UNALIGNED_IO bus fault, including four-byte aligned addresses | [halfword read][bus-u16-read-ts], [mirror][bus-u16-read-cpp], [write][bus-u16-write-ts], [mirror][bus-u16-write-cpp] |
+| U16 load/store | odd | CPU address exception before mapped access | [alignment masks][access-kind-ts], [mirror][access-kind-cpp], [CPU loads][cpu-load-ts], [mirror][cpu-load-cpp], [stores][cpu-store-ts], [mirror][cpu-store-cpp] |
+| register-word/U32/F32/F64 load/store | not four-byte aligned | CPU address exception before mapped access | [alignment masks][access-kind-ts], [mirror][access-kind-cpp], [CPU loads][cpu-load-ts], [mirror][cpu-load-cpp], [stores][cpu-store-ts], [mirror][cpu-store-cpp] |
+
+- F32 transfers the bits of one word. F64 transfers a word at A followed
+  by a word at A+4, low word first, and stops if the first faults. F64 needs
+  four-byte, not eight-byte, alignment. These are two word callbacks within
+  one CPU instruction, not evidence that a VBlank service/latch can occur
+  between the halves. The timing owner explicitly treats CPU instructions
+  as atomic and may service a deadline afterward. Multiword stores similarly
+  perform successive individual word
+  writes, stopping at the first fault without undoing earlier writes. The
+  two PCRTC ranges remain separated by non-PCRTC registers. Sources:
+  [F32/F64 reads][bus-float-read-ts], [mirror][bus-float-read-cpp],
+  [writes][bus-float-write-ts], [mirror][bus-float-write-cpp],
+  [alignment][access-kind-ts], [mirror][access-kind-cpp],
+  [multiword store][cpu-multiword-ts], [mirror][cpu-multiword-cpp],
+  [instruction-atomic timing][instruction-timing-ts], [mirror][instruction-timing-cpp],
+  [mapping][addr-ts], [mirror][addr-cpp].
+- CPU data load/store dispatch has no privilege gate, and PCRTC callbacks
+  have no user/supervisor selection. These accesses are available in either
+  CPU mode; COP0 privilege rules do not apply to PCRTC MMIO. PCRTC installs
+  no write-ready line, so these stores do not wait on a PCRTC ready signal.
+  Sources: [CPU load/store dispatch][cpu-access-ts], [mirror][cpu-access-cpp],
+  [callbacks][callbacks-ts], [mirror][callbacks-cpp],
+  [registration][registration-ts], [mirror][registration-cpp],
+  [ready rule][bus-ready-ts], [mirror][bus-ready-cpp].
+- Misalignment raises CPU address-error-load (CAUSE `00000010H`) or
+  address-error-store (`00000014H`) and records the attempted address in
+  BAD_ADDRESS before mapped access. A new mapped-data bus fault raises
+  CPU data-bus-error (`0000001CH`); a faulting load does not overwrite its
+  destination. These are CPU exceptions, not PCRTC event bits or PCRTC IRQs.
+  Sources: [exception constants][cause-ts], [mirror][cause-cpp],
+  [load/store dispatch][cpu-load-ts], [mirror][cpu-load-cpp],
+  [store][cpu-store-ts], [mirror][cpu-store-cpp],
+  [address exception][cpu-address-ts], [mirror][cpu-address-cpp].
+- The system bus-fault latch retains the first fault's code/address/access
+  until acknowledged, while every fault increments its sequence. A nonzero
+  ACK write clears the three detail words; reset/clear values are zero.
+  The PCRTC word mappings are not in the memory owner's read-only set;
+  CSR_HIGH/IMR_HIGH writes are ignored device writes, not READ_ONLY faults.
+  Sources: [fault latch][bus-fault-ts], [mirror][bus-fault-cpp],
+  [clear/reset][bus-ack-ts], [mirror][bus-ack-cpp],
+  [ACK write][bus-ack-write-ts], [mirror][bus-ack-write-cpp],
+  [read-only set][bus-readonly-ts], [mirror][bus-readonly-cpp],
+  [PCRTC dispatch][dispatch-ts], [mirror][dispatch-cpp].
+- System fault register addresses are CODE `08010208H`, ADDR `0801020CH`,
+  ACCESS `08010210H`, ACK `08010214H`. Codes are NONE0, UNMAPPED1,
+  UNALIGNED_IO2, READ_ONLY3. Access records combine READ bit0 or WRITE bit1
+  with U8 bit8, U16 bit9, U32 bit10, Word bit11, F32 bit12 or F64 bit13.
+  These are system bus words, not additional PCRTC registers. Sources:
+  [fault-address expressions][fault-address-ts], [mirror][fault-address-cpp],
+  [fault offsets][fault-offset-ts], [mirror][fault-offset-cpp],
+  [I/O base/word][memory-base-ts], [mirror][memory-base-cpp],
+  [fault codes/access bits][fault-bits-ts], [mirror][fault-bits-cpp].
 
 ## Evaluated programming inputs
 
 These examples evaluate the reset constants through the cited field decoders.
-They do not add a memory format, a write-to-display deadline, or a bus-access
-rule. All address/value pairs below are PCRTC word writes; the source scope
-does not supply assembly syntax or a cartridge-side store utility.
+All address/value pairs below are aligned PCRTC word writes. Their geometry and
+write order do not supply assembly syntax or a cartridge-side store utility.
 
 ### E1. Circuit 1 with the reset display geometry
 
@@ -278,16 +586,19 @@ does not supply assembly syntax or a cartridge-side store utility.
 - For the stated PMODE word, MMOD = 1 and ALP = 255 select circuit 1's
   `RAW_RGBA` path because AMOD = 0. Circuit 1 covers the entire output,
   so the owner selects no circuit-2 draw path and does not require a
-  background draw. This proves selection of an unblended path, not a
-  sampled pixel's alpha value or a blend equation.
-  Sources: [composition selection][blend-ts], [mirror][blend-cpp].
+  background draw. The sample's original RGB and alpha are selected;
+  GX16 sample alpha is 0 or 128 from local-memory bit15, not necessarily
+  255. Sources: [composition selection][blend-ts], [mirror][blend-cpp],
+  [sample packing][palette-ts], [mirror][palette-cpp],
+  [raw operation][raw-ops-ts], [mirror][generic-ops-cpp].
 - These writes are configuration writes and use the presentation-copy rule
   above. None is a beam-timing word. The write order does not establish an
-  atomic update across an intervening presentation latch, and the sources
-  do not justify a particular VBlank edge or a visible first-frame deadline.
+  atomic update across an intervening VBlank-entry latch, nor a visible
+  first-frame deadline independent of when the words are written.
   Sources: [configuration writes][read-write-ts], [mirror][read-write-cpp],
   [beam-timing set][timing-set-ts], [mirror][timing-set-cpp],
-  [latch][latch-ts], [mirror][latch-cpp].
+  [latch][latch-ts], [mirror][latch-cpp], [VBlank entry][vblank-ts],
+  [mirror][vblank-cpp].
 
 ### E1b. Change the source origin and display-window size
 
@@ -344,10 +655,12 @@ does not supply assembly syntax or a cartridge-side store utility.
   `628` field end, returning to within-field half-line zero. HSync schedule
   is `2, 4, 6, ...`; the pending-HSINT suppression and clear rules still
   apply. Within-field VBlank-active is false below 576 and true from 576
-  through the remainder of the field. These are beam/event landmarks,
-  not presentation-latch edges. Sources: [restart][restart-ts],
-  [mirror][restart-cpp], [service][service-ts], [mirror][service-cpp],
-  [vertical thresholds][vertical-ts], [mirror][vertical-cpp].
+  through the remainder of the field. The VBlank-begin landmark also
+  selects the normal presentation latch. These landmarks are not an
+  electrical waveform. Sources: [restart][restart-ts], [mirror][restart-cpp],
+  [service][service-ts], [mirror][service-cpp],
+  [vertical thresholds][vertical-ts], [mirror][vertical-cpp],
+  [VBlank handling][vblank-ts], [mirror][vblank-cpp].
 - Reset has even VFP, so the FIELD toggle condition is false. Reset FIELD
   is zero; the first VSync sets it to one rather than toggling it.
   Sources: [reset CSR][leaf-ts], [mirror][leaf-cpp],
@@ -402,53 +715,29 @@ does not supply assembly syntax or a cartridge-side store utility.
   Sources: [context][context-ts], [mirror][context-cpp],
   [composition count][leaf-ts], [mirror][leaf-cpp].
 
-## Editorial gaps: omit rather than infer
+## Editorial closure and limits
 
-- **Presentation edge:** the inspected GPU method is named
-  `presentReadyFrameOnVblankEdge`; its callers selecting VBlank begin or end
-  are outside this sheet's source scope. Do not say that ordinary
-  configuration writes become visible specifically at VBlank begin or end.
-  Sources: [latch callsite][presentation-ts], [mirror][presentation-cpp].
-- **Format packing:** only the six format constant declarations were inspected
-  in `gpu_local_memory`, not its storage datapath. Do not supply pixel packing,
-  local-memory addressing, framebuffer-wrap claims, or infer the pixel
-  result of the named zero path. Sources: [format declarations][formats-ts],
-  [mirror][formats-cpp], [path dispatch][storage-ts], [mirror][storage-cpp].
-- **Blend equation/color channels:** path names and the 24-bit background
-  mask do not specify channel order, arithmetic, saturation, or rounding.
-  The owners choosing paths do not execute the pixel blend in these files.
-  Sources: [background/path selection][mode-ts], [blend selection][blend-ts],
-  [mirror][mode-cpp], [mirror][blend-cpp].
-- **PMODE programmer-facing selector semantics:** the inspected owner
-  selects named draw paths for MMOD, AMOD and SLBG, but does not execute
-  those draw paths. A truth table of their names is available; a complete
-  RGB/alpha operation reference, including claims that a pixel is opaque,
-  needs the owning composition datapath. Do not expand the raw-path
-  selection in E1 into an alpha-value guarantee.
-  Sources: [path selection][blend-ts], [mirror][blend-cpp].
-- **Framebuffer base units:** the nine-bit field produces the owner's
-  `framebufferBaseWord` by shifting left 12. These sources do not establish
-  how many bytes one of those local-memory words occupies. Do not equate
-  it with a four-byte PCRTC register word or add a byte-address conversion.
-  Sources: [base decode][circuit-ts], [mirror][circuit-cpp].
-- **SIGNAL/FINISH/EDWINT:** these are named CSR bits and are clearable/maskable,
-  but the inspected device service generates only HSINT and VSINT. Do not
-  invent producers or completion timing for the other three events.
-  Sources: [bit names][bits-ts], [mirror][bits-cpp], [service][service-ts],
-  [mirror][service-cpp].
-- **Faults and bus access policy:** the inspected spec leaf/device owner
-  does not define a PCRTC fault register or a fault-generation contract.
-  Read/write callbacks alone do not prove that every width/alignment/access
-  is fault-free. Do not state a fault-free guarantee, bus-width policy,
-  privilege rule, or reserved-bit write requirement from this sheet.
-  Sources: [register definitions][leaf-ts], [mirror][leaf-cpp],
-  [MMIO callbacks][callbacks-ts], [mirror][callbacks-cpp].
-- **RESET/FLUSH downstream details:** GPU callsites are inspected, but the
-  command-buffer owner and GPU reset-constant leaf are outside scope. Do not
-  expand `abortReadbackAndQueuedCommands` into an unsourced discard/retirement
-  contract or list numeric reset values for non-PCRTC registers.
-  Sources: [clearing path][flush-ts], [mirror][flush-cpp],
-  [GPU register reset][gpu-reset-ts], [mirror][gpu-reset-cpp].
+The eight former source gaps are resolved in this sheet: PMODE operations,
+packing/addressing/wrap/zero sampling, blend arithmetic/channels, two-byte
+local-memory words, the VBlank-entry latch, absence of normal producers for the
+three named non-beam events, mapped CPU access/faults, and downstream RESET/FLUSH
+behavior. Their source links accompany the facts above. This is input for a new
+chapter review, not approval of the existing chapter or its publication record.
+
+- No producer/timing for SIGNAL/FINISH/EDWINT is invented. Normal execution
+  does not generate them; arbitrary restored pending bits retain their
+  documented W1C/mask semantics.
+- No electrical video waveform or within-instruction MMIO/edge ordering is
+  established. No global CPU/interrupt-controller service recipe follows
+  from the device-level mask example.
+- Numeric reset values of other GPU registers, full raster/GP0 command
+  descriptions, DMA exception delivery and instruction fetches from MMIO
+  remain outside this chapter's extracted contract; no blanket fault-free
+  or undo guarantee is implied.
+- The [WebGPU discrepancy](../reviews/pcrtc-webgpu-constant-blend.md) is
+  deferred runtime work. Pixel behavior here follows the user's explicit
+  TS/C++ software-authority decision, not an attempted reconciliation of
+  conflicting accelerated behavior.
 
 [addr-ts]: ../../../machine/ts/spec/gx/pcrtc.ts#L100-L104
 [addr-cpp]: ../../../machine/cpp/spec/gx/pcrtc.h#L94-L98
@@ -540,3 +829,122 @@ does not supply assembly syntax or a cartridge-side store utility.
 [context-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L501-L520
 [callbacks-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L2071-L2083
 [callbacks-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L1551-L1563
+[timer-ts]: ../../../machine/ts/machine/runtime/cpu_executor.ts#L327-L337
+[timer-cpp]: ../../../machine/cpp/machine/runtime/cpu_executor.cpp#L313-L323
+[vblank-ts]: ../../../machine/ts/machine/runtime/vblank.ts#L44-L65
+[vblank-cpp]: ../../../machine/cpp/machine/runtime/vblank.cpp#L31-L49
+[model-ts]: ../../../machine/ts/spec/bmsx/model.ts#L46-L56
+[model-cpp]: ../../../machine/cpp/spec/bmsx/model.h#L51-L61
+[vram-state-ts]: ../../../machine/ts/render/backend/software/gx_gpu_state.ts#L104-L108
+[vram-state-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_state.h#L90-L99
+[vram-load-ts]: ../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L4-L8
+[vram-load-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_vram.cpp#L5-L12
+[vram-spec-ts]: ../../../machine/ts/spec/gx/vram.ts#L1-L5
+[vram-spec-cpp]: ../../../machine/cpp/spec/gx/vram.h#L9-L14
+[sample-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L46-L95
+[sample-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L47-L91
+[palette-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_palette.ts#L5-L11
+[palette-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout_palette.cpp#L7-L13
+[expand-ts]: ../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L21-L23
+[expand-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L33-L35
+[address-layout-ts]: ../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L10-L100
+[address-layout-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L14-L84
+[address32-ts]: ../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L12-L33
+[address32-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L18-L34
+[address16-ts]: ../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L35-L80
+[address16-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L36-L75
+[address-linear-ts]: ../../../machine/ts/machine/devices/gx/gpu_local_memory.ts#L83-L100
+[address-linear-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_local_memory.h#L78-L84
+[word-fetch-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L34-L36
+[word-fetch-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L35-L39
+[zero-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L528-L545
+[zero-rgba-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L770-L787
+[zero-source-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L1283-L1304
+[zero-source-rgba-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L1546-L1566
+[composition-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout.ts#L13-L44
+[composition-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L305-L340
+[background-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L95-L118
+[raw-ops-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L98-L176
+[generic-ops-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L1044-L1074
+[generic-ops-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L221-L269
+[source-ops-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L1313-L1344
+[constant-ops-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L238-L297
+[blend-equation-ts]: ../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L38-L43
+[blend-equation-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L99-L104
+[abort-ts]: ../../../machine/ts/machine/devices/gx/gpu_command_buffer.ts#L248-L276
+[abort-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_command_buffer.h#L228-L256
+[readback-ts]: ../../../machine/ts/machine/devices/gx/gpu_command_buffer.ts#L133-L159
+[readback-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_command_buffer.h#L88-L101
+[readback-reset-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_command_buffer.h#L144-L155
+[readback-request-ts]: ../../../machine/ts/machine/devices/gx/gpu_command_buffer.ts#L187-L193
+[readback-request-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_command_buffer.h#L157-L160
+[parser-clear-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L1630-L1650
+[parser-clear-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L1108-L1128
+[parser-stop-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L1153-L1159
+[parser-stop-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L721-L727
+[upload-flush-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L1652-L1673
+[upload-flush-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L1130-L1150
+[upload-count-ts]: ../../../machine/ts/render/backend/gx_gpu_render_rules.ts#L230-L238
+[upload-count-cpp]: ../../../machine/cpp/render/backend/gx_gpu_render_rules.h#L234-L242
+[upload-write-ts]: ../../../machine/ts/render/backend/software/gx_gpu_commands.ts#L75-L100
+[upload-write-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_commands.cpp#L40-L76
+[command-consumer-ts]: ../../../machine/ts/render/backend/software/gx_gpu.ts#L18-L31
+[command-consumer-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu.cpp#L26-L47
+[bus-read-ts]: ../../../machine/ts/machine/memory/memory.ts#L544-L555
+[bus-read-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L434-L445
+[bus-write-ts]: ../../../machine/ts/machine/memory/memory.ts#L627-L646
+[bus-write-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L522-L540
+[bus-u8-read-ts]: ../../../machine/ts/machine/memory/memory.ts#L442-L451
+[bus-u8-read-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L332-L341
+[bus-u8-write-ts]: ../../../machine/ts/machine/memory/memory.ts#L466-L469
+[bus-u8-write-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L356-L359
+[bus-u16-read-ts]: ../../../machine/ts/machine/memory/memory.ts#L503-L506
+[bus-u16-read-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L393-L396
+[bus-u16-write-ts]: ../../../machine/ts/machine/memory/memory.ts#L603-L606
+[bus-u16-write-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L498-L501
+[access-kind-ts]: ../../../machine/ts/spec/blua32/memory_access_kind.ts#L1-L10
+[access-kind-cpp]: ../../../machine/cpp/spec/blua32/memory_access_kind.h#L8-L23
+[cpu-load-ts]: ../../../machine/ts/machine/cpu/cpu.ts#L3080-L3115
+[cpu-load-cpp]: ../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L621-L642
+[cpu-store-ts]: ../../../machine/ts/machine/cpu/cpu.ts#L3117-L3152
+[cpu-store-cpp]: ../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L646-L668
+[bus-float-read-ts]: ../../../machine/ts/machine/memory/memory.ts#L573-L588
+[bus-float-read-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L463-L482
+[bus-float-write-ts]: ../../../machine/ts/machine/memory/memory.ts#L659-L671
+[bus-float-write-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L553-L567
+[cpu-multiword-ts]: ../../../machine/ts/machine/cpu/cpu.ts#L3155-L3170
+[cpu-multiword-cpp]: ../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L672-L685
+[cpu-access-ts]: ../../../machine/ts/machine/cpu/cpu.ts#L2992-L3170
+[cpu-access-cpp]: ../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L554-L685
+[registration-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L462-L472
+[registration-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L53-L63
+[bus-ready-ts]: ../../../machine/ts/machine/memory/memory.ts#L261-L265
+[bus-ready-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L181-L185
+[cause-ts]: ../../../machine/ts/spec/blua32/cop0.ts#L19-L22
+[cause-cpp]: ../../../machine/cpp/spec/blua32/cop0.h#L25-L28
+[cpu-address-ts]: ../../../machine/ts/machine/cpu/cpu.ts#L1732-L1739
+[cpu-address-cpp]: ../../../machine/cpp/machine/cpu/cpu.cpp#L2290-L2297
+[bus-fault-ts]: ../../../machine/ts/machine/memory/memory.ts#L811-L819
+[bus-fault-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L707-L715
+[bus-ack-ts]: ../../../machine/ts/machine/memory/memory.ts#L419-L423
+[bus-ack-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L309-L313
+[bus-ack-write-ts]: ../../../machine/ts/machine/memory/memory.ts#L822-L833
+[bus-ack-write-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L695-L722
+[bus-readonly-ts]: ../../../machine/ts/machine/memory/memory.ts#L852-L894
+[bus-readonly-cpp]: ../../../machine/cpp/machine/memory/memory.cpp#L729-L771
+[fault-address-ts]: ../../../machine/ts/spec/bmsx/io.ts#L209-L212
+[fault-address-cpp]: ../../../machine/cpp/spec/bmsx/io.h#L222-L225
+[fault-offset-ts]: ../../../machine/ts/spec/bmsx/io.ts#L99-L105
+[fault-offset-cpp]: ../../../machine/cpp/spec/bmsx/io.h#L112-L118
+[fault-bits-ts]: ../../../machine/ts/spec/bmsx/io.ts#L399-L410
+[fault-bits-cpp]: ../../../machine/cpp/spec/bmsx/io.h#L412-L423
+[command-controls-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L1770-L1784
+[command-controls-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L1253-L1266
+[masked-write-ts]: ../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L38-L45
+[masked-write-cpp]: ../../../machine/cpp/render/backend/software/gx_gpu_vram.h#L50-L62
+[extension-write-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L1381-L1385
+[extension-write-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L890-L894
+[gpu-present-ts]: ../../../machine/ts/machine/devices/gx/gpu.ts#L746-L753
+[gpu-present-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L276-L283
+[instruction-timing-ts]: ../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L656-L663
+[instruction-timing-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L380-L386

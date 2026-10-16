@@ -1,8 +1,8 @@
 # Hardware-manual chapter standard
 
 This is the editorial and publication standard for the architecture booklet.
-[The PCRTC chapter](../book1/pcrtc.md) is the first **style baseline**, not a
-complete hardware contract and not a compulsory outline for every unit.
+[The PCRTC chapter](../book1/pcrtc.md) is the first reviewed chapter and **style
+baseline**, not a compulsory outline for every unit.
 
 Book I describes the installed machine. Cartridge sockets and card devices belong
 in Book II. Work on one unit at a time. Chapter order may follow the reference
@@ -105,7 +105,8 @@ directory. Its required topics are:
 Each topic has a `resolution` and an `open` array. An empty resolution or any open
 question blocks publication. Explain a genuinely inapplicable topic in its
 resolution, with evidence; do not silently delete checklist topics. The PCRTC
-record deliberately retains the unresolved contracts from its fact sheet.
+record documents the closed contracts and the explicit software-authority
+decision; its deferred backend discrepancy has a separate follow-up note.
 
 The `facts`, `figures`, and `print` reviews each have a `passed` flag and a
 repository-relative `report` path. Leave `passed` false until that review's
