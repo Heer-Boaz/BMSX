@@ -228,6 +228,162 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   Sources: [dispatch][dispatch-ts], [mirror][dispatch-cpp],
   [clearing path][flush-ts], [mirror][flush-cpp].
 
+## Evaluated programming inputs
+
+These examples evaluate the reset constants through the cited field decoders.
+They do not add a memory format, a write-to-display deadline, or a bus-access
+rule. All address/value pairs below are PCRTC word writes; the source scope
+does not supply assembly syntax or a cartridge-side store utility.
+
+### E1. Circuit 1 with the reset display geometry
+
+- Initial condition: PCRTC reset configuration and reset timing. At reset,
+  `PMODE_LOW.EN1 = EN2 = 0`; the two circuits' reset geometry is configured
+  but neither circuit is enabled. Sources: [reset inputs][leaf-ts],
+  [mirror][leaf-cpp], [enable decode][circuit-ts], [mirror][circuit-cpp].
+- The table lists the explicit circuit-1 configuration inputs, followed by
+  its enable/composition word. The first four values equal their reset
+  values; starting from reset they need not be written again. The only
+  changed word in this example is `PMODE_LOW`.
+  Sources: [reset inputs][leaf-ts], [mirror][leaf-cpp],
+  [word-write equality][read-write-ts], [mirror][read-write-cpp].
+
+  | Order | Address | Register | Value | Decoded input |
+  |---:|---|---|---|---|
+  | 1 | `0801035CH` | `DISPFB1_LOW` | `000FA000H` | base field 0; width field 16; storage selector 31 |
+  | 2 | `08010360H` | `DISPFB1_HIGH` | `00000000H` | source X = 0; source Y = 0 |
+  | 3 | `08010364H` | `DISPLAY1_LOW` | `018252A8H` | signal X = 680; signal Y = 37; magnification X = 4, Y = 1 |
+  | 4 | `08010368H` | `DISPLAY1_HIGH` | `000EF4FFH` | horizontal extent = 1279; vertical extent = 239 |
+  | 5 | `08010354H` | `PMODE_LOW` | `0000FF21H` | EN1 = 1; EN2 = 0; MMOD = 1; AMOD = 0; SLBG = 0; ALP = 255 |
+
+  Sources for addresses: [address function][addr-ts], [mirror][addr-cpp].
+  Sources for decoded inputs: [circuit fields][circuit-ts],
+  [mirror][circuit-cpp], [extent fields][extents-ts], [mirror][extents-cpp],
+  [composition fields][blend-ts], [mirror][blend-cpp].
+- Evaluated geometry for the enabled circuit: framebuffer base word = 0;
+  framebuffer width = `16 * 64 = 1024`; storage path = GX16. The horizontal
+  signal interval is `[680, 680 + 1279 + 1) = [680, 1960)`, and the height
+  is `239 + 1 = 240`. Reset signal step X is 4, so horizontal boundaries
+  convert to `680 / 4 = 170` and `1960 / 4 = 490`, with no rounding.
+  With only circuit 1 enabled, output origin is `(0, 0)`, output width is
+  `490 - 170 = 320`, and output height is 240. Horizontal source phase is
+  zero; source advance X is `4 / 4 = 1` with remainder zero; Y
+  magnification is one. `SMODE2_LOW = 0` selects non-interlaced traversal.
+  Sources: [reset inputs][leaf-ts], [mirror][leaf-cpp],
+  [timing signal step][timing-ts], [mirror][timing-cpp],
+  [source/circuit decode][circuit-ts], [mirror][circuit-cpp],
+  [boundaries and phases][extents-ts], [mirror][extents-cpp],
+  [output size][bounds-ts], [mirror][bounds-cpp],
+  [non-interlace decode][mode-ts], [mirror][mode-cpp].
+- For the stated PMODE word, MMOD = 1 and ALP = 255 select circuit 1's
+  `RAW_RGBA` path because AMOD = 0. Circuit 1 covers the entire output,
+  so the owner selects no circuit-2 draw path and does not require a
+  background draw. This proves selection of an unblended path, not a
+  sampled pixel's alpha value or a blend equation.
+  Sources: [composition selection][blend-ts], [mirror][blend-cpp].
+- These writes are configuration writes and use the presentation-copy rule
+  above. None is a beam-timing word. The write order does not establish an
+  atomic update across an intervening presentation latch, and the sources
+  do not justify a particular VBlank edge or a visible first-frame deadline.
+  Sources: [configuration writes][read-write-ts], [mirror][read-write-cpp],
+  [beam-timing set][timing-set-ts], [mirror][timing-set-cpp],
+  [latch][latch-ts], [mirror][latch-cpp].
+
+### E1b. Change the source origin and display-window size
+
+- Initial condition: PCRTC reset configuration and reset timing. Issue these
+  three changed configuration words in the listed order, with circuit 1
+  enabled by the last write:
+
+  | Order | Address | Register | Value | Decoded input |
+  |---:|---|---|---|---|
+  | 1 | `08010360H` | `DISPFB1_HIGH` | `00008020H` | source X = 32; source Y = 16 |
+  | 2 | `08010368H` | `DISPLAY1_HIGH` | `000BF3FFH` | horizontal extent = 1023; vertical extent = 191 |
+  | 3 | `08010354H` | `PMODE_LOW` | `0000FF21H` | EN1 = 1; EN2 = 0; MMOD = 1; AMOD = 0; SLBG = 0; ALP = 255 |
+
+  `00008020H = (16 << 11) | 32` and
+  `000BF3FFH = (191 << 12) | 1023`.
+  Sources: [address function][addr-ts], [mirror][addr-cpp],
+  [source and PMODE decode][circuit-ts], [mirror][circuit-cpp],
+  [extent decode][extents-ts], [mirror][extents-cpp],
+  [composition fields][blend-ts], [mirror][blend-cpp].
+- All other configuration words retain their reset values. Framebuffer
+  base word remains zero, framebuffer width remains 1024, storage selector
+  remains 31 (GX16), signal origin remains `(680, 37)`, magnification
+  remains `(4, 1)`, signal step X remains 4, and traversal remains
+  non-interlaced. Sources: [reset inputs][leaf-ts], [mirror][leaf-cpp],
+  [circuit decode][circuit-ts], [mirror][circuit-cpp],
+  [timing decode][timing-ts], [mirror][timing-cpp],
+  [interlace decode][mode-ts], [mirror][mode-cpp].
+- The programmed signal interval is `[680, 680 + 1023 + 1) = [680, 1704)`.
+  Both boundaries align to signal step 4: `680 / 4 = 170` and
+  `1704 / 4 = 426`. With only circuit 1 enabled, output origin is `(0, 0)`,
+  width is `426 - 170 = 256`, and height is `191 + 1 = 192`.
+  Sources: [bounds and extents][extents-ts], [mirror][extents-cpp],
+  [output size][bounds-ts], [mirror][bounds-cpp].
+- These writes use the same presentation-copy rule and PMODE path selection
+  as E1. They do not establish an atomic multiword update, sampled pixel
+  contents or alpha, or a visible first-frame deadline.
+  Sources: [configuration writes][read-write-ts], [mirror][read-write-cpp],
+  [latch][latch-ts], [mirror][latch-cpp],
+  [composition selection][blend-ts], [mirror][blend-cpp].
+
+### Reset beam landmarks for a timing diagram
+
+- Reset timing decodes to RC = 4, LC = 32, divider factor = 1, CMOD = 3,
+  signal step X = 4, PRST = SINT = 0, and vertical-unit multiplier U = 1.
+  HFP = 48, HBP = 262, HS = 254, HF = 1212, HB = 1680;
+  VFP = 4, VFPE = 5, VBP = 33, VBPE = 5, VDP = 576, VS = 5.
+  Therefore H = 3456, D = 8, half-line numerator = 27648,
+  half-line denominator = 864000000, total half-lines = 628,
+  active-display half-lines = 576, and VSync half-line = 585.
+  Sources: [reset inputs][leaf-ts], [mirror][leaf-cpp],
+  [timing decode/formulas][timing-ts], [mirror][timing-cpp].
+- Diagram landmarks, in half-lines from beam restart: `0` beam start;
+  `2` first scheduled HSync; `576` VBlank begin; `585` VSync and VSINT;
+  `628` field end, returning to within-field half-line zero. HSync schedule
+  is `2, 4, 6, ...`; the pending-HSINT suppression and clear rules still
+  apply. Within-field VBlank-active is false below 576 and true from 576
+  through the remainder of the field. These are beam/event landmarks,
+  not presentation-latch edges. Sources: [restart][restart-ts],
+  [mirror][restart-cpp], [service][service-ts], [mirror][service-cpp],
+  [vertical thresholds][vertical-ts], [mirror][vertical-cpp].
+- Reset has even VFP, so the FIELD toggle condition is false. Reset FIELD
+  is zero; the first VSync sets it to one rather than toggling it.
+  Sources: [reset CSR][leaf-ts], [mirror][leaf-cpp],
+  [toggle condition][duration-ts], [mirror][duration-cpp],
+  [VSync action][service-ts], [mirror][service-cpp].
+
+### E2. Clear stale HSINT and enable only its PCRTC interrupt mask
+
+| Order | Address | Register | Value | Result |
+|---:|---|---|---|---|
+| 1 | `080103DCH` | `IMR_LOW` | `00007F00H` | mask all five PCRTC events |
+| 2 | `080103D4H` | `CSR_LOW` | `00000004H` | clear HSINT only; do not request RESET or FLUSH |
+| 3 | `080103DCH` | `IMR_LOW` | `00007B00H` | unmask HSINT; leave SIGNAL, FINISH, VSINT and EDWINT masked |
+
+- `7F00H = 6000H | 1F00H`; `7B00H = 6000H | 1B00H` clears IMR bit 10
+  only relative to `7F00H`. CSR clear value `00000004H` is HSINT bit 2.
+  Sources: [addresses][addr-ts], [mirror][addr-cpp], [bit constants][bits-ts],
+  [mirror][bits-cpp], [CSR/IMR writes][status-write-ts],
+  [mirror][status-write-cpp].
+- If HSINT was pending and timing runs, step 2 resumes the HSync schedule
+  at the first scheduled point strictly after the current half-line;
+  suppressed earlier HSync points are not replayed. If HSINT becomes
+  pending between steps 2 and 3, step 3 immediately requests the PCRTC IRQ.
+  Otherwise a newly raised HSINT requests it while this mask remains
+  installed. Sources: [CSR clear/IMR unmask][status-write-ts],
+  [mirror][status-write-cpp], [HSync resume][resume-ts],
+  [mirror][resume-cpp], [new event][raise-ts], [mirror][raise-cpp],
+  [IRQ dispatch][dispatch-ts], [mirror][dispatch-cpp].
+- Step 2 leaves FIELD and the four other CSR event bits unchanged. Masking
+  those other events does not clear them; a later write which unmasks an
+  already pending event can request the PCRTC IRQ immediately. This
+  sequence specifies only PCRTC state and its request; it does not specify
+  interrupt-controller acknowledgement or CPU interrupt enable.
+  Sources: [CSR/IMR writes][status-write-ts], [mirror][status-write-cpp],
+  [IRQ dispatch][dispatch-ts], [mirror][dispatch-cpp].
+
 ## Retained state (editorial; not cartridge-visible registers)
 
 - Save state retains both 22-word arrays (`registerWords`, `presentWords`),
@@ -263,6 +419,18 @@ Decoded-field sources for rows 0–11: [circuit decode][circuit-ts],
   The owners choosing paths do not execute the pixel blend in these files.
   Sources: [background/path selection][mode-ts], [blend selection][blend-ts],
   [mirror][mode-cpp], [mirror][blend-cpp].
+- **PMODE programmer-facing selector semantics:** the inspected owner
+  selects named draw paths for MMOD, AMOD and SLBG, but does not execute
+  those draw paths. A truth table of their names is available; a complete
+  RGB/alpha operation reference, including claims that a pixel is opaque,
+  needs the owning composition datapath. Do not expand the raw-path
+  selection in E1 into an alpha-value guarantee.
+  Sources: [path selection][blend-ts], [mirror][blend-cpp].
+- **Framebuffer base units:** the nine-bit field produces the owner's
+  `framebufferBaseWord` by shifting left 12. These sources do not establish
+  how many bytes one of those local-memory words occupies. Do not equate
+  it with a four-byte PCRTC register word or add a byte-address conversion.
+  Sources: [base decode][circuit-ts], [mirror][circuit-cpp].
 - **SIGNAL/FINISH/EDWINT:** these are named CSR bits and are clearable/maskable,
   but the inspected device service generates only HSINT and VSINT. Do not
   invent producers or completion timing for the other three events.
