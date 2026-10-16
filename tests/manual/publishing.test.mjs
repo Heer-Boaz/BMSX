@@ -34,12 +34,9 @@ This is a publication fixture, not a hardware specification.
 `;
 
 async function fixture(t, chapterSource = sampleChapter) {
-	const root = await mkdtemp(join(tmpdir(), 'bmsx-manual-'));
+	const root = await mkdtemp(join(tmpdir(), 'bmsx manual '));
 	t.after(() => rm(root, { recursive: true, force: true }));
-	for (const path of ['docs/manual', 'scripts/manual']) {
-		await cp(resolve(repositoryRoot, path), join(root, path), { recursive: true });
-	}
-	await cp(resolve(repositoryRoot, 'package-lock.json'), join(root, 'package-lock.json'));
+	await cp(resolve(repositoryRoot, 'docs/manual'), join(root, 'docs/manual'), { recursive: true });
 	const entry = {
 		book: 'II', label: 'SAMPLE', chapter: 'docs/book2/sample.md',
 		facts: 'docs/book2/facts/sample.md', review: 'docs/book2/reviews/sample.json',
@@ -51,12 +48,9 @@ async function fixture(t, chapterSource = sampleChapter) {
 	const files = {
 		'docs/manual/catalog.json': JSON.stringify({ sample: entry }),
 		[entry.chapter]: chapterSource,
-		[entry.facts]: '# Fixture facts\n\n[Constant][ts]. [Mirror](../../../owners/sample.h#L1-L1).\n\n[ts]: ../../../owners/sample.ts#L1-L1\n[unused]: ../../../owners/extra.ts#L1-L1\n',
+		[entry.facts]: '# Fixture facts\n\nThe factual review is separate from printing.\n',
 		[entry.review]: JSON.stringify(review),
 		'docs/book2/figures/sample.svg': sampleFigure,
-		'owners/sample.ts': 'export const RESET = 0;\n',
-		'owners/sample.h': 'const unsigned RESET = 0;\n',
-		'owners/extra.ts': '// A source definition remains a tracked input even if not cited.\n',
 		'docs/book2/reviews/evidence.md': '# Synthetic review evidence\n\nOnly the test fixture is approved here.\n',
 	};
 	for (const [path, content] of Object.entries(files)) {
@@ -70,7 +64,7 @@ async function approveFixture(root) {
 	const chapter = await loadChapter(root, 'sample');
 	for (const kind of reviewKinds) {
 		chapter.review.reviews[kind] = {
-			fingerprint: chapter.fingerprint,
+			passed: true,
 			report: 'docs/book2/reviews/evidence.md',
 		};
 	}
@@ -83,16 +77,14 @@ test('review template has every required contract topic and review pass', async 
 	assert.deepEqual(Object.keys(review.coverage), coverageTopics);
 	assert.deepEqual(Object.keys(review.reviews), reviewKinds);
 	assert.ok(Object.values(review.coverage).every(topic => topic.resolution === '' && topic.open.length === 0));
-	assert.ok(Object.values(review.reviews).every(pass => pass.fingerprint === '' && pass.report === ''));
+	assert.ok(Object.values(review.reviews).every(pass => pass.passed === false && pass.report === ''));
 });
 
-test('publication requires explicit coverage, closed questions, and all three current evidence-backed reviews', async t => {
+test('publication requires explicit coverage, closed questions, and passed reviews with evidence', async t => {
 	const root = await fixture(t);
 	let chapter = await loadChapter(root, 'sample');
-	assert.equal((await publicationFailures(root, chapter)).length, 6);
-	const fingerprint = chapter.fingerprint;
+	assert.deepEqual(await publicationFailures(root, chapter), reviewKinds.map(kind => `${kind} review: pending`));
 	chapter = await approveFixture(root);
-	assert.equal(chapter.fingerprint, fingerprint, 'signatures do not hash themselves');
 	assert.deepEqual(await publicationFailures(root, chapter), []);
 	chapter.review.coverage.visibility.open.push('Exact latch edge is not established.');
 	chapter.review.coverage.faults.resolution = '';
@@ -100,48 +92,32 @@ test('publication requires explicit coverage, closed questions, and all three cu
 		'visibility: Exact latch edge is not established.',
 		'faults: no coverage decision recorded',
 	]);
-	chapter.review.reviews.figures.fingerprint = 'older-inputs';
-	assert.ok((await publicationFailures(root, chapter)).includes('figures review: missing or for different inputs'));
+	chapter.review.reviews.figures.passed = false;
+	assert.ok((await publicationFailures(root, chapter)).includes('figures review: pending'));
+	chapter.review.reviews.print.report = '';
+	assert.ok((await publicationFailures(root, chapter)).includes('print review: no evidence report recorded'));
 	chapter.review.reviews.print.report = 'docs/book2/reviews/missing.md';
 	await assert.rejects(publicationFailures(root, chapter), { code: 'ENOENT' });
 });
 
-test('fingerprints track whole source files, SVGs, typography, tooling, metadata, and coverage, not checkout location', async t => {
+test('styling can reopen print review without invalidating facts or figure semantics', async t => {
 	const root = await fixture(t);
-	let chapter = await approveFixture(root);
-	const relocated = join(await mkdtemp(join(tmpdir(), 'bmsx-manual-relocated-')), 'checkout with spaces');
-	t.after(() => rm(dirname(relocated), { recursive: true, force: true }));
-	await cp(root, relocated, { recursive: true });
-	assert.equal((await loadChapter(relocated, 'sample')).fingerprint, chapter.fingerprint);
-	assert.deepEqual(chapter.inputs.filter(input => input.path.startsWith('owners/')).map(input => input.path), [
-		'owners/extra.ts', 'owners/sample.h', 'owners/sample.ts',
-	]);
-	for (const path of [
-		'owners/sample.ts', 'owners/sample.h', 'owners/extra.ts',
-		'docs/book2/sample.md', 'docs/book2/facts/sample.md', 'docs/book2/figures/sample.svg',
-		'docs/manual/print.css', 'docs/manual/fonts/LiberationMono-Regular.ttf',
-		'scripts/manual/render.mjs', 'package-lock.json', 'docs/manual/README.md',
-	]) {
-		await appendFile(join(root, path), '\n');
-		const changed = await loadChapter(root, 'sample');
-		assert.notEqual(changed.fingerprint, chapter.fingerprint, path);
-		chapter = changed;
-	}
-	const catalog = JSON.parse(await readFile(join(root, 'docs/manual/catalog.json'), 'utf8'));
-	catalog.sample.label = 'OTHER';
-	await writeFile(join(root, 'docs/manual/catalog.json'), JSON.stringify(catalog));
-	let changed = await loadChapter(root, 'sample');
-	assert.notEqual(changed.fingerprint, chapter.fingerprint, 'running labels are publication inputs');
-	changed.review.coverage.visibility.resolution += ' Updated coverage decision.';
+	const chapter = await approveFixture(root);
+	await appendFile(join(root, 'docs/manual/print.css'), '\nh1 { letter-spacing: .5pt; }\n');
+	const changed = await loadChapter(root, 'sample');
+	assert.match(changed.stylesheet, /letter-spacing: \.5pt/);
+	assert.deepEqual(changed.review.reviews, chapter.review.reviews);
+	changed.review.reviews.print.passed = false;
 	await writeFile(join(root, changed.entry.review), JSON.stringify(changed.review));
-	chapter = await loadChapter(root, 'sample');
-	assert.notEqual(chapter.fingerprint, changed.fingerprint, 'closing or changing coverage requires review');
-	assert.ok((await publicationFailures(root, chapter)).includes('facts review: missing or for different inputs'));
+	const reopened = await loadChapter(root, 'sample');
+	assert.deepEqual(await publicationFailures(root, reopened), ['print review: pending']);
+	assert.equal(reopened.review.reviews.facts.passed, true);
+	assert.equal(reopened.review.reviews.figures.passed, true);
 });
 
-test('missing sources/assets fail instead of producing a partial chapter', async t => {
+test('missing print assets fail instead of producing a partial chapter', async t => {
 	const root = await fixture(t);
-	await rm(join(root, 'owners/sample.ts'));
+	await rm(join(root, 'docs/book2/figures/sample.svg'));
 	await assert.rejects(loadChapter(root, 'sample'), { code: 'ENOENT' });
 	await assert.rejects(loadChapter(root, 'not-a-chapter'), /Unknown manual chapter/);
 });
@@ -162,7 +138,7 @@ test('HTML is self-contained, preserves author grouping at any heading number, a
 	assert.match(publication, /content: "SAMPLE"/);
 });
 
-test('Chromium prints a tagged/outlined portable PDF and a source/engine receipt', async t => {
+test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {
 	const root = await fixture(t);
 	const chapter = await approveFixture(root);
 	assert.deepEqual(await publicationFailures(root, chapter), []);
@@ -177,11 +153,10 @@ test('Chromium prints a tagged/outlined portable PDF and a source/engine receipt
 	assert.ok(Math.abs(Number(height) - 297 * 72 / 25.4) < 1, 'A4 page height');
 	assert.deepEqual(output.layout, { figures: 1, registerEntries: 1, errors: [] });
 	const receipt = JSON.parse(await readFile(output.receipt, 'utf8'));
-	assert.equal(receipt.fingerprint, chapter.fingerprint);
+	assert.deepEqual(Object.keys(receipt), ['chapter', 'mode', 'layout', 'engine']);
 	assert.equal(receipt.mode, 'publish');
 	assert.equal(receipt.engine.node, process.version);
 	assert.match(receipt.engine.chromium, /^\d+\./);
-	assert.equal(receipt.inputs.length, chapter.inputs.length);
 	assert.doesNotMatch(await readFile(output.html, 'utf8'), /DRAFT/);
 });
 
@@ -251,7 +226,7 @@ test('CLI checks/publication fail for PCRTC gaps from a different working direct
 			cwd: tmpdir(), encoding: 'utf8',
 		});
 		assert.equal(result.status, 1);
-		assert.match(result.stdout, /input fingerprint [a-f\d]{64}/);
+		assert.match(result.stdout, /Fact sheet: docs\/book1\/facts\/pcrtc\.md/);
 		assert.match(result.stderr, /Publication blocked:/);
 		assert.match(result.stderr, /exact presentation-latch edge/);
 		assert.doesNotMatch(result.stdout, /Published chapter:/);

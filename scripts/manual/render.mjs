@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { escapeAttribute, escapeText } from 'entities';
+import { escapeText } from 'entities';
 import { Marked } from 'marked';
 import { chromium } from 'playwright';
 
@@ -10,12 +10,12 @@ export function chapterHtml(chapter, mode) {
 			image({ href }) {
 				// Manual figures are authored SVG. Inline them so body and figure
 				// lettering use the same bundled fonts, without external resources.
-				return `<span class="manual-figure">${chapter.files.get(chapter.figures.get(href)).toString('utf8')}</span>`;
+				return `<span class="manual-figure">${chapter.figures.get(href)}</span>`;
 			},
 		},
 	});
 	const stylesheet = chapter.stylesheet.replace(/url\("([^"]+)"\)/g, (_, href) =>
-		`url("data:font/ttf;base64,${chapter.files.get(chapter.fonts.get(href)).toString('base64')}")`);
+		`url("data:font/ttf;base64,${chapter.fonts.get(href).toString('base64')}")`);
 	const preview = mode === 'preview';
 	const title = `BMSX Book ${chapter.entry.book} — ${chapter.entry.label}${preview ? ' — DRAFT' : ''}`;
 	const footer = chapter.entry.label + (preview ? ' — DRAFT / NOT FOR PUBLICATION' : '');
@@ -23,7 +23,6 @@ export function chapterHtml(chapter, mode) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="manual-input-fingerprint" content="${escapeAttribute(chapter.fingerprint)}">
 <title>${escapeText(title)}</title>
 <style>${stylesheet}
 @page {
@@ -97,8 +96,7 @@ export async function renderChapter(chapter, mode, outputDirectory) {
 			outline: true,
 		});
 		const receipt = {
-			chapter: chapter.id, mode, fingerprint: chapter.fingerprint,
-			inputs: chapter.inputs, layout,
+			chapter: chapter.id, mode, layout,
 			engine: { chromium: browser.version(), node: process.version, platform: process.platform, arch: process.arch },
 		};
 		await writeFile(`${stem}.json`, JSON.stringify(receipt, null, '\t') + '\n');

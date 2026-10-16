@@ -11,8 +11,8 @@
 		"programming": { "resolution": "", "open": [] }
 	},
 	"reviews": {
-		"facts": { "fingerprint": "", "report": "" },
-		"figures": { "fingerprint": "", "report": "" },
-		"print": { "fingerprint": "", "report": "" }
+		"facts": { "passed": false, "report": "" },
+		"figures": { "passed": false, "report": "" },
+		"print": { "passed": false, "report": "" }
 	}
 }

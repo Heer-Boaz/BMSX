@@ -1,14 +1,12 @@
 # PCRTC draft print inspection
 
-This is preview evidence, **not a publication approval**. The print fingerprint
-remains unsigned in `pcrtc.json`; the hardware coverage and release reviews remain
+This is preview evidence, **not a publication approval**. The print review
+remains pending in `pcrtc.json`; the hardware coverage and release reviews remain
 open. No hardware facts were added during the publishing-tool work.
 
 Command: `npm run manual:preview -- pcrtc`
 
 Artifacts: `build/manual/pcrtc.preview.pdf`, `.html`, and `.json`.
-
-Input fingerprint: `fee79f8447fbcc295a4dcb5898dcba709030faa8330dc31dd430ca1b292eb92d`
 
 Engine: Chromium `153.0.8010.12`, Node `v22.23.1`, Linux x64.
 
@@ -31,5 +29,5 @@ Engine: Chromium `153.0.8010.12`, Node `v22.23.1`, Linux x64.
   release; the mechanical checks do not approve pagination.
 
 The eight source-scope gaps remain listed in `pcrtc.json` and in the fact sheet.
-Closing them requires source work, not removing the draft label or signing this
+Closing them requires source work, not removing the draft label or approving this
 preview report.

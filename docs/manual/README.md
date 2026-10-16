@@ -107,12 +107,23 @@ question blocks publication. Explain a genuinely inapplicable topic in its
 resolution, with evidence; do not silently delete checklist topics. The PCRTC
 record deliberately retains the unresolved contracts from its fact sheet.
 
-The `facts`, `figures`, and `print` reviews each require the current input
-`fingerprint` and a repository-relative evidence `report` path. Record the review
-scope, findings, and how they were resolved. A print report identifies the build
-receipt, engine, and pages inspected. Only a completed review may enter its
-fingerprint; the tool has **no approve command**. Keep pending reviews empty.
-The machine checks recorded decisions and freshness, not their truthfulness.
+The `facts`, `figures`, and `print` reviews each have a `passed` flag and a
+repository-relative `report` path. Leave `passed` false until that review's
+findings are resolved. One report can cover several passes. Record the scope,
+findings, and resolutions; a print report also names the engine and pages inspected.
+The publisher checks these recorded decisions, not the truth of hardware claims.
+
+When making changes, reopen only the affected reviews in the same edit:
+
+- Hardware claims, examples, or their source contracts: `facts`; also `figures`
+  when their meaning changes.
+- SVG connections, dimensions, or labels: `figures` and `print`; also `facts`
+  when a hardware claim changes.
+- Stylesheet, fonts, publisher, or browser: `print`, not `facts`.
+
+Reopen `print` whenever the chapter's content or layout changes. Review freshness
+is an editorial responsibility: there are no file hashes or approval signatures
+to copy, and no automatic claim that an unchanged flag proves a review is current.
 
 ## Shared print design and source markup
 
@@ -161,21 +172,17 @@ The preview/publish/test scripts provision the lockfile's Chromium with the
 existing Playwright installer. Preview writes `build/manual/pcrtc.preview.html`,
 `.pdf`, and `.json`; publication writes `build/manual/pcrtc.html`, `.pdf`, and
 `.json`. Build products are ignored. The HTML is self-contained. The JSON receipt
-identifies input hashes, Chromium/Node/platform, and mechanical layout results.
+records Chromium/Node/platform and mechanical layout results.
 
-`manual:check` exits nonzero for unresolved coverage or missing/stale reviews.
+`manual:check` exits nonzero for unresolved coverage or pending reviews.
 `manual:publish` applies the same gate **before rendering**. Preview may succeed
 while reporting those publication blockers; that is not release approval.
-Missing source/asset/report files are errors, never implicit passes. A failed
-build does not make an older PDF current; use the successful command and receipt.
+Missing chapter/asset files or a passed review's report are build errors. A
+failed build does not make an older PDF current; use the successful command and receipt.
 
-The fingerprint covers the chapter, fact sheet, whole local source files linked
-by the sheet (reference definitions and inline links), SVGs, fonts, stylesheet,
-publication tooling/standard, lockfile, chapter metadata, and coverage decisions.
-Changing any of these invalidates recorded approvals. Line anchors alone are
-not freshness evidence. Review reports/signatures are excluded to avoid a
-self-referential hash. Use local file links in fact sheets; web links are not
-hardware-source inputs for this pipeline.
+The publisher reads the chapter, its review record, and its print assets. It
+does not traverse the fact sheet's source links or load device owners. Those
+belong to the factual review, not the PDF build.
 
 Build checks detect missing input files, horizontal overflow, oversized
 indivisible blocks, and figure labels outside their viewport. They

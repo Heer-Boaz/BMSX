@@ -52,8 +52,8 @@
 		}
 	},
 	"reviews": {
-		"facts": { "fingerprint": "", "report": "" },
-		"figures": { "fingerprint": "", "report": "" },
-		"print": { "fingerprint": "", "report": "docs/book1/reviews/pcrtc-print.md" }
+		"facts": { "passed": false, "report": "" },
+		"figures": { "passed": false, "report": "" },
+		"print": { "passed": false, "report": "docs/book1/reviews/pcrtc-print.md" }
 	}
 }

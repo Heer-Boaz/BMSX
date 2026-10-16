@@ -10,7 +10,7 @@ if (!['check', 'preview', 'publish'].includes(mode) || !id || extra.length !== 0
 	try {
 		const chapter = await loadChapter(repositoryRoot, id);
 		const failures = await publicationFailures(repositoryRoot, chapter);
-		console.log(`${id}: input fingerprint ${chapter.fingerprint}`);
+		console.log(`${id}: ${chapter.entry.chapter}\nFact sheet: ${chapter.entry.facts}`);
 		if (failures.length !== 0) {
 			console.error(`Publication blocked:\n${failures.map(failure => `- ${failure}`).join('\n')}`);
 		}
