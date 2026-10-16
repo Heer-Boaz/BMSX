@@ -11,20 +11,7 @@ Each reading circuit has its own framebuffer selection, source position, signal
 position, magnification, and window size. Output control selects the enabled circuits
 and their composition settings.
 
-```text
-Local framebuffer ──► Reading circuit 1 ──┐
-                     DISPFB1 / DISPLAY1  │
-                                        ├──► Output control ──► Display output
-Local framebuffer ──► Reading circuit 2 ──┤       PMODE
-                     DISPFB2 / DISPLAY2  │         ▲
-                                        └─────────┤
-                                             Background
-                                              BGCOLOR
-
-Timing control ──► Signal coordinates and display cadence
-SMODE1 / SMODE2 / SYNCH1 / SYNCH2 / SYNCV
-       └────────► HSINT / VSINT / FIELD
-```
+![PCRTC display data path and controls](figures/pcrtc-overview.svg)
 
 PCRTC register words occupy four bytes. The composition registers start at `08010354H`;
 the timing and status registers start at `080103ACH`. Use the individual addresses in
@@ -51,16 +38,9 @@ X magnification = encoded X magnification + 1
 Y magnification = encoded Y magnification + 1
 Horizontal span = horizontal extent + 1 signal units
 Vertical height = vertical extent + 1
-
-                   signal X                     signal X + extent + 1
-                       │                                  │
- signal Y ─────────────┌──────────────────────────────────┐
-                       │                                  │
-                       │          Circuit window          │  vertical extent + 1
-                       │                                  │
-                       └──────────────────────────────────┘
-                       ◄── horizontal extent + 1 ────────►
 ```
+
+![Signal position and dimensions of a display window](figures/pcrtc-window.svg)
 
 The horizontal interval includes its starting coordinate and excludes its ending
 coordinate. Before conversion to output pixels, each horizontal boundary is rounded
@@ -495,17 +475,7 @@ half-line two. CSR event bits and FIELD are unchanged.
 At reset, H = 3456, D = 8, LC = 32, and U = 1. The half-line period is therefore `27648
 / 864000000` seconds. The reset beam sequence is:
 
-```text
-Half-line    0       2       4       ...       576       585        628
-             │       │       │                 │         │          │
-             Start   HSync   HSync             │         │          │
-             ├──── Active-display interval ────┤         │          │
-             │                                 ├── VBlank-active ──┤
-             │                                 │         │          │
-             │                            VBlank begin   │       Field end
-             │                                       VSync       Return to 0
-             │                                       VSINT
-```
+![Reset beam events and active-display and VBlank intervals](figures/pcrtc-reset-timing.svg)
 
 The reset vertical counts are VDP = 576, VFP = 4, VFPE = 5, VBP = 33, VBPE = 5, and VS =
 5. VBlank-active is false below half-line 576 and true for the remainder of the field.

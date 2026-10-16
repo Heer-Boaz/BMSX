@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="360" viewBox="0 0 800 360" role="img" aria-labelledby="overview-title overview-description">
+  <title id="overview-title">PCRTC display data path and controls</title>
+  <desc id="overview-description">Reading circuits 1 and 2 and the background enter PMODE output control independently. SMODE2 controls interlaced reading. SMODE1, SYNCH1, SYNCH2 and SYNCV control signal timing and timing events.</desc>
+  <defs>
+    <marker id="overview-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#111"/>
+    </marker>
+  </defs>
+  <g fill="#fff" stroke="#111" stroke-width="1.4">
+    <rect id="reading-circuit-1" x="178" y="24" width="220" height="68"/>
+    <rect id="reading-circuit-2" x="178" y="115" width="220" height="68"/>
+    <rect id="output-control" x="490" y="24" width="150" height="208"/>
+    <rect id="timing-control" x="360" y="278" width="160" height="68"/>
+  </g>
+  <g fill="none" stroke="#111" stroke-width="1.4" marker-end="url(#overview-arrow)">
+    <path id="framebuffer-to-circuit-1" d="M148 60 H178"/>
+    <path id="framebuffer-to-circuit-2" d="M148 147 H178"/>
+    <path id="circuit-1-to-output-control" d="M398 60 H490"/>
+    <path id="circuit-2-to-output-control" d="M398 147 H490"/>
+    <path id="background-to-output-control" d="M112 206 H490"/>
+    <path id="output-to-display" d="M640 128 H683"/>
+    <path id="interlace-control" d="M94 249 H170"/>
+    <path id="timing-registers-to-control" d="M326 298 H360"/>
+    <path id="timing-to-signal" d="M520 294 H556"/>
+    <path id="timing-to-events" d="M520 330 H556"/>
+  </g>
+  <g fill="#111" font-family="Arial, sans-serif" font-size="15">
+    <text x="12" y="65">Local framebuffer</text>
+    <text x="12" y="152">Local framebuffer</text>
+    <text x="12" y="211">Background</text>
+    <text x="695" y="133">Display output</text>
+    <text x="184" y="254">Interlaced reading</text>
+    <text x="568" y="300">Signal coordinates / cadence</text>
+    <text x="568" y="336">HSINT / VSINT / FIELD</text>
+    <g text-anchor="middle" font-size="16">
+      <text x="288" y="50">Reading circuit 1</text>
+      <text x="288" y="141">Reading circuit 2</text>
+      <text x="565" y="112">Output control</text>
+      <text x="440" y="318">Timing control</text>
+    </g>
+    <g font-family="monospace" font-size="14">
+      <text x="288" y="74" text-anchor="middle">DISPFB1 / DISPLAY1</text>
+      <text x="288" y="165" text-anchor="middle">DISPFB2 / DISPLAY2</text>
+      <text x="565" y="137" text-anchor="middle">PMODE</text>
+      <text x="12" y="232">BGCOLOR</text>
+      <text x="18" y="254">SMODE2</text>
+      <text x="18" y="303">SMODE1 / SYNCH1 / SYNCH2 / SYNCV</text>
+    </g>
+  </g>
+</svg>
