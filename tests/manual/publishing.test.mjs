@@ -207,6 +207,7 @@ test('reviewed PCRTC uses the shared publisher with its hardware coverage closed
 	const page = await browser.newPage();
 	await page.setContent(await readFile(output.html, 'utf8'));
 	await page.evaluate(() => document.fonts.ready);
+	assert.equal(await page.locator('table.bit-fields').count(), 26, 'each PCRTC word has a real bit-field table');
 	const session = await page.context().newCDPSession(page);
 	await session.send('DOM.enable');
 	await session.send('CSS.enable');

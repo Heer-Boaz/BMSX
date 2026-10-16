@@ -595,12 +595,15 @@ entries.
 | `08010354H` | `PMODE_LOW` | Circuit enables and output controls | R/W | `00000000H` |
 | `08010358H` | `PMODE_HIGH` | Retained high word | R/W | `00000000H` |
 
-```text
-LOW   31:16 | 15:8 |  7   |  6   |  5   | 4:2 |  1  |  0
-        R   | ALP  | SLBG | AMOD | MMOD |  R  | EN2 | EN1
-HIGH  31:0
-        R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:16</th><th>15:8</th><th>7</th><th>6</th><th>5</th><th>4:2</th><th>1</th><th>0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>ALP</td><td>SLBG</td><td>AMOD</td><td>MMOD</td><td>R</td><td>EN2</td><td>EN1</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td></tr></tbody>
+</table>
 
 | Field | Setting |
 |---|---|
@@ -626,12 +629,15 @@ supplies a complete PMODE word for that example.
 | `0801035CH` | `DISPFB1_LOW` | Framebuffer base, width, and storage selection | R/W | `000FA000H` |
 | `08010360H` | `DISPFB1_HIGH` | Framebuffer source origin | R/W | `00000000H` |
 
-```text
-LOW   31:20 | 19:15  | 14:9  | 8:0
-        R   | Storage| Width | Base
-HIGH  31:22 | 21:11    | 10:0
-        R   | Source Y | Source X
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:20</th><th>19:15</th><th>14:9</th><th>8:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Storage</td><td>Width</td><td>Base</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:22</th><th>21:11</th><th>10:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Source Y</td><td>Source X</td></tr></tbody>
+</table>
 
 Base (`FBP`) is in groups of 4096 sixteen-bit local-memory words; width (`FBW`) is in
 groups of 64 framebuffer pixels. Source X and source Y specify the source origin.
@@ -658,12 +664,15 @@ Packing and address calculations are in Sections 2.3–2.4, including FBW = 0 an
 | `08010364H` | `DISPLAY1_LOW` | Signal origin and magnification | R/W | `018252A8H` |
 | `08010368H` | `DISPLAY1_HIGH` | Signal-window extents | R/W | `000EF4FFH` |
 
-```text
-LOW   31:29 | 28:27 | 26:23 | 22:12    | 11:0
-        R   | Y mag | X mag | Signal Y | Signal X
-HIGH  31:23 | 22:12          | 11:0
-        R   | Vertical extent| Horizontal extent
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:29</th><th>28:27</th><th>26:23</th><th>22:12</th><th>11:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Y mag</td><td>X mag</td><td>Signal Y</td><td>Signal X</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:23</th><th>22:12</th><th>11:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Vertical extent</td><td>Horizontal extent</td></tr></tbody>
+</table>
 
 | Field | Actual setting |
 |---|---|
@@ -686,12 +695,15 @@ output-pixel counts; apply the signal-step boundary conversion in Section 2.1.
 | `0801036CH` | `DISPFB2_LOW` | Framebuffer base, width, and storage selection | R/W | `000FA000H` |
 | `08010370H` | `DISPFB2_HIGH` | Framebuffer source origin | R/W | `00000000H` |
 
-```text
-LOW   31:20 | 19:15  | 14:9  | 8:0
-        R   | Storage| Width | Base
-HIGH  31:22 | 21:11    | 10:0
-        R   | Source Y | Source X
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:20</th><th>19:15</th><th>14:9</th><th>8:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Storage</td><td>Width</td><td>Base</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:22</th><th>21:11</th><th>10:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Source Y</td><td>Source X</td></tr></tbody>
+</table>
 
 Base (`FBP`) is in groups of 4096 sixteen-bit local-memory words; width (`FBW`) is in
 groups of 64 framebuffer pixels. Circuit 2 has its own source X/Y origin. Packing and
@@ -717,12 +729,15 @@ address calculations are in Sections 2.3–2.4, including FBW = 0 and wrap.
 | `08010374H` | `DISPLAY2_LOW` | Signal origin and magnification | R/W | `018252A8H` |
 | `08010378H` | `DISPLAY2_HIGH` | Signal-window extents | R/W | `000EF4FFH` |
 
-```text
-LOW   31:29 | 28:27 | 26:23 | 22:12    | 11:0
-        R   | Y mag | X mag | Signal Y | Signal X
-HIGH  31:23 | 22:12          | 11:0
-        R   | Vertical extent| Horizontal extent
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:29</th><th>28:27</th><th>26:23</th><th>22:12</th><th>11:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Y mag</td><td>X mag</td><td>Signal Y</td><td>Signal X</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:23</th><th>22:12</th><th>11:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Vertical extent</td><td>Horizontal extent</td></tr></tbody>
+</table>
 
 The encoded-plus-one rules are the same as for circuit 1: X magnification is 1–16, Y
 magnification is 1–4, and each extent specifies one less than the corresponding span or
@@ -740,12 +755,15 @@ output bounds.
 | `0801037CH` | `BGCOLOR_LOW` | Background color input | R/W | `00000000H` |
 | `08010380H` | `BGCOLOR_HIGH` | Retained high word | R/W | `00000000H` |
 
-```text
-LOW   31:24 | 23:0
-        R   | Background color
-HIGH  31:0
-        R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:24</th><th>23:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Background color</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td></tr></tbody>
+</table>
 
 Write R in bits 7–0, G in bits 15–8, and B in bits 23–16. Background alpha is zero.
 PMODE controls composition with the enabled circuits as described in Section 2.5.
@@ -761,12 +779,15 @@ PMODE controls composition with the enabled circuits as described in Section 2.5
 | `080103ACH` | `SMODE1_LOW` | Timing factors, run controls, and horizontal signal step | R/W | `40806504H` |
 | `080103B0H` | `SMODE1_HIGH` | Vertical-unit selection | R/W | `00000007H` |
 
-```text
-LOW   31:25 | 24:21  | 20:18 | 17   | 16   | 15 | 14:13 | 12 | 11:10   | 9:3 | 2:0
-        R   | Step X |   R   | SINT | PRST | R  | CMOD  | R  | Divider | LC  | RC
-HIGH  31:5 | 4 | 3:0
-        R  | U |  R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:25</th><th>24:21</th><th>20:18</th><th>17</th><th>16</th><th>15</th><th>14:13</th><th>12</th><th>11:10</th><th>9:3</th><th>2:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Step X</td><td>R</td><td>SINT</td><td>PRST</td><td>R</td><td>CMOD</td><td>R</td><td>Divider</td><td>LC</td><td>RC</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:5</th><th>4</th><th>3:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>U</td><td>R</td></tr></tbody>
+</table>
 
 RC, LC, and the divider field set the half-line period through the equations in Section
 2.7. Step X is the number of horizontal signal units per output pixel. A latched Step X
@@ -803,12 +824,15 @@ bits are retained bits. A restart does not acknowledge CSR events or assign FIEL
 | `080103B4H` | `SMODE2_LOW` | Interlace and frame-mode controls | R/W | `00000000H` |
 | `080103B8H` | `SMODE2_HIGH` | Retained high word | R/W | `00000000H` |
 
-```text
-LOW   31:2 |  1   |  0
-        R  | FFMD | INT
-HIGH  31:0
-        R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:2</th><th>1</th><th>0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>FFMD</td><td>INT</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td></tr></tbody>
+</table>
 
 | INT | FFMD | Traversal |
 |---:|---:|---|
@@ -830,12 +854,15 @@ display-latch rule without restarting the beam.
 | `080103BCH` | `SYNCH1_LOW` | HFP and HBP counts | R/W | `1FC83030H` |
 | `080103C0H` | `SYNCH1_HIGH` | HS count | R/W | `0007F5C2H` |
 
-```text
-LOW   31:22 | 21:11 | 10:0
-        R   | HBP   | HFP
-HIGH  31:27 | 26:11 | 10:0
-        R   | HS    | R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:22</th><th>21:11</th><th>10:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>HBP</td><td>HFP</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:27</th><th>26:11</th><th>10:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>HS</td><td>R</td></tr></tbody>
+</table>
 
 HFP, HBP, and HS contribute horizontal timing counts to H. Their time scale is set by
 RC, LC, and the divider, not by the output-pixel magnification fields. A changed write
@@ -852,12 +879,15 @@ to either word recalculates timing and restarts the beam.
 | `080103C4H` | `SYNCH2_LOW` | HF and HB counts | R/W | `003484BCH` |
 | `080103C8H` | `SYNCH2_HIGH` | Retained timing high word | R/W | `00000000H` |
 
-```text
-LOW   31:27 | 26:11 | 10:0
-        R   | HB    | HF
-HIGH  31:0
-        R
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:27</th><th>26:11</th><th>10:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>HB</td><td>HF</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td></tr></tbody>
+</table>
 
 HF and HB complete the horizontal sum H. **Changing `SYNCH2_HIGH` also restarts the
 beam**, although its bits have no named timing field. Writing its current value does not
@@ -874,12 +904,15 @@ restart it.
 | `080103CCH` | `SYNCV_LOW` | VFP, VFPE, and VBP counts | R/W | `02101404H` |
 | `080103D0H` | `SYNCV_HIGH` | VBPE, VDP, and VS counts | R/W | `00A90005H` |
 
-```text
-LOW   31:20 | 19:10 | 9:0
-        VBP | VFPE  | VFP
-HIGH  31:21 | 20:10 | 9:0
-        VS  | VDP   | VBPE
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:20</th><th>19:10</th><th>9:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>VBP</td><td>VFPE</td><td>VFP</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:21</th><th>20:10</th><th>9:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>VS</td><td>VDP</td><td>VBPE</td></tr></tbody>
+</table>
 
 These fields count vertical units. Multiplying by U converts them to half-lines. VDP
 sets the active-display interval. VFP and VFPE offset VSync from its end; all six fields
@@ -900,12 +933,15 @@ output-pixel extents.
 | `080103D4H` | `CSR_LOW` | Event status, acknowledgements, FIELD, FLUSH, and RESET | Read; W1C events; write actions | `551B4000H` |
 | `080103D8H` | `CSR_HIGH` | Zero high word | Read zero; writes have no action | `00000000H` |
 
-```text
-LOW   31:14 | 13    | 12:10 | 9     | 8     | 7:5 | 4      | 3     | 2     | 1      | 0
-         —  | FIELD |   —   | RESET | FLUSH |  —  | EDWINT | VSINT | HSINT | FINISH | SIGNAL
-HIGH  31:0
-        Read zero; writes have no action
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:14</th><th>13</th><th>12:10</th><th>9</th><th>8</th><th>7:5</th><th>4</th><th>3</th><th>2</th><th>1</th><th>0</th></tr></thead>
+<tbody><tr><th>Field</th><td>—</td><td>FIELD</td><td>—</td><td>RESET</td><td>FLUSH</td><td>—</td><td>EDWINT</td><td>VSINT</td><td>HSINT</td><td>FINISH</td><td>SIGNAL</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>Read zero; writes have no action</td></tr></tbody>
+</table>
 
 | Bits | Field | Access and operation |
 |---|---|---|
@@ -943,12 +979,15 @@ gives the accepted-work and upload rules.
 | `080103DCH` | `IMR_LOW` | Five event masks and fixed read bits | R/W masks; fixed bits as below | `00007F00H` |
 | `080103E0H` | `IMR_HIGH` | Zero high word | Read zero; writes have no action | `00000000H` |
 
-```text
-LOW   31:15 | 14:13 | 12     | 11    | 10    | 9      | 8      | 7:0
-       Zero | Ones  | EDWINT | VSINT | HSINT | FINISH | SIGNAL | Zero
-HIGH  31:0
-        Read zero; writes have no action
-```
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:15</th><th>14:13</th><th>12</th><th>11</th><th>10</th><th>9</th><th>8</th><th>7:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>Zero</td><td>Ones</td><td>EDWINT</td><td>VSINT</td><td>HSINT</td><td>FINISH</td><td>SIGNAL</td><td>Zero</td></tr></tbody>
+</table>
+
+<table class="bit-fields">
+<thead><tr><th>HIGH</th><th>31:0</th></tr></thead>
+<tbody><tr><th>Field</th><td>Read zero; writes have no action</td></tr></tbody>
+</table>
 
 | Mask bit | Corresponding CSR event | 0 | 1 |
 |---:|---|---|---|

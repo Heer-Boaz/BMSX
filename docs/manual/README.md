@@ -129,8 +129,8 @@ to copy, and no automatic claim that an unchanged flag proves a review is curren
 ## Shared print design and source markup
 
 [print.css](print.css) owns the common monochrome A4 layout: 19 mm top, 18 mm
-other margins, 10 pt body text, ruled headings/tables, and compact monospace bit
-layouts. Book/chapter labels and page numbers are generated in page margins.
+other margins, 10 pt body text, ruled headings/tables, compact bit-field tables,
+and monospace equations. Book/chapter labels and page numbers are generated in page margins.
 All previews say **DRAFT — NOT FOR PUBLICATION**, including in every page footer.
 
 Author figures as local, standalone SVG with a `viewBox`, unique IDs, and meaningful
@@ -157,6 +157,19 @@ Blank lines inside the HTML boundary let Markdown parse normally. Use
 `class="keep-together"` for another short indivisible group. If a group or table
 exceeds one printable page, split it editorially; do not shrink the whole chapter
 or hide overflow. Prose and longer sections otherwise paginate normally.
+
+Use real tables for register bit fields, not columns aligned with spaces. A
+`bit-fields` table pairs each bit range with its field; use separate tables when
+the low and high words have different divisions:
+
+```html
+<table class="bit-fields">
+<thead><tr><th>LOW</th><th>31:1</th><th>0</th></tr></thead>
+<tbody><tr><th>Field</th><td>R</td><td>Enable</td></tr></tbody>
+</table>
+```
+
+These are field-group tables, not drawings to a physical bit-width scale.
 
 ## Repository commands
 
