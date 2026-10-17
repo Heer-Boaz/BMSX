@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="400" viewBox="0 0 1000 400" role="img" aria-labelledby="title desc">
+  <title id="title">One vertex in model, world, view, and screen coordinates</title>
+  <desc id="desc">Model point 64,32,0 is placed at world point 168,104,768. Subtracting viewing origin 120,56,256 with unchanged axes gives view point 48,48,512. With H 256 and offsets 128,96, its screen point is 152,120. A lower solid path shows that GTE directly transforms the model input to view coordinates using the combined supplied matrix and translation, without storing the world point.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#16466b"/></marker>
+    <marker id="softArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#68737c"/></marker>
+  </defs>
+  <rect width="1000" height="400" fill="white"/>
+  <g font-family="sans-serif" fill="#1d2b36">
+    <text x="35" y="35" font-size="21" font-weight="700">One vertex; four coordinate descriptions</text>
+    <text x="35" y="61" font-size="15">World placement is a software meaning, not a required GTE intermediate.</text>
+    <g font-size="13" text-anchor="middle" fill="#465966">
+      <text x="260" y="92">Place the model</text><text x="260" y="109">R_model, b</text>
+      <text x="510" y="92">Change the origin</text><text x="510" y="109">p_world − c</text>
+      <text x="760" y="92">Perspective, then offset</text><text x="760" y="109">H = 256; (128,96)</text>
+    </g>
+    <g stroke="#16466b" stroke-width="1.5" fill="#f1f6fa">
+      <rect x="35" y="125" width="205" height="80" rx="5"/>
+      <rect x="535" y="125" width="195" height="80" rx="5"/>
+      <rect x="790" y="125" width="175" height="80" rx="5"/>
+    </g>
+    <rect x="285" y="125" width="200" height="80" rx="5" stroke="#68737c" stroke-width="1.5" stroke-dasharray="5 4" fill="#f7f7f7"/>
+    <g text-anchor="middle">
+      <g font-size="15" font-weight="700">
+        <text x="137.5" y="150">MODEL</text><text x="385" y="150">WORLD</text>
+        <text x="632.5" y="150">VIEW</text><text x="877.5" y="150">SCREEN</text>
+      </g>
+      <g font-family="monospace" font-size="18">
+        <text x="137.5" y="182">(64,32,0)</text><text x="385" y="182">(168,104,768)</text>
+        <text x="632.5" y="182">(48,48,512)</text><text x="877.5" y="182">(152,120)</text>
+      </g>
+    </g>
+    <g fill="none" stroke-width="1.7">
+      <path d="M241,165 H278" stroke="#68737c" stroke-dasharray="5 4" marker-end="url(#softArrow)"/>
+      <path d="M486,165 H528" stroke="#68737c" stroke-dasharray="5 4" marker-end="url(#softArrow)"/>
+      <path d="M731,165 H783" stroke="#16466b" marker-end="url(#arrow)"/>
+      <path d="M137,206 V305 H278" stroke="#16466b" marker-end="url(#arrow)"/>
+      <path d="M580,305 H632 V213" stroke="#16466b" marker-end="url(#arrow)"/>
+    </g>
+    <rect x="285" y="253" width="295" height="94" rx="5" stroke="#16466b" stroke-width="1.7" fill="#e8f1f8"/>
+    <g text-anchor="middle">
+      <text x="432.5" y="276" font-size="15" font-weight="700">GTE: one supplied transform</text>
+      <text x="432.5" y="300" font-family="monospace" font-size="14">m/4096: (X,Y,Z) → (−Y,X,Z)</text>
+      <text x="432.5" y="323" font-family="monospace" font-size="14">TR = (80,−16,512); SF=1, LM=0</text>
+    </g>
+    <text x="137" y="329" font-size="13" text-anchor="middle">signed input halves</text>
+    <text x="654" y="277" font-size="13">IR = view point</text>
+    <text x="654" y="297" font-size="13">SZ = 512</text>
+    <text x="35" y="381" font-size="14">Solid lower path: model input → supplied matrix/translation → view result. Dashed path: software interpretation.</text>
+  </g>
+</svg>

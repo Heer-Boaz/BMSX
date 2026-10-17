@@ -1,54 +1,66 @@
-# GTE draft print review
+# GTE print review
 
-Engine: Chromium `153.0.8010.12`, Node `v22.23.1`, Linux x64.
-PDF inspection: PDFium `156.0.8076.0`, rendered at 90 dpi.
-Source/figure semantics: [gte-source.md](gte-source.md).
+Approved for the reviewed expanded chapter. Facts, arithmetic and figure
+semantics are recorded separately in [gte-source.md](gte-source.md).
+Page count is inspection scope, not evidence of instructional completeness.
 
-## Current artifact and scope
+Engine: Chromium153.0.8010.12, Nodev22.23.1, Linuxx64. PDF inspection used the
+existing PDFium environment, with readable individual renders and contact sheets.
+The shared stylesheet, fonts and publisher are unchanged.
 
-`npm run manual:preview -- gte` renders the current **37-page draft** to
-`build/manual/gte.preview.pdf`. All pages were inspected as actual readable PDFium
-images, split across three reviewers (1–12, 13–24, 25–37). The integrating editor
-also checked the specifications, new projection diagram, rendering sequence and
-final arithmetic/example pages.
+## Actual PDF inspection
 
-The chapter uses the existing stylesheet, fonts and publisher. The only new figure
-is an authored SVG of the worked triangle and its dimensions. There is no
-chapter-specific rendering code, smaller type, automatic section assembler or
-new publication schema.
+The final draft and publish-mode release proof each contain120 pages. The release
+proof was rendered by the existing shared `renderChapter` to
+`/tmp/bmsx-gte-depth/release-proof/gte.pdf` before print approval. The old
+18-page `build/manual/gte.pdf` was not used as current evidence.
 
-## Findings and resolutions
+- Preview pages1–44 were individually rendered and viewed at1.5×, including the
+  dataflow/coordinate/projection figures, numerical tables and every consecutive
+  cartridge listing fragment. Root inspected45–80 in actual PDF contact sheets,
+  including full projection, NCLIP, selector, flag and lighting tables.
+- Preview pages81–119 were individually inspected at1.5×. After adding the worked
+  conversion/sign-count reference, the affected107–120 were inspected again.
+- Removing the draft banner changes release body pagination only on1–3 within
+  the first73 pages. Exact rendered-body comparisons establish that4–73 match
+  the visually inspected draft; root viewed the three changed release pages.
+- The final release proof's74–120 received a separate inspection/comparison after
+  the NCCT/CC setups and VMAD3 link correction. Changed74–81/99 were individually
+  viewed. Unchanged82–98/100–120 match the corrected, already visually inspected
+  body renders exactly;82–83/95–96/120 were also viewed again.
 
-- The specifications and programming tables are readable at ordinary table size;
-  field labels are paired with ranges in actual cells.
-- The new geometry diagram has readable vertex/origin/offset labels, visible axis
-  arrowheads and dimension endpoints. Its coordinate area is not represented as
-  a hardware clipping window.
-- The triangle setup, result snapshots, GP0 packets, PCRTC setup, and translated
-  projection retain complete tables in usable order. The NCCS/DPCS examples and
-  all individual command entries remain readable across page boundaries.
-- Three real pagination findings were corrected using existing author grouping:
-  NCLIP's lead-in stays with its formula; the screen-coordinate heading/lead-in
-  stays with its ordered formula; PLUS's publication lead-in stays with its result
-  table. No publisher exception was introduced.
-- All thirteen register groups fit their pages. Whitespace before an indivisible
-  entry is accepted rather than splitting it or shrinking its type. The seed ROM
-  title, legend, all257 bytes and final index100 remain together.
+No clipping, overlap, lost/misaligned fields, unusable code/type or reader-blocking
+break remains. All four figures,76-word register inventory, command tables,
+complete-work budgets and257-byte reciprocal appendix are within their borders.
+Running labels/page numbers and PDF navigation remain present. Whitespace before
+whole register groups is accepted rather than shrinking type or splitting fields.
 
-After final wording/specification/grouping changes, a pixel comparison identified
-changed pages2–5,11,14,34–37. Those pages were reinspected; all other final pages
-were pixel-identical to the initially inspected draft. No clipping, overlap,
-stranded-heading or unusable table/formula break remains in the final draft.
+## Resolved assembly findings
 
-## Validation and publication status
+- The complete cartridge listing was too large as one indivisible block. Eight
+  consecutive semantic fragments preserve every source line apart from print
+  indentation; no publisher special case or smaller-type workaround was added.
+- The extreme direct-screen NCLIP table was too wide. Separate input/result tables
+  retain every operand, full determinant, raw/signed result and flag. The ordinary
+  winding table remains a separate unchanged calculation.
+- A repeated-PLUS section was accidentally included in the reciprocal appendix's
+  keep-together wrapper. The wrapper now bounds only the appendix.
+- A CDP single-word orphan and GPL single-line widow were resolved with shorter
+  equivalent prose; rebuilt actual pages confirm both fixes.
+- Internal paragraph labels were replaced by explicit command inputs or a named
+  link. The resulting page-break changes received the release inspection above.
 
-The shared layout checks report three figures, thirteen register groups and no
-layout errors. All sixteen manual tests pass; the actual GTE integration test
-renders a draft without requiring editorial publication approval. All121 focused
-GTE/GPU tests pass. These mechanical/runtime results do not substitute for the
-source, reader or PDF reviews.
+## Reproduction
 
-Every draft page retains its DRAFT footer. This review approves the inspected
-layout, **not final publication**: the physical-clock/bus specification question in
-[gte.json](gte.json) remains open. The earlier eighteen-page release artifact is
-not the current draft and has not been silently replaced with an approved release.
+```sh
+npm run manual:preview -- gte
+npm run manual:check -- gte
+npm run manual:publish -- gte
+npm run test:manual
+```
+
+Mechanical checks report4 figures,13 register groups and no overflow, oversized
+indivisible blocks or clipped SVG labels. All16 shared manual tests pass; they
+do not substitute for the visual/source/reader evidence. The canonical artifact
+is `build/manual/gte.pdf`; the separately generated preview retains its DRAFT
+banner/footer. The chapter continues to use the ordinary shared pipeline.

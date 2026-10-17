@@ -4,7 +4,9 @@ Editorial input for one hardware-manual chapter; not chapter prose. Source scope
 the mirrored IO/memory-map/numeric leaves and live GTE owners, plus the specific
 mapped-memory, CPU access/alignment/store-interlock, scheduler-clock, and machine reset/service
 callsites needed to establish access and timing. No architecture document,
-reference PDF, external console specification, or rendering backend was used.
+reference PDF or external console specification was used. The adjacent GPU
+packet decoder and PCRTC/VBlank owners are cited only for the explicit drawing
+and display hand-offs in the complete cartridge example.
 
 No TS/C++/spec disagreement was found in the source facts below. Absolute
 addresses were independently evaluated from both mirrored constant expressions.
@@ -630,7 +632,7 @@ The following narrative conventions are derived from existing operations, not cl
 | Matrix factor 4096, translation scaling, SF/LM and wrap/clamp warnings | Arithmetic primitives; projection RT | [TS dot rotation and projection](../../../machine/ts/machine/devices/gx/gte.ts#L950-L995), [TS MAC/IR stages](../../../machine/ts/machine/devices/gx/gte.ts#L680-L761), [TS projection IR3](../../../machine/ts/machine/devices/gx/gte.ts#L1036-L1050); [C++ dot rotation/projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L824-L869), [C++ MAC/IR stages](../../../machine/cpp/machine/devices/gx/gte.cpp#L543-L624), [C++ projection IR3](../../../machine/cpp/machine/devices/gx/gte.cpp#L910-L924) |
 | H unsigned; signed screen offset ×65536; depth fixed-12 regardless SF; screen clamp | Projection RT and its exact divide | [TS projection](../../../machine/ts/machine/devices/gx/gte.ts#L977-L995), [TS depth/divide/screen limits](../../../machine/ts/machine/devices/gx/gte.ts#L1052-L1106), [TS projection operand getters](../../../machine/ts/machine/devices/gx/gte.ts#L1235-L1253); [C++ projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L851-L869), [C++ limits/divide](../../../machine/cpp/machine/devices/gx/gte.cpp#L926-L979), [C++ getters](../../../machine/cpp/machine/devices/gx/gte.cpp#L1107-L1125) |
 | RTPT ordering and final IR0, flag accumulation, command-scoped status | Command table; projection last-vertex rule | [TS RTPT dispatch](../../../machine/ts/machine/devices/gx/gte.ts#L623-L629), [TS cue output](../../../machine/ts/machine/devices/gx/gte.ts#L992-L995), [TS IR0 limit](../../../machine/ts/machine/devices/gx/gte.ts#L1108-L1119); [C++ RTPT dispatch](../../../machine/cpp/machine/devices/gx/gte.cpp#L488-L494), [C++ cue output](../../../machine/cpp/machine/devices/gx/gte.cpp#L866-L869), [C++ IR0 limit](../../../machine/cpp/machine/devices/gx/gte.cpp#L981-L992) |
-| Doubled oriented area; AVSZ scaled sum; preserved histories | Direct arithmetic commands | [TS NCLIP/AVSZ](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1019); [C++ NCLIP/AVSZ](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L893) |
+| Doubled oriented area; AVSZ scaled sum; preserved histories | Direct arithmetic commands | [TS NCLIP/AVSZ](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1007); [C++ NCLIP/AVSZ](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L881) |
 | Normal/light/color roles; distinct color-byte and output ×16 scales; cue endpoints | Shared color/lighting stages; command stage table | [TS stages](../../../machine/ts/machine/devices/gx/gte.ts#L783-L869), [TS depth cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948), [TS RGB push](../../../machine/ts/machine/devices/gx/gte.ts#L1133-L1141); [C++ stages](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L732), [C++ cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822), [C++ RGB push](../../../machine/cpp/machine/devices/gx/gte.cpp#L1006-L1014) |
 
 No TS/C++ disagreement was found in this audited scope. Read/write addresses and their exact access semantics remain those already extracted in the fact sheet. The prose does not replace the exact arithmetic appendix or full register inventory.
@@ -896,3 +898,338 @@ auditor. Minor author action: "next two tables" precedes three GP0 tables; say
 "following GP0 tables". For local clarity, the latch paragraph can repeat the
 already cross-referenced rule to finish all four writes before the same VBlank
 entry, rather than allowing "visible together" to suggest atomic store admission.
+
+## Further programming derivations: spaces, transform construction and color selection
+
+These are chosen mathematical examples, not additional hardware modes or a source
+of new machine constants. The architectural inputs and exact arithmetic are the
+ones already enumerated above. Coordinate names, handedness, model placement,
+viewing origin, normal scale and material choices are explicitly software policy.
+
+| Used hardware fact | Narrow mirrored owner evidence |
+|---|---|
+| Input vector components are signed low/high halfwords; matrix coefficients are signed halves; projection selects matrix0 and translation0 | [TS vector](../../../machine/ts/machine/devices/gx/gte.ts#L1161-L1171), [C++ vector](../../../machine/cpp/machine/devices/gx/gte.cpp#L1033-L1043); [TS matrix](../../../machine/ts/machine/devices/gx/gte.ts#L1196-L1233), [C++ matrix](../../../machine/cpp/machine/devices/gx/gte.cpp#L1068-L1105) |
+| Rows consume XYZ with ordered signed44 accumulation; SF shift precedes signed visible-word IR limiting | [TS rows](../../../machine/ts/machine/devices/gx/gte.ts#L783-L818), [C++ rows](../../../machine/cpp/machine/devices/gx/gte.cpp#L646-L681); [TS MAC](../../../machine/ts/machine/devices/gx/gte.ts#L680-L719), [C++ MAC](../../../machine/cpp/machine/devices/gx/gte.cpp#L545-L584) |
+| Projection uses limited IR1/IR2, fixed12 retained-Z depth, integer reciprocal and fixed16 screen output; no screen clipping-volume input | [TS projection](../../../machine/ts/machine/devices/gx/gte.ts#L950-L995), [C++ projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L824-L869); [TS limits/divide](../../../machine/ts/machine/devices/gx/gte.ts#L1036-L1106), [C++ limits/divide](../../../machine/cpp/machine/devices/gx/gte.cpp#L910-L979) |
+| Light stage consumes matrix1/vector/zero control; color stage consumes matrix2/current IR/control1 | [TS stage selection](../../../machine/ts/machine/devices/gx/gte.ts#L820-L826), [C++ stage selection](../../../machine/cpp/machine/devices/gx/gte.cpp#L683-L689) |
+| NCCS applies RGBC after both matrices; NCS omits base multiplication; NCDS cues the unshifted modulation products | [TS stages](../../../machine/ts/machine/devices/gx/gte.ts#L828-L858), [C++ stages](../../../machine/cpp/machine/devices/gx/gte.cpp#L691-L721) |
+| Color pushes consume signed visible MAC>>4, byte-limit and current RGBC CODE, not old FIFO CODE | [TS color push](../../../machine/ts/machine/devices/gx/gte.ts#L1133-L1141), [C++ color push](../../../machine/cpp/machine/devices/gx/gte.cpp#L1006-L1014) |
+| Cue difference and result have separate SF shifts/clamps; compound modulation inputs need not equal a reloaded byte color | [TS depth cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948), [C++ depth cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822) |
+
+### Coordinate-space example
+
+Chosen software mapping: model `(X,Y,Z)` becomes world `(-Y,X,Z)+(200,40,768)`.
+Viewing origin is `(120,56,256)`, with unchanged axes. Therefore the directly
+supplied transform has raw rows `(0,-4096,0)`, `(4096,0,0)`, `(0,0,4096)` and
+translation `(80,-16,512)`. Model `(64,32,0)` gives world `(168,104,768)` and view
+`(48,48,512)`. Raw row accumulations are `(196608,196608,2097152)`; SF=1 produces
+those view coordinates. H256, OFX128<<16 and OFY96<<16 produce q32768, screen
+`(152,120)`. With unchanged axes, viewing-origin movement +32 in world X changes
+that point's view X from48 to16. This is derived coordinate algebra, not a GTE
+camera state.
+
+The spatial/screen movement contrast uses unsaturated X64 at depths512/1024,
+H256 and OFX128<<16. The exact quotients32768/16384 give original SX160/144.
+Adding spatial TRX32 gives176/152; adding OFX16<<16 instead gives176/160.
+The figure labels follow this chosen example and do not add an intermediate
+world register or clipping window.
+
+### Nonidentity transform construction
+
+Chosen local scales5/4,5/2,1 followed by an XY turn with cos3/5,sin4/5 give
+interpreted rows `(3/4,-2,0)`, `(1,3/2,0)`, `(0,0,1)`. Raw Q12 rows are
+`(3072,-8192,0)`, `(4096,6144,0)`, `(0,0,4096)`. Matrix words are
+`e0000c00 10000000 00001800 00000000 00001000`; translation `(40,-24,512)` is
+`00000028 ffffffe8 00000200`. Model origin and +64 axis probes produce
+`(40,-24,512)`, `(88,40,512)`, `(-88,72,512)`, `(40,-24,576)`. The first two
+probe displacements have lengths80/160 and dot product0.
+
+Model `(64,16,0)` produces raw accumulations `(229376,262144,2097152)`, then
+MAC/IR `(56,64,512)` at SF1/LM0. H256, offsets128/96 and zero DQA/DQB yield
+screen `(156,128)`, SXY2=`0080009c`, FLAG0. The chosen flat input box
+X/Y=-64..64,Z0 gives view X=-136..216,Y=-184..136,Z512 and screen X60..236,
+Y4..164. These finite bounds justify this example's absence of clamps only.
+
+### Nonidentity lighting and material choice
+
+Chosen approximate Q12 normal `(2458,0,3277)`; raw light rows
+`(3072,0,2048)`, `(-2048,0,3072)`, `(0,0,-4096)`; raw color rows
+`(4096,1024,0)`, `(2048,4096,0)`, `(1024,2048,4096)`; ambient `(256,512,128)`.
+SF1/LM1 light accumulations `(14262272,5032960,-13422592)` yield shifted MAC
+`(3482,1228,-3277)` and limited IR `(3482,1228,0)`. Color accumulations are
+`(16568320,14258176,6604800)` and produce gains `(4045,3481,1612)`.
+
+RGBC=`34c060a0` (material A, RGB160/96/192) produces unshifted modulation
+`(10355200,5346816,4952064)`, visible MAC/IR `(2528,1305,1209)`, RGB2=`344b519e`.
+FLAG=`00400000` retains only the earlier IR3 saturation; ERROR is clear.
+Zero supplied normal instead produces ambient-only RGB2=`34060c0a`. NCS under
+the original normal/matrices gives direct unmodulated RGB252/217/100.
+
+RGBC=`34a0c040` (material B, RGB64/192/160) produces modulation
+`(4142080,10693632,4126720)`, shifted MAC/IR `(1011,2610,1007)`, RGB2=`343ea33f`.
+Both examples retain the same supplied normal and matrix setup.
+
+For material A, far vector `(1280,1536,2560)` and direct IR0=2048 give fused
+NCDS RGB2=`34755876`. Reloading the earlier NCCS byte result as RGBC and using
+DPCS gives `34755877` instead: the red cue differences are -1249 versus -1248.
+Preloading light responses `(3482,1228,0)` followed by CC/CDP reproduces the
+corresponding material/cued result; preloading gains `(4045,3481,1612)` followed
+by DCPL reproduces the cued result. Those continuations do not recreate earlier
+light-stage flags. All examples were independently derived with integer products
+and shifts, then checked through live TS arithmetic; C++ agreement was checked
+in source, not by executing the native runtime.
+
+### Expanded RTPS/RTPT reference examples
+
+The full command entries use the existing source contract, not new instruction
+encodings. Dispatch and last-vertex cue selection: [TS RTPS](../../../machine/ts/machine/devices/gx/gte.ts#L525-L533),
+[C++ RTPS](../../../machine/cpp/machine/devices/gx/gte.cpp#L390-L398),
+[TS RTPT](../../../machine/ts/machine/devices/gx/gte.ts#L623-L629),
+[C++ RTPT](../../../machine/cpp/machine/devices/gx/gte.cpp#L488-L494).
+Their projection/arithmetic stages and flags are sourced above. Numeric execution
+here was through those TS owners, not a guest or native timing measurement.
+
+RTPS chosen quarter-turn rows `(0,-4096,0)`, `(4096,0,0)`, `(0,0,4096)`,
+translation `(12,-8,300)`, V0`(30,-45,700)`, OFX=`00804000`, OFY=`00608000`,
+H333,DQA=-256,DQB=`00800000`: transformed `(57,22,1000)`, q21824, screen
+`(147,103)`, IR0=684, MAC0=`002ac000`, FLAG0. The exact reciprocal derivation
+has shift6,r1=31232,table index244,T=5,r2=262,r3=65572,reciprocal67109.
+
+RTPT uses that same transform/projection with inputs `(30,-45,100)`,
+`(-140,-120,300)`, `(150,80,1200)`: transformed depths400/600/1500 and exact
+quotients54559/36372/14549 produce screens `(175,114)`, `(201,14)`, `(113,128)`.
+Final IR0=1138, MAC0=`00472b00`, FLAG0. The negative cue expressions that the
+first two quotients would produce are not evaluated by RTPT. Changing only
+V0.Z to -200 gives its depth100, q131071, screen`(242,140)`, FLAG=`80020000`,
+while final V2 MAC/IR/IR0 remain unchanged. Old SZ3=444 ends as final SZ0;
+the new depths occupy SZ1/SZ2/SZ3. These examples also checked the derived
+packed-color reads and the four SF/LM option contrasts printed in the entries.
+
+### Composing transforms and choosing cue coefficients
+
+The composition lesson uses the previous parent matrix A and translation
+`a=(40,-24,512)`. A local Q12 YZ turn B has rows `(4096,0,0)`,
+`(0,2458,-3277)`, `(0,3277,2458)`, with local origin `b=(5,-3,7)`.
+Column-vector composition is `C=A*B`, `t=A*b+a`. Chosen policy: accumulate the
+whole row product, arithmetic-shift12 once, and retain representable signed16
+coefficients/integer translation. Four MVMVA words `00086012 0008e012 00096012
+00080012` produce C columns and t. Raw result rows are `(3072,-4916,6554)`,
+`(4096,3687,-4916)`, `(0,3277,2458)`; translation `(49,-24,519)`. Sequential
+integer-IR evaluation gives `(91,45,536)` where the precomposed result gives
+`(90,44,536)` for the lesson's same vertex(64,16,8): these are different explicitly
+chosen truncation policies, not claimed hardware equivalence. Matrix rows and
+control consumption: [TS MVMVA](../../../machine/ts/machine/devices/gx/gte.ts#L913-L937),
+[C++ MVMVA](../../../machine/cpp/machine/devices/gx/gte.cpp#L777-L811),
+[TS operand snapshot](../../../machine/ts/machine/devices/gx/gte.ts#L918-L920),
+[C++ operand snapshot](../../../machine/cpp/machine/devices/gx/gte.cpp#L785-L787).
+
+P04's nearest-coefficient error bound is qualified: rounding to the nearest Q12
+integer must leave that integer in signed16 range. It does not bound saturation
+of out-of-range ideal coefficients. P05's exact representable mapping and box
+corners were independently re-executed during reader review.
+
+Cue fitting uses H128, near256, far768 and the actual q endpoints32768/10923.
+DQA=-768 is raw `fffffd00`. Ideal-division DQB=`01800000` gives far IR0=4095;
+calibrated DQB=`01800100` gives near0/far4096 without either endpoint clamping.
+At Z128/256/384/512/768/1024, q is65536/32768/21845/16384/10923/8192; shifted
+cue is-6144/0/2048/3072/4096/4608, then IR0 clamps to0/0/2048/3072/4096/4096.
+Only Z128/Z1024 set projection IR0 saturation here. Material A's NCDS RGB words
+are `344b519e 344b519e 34755876 348a5c63 34a05f4f 34a05f4f`; its full coefficient
+still loses fractional red/green terms. This is not generalized as an exact
+far-byte endpoint for NCDS. Reciprocal, full cue and limits:
+[TS projection](../../../machine/ts/machine/devices/gx/gte.ts#L975-L995),
+[C++ projection](../../../machine/cpp/machine/devices/gx/gte.cpp#L849-L869),
+[TS reciprocal](../../../machine/ts/machine/devices/gx/gte.ts#L1071-L1094),
+[C++ reciprocal](../../../machine/cpp/machine/devices/gx/gte.cpp#L945-L967),
+[TS cue](../../../machine/ts/machine/devices/gx/gte.ts#L939-L948),
+[C++ cue](../../../machine/cpp/machine/devices/gx/gte.cpp#L813-L822).
+
+### Practical vector arithmetic and numerical diagnosis
+
+GPF then GPL under SF1/LM0 combines a=(96,-48,32), weight3072 and
+b=(-32,80,64), weight1024. First MAC=(72,-36,24), final MAC=(64,-16,40).
+With CODE5a, pushes are `5a010004`, `5a020004`; both FLAG=`00100000`, not ERROR.
+GPF/GPL consume signed IR0 and IR lanes; GPL adds the signed *visible* MAC
+scaled by4096 under SF1, not an unrounded hidden product:
+[TS GPF/GPL](../../../machine/ts/machine/devices/gx/gte.ts#L894-L911),
+[C++ GPF/GPL](../../../machine/cpp/machine/devices/gx/gte.cpp#L757-L775).
+
+OP on u=(12,-8,4) in matrix0 diagonal and v=(-4,20,8) in IR gives
+n=(-144,-112,208), SF0/LM0, FLAG0. SQR SF0 produces MAC=(20736,12544,43264),
+IR3=32767, FLAG=`00400000`; sum MACs76544, not limited IRs66047. Exact functions:
+[TS OP](../../../machine/ts/machine/devices/gx/gte.ts#L763-L771),
+[C++ OP](../../../machine/cpp/machine/devices/gx/gte.cpp#L626-L634),
+[TS SQR](../../../machine/ts/machine/devices/gx/gte.ts#L871-L879),
+[C++ SQR](../../../machine/cpp/machine/devices/gx/gte.cpp#L734-L742).
+
+Mapped-owner diagnostic cases, independently derived with integer arithmetic:
+
+| Independent case | Input/change and command | Exact observation |
+|---|---|---|
+| Fractional shift | C0=0800, V0.X=+3/-3, command00086012 | MAC1=1/-2, FLAG0 |
+| Visible32 wrap, not signed44 overflow | Matrix0zero, TRX=00080000, command00000012 | MAC1=80000000, IR1=ffff8000, FLAG81000000 |
+| Ordered44 cancellation | C0=f0001000,TRX=7fffffff,V0=(1,1,0),command00080012 | MAC1=7fffffff,IR1=7fff,FLAGc9000000 |
+| IR clamp with no screen clamp | Matrix diag8192/4096/4096,V0=(20000,0,512),H16,command00080001 | MAC1=40000,IR1=32767,SXY2=000003ff,FLAG81000000 |
+| Earlier MAC0 event retained after cue | Identity,V0=(32767,0,512),H256,OFX7fffffff,zero cue,command00080001 | Final MAC0=0,SXY2=000003ff,FLAG80014000 |
+| Reciprocal edge/negative depth | Identity,X1,Y0,H256,Z129/128/-1,command00080001 | SXY2=1 each; depths129/128/0,FLAG0/80020000/80060000 |
+
+The normal arithmetic/flags and projection owner ranges linked above define each
+stage. Signed44 ordered wrap plus shifted visible-word interpretation:
+[TS MAC/accumulation](../../../machine/ts/machine/devices/gx/gte.ts#L680-L746),
+[C++ MAC/accumulation](../../../machine/cpp/machine/devices/gx/gte.cpp#L545-L609).
+These are execution and derivation checks, not a CPU-cycle measurement.
+
+### Executable BLua operands and repeated-frame display
+
+The public listing follows the existing BIOS static-data patterns:
+[monitor typed records](../../../machine/bios/shell/commands.lua#L61-L78),
+[terminal ROM/BSS](../../../machine/bios/tty/terminal.lua#L41-L73),
+[VBlank counter](../../../machine/bios/kernel/vblank.lua#L6-L23).
+The four reusable GTE operand types are owned by
+[cartlib/gx/gte.lua](../../../cartlib/gx/gte.lua#L3-L28), not a cart-local ABI.
+Compiler source for the fixed-record representation:
+[primitive sizes](../../../toolchain/ts/lua/compiler/struct_types.ts#L44-L69),
+[static initialization](../../../toolchain/ts/lua/compiler.ts#L3720-L3815),
+[typed strides](../../../toolchain/ts/lua/compiler.ts#L4982-L5022),
+[word stores](../../../toolchain/ts/lua/compiler.ts#L5235-L5245).
+Current compile has152 ROM operand bytes and12 BSS bytes, no NEWT/GETT/SETT,
+and only Word memory instructions. Guest assertions independently check sizes,
+offsets, negative coordinate serialization and row-major matrix word contents.
+
+The Gouraud triangle's GP0 first word is300000a0, followed by SXY0,
+00008000,SXY1,00400000,SXY2. Its six-word color/coordinate order and raster
+interpolation are defined by
+[TS Gouraud decode](../../../machine/ts/render/backend/software/gx_gpu_commands.ts#L185-L192),
+[C++ Gouraud decode](../../../machine/cpp/render/backend/software/gx_gpu_commands.cpp#L187-L194).
+GPU-idle status is not inferred from GTE completion. PCRTC RESET's drawing/display
+action is defined by
+[TS CSR action](../../../machine/ts/machine/devices/gx/gpu.ts#L1409-L1421),
+[C++ CSR action](../../../machine/cpp/machine/devices/gx/gpu.cpp#L918-L930).
+The display buffers use the earlier established GX16 stride1024 mapping at rows0
+and256; the low words are000fa000/000fa040. The source window remains256x192.
+The actual scheduled VBlank path latches presentation before raising the system
+VBlank interrupt:
+[TS VBlank](../../../machine/ts/machine/runtime/vblank.ts#L54-L64),
+[C++ VBlank](../../../machine/cpp/machine/runtime/vblank.cpp#L39-L48),
+[TS latch](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L723-L730),
+[C++ latch](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L446-L453).
+The sequence is sampled after display stores; another observed increment precedes
+reuse of the previous front buffer. Interrupt masking is not a latch inhibit.
+
+Both isolated real guest cases pass: static_operand_layout and
+geometry_color_and_buffer_lifetime. Captures show the actual interpolated
+triangle and its translated later frame, not a separately drawn illustration.
+Execution is headless TS CPU/device/BIOS/scanout; no native or physical-hardware
+run is claimed. The complete cartridge and test remain ordinary source files,
+without a chapter assembler, new protocol or publisher branch.
+
+### Expanded MVMVA cases and repeated PLUS timing
+
+MVMVA dispatch/selector/row ownership is linked above. Synthetic mx3 is built
+from RGBC red, signed IR0 and selected matrix0 halves:
+[TS synthetic coefficients](../../../machine/ts/machine/devices/gx/gte.ts#L1182-L1194),
+[C++ synthetic coefficients](../../../machine/cpp/machine/devices/gx/gte.cpp#L1054-L1066).
+The ordinary C03 example uses matrix words08001000/f800fc00/04001000/fc000400/
+00001000, control(3,-2,10), V1(12,-7,5), command00088012. Raw accumulations
+41984/-56320/80896 yield SF1 MAC/IR(10,-14,19), FLAG0. LM1 instead sets IR2 and
+ERROR (`80800000`); SF0 saturates every IR lane (`81c00000`). Synthetic mx3 with
+red5,IR0=-256,C1lo128,C2lo-64,oldIR(3,-4,5),SF0/cv3 gives(-1840,512,-256),FLAG0.
+cv2's separate test finishes(2,8,3),FLAG00400000 from discarded first-pass
+IR3=40003. Its preliminary negative row2 is not limited to zero because that
+pass forces LM0 despite final LM1. Snapshot and both passes are verified against
+the full MVMVA owner, not modeled as an ordinary full far-vector addition.
+
+Three PLUS work items use A/M/s respectively(120,-48,256)/(24,16,-32)/2048,
+(-96,80,512)/(-20,12,8)/-1024 and(32760,-32760,1024)/(32,-32,-2048)/2048.
+Results are(132,-40,240),(-91,77,510),(32767,-32768,0), with last flagc4000000.
+Accepted current inputs, pending results/deadline and joint publication:
+[TS PLUS](../../../machine/ts/machine/devices/gx/gte.ts#L302-L431),
+[C++ PLUS](../../../machine/cpp/machine/devices/gx/gte.cpp#L160-L296).
+Actual CPU reads-before-next-issue sequence retained all nine result/flag words
+at ordinary RAM address080c1000. It consumed100 system cycles:19 value/address-load cycles,30 input-store,
+6 command-store,18 result-load,18 retention-store,7 polling/test/branch and2 RET.
+Commands accepted31/55/79, due36/60/84. Next-input stores at33/35 and57/59 occur
+while preceding work is pending without changing that work. Final reads see
+busy81, ready85; final retention ends98, return100. This is one scalar ISA
+sequence, not a measured lowering of every BLua program.
+
+A separate actual CPU direct-store test accepted first command4, charged blocked
+attempt6, serviced completion9, accepted retried store11 and returned13 with
+second completion still due16. CPU cost/readiness/scheduler owners:
+[TS scalar stores](../../../machine/ts/machine/cpu/cpu.ts#L3020-L3029),
+[C++ scalar stores](../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L579-L598),
+[TS blocking](../../../machine/ts/machine/cpu/cpu.ts#L1647-L1663),
+[C++ blocking](../../../machine/cpp/machine/cpu/cpu.cpp#L2342-L2355),
+[TS cost charge](../../../machine/ts/machine/cpu/cpu.ts#L1837-L1854),
+[C++ cost charge](../../../machine/cpp/machine/cpu/cpu.cpp#L2465-L2482),
+[TS costs](../../../machine/ts/spec/blua32/opcode.ts#L75-L84),
+[C++ costs](../../../machine/cpp/spec/blua32/opcode.cpp#L5-L54),
+[TS active time](../../../machine/ts/machine/scheduler/device.ts#L52-L81),
+[C++ active time](../../../machine/cpp/machine/scheduler/device.cpp#L33-L44).
+This is CPU/scheduler execution, unlike the isolated arithmetic checks. Its
+source was an inline verification program; no permanent timing framework was
+added. Publication itself does not make several separate result loads a snapshot.
+
+NCLIP's expanded entry follows the signed-halfword determinant and full MAC0
+path: [TS NCLIP](../../../machine/ts/machine/devices/gx/gte.ts#L998-L1007),
+[C++ NCLIP](../../../machine/cpp/machine/devices/gx/gte.cpp#L872-L881).
+Points(10,20),(100,30),(40,80) give5100; swapping the final two gives-5100;
+collinear replacement gives0. Direct signed16 extreme corners give full
++4294836225/rawfffe0001/FLAG80010000; reverse gives-4294836225/raw0001ffff/
+FLAG80008000. Their wrapped signs reverse the intended full-area sign. The
+projection-clamped coordinate square instead bounds magnitude to2047^2=4190209;
+this is a derived bound, not an input clamp performed by NCLIP.
+
+AVSZ3's expanded entry follows the full signed product, visible MAC0 low word
+and separate full-product depth clamp:
+[TS AVSZ3](../../../machine/ts/machine/devices/gx/gte.ts#L1009-L1013),
+[C++ AVSZ3](../../../machine/cpp/machine/devices/gx/gte.cpp#L883-L887).
+Depths1000/2000/3000 and ZSF3=1365 give P8190000,MAC0007cf830,OTZ1999,FLAG0;
+SZ0=60000 is not consumed. Depths65535/4/0 and scale32767 give full P2147516413,
+MAC080007ffd,OTZ65535,FLAG80050000. Depths1/0/0 and scale-1 give P=-1,
+shifted-1,OTZ0,FLAG80040000. Neither example derives OTZ from wrapped MAC0.
+
+Normal-direction qualification is explicit software mathematics: under
+R=diag(2,1,1), perpendicular e=(1,1,0),n=(1,-1,0) become Re=(2,1,0),Rn=(2,-1,0),
+with dot3. R inverse-transpose instead gives n'=(1/2,-1,0), whose dot with Re is0.
+The identity `(R^-T*n) dot(R*e)=n dot e` justifies this convention for invertible
+R; no GTE inverse/normalization behavior is added. The light-stage owner consumes
+the supplied vector and light matrix exactly as linked above.
+
+The cold packet-preparation cycle interval was independently rerun from the
+P18 reproduction fixture after correcting its data boundary: operands reside
+in real slot0 cartridge media at offset1000, address10001000; they are not
+appended to the BIOS. The scalar instruction schedule includes all38 operand
+ROM loads, all42 GTE control/input/command stores,10 GTE result loads,10 RAM
+output stores,12 LOADK,seven bitwise/comparison operations andRET. Two rejection
+JMPs are present but skipped on the accepted positive-area path. Issued count120,
+charged cycles221; all six packet words, three zero flags and area4096 agree.
+The40-byte RAM output at080c1000 is caller-reserved for this example, not new
+hardware scratch storage. BIOS/startup/caller entry, GP0 submission/drawing and
+VBlank waits are outside the interval. Opcode charges are the costs linked above;
+normal23/8/39 counts are not another70 cycles to add. Execution provenance and
+fixture mechanics stay out of the public hardware chapter.
+
+The near-plane construction is software geometry, not inferred GTE clipping.
+Chosen H256,nearZ256; view pointsA(-64,-64,128),B(64,-64,512),C(0,64,512).
+Intersections at t1/3 are(-64/3,-64,256),(-128/3,-64/3,256), chosen nearest-
+integer vertices(-21,-64,256),(-43,-21,256). Identity RTPT projection under the
+stated setup produces screens(107,32),(160,64),(128,128),(85,75). Two retained
+triples(I_AB,B,C)/(I_AB,C,I_AC) give NCLIP4416/3015. Both RTPT flags are0.
+Independent rational geometry and mapped GTE/NCLIP execution agree; the existing
+projection/NCLIP owners above define hardware behavior. No source-language
+encoding helper or GTE clipping feature is introduced.
+
+The packed-IR/leading-sign worked register examples follow the existing port
+rules, not an extra arithmetic command:
+[TS reads/writes](../../../machine/ts/machine/devices/gx/gte.ts#L433-L498),
+[C++ reads/writes](../../../machine/cpp/machine/devices/gx/gte.cpp#L298-L364),
+[TS packed conversion](../../../machine/ts/machine/devices/gx/gte.ts#L1143-L1159),
+[C++ packed conversion](../../../machine/cpp/machine/devices/gx/gte.cpp#L1016-L1031).
+Independent calculations and live register execution agree: D28 writefffffc1f
+setsIR(3968,0,3968), both packed reads7c1f. Direct IR(-128,2176,4096) changes both
+reads to7e20 without another packed-input write. D30 inputs0/ffffffff/f00/
+fff00000/80000000/7fffffff give counts32/32/20/12/1/1. A preloaded FLAG00400000
+remains unchanged through all these accesses. Count-minus-one headroom for a
+nonzero signed32 value is a software arithmetic consequence of counting its
+leading sign bits, not automatic normalization. C++ was source-inspected only.

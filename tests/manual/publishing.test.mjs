@@ -240,6 +240,6 @@ test('GTE draft renders through the shared pipeline without chapter-specific too
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-gte-publication-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const output = await renderChapter(chapter, 'preview', directory);
-	assert.equal(output.layout.figures, 3);
+	assert.equal(output.layout.figures, 4);
 	assert.match(await readFile(output.html, 'utf8'), /DRAFT/);
 });

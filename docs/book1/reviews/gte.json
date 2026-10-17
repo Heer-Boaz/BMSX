@@ -9,20 +9,16 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Operation-specific scale/packing guidance and per-command purpose/input/option/output entries cover all22 normal functions plus VMAD3. The retained exact arithmetic specifies44-bit ordered wrap, clamps, matrix/cv2 behavior, reciprocal algorithm and257 ROM bytes. H is an unscaled projection numerator, not a shared scene-coordinate scale; NCLIP is doubled oriented area with MAC0 overflow qualifications.",
-			"open": [
-				"The exact arithmetic appendix does not substitute for a full usable instruction reference. Command paragraphs still need explicit ordered calculations, complete state footprints and distinguishing worked/boundary cases; see C01-C23 in docs/book1/gte-outline.md."
-			]
+			"resolution": "All22 normal functions and PLUS VMAD3 have complete individual purpose, encoding/options, operands, ordered calculation, modified/preserved state, flags, timing and worked boundaries. Every entry received an independent non-author source/math review; the exact-stage definitions and257-byte reciprocal ROM remain available.",
+			"open": []
 		},
 		"visibility": {
 			"resolution": "Result visibility distinguishes immediate normal-command results from pending PLUS operands/results, old output visibility, deadline publication, direct word-store interlock and separate normal/PLUS state. Register-access cautions cover F64 second-word admission and word-sequence readiness preflight.",
 			"open": []
 		},
 		"timing": {
-			"resolution": "Mirrored installed-model and live timing/CPU owners establish33,868,800 system cycles/s, two-cycle admitted scalar word-store base cost, normal nominal counts without extra GTE CPU charge, and PLUS five/one-cycle deadlines. Specification tables distinguish logical32-bit transfers and arithmetic admission ceiling from physical bus guarantees.",
-			"open": [
-				"Independent GTE core clock and physical GTE/IO bus clock, pin width, arbitration/contended-transfer schedule and sustained guaranteed bandwidth are not defined by the inspected model/owners. These require an explicit hardware-specification decision; the draft states that they are not specified and does not invent Sony values."
-			]
+			"resolution": "Installed33,868,800Hz system cycles, logical word transfers, ordinary scalar CPU costs, normal nominal counts without extra GTE CPU charge, and PLUS five/one-cycle deadlines are explicit. Complete221-cycle cold geometry-to-RAM-packet and100-cycle repeated-PLUS intervals were independently executed. Physical core/bus clocks, pin width, arbitration and guaranteed sustained bandwidth are undefined by the software contract and explicitly recorded as separate specification decisions in gte-source.md, not invented publication facts.",
+			"open": []
 		},
 		"interrupts": {
 			"resolution": "Interrupts states the sourced absence of GTE completion IRQs and IRQ control words. PLUS result polling and the direct command word-store interlock are distinct mechanisms, not IRQ delivery.",
@@ -37,13 +33,8 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Parallel-written programming sections teach matrix packing/scales/SF/LM, retained state, flags, and actual choices per command. Ordered triangle RTPT->NCLIP->AVSZ3 feeds an explicit GP0 clear/draw and PCRTC latch sequence with visible pixel results; translated RTPS, NCCS, DPCS and PLUS examples have independently checked numerical readbacks. The triangle+scanout recipe ran through mapped TS owners and software raster/scanout, not a guest cartridge or native run.",
-			"open": [
-				"The manuscript is not a complete programming handbook. Paragraph acceptance criteria are tracked in docs/book1/gte-outline.md; previous source and print audits did not establish those reader outcomes.",
-				"Coordinate-space selection, constructing and composing transforms, meaningful nonidentity lighting, material selection and depth-cue coefficient derivation need integrated, independently reviewed programming lessons. New paragraph drafts are not yet part of the chapter.",
-				"Practical interpolation/general arithmetic, repeated PLUS work, numerical failure diagnosis and a full preparation/transfer/issue/wait/readout cycle budget remain incomplete.",
-				"The complete executable cartridge example and vertex-color/multiple-frame display explanation are not yet integrated into the manuscript. Its headless guest execution is separate evidence, not publication approval."
-			]
+			"resolution": "Independent reader review closes the programming route: coordinate conventions, transform construction/composition, precision and clipping, meaningful supplied normals/light/material/cue choices, general arithmetic, PLUS lifetime, numeric diagnosis, packed/leading-sign ports, actual BIOS-style typed ROM/BSS code, GPU packet submission, two-buffer publication and qualified complete-work cycle budgets. The real guest suite and both displayed images pass.",
+			"open": []
 		}
 	},
 	"reviews": {

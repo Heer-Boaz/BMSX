@@ -88,7 +88,7 @@ as `0xfffff000`. The chosen geometry does not overflow MAC0; arbitrary geometry
 also needs the overflow qualification.
 
 The initial projected triangle is `(96,64)`, `(160,64)`, `(128,128)`. Every
-32 frames the X translation alternates between 0 and 32, moving it sixteen
+32 loop iterations the X translation alternates between 0 and 32, moving it sixteen
 screen units right. NCCT produces RGB words `000000a0`, `00008000`, `00400000`;
 the GPU interpolates those colors.
 
