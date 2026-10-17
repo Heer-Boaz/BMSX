@@ -528,3 +528,39 @@ repair, new input facade, clamp, fallback or invented physical guarantee in
 this documentation slice. The requested bounded GEO plates are now accepted;
 remaining graphics contrasts, installed CPU/system contracts and Book II are
 still whole-manual work.
+
+## SYSTEM chapter: installed control, timing and console route
+
+The new SYSTEM chapter now has a complete thirteen-word reference, actual
+current-mode privilege rules, separate snapshot/publication and CPU/device
+return edges, raw cause/domain/reason meanings, reset request consumption,
+TIME/FRAME/CYCLES representations and diagnostic queue/flush behavior. Its
+selected-device context table distinguishes retained registers/assembly from
+shared RAM/VRAM, GEO completion from IMGDEC batch quiescence, and the APU voice
+hold from sample transfers. Facts are separate controller, CPU, firmware and
+per-device boundary extracts, not imported reference-console addresses.
+
+A separate author supplied each control, time/output and complete-program
+section. The ordinary BLua example uses the existing elapsed-clock helper,
+172-byte typed BSS and actual BIOS globals; its31+73 printed source lines match
+the executable modules. The retained integration case and ordinary diagnostic
+run pass. A separate real-request/read-only observation checks normal
+STATUS0→5→0→5, restored MASK4, advancing time and no fault publication. These are
+bounded normal routes, not native cartridge parity, arbitrary repaired-fault
+continuation, all-state preservation or a complete CPU/BIOS reference.
+
+**Separate CPU-owner audit, not a documentation-side repair:** simultaneous
+yield plus HALT/hard-halt/blocked state has different direct-run-loop ordering.
+`machine/ts/machine/cpu/cpu.ts:1809–1816,1874–1881` consumes yield first;
+`machine/cpp/machine/cpu/cpu.cpp:2391–2399` returns halted before consuming yield.
+The runtime wrappers separately gate held/halted execution. The finding does
+not establish guest reachability, a cartridge-visible effect or the intended
+common precedence. The chapter withholds that rule; no runtime fix, fallback,
+rollback, new harness or common precedence is inferred from the green suites.
+Both locations and scope are retained in `facts/system-context.md`.
+
+The broader newcomer acceptance target remains whole-console programming
+without reverse engineering. Complete CPU instruction/timing and on-console
+source-loading/environment contracts, remaining graphics contrasts and Book II
+remain work; one correct SYSTEM chapter cannot close them. Source/reader/actual
+PDF decisions for this chapter are recorded separately in its review files.

@@ -1,0 +1,30 @@
+[
+  {
+    "frame": 80,
+    "description": "four timer observations and raw line completed",
+    "capture": true
+  },
+  {
+    "frame": 82,
+    "description": "request installed monitor",
+    "event": {
+      "type": "supervisor-request",
+      "down": true,
+      "timestamp": 1640
+    }
+  },
+  {
+    "frame": 84,
+    "description": "release monitor request",
+    "event": {
+      "type": "supervisor-request",
+      "down": false,
+      "timestamp": 1680
+    }
+  },
+  {
+    "frame": 90,
+    "description": "firmware console retains BIOS print calls",
+    "capture": true
+  }
+]

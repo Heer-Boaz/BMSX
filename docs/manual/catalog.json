@@ -68,5 +68,12 @@
 		"chapter": "docs/book1/input.md",
 		"facts": "docs/book1/facts/input.md",
 		"review": "docs/book1/reviews/input.json"
+	},
+	"system": {
+		"book": "I",
+		"label": "SYSTEM",
+		"chapter": "docs/book1/system.md",
+		"facts": "docs/book1/facts/system.md",
+		"review": "docs/book1/reviews/system.json"
 	}
 }
