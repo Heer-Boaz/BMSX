@@ -1,0 +1,3 @@
+title: DMA Manual Example
+hardware:
+    - type: rom

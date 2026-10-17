@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Two installed channels share one admitted block; captured configuration is not payload RAM, source data is read at service, and downstream device/display completion remains separate. Independent source and complete-reader checks pass.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "All twelve nonadjacent addresses, access/reset words, complete CONTROL fields and retained upper bits, selectors including unnamed 11–14, STATUS and command/read-zero TRIGGER are covered and independently source-checked.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Ordered mapped read/write, independent four-byte increments, 32-bit wrapping, captured configuration versus live payload, block tails, overlapping RAM and writes while BUSY are taught; real mirrored owner replay passes.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Accepted programmed writes, block admission, service-edge payload effects, block-final endpoint/count publication and DONE-before-IRQ are distinct. Active snapshot overwrites versus retained new CONTROL are explicitly illustrated and executed.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Installed 33,868,800 Hz timebase and RAM/system-ROM/cartridge setup/word costs, span sum/max formula, whole-block minimum, tails/crossings and exact 94-cycle two-channel schedule are source-checked and executed identically on TS/C++ owners. Undefined electrical ratings remain separate specification decisions.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "DMA0 bit 0/DMA1 bit 8, no local enable, central MASK/ACK/CPU gates, zero-count immediate completion and coalescence are separate from DONE. Actual per-channel BSS sequences and predicate HALT waits pass ordinary guest execution.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Mapped faults and write-ready refusal do not abort/count-stop DMA. First fault detail/sequence, no dedicated DMA error IRQ, retained effects and read-only STATUS rejection without mutation are source-checked; fault-progress replay passes both owners.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "DMA-unit reset clears all twelve mapped words and requests, discards admitted service, resets arbitration turn 0 and preserves installed timing. It is not presented as a CONTROL abort or device-port reset command.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete two-module BIOS-style BLua program uses typed ports, readonly operands and explicit BSS. Actual guest execution checks 60 RAM words, both BUSY channels, final words/endpoints, separate DMA/GPU waits and a real red pixel readback; exact printed listings and full-reader review pass.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/dma-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/dma-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/dma-print.md"
+		}
+	}
+}
