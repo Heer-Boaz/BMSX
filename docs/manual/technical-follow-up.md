@@ -4,6 +4,12 @@
 
 **Boundary:** this is an editorial inventory of the six current chapters and their existing frozen fact sheets, plus a unit/index inventory. It is not a new live owner-versus-spec extraction, a fresh factual approval, proof of full Book I coverage, or closure of the user's broad technical audit. The broad audit and graphics-output items in `README.md` remain open. The DMA supplement below addresses the first bounded rate/boundary teaching task, not this entire inventory. No new publisher/schema/check layer is proposed.
 
+**Progress after this baseline:** GEO now has a separately extracted and reviewed
+owner chapter, an executed three-operation BLua cartridge and paired timing/data
+replays; see [its source review](../book1/reviews/geo-source.md). This closes the
+missing GEO chapter assignment below, not the broad technical audit or the real
+graphics-output illustrations. IMGDEC is the next chapter assignment.
+
 ## What is already explicit, versus what still needs a paragraph
 
 Line ranges describe the inspected baseline, not stable manuscript anchors.

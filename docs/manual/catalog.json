@@ -40,5 +40,12 @@
 		"chapter": "docs/book1/apu.md",
 		"facts": "docs/book1/facts/apu.md",
 		"review": "docs/book1/reviews/apu.json"
+	},
+	"geo": {
+		"book": "I",
+		"label": "GEO",
+		"chapter": "docs/book1/geo.md",
+		"facts": "docs/book1/facts/geo.md",
+		"review": "docs/book1/reviews/geo.json"
 	}
 }
