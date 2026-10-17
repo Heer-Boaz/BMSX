@@ -1,8 +1,10 @@
 # GEO print acceptance
 
-Current chapter accepted for print/layout after independent inspection of the
-actual publication-mode PDF. This is not source/owner-fact approval; those
-checks are separate in [geo-source.md](geo-source.md).
+The current 44-page chapter is accepted after actual-page inspection,
+including five real docking-scene plates and the complete additional program.
+The earlier 26-page record below describes the prior edition. Source and
+reader acceptance are separate in [geo-source.md](geo-source.md) and
+[geo-scene-source.md](geo-scene-source.md).
 
 ## Artifact and actual visual inspection
 
@@ -55,3 +57,55 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+## Docking-scene edition — 44 actual pages
+
+The unchanged publisher, bundled fonts and Chromium 153.0.8010.12 rendered a
+private publication-mode proof. All 44 pages were rasterized at scale 1.4,
+833×1179, and individually viewed at original detail: independent reviewer
+pages 1–22; root pages 23–44. Every new image/caption and all 22 complete scene
+code parts were actually inspected; a layout receipt or contact sheet was not
+substituted for page review.
+
+| Pages | Inspected content |
+|---|---|
+| 1–2 | Installed resources, job diagram and authored sprite/hull introduction |
+| 3–6 | All five actual PNGs and captions; exact transform/SAT/F32 inputs and three-pose results; distinct pivot, depth, normal and contact markers |
+| 7–11 | Drawing/publication route, launch/capture, full register table, timing, faults and IRQ/reset |
+| 12–17 | XFORM and SAT layouts, arithmetic, faults and worked results |
+| 18–23 | Complete OVERLAP configuration, input/shape/output/summary tables, clipping and fault/overflow rules |
+| 23–31 | Original complete numeric job/fault program and interpretation |
+| 32–44 | All three complete docking-scene modules, including actual indexed artwork, typed storage, GPU packets and separate geometry/VBlank waits |
+
+The first visual proof found two detached table introductions: input records
+on page18 with table19, and output records on page21 with table22. Existing
+keep-together markup now groups each heading/lead/first table. Only pages
+18,19,21,22 changed from that correction; a neutral SAT heading changed page40.
+All other39 page bodies are pixel-identical to the inspected proof. The
+independent reviewer reopened18/19/21/22 individually and accepted both complete
+groups without new orphans/clipping; root reopened40 and accepted the complete
+code and heading. The substantial access-rule introduction on8 followed by
+the full-page seventeen-word register table on9 is retained, not forced into
+an oversized block or reduced type.
+
+All five PNG/caption groups stay together. The colored outlines, opposing
+normal arrows, white point/pivot and separate yellow16-pixel depth bracket
+remain readable at the existing image size. Long nested drawing expressions
+were reflowed in the actual source before the final build/listing extraction;
+no stylesheet, font size or publisher special case was introduced. All code
+and tables fit without clipped glyphs. The receipt has six figures (one SVG,
+five PNG), no horizontal overflow, no oversized unbreakable group and no SVG
+label outside its viewBox.
+
+An apparent intermittent running-header/footer omission was withdrawn as an
+image-reading artifact. Actual header and left-GEO-footer regions of all44
+raster pages are pixel-identical to visibly correct page1; page numbers remain
+sequential. No CSS fix was made for a nonexistent defect.
+
+The canonical publication is compared with this accepted final proof below.
+Page count identifies the reviewed artifact, not whole-console completeness.
+
+Canonical publication verification passed: all44 full-page rasters are
+pixel-identical to the accepted final proof. All17 existing manual tests pass;
+all22 printed parts still reconstruct the three final source modules exactly,
+and all five chapter PNGs remain byte-identical to the final ordinary captures.

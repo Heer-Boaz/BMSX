@@ -314,3 +314,58 @@ The check starts a fresh target with the ordinary entry plus a fixture in a deri
 The retained-result checks cover the 204-byte result layout; initially zero keyboard, pointer, pad and rumble-support observations; a KeyA press with mask `10H`; a held KeyA without a repeated press; separate first-pad A press and release with bit 0; and a KeyA release retaining `last_release = 10H`. The final completed observation has different before/after sample sequences and one KeyA press and release counted.
 
 This checks the specified keyboard/pad levels and software edges. It does not inspect all 51 words at every instant or establish physical attachment timing, pointer calibration, visible output or vibration behavior.
+
+## Build and inspect the GEO docking scene
+
+The [complete docking-scene program](../book1/geo.md#complete-blua-docking-scene-program) is a **separate cartridge**, not an addition to the earlier numeric `geo_manual` entry. Its three complete listings belong in:
+
+```text
+carts/geo_scene_manual/
+  results.lua
+  assets.lua
+  cart.lua
+  res/manifest/manifest.rommanifest
+```
+
+Concatenate each module's printed parts in order into its own file. `results.lua` supplies the typed layouts and BSS; `assets.lua` supplies the complete indexed artwork, palette, hull and records; `cart.lua` declares the sole `module<entry>`. The manifest is:
+
+```yaml
+title: GEO Docking Scene Manual
+hardware:
+  - type: rom
+```
+
+With the prerequisites above, build the tooling once, then the supplied cartridge:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- geo_scene_manual --debug
+npm run headless:test -- geo_scene_manual tests/carts/geo_scene_manual/geo_scene_manual_assert.lua
+```
+
+The cartridge build prepares its matching BIOS automatically. The successful case line is:
+
+```text
+[test] three_pose_geometry_and_visible_scene_sequence: passed
+```
+
+This fresh-target, derived integration image checks all three transformed hulls and bounds, SAT results, F32 contact and summary values, nine successful pose jobs, the separated return job, separate GEO/VBlank counters, the firmware reservation and six programmed display publications. It also checks that the old contact remains in storage while the return's new result count is zero. It does **not** supply the published images or prove that a programmed framebuffer read is a displayed-picture acknowledgement.
+
+Capture the ordinary cartridge separately:
+
+```sh
+npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/geo_scene_manual/geo_scene_manual_demo.json geo_scene_manual
+```
+
+The existing timeline writes the following actual 256 × 192 PNGs under `tests/carts/geo_scene_manual/screenshots/`:
+
+| File | Expected picture |
+|---|---|
+| `frame_00004.png` | Local drone, cyan authored hull, gray axes and white pivot |
+| `frame_00013.png` | Plain blue/red docking scene, separated |
+| `frame_00022.png` | Separated cyan/amber transformed hulls; no result marker |
+| `frame_00031.png` | Touching hulls and green SAT direction; no contact or depth bracket |
+| `frame_00040.png` | Overlap, green SAT direction, yellow depth bracket, magenta contact normal and white contact cross |
+| `frame_00049.png` | Separated return with no stale contact marker; identical to frame 22 in the checked run |
+
+Those are observed capture points in this ordinary playback, not guest callback-counter values or a hardware latency guarantee. The eight-VBlank holds are the demonstration's chosen cadence. The retained-result check and these ordinary software-rendered captures are separate evidence; neither certifies native guest execution, accelerated rendering or a physical frame budget.

@@ -1,0 +1,8 @@
+[
+	{ "frame": 4, "capture": true, "description": "Authored drone in local space: actual texture, cyan octagon, white pivot" },
+	{ "frame": 13, "capture": true, "description": "Normal docking game: two real textured drones separated" },
+	{ "frame": 22, "capture": true, "description": "Separated diagnostics: transformed cyan and amber octagons, no contact" },
+	{ "frame": 31, "capture": true, "description": "Touching diagnostics: SAT hit 1 depth 0, green A-to-B direction, no F32 contact" },
+	{ "frame": 40, "capture": true, "description": "Overlap: SAT depth 4, green A-to-B arrow, white actual point (14,8) and magenta B-to-A arrow" },
+	{ "frame": 49, "capture": true, "description": "Separated return: old contact bytes retained, new count 0 means no contact marker" }
+]

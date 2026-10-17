@@ -246,6 +246,8 @@ a source-accurate register reference as a complete technical specification.
   actual cartridge output without Studio/debugger chrome. Keep the producing
   program, settings and capture provenance in editorial evidence. Schematics or
   generated “expected” pictures must not stand in for observed result images.
+  The bounded GEO docking scene now has five accepted actual plates and a
+  complete executable teaching route; other contrasts remain on the inventory.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.

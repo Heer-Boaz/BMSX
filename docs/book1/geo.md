@@ -46,6 +46,135 @@ its contents. This shows the normal nonzero-job path, not an electrical bus or
 a cycle waveform. OVERLAP2D additionally clears its summary at command
 acceptance, and zero-count completion does not pass through record service.
 
+## An authored sprite and its collision hull
+
+A sprite image and a collision polygon are different cartridge inputs. This example uses two copies of an authored 16 × 16 indexed drone. Its six direct16 RGB555 palette words are `0000H`, `8000H`, `294AH`, `4631H`, `6318H`, and `7FFFH`. Index 0 is transparent; index 1 is opaque black. Neither transparent pixels nor the image rectangle instruct GEO to discover a collision boundary.
+
+The cartridge deliberately associates the artwork with this convex octagon, in the stated vertex order:
+
+```
+(4,0), (12,0), (16,4), (16,12),
+(12,16), (4,16), (0,12), (0,4)
+```
+
+Both copies have local origin `(0,0)` and pivot `(8,8)`. Vertices and artwork share that local coordinate space. The pivot is an illustration mark and asset convention, not a GEO register or hidden matrix translation. These poses use no rotation or scale. A stays at world translation `(0,0)`; B moves to `(20,0)`, `(16,0)`, then `(12,0)`. A world point is its local point plus the corresponding translation. The hull is an explicit authoring choice, not an image-alpha measurement.
+
+<section class="keep-together">
+
+![Local drone with cyan octagon, gray coordinate axes and white pivot cross.](figures/geo-scene-local.png)
+
+**Local coordinates.** The gray axes start at the image origin; the white cross marks pivot `(8,8)`, not a GEO control. The cyan polygon is the separately authored collision hull. This view projects local coordinates as `(96+4x,64+4y)`; the pivot is therefore at display pixel `(128,96)`.
+
+</section>
+
+<section class="keep-together">
+
+![Two separated blue and red drones against a star and lane backdrop, without geometry overlays.](figures/geo-scene-plain.png)
+
+**Artwork alone.** The two drones share one texture. The stars and lane are background artwork, not GEO shapes. This and the following world views use display coordinates `(32+4x,64+4y)`: positive X runs right and positive Y down. The four-pixels-per-unit projection belongs to this illustration, not to GEO.
+
+</section>
+
+### Transform first, then test the resulting vertices
+
+XFORM2 and SAT2 use signed Q16.16 coordinates: the signed value of each 32-bit word divided by 65536. The integer coordinates here are encoded exactly by multiplying by 65536. An affine matrix contains `m00, m01, tx, m10, m11, ty`; each matrix here is `[00010000H,0,tx,0,00010000H,0]`.
+
+Store one local eight-vertex hull, two matrices, and these XFORM2 records. Fields are `flags, source_index, destination_index, matrix_index, vertex_count, bounds_index`:
+
+```
+[0, 0, 0, 0, 8, 0]
+[0, 0, 8, 1, 8, 1]
+```
+
+They share the local hull and write A's eight world vertices followed by B's: 128 bytes altogether, plus two 16-byte Q16 bounds records. `source_index` is multiplied by STRIDE1; vertices within a hull are consecutive eight-byte records. `destination_index` is a vertex index, not a byte offset.
+
+For XFORM2, set SRC0=records, SRC1=local vertices, SRC2=matrices, DST0=world vertices, DST1=bounds, COUNT=2 and strides `24,8,24`; submit CMD=`20H` after setup.
+
+SAT2 must consume **that completed world buffer**. Its descriptors contain `flags, vertex_count, vertex_offset_bytes, reserved`:
+
+```
+A: [1, 8, 0, 0]
+B: [1, 8, 64, 0]
+```
+
+The pair is `[0,0,0,1,0]`, in field order `flags, shape_a, result_index, shape_b, flags2`. Set SRC0=pair, SRC1=descriptors, SRC2=XFORM2's world buffer, DST0=20-byte result, COUNT=1, STRIDE0=20 and STRIDE1=16; submit CMD=`21H`.
+
+CMD captures configuration, not operand bytes. Keep XFORM2's records, local hull and matrices unchanged until it completes. Keep SAT2's pair, descriptors and world buffer unchanged through SAT2. There is no queued dependency command: check successful XFORM2 completion before submitting SAT2. A new CMD while BUSY rejects and discards the running job. Successful XFORM2 here has STATUS=2, FAULT=0, PROCESSED=2; successful SAT2 has STATUS=2, FAULT=0, PROCESSED=1. An interrupt alone does not establish success. Consume each pose's results before overwriting its buffers.
+
+### Three exact poses
+
+A's world bounds remain `(0,0,16,16)`. SAT2 returns `hit, nx, ny, depth, meta`; normal and depth words are Q16.16.
+
+| Pose | B translation word | B world bounds | SAT2 result words |
+|---|---|---|---|
+| Separated | `00140000H` | `(20,0,36,16)` | `(0,0,0,0,0)` |
+| Touching | `00100000H` | `(16,0,32,16)` | `(1,00010000H,0,0,2)` |
+| Overlapping | `000C0000H` | `(12,0,28,16)` | `(1,00010000H,0,00040000H,2)` |
+
+Touching occurs along `x=16`, from `y=4` to `y=12`. SAT2 counts it as a hit with zero depth. The overlapping pose has depth 4. Both normals are `(1,0)`, from A towards B.
+
+Metadata 2 selects A's edge 2, the directed segment `(16,4) → (16,12)`. SAT2 packs the shape selector into the high 16 bits and edge index into the low 16 bits; flipping the normal does not change that identity. SAT2 supplies no contact point.
+
+### A separate floating-point contact query
+
+OVERLAP2D does not read Q16 coordinates. Supply actual F32 vertices and bounds separately; interpreting XFORM2's words as F32 does not convert them. The cartridge divides the authored local Q16 coordinates by 65536 and stores F32 vertices once. Both instances share that polygon and bounds `(0,0,16,16)`, with F32 translations matching the poses. Instances contain translation, not an affine matrix. Rotation or scale would require separately produced matching F32 geometry and bounds.
+
+The 96-byte polygon object has kind=3, count=8, data offset=32 and bounds offset=16, with offsets relative to its descriptor. Both instances use layer=mask=1. The candidate is `[0,1,44524F4EH]`; its final word is cartridge-supplied pair information, not a computed feature. Set SRC0=instances, SRC1=candidate, DST0=36-byte contact storage, DST1=16-byte summary, COUNT=1, PARAM0=1, PARAM1=1 and strides `20,12,2`; submit CMD=`22H`.
+
+The completed summary is `result_count, exact_pairs, broadphase_pairs, flags`:
+
+| Pose | Summary | Valid contact |
+|---|---|---|
+| Separated | `(0,0,1,0)` | None |
+| Touching | `(0,1,1,0)` | None |
+| Overlapping | `(1,1,1,0)` | Normal `(-1,0)`, depth 4, world point `(14,8)` |
+
+OVERLAP2D requires positive depth for a contact and points its normal from B towards A, opposite to SAT2's convention. The overlapping contact has piece indices `0,0` and feature 2. Here feature 2 is the winning edge index only, without SAT2's shape selector.
+
+For this vertex order, the clipped intersection has six vertices. Their arithmetic mean is `(14,8)`. The reported point is world-space, neither a guaranteed area centroid nor a selected boundary point. Clipping is winding-sensitive and does not normalize winding.
+
+<section class="keep-together">
+
+![Separated drones with cyan and amber hull outlines and no result diagnostics.](figures/geo-scene-separated.png)
+
+**Separated.** Cyan identifies A's transformed hull; amber identifies B's. SAT2 reports no hit and OVERLAP2D reports no contact, so no arrow, contact cross or depth bracket is drawn.
+
+</section>
+
+<section class="keep-together">
+
+![Touching hulls with an amber shared edge and a green rightward direction arrow.](figures/geo-scene-touching.png)
+
+**Touching.** B's amber outline is drawn after A's cyan outline, making the shared segment amber. The green arrow shows SAT2's A-to-B normal. Its deliberately chosen 24-pixel length is 6 world units, not penetration depth. SAT2's depth is zero: no yellow bracket is drawn, and OVERLAP2D supplies no contact arrow or point cross.
+
+</section>
+
+<section class="keep-together">
+
+![Overlapping hulls with green and magenta opposing arrows, yellow depth bracket and white contact cross.](figures/geo-scene-overlap.png)
+
+**Overlapping.** The green SAT2 arrow points A-to-B from an illustrative anchor, not a reported point. The magenta OVERLAP2D arrow points B-to-A from the actual world contact point `(14,8)`, marked by the white cross at display pixel `(88,96)`. Both arrows are 24 pixels long for visibility, not depth measures. The yellow bracket below the hulls is the depth measure: its endpoints `(80,136)` and `(96,136)` are 16 pixels apart, representing 4 world units.
+
+</section>
+
+After reuse, trust the **current completed summary**, not retained contact bytes. The cartridge returns to separation using the same live contact buffer without clearing it. Its previous normal, depth, point and feature remain, but the new result count is zero, so no contact slot is valid and no old marker is submitted. The resulting picture is identical to the separated plate. SAT2 differs: separation overwrites all five result words with zero.
+
+### From geometry results to video packets
+
+The image is enlarged before upload: each authored pixel becomes a 4 × 4 block in a 64 × 64 RGB555 texture. The 8192-byte texture is uploaded to VRAM origin `(640,0)` using image-upload command `A0H`, origin word `00000280H` and size `00400040H`. Its 2048 payload words each contain two adjacent 16-bit texels. These are repeated scalar writes to the fixed GP0 port. The 64 × 64 textured rectangles do not themselves scale a 16 × 16 image; they use the prepared texture, modulated blue for A and red for B.
+
+Sprites are submitted before hulls. Each hull becomes eight finite flat-line packets: command/color with opcode `40H`, then two endpoints. Command colors use RGB888 with red in the low byte, then green and blue. Endpoints pack signed 11-bit integer pixel X in the low halfword and Y in the high halfword. For these positive integral poses, shifting a Q16 coordinate right by 14 combines division by 65536 with the four-pixel scale; add the display origin afterwards.
+
+The yellow bracket uses the winning horizontal projection interval. The green arrow has a separate illustrative anchor. The magenta arrow and white cross use the valid F32 world point. The cross is drawn last. These arrowheads and bracket placements are authored for the illustrated horizontal normals, not an arbitrary rotated-normal renderer.
+
+The example owns idle GEO, GPU/PCRTC and the central interrupt mask exclusively. It uses valid authored operands and retains each job's completion report; it is not an inherited-state initialization or general fault-recovery routine. Its two 256 × 192 GX16 surfaces occupy VRAM word-X `[0,256)`, rows `[0,192)` and `[256,448)`; the texture occupies word-X `[640,704)`, rows `[0,64)`. Rows have 1024 halfwords. These rectangular spans avoid each other and the linked firmware's queried reservation, here origin `(704,720)`, size `320 × 252`. Query that reservation for a different firmware; these numbers are not a universal reservation constant.
+
+PCRTC is reset and display output disabled during setup. Drawing selects the surface's draw area and offset. Fill command `02H` ignores both, so clearing the second surface explicitly uses its raw VRAM origin `(0,256)` rather than relying on the draw offset.
+
+After drawing, wait for GPUSTAT bit 26 to indicate idle. **GPU idle is not display publication.** Mask interrupt delivery, program the framebuffer selection and display enable, acknowledge stale VBlank bit `4`, record the VBlank callback counter while masked, then enable the owned sources with mask `1CH`. Wait for that counter to change: this observes a fresh VBlank after the writes, not an unrelated GEO completion. Each illustration then holds for eight later VBlank services, an authored viewing cadence rather than a required device delay.
+
+The [complete docking-scene program](#complete-blua-docking-scene-program) below supplies all three modules, including the artwork, data records, drawing packets and separate completion waits.
+
 ## Launching and observing a job
 
 A write to `CMD` is the launch doorbell. Writing the source, destination, count, parameter, or stride registers only changes the programmed register words; it does not begin processing. Submit a job in this order:
@@ -406,6 +535,8 @@ The remaining `PARAM0` bits have no effect on this pass. In particular, the name
 
 A launch clears the processed, result, exact-pair, and broadphase-pair counts and writes a zero summary, including when `COUNT=0`. There is no separate OVERLAP2D configuration-validation stage.
 
+<section class="keep-together">
+
 ### Input records
 
 #### Instances and candidate pairs
@@ -419,6 +550,8 @@ An instance occupies five words, 20 bytes:
 | `+8` | F32 | Translation `ty` |
 | `+12` | U32 | Layer bitmask |
 | `+16` | U32 | Collision mask |
+
+</section>
 
 Instance index `i` addresses `SRC0 + i × STRIDE0`. Several instances may reference the same descriptor with different translations. Translation is the only instance transform: there is no rotation or scale field.
 
@@ -502,6 +635,8 @@ A nonempty clipped polygon produces the arithmetic mean of its output vertices�
 
 The clipping workspace holds 128 vertices in each of two buffers; there is no explicit clipping-capacity fault. Zero-length edges are skipped, and zero projected overlap rejects contact. Non-finite values receive the stated arithmetic and comparisons, not a separate value-classification check.
 
+<section class="keep-together">
+
 ### Output records and summary
 
 Results are packed at `DST0 + resultCount × 36`, independent of input strides:
@@ -514,6 +649,8 @@ Results are packed at `DST0 + resultCount × 36`, independent of input strides:
 | `+20`, `+24` | U32 | Winning A, B piece indices |
 | `+28` | U32 | Winning edge index, without edge-owner bit |
 | `+32` | U32 | Candidate metadata or generated full-pass metadata |
+
+</section>
 
 Primitive shapes report piece index zero. There is no hit flag: misses emit nothing.
 
@@ -1007,3 +1144,696 @@ MASK is zero, and unrelated pending sources need not be zero.
 These retained observations are ordinary program data, not extra GEO
 registers. Keep source and output buffers under the ownership rules above;
 the later fault does not invalidate or erase the earlier successful results.
+
+## Complete BLua docking-scene program
+
+This is a separate cartridge from the numeric job-and-fault program above. It assumes exclusive access to an idle GEO unit, GPU/PCRTC and the three interrupt sources used here. The valid, fixed inputs exercise successful jobs; each report retains STATUS, PROCESSED and FAULT. A change in the interrupt sequence alone is not proof of success. Use the earlier fault reference and recovery program when diagnosing an unsuccessful job.
+
+The three complete modules follow. Concatenate each module's parts in order, without merging the modules into one entry. The [build and inspection companion](../programming/getting-started.md#build-and-inspect-the-geo-docking-scene) supplies their project locations, manifest, commands and expected observations. Result structures and counters are ordinary cartridge storage, not additional hardware registers.
+
+### Storage module: ports and coordinate layouts
+
+```lua
+module<const>
+
+struct geo_scene_sources
+	src0: word
+	src1: word
+	src2: word
+	dst0: word
+	dst1: word
+	count: word
+end
+
+struct geo_scene_parameters
+	param0: word
+	param1: word
+	stride0: word
+	stride1: word
+	stride2: word
+end
+
+struct geo_scene_vertex
+	x: word
+	y: word
+end
+
+struct geo_scene_float_vertex
+	x: f32
+	y: f32
+end
+
+struct geo_scene_transform
+	m00: word
+	m01: word
+	tx: word
+	m10: word
+	m11: word
+	ty: word
+end
+```
+
+### Storage module: fixed-point jobs and SAT result
+
+```lua
+
+struct geo_scene_xform_record
+	flags: word
+	source_index: word
+	destination_index: word
+	matrix_index: word
+	vertex_count: word
+	bounds_index: word
+end
+
+struct geo_scene_sat_pair
+	flags: word
+	shape_a: word
+	result_index: word
+	shape_b: word
+	flags2: word
+end
+
+struct geo_scene_sat_shape
+	flags: word
+	vertex_count: word
+	vertex_offset: word
+	reserved: word
+end
+
+struct geo_scene_sat_result
+	hit: word
+	nx: word
+	ny: word
+	depth: word
+	meta: word
+end
+```
+
+### Storage module: binary32 shapes and contact
+
+```lua
+
+struct geo_scene_polygon
+	kind: word
+	vertex_count: word
+	data_offset: word
+	bounds_offset: word
+	bounds: f32[4]
+	vertices: geo_scene_float_vertex[8]
+end
+
+struct geo_scene_instance
+	shape: word
+	tx: f32
+	ty: f32
+	layer: word
+	mask: word
+end
+
+struct geo_scene_candidate
+	instance_a: word
+	instance_b: word
+	meta: word
+end
+
+struct geo_scene_contact
+	nx: f32
+	ny: f32
+	depth: f32
+	px: f32
+	py: f32
+	piece_a: word
+	piece_b: word
+	feature_meta: word
+	pair_meta: word
+end
+```
+
+### Storage module: summaries and retained poses
+
+```lua
+
+struct geo_scene_summary
+	result_count: word
+	exact_pairs: word
+	broadphase_pairs: word
+	flags: word
+end
+
+struct geo_scene_observation
+	status: word
+	processed: word
+	fault: word
+end
+
+struct geo_scene_pose
+	transforms: geo_scene_transform[2]
+	world: geo_scene_vertex[16]
+	bounds: word[8]
+	sat: geo_scene_sat_result
+	instances: geo_scene_instance[2]
+	contact: geo_scene_contact
+	summary: geo_scene_summary
+	jobs: geo_scene_observation[3]
+end
+```
+
+### Storage module: shared results and texture buffer
+
+```lua
+
+struct geo_scene_result
+	prepared_poses: word
+	completed_phase: word
+	geo_sequence: word
+	vblank_sequence: word
+	geo_errors: word
+	system_origin: word
+	system_size: word
+	polygon: geo_scene_polygon
+	poses: geo_scene_pose[3]
+	contact_output: geo_scene_contact
+	return_summary: geo_scene_summary
+	return_job: geo_scene_observation
+	before_vblank: word[6]
+	after_vblank: word[6]
+	programmed_framebuffer: word[6]
+	contact_drawn: word[6]
+end
+
+bss result: geo_scene_result
+bss sprite_pixels: u16[64][64]
+
+return { result = result, sprite_pixels = sprite_pixels }
+```
+
+### Artwork module: complete indexed drone and palette
+
+```lua
+module<const>
+
+-- Explicit indexed artwork: 0 is transparent; 1 is opaque black.
+-- One authored pixel occupies one game unit, expanded to 4 x 4 texture texels.
+rodata drone_indices: u8[16][16] = {
+	{ 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0 },
+	{ 0, 0, 0, 4, 3, 2, 2, 2, 2, 2, 2, 3, 4, 0, 0, 0 },
+	{ 0, 0, 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 0, 0 },
+	{ 0, 4, 3, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2, 3, 4, 0 },
+	{ 4, 3, 2, 2, 2, 3, 5, 5, 5, 5, 3, 2, 2, 2, 3, 4 },
+	{ 4, 2, 2, 2, 3, 5, 5, 5, 5, 5, 5, 3, 2, 2, 2, 4 },
+	{ 4, 2, 2, 2, 3, 5, 5, 1, 1, 5, 5, 3, 2, 2, 2, 4 },
+	{ 4, 2, 2, 2, 3, 5, 5, 1, 1, 5, 5, 3, 2, 2, 2, 4 },
+	{ 4, 2, 2, 2, 2, 3, 5, 5, 5, 5, 3, 2, 2, 2, 2, 4 },
+	{ 4, 2, 2, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 2, 4 },
+	{ 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4 },
+	{ 4, 3, 2, 2, 5, 5, 2, 2, 2, 2, 5, 5, 2, 2, 3, 4 },
+	{ 0, 4, 3, 2, 5, 5, 2, 2, 2, 2, 5, 5, 2, 3, 4, 0 },
+	{ 0, 0, 4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 0, 0 },
+	{ 0, 0, 0, 4, 3, 2, 2, 2, 2, 2, 2, 3, 4, 0, 0, 0 },
+	{ 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0 },
+}
+rodata drone_palette: u16[6] = { 0x0000, 0x8000, 0x294a, 0x4631, 0x6318, 0x7fff }
+```
+
+### Artwork module: hull, jobs and pose translations
+
+```lua
+
+-- Both sprites share origin (0,0), pivot (8,8), and this authored octagon.
+-- These are collision vertices, not a hull generated from the alpha coverage.
+rodata local_hull: geo_scene_vertex[8] = {
+	{ x = 4 << 16, y = 0 }, { x = 12 << 16, y = 0 },
+	{ x = 16 << 16, y = 4 << 16 }, { x = 16 << 16, y = 12 << 16 },
+	{ x = 12 << 16, y = 16 << 16 }, { x = 4 << 16, y = 16 << 16 },
+	{ x = 0, y = 12 << 16 }, { x = 0, y = 4 << 16 },
+}
+rodata transform_records: geo_scene_xform_record[2] = {
+	{ flags = 0, source_index = 0, destination_index = 0,
+		matrix_index = 0, vertex_count = 8, bounds_index = 0 },
+	{ flags = 0, source_index = 0, destination_index = 8,
+		matrix_index = 1, vertex_count = 8, bounds_index = 1 },
+}
+rodata sat_pair: geo_scene_sat_pair = {
+	flags = 0, shape_a = 0, result_index = 0, shape_b = 1, flags2 = 0,
+}
+rodata sat_shapes: geo_scene_sat_shape[2] = {
+	{ flags = 1, vertex_count = 8, vertex_offset = 0, reserved = 0 },
+	{ flags = 1, vertex_count = 8, vertex_offset = 64, reserved = 0 },
+}
+rodata candidate: geo_scene_candidate = {
+	instance_a = 0, instance_b = 1, meta = 0x44524f4e,
+}
+rodata translations: word[3] = { 20, 16, 12 }
+
+return {
+	drone_indices = drone_indices, drone_palette = drone_palette,
+	local_hull = local_hull,
+	transform_records = transform_records, sat_pair = sat_pair,
+	sat_shapes = sat_shapes, candidate = candidate, translations = translations,
+}
+```
+
+### Entry module: bindings and distinct interrupt sequences
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local assets<const> = require('assets')
+local system_vram_region<const> = require('gpu/system_vram_region')
+local result<const>: *geo_scene_result = state.result
+local pixels<const>: *u16[64][64] = state.sprite_pixels
+local indices<const>: *u8[16][16] = assets.drone_indices
+local palette<const>: *u16 = assets.drone_palette
+local local_hull<const>: *geo_scene_vertex = assets.local_hull
+local translations<const>: *word = assets.translations
+local src<const>: *geo_scene_sources = 0x08000024
+local param<const>: *geo_scene_parameters = 0x08000048
+local command<const>: *word = 0x0800003c
+local status<const>: *word = 0x08000044
+local processed<const>: *word = 0x0800005c
+local fault<const>: *word = 0x08000060
+local fault_ack<const>: *word = 0x08010224
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local display_origin<const>: *word = 0x08010364
+local display_extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+
+function irq(flags)
+	if (flags & 0x04) ~= 0 then
+		result.vblank_sequence = result.vblank_sequence + 1
+	end
+	if (flags & 0x18) ~= 0 then
+		result.geo_sequence = result.geo_sequence + 1
+	end
+	if (flags & 0x10) ~= 0 then
+		result.geo_errors = result.geo_errors + 1
+	end
+	*irq_ack = flags & 0x1c
+end
+```
+
+### Entry module: target surface and scene background
+
+```lua
+
+-- Draw the scene artwork and result overlays into the selected surface.
+local draw_scene<const> = function(scene, buffer_y)
+	*gp0 = 0xe100050a
+	*gp0 = 0xe2000000
+	*gp0 = 0xe3000000 | (buffer_y << 10)
+	*gp0 = 0xe40000ff | ((buffer_y + 191) << 10)
+	*gp0 = 0xe5000000 | (buffer_y << 11)
+	*gp0 = 0xe6000000
+	-- Fill ignores the drawing offset; its destination is explicitly raw VRAM.
+	*gp0 = 0x02181008
+	*gp0 = buffer_y << 16
+	*gp0 = 256 | (192 << 16)
+
+	-- Stars and docking-lane markings belong to the dummy game artwork.
+	for star = 0, 14 do
+		local x<const> = 12 + (star * 47) % 232
+		local y<const> = 20 + (star * 29) % 140
+		*gp0 = 0x60605040
+		*gp0 = x | (y << 16)
+		*gp0 = 1 | (1 << 16)
+	end
+	for lane = 0, 5 do
+		*gp0 = 0x40383020
+		*gp0 = (16 + lane * 40) | (160 << 16)
+		*gp0 = (32 + lane * 40) | (160 << 16)
+	end
+	*gp0 = 0x40383020
+	*gp0 = 16 | (152 << 16)
+	*gp0 = 240 | (152 << 16)
+```
+
+### Entry module: local artwork, axes, hull and pivot
+
+```lua
+
+	if scene == 0 then
+		-- Local-space sprite view: origin (0,0) at screen (96,64), scale 4.
+		*gp0 = 0x64a07030
+		*gp0 = 96 | (64 << 16)
+		*gp0 = 0
+		*gp0 = 64 | (64 << 16)
+		-- Local axes start at the sprite origin, not the central pivot.
+		*gp0 = 0x40706050
+		*gp0 = 96 | (64 << 16)
+		*gp0 = 176 | (64 << 16)
+		*gp0 = 0x40706050
+		*gp0 = 96 | (64 << 16)
+		*gp0 = 96 | (144 << 16)
+		for edge = 0, 7 do
+			local next_edge<const> = (edge + 1) % 8
+			*gp0 = 0x40ffff00
+			*gp0 = (96 + (local_hull[edge].x >> 14))
+				| ((64 + (local_hull[edge].y >> 14)) << 16)
+			*gp0 = (96 + (local_hull[next_edge].x >> 14))
+				| ((64 + (local_hull[next_edge].y >> 14)) << 16)
+		end
+		*gp0 = 0x40ffffff
+		*gp0 = 124 | (96 << 16)
+		*gp0 = 132 | (96 << 16)
+		*gp0 = 0x40ffffff
+		*gp0 = 128 | (92 << 16)
+		*gp0 = 128 | (100 << 16)
+	else
+```
+
+### Entry module: place the two textured sprites
+
+```lua
+		local pose_index = 0
+		if scene == 3 then
+			pose_index = 1
+		elseif scene == 4 then
+			pose_index = 2
+		end
+		local pose<const>: *geo_scene_pose = &result.poses[pose_index]
+		-- Game world -> display: screen=(32+4*x,64+4*y).
+		-- The two 64px sprites share one texture, with blue and red modulation.
+		*gp0 = 0x64a07030
+		*gp0 = 32 | (64 << 16)
+		*gp0 = 0
+		*gp0 = 64 | (64 << 16)
+		*gp0 = 0x644050c0
+		*gp0 = (32 + translations[pose_index] * 4) | (64 << 16)
+		*gp0 = 0
+		*gp0 = 64 | (64 << 16)
+
+```
+
+### Entry module: transformed hulls and actual depth bracket
+
+```lua
+		if scene ~= 1 then
+			for shape = 0, 1 do
+				local color = 0x40ffff00
+				if shape == 1 then
+					color = 0x4000bfff
+				end
+				for edge = 0, 7 do
+					local first<const> = shape * 8 + edge
+					local second<const> = shape * 8 + (edge + 1) % 8
+					*gp0 = color
+					*gp0 = (32 + (pose.world[first].x >> 14))
+						| ((64 + (pose.world[first].y >> 14))
+							<< 16)
+					*gp0 = (32 + (pose.world[second].x >> 14))
+						| ((64 + (pose.world[second].y >> 14))
+							<< 16)
+				end
+			end
+
+			-- Yellow bracket: X-projection depth at 4 pixels per unit.
+			if pose.sat.hit ~= 0 and pose.sat.depth ~= 0 then
+				local left<const> = 32 + translations[pose_index] * 4
+				local right<const> = left + ((pose.sat.depth * 4) >> 16)
+				*gp0 = 0x4000ffff
+				*gp0 = left | (136 << 16)
+				*gp0 = right | (136 << 16)
+				*gp0 = 0x4000ffff
+				*gp0 = left | (133 << 16)
+				*gp0 = left | (139 << 16)
+				*gp0 = 0x4000ffff
+				*gp0 = right | (133 << 16)
+				*gp0 = right | (139 << 16)
+			end
+
+```
+
+### Entry module: display the SAT direction
+
+```lua
+			-- SAT has no contact point; anchor its green arrow below A.
+			-- Fixed length: 24 pixels (6 units), not penetration depth.
+			if pose.sat.hit ~= 0 then
+				local end_x<const> = 64 + ((pose.sat.nx * 24) >> 16)
+				*gp0 = 0x4000ff00
+				*gp0 = 64 | (144 << 16)
+				*gp0 = end_x | (144 << 16)
+				*gp0 = 0x4000ff00
+				*gp0 = (end_x - 4) | (140 << 16)
+				*gp0 = end_x | (144 << 16)
+				*gp0 = 0x4000ff00
+				*gp0 = (end_x - 4) | (148 << 16)
+				*gp0 = end_x | (144 << 16)
+			end
+
+```
+
+### Entry module: count-gated contact point and normal
+
+```lua
+			local contact: *geo_scene_contact = &result.contact_output
+			local summary: *geo_scene_summary = &result.return_summary
+			if scene ~= 5 then
+				contact = &pose.contact
+				summary = &pose.summary
+			end
+			-- Only the completed result count makes a contact slot valid.
+			if summary.result_count ~= 0 then
+				local x<const> = 32 + contact.px * 4
+				local y<const> = 64 + contact.py * 4
+				local end_x<const> = x + contact.nx * 24
+				local end_y<const> = y + contact.ny * 24
+				*gp0 = 0x40ff00ff
+				*gp0 = x | (y << 16)
+				*gp0 = end_x | (end_y << 16)
+				*gp0 = 0x40ff00ff
+				*gp0 = (end_x + 4) | ((end_y - 4) << 16)
+				*gp0 = end_x | (end_y << 16)
+				*gp0 = 0x40ff00ff
+				*gp0 = (end_x + 4) | ((end_y + 4) << 16)
+				*gp0 = end_x | (end_y << 16)
+				*gp0 = 0x40ffffff
+				*gp0 = (x - 3) | (y << 16)
+				*gp0 = (x + 3) | (y << 16)
+				*gp0 = 0x40ffffff
+				*gp0 = x | ((y - 3) << 16)
+				*gp0 = x | ((y + 3) << 16)
+				result.contact_drawn[scene] = 1
+			end
+		end
+	end
+end
+```
+
+### Entry module: display setup and separate binary32 polygon
+
+```lua
+
+result.system_origin, result.system_size = system_vram_region()
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0
+*display_origin = 0x01800000
+*display_extent = 0x000bf3ff
+*gp1 = 0x09000000
+*fault_ack = 1
+*irq_ack = 0x1c
+*irq_mask = 0x1c
+
+-- Separate F32 polygon storage. No reinterpretation of the Q16 vertex pool.
+result.polygon.kind = 3
+result.polygon.vertex_count = 8
+result.polygon.data_offset = 32
+result.polygon.bounds_offset = 16
+result.polygon.bounds[0] = 0
+result.polygon.bounds[1] = 0
+result.polygon.bounds[2] = 16
+result.polygon.bounds[3] = 16
+for vertex = 0, 7 do
+	result.polygon.vertices[vertex].x = local_hull[vertex].x / 65536
+	result.polygon.vertices[vertex].y = local_hull[vertex].y / 65536
+end
+```
+
+### Entry module: prepare the three translated poses
+
+```lua
+
+-- Each pose owns matrices, world pool, AABBs, SAT, summary and historical contact.
+for pose_index = 0, 2 do
+	local pose<const>: *geo_scene_pose = &result.poses[pose_index]
+	for shape = 0, 1 do
+		pose.transforms[shape].m00 = 65536
+		pose.transforms[shape].m01 = 0
+		pose.transforms[shape].m10 = 0
+		pose.transforms[shape].m11 = 65536
+		pose.transforms[shape].ty = 0
+		pose.transforms[shape].tx = 0
+		pose.instances[shape].shape = &result.polygon
+		pose.instances[shape].tx = 0
+		pose.instances[shape].ty = 0
+		pose.instances[shape].layer = 1
+		pose.instances[shape].mask = 1
+	end
+	pose.transforms[1].tx = translations[pose_index] << 16
+	pose.instances[1].tx = translations[pose_index]
+```
+
+### Entry module: transform and retain completion
+
+```lua
+	src->src0 = assets.transform_records
+	src->src1 = assets.local_hull
+	src->src2 = &pose.transforms[0]
+	src->dst0 = &pose.world[0]
+	src->dst1 = &pose.bounds[0]
+	src->count = 2
+	param->param0 = 0
+	param->param1 = 0
+	param->stride0 = sizeof(geo_scene_xform_record)
+	param->stride1 = sizeof(geo_scene_vertex)
+	param->stride2 = sizeof(geo_scene_transform)
+	local before_xform<const> = result.geo_sequence
+	*command = 0x20
+	while result.geo_sequence == before_xform do
+		halt_until_irq
+	end
+	pose.jobs[0].status = *status
+	pose.jobs[0].processed = *processed
+	pose.jobs[0].fault = *fault
+
+```
+
+### Entry module: test the completed world vertices
+
+```lua
+	-- Only completed XFORM2 output is submitted to SAT2.
+	src->src0 = assets.sat_pair
+	src->src1 = assets.sat_shapes
+	src->src2 = &pose.world[0]
+	src->dst0 = &pose.sat
+	src->dst1 = 0
+	src->count = 1
+	param->stride0 = sizeof(geo_scene_sat_pair)
+	param->stride1 = sizeof(geo_scene_sat_shape)
+	local before_sat<const> = result.geo_sequence
+	*command = 0x21
+	while result.geo_sequence == before_sat do
+		halt_until_irq
+	end
+	pose.jobs[1].status = *status
+	pose.jobs[1].processed = *processed
+	pose.jobs[1].fault = *fault
+
+```
+
+### Entry module: candidate contact and historical snapshot
+
+```lua
+	-- A separate F32 candidate job supplies a point, unlike SAT2.
+	src->src0 = &pose.instances[0]
+	src->src1 = assets.candidate
+	src->src2 = 0
+	src->dst0 = &result.contact_output
+	src->dst1 = &pose.summary
+	src->count = 1
+	param->param0 = 1
+	param->param1 = 1
+	param->stride0 = sizeof(geo_scene_instance)
+	param->stride1 = sizeof(geo_scene_candidate)
+	param->stride2 = 2
+	local before_overlap<const> = result.geo_sequence
+	*command = 0x22
+	while result.geo_sequence == before_overlap do
+		halt_until_irq
+	end
+	pose.jobs[2].status = *status
+	pose.jobs[2].processed = *processed
+	pose.jobs[2].fault = *fault
+	local contact_source<const>: *word = &result.contact_output
+	local contact_snapshot<const>: *word = &pose.contact
+	for index = 0, sizeof(geo_scene_contact) // 4 - 1 do
+		contact_snapshot[index] = contact_source[index]
+	end
+	result.prepared_poses = pose_index + 1
+end
+```
+
+### Entry module: prepare and upload the actual texture
+
+```lua
+
+-- Expand authored art 4x into the actual texture upload's typed RGB555 storage.
+for y = 0, 63 do
+	for x = 0, 63 do
+		pixels[y][x] = palette[indices[y >> 2][x >> 2]]
+	end
+end
+*gp0 = 0xe6000000
+*gp0 = 0xa0000000
+*gp0 = 640
+*gp0 = 64 | (64 << 16)
+local texture_words<const>: *word = state.sprite_pixels
+for index = 0, sizeof(u16[64][64]) // 4 - 1 do
+	*gp0 = texture_words[index]
+end
+
+```
+
+### Entry module: reuse the live contact output and draw
+
+```lua
+for scene = 0, 5 do
+	if scene == 5 then
+		-- Reuse the SAME contact output after overlap; misses do not erase it.
+		src->src0 = &result.poses[0].instances[0]
+		src->dst0 = &result.contact_output
+		src->dst1 = &result.return_summary
+		local before_return<const> = result.geo_sequence
+		*command = 0x22
+		while result.geo_sequence == before_return do
+			halt_until_irq
+		end
+		result.return_job.status = *status
+		result.return_job.processed = *processed
+		result.return_job.fault = *fault
+	end
+	local buffer_y<const> = (scene & 1) * 256
+	draw_scene(scene, buffer_y)
+	while (*gp1 & 0x04000000) == 0 do
+	end
+```
+
+### Entry module: observe a fresh display edge and hold the pose
+
+```lua
+	-- Idle is NOT publication. Program the display, discard stale pending,
+	-- then await a new VBlank callback while owning both GEO/VBlank IRQs.
+	*irq_mask = 0
+	*framebuffer = 0x000fa000 | ((scene & 1) << 6)
+	*pmode = 0x0000ff21
+	*irq_ack = 0x04
+	result.before_vblank[scene] = result.vblank_sequence
+	*irq_mask = 0x1c
+	while result.vblank_sequence == result.before_vblank[scene] do
+		halt_until_irq
+	end
+	result.after_vblank[scene] = result.vblank_sequence
+	result.programmed_framebuffer[scene] = *framebuffer
+	result.completed_phase = scene + 1
+	-- Authored demo cadence, not a device latency guarantee.
+	local hold<const> = result.vblank_sequence
+	while result.vblank_sequence - hold < 8 do
+		halt_until_irq
+	end
+end
+
+while true do
+	halt_until_irq
+end
+```

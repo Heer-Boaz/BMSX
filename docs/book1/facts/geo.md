@@ -331,3 +331,10 @@ condition read but before HALT. Paired owning sources:
 `machine/cpp/machine/cpu/cpu.cpp:1643–1650,2280–2285`.
 This is a narrow shared CPU/IRQ boundary, not an inferred issue-to-handler
 latency or a full CPU chapter.
+
+## Executed docking-scene supplement
+
+The separate [scene fact sheet](geo-scene.md) freezes the actual authored drone,
+Q16/F32 job chain, GPU/PCRTC boundary, ordinary execution and unmodified image
+provenance. Its extraction, authorship, independent source/reader/image checks
+and limits are recorded in [the scene review](../reviews/geo-scene-source.md).

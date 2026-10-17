@@ -18,8 +18,9 @@ missing GEO chapter assignment below, not the broad technical audit or the real
 graphics-output illustrations. IMGDEC now also has a separately extracted,
 reviewed owner chapter and executed four-job BLua cartridge; see
 [its source review](../book1/reviews/imgdec-source.md). INPUT now has a separately authored, source-checked raw-interface draft; its
-attachment and output-precision questions remain recorded below. The GEO
-scene/overlay and complete memory-foundation requirements remain open.
+attachment and output-precision questions remain recorded below. The bounded
+GEO docking scene and five real output plates are now accepted; complete
+memory/CPU/system foundations remain open.
 
 ## What is already explicit, versus what still needs a paragraph
 
@@ -355,26 +356,31 @@ unrelated sourced chapters. They are not invented hardware guarantees.
 
 ### GEO: dummy-game scene, sprites and convex hulls
 
-**Requested addition; open.** Add a small executable dummy-game scene with real
-sprites, then pair its normal output with a clearly labelled geometry overlay.
-Show the sprites' authored convex hulls in local space and their transformed
-hulls in the same screen/world scene. Use controlled separated, touching and
-overlapping poses to connect the picture to XFORM2, SAT2 and OVERLAP2D inputs
-and results. Depict the applicable hit result, contact point, normal and depth
-with their stated coordinate space and direction; do not substitute sprite
-rectangles for the actual tested hulls.
+**Bounded addition completed.** A separate ordinary BLua docking scene now
+supplies actual textured drones, explicitly authored octagonal hulls, local
+origin/pivot, transformed world outlines and controlled separated/touching/
+overlapping poses. Five unmodified actual plates connect the complete program
+to its inputs/results. A sixth separated-return capture is identical to the
+separated plate: retained old contact bytes are not valid after the new count0.
 
-Keep the boundary visible: GEO produces transformed geometry and collision
-results; the cartridge submits sprites and diagnostic lines/markers to GPU.
-The overlay is cartridge-drawn explanatory output, not a GEO rendering mode.
-Include the actual BLua setup, sprite/hull data, programmed operations and
-observable results. Capture the executed scene and overlays through the
-existing runner, preserve the source/settings for each pose, independently
-check every overlay against its geometry/result words, and inspect the final
-printed plates for readable alignment and labels. This is not satisfied by
-the chapter's current numeric square examples, a schematic alone or the
-separate GTE triangle captures. No new capture or publishing framework is
-needed.
+The complete three-module,577-line listing and public build/result/capture
+route teach Q16 XFORM→SAT dependency, separate F32 contact storage, normal
+conventions, touch versus positive overlap, point validity, a real depth bracket,
+raw GPU texture/line packets, disjoint VRAM and fresh-after-write VBlank. GEO
+still produces geometry/results, not a rendering mode. The yellow depth span
+is16pixels; the24pixel direction arrows are explicitly not depth measures.
+
+Independent current-owner replay14vectors and existing156vector parity pass;
+full cart validation, retained suite and separate ordinary playback pass.
+Independent source, public-only newcomer and all-six-image checks pass, and
+all44 actual PDF pages have been inspected with the final four-page layout
+correction rechecked. See [the scene acceptance](../book1/reviews/geo-scene-source.md)
+and [print acceptance](../book1/reviews/geo-print.md). No new publisher/capture
+framework or runtime repair was added.
+
+This closes the requested controlled dummy-scene/sprite/hull illustrations,
+not arbitrary winding/rotation, general collision-response physics, other
+GTE/GPU/PCRTC contrasts, electrical bandwidth or whole-manual completeness.
 
 ### Initial GTE/GPU capture leads
 
@@ -410,8 +416,9 @@ The GPU plate now also has its unmodified PNG, captioned nine-region legend,
 independent merged-source/image acceptance and final actual-print approval;
 see [its source review](../book1/reviews/gpu-source.md) and
 [print review](../book1/reviews/gpu-print.md). Further GTE/GPU contrasts,
-PCRTC before/after output and the GEO dummy-game task remain open. These three
-frames do not close the broad illustrations or technical audit.
+other PCRTC contrasts remain open. The separate GEO scene is now accepted
+above; these bounded examples do not close the broad illustrations or
+technical audit.
 
 
 ## Display-result observation follow-up
@@ -518,6 +525,6 @@ Further source-defined attachment gaps are now explicit:
 
 Keep these contracts open in the coverage record. None authorizes a runtime
 repair, new input facade, clamp, fallback or invented physical guarantee in
-this documentation slice. The requested GEO dummy-game/sprite/hull plates,
-remaining installed CPU/system contracts and Book II are still whole-manual
-work.
+this documentation slice. The requested bounded GEO plates are now accepted;
+remaining graphics contrasts, installed CPU/system contracts and Book II are
+still whole-manual work.

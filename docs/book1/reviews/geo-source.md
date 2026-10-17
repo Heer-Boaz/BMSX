@@ -1,9 +1,11 @@
 # GEO source, programming and figure review
 
 Source, semantic-figure and complete-reader reviews pass for the current
-chapter. Controller, XFORM2/SAT2 and OVERLAP2D extractions and authorship were
-separate tasks; their nonauthor checks are recorded below. Actual print
-acceptance is separate in geo-print.md. Book I remains unfinished.
+chapter, including the new real docking scene. The original numeric chapter's
+checks are retained below; the separately authored and independently audited
+[scene acceptance](geo-scene-source.md) records the new 577-line program,
+actual sprites/hulls/contacts, five unmodified plates and public-only reader
+check. Print acceptance is separate in geo-print.md. Book I remains unfinished.
 
 ## Authority and scope
 
