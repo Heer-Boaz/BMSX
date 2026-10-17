@@ -1,0 +1,3 @@
+title: IRQ Manual Example
+hardware:
+    - type: rom

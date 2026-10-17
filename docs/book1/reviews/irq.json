@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Three installed controller word ports retain source requests, mask delivery and clear selected pending bits; source-unit latches and the CPU IE gate remain separate. Book II source names do not add socket programming.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "Complete address/access/reset/32-bit operation reference for FLAGS, ACK and MASK, all eleven named sources and retained unnamed upper bits. Independent live-source review and TS/C++ mapped replay pass.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Full-word raise OR, ACK AND NOT, complete MASK replacement and nonzero pending AND mask output are taught with an independently checked numeric trace. Pending is not a FIFO or event count.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "ACK and MASK apply on accepted writes. Post-entry fresh full FLAGS read is not an acceptance-time snapshot or enabled subset. Independent source review and exact actual-code listings close the observation boundary.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "33.8688MHz system-cycle unit, ISA base costs, continuing device time during HALT and the actual-example9/6-cycle entry-only budget are explicit. Callback/RET and request waiting are excluded; undefined electrical/controller-rate guarantees remain separate specification decisions in irq-source.md.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "CPU IEc and controller gate, shared vector, full flags, STATUS/CAUSE/EPC entry/RFE, no implicit ACK, HALT accepted-event bit and predicate waits are covered. GPU-local/controller rearming, coalescence races and software dispatcher policy are distinct and independently reviewed.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "FLAGS word write READ_ONLY3, low-byte read and invalid subword/offset rules, F32/F64 successive effects, and the already-published common CPU alignment/system fault-latch contract are explicit. Actual mapped TS/C++ fault cases pass.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "Reset pending/MASK/ACK zero words are distinguished from selective ACK or MASK0 and from source-unit reset. Internal save-state/bank fields remain editorial facts, not invented guest words.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Real BIOS-style two-module BLua experiment uses explicit startup-zeroed BSS and typed word ports. Ordinary guest execution verifies all eight phases, full44 arguments, selective preservation of04 and two rearmed services; independent whole-reader review closes assumptions and assembly instructions.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/irq-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/irq-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/irq-print.md"
+		}
+	}
+}

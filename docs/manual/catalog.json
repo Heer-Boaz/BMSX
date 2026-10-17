@@ -19,5 +19,12 @@
 		"chapter": "docs/book1/gpu.md",
 		"facts": "docs/book1/facts/gpu.md",
 		"review": "docs/book1/reviews/gpu.json"
+	},
+	"irq": {
+		"book": "I",
+		"label": "IRQ",
+		"chapter": "docs/book1/irq.md",
+		"facts": "docs/book1/facts/irq.md",
+		"review": "docs/book1/reviews/irq.json"
 	}
 }
