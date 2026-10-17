@@ -1,8 +1,8 @@
 # GPU cartridge example
 
 The cartridge draws raw and modulated textures, an RGB-interpolated triangle,
-additive rectangles and destination-mask-protected rectangles. It reads three
-raw pixels back and uploads the returned words into a separate witness region.
+additive rectangles, destination-mask-protected rectangles and an enlarged
+palette4 strip. It reads three raw pixels back and uploads the returned words into a separate witness region.
 The PCRTC publishes the resulting 256×192 picture.
 
 ## Existing BIOS precedents
@@ -21,6 +21,8 @@ This follows the actual firmware's source/storage model, not ordinary Lua tables
   word-sequence store would reach GP1 next and is not interchangeable.
 
 The texture is a `rodata u16[4][4]`, not dynamically created pixel data.
+A sixteen-entry `u16` palette and four packed `u16` index words add 40 readonly
+bytes. Palette and index uploads use the same whole-word source view.
 `drawing_commands` is a readonly sequence of complete packets, not a fake
 register file. `readback_words` is eight bytes of explicit mutable BSS.
 There is no cart-local ABI encoder, setter facade, DMA utility or allocation
@@ -40,10 +42,14 @@ needed to author this example.
 4. Subsequent rectangles demonstrate additive RGB and check/set-mask.
    Texture texel `0000` is transparent; `8000` is opaque black under the raw
    opaque command.
-5. A counted 3×1 readback yields `001f001f`, then `000003e0`. The complete
+5. A separate palette at raw (768,256) and four packed index words at (704,16)
+   supply a palette4 quad along the bottom. T0 CLUT `4030` and T1 page/depth `000b`
+   locate them. Palette index 0 draws red, index 3 fetches transparent `0000`, and
+   index 4 fetches opaque black `8000`. Raw mode ignores the zero color field.
+6. A counted 3×1 readback yields `001f001f`, then `000003e0`. The complete
    second read releases the stream; its high half is zero. Re-upload ignores
    the final high half rather than treating it as a fourth pixel or command.
-6. The ordered IRQ marker is acknowledged at both latches. Idle is waited for
+7. The ordered IRQ marker is acknowledged at both latches. Idle is waited for
    separately before PMODE enables the picture. Display acceptance is not
    inferred from the marker. No displayed buffer is subsequently modified.
 
@@ -59,8 +65,9 @@ npm run headless:test -- gpu_manual tests/carts/gpu_manual/gpu_manual_assert.lua
 ```
 
 The actual guest suite checks the retained odd-tail latch, the three-pixel
-witness and fourteen raw pixel probes covering gains, inherited T1, exact-zero
-transparency, black bit15, additive results and destination protection. It
-captures the displayed picture under `tests/carts/gpu_manual/screenshots/`.
+witness and twenty raw pixel probes covering gains, inherited T1, exact-zero
+transparency, black bit15, additive results, destination protection and the
+uploaded palette/index distinction. It captures the displayed picture under `tests/carts/gpu_manual/screenshots/`.
 This is headless guest execution, not proof of native/backend parity or a
-physical sustained raster rate. The complete GPU chapter remains in progress.
+physical sustained raster rate. The complete GPU operation reference and programming chapter is in
+[`docs/book1/gpu.md`](../../docs/book1/gpu.md).

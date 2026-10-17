@@ -1,71 +1,53 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Unit, raw storage, primitive and PCRTC boundaries are taught and scoped reviews pass.",
-			"open": [
-				"Final whole-reader integration and cross-references remain pending."
-			]
+			"resolution": "GPU drawing/raw local-memory operations are distinguished from prior geometry/lighting/depth ordering and actual PCRTC scanout. Independent complete-reader review closes cross-section ownership and existing adjacent-unit references.",
+			"open": []
 		},
 		"registers": {
-			"resolution": "Both GPU ports/accesses/reset, every GPUSTAT field, all GP1 control/query operations, ingress ownership and GP0 framing plus flat/Gouraud untextured packets are integrated and independently checked.",
-			"open": [
-				"Remaining textured polygon, line/polyline, rectangle, transfer and environment packet entries need authorship/integration/review."
-			]
+			"resolution": "Both port addresses/access/reset scopes, all 32 GPUSTAT bits, all GP1 controls/query aliases, all 256 GP0 classifications and every polygon/line/polyline/rectangle/fill/upload/readback/copy/E1–E6 word/field/option/reset/state effect are integrated. Independent paragraph audits and complete-reader review cover the operation reference.",
+			"open": []
 		},
 		"datapath": {
-			"resolution": "Storage, placement, coverage, finite planes, line sampling, textures, gain/dither, blend/mask and fill/copy lessons are integrated with independent checks.",
-			"open": [
-				"Whole-reader connection to the complete command reference and final figures remains pending."
-			]
+			"resolution": "Storage/placement, coverage/shared edges, finite planes/line recurrence, packed/direct textures and CLUTs, window/flip/gain/dither/blend/mask, raw fill/transfers and overlapping traversal have sourced numerical lessons reconnected to complete packet references and actual cartridge operands.",
+			"open": []
 		},
 		"visibility": {
-			"resolution": "Admission, DMA BLOCK_END, retained snapshots, GP1 reset/clear/readback phases and VBlank presentation are taught and scoped checks pass.",
-			"open": [
-				"Remaining packet-family visibility integration and final whole-reader review remain open."
-			]
+			"resolution": "Admission/assembly/parser execution, retained per-command/per-segment snapshots, persistent T1 state, command deadlines, reset/clear/readback phases, DMA staging/BLOCK_END and actual PCRTC VBlank publication remain distinct; source, bounded owner replay and whole-reader checks agree.",
+			"open": []
 		},
 		"timing": {
-			"resolution": "Installed resources/access costs and all command-cost equations pass independent arithmetic plus actual TS/C++ replay57 bounded cases; physical guarantees are not fabricated.",
-			"open": [
-				"Complete actual CPU issue/wait/readout budget W02 and final whole-reader integration remain open."
-			]
+			"resolution": "Installed resources/access costs and all command-cost equations pass independent arithmetic plus actual TS/C++ timing replay; the complete specified 29-word/63-instruction issue/poll/ack/readout/return function executes in 83 cycles through ordinary and observed CPU dispatch. Physical guarantees are not fabricated.",
+			"open": []
 		},
 		"interrupts": {
-			"resolution": "Marker ordering/suppression/re-arming, separate GPU/controller acknowledgements and idle-alone non-IRQ behavior are covered and checked.",
-			"open": [
-				"Final whole-reader/complete-packet integration remains pending."
-			]
+			"resolution": "Marker ordering, already-set suppression/re-arming, separate GPU/controller pending acknowledgements, no idle-generated IRQ and request-versus-idle-versus-display publication are covered with actual cartridge and complete scalar timeline evidence.",
+			"open": []
 		},
 		"faults": {
-			"resolution": "CPU access-width/alignment/side effects, admission/ownership and ignored versus payload opcodes are taught with paired-source checks.",
-			"open": [
-				"Final complete packet-reference/whole-reader audit remains open; DMA-controller register programming is outside this unit."
-			]
+			"resolution": "Complete CPU port width/alignment/ordered-side-effect and admission/read-ownership policy is sourced. Ignored opcodes, incomplete/count-framed streams and representable fields retain deterministic results, not invented packet faults/recovery. DMA-controller registers and CPU exception-handler programming are not claimed as GPU interfaces.",
+			"open": []
 		},
 		"reset": {
-			"resolution": "GP1 RESET/FIFO-clear, accepted/partial work, readback phase aborts and PCRTC reset coupling are taught and checked.",
-			"open": [
-				"Final whole-reader integration remains pending."
-			]
+			"resolution": "Machine/PCRTC reset versus GP1 RESET/FIFO-clear, register defaults/preservations, accepted-versus-queued work, partial upload flush and phase-dependent readback aborts are covered and checked without VRAM-erasure or rollback promises.",
+			"open": []
 		},
 		"programming": {
-			"resolution": "All pixel lessons and the complete BIOS-style cartridge are integrated; actual guest readback/probes and capture pass.",
-			"open": [
-				"Remaining command-family reference, full CPU work budget and whole-reader/print acceptance remain outstanding."
-			]
+			"resolution": "The complete BIOS-style BLua route precedes the register inventory: typed readonly direct image/palette/indices/packets, explicit BSS, fixed-port transfers, drawing/display setup, counted odd readback, two-latch IRQ handling and separate idle/publication. Actual rebuilt guest 20 probes/readback/witness/capture plus independent source/math/representation and whole-reader reviews pass. The static example does not promise a general frame-loop/buffer-reuse algorithm.",
+			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/gpu-source.md"
 		},
 		"figures": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/gpu-source.md"
 		},
 		"print": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/gpu-print.md"
 		}
 	}

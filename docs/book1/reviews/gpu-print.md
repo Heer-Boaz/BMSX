@@ -1,33 +1,61 @@
 # GPU print review
 
-**Final approval pending.** This is a partial draft, not a published GPU chapter.
-The current preview uses the ordinary shared manual renderer, stylesheet and
-bundled fonts. No GPU-specific publisher, font, layout rule or assembler was added.
+**Pass.** The complete chapter uses the ordinary shared renderer, stylesheet and
+bundled fonts. No GPU-specific publisher, font, layout rule, assembler or
+freshness/validation layer was added.
 
-## Foundation layout feedback
+## Actual-page inspection
 
-The real draft PDF was rasterized with PDFium and viewed, not judged only from
-HTML or the build receipt. The storage/primitive/plane/texture tables and the
-shared-edge vector fit their pages. The figure's twelve integer samples,9+3
-ownership, vertex labels and diagonal sample are readable and agree with the
-independent source/raster review. Bit/status and numerical representations use
-real tables, not space-aligned text pretending to be a table.
+The existing renderer produced private publication-layout proofs before the
+canonical publication gate was approved. PDFium rasterized every actual page at
+readable original size; HTML, text extraction, contact sheets and build receipts
+were not substitutes for viewing the pages. The final proof has 72 pages; that
+count is an inspection inventory, not instructional-completeness evidence.
 
-The actual cartridge source is printed in eight consecutive code fragments;
-those fragments concatenate to its source apart from indentation/blank lines.
-The packet data, initialization, fixed-port upload, readiness/odd-tail reads,
-IRQ/idle hand-off and result table were inspected in the PDF at readable size.
-No source block is cropped or wider/taller than the existing page area.
+The full page inventory is covered by these individual-page reviews:
 
-Actual PDF inspection found an authoring defect: a line break before the text
-`1. The later VBlank...` made a reference to reading circuit1 become an ordered
-Markdown list. The sentence was joined in the manuscript. The result-table
-heading/description/table now use the existing author-side `keep-together`
-class. Neither fix changes the renderer or hardware claims.
+- 1–12: specifications, real BLua listings/results and ports/status/controls.
+- 13–24: controls/queries/ingress, storage, placement, coverage and finite planes.
+- 25–48: lookup/window/gain/dither/blend tables, packet fields and polygon/line
+  references, with all numerical fields/equations and continuations inspected.
+- 49–72: polyline/rectangle/transfer/environment references and complete scalar
+  instruction/timeline/budget tables, every page individually inspected.
 
-This inspection covers the foundation sections and executable example only.
-Remaining packet references and whole-reader integration are still open; it is
-not an instructional-completeness or publication claim.
-After their integration, inspect the actual complete PDF again, including all
-figures, register entries, tables, code, page breaks and internal links. Successful
-mechanical layout tests cannot replace that final review.
+After author-side page-break fixes, the changed final-layout pages were reopened:
+10–19 and 25–29 in proof2, then 12–15 and 28–30 in proof3. Unchanged page bodies
+were compared directly as pixels against their already inspected actual-page
+renders. The final publication is checked against that exact reviewed layout.
+All tables/code/fields remain inside their cells and page area, with readable
+columns, complete glyphs and no confirmed overlap, crop or damaging page break.
+Running headers/footers and sequential page numbers remain separated from body.
+
+## Findings resolved without publisher changes
+
+1. The reset heading/table lead-ins were stranded before their primary tables.
+   Existing author-side keep-together groups now retain those headings and tables.
+2. A following GP1 acknowledgement heading/encoding was separated from its meaning.
+   Short GP1 entry prefixes now group heading, encoding and initial meaning/field
+   table with the same existing class. Independent final-page review confirms the
+   acknowledgement and following control entries no longer inherit the split.
+3. The modulation introduction ended a page before its boxed equations. Grouping
+   that introduction with the equations resolves it; following tables/headings
+   were rechecked and remain intact.
+
+An apparent missing repeated header/footer in a multi-image presentation was
+withdrawn after individual-page and actual-PNG band checks. It was not a PDF
+or publisher defect. No stylesheet, font or rendering-tool change was justified.
+An earlier Markdown break which turned “reading circuit 1” into an ordered list
+was also corrected in the authored sentence.
+
+## Figure and representations
+
+The unchanged shared-edge SVG retains the independently source/raster-checked
+12 samples, first/second ownership 9+3, vertex labels and one on-diagonal owner.
+It was individually viewed in the final-style PDF: colors, open boundaries,
+legend, arrow and circled sample are readable and semantically consistent.
+Register fields and numerical layouts are real tables, not space-aligned text.
+The eight BLua fragments concatenate to the actual cartridge apart from whitespace.
+
+Source/whole-reader acceptance and actual guest execution remain separate records.
+This print pass does not establish physical/native/backend parity or completion
+of Book I; it accepts the actual layout of the sourced, complete GPU chapter.

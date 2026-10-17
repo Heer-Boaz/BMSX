@@ -18,6 +18,13 @@ rodata texels: u16[4][4] = {
 	{ 0x7c00, 0x7c00, 0x8000, 0x0000 },
 }
 
+-- Palette entry zero is red; entry three is transparent; entry four is black.
+rodata palette_colors: u16[16] = {
+	0x001f, 0x03e0, 0x7c00, 0x0000, 0x8000, 0x7fff, 0x03ff, 0x7fe0,
+	0x7c1f, 0x4210, 0x0010, 0x0200, 0x4000, 0x0210, 0x4200, 0x4010,
+}
+rodata palette_indices: u16[4] = { 0x3210, 0x7654, 0xba98, 0xfedc }
+
 -- These are complete GP0 packets, not an array of register values.
 rodata drawing_commands: word[] = {
 	-- Raw textured quad. T1 selects direct16, page X=640, page Y=0.
@@ -48,6 +55,12 @@ rodata drawing_commands: word[] = {
 	0x600080c0, 176 | (128 << 16), 32 | (32 << 16),
 	0x60c08000, 192 | (144 << 16), 32 | (32 << 16),
 	0xe6000000,
+	-- Sixteen palette4 texels across the bottom strip. CLUT is (768,256).
+	0x2d000000,
+	16 | (176 << 16), (16 << 8) | (0x4030 << 16),
+	240 | (176 << 16), 15 | (16 << 8) | (0x000b << 16),
+	16 | (192 << 16), 16 << 8,
+	240 | (192 << 16), 15 | (16 << 8),
 }
 
 bss readback_words: word[2]
@@ -82,6 +95,21 @@ end
 local texture_words<const>: *word = texels
 for index = 0, sizeof(u16[4][4]) // 4 - 1 do
 	*gp0 = texture_words[index]
+end
+-- A palette is raw local-memory data, uploaded exactly like the direct image.
+*gp0 = 0xa0000000
+*gp0 = 768 | (256 << 16)
+*gp0 = 16 | (1 << 16)
+local palette_words<const>: *word = palette_colors
+for index = 0, sizeof(u16[16]) // 4 - 1 do
+	*gp0 = palette_words[index]
+end
+*gp0 = 0xa0000000
+*gp0 = 704 | (16 << 16)
+*gp0 = 4 | (1 << 16)
+local index_words<const>: *word = palette_indices
+for index = 0, sizeof(u16[4]) // 4 - 1 do
+	*gp0 = index_words[index]
 end
 for index = 0, #drawing_commands - 1 do
 	*gp0 = drawing_commands[index]

@@ -105,6 +105,315 @@ bus clock or pin width, arbitration schedule, physical per-pixel fetch cost, or
 guaranteed sustained command, pixel or byte rate. Coordinate and storage limits
 are representable capacities, not rated maximum-resolution video modes.
 
+<a id="gpu-programming-example"></a>
+## Program a complete picture in BLua
+
+This cartridge stores a sixteen-pixel texture and its fixed command stream in
+ROM. Two BSS words retain the raw image-readback result. Typed whole-word views
+supply scalar port accesses: each stream store addresses the same GP0 word,
+while indexing advances through the source data.
+
+The picture contains two enlarged copies of one 4×4 texture, a Gouraud triangle,
+additive rectangles and protected overlapping rectangles. A small unscaled
+textured rectangle demonstrates persistent page selection. A separate three-pixel
+strip receives the actual readback result. The bottom strip displays sixteen
+uploaded palette4 texels. No GTE command is needed: all positions
+are already screen coordinates.
+
+### Declare ports and authored data
+
+The following listings are consecutive parts of one cartridge. GP0/GP1 are the
+GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source, extent and PMODE
+formats are specified in the PCRTC chapter; they are not alternative GP1 controls.
+
+```lua
+module<entry>
+
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local display_extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+
+-- Sixteen raw RGB555/mask words, packed by the compiler into cartridge ROM.
+rodata texels: u16[4][4] = {
+	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
+	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
+	{ 0x7c00, 0x7c00, 0x7fff, 0x7fff },
+	{ 0x7c00, 0x7c00, 0x8000, 0x0000 },
+}
+```
+
+### Author complete packets, not register-setting tables
+
+The halfword array is a sixteen-pixel image. Its last row deliberately includes
+both `8000H` and `0000H`: the former draws black; the latter leaves the background.
+The compiler packs each adjacent pair into one word for the upload loop.
+
+The packet array below contains **55 words**. Its first two packets are nine-word
+textured quads. T0 supplies U/V with CLUT zero; direct16 ignores that palette.
+T1 supplies page/depth fields `010AH`: X=10×64=640, Y=0, direct16. The persistent
+update preserves the separately programmed draw-to-displayed-field bit. The
+four-word textured rectangle after them supplies no new page.
+
+Each quad maps byte U/V from 0 to 3 across its vertices. It demonstrates affine
+magnification, not a new texture size, perspective correction or filtered sampling.
+Raw RGB gain is ignored. The modulated quad halves red and preserves green;
+its supplied blue gain saturates already-full-blue texels. The later six-word
+triangle instead interleaves three colors with three positions and has no UV words.
+
+```lua
+-- Palette entry zero is red; entry three is transparent; entry four is black.
+rodata palette_colors: u16[16] = {
+	0x001f, 0x03e0, 0x7c00, 0x0000, 0x8000, 0x7fff, 0x03ff, 0x7fe0,
+	0x7c1f, 0x4210, 0x0010, 0x0200, 0x4000, 0x0210, 0x4200, 0x4010,
+}
+rodata palette_indices: u16[4] = { 0x3210, 0x7654, 0xba98, 0xfedc }
+
+-- These are complete GP0 packets, not an array of register values.
+rodata drawing_commands: word[] = {
+	-- Raw textured quad. T1 selects direct16, page X=640, page Y=0.
+	0x2d808080,
+	16 | (24 << 16), 0,
+	80 | (24 << 16), 3 | (0x010a << 16),
+	16 | (88 << 16), 3 << 8,
+	80 | (88 << 16), 3 | (3 << 8),
+	-- Modulated quad: halve red, preserve green; blue gain 1.5 saturates.
+	0x2cc08040,
+	96 | (24 << 16), 0,
+	160 | (24 << 16), 3 | (0x010a << 16),
+	96 | (88 << 16), 3 << 8,
+	160 | (88 << 16), 3 | (3 << 8),
+	-- No E1 here: this rectangle inherits the preceding polygon's T1 page.
+	0x65000000, 24 | (112 << 16), 0, 4 | (4 << 16),
+	-- A separate RGB-interpolated triangle; no texture words.
+	0x300000ff, 176 | (24 << 16),
+	0x0000ff00, 240 | (24 << 16),
+	0x00ff0000, 208 | (88 << 16),
+	-- Two opaque rectangles, then an additive rectangle crossing both.
+	0x60402020, 16 | (128 << 16), 64 | (40 << 16),
+	0x60204020, 80 | (128 << 16), 64 | (40 << 16),
+	0xe1000420,
+	0x62202080, 48 | (144 << 16), 64 | (24 << 16),
+	-- Set+check: the first rectangle marks its pixels; the second protects them.
+	0xe6000003,
+	0x600080c0, 176 | (128 << 16), 32 | (32 << 16),
+	0x60c08000, 192 | (144 << 16), 32 | (32 << 16),
+	0xe6000000,
+	-- Sixteen palette4 texels across the bottom strip. CLUT is (768,256).
+	0x2d000000,
+	16 | (176 << 16), (16 << 8) | (0x4030 << 16),
+	240 | (176 << 16), 15 | (16 << 8) | (0x000b << 16),
+	16 | (192 << 16), 16 << 8,
+	240 | (192 << 16), 15 | (16 << 8),
+}
+```
+
+The final quad uses palette4 page X=704,Y=0 and constant V=16. Its four
+source halfwords hold sixteen four-bit indices, lowest nibble first: `3210H`
+selects entries 0,1,2,3. The CLUT attribute `4030H` selects raw (768,256);
+entry 0 is red, entry 3 is zero, and entry 4 is nonzero black. The palette and
+indices are separate raw uploads, not a special palette-port operation.
+Raw texturing ignores the quad's zero color field. The sixteen colors are
+magnified across the bottom strip by interpolating U=0…15; this does not enlarge
+the packed source or allocate sixteen-bit pixels for its indices.
+
+### Keep returned words in mutable storage
+
+The two BSS words hold results, not another copy of the ROM image. The interrupt
+entry acknowledges delivered requests. GPU IRQ delivery is masked during drawing;
+its request latch is observed explicitly later.
+
+```lua
+bss readback_words: word[2]
+
+function irq(flags)
+	*irq_ack = flags
+end
+```
+
+### Establish the drawing and display domains
+
+PCRTC CSR RESET establishes both PCRTC configuration and GPU stream/register
+defaults; it does not initialize local-memory pixels. The Y-address gate is
+explicitly closed, and E1–E6 establish
+the drawing environment. The background fill covers only the 256×192 picture;
+the texture's later upload initializes its separate source words.
+
+The drawing area includes (0,0)…(255,191), with zero offset. E1=`0400H` sets
+draw-to-displayed-field and disables dither. E6 clears destination check/force.
+The picture's background RGB bytes `(8,16,24)` reduce to raw word `0C41H`.
+PCRTC reading circuit 1 selects GX16 storage with a 1,024-word stride; PMODE
+remains disabled while the GPU prepares this single, never-reused picture.
+
+```lua
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0
+*display_extent = 0x000bf3ff
+*gp1 = 0x09000000
+
+-- Explicit drawing state; RESET does not clear local memory.
+*gp0 = 0xe1000400
+*gp0 = 0xe2000000
+*gp0 = 0xe3000000
+*gp0 = 0xe40000ff | (191 << 10)
+*gp0 = 0xe5000000
+*gp0 = 0xe6000000
+*gp0 = 0x02181008
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+```
+
+### Upload and issue the stream through one port
+
+A0 selects 4×4 raw pixels at `(640,0)`: exactly eight payload words follow its
+three-word header. The readonly word view exposes the compiler's packed image.
+Both loops write to `*gp0` every iteration; indexing applies to the source only.
+The scalar-store admission mechanism supplies any necessary wait; DMA-ready
+bit 28 is not its admission test. A CPU word-sequence store advances the
+destination and must not replace these fixed-port stores.
+
+```lua
+-- A0 header followed by eight whole-word payload stores to the SAME port.
+*gp0 = 0xa0000000
+*gp0 = 640
+*gp0 = 4 | (4 << 16)
+local texture_words<const>: *word = texels
+for index = 0, sizeof(u16[4][4]) // 4 - 1 do
+	*gp0 = texture_words[index]
+end
+-- A palette is raw local-memory data, uploaded exactly like the direct image.
+*gp0 = 0xa0000000
+*gp0 = 768 | (256 << 16)
+*gp0 = 16 | (1 << 16)
+local palette_words<const>: *word = palette_colors
+for index = 0, sizeof(u16[16]) // 4 - 1 do
+	*gp0 = palette_words[index]
+end
+*gp0 = 0xa0000000
+*gp0 = 704 | (16 << 16)
+*gp0 = 4 | (1 << 16)
+local index_words<const>: *word = palette_indices
+for index = 0, sizeof(u16[4]) // 4 - 1 do
+	*gp0 = index_words[index]
+end
+for index = 0, #drawing_commands - 1 do
+	*gp0 = drawing_commands[index]
+end
+```
+
+The direct image occupies eight payload words. The sixteen-entry palette
+occupies another eight, and its four packed index halfwords occupy two. All
+three uploads finish before their drawing packets. The final quad's T1 selects
+palette4 rather than the preceding direct16 page; its T0 locates the uploaded
+palette. A zero index therefore draws red, while index 3 leaves the background
+because the **fetched palette word** is zero. Index 4 draws black from `8000H`.
+No direct CPU local-memory aperture or palette upload helper is needed.
+
+### Wait for readback readiness and consume its full count
+
+The C0 request selects the first three texture pixels: red, red, green.
+GPUSTAT bit 27—not bit 26—qualifies consumption. Once ready and without a DMA
+reader owning the port, the two reads return `001F001FH` and `000003E0H`.
+The final word's high half is zero and consuming it releases readback. The
+preceding draw commands must reach this readback's ordered fence before its
+result is supplied; readiness is not a fixed one-cycle transfer promise.
+
+```lua
+-- Three pixels produce two reads. The final read has a zero high half.
+*gp0 = 0xc0000000
+*gp0 = 640
+*gp0 = 3 | (1 << 16)
+while (*gp1 & 0x08000000) == 0 do
+end
+readback_words[0] = *gp0
+readback_words[1] = *gp0
+```
+
+### Use the returned raw representation directly
+
+Upload those two words into the three-pixel strip at `(16,112)`. There is no
+conversion to RGB bytes or display pixels. The final high half is unused because
+the destination area contains three pixels, not four. The following marker is a
+new **whole** GP0 word, never a value hidden in that unused halfword.
+
+```lua
+-- Re-upload those exact words as a three-pixel witness at (16,112).
+*gp0 = 0xa0000000
+*gp0 = 16 | (112 << 16)
+*gp0 = 3 | (1 << 16)
+for index = 0, #readback_words - 1 do
+	*gp0 = readback_words[index]
+end
+```
+
+### Separate the marker, idle and display hand-off
+
+The marker sets GPUSTAT bit 24 after earlier queued commands. GP1(02h) clears
+that GPU latch; the controller acknowledgement clears pending GPU IRQ bit 6.
+Waiting for bit 26 is separate because the marker can be set before its own
+one-tick command interval completes. Only then does PMODE enable reading circuit 1. The later VBlank publication, not either GPU status bit, accepts the picture.
+The cartridge subsequently acknowledges VBlank requests and sleeps without
+modifying the displayed pixels.
+
+```lua
+-- IRQ is an in-order marker, not an idle or display acknowledgement.
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
+while (*gp1 & 0x04000000) == 0 do
+end
+*pmode = 0x0000ff21
+*irq_ack = 0xffffffff
+*irq_mask = 0x00000004
+while true do
+	halt_until_irq
+end
+```
+
+<div class="keep-together">
+
+### Check the result in raw words
+
+These expected samples distinguish the controls without relying on display-color
+expansion. Mask bits remain part of each stored word.
+
+| Raw position | Expected word | What it distinguishes |
+|---|---|---|
+| (16,24) | `001FH` | Raw full red |
+| (96,24) | `000FH` | Red reduced by gain 64 |
+| (138,68) | `7FEFH` | Modulated white: red reduced, green unchanged, blue saturated |
+| (24,112) | `001FH` | Following rectangle inherits polygon T1 page |
+| (26,115) | `8000H` | Nonzero black texel writes its bit 15 |
+| (27,115) | `0C41H` | Exact-zero texel leaves the initialized background |
+| (50,150) | `3114H` | Additive rectangle over first destination color |
+| (90,150) | `2194H` | Same source over a different destination color |
+| (200,150) | `8218H` | A later checked draw preserves the first rectangle's marked pixel |
+| (220,165) | `E200H` | Second rectangle writes and marks an unprotected pixel |
+| (16,180) | `001FH` | Palette index 0 fetches a nonzero red word |
+| (31,180) | `03E0H` | Next packed nibble selects palette entry 1 |
+| (46,180) | `7C00H` | Palette entry 2 is blue |
+| (61,180) | `0C41H` | Index 3 fetches zero and preserves the background |
+| (76,180) | `8000H` | Index 4 fetches nonzero black |
+| (91,180) | `7FFFH` | Index 5 fetches white |
+
+</div>
+
+This is a static picture, not a frame-loop template. The PCRTC chapter specifies
+the VBlank edge that makes programmed display settings visible; GPU idle and the
+IRQ marker do not acknowledge that publication. Packet preparation and issue
+costs also remain separate from queued command deadlines; the command-cost
+reference does not establish a sustained frame rate for arbitrary cartridge code.
+
 <a id="gpu-ports-status"></a>
 ## GP0, GPUREAD, GP1 and GPUSTAT
 
@@ -237,6 +546,8 @@ word returns readback to idle and allows queued command processing to resume;
 that is not a guarantee that the whole GPU immediately becomes idle. The next
 permitted READY read replaces any intervening query result with image data.
 
+<div class="keep-together">
+
 ### Reset and display visibility
 
 The other programmed defaults associated with full GPU reset are:
@@ -250,6 +561,8 @@ The other programmed defaults associated with full GPU reset are:
 | Vertical display range | `0x00044c23` |
 | VRAM Y-address extension | Zero |
 | DMA direction; GPU interrupt-request latch | Zero |
+
+</div>
 
 These are stored control values, not additional directly addressed ports.
 **GP1(00h) is not a full device reset:** it restores the GPU control defaults
@@ -291,6 +604,8 @@ itself prevent a GP1 store: GP1 admission is the system supervisor-quiesce gate.
 The reset and clear controls can therefore be issued while GP0 has an incomplete
 stream; they do not wait for idle.
 
+<div class="keep-together">
+
 ### GP1(00h) — reset GPU command and register state
 
 **Word:** `0x00000000`; all payload bits are ignored.
@@ -308,12 +623,16 @@ register defaults:
 | Display-disabled latch | One |
 | DMA direction; GPU interrupt-request latch | Zero |
 
+</div>
+
 This is **not a full machine or display reset**. It preserves GPUREAD and the
 VRAM Y-address-extension latch, does not initialize local memory, and does not
 reset PCRTC registers or its beam timing. It does not acknowledge the system
 IRQ controller's pending GPU bit. A later GPUSTAT read is recomputed from these
 control values and current beam/command conditions; do not substitute a fixed
 status constant for that read.
+
+<div class="keep-together">
 
 ### GP1(01h) — clear the GP0 stream
 
@@ -323,6 +642,8 @@ Clear the GP0 FIFO, separate DMA ingress FIFO, incomplete fixed-packet/image
 header and polyline assembly, and cancel the pending command deadline. Drawing,
 display and DMA-direction registers are not reset. Neither GPUSTAT's interrupt
 request latch nor the system IRQ pending latch is acknowledged.
+
+</div>
 
 A clear is **not a rollback of every previously accepted operation**. An accepted
 pending raster/upload target is completed where present. If an A0 upload has
@@ -343,6 +664,8 @@ Thus GP1(01h) can abandon a readback barrier; it is not equivalent to reading
 and consuming its remaining image words. Choose GP1(00h) instead only when the
 GPU register defaults are also wanted.
 
+<div class="keep-together">
+
 ### GP1(02h) — acknowledge the GPU request latch
 
 **Word:** `0x02000000`; all payload bits are ignored.
@@ -356,6 +679,10 @@ controller latch through its own acknowledgement register. This command is not
 an idle, VBlank or displayed-picture acknowledgement. Becoming idle does not itself
 raise `IRQ_GPU`.
 
+</div>
+
+<div class="keep-together">
+
 ### GP1(03h) — set display-disable state
 
 **Word:** `0x03000000 OR d`; **payload mask:** `0x000001`.
@@ -365,9 +692,13 @@ raise `IRQ_GPU`.
 | 0 | Enabled | 0 |
 | 1 | Disabled | 1 |
 
+</div>
+
 All other payload bits are ignored. This controls the GPU display-disabled
 latch, not PCRTC's circuit enables or timing registerfiles. Its immediate status
 readback does not prove that a new displayed presentation has latched.
+
+<div class="keep-together">
 
 ### GP1(04h) — select DMA direction and request source
 
@@ -380,6 +711,8 @@ readback does not prove that a new displayed presentation has latched.
 | 2 | CPU→GP0 | GPUSTAT bit 28, DMA packet acceptance |
 | 3 | GPUREAD→CPU | GPUSTAT bit 27, readback READY |
 
+</div>
+
 GPUSTAT bits 30:29 return the selected direction. A system ingress stop
 suppresses the write-side requests for directions 1 and 2. Entering direction 3
 enables readback DMA request generation; leaving it disables that generation.
@@ -387,6 +720,8 @@ The command selects GPU-side direction/request behavior only: it does not
 program a DMA channel's addresses or count, start a channel transfer, or grant
 a CPU read ownership of a DMA-owned GP0 read port. In particular, direction 2's
 request source is not a general CPU-store-ready predicate.
+
+<div class="keep-together">
 
 ### GP1(05h) — set the GPU display-start word
 
@@ -398,6 +733,8 @@ The retained word is `start AND 0x000ffffe`: bit 0 is discarded. Decode it as
 - source Y = `(retained >> 10) AND Ymask`, where GP1(09h) selects `Ymask` as
   `0x1ff` or `0x3ff`.
 
+</div>
+
 This is GPU display-start state. It neither writes PCRTC's DISPFB/DISPLAY
 registers nor restarts the beam. The stored high Y bit remains available when
 the Y gate is closed; changing the gate changes its decoded address rather than
@@ -408,6 +745,8 @@ nine-bit gate or 1023 with the ten-bit gate. This is address decoding, not a
 promise that the selected start and a particular display window form a useful
 picture.
 
+<div class="keep-together">
+
 ### GP1(06h) — retain horizontal-display-range state
 
 **Word:** `0x06000000 OR range`; **payload mask:** `0xffffff`.
@@ -416,6 +755,10 @@ Retain all twenty-four payload bits as the GPU horizontal-display-range word.
 For example, `0x06ffffff` retains `0x00ffffff`. These are GPU control values,
 not writes to PCRTC's horizontal synchronization or reading-window registers;
 this command does not establish a physical pixel clock or beam interval.
+
+</div>
+
+<div class="keep-together">
 
 ### GP1(07h) — set vertical-display-range state
 
@@ -426,12 +769,16 @@ this command does not establish a physical pixel clock or beam interval.
 | 9:0 | Range start |
 | 19:10 | Range end |
 
+</div>
+
 The retained word is `range AND 0x000fffff`; payload bits 23:20 are ignored.
 Start and end are stored without ordering validation: equal or reversed values
 are not silently replaced by a preferred range. This is not a write to PCRTC's
 vertical timing or DISPLAY window. `0x07ffffff` therefore stores `0x000fffff`,
 with both ten-bit fields equal to 1023, rather than selecting a maximum valid
 monitor mode.
+
+<div class="keep-together">
 
 ### GP1(08h) — set GPU display-mode fields
 
@@ -452,6 +799,8 @@ All eight mode bits are retained. Their GPUSTAT mapping is:
 </tbody>
 </table>
 
+</div>
+
 A mode update clears GPUSTAT's bit-14 reverse mask; retained mode bit 7 is not
 copied there. For example, `0x08ffffff` retains mode `0xff`, sets GPUSTAT bits
 22:16 to `0x7f`, and leaves bit 14 clear. Do not reinterpret that raw high bit as
@@ -462,6 +811,8 @@ reading-circuit layout or display window. The vertical-resolution/interlace
 flags also participate in the beam-derived GPUSTAT fields described in the
 status reference; they are not command-completion flags.
 
+<div class="keep-together">
+
 ### GP1(09h) — select the VRAM Y-address gate
 
 **Word:** `0x09000000 OR extension`; **payload mask:** `0x000001`.
@@ -470,6 +821,8 @@ status reference; they are not command-completion flags.
 |---|---|---|
 | 0 | Nine | `0x1ff` |
 | 1 | Ten | `0x3ff` |
+
+</div>
 
 This selects address interpretation; it does not resize the installed local
 memory. It is a different latch from GP0 draw-mode's texture-page-Y-high bit.
@@ -979,6 +1332,12 @@ U=126 selects the low byte of `100FH`; U=127 selects its high byte. U=128 advanc
 
 With the Y gate closed, the same page fields select page Y=256 and the same CLUT attribute selects row 388. The reads use different words; the depth and palette-index range are unchanged. Depth 3 is also deterministic: with page/depth fields `0000099FH`, the same page base and U=63,V=23 directly return `100FH` from `(1023,791)`. That word is a color, not two palette indices. Depth 2 performs the same direct lookup.
 
+[Program a complete picture in BLua](#gpu-programming-example) supplies the
+complete palette4 route: typed readonly colors and packed indices, separate raw
+uploads, T0 CLUT selection and T1 palette-depth/page selection. Its result
+includes a nonzero entry 0, a transparent entry and a nonzero black entry, so
+palette-index interpretation can be distinguished from fetched-color rules.
+
 ### Replace coordinate bits with a texture window
 
 The E2 window fields are X mask bits 4:0, Y mask bits 9:5, X offset bits 14:10 and Y offset bits 19:15. Independently for U and V, the mathematical transformation is:
@@ -1040,6 +1399,8 @@ Choose **raw texturing** when the fetched texture color itself is the desired so
 
 A fetched texture word of `0000H` is skipped before either calculation. A nonzero word, including black `8000H`, proceeds. The words calculated below specify the **source RGB555**, before later blending, destination protection and stored-bit-15 selection; they are not unconditional final-memory results.
 
+<div class="keep-together">
+
 For each modulated channel, let T be the texture component (0…31), C the supplied or interpolated byte (0…255), and d the eligible dither offset, or zero with dithering off. The mathematical calculation is:
 
 ```text
@@ -1048,6 +1409,8 @@ S = P + d
 F = 0                       if S < 0
 F = min(S >> 3, 31)          otherwise
 ```
+
+</div>
 
 Both right shifts discard low bits. Keep the two stages and their order: do not expand the five-bit texture channel by bit replication, clamp P to a byte before adding d, or add d after producing F. Saturation belongs after the dither addition.
 
@@ -1514,6 +1877,1216 @@ For general costs, the Gouraud setup is 334 ticks per triangle command or 370 pe
 
 A GTE result is not an extra packet field: supply the resulting screen XY and RGB in the listed words. The first color word still needs the selected GP0 opcode in its high byte; a packed color result is not already a GPU command. Projection, lighting, near-plane clipping and depth-order selection precede this primitive; it has no Z/W input, perspective correction or depth comparison.
 
+<a id="gpu-flat-textured-polygons"></a>
+## Flat textured polygons — GP0(24H–27H,2CH–2FH)
+
+These commands supply one RGB color and a U/V pair at each vertex. “Flat” means
+one supplied color, **not** one texture coordinate or one fetched texel. U/V
+still use the finite affine planes described in [Predict interpolated colors and texture coordinates](#gpu-interpolation). Each covered sample performs one point lookup.
+
+### Opcode and complete packet
+
+| Triangle opcode | Quad opcode | Texture color | Semi-transparency request |
+|---|---|---|---|
+| `24H` | `2CH` | Modulated by supplied RGB | Off |
+| `25H` | `2DH` | Raw fetched RGB555 | Off |
+| `26H` | `2EH` | Modulated by supplied RGB | On |
+| `27H` | `2FH` | Raw fetched RGB555 | On |
+
+Bit 3 selects a quad, bit 2 is set for texture, bit 1 requests semi-transparency,
+and bit 0 selects raw rather than modulated texture. Unlike untextured polygon
+bit 0, it is meaningful here. Bit 4 is clear: no per-vertex colors are supplied.
+
+| Word | Triangle: seven words | Quad: nine words |
+|---|---|---|
+| 1 | `(opcode << 24) OR C` | `(opcode << 24) OR C` |
+| 2 | P0 | P0 |
+| 3 | T0 | T0 |
+| 4 | P1 | P1 |
+| 5 | T1 | T1 |
+| 6 | P2 | P2 |
+| 7 | T2 | T2 |
+| 8 | — | P3 |
+| 9 | — | T3 |
+
+C contains unsigned R/G/B bytes in bits 7:0/15:8/23:16. Each P contains signed
+eleven-bit X in bits 10:0 and Y in 26:16; the other five bits of each halfword
+do not extend the coordinate. Each T contains unsigned U in bits 7:0, V in
+15:8, and an attribute in 31:16. Raw texture still requires the complete packet,
+including C and every T; ignoring C for color does not remove its word.
+
+There is no terminator. T2, or T3 for a quad, finishes the packet. A quad uses
+triangles (0,1,2), then (2,1,3), carrying each vertex's own UV. The coordinate,
+size-rejection and shared-edge rules are the same as in [Flat untextured polygons](#gpu-flat-polygons); an arbitrary four-corner outline is not repaired into a different
+split.
+
+### T0 selects the palette; T1 changes persistent drawing state
+
+T0's upper half is the CLUT attribute:
+
+```text
+CLUT base X = (attribute AND 003FH) × 16 raw words
+CLUT base Y = (attribute >> 6), decoded through the Y-address gate
+```
+
+T1's upper half supplies these drawing-mode fields:
+
+| Attribute bits | Meaning |
+|---|---|
+| 3:0 | Texture-page base X in units of 64 raw words |
+| 4 | Add 256 to texture-page base Y |
+| 6:5 | Blend selection |
+| 8:7 | Texture depth: 0 palette4, 1 palette8, 2 or 3 direct sixteen-bit |
+| 11 | Add 512 to texture-page base Y |
+
+The page Y result is decoded through the Y-address gate. Other T1 attribute
+bits do not participate in the update:
+
+```text
+new draw mode = (old draw mode AND NOT 09FFH)
+                OR (T1 attribute AND 09FFH)
+```
+
+This changes the **persistent** draw mode before taking this polygon's own
+state snapshot. Bits 9,10,12,13 survive: dither enable, draw-to-displayed-field
+and rectangle X/Y flips are not supplied anew by T1. T2/T3 upper halves are
+ignored; their low U/V bytes remain required. None of these words starts an
+independent GP0 command, even if its high byte resembles E1.
+
+The emitted polygon retains its resulting draw mode and the current texture
+window, area, offset, mask mode, Y gate and skipped-row parity. Later state
+changes do not reinterpret it. Conversely, its T1 page update remains current
+for later commands. A textured rectangle's T0 selects its CLUT, **not** a new
+page: it inherits the current page, depth, blend selection and flip settings.
+
+After U/V plane extraction, apply texture-window replacement and the lookup
+rules in [Locate texture texels and palette colors](#gpu-texture-lookup). Palette4 selects a nibble
+from a packed word, palette8 selects a byte, and depths 2/3 fetch a direct word.
+Both packed-source X and CLUT X wrap within their respective raw rows. A palette
+index of zero is not intrinsically transparent; the fetched color word decides.
+
+### Worked seven-word triangle
+
+Use zero drawing offset, identity texture window, an open Y-address gate,
+drawing area `(0,0)` through `(63,31)`, no row suppression and mask mode zero.
+Initially program draw mode **`3742H`**. Its dither, draw-to-displayed-field and
+both rectangle-flip bits are set; its old page/depth/blend fields will change.
+Initialize the destination region used below to **`0C41H`**, RGB5=(1,2,3).
+
+Declare these existing raw local-memory contents before drawing. They are source
+words, not an upload packet or a suggested loading API:
+
+| Raw coordinate | Sixteen-bit source word |
+|---|---|
+| (61,Y), for every Y=773…776 | `1514H` |
+| (62,Y), for every Y=773…776 | `1716H` |
+| (61,772) | `1415H` |
+| (4,500) | `6208H` |
+| (5,500) | `E208H` |
+| (6,500) | `0000H` |
+| (7,500) | `8000H` |
+
+No sampled source coordinate is left unspecified, and these source regions do
+not overlap the destination. Supply this complete polygon packet:
+
+| Word | Raw input | Meaning |
+|---|---|---|
+| 1 | `26C08040H` | Modulated, semi-transparent triangle; RGB=(64,128,192) |
+| 2 | `00180028H` | P0=(40,24) |
+| 3 | `7D3F05FAH` | T0: U0=250,V0=5; CLUT attribute=`7D3FH` |
+| 4 | `0018002CH` | P1=(44,24) |
+| 5 | `08BF05FEH` | T1: U1=254,V1=5; page attribute=`08BFH` |
+| 6 | `001C0028H` | P2=(40,28) |
+| 7 | `E10009FAH` | T2: U2=250,V2=9; ignored upper half=`E100H` |
+
+The CLUT attribute gives base (1008,500). T1 selects page (960,768), palette8
+and additive blend selection 1. The merge is
+`(3742H AND NOT 09FFH) OR 08BFH = 3EBFH`; preserved bits are `3600H`.
+Word 7 does **not** overwrite this state with an E1 command.
+
+The UV planes have exact steps of one texel per destination pixel: at covered
+integer samples, U=`250+(X−40)` and V=`5+(Y−24)`. The inherited rectangle flips
+do not reverse polygon planes. On row Y=24 the lookups are:
+
+| Destination X | U,V | Packed raw coordinate | Selected index | CLUT coordinate | Fetched word |
+|---|---|---|---|---|---|
+| 40 | 250,5 | (61,773) | 20 | (4,500) | `6208H` |
+| 41 | 251,5 | (61,773) | 21 | (5,500) | `E208H` |
+| 42 | 252,5 | (62,773) | 22 | (6,500) | `0000H` |
+| 43 | 253,5 | (62,773) | 23 | (7,500) | `8000H` |
+
+For X=40, `960+(250>>1)=1085`, which wraps to raw X=61 without changing row
+773. Its low byte selects index 20. Then `1008+20=1028` wraps to CLUT X=4
+without changing row 500. The packed `1514H` holds indices 20 and 21, not two
+RGB555 colors.
+
+Sample `6208H` has RGB5=(8,16,24). Modulation by (64,128,192) first gives
+products `(32,128,288)`. At (40,24), dither −4 gives source RGB5=(3,15,31),
+word **`7DE3H`**. This fetched sample has bit 15 clear, so it stays opaque even
+though the command requests semi-transparency. At (41,24), fetched `E208H` has
+the same RGB but bit 15 set: dither zero gives source (4,16,31), additive
+blending over (1,2,3) gives (5,18,31), and retained sample bit 15 makes the final
+word **`FE45H`**.
+
+`0000H` skips the write entirely. `8000H` is nonzero black: at (43,24) its
+modulated source remains black, additive blending preserves background RGB,
+but stored sample bit 15 changes the result to **`8C41H`**. The exact completed
+triangle is:
+
+| Y | X=40 | X=41 | X=42 | X=43 |
+|---|---|---|---|---|
+| 24 | `7DE3H` | `FE45H` | `0C41H` (zero sample) | `8C41H` |
+| 25 | `7E04H` | `FE24H` | `0C41H` (zero sample) | — |
+| 26 | `7DE3H` | `FE45H` | — | — |
+| 27 | `7E04H` | — | — | — |
+
+Dashes are outside coverage and remain unchanged. There are ten covered samples,
+two fetched-zero skips and eight writes. For the full gain/dither arithmetic
+and write-protection rules, use **Choose texture gain and dither deliberately**
+and **Separate texture transparency, blending and destination protection**.
+In particular, force-mask does not make a bit-15-clear texture sample blend,
+and even force-mask cannot turn fetched `0000H` into a write.
+
+In a separate trial from the original background, change only word 1 to
+`27C08040H`. Raw texture ignores the supplied gain and bypasses dithering:
+(40,24) becomes `6208H`; (41,24) blends raw RGB5=(8,16,24) over the background
+and becomes **`EE49H`**. Semi-transparency and stored-bit selection still apply.
+Use modulation color (128,128,128) for exact unit gain **with dithering off**;
+(255,255,255) is not neutral.
+
+### A later rectangle inherits the changed page and preserved flips
+
+With no intervening drawing-mode change, send:
+
+```text
+66C08040H  00180030H  7D3F05FBH  00020002H
+```
+
+This is a two-by-two semi-transparent modulated textured rectangle at (48,24),
+starting U/V=(251,5), using the same CLUT and RGB. Its sole texture word contains
+no page replacement. Current `3EBFH` therefore supplies palette8, page(960,768),
+additive blending and both flips. U advances 251→250; V advances 5→4. Row V=4
+uses declared raw word `1415H`, reversing the two palette indices. Rectangles
+do not dither, despite retained dither enable:
+
+| Destination row | X=48 | X=49 |
+|---|---|---|
+| 24 | `FE45H` | `7E04H` |
+| 25 | `7E04H` | `FE45H` |
+
+Thus T1 was not a temporary material choice, and the polygon did not clear flip
+state merely because it did not use it. Program the intended drawing mode before
+a later material that requires different state.
+
+### Command cost
+
+Flat textured setup is 226 ticks for a triangle or 262 for a quad, followed by
+the per-triangle work estimates in **Budget command work separately from issuing
+words**. Raw texture receives no setup/work discount. This triangle has absolute
+double area 16, giving p=8, then 16 for texture and 24 for semi-transparency:
+`226+24=250` ticks, a 125-system-cycle command interval. The opaque `24H`/`25H`
+variants instead take `226+16=242` ticks, or 121 cycles, under the same state.
+Neither fetched-zero skips nor the actual eight stores reduce that estimate.
+CPU issue work, readback readiness and presentation completion remain separate.
+
+<a id="gpu-gouraud-textured-polygons"></a>
+## Gouraud textured polygons — GP0(34H–37H,3CH–3FH)
+
+Use this family when each vertex supplies RGB material gains as well as texture
+coordinates. Modulated commands interpolate RGB and U/V across each triangle;
+raw commands retain the same packet layout but take the unmodulated source
+color from the texture.
+
+### Opcode and complete packet
+
+| Opcode | Primitive | Texture color | Blend request | Words |
+|---|---|---|---|---:|
+| `34H` | Triangle | Modulated | Off | 9 |
+| `35H` | Triangle | Raw | Off | 9 |
+| `36H` | Triangle | Modulated | On | 9 |
+| `37H` | Triangle | Raw | On | 9 |
+| `3CH` | Quad | Modulated | Off | 12 |
+| `3DH` | Quad | Raw | Off | 12 |
+| `3EH` | Quad | Modulated | On | 12 |
+| `3FH` | Quad | Raw | On | 12 |
+
+The opcode has Gouraud bit 4 and texture bit 2 set. Bit 3 selects a quad, bit 1
+requests semitransparency, and bit 0 selects raw texture. Supply complete GP0
+words in this order:
+
+```text
+Triangle: (opcode<<24) OR C0, P0,T0, C1,P1,T1, C2,P2,T2
+Quad:     (opcode<<24) OR C0, P0,T0, C1,P1,T1, C2,P2,T2, C3,P3,T3
+```
+
+Each C contains unsigned R/G/B bytes in bits 7:0, 15:8 and 23:16. Only the first
+word's high byte selects a command; the high byte of C1–C3 is ignored. Each P
+contains signed eleven-bit X in bits 10:0 and Y in 26:16; the other five bits in
+each halfword do not extend the coordinate. Each T contains unsigned U in bits
+7:0 and V in 15:8, with the upper half interpreted below.
+
+**Raw mode does not remove the color words.** C1 and C2 remain words 4 and 7;
+in a quad C3 remains word 10. Omitting them makes subsequent positions and
+texture words occupy the wrong fields. There is no terminator after word 9 or
+12. These are packet fields, not a BLua data-loading API.
+
+A quad draws triangles `(0,1,2)` then `(2,1,3)`, preserving each vertex's C/P/T
+association. Each half has its own affine planes; this is not bilinear shading
+of four corners. Geometry, inclusive drawing-area clipping and row suppression
+follow [Place primitives across coordinate boundaries](#gpu-coordinate-placement)
+and [Predict shared-edge and joint writes](#gpu-shared-edges).
+
+### CLUT, persistent T1 state and retained operands
+
+T0's upper half is the CLUT attribute: base X is `(attribute AND 3fH)×16` raw
+words, and base Y is `attribute>>6` through the retained Y-address gate. Palette
+lookup uses that base; direct16 depth does not use the CLUT.
+
+T1's upper half is the texture-page attribute. It is word **6** here, not word 5
+as in a flat-textured packet. Its selected fields are:
+
+| Attribute bits | Selection |
+|---|---|
+| 3:0 | Page X in units of 64 raw words |
+| 4 | Page Y contribution of 256 |
+| 6:5 | RGB blend mode 0–3 |
+| 8:7 | Texture depth: 0 palette4; 1 palette8; 2 or 3 direct16 |
+| 11 | Page Y contribution of 512, subject to the Y-address gate |
+
+The update is persistent:
+
+```text
+new draw mode = (old draw mode AND NOT 09ffH) OR (T1 attribute AND 09ffH)
+```
+
+It preserves draw-mode bits 9, 10, 12 and 13. Other T1 attribute bits do not
+change them; T2/T3 upper halves do not select further pages. The update happens
+**before this polygon's own environment snapshot**, so it affects both this
+polygon and later commands that use current draw mode, including textured
+rectangles. Restore the desired page/blend/depth state explicitly when the next
+material differs.
+
+At emission, the polygon retains the resulting draw mode, Y extension, texture
+window, drawing-area corners, drawing offset, mask mode and skipped-row parity.
+Later state writes do not reinterpret those operands. The command changes no
+other drawing-environment register; eligible covered pixels change local memory
+through the retained mask/blend rules.
+
+### Attribute and pixel calculation
+
+The finite planes are those in
+[Predict interpolated colors and texture coordinates](#gpu-interpolation):
+determinant quotients truncate toward zero, steps/intercepts occupy twenty bits
+with twelve fractional bits, and readout takes bits 19:12. The half-attribute
+bias does not move coverage. Modulated mode evaluates all five R/G/B/U/V planes;
+raw mode ignores RGB for output but still evaluates U/V. There is no Z/W term,
+perspective correction, filtering or mip-level selection in this point sample.
+
+U/V then undergo texture-window replacement and the page/CLUT lookup in
+[Locate texture texels and palette colors](#gpu-texture-lookup). A fetched
+`0000H` skips the pixel; `8000H` is nonzero black, not transparent. Modulation
+uses each five-bit texel component t and interpolated byte c:
+
+```text
+p = (t×c) >> 4
+source component = 0,                         if p+d < 0
+                 = min((p+d)>>3, 31),         otherwise
+```
+
+Here d is the eligible destination-position dither offset, or zero with dithering
+off. Byte 128 is exact unit gain **with dithering off**, not byte 255. Modulated
+Gouraud-textured polygons are eligible for draw-mode dithering; raw texturing
+bypasses both modulation and dithering. See
+[Choose texture gain and dither deliberately](#gpu-color-dither).
+
+A semitransparent opcode blends only when the fetched nonzero texel also has
+bit 15 set. Otherwise that pixel is opaque. Blending uses the quantized RGB5
+source, not interpolated RGB bytes. Destination check-mask can suppress the
+write; force-mask sets output bit 15 but does not make an unmarked texel blend.
+Without force-mask, output bit 15 copies the fetched texel. The independent zero,
+blend and destination-protection rules are in
+[Separate texture transparency, blending and destination protection](#gpu-blending-mask).
+
+### Worked nonconstant nine-word triangle
+
+Declare the following initial state and memory; no upload packet is implied:
+
+- Drawing offset zero; inclusive drawing area X=0…255,Y=0…191; no skipped rows;
+  Y-address extension zero; texture-window word zero; mask mode zero.
+- Current draw mode `3709H`. Its dither/draw-to-displayed-field/flip bits are set;
+  the flip bits are preserved but do not flip triangle U/V planes.
+- Every raw texture word at X=192…200,Y=5…23 is `2525H`.
+  Raw CLUT word `(229,100)` is `F194H`, RGB5=(20,12,28), bit 15 set.
+- All destination words covered by this triangle initially contain `A505H`,
+  RGB5=(5,8,9), bit 15 set. Check-mask is off, so that old bit does not protect them.
+
+Supply these nine words:
+
+| Word | Raw word | Operand |
+|---|---|---|
+| 1 | `36C08040H` | Triangle, modulated, semitransparent; C0=(64,128,192) |
+| 2 | `00180028H` | P0=(40,24) |
+| 3 | `190C0503H` | T0: U/V=(3,5), CLUT attribute 190cH |
+| 4 | `E18040C0H` | C1=(192,64,128); high E1H is not a command |
+| 5 | `0018002FH` | P1=(47,24) |
+| 6 | `00A30711H` | T1: U/V=(17,7), page attribute 00a3H |
+| 7 | `E240C080H` | C2=(128,192,64); high E2H is not a command |
+| 8 | `001E0028H` | P2=(40,30) |
+| 9 | `BEEF1709H` | T2: U/V=(9,23); upper half ignored |
+
+T1 changes draw mode to `(3709H AND NOT 09ffH) OR 00a3H = 36a3H`: page X=192,
+Y=0, palette8, additive blend mode 1. CLUT attribute 190cH gives base `(192,100)`.
+The triangle determinant is 42 and its plane anchor is vertex 0. The retained
+plane quantities are:
+
+| Attribute | X-step word | Y-step word | Intercept |
+|---|---|---|---|
+| R | `12492H` | `0AAAAH` | `65140H` |
+| G | `F6DB7H` | `0AAAAH` | `EE378H` |
+| B | `F6DB7H` | `EAAABH` | `2E360H` |
+| U | `02000H` | `01000H` | `9B800H` |
+| V | `00492H` | `03000H` | `B2130H` |
+
+For example, the R steps are `trunc(4096×128/7)=74898` and
+`trunc(4096×64/6)=43690`; the negative G/B steps use the same toward-zero rule.
+Evaluating covered pixel `(42,26)` gives **RGB=(122,131,131), U/V=(9,12)**.
+The identity texture window leaves U/V unchanged. Palette8 fetches raw word
+`(192+(9>>1),12)=(196,12)`, takes its high byte `25H`, then reads CLUT
+`(192+37,100)=(229,100)`: sample `F194H`.
+
+The destination's dither phase is `(2,2)`, giving d=−4. The three first-stage
+products are `(20×122)>>4=152`, `(12×131)>>4=98` and `(28×131)>>4=229`.
+After adding −4 and shifting right three, the source is RGB5=(18,11,28).
+Both the opcode request and sample bit 15 permit blending. Additive mode gives
+`min((5,8,9)+(18,11,28),31)=(23,19,31)`, and the copied sample bit 15 produces
+**`FE77H`**.
+
+A neighboring covered pixel proves the gains are not constant: `(43,26)` has
+RGB=(140,122,122), U/V=(11,12), d=0 and foreground RGB5=(21,11,26).
+It fetches the same CLUT color through packed word `(197,12)` but stores
+**`FE7AH`** over the declared destination.
+
+Starting each contrast from the same initial destination:
+
+| Change at (42,26) | Stored result | Reason |
+|---|---|---|
+| Opcode `34H` instead | `F172H` | Modulated/dithered source replaces RGB; no blend request |
+| Opcode `37H` instead | `FE99H` | RGB fields still present but ignored; raw source (20,12,28) blends |
+| CLUT color `7194H` instead, opcode 36H | `7172H` | Same modulated RGB, but fetched bit 15 clear prevents blending |
+
+### Command cost
+
+This Gouraud-textured family has setup `46+288+162=496` ticks for a triangle or
+`82+288+162=532` for a quad, followed by the separate triangle work estimates in
+[Budget command work separately from issuing words](#gpu-command-costs).
+Raw mode does not remove the textured or Gouraud setup charges.
+
+For the worked triangle there is no clipping or row skipping. Estimated work is
+`abs(42)>>1=21`, doubled for texturing to 42, then increased for the blend request
+to `42+((42+1)>>1)=63`. Total cost is **559 command ticks**, or **280 scheduled
+system cycles** from execution start. The raw 37H contrast has that same cost.
+The opaque 34H contrast instead costs `496+42=538` ticks, or 269 cycles. Clearing
+the fetched sample bit 15 does not remove the semitransparent opcode's work
+surcharge. These estimates are not counts of stored pixels and exclude CPU
+packet preparation/issue; timing coordinates use ordinary signed-eleven-bit
+position-plus-offset sums, not the raster triangle's common coordinate shift.
+
+<a id="gpu-finite-lines"></a>
+## Finite flat and Gouraud lines — GP0(40H–47H,50H–57H)
+
+A finite line supplies exactly two endpoints. Flat color uses one RGB value for both; Gouraud color supplies a separate RGB value with each endpoint. Neither form has texture operands.
+
+| Opcode bytes | Color form | Blend request | Packet words |
+|---|---|---|---|
+| `40H`,`41H`,`44H`,`45H` | Flat | Off | 3 |
+| `42H`,`43H`,`46H`,`47H` | Flat | On | 3 |
+| `50H`,`51H`,`54H`,`55H` | Gouraud | Off | 4 |
+| `52H`,`53H`,`56H`,`57H` | Gouraud | On | 4 |
+
+Bit 4 selects Gouraud color, bit 3 is clear for these finite forms, and bit 1 requests semitransparency. Bits 2 and 0 do not add texture fields or select raw color: all four opcodes in each row have the same operand layout and color behavior.
+
+```text
+Flat:    (opcode<<24) OR C0, P0, P1
+Gouraud: (opcode<<24) OR C0, P0, C1, P1
+```
+
+This is packet notation, not cartridge-language code. C uses unsigned R/G/B bytes in bits 7:0/15:8/23:16. C1's high byte is ignored, not decoded as another command. P consumes signed eleven-bit X in bits 10:0 and Y in 26:16; the other bits in each halfword do not extend its range. There is **no terminator**. After the third/fourth word, the next whole word starts a new command.
+
+### Endpoint order, samples and color lifetime
+
+The calculation is the one in [Predict line samples and color ramps](#gpu-line-sampling). If the first endpoint has greater X, the GPU exchanges **both endpoints and their associated colors**. Equal-X vertical lines retain their supplied order: there is no corresponding normalization to upward or downward traversal. Reversing such a line can change a quantized color tie, as the vertical reversal example in that lesson demonstrates.
+
+After ordinary drawing-offset sums, reject source spans exceeding 1024×512 inclusive. The accepted segment generates `max(abs(dx),abs(dy))+1` samples, including both endpoints; an accepted zero-length segment generates one. Positions use the specified outward-rounded Q32 steps/biases, while Gouraud bytes use biased Q12 accumulators and truncated color steps. Generated positions wrap to signed eleven bits before drawing-area and row-suppression tests. Neither clipping nor skipped rows restarts the original color ramp.
+
+For a concrete clipped, descending-Y Gouraud line, use zero offset, inclusive area X=10…14,Y=7…10, retained suppression of odd rows, dithering off and mask-mode low bits zero:
+
+| Word | Raw word | Operand |
+|---|---|---|
+| 1 | `5528C814H` | Opaque Gouraud; first RGB=(20,200,40) |
+| 2 | `0005000EH` | First endpoint (14,5) |
+| 3 | `E1B414DCH` | Second RGB=(220,20,180), not an E1 command |
+| 4 | `000C000AH` | Second endpoint (10,12) |
+
+Opcode `55H` deliberately has both ignored bits set. X ordering makes the working start `(10,12)` with RGB=(220,20,180), and the end `(14,5)` with RGB=(20,200,40). N=7 gives eight generated samples. The Q12 RGB steps are −117028,+105325,−81920. Of the samples at original indices 0…7, the area admits indices 2…5; odd-row suppression removes indices 3 and 5:
+
+| Original sample index | Destination | RGB byte readout | Stored RGB555 word |
+|---|---|---|---|
+| 2 | (11,10) | (163,71,140) | `4514H` |
+| 4 | (12,8) | (106,123,100) | `31EDH` |
+
+The intervening rejected samples still advance every accumulator. These two opaque, unchecked, unforced writes replace their old words and write bit 15 clear.
+
+### Flat lines also dither
+
+The draw-mode dither setting applies to **flat as well as Gouraud lines**. As a separate example, enable dithering, disable row suppression and use area X=16…19,Y=20, zero offset and mask-mode low bits zero. The complete flat packet is:
+
+```text
+450F0807H, 00140010H, 00140013H
+```
+
+Its RGB=(7,8,15) is constant, but absolute destination phases produce different words:
+
+| Destination | Dither offset | RGB555 word |
+|---|---|---|
+| (16,20) | −4 | `0400H` |
+| (17,20) | 0 | `0420H` |
+| (18,20) | −3 | `0400H` |
+| (19,20) | +1 | `0821H` |
+
+The common offset is added to each byte, saturated to 0…255, then reduced by three bits. It is not a per-line phase restarted at the first endpoint, and blending uses the resulting five-bit source.
+
+### State and command cost
+
+Draw state is retained when the complete command is emitted; later environment changes do not reinterpret it. Semitransparent forms blend admitted source pixels against their current destination. Mask checking can suppress the write; force-mask sets output bit 15, otherwise these untextured lines write zero there. The packet itself contains no drawing-environment update.
+
+Finite-line command work is the clipped **source bounding-box** estimate, not the generated or stored-sample count. Use ordinary signed-eleven-bit position-plus-offset sums, reject excessive source spans, and intersect the inclusive source bounding rectangle with the drawing area. Empty work costs zero ticks. Otherwise, with clipped dimensions W/H, active row suppression changes H to `max(1,H>>1)` and work is `max(W,H)`. Flat/Gouraud choice does not add a separate setup term.
+
+For the first packet, the source box is 5×8, clipped to 5×4. Skipping changes the timing height to 2, but `max(5,2)=5`: **five ticks/three scheduled system cycles**, despite only two stored samples. Without skipping it still costs five ticks, although four samples survive clipping. The flat dither example costs four ticks/two cycles. A nonempty zero-length finite line costs one tick, even if row suppression prevents its one store. These are queued command intervals, not CPU packet-supply time or physical raster bandwidth; finite lines do not acquire a polyline's initial 16-tick setup.
+
+<a id="gpu-polylines"></a>
+## Flat and Gouraud polylines — GP0(48H–4FH,58H–5FH)
+
+A polyline starts with two endpoints, then adds one segment for each complete continuation vertex. Flat color retains one RGB value throughout; Gouraud color supplies a new RGB value with each new endpoint.
+
+| Opcode bytes | Color form | Blend request | Initial words | Words per added vertex |
+|---|---|---|---|---|
+| `48H`,`49H`,`4CH`,`4DH` | Flat | Off | 3 | 1 |
+| `4AH`,`4BH`,`4EH`,`4FH` | Flat | On | 3 | 1 |
+| `58H`,`59H`,`5CH`,`5DH` | Gouraud | Off | 4 | 2 |
+| `5AH`,`5BH`,`5EH`,`5FH` | Gouraud | On | 4 | 2 |
+
+Bit 4 selects Gouraud color, bit 3 selects continuation, and bit 1 requests semitransparency. Bits 2 and 0 neither add texture operands nor select raw color. The word order is:
+
+```text
+Flat:    (opcode<<24) OR C0, P0, P1, P2, P3, ... , terminator
+Gouraud: (opcode<<24) OR C0, P0, C1, P1, C2, P2, C3, P3, ... , terminator
+```
+
+This is packet notation. Colors consume unsigned RGB bytes in bits 7:0/15:8/23:16; positions consume signed eleven-bit X/Y fields in bits 10:0/26:16. The complete initial header emits segment P0–P1 **without waiting for termination**. Flat P2 emits P1–P2 using C0 again; Gouraud C2/P2 emits the same segment using C1/C2. The previous endpoint and its color remain available for the following segment.
+
+### Terminate at the right field boundary
+
+After the initial header, any word satisfying this predicate is a terminator:
+
+```text
+(word AND F000F000H) = 50005000H
+```
+
+Test it only at the start of a continuation vertex: the next **position** for flat color, or the next **color** for Gouraud color. `5ABC5DEFH` qualifies. The identical word in a Gouraud continuation's position slot is position data, not a terminator. Initial-header fields are not termination boundaries either.
+
+The complete eight-word example in [Frame the GP0 command stream](#gpu-command-stream) makes the distinction concrete:
+
+| Word in that example | Input | Boundary meaning |
+|---|---|---|
+| 3 | `E10000FFH` | Initial second color; high byte ignored, not an E1 command |
+| 6 | `001A002EH` | Continuation position, completing the second segment |
+| 7 | `5ABC5DEFH` | Next continuation-color slot: terminates without adding a segment |
+| 8 | `E1000000H` | Now a new drawing-environment command |
+
+Moving the marker into word 6 would make it position data. Conversely, a matching full word in a continuation-color slot terminates **before** its low 24 bits can become a color. An opcode-looking or NOP-looking continuation word is not an escape to a command boundary.
+
+There is no fixed total polyline word count. Omitting termination leaves the continuation phase open; supplying a Gouraud color without its position leaves that pair unfinished. A pause while buffered words drain does not discard the retained endpoint. Termination does not undo segments already emitted. Each complete segment retains the drawing state present at its own emission; it does not wait for a final whole-polyline state snapshot.
+
+### Count the joint twice when blending
+
+Every segment uses the finite-line calculation in [Predict line samples and color ramps](#gpu-line-sampling): X ordering exchanges endpoints and their associated colors, equal-X order is retained, and an accepted segment generates `max(abs(dx),abs(dy))+1` samples. Generated positions wrap to signed eleven bits before area/row tests. Clipping or row suppression does not restart a color ramp. Dithering, if enabled, applies to flat as well as Gouraud segments at each absolute destination phase.
+
+For a complete flat example, use zero offset, inclusive area X=40…46/Y=30, no row suppression, dithering off, mask checking/forcing off and saturated additive blend selection 1. Initialize all seven destination words to `0000H` and supply:
+
+| Word | Raw input | Meaning |
+|---|---|---|
+| 1 | `4A000020H` | Flat semitransparent polyline; RGB=(32,0,0) |
+| 2 | `001E0028H` | P0=(40,30) |
+| 3 | `001E002BH` | P1=(43,30); completes the initial segment |
+| 4 | `001E002EH` | P2=(46,30); completes the next segment |
+| 5 | `5ABC5DEFH` | Terminates at the next flat position boundary |
+
+Each segment generates four samples, including both ends. RGB=(32,0,0) becomes RGB5=(4,0,0), word `0004H`, before blending. The first segment writes X=40…43; the second writes X=43…46. Their common endpoint receives **two additions**, not polygon-style once-only seam ownership:
+
+| Destination X at Y=30 | 40 | 41 | 42 | 43 | 44 | 45 | 46 |
+|---|---|---|---|---|---|---|---|
+| Write count | 1 | 1 | 1 | 2 | 1 | 1 | 1 |
+| Final word | `0004H` | `0004H` | `0004H` | `0008H` | `0004H` | `0004H` | `0004H` |
+
+These are the results after both segments' pixel writes. The stated mask settings matter: destination protection could reject an old protected word, while forcing would set output bit 15. No sample bit 15 is needed to enable blending for these untextured lines.
+
+### Command cost
+
+Use the finite-line source-bounding-box estimate for each segment: ordinary decoded position-plus-offset sums, reject inclusive spans over 1024×512, then intersect with drawing bounds. Empty intersection gives zero work. Otherwise, with clipped dimensions W/H, row suppression changes H to `max(1,H>>1)` and work is `max(W,H)`.
+
+The **initial polyline segment adds 16 setup ticks**; later continuation segments use work alone. Each example box is 4×1, giving **20 ticks/10 scheduled system cycles** for the initial segment and **4 ticks/2 cycles** for the continuation. The terminator adds no segment. An initial segment with zero work still has its 16-tick setup; a zero-work continuation does not repeat it. Gouraud color, blending and dithering add no separate line-cost term. These are queued command intervals, not CPU word-supply costs, physical raster bandwidth or presentation acknowledgement.
+
+<a id="gpu-rectangle-packets"></a>
+## Drawing rectangles — GP0(60H–7FH)
+
+A drawing rectangle supplies one RGB color, one destination origin and either a fixed size or an explicit width/height. Textured forms add one U/V and CLUT word. There is no Gouraud rectangle: opcode bits 4:3 select size, not color interpolation.
+
+| Size | Color source | Opaque opcode bytes | Semitransparent opcode bytes | Words |
+|---|---|---|---|---|
+| Variable | Untextured | `60H`,`61H` | `62H`,`63H` | 3 |
+| Variable | Modulated texture | `64H` | `66H` | 4 |
+| Variable | Raw texture | `65H` | `67H` | 4 |
+| 1×1 | Untextured | `68H`,`69H` | `6AH`,`6BH` | 2 |
+| 1×1 | Modulated texture | `6CH` | `6EH` | 3 |
+| 1×1 | Raw texture | `6DH` | `6FH` | 3 |
+| 8×8 | Untextured | `70H`,`71H` | `72H`,`73H` | 2 |
+| 8×8 | Modulated texture | `74H` | `76H` | 3 |
+| 8×8 | Raw texture | `75H` | `77H` | 3 |
+| 16×16 | Untextured | `78H`,`79H` | `7AH`,`7BH` | 2 |
+| 16×16 | Modulated texture | `7CH` | `7EH` | 3 |
+| 16×16 | Raw texture | `7DH` | `7FH` | 3 |
+
+Bit 2 enables texture, bit 1 requests semitransparency, and bit 0 selects raw rather than modulated texture **only when textured**. The paired untextured opcodes ignore bit 0. Raw texture ignores the supplied RGB color; modulation uses it as channel gain.
+
+```text
+Variable untextured: (opcode<<24) OR C0, P0, S
+Variable textured:   (opcode<<24) OR C0, P0, T0, S
+Fixed untextured:    (opcode<<24) OR C0, P0
+Fixed textured:      (opcode<<24) OR C0, P0, T0
+```
+
+This is packet notation. C0 consumes unsigned RGB bytes in bits 7:0/15:8/23:16; P0 consumes signed eleven-bit X/Y in bits 10:0/26:16. S supplies width in bits 9:0 and height in bits 24:16: **0…1023 by 0…511**, with either zero extent empty. This is not an image transfer's zero-means-maximum convention. Fixed forms have **no S word**: an extra size word would instead occupy the next command boundary.
+
+T0 has U in bits 7:0, V in 15:8 and a CLUT attribute in 31:16. CLUT X is `(attribute AND 3FH)×16`; CLUT Y is `attribute>>6` through the Y-address gate. The rectangle uses the **current E1 texture page and depth**. It has no polygon T1 word and does not overwrite E1 with its CLUT attribute.
+
+### Placement and texture lifetime
+
+Add the signed drawing offset to the decoded origin, then wrap that origin to signed eleven bits. Extend right/down by the selected size; do not repeatedly wrap the destination extent. Clip against the inclusive drawing area. Textured rectangles anchor U/V at the original, unclipped origin. Independent X/Y flip settings change their steps to −1 instead of +1; they neither reverse destination coverage nor move the anchor automatically to the opposite texture edge. Left/top clipping advances U/V, and suppressed rows still advance V. See [Keep a clipped or flipped rectangle on its texture](#gpu-texture-rectangles) for the four independent flip choices.
+
+Every complete rectangle retains its drawing-state snapshot. Later environment changes do not reinterpret it. Neither untextured nor textured rectangles dither, even with the draw-mode dither setting enabled. The normal transparent-sample, blending and destination-mask rules still apply: fetched `0000H` skips the write, while `8000H` is processed black; textured semitransparency needs both the opcode request and sample bit 15. Mask checking tests the old destination; forcing sets output bit 15.
+
+### Complete untextured and textured packets
+
+For both trials below, use zero offset, inclusive drawing area X=13…17/Y=22…25, retained suppression of odd rows, mask checking/forcing off and the dither setting on. Initialize the twenty destination words in that area to `6B5AH` before **each** trial.
+
+The complete opaque fixed-8×8 packet is only two words:
+
+```text
+70A0647CH, 0014000AH
+```
+
+It supplies RGB=(124,100,160) and origin (10,20). Clipping leaves five columns and four rows; odd-row suppression leaves ten writes on Y=22 and 24. With no rectangle dither, every write is RGB5=(15,12,20), **`518FH`**. Rows 23 and 25 retain `6B5AH`. There is no trailing size word.
+
+For the textured trial, let current E1 select page (64,256), eight-bit palette sampling and both rectangle flips. Use texture-window fields X-mask=1/Y-mask=3/X-offset=0/Y-offset=1, giving U AND/OR masks `F7H/00H` and V masks `E7H/08H`. Declare these raw source words; all other texture words and palette entries used by this example are `0000H`:
+
+| Role | Raw VRAM coordinate | Word |
+|---|---|---|
+| Packed texture | (187,495) | `A512H` |
+| Packed texture | (187,493) | `3612H` |
+| Palette color | (133,300) | `25ABH` |
+| Palette color | (22,300) | `8000H` |
+
+Supply the complete variable, modulated, opaque packet:
+
+| Word | Raw input | Meaning |
+|---|---|---|
+| 1 | `64808080H` | RGB=(128,128,128), exact unit modulation gain |
+| 2 | `0014000AH` | Origin (10,20) |
+| 3 | `4B3E0102H` | U0=2,V0=1; CLUT base (992,300) |
+| 4 | `00060008H` | Width 8, height 6 |
+
+The first admitted pixel (13,22) has stepped U/V=(−1,−1), transformed to `F7H/EFH`. Palette8 reads raw (64+123,256+239)=(187,495); odd U selects `A5H`. CLUT X wraps within its row: `(992+165) AND 3FFH=133`, yielding `25ABH`. Neutral gain preserves its RGB5=(11,13,9).
+
+| Destination | Windowed U/V | Selected index | Fetched color | Final destination |
+|---|---|---|---|---|
+| (13,22) | `F7H/EFH` | `A5H` | `25ABH` | `25ABH` |
+| (14,22) | `F6H/EFH` | `12H` | `0000H` | Unchanged `6B5AH` |
+| (13,24) | `F7H/EDH` | `36H` | `8000H` | `8000H` |
+
+Y=23 still consumes V=`EEH` despite being suppressed, so Y=24 uses `EDH`, not `EEH`. Its index `36H` selects CLUT X=(992+54) AND 3FFH=22. Only the two nonzero-color destinations shown change; every other destination retains `6B5AH`. The `8000H` write is opaque processed black, not a transparent skip. Changing opcode `64H` to raw `65H` keeps the packet layout and lookup; this particular neutral-gain case then has the same output without using C0.
+
+### Command cost
+
+Use ordinary signed-eleven-bit position-plus-offset sums for timing, **not** the raster origin's rewrapped sum. Both examples have clipped W=5,H=4 before row suppression and H′=2 after it. The untextured row cost is q=5: **16+5×2=26 ticks, 13 scheduled system cycles**. Palette8 is below both texture thresholds, adding W=5 row ticks: q=10 and **16+10×2=36 ticks, 18 cycles**. Raw texture does not remove that overhead. The cost remains 36 ticks despite only two successful texture writes.
+
+In general add `(W+1)>>1` to row cost when semitransparency **or** mask checking is enabled, once even when both are enabled. The wider/greater-area texture branches are listed in [Budget command work separately from issuing words](#gpu-command-costs); use clipped H **before** row halving to select them. An empty rectangle still costs 16 ticks/eight cycles. For example, replacing the textured packet's S with `00060000H` gives width zero and no samples, not a 1024-column image. These intervals exclude CPU word preparation/supply and do not acknowledge presentation.
+
+<a id="gpu-fill-packet"></a>
+## Fill raw local memory — GP0(02H)
+
+Use fill for a solid RGB color written in sixteen-word horizontal units, not as
+a drawing rectangle with the usual pixel-write controls. **Only opcode `02H`**
+selects this operation. Its complete packet is three GP0 words:
+
+| Word | Contents |
+|---|---|
+| 1 | `02000000H OR RGB888`: R in bits 7:0, G in 15:8, B in 23:16 |
+| 2 | Destination XY: raw X in the low halfword, raw Y in the high halfword |
+| 3 | Size S: width in the low halfword, height in the high halfword |
+
+There is no pixel payload or terminator. The next word starts a new command;
+its bits are not additional fill pixels. The low twenty-four header bits are
+color, not raw/modulated or semitransparency options.
+
+### Decode alignment, dimensions and color
+
+With `Ymask=1ffH` for the nine-bit gate or `3ffH` for the ten-bit gate:
+
+```text
+X0 = XY AND 3f0H
+Y0 = (XY >> 16) AND Ymask
+W  = ((S AND 3ffH) + 15) AND NOT 0fH
+H  = (S >> 16) AND 1ffH
+```
+
+X is aligned **down** to a multiple of 16; the selected width is rounded **up**
+to a multiple of 16. Width 1…16 therefore writes 16 columns, while width 1009…1023
+writes 1024. Width zero remains empty, and height zero remains empty: neither
+selects the maximum transfer dimension. Height uses only nine bits even when
+the Y-address gate is open. Unselected position/size bits do not extend these
+fields.
+
+For each admitted row j and column i, raw coordinates are
+`X=(X0+i) AND 3ffH`, `Y=(Y0+j) AND Ymask`. X wraps within its row; an overrun
+past 1023 does not carry into the next row. The Y gate also applies to each
+generated row. These are raw-word addresses, not signed drawing coordinates or
+PCRTC storage-format addresses; see [Choose the storage contract before drawing](#gpu-storage).
+
+Each byte loses its low three bits. The stored word is
+`(R>>3) OR ((G>>3)<<5) OR ((B>>3)<<10)`, with **bit 15 clear**. Fill bypasses
+drawing offset, drawing-area clipping, dithering, blending, destination-mask
+checking and force-mask. It can therefore overwrite an old marked word and
+clear its bit 15 even while both mask controls are set. It does not change those
+configured controls.
+
+The exception is **retained skipped-row parity**. A row whose parity matches
+the retained suppression value is not written. Such suppression can be selected
+when vertical-resolution and interlace mode are both set and draw-to-displayed-
+field is clear; otherwise no row parity is suppressed. Do not assume fill always
+writes every row merely because it bypasses the drawing area. The differences
+from drawing, upload and copy are collected in
+[Choose fill, drawing or a raw transfer](#gpu-memory-operations).
+
+### Complete nonaligned fill with both address wraps
+
+Declare nine-bit Y addressing and retained suppression of odd rows. Drawing
+area X=100…103,Y=200…202 excludes the target; drawing offset is `(13,−7)`;
+dithering and subtractive blend mode are selected; mask mode has check and force
+both set. The locations named below initially contain `FFFFH`. These are declared
+example contents, not a reset-memory guarantee.
+
+Supply:
+
+| Word | Raw word | Requested operand |
+|---|---|---|
+| 1 | `024964F1H` | RGB=(241,100,73) |
+| 2 | `03FF03FFH` | X=1023,Y=1023 |
+| 3 | `00040011H` | Width 17,height 4 |
+
+X aligns to 1008, width rounds to 32, and the nine-bit Y gate selects 511. The four
+row addresses are 511,0,1,2; each row's columns are 1008…1023 followed by 0…15.
+The output color is RGB5=(30,12,9), packed **`259EH`**:
+
+| Raw Y | Retained parity test | After-fill words at X=1008…1023 and X=0…15 |
+|---|---|---|
+| 511 | Odd: suppressed | `FFFFH`, unchanged |
+| 0 | Even: admitted | `259EH` |
+| 1 | Odd: suppressed | `FFFFH`, unchanged |
+| 2 | Even: admitted | `259EH` |
+
+Exactly 64 distinct words change here. Neighbors such as `(16,0)` and `(1007,2)`
+remain unchanged. The excluding drawing area and nonzero offset do not relocate
+or clip these writes; old bit 15 does not protect them, and force-mask does not
+mark the result. The selected dither/blend state likewise does not alter `259EH`.
+
+### Command cost, not stored-pixel count
+
+For decoded W/H, the cost is:
+
+```text
+ticks = 46 + ((W >> 3) + 9)×H
+```
+
+The worked packet costs `46+(4+9)×4=98` command ticks, or **49 scheduled system
+cycles** from execution start. Disabling row suppression would write 128 words
+instead of 64 but would not change that cost. Likewise, changing only S to
+`00040000H` makes width zero and writes nothing, yet still costs 82 ticks/41
+cycles; S=`00000011H` makes height zero and costs 46 ticks/23 cycles.
+
+These intervals exclude preparation and issue of the three words and are not a
+physical fill-rate specification. Use the execution-deadline conversion in
+[Budget command work separately from issuing words](#gpu-command-costs). Do not
+apply the signed-position-plus-offset or clipped-area work rules of drawing
+primitives to this fill calculation.
+
+<a id="gpu-upload-packet"></a>
+## Raw image upload — GP0(A0H–BFH)
+
+Upload supplies raw **sixteen-bit local-memory words**, two per GP0 payload word. Every opcode byte from `A0H` through `BFH` selects the same operation; the opcode's low five bits and the header's low 24 bits do not select formats or colors.
+
+```text
+(opcode<<24) OR ignored24, destinationXY, S, payload0, payload1, ...
+W = (((S AND FFFFH) − 1) AND 3FFH) + 1
+H = ((((S >> 16) AND FFFFH) − 1) AND 1FFH) + 1
+payload words = (W×H + 1) >> 1
+```
+
+This is packet notation and integer mathematics. The header is exactly three 32-bit words. Destination X uses its low ten bits; destination Y comes from the upper half through the selected Y-address gate. These are raw addresses, not signed primitive positions. W is 1…1024 and H is 1…512: **zero does not request an empty upload**.
+
+| Raw S | Normalized W×H | Payload words | Total GP0 words |
+|---|---|---|---|
+| `00030003H` | 3×3 | 5 | 8 |
+| `00000000H` | 1024×512 | 262144 | 262147 |
+| `02010401H` | 1×1 | 1 | 4 |
+
+Consume each payload word's **low sixteen bits first, then high sixteen bits**, advancing a row-major pixel cursor. Packing does not restart at each row. With an odd width, one payload word can supply the last pixel of one row and the first pixel of the next. For an odd total pixel count, ignore the final payload word's upper half; the **next whole GP0 word** begins the next command. There is no end-image opcode in place of the count. Opcode-looking or polyline-marker-looking data remains image data throughout that payload.
+
+### Raw addressing and mask state
+
+For each pixel, X wraps within its 1024-word row, without carrying into Y. Generated rows wrap through the selected 512- or 1024-row Y-address period. This is raw local-memory addressing, not drawing-area clipping.
+
+Upload applies the retained destination-mask mode but ignores drawing offset, drawing area, row suppression, blending and dithering. Check-mask tests the destination's **old** bit 15 and rejects the entire write when set. Otherwise force-mask sets output bit 15; without force-mask, all sixteen source bits pass through. In particular, source `0000H` is an ordinary raw write, not texture transparency, and `8000H` is ordinary raw data rather than a blend request.
+
+A normal upload becomes one retained command after the counted payload has been assembled. Its mask mode and Y-address state are snapshotted when the complete upload—or a flushed partial upload—is emitted, not supplied by an extra payload flag. Apparent E commands inside the image cannot change that state.
+
+### A 3×3 upload across both address boundaries
+
+Select the 512-row Y-address period and mask mode `3`: checking and forcing both enabled. The following table declares the old destination words. Other draw-state settings do not affect this raw upload. Supply all eight words:
+
+| GP0 word | Raw input | Role |
+|---|---|---|
+| 1 | `BF123456H` | Upload alias BF; low 24 bits ignored |
+| 2 | `01FF03FEH` | Destination X=1022,Y=511 |
+| 3 | `00030003H` | Width 3,height 3 |
+| 4 | `E1800000H` | Pixels 0/1: `0000H`,`E180H` |
+| 5 | `5ABC5DEFH` | Pixels 2/3: `5DEFH`,`5ABCH`; not a polyline terminator |
+| 6 | `00008000H` | Pixels 4/5: `8000H`,`0000H` |
+| 7 | `A0007C00H` | Pixels 6/7: `7C00H`,`A000H`; not a new upload |
+| 8 | `E1001234H` | Pixel 8: `1234H`; upper `E100H` ignored |
+
+The complete masked result is:
+
+| Pixel index | Destination | Source | Before | After |
+|---|---|---|---|---|
+| 0 | (1022,511) | `0000H` | `001FH` | `8000H` |
+| 1 | (1023,511) | `E180H` | `03E0H` | `E180H` |
+| 2 | (0,511) | `5DEFH` | `8001H` | Unchanged `8001H` |
+| 3 | (1022,0) | `5ABCH` | `1111H` | `DABCH` |
+| 4 | (1023,0) | `8000H` | `2222H` | `8000H` |
+| 5 | (0,0) | `0000H` | `8333H` | Unchanged `8333H` |
+| 6 | (1022,1) | `7C00H` | `4444H` | `FC00H` |
+| 7 | (1023,1) | `A000H` | `8555H` | Unchanged `8555H` |
+| 8 | (0,1) | `1234H` | `6666H` | `9234H` |
+
+Payload word 5 crosses the logical row boundary: its low half targets (0,511), while its high half targets (1022,0). X overflow alone did **not** move pixel 2 to Y=0; the completed three-pixel row advances Y and the selected gate wraps 512 to zero. Pixel 0 proves that raw zero really writes: force-mask turns it into `8000H`. Pixels 2,5,7 retain their protected old words regardless of their source bits. The ignored upper half of word 8 cannot supply another pixel or start an E1 command.
+
+### An interrupted upload retains only its consumed prefix
+
+GP1(01h) clears the stream, not every earlier accepted pixel operation. If upload assembly has consumed at least one payload word, the clear flushes that partial payload; a header-only upload is discarded. Only up to `min(W×H,2×consumedPayloadWords)` pixels are represented. It does not manufacture the missing rectangle pixels, and words still merely queued in the cleared FIFOs are not promised as part of that prefix.
+
+As a separate trial from the same old-memory table, suppose only payload words 4 and 5 have been consumed before the GP1 clear. The retained prefix represents **four pixels**, not one complete row or two rows. After its masked writes, indices 0,1,3 have the table's new values; index 2 remains protected; indices 4…8 retain their **Before** values. Subsequent GP0 words start a new stream: do not send the abandoned remainder as though its old header were active. GP1(00h) performs the same stream-clear operation before restoring register defaults; it is not a local-memory rollback. See [GP1 control commands](#gpu-gp1-controls) for the complete clear/reset and readback distinctions.
+
+### Supply cost is separate from command cost
+
+A normal upload has **one command tick** of scheduled command cost, giving one system cycle, independently of image area. That is not a bound on preparing, admitting or supplying its header/payload, nor on making the resulting pixels available for presentation.
+
+Supply CPU words to the **same fixed GP0 port** with the word-access/admission contract, or hand the stream to its DMA owner as described in [Hand a GP0 stream between CPU and DMA](#gpu-ingress-ownership). A contiguous CPU word sequence does not repeatedly address GP0. DMA block boundaries do not finish an incomplete image payload, and DMA ownership excludes interleaved direct CPU writes. Packet completion, command completion and display completion remain separate events.
+
+<a id="gpu-readback-packet"></a>
+## Read raw local memory — GP0(C0H–DFH)
+
+Use this command to return raw sixteen-bit local-memory words through GPUREAD.
+It does not return a PCRTC-composed, magnified or storage-format-converted
+picture, and it does not expose a CPU-addressable local-memory aperture.
+
+### Three-word request and normalized dimensions
+
+Every opcode from `C0H` through `DFH` selects the same operation. The opcode's
+low five bits and the header's low twenty-four bits do not select another format.
+Supply:
+
+| Word | Contents |
+|---|---|
+| 1 | `opcode << 24`; low twenty-four bits ignored |
+| 2 | Source XY: raw X in the low halfword, raw Y in the high halfword |
+| 3 | Size S: raw width in the low halfword, raw height in the high halfword |
+
+There is **no GP0 pixel payload or terminator**. Image data comes back on reads;
+a following GP0 write belongs to the next command, subject to the readback
+barrier below.
+
+```text
+W = (((S AND ffffH) − 1) AND 3ffH) + 1
+H = ((((S >> 16) AND ffffH) − 1) AND 1ffH) + 1
+GPUREAD word count = (W×H + 1) >> 1
+```
+
+W is 1…1024 and H is 1…512, including with the ten-bit Y-address gate. A zero size
+word requests 1024×512 pixels and 262144 reads, not an empty operation. Raw size
+halfwords 1025/513 instead select 1×1. These are image-transfer dimensions, not
+fill or drawing-rectangle zero-size rules.
+
+Source X uses ten bits. Source Y and every generated row use the request's
+nine-bit or ten-bit Y mask. X wraps within its 1024-word row, without carrying
+into the next row. The source coordinates, normalized dimensions and Y-extension
+value belong to the retained request; a later gate write does not retarget an
+already emitted request. The raw word representation and address distinction
+are described in [Choose the storage contract before drawing](#gpu-storage).
+
+### Execution, submission and READY are separate
+
+The command has a **one-command-tick** execution interval. At its scheduled
+completion, it activates a pending readback with cursor zero and a command-count
+fence identifying the required command prefix through this request. That scheduled interval
+is not the time to return all W×H pixels.
+
+The request progresses through three distinct states:
+
+| State | Meaning for the request |
+|---|---|
+| Pending | Waiting for read work to be submitted at its exact completed-command fence |
+| Submitted | The ordered read work has been claimed; its matching completion is still required |
+| READY | Data is available for permitted GPUREAD consumption; GPUSTAT bit 27 is set |
+
+The fence ensures the required earlier work is performed before pixel extraction.
+The count and these phases are ordering state, not extra request words or
+additional directly addressed registers. Later packets cannot execute past a
+non-idle readback. Do not replace READY with the command's one-tick deadline,
+GPU idle, or acceptance of the third header word. No fixed C0-to-READY latency
+or sustained readout rate is specified by that command cost.
+
+### Read ownership, latch and counted release
+
+Use complete word reads and the port rules in
+[GP0, GPUREAD, GP1 and GPUSTAT](#gpu-ports-status). A GP0 read first synchronizes
+already-due command work. If no readback is READY, it returns the retained
+GPUREAD latch without consuming a pixel; it does not necessarily return zero.
+If READY and DMA does not own GP0's read port, a CPU read consumes the next
+packed word and replaces the latch. A DMA read may consume its stream; a CPU
+read while DMA owns that port instead returns the latch without advancing.
+READY alone does not grant CPU ownership.
+
+Packing is one continuous row-major pixel sequence: first pixel low halfword,
+next pixel high halfword, continuing across row boundaries. There is no padding
+after an odd-width row. Only the final odd pixel has an unused **zero high
+halfword**. Count `(W×H+1)>>1` permitted word reads; neither a zero word nor a
+particular pixel value is an end marker.
+
+Consuming the final word returns readback to idle and resumes queued command
+processing. GPUREAD keeps that final word until another query or permitted data
+read replaces it. The next no-READY read repeats the latch, not a new pixel.
+A byte read is not a nonconsuming peek: it invokes the full read callback and
+can consume an entire packed word. Query/latch interactions are detailed in
+[Query drawing state through GPUREAD](#gpu-info-queries); a query does not reserve
+its answer against a ready image read.
+
+### Complete odd 3×3 readback across both address wraps
+
+Declare nine-bit Y addressing, GPUREAD=`DEADBEEFH`, no DMA read ownership and no
+intervening info query. The source words are already present as follows; no
+upload or reset-memory contents are implied:
+
+| Raw Y | X=1023 | X=0 | X=1 |
+|---|---|---|---|
+| 511 | `0011H` | `8022H` | `0033H` |
+| 0 | `0044H` | `8055H` | `0066H` |
+| 1 | `0077H` | `8088H` | `0099H` |
+
+Issue:
+
+| Word | Raw word | Meaning |
+|---|---|---|
+| 1 | `D9ABCDEFH` | Readback alias D9H; ABCDEFH ignored |
+| 2 | `03FF03FFH` | X=1023; supplied Y=1023 masks to 511 |
+| 3 | `00030003H` | W=3,H=3 |
+
+Each row addresses X=1023,0,1; generated rows address 511,0,1. While bit 27 remains
+clear, a GP0 read returns `DEADBEEFH` and does not advance this image. Once READY,
+the five permitted word reads are:
+
+| Read | GPUREAD result | Low pixel | High pixel | READY after read |
+|---|---|---|---|---|
+| 1 | `80220011H` | (1023,511) | (0,511) | 1 |
+| 2 | `00440033H` | (1,511) | (1023,0) | 1 |
+| 3 | `00668055H` | (0,0) | (1,0) | 1 |
+| 4 | `80880077H` | (1023,1) | (0,1) | 1 |
+| 5 | `00000099H` | (1,1) | Unused zero | 0 |
+
+Read 2 crosses a logical row boundary without padding. Source bit 15 passes
+through unchanged; these are storage words, not newly quantized RGB values.
+With no next readback or query, another GP0 read returns `00000099H` again.
+An intervening CPU read under DMA read ownership would instead repeat the
+current latch without consuming one of these five words.
+
+### A queued marker waits for the final read
+
+For the same request, start with the GPU request latch clear and place the whole
+GP0 marker word `1F000000H` immediately after the three-word header. It is the
+next command, not data for this readback. It cannot execute while the readback
+is pending, submitted or READY, including after only four of the five reads.
+
+Let R be the cycle when the permitted final read resumes processing, with this
+marker the only queued follow-up. The marker executes in that resumed processing,
+sets its request, and has its own one-tick interval ending at R+1 system cycle.
+This is a relative command timeline, **not** a promised READY deadline or a CPU
+five-read benchmark. The final read releases the image barrier; the marker's
+request and GPU idle are still different conditions. Acknowledgement of GPU and
+controller latches follows [GP1 control commands](#gpu-gp1-controls).
+
+### Clearing is an abort, not counted consumption
+
+GP1(01h) can abandon readback; retained-command effects depend on whether the
+request is unactivated, pending, submitted or READY. It is not equivalent to
+consuming the remaining words and is not a rollback of all earlier accepted
+work. Use the phase-dependent clear description in
+[GP1 control commands](#gpu-gp1-controls). GP1(00h) also clears the stream but
+preserves the GPUREAD latch and Y-extension value; neither resetting that GPU
+register state nor reading an old latch proves local memory was erased.
+
+<a id="gpu-copy-packet"></a>
+## Raw local-memory copy — GP0(80H–9FH)
+
+Copy moves sixteen-bit words directly between two local-memory regions. Every opcode byte from `80H` through `9FH` has the same four-word layout; the low five opcode bits and low 24 header bits are ignored. There is no GP0 pixel payload or CPU readback:
+
+```text
+(opcode<<24) OR ignored24, sourceXY, destinationXY, S
+W = (((S AND FFFFH) − 1) AND 3FFH) + 1
+H = ((((S >> 16) AND FFFFH) − 1) AND 1FFH) + 1
+```
+
+This is packet notation and integer mathematics. Each XY has raw X in its low ten bits and raw Y in its upper half through the selected Y-address gate. They are not signed primitive positions. W is 1…1024 and H is 1…512: S=`00000000H` requests **1024×512**, not an empty copy. The 1024-row Y-address setting does not enlarge that 512-row maximum transfer height. After the fourth packet word, the next word is another command, not image data.
+
+The complete packet retains its mask mode and Y-address state when emitted; later environment changes do not reinterpret it. Source/destination X wrap within their respective 1024-word rows, and generated Y values wrap through the selected 512- or 1024-row period. Drawing offset, drawing area, row suppression, blending and dithering do not affect this raw operation.
+
+Check-mask rejects a write when the destination's **old** bit 15 is set. Otherwise force-mask sets output bit 15; with forcing clear, all sixteen source bits are copied. Source `0000H` is writable raw data, not texture transparency. A set source bit 15 is also data: it does not prevent reading or request blending.
+
+### Determine traversal before relying on overlap
+
+Rows always advance in increasing **logical** row order, even when Y wraps to a smaller physical coordinate. For every row calculate:
+
+```text
+D = (destinationX − sourceX) AND 3FFH
+```
+
+If `0 < D < W`, visit columns W−1…0; otherwise visit 0…W−1. Read each source word immediately before its destination mask test/write. The operation does **not** first capture a whole source rectangle. Horizontal reverse traversal therefore does not promise source preservation for vertical overlap.
+
+For a complete wrapped horizontal example, clear both mask controls and initialize row 20 as follows. Supply:
+
+```text
+9F123456H, 001403FEH, 001403FFH, 00010003H
+```
+
+This copies 3×1 from (1022,20) to (1023,20); the first word deliberately uses alias `9FH` and ignored payload bits. D=1, so columns execute 2,1,0:
+
+| Column | Source X/read word | Destination X |
+|---|---|---|
+| 2 | 0 / `0033H` | 1 |
+| 1 | 1023 / `0022H` | 0 |
+| 0 | 1022 / `0011H` | 1023 |
+
+| X at Y=20 | 1022 | 1023 | 0 | 1 |
+|---|---|---|---|---|
+| Before | `0011H` | `0022H` | `0033H` | `0044H` |
+| After | `0011H` | `0011H` | `0022H` | `0033H` |
+
+X wrapping stays on row 20; it does not carry into row 21.
+
+### A downward copy reads the rows it just wrote
+
+Select the 512-row Y-address period, clear both mask controls and supply this complete packet:
+
+| Word | Raw input | Meaning |
+|---|---|---|
+| 1 | `80000000H` | Raw local-memory copy |
+| 2 | `01FE03FFH` | Source (1023,510) |
+| 3 | `01FF03FFH` | Destination (1023,511) |
+| 4 | `00030003H` | Width 3,height 3 |
+
+Use the following before-words at the three columns X=(1023,0,1):
+
+| Physical Y | Before | After |
+|---|---|---|
+| 510 | `0011H,0022H,0033H` | `0011H,0022H,0033H` |
+| 511 | `0044H,0055H,0066H` | `0011H,0022H,0033H` |
+| 0 | `0077H,0088H,0099H` | `0011H,0022H,0033H` |
+| 1 | `00AAH,00BBH,00CCH` | `0011H,0022H,0033H` |
+
+D=0 selects forward columns. Logical row 0 copies 510→511. Logical row 1 then reads the **new** row 511 into physical row 0, and logical row 2 reads the new row 0 into row 1. The result repeats the original first source row; it does not shift three independently preserved original rows. [Choose fill, drawing or a raw transfer](#gpu-memory-operations) describes software ordering when those originals must be preserved.
+
+Destination protection can change which source values cascade. As a separate trial, restore the Before values, change only (0,511) from `0055H` to **`8055H`**, and enable check-mask with forcing clear: mask mode `2`. The first copied row cannot replace that protected middle word, leaving row 511 as `0011H,8055H,0033H`. The next row reads those actual contents, so row 0 also becomes `0011H,8055H,0033H`; the third repeats them into row 1. Source bit 15 does not block these reads or writes to still-unprotected destinations. There are eight successful stores rather than nine, but no preserved-source snapshot appears.
+
+### Command cost
+
+Copy costs **2×W×H command ticks**, using normalized dimensions, without drawing-area clipping or a mask-hit reduction. Thus the horizontal packet costs six ticks/three scheduled system cycles. The 3×3 packet costs **18 ticks/nine cycles**, both with and without the protected-word contrast. S=zero costs 1,048,576 ticks/524,288 cycles, although the packet still contains only four words.
+
+The signed-eleven-bit geometry estimates for drawing primitives do not apply to copy. These command intervals do not include CPU preparation/issue or establish physical memory bandwidth, pixel-presentation time or a general two-dimensional source-preserving move guarantee.
+
+<a id="gpu-draw-mode"></a>
+## Drawing mode — GP0(E1H)
+
+E1 is one GP0 word: `E1000000H OR parameter`. It retains parameter bits **13:0**, mask `00003FFFH`; bits 23:14 are ignored. The draw-mode word's reset value is zero, not a zero value for the whole GPUSTAT register.
+
+| Draw-mode bits | Meaning |
+|---|---|
+| 3:0 | Texture-page X: field×64 **raw sixteen-bit words** |
+| 4 | Texture-page Y low selector: bit×256 rows |
+| 6:5 | Blend selection: 0=half-sum, 1=saturated addition, 2=clamped subtraction, 3=quarter-foreground addition |
+| 8:7 | Texture depth: 0=four-bit palette, 1=eight-bit palette, 2=direct sixteen-bit, **3=the same direct-sixteen-bit sampling path** |
+| 9 | Enable dithering for eligible primitive/color paths |
+| 10 | Draw-to-displayed-field control: a set bit disables the conditional row-parity suppression described below |
+| 11 | Texture-page Y high selector: bit×512 rows |
+| 12 | Textured-rectangle X flip: U step −1 when set, +1 when clear |
+| 13 | Textured-rectangle Y flip: V step −1 when set, +1 when clear |
+
+Page Y is the sum of the two selectors through the current Y-address gate. Bit 11 is a page-address bit, **not a texture-disable bit**. Depth 3 is representable and reads direct words; do not reject it or interpret it as another palette format.
+
+The blend selector chooses the calculation, not whether a pixel blends. An untextured primitive still needs its semitransparency opcode request; a textured pixel needs both that request and fetched sample bit 15. Dithering applies to untextured Gouraud polygons, modulated textured polygons and lines, but not flat untextured polygons, raw texture or rectangles. The numerical color paths are described in [Choose texture gain and dither deliberately](#gpu-color-dither) and [Separate texture transparency, blending and destination protection](#gpu-blending-mask).
+
+Bit 10 does **not** describe an arbitrary protected display rectangle. One retained row parity is suppressed only when the GPU vertical-resolution and interlace flags are both set **and bit 10 is clear**; the retained active-line parity selects the skipped rows. Otherwise no row parity is suppressed. Rectangle flip bits independently change UV traversal, not destination geometry or the initial UV anchor, and do not reverse triangle interpolation.
+
+### State changes at parser execution, not admission
+
+E1 changes current draw mode when the ordered GP0 parser executes its word, not merely when a FIFO accepts it. The register change occurs at the start of its **one-command-tick interval**, whose completion deadline is one system cycle later. E1 is not itself a retained drawing primitive. Every emitted draw retains its own mode and other drawing-state snapshot; later E1 words cannot reinterpret it. This queued interval is not CPU issue cost or a physical raster-clock guarantee.
+
+Textured polygons have another persistent mode producer. T1's upper attribute half updates current mode **before that polygon takes its snapshot**:
+
+```text
+new mode = (old mode AND NOT 09FFH) OR (T1 attribute AND 09FFH)
+```
+
+This replaces bits 8:0 and 11: page, depth and blend. It preserves bits **9,10,12,13**, regardless of those bits in the attribute. T1 is word 5 of a flat textured polygon or word 6 of a Gouraud textured polygon, counting the command word as 1. It is an operand, not a standalone E1 command. T0 supplies the CLUT, while T2/T3 upper halves do not make further page changes. Textured rectangles have no T1 and use the current mode.
+
+### A complete E1 word and a later T1 overwrite
+
+Select the 1024-row Y-address period and issue the complete word:
+
+```text
+E1ABDBDFH
+```
+
+Only `1BDFH` is retained; the result is identical to `E1001BDFH`. It selects page (960,768), direct depth 3, subtractive blend selection 2, dithering on, bit 10 clear, X flip on and Y flip off. With the 512-row gate instead, the same page selectors yield Y=256, not 768.
+
+In a later textured polygon, use **`E4A2078CH` in its T1 slot**. Its U/V bytes are (140,7); its attribute is `E4A2H`. The persistent merge is:
+
+```text
+old preserved bits = 1BDFH AND NOT 09FFH = 1200H
+new selected bits  = E4A2H AND 09FFH     = 00A2H
+new current mode   = 1200H OR 00A2H      = 12A2H
+```
+
+All four preserved flags deliberately disagree with the attribute:
+
+| Bit | Old mode | Attribute | Result |
+|---|---|---|---|
+| 9, dither | 1 | 0 | 1 |
+| 10, draw-to-displayed-field | 0 | 1 | 0 |
+| 12, rectangle X flip | 1 | 0 | 1 |
+| 13, rectangle Y flip | 0 | 1 | 0 |
+
+The new mode selects page (128,0), palette8 and additive blend selection 1; the old dither/field/flip flags survive. For an illustrative lookup whose **post-window** U/V are (140,7):
+
+| Mode | First raw texture read |
+|---|---|
+| `1BDFH`, direct depth 3 | X=(960+140) AND 3FFH=76, Y=768+7=775 |
+| `12A2H`, palette8 | X=128+(140>>1)=198, Y=7; even U selects the low index byte, then the T0-selected CLUT |
+
+These are lookup inputs, not a claim that a particular polygon vertex is covered. A draw emitted before the merge retains `1BDFH`; the polygon carrying T1 retains `12A2H`; a following textured rectangle also uses `12A2H` until another mode producer changes it.
+
+### Check only the status bits which echo draw mode
+
+GPUSTAT bits 10:0 echo mode bits 10:0, while mode bit 11 appears at **GPUSTAT bit 15**. GPUSTAT bits 11/12 belong to destination mask mode, not the rectangle flips. Do not read GPUSTAT as a complete fourteen-bit E1 echo.
+
+After the respective mode update executes, the example therefore gives:
+
+| Current mode | `GPUSTAT AND 000087FFH` |
+|---|---|
+| `1BDFH` | `000083DFH` |
+| `12A2H` | `000002A2H` |
+
+Other status fields still reflect their own controls, beam and command state. These masked observations do not establish drawing completion or expose a separate draw-mode query port.
+
+<a id="gpu-environment"></a>
+## Texture window, drawing bounds, offset and masks — GP0(E2H–E6H)
+
+Each command below is **one GP0 word**, formed by ORing its opcode word with the parameter. All five retained parameter words reset to zero. Bits outside the listed mask are ignored; they do not add packet fields.
+
+| Command word | Retained mask | Parameter fields |
+|---|---|---|
+| `E2000000H OR parameter` | `000FFFFFH` | Texture window: X mask 4:0, Y mask 9:5, X offset 14:10, Y offset 19:15 |
+| `E3000000H OR parameter` | `000FFFFFH` | Drawing-area top-left: X 9:0, Y 19:10 |
+| `E4000000H OR parameter` | `000FFFFFH` | Drawing-area bottom-right: X 9:0, Y 19:10 |
+| `E5000000H OR parameter` | `003FFFFFH` | Drawing offset: signed X 10:0, signed Y 21:11 |
+| `E6000000H OR parameter` | `00000003H` | Bit 0 force output bit 15; bit 1 reject writes over old destination bit 15 |
+
+These update programmed drawing state when the ordered GP0 parser **executes** the command, not merely when its word is accepted at the port. The effect occurs at the start of a one-command-tick interval; its completion deadline is one system cycle later. An environment command is not itself a retained drawing primitive. CPU preparation/admission waits and display completion are separate costs/events.
+
+### E2 replaces texture-coordinate bits
+
+Each texture-window mask/offset field is five bits. For either axis, derive the byte-sized operands:
+
+```text
+AND byte = (NOT (mask×8)) AND FFH
+OR byte  = (offset AND mask)×8
+result   = (coordinate AND AND-byte) OR OR-byte
+```
+
+Apply X fields to U and Y fields to V. This is bit replacement, not an arbitrary clipping rectangle or texture width/height. Offset bits outside the mask do not participate; the low three coordinate bits are unchanged. Reset E2=zero gives AND bytes `FFH` and OR bytes `00H`: identity on byte coordinates, not a forced lookup at zero. For page/CLUT placement after this transformation, see [Locate texture texels and palette colors](#gpu-texture-lookup).
+
+### E3/E4 are inclusive limits; E5 is a signed displacement
+
+Drawing-area X is unsigned ten-bit. The retained corner words keep ten Y bits, but a draw decodes them through **its retained Y-address gate**. Right and bottom are inclusive: a decoded area `(left,top)…(right,bottom)` admits the half-open ranges `[left,right+1)` and `[top,bottom+1)`. A reversed decoded X or Y axis is empty, not automatically exchanged or wrapped. Both reset corner words zero describe the single-sample area (0,0), not a full-screen drawing area.
+
+E5 decodes each eleven-bit offset as signed two's complement, −1024…1023. It moves primitive coordinates, not the drawing-area limits or raw image-transfer addresses. The primitive families' different boundary rules remain those in [Place primitives across coordinate boundaries](#gpu-coordinate-placement); E5 does not replace them with one universal wrapping rule.
+
+### E6 controls a destination write, not a source color
+
+With bit 1 set, test the destination's **old** bit 15 before blend/store and reject the entire write if that bit is one. A permitted write has output bit 15 forced to one when bit 0 is set. Otherwise untextured drawing writes zero there, textured drawing copies the sample bit, and raw upload/copy preserves the source bit. Force-mask does not enable texture blending. Fill bypasses both controls; raw upload/copy honors them.
+
+GPUSTAT bits **11/12** echo E6 bits **0/1**, respectively. Thus mask mode 3 gives `GPUSTAT AND 00001800H = 00001800H`; mode zero gives zero under that mask. This says nothing about the other status fields or drawing completion. The distinct transparency/blend cases are described in [Separate texture transparency, blending and destination protection](#gpu-blending-mask).
+
+### Program concrete state, then preserve its lifetime
+
+Select the 512-row Y-address period and supply these five complete GP0 commands. Their deliberately nonzero ignored bits do not change the retained values:
+
+| Input word | Retained parameter | Effective state |
+|---|---|---|
+| `E2F08061H` | `00008061H` | Window masks X=1/Y=3, offsets X=0/Y=1 |
+| `E3F8580DH` | `0008580DH` | Top-left raw X=13/Y=534, decoded (13,22) |
+| `E4F86411H` | `00086411H` | Bottom-right raw X=17/Y=537, decoded (17,25) |
+| `E5FFEFFEH` | `003FEFFEH` | Offset X=−2,Y=−3 |
+| `E6FFFF03H` | `00000003H` | Check old destination and force permitted output bit 15 |
+
+E2's derived byte operands are:
+
+| Axis | Mask field | Offset field | AND byte | OR byte |
+|---|---|---|---|---|
+| U | 1 | 0 | `F7H` | `00H` |
+| V | 3 | 1 | `E7H` | `08H` |
+
+For example, U=`ADH`,V=`09H` becomes **`A5H,09H`**: U changes while V already has the selected replacement bits. No packed byte mask is substituted for the original five-bit command fields.
+
+The drawing area is five columns by four rows, half-open X=[13,18)/Y=[22,26). Raw Y values 534/537 are retained, not destroyed by the 512-row decode. With the 1024-row gate, those same corner words instead select Y=534…537. The offset's raw fields are `7FEH/7FDH`, decoding to −2/−3; a supplied coordinate (16,27) has ordinary offset sum (14,24), inside the selected 512-period area.
+
+After a drawing packet has actually been **emitted** under this state, execute:
+
+```text
+E2000000H, E400640CH, E5000000H, E6000000H
+```
+
+Current state now has an identity window, zero offset and no destination-mask controls. The unchanged left limit is 13, but the new right limit is 12, so its X drawing interval is empty. A later drawing primitive that uses the area sees that empty interval.
+
+The already-emitted draw still retains window `8061H`, the earlier two corner words, offset `3FEFFEH`, mask mode 3 and its 512-row Y gate. Later environment writes do not retroactively change those operands. For a pending draw, use its actual command or segment emission as the snapshot boundary, not merely acceptance of its first word. This distinction is why a current-state status observation is not a readout of every queued draw's retained state.
+
 <a id="gpu-command-costs"></a>
 ## Budget command work separately from issuing words
 
@@ -1608,259 +3181,137 @@ E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; th
 
 Finally, budget the **CPU work** separately. A scalar word issue has two base CPU cycles before address/value preparation, control flow and admission waits. CPU and GPU work can overlap; do not blindly add every modeled command interval to every word-store cost. A complete cartridge budget must include its actual issue schedule and synchronization, not convert these equations into a pixels-per-second or transfer-bandwidth guarantee.
 
-<a id="gpu-programming-example"></a>
-## Program a complete picture in BLua
+<a id="gpu-complete-budget"></a>
+## Count a complete issue-and-fence interval
 
-This cartridge stores a sixteen-pixel texture and its fixed command stream in
-ROM. Two BSS words retain the raw image-readback result. Typed whole-word views
-supply scalar port accesses: each stream store addresses the same GP0 word,
-while indexing advances through the source data.
+Command ticks do not include preparing words, polling status, acknowledging an
+IRQ or retaining a result. The following complete scalar ISA function supplies a
+32×4 red fill, queues an IRQ marker, waits for it, saves the observed status,
+acknowledges both IRQ latches, checks idle separately, saves that status and
+returns. **Its cost is 83 system cycles**, not 83 plus the fill's command interval.
+CPU issue/polling and GPU work overlap.
 
-The picture contains two enlarged copies of one 4×4 texture, a Gouraud triangle,
-additive rectangles and protected overlapping rectangles. A small unscaled
-textured rectangle demonstrates persistent page selection. A separate three-pixel
-strip receives the actual readback result. No GTE command is needed: all positions
-are already screen coordinates.
+This budget specifies an instruction schedule. It is not a claim that every BLua
+spelling of the same procedure emits these instructions. The preceding executable
+cartridge shows BLua programming; the schedule here makes its own address setup,
+loads/stores, tests, taken branches and return explicit.
 
-### Declare ports and authored data
+### Define the interval and initial state
 
-The following listings are consecutive parts of one cartridge. GP0/GP1 are the
-GPU ports described earlier. PCRTC's CSR, framebuffer, source, extent and PMODE
-formats are specified in the PCRTC chapter; they are not alternative GP1 controls.
+Start counting at the first instruction of an already-entered function. The GPU
+is idle, with empty input, no partial packet or readback, its IRQ request clear,
+and no pending competing work. The reset drawing/display state supplies no row
+suppression. DMA does not own either port, ingress is not stopped, the controller
+pending and mask words are zero, and no IRQ, fault or other bus master interrupts
+the interval. The beam remains on reset line parity zero throughout these 83
+cycles. Startup, the caller and initialization that establishes these preconditions
+are outside this stated interval.
 
-```lua
-module<entry>
+Reserve eight writable bytes at illustrative RAM address `0x080c1000` for the two
+status snapshots. This is cartridge-owned result storage, not GPU scratch RAM.
+The function loads every address/value it uses; none of its CPU registers is
+assumed preloaded:
 
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
+| Register | Constant loaded by LOADK |
+|---|---|
+| r0 | GP0 address `0x0801023c` |
+| r1 | GP1/GPUSTAT address `0x08010240` |
+| r2 | Red fill word `0x020000ff` |
+| r3 | Zero: destination `(0,0)` and the comparison operand |
+| r4 | Fill size word `0x00040020`:32×4 |
+| r5 | IRQ marker word `0x1f000000` |
+| r6 | GPU IRQ status mask `0x01000000`, bit 24 |
+| r7 | GP1 acknowledge word `0x02000000` |
+| r8 | Controller acknowledge address `0x08000004` |
+| r9 | Controller GPU IRQ bit `0x00000040` |
+| r10 | Result-storage address `0x080c1000` |
+| r11 | GPU idle status mask `0x04000000`, bit 26 |
 
--- Sixteen raw RGB555/mask words, packed by the compiler into cartridge ROM.
-rodata texels: u16[4][4] = {
-	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
-	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
-	{ 0x7c00, 0x7c00, 0x7fff, 0x7fff },
-	{ 0x7c00, 0x7c00, 0x8000, 0x0000 },
-}
-```
+r12 holds a GPUSTAT read; r13 holds its masked test. The twelve LOADK instructions
+cost twelve cycles. All memory operations below are scalar displaced **Word**
+loads/stores with two-cycle base cost. An address `base+4` uses displacement 1;
+no extra address ADD is hidden in this schedule. Every GP0 store uses the same
+r0 address, not an incrementing destination.
 
-### Author complete packets, not register-setting tables
+### Specify every stored instruction
 
-The halfword array is a sixteen-pixel image. Its last row deliberately includes
-both `8000H` and `0000H`: the former draws black; the latter leaves the background.
-The compiler packs each adjacent pair into one word for the upload loop.
+The operation column describes ISA effects, not BLua source syntax. EQ uses
+A=1: if the masked value differs from zero, skip the following JMP. Thus a clear
+status bit executes the backward branch; a set bit exits the polling loop.
+BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
 
-The packet array below contains **46 words**. Its first two packets are nine-word
-textured quads. T0 supplies U/V with CLUT zero; direct16 ignores that palette.
-T1 supplies page/depth fields `010AH`: X=10×64=640, Y=0, direct16. The persistent
-update preserves the separately programmed draw-to-displayed-field bit. The
-four-word textured rectangle after them supplies no new page.
+| Instruction index | Operation |
+|---|---|
+| 0…11 | LOADK: load the twelve constants above into r0…r11 |
+| 12 | STORE_MEM_D: r2 → Word[r0], fill header |
+| 13 | STORE_MEM_D: r3 → Word[r0], destination |
+| 14 | STORE_MEM_D: r4 → Word[r0], size; complete the fill packet |
+| 15 | STORE_MEM_D: r5 → Word[r0], IRQ marker |
+| 16 | LOAD_MEM_D: Word[r1] → r12 |
+| 17 | BAND: r12 AND r6 → r13 |
+| 18 | EQ: compare r13 with r3; skip instruction 19 when unequal |
+| 19 | JMP: jump to instruction 16 |
+| 20 | STORE_MEM_D: r12 → Word[r10], retain IRQ observation |
+| 21 | STORE_MEM_D: r7 → Word[r1], acknowledge GPU request |
+| 22 | STORE_MEM_D: r9 → Word[r8], acknowledge controller pending bit |
+| 23 | LOAD_MEM_D: Word[r1] → r12 |
+| 24 | BAND: r12 AND r11 → r13 |
+| 25 | EQ: compare r13 with r3; skip instruction 26 when unequal |
+| 26 | JMP: jump to instruction 23 |
+| 27 | STORE_MEM_D: r12 → Word[r10+4], retain idle observation |
+| 28 | RET: return, two cycles |
 
-Each quad maps byte U/V from 0 to 3 across its vertices. It demonstrates affine
-magnification, not a new texture size, perspective correction or filtered sampling.
-Raw RGB gain is ignored. The modulated quad halves red and preserves green;
-its supplied blue gain saturates already-full-blue texels. The later six-word
-triangle instead interleaves three colors with three positions and has no UV words.
+There are 29 stored instruction words, but loops change the executed count. In
+this case instructions 16…19 execute nine unsuccessful passes, followed by
+one successful pass 16…18. Instructions 23…25 succeed at the first idle check;
+JMP at instruction 26 is not issued.
 
-```lua
--- These are complete GP0 packets, not an array of register values.
-rodata drawing_commands: word[] = {
-	-- Raw textured quad. T1 selects direct16, page X=640, page Y=0.
-	0x2d808080,
-	16 | (24 << 16), 0,
-	80 | (24 << 16), 3 | (0x010a << 16),
-	16 | (88 << 16), 3 << 8,
-	80 | (88 << 16), 3 | (3 << 8),
-	-- Modulated quad: halve red, preserve green; blue gain 1.5 saturates.
-	0x2cc08040,
-	96 | (24 << 16), 0,
-	160 | (24 << 16), 3 | (0x010a << 16),
-	96 | (88 << 16), 3 << 8,
-	160 | (88 << 16), 3 | (3 << 8),
-	-- No E1 here: this rectangle inherits the preceding polygon's T1 page.
-	0x65000000, 24 | (112 << 16), 0, 4 | (4 << 16),
-	-- A separate RGB-interpolated triangle; no texture words.
-	0x300000ff, 176 | (24 << 16),
-	0x0000ff00, 240 | (24 << 16),
-	0x00ff0000, 208 | (88 << 16),
-	-- Two opaque rectangles, then an additive rectangle crossing both.
-	0x60402020, 16 | (128 << 16), 64 | (40 << 16),
-	0x60204020, 80 | (128 << 16), 64 | (40 << 16),
-	0xe1000420,
-	0x62202080, 48 | (144 << 16), 64 | (24 << 16),
-	-- Set+check: the first rectangle marks its pixels; the second protects them.
-	0xe6000003,
-	0x600080c0, 176 | (128 << 16), 32 | (32 << 16),
-	0x60c08000, 192 | (144 << 16), 32 | (32 << 16),
-	0xe6000000,
-}
-```
+### Follow issue, command completion and readout
 
-### Keep returned words in mutable storage
+Count cycles relative to function entry. Each mapped access occurs at its
+instruction's charged endpoint:
 
-The two BSS words hold results, not another copy of the ROM image. The interrupt
-entry acknowledges delivered requests. GPU IRQ delivery is masked during drawing;
-its request latch is observed explicitly later.
+| Cycle | Event |
+|---|---|
+| 12 | All constants are loaded |
+| 14,16,18 | The three fill words are accepted; the complete fill starts at 18 |
+| 20 | IRQ marker accepted behind the active fill, without waiting for idle |
+| 22,27,…,62 | Nine completed status reads find GPU IRQ bit 24 clear |
+| 67 | Fill reaches `18+49`; marker executes and sets IRQ. The tenth read sees IRQ set but idle clear |
+| 68 | The marker's own one-tick interval completes |
+| 69 | BAND/EQ finish selecting the successful IRQ path; JMP at instruction 19 is skipped |
+| 71 | First retained status is written to result word 0 |
+| 73,75 | GPU request and controller pending latches are acknowledged separately |
+| 77 | First separate idle read completes with bit 26 set |
+| 79 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
+| 81,83 | Second status is retained, then RET completes |
 
-```lua
-bss readback_words: word[2]
+The fill costs 98 command ticks, 49 cycles. The marker adds its own one-cycle
+interval: completion of the queued work is at 68, not at the first IRQ observation
+at 67. Under the stated reset/parity conditions, the saved words are `11922000H`
+(IRQ set, idle clear) and `14922000H` (IRQ clear, idle set). In general, beam and
+configuration fields must be interpreted rather than compared with these whole
+example constants.
 
-function irq(flags)
-	*irq_ack = flags
-end
-```
+| Executed work | Instructions | CPU cycles |
+|---|---:|---:|
+| Address/value setup | 12 LOADK | 12 |
+| Supply fill and marker | 4 stores | 8 |
+| Nine unsuccessful IRQ passes | 9×(load, BAND, EQ, JMP) | 45 |
+| Successful IRQ pass | load, BAND, EQ | 4 |
+| Retain IRQ status; acknowledge GPU and controller | 3 stores | 6 |
+| Successful idle check | load, BAND, EQ | 4 |
+| Retain idle status | 1 store | 2 |
+| Return | 1 RET | 2 |
+| **Complete entered-function interval** | **63** | **83** |
 
-### Establish the drawing and display domains
+No direct CPU store stalls in this sequence; the marker fits in the input while
+the fill executes. The 49 IRQ-poll cycles are still charged CPU work, not free
+waiting. Replacing polling with an interrupt handler changes setup, entry,
+acknowledgement and resumption costs and needs its own budget.
 
-PCRTC CSR RESET establishes both PCRTC configuration and GPU stream/register
-defaults; it does not initialize local-memory pixels. The Y-address gate is
-explicitly closed, and E1–E6 establish
-the drawing environment. The background fill covers only the 256×192 picture;
-the texture's later upload initializes its separate source words.
-
-The drawing area includes (0,0)…(255,191), with zero offset. E1=`0400H` sets
-draw-to-displayed-field and disables dither. E6 clears destination check/force.
-The picture's background RGB bytes `(8,16,24)` reduce to raw word `0C41H`.
-PCRTC reading circuit 1 selects GX16 storage with a 1,024-word stride; PMODE
-remains disabled while the GPU prepares this single, never-reused picture.
-
-```lua
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*display_extent = 0x000bf3ff
-*gp1 = 0x09000000
-
--- Explicit drawing state; RESET does not clear local memory.
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-*gp0 = 0xe6000000
-*gp0 = 0x02181008
-*gp0 = 0
-*gp0 = 256 | (192 << 16)
-```
-
-### Upload and issue the stream through one port
-
-A0 selects 4×4 raw pixels at `(640,0)`: exactly eight payload words follow its
-three-word header. The readonly word view exposes the compiler's packed image.
-Both loops write to `*gp0` every iteration; indexing applies to the source only.
-The scalar-store admission mechanism supplies any necessary wait; DMA-ready
-bit 28 is not its admission test. A CPU word-sequence store advances the
-destination and must not replace these fixed-port stores.
-
-```lua
--- A0 header followed by eight whole-word payload stores to the SAME port.
-*gp0 = 0xa0000000
-*gp0 = 640
-*gp0 = 4 | (4 << 16)
-local texture_words<const>: *word = texels
-for index = 0, sizeof(u16[4][4]) // 4 - 1 do
-	*gp0 = texture_words[index]
-end
-for index = 0, #drawing_commands - 1 do
-	*gp0 = drawing_commands[index]
-end
-```
-
-### Wait for readback readiness and consume its full count
-
-The C0 request selects the first three texture pixels: red, red, green.
-GPUSTAT bit 27—not bit 26—qualifies consumption. Once ready and without a DMA
-reader owning the port, the two reads return `001F001FH` and `000003E0H`.
-The final word's high half is zero and consuming it releases readback. The
-preceding draw commands must reach this readback's ordered fence before its
-result is supplied; readiness is not a fixed one-cycle transfer promise.
-
-```lua
--- Three pixels produce two reads. The final read has a zero high half.
-*gp0 = 0xc0000000
-*gp0 = 640
-*gp0 = 3 | (1 << 16)
-while (*gp1 & 0x08000000) == 0 do
-end
-readback_words[0] = *gp0
-readback_words[1] = *gp0
-```
-
-### Use the returned raw representation directly
-
-Upload those two words into the three-pixel strip at `(16,112)`. There is no
-conversion to RGB bytes or display pixels. The final high half is unused because
-the destination area contains three pixels, not four. The following marker is a
-new **whole** GP0 word, never a value hidden in that unused halfword.
-
-```lua
--- Re-upload those exact words as a three-pixel witness at (16,112).
-*gp0 = 0xa0000000
-*gp0 = 16 | (112 << 16)
-*gp0 = 3 | (1 << 16)
-for index = 0, #readback_words - 1 do
-	*gp0 = readback_words[index]
-end
-```
-
-### Separate the marker, idle and display hand-off
-
-The marker sets GPUSTAT bit 24 after earlier queued commands. GP1(02h) clears
-that GPU latch; the controller acknowledgement clears pending GPU IRQ bit 6.
-Waiting for bit 26 is separate because the marker can be set before its own
-one-tick command interval completes. Only then does PMODE enable reading circuit 1. The later VBlank publication, not either GPU status bit, accepts the picture.
-The cartridge subsequently acknowledges VBlank requests and sleeps without
-modifying the displayed pixels.
-
-```lua
--- IRQ is an in-order marker, not an idle or display acknowledgement.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-*gp1 = 0x02000000
-*irq_ack = 0x00000040
-while (*gp1 & 0x04000000) == 0 do
-end
-*pmode = 0x0000ff21
-*irq_ack = 0xffffffff
-*irq_mask = 0x00000004
-while true do
-	halt_until_irq
-end
-```
-
-<div class="keep-together">
-
-### Check the result in raw words
-
-These expected samples distinguish the controls without relying on display-color
-expansion. Mask bits remain part of each stored word.
-
-| Raw position | Expected word | What it distinguishes |
-|---|---|---|
-| (16,24) | `001FH` | Raw full red |
-| (96,24) | `000FH` | Red reduced by gain 64 |
-| (138,68) | `7FEFH` | Modulated white: red reduced, green unchanged, blue saturated |
-| (24,112) | `001FH` | Following rectangle inherits polygon T1 page |
-| (26,115) | `8000H` | Nonzero black texel writes its bit 15 |
-| (27,115) | `0C41H` | Exact-zero texel leaves the initialized background |
-| (50,150) | `3114H` | Additive rectangle over first destination color |
-| (90,150) | `2194H` | Same source over a different destination color |
-| (200,150) | `8218H` | A later checked draw preserves the first rectangle's marked pixel |
-| (220,165) | `E200H` | Second rectangle writes and marks an unprotected pixel |
-
-</div>
-
-This is a static picture, not a frame-loop template. Reusing a displayed region
-requires the buffer-lifetime and publication discipline described in the PCRTC
-chapter. Packet preparation and issue costs also remain separate from queued
-command deadlines; the command-cost reference does not establish a sustained
-frame rate for arbitrary cartridge code.
+This is an execution fence and status readout, not image readback or a displayed
+frame. A C0 image read requires its separate READY/ownership/count protocol and
+has no fixed whole-transfer latency established by the one-tick command cost.
+Neither the 83-cycle function nor a sum of drawing costs establishes physical bus
+bandwidth, sustained fill rate or the CPU cost of a complete game frame.

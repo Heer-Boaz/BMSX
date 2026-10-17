@@ -1,7 +1,7 @@
 # GPU source and reader review
 
-**Whole-chapter review pending.** This assembling manuscript is not a publication
-approval. The [reader-task work list](../gpu-outline.md) separates paragraph
+**Source and whole-reader review pass.** The separate final
+[print review](gpu-print.md) also passes. The [reader-task work list](../gpu-outline.md) separates paragraph
 writing, independent checks, actual guest execution and final PDF acceptance.
 No architecture document or hardware-reference PDF supplies chapter facts.
 
@@ -41,9 +41,9 @@ No duplicate reset, IRQ or display paragraphs were added merely to mirror the
 editorial assignment IDs.
 
 These are scoped checks, not a declaration that the entire unit is completely
-documented. Remaining packet-family paragraphs, complete CPU work
-budgets and whole-reader integration are still open. Publication flags remain
-false until the complete chapter is reviewed.
+documented. The continuation below records the newly completed command families,
+CPU interval and uploaded-palette cartridge extension. Complete-reader and final-print acceptance are now separately recorded; these
+scoped checks alone were never treated as publication approval.
 
 ## Existing BIOS patterns and actual cartridge
 
@@ -55,18 +55,20 @@ audit also verified its eight printed fragments against the actual cart. It did
 **not** invent a GTE-specific BIOS loader: no such user exists in the current
 44 BIOS Lua files.
 
-The new [GPU example](../../../carts/gpu_manual/README.md) uses a typed4×4
+The new [GPU example](../../../carts/gpu_manual/README.md) uses a typed 4×4
 halfword image, readonly complete command packets and eight bytes of BSS results.
-It adds no local ABI helper, setter facade, runtime API or publisher machinery.
+A separate sixteen-entry palette and four packed index halfwords supply the
+added palette4 strip. It adds no local ABI helper, setter facade, runtime API or
+publisher machinery.
 Scalar loops repeatedly store to GP0; they do not misuse contiguous word stores
 as fixed-port streaming. The complete eight printed Lua fragments concatenate
 to the cart, apart from print whitespace.
 
 Actual compiled cartridge/BIOS/CPU/GPU/PCRTC execution passes the guest case:
-odd three-pixel readback, odd-tail re-upload witness and fourteen raw probes
+odd three-pixel readback, odd-tail re-upload witness and twenty raw probes
 for gain, T1 inheritance, zero versus black, additive color and mask protection.
 The actual capture was inspected: raw/modulated texture blocks, color-interpolated
-triangle, additive overlap and protected rectangles are visible. This is not a
+triangle, additive overlap, protected rectangles and the palette4 strip are visible. This is not a
 native-runtime or multi-backend parity claim.
 
 Independent cart review caught and resolved two small issues before acceptance:
@@ -86,9 +88,9 @@ npm run manual:preview -- gpu
 git diff --check
 ```
 
-`manual:check -- gpu` must still reject publication because the actual remaining
-coverage and whole-chapter reviews are open. A successful preview is layout
-feedback, not permission to publish a partial reference.
+`manual:check -- gpu` applies the separate recorded source/figure/print gates.
+A successful preview is layout feedback, not publication approval. The final
+visual report records every reviewed actual-page range and resolved print finding.
 
 ## Resolved extraction finding
 
@@ -108,3 +110,92 @@ snapshot revision without initializing that word but expects black. The second
 test passes alone and the complete GPU suite passes78/78. Its source is the
 snapshot/revision fixture contract, not the chapter's independent coverage math.
 No defensive clear, fallback, runtime or test change was added for documentation.
+
+## Complete interval and packet-reference continuation
+
+W02 now includes the complete already-entered scalar function: all twelve
+constant loads, four GP0 stores, both polling loops, two result stores, both
+IRQ acknowledgements and return. Independent reconstruction and actual ordinary
+and instruction-observed CPU dispatch agree on29 stored instructions,
+63 executed instructions and83 system cycles. The fill starts at18/completes67;
+the marker raises at67/completes68, and the successful status snapshots are
+11922000/14922000. This is the specified isolated interval, not a universal
+BLua compiler lowering or a measured physical transfer rate. The installed
+clock is explicitly programmed at the timing owner; a scratch default-clock
+fixture was corrected rather than masking the resulting beam status bit.
+
+Additional nonauthor packet reviews now cover:
+
+| Reference | Independent checks | Boundary of evidence |
+|---|---|---|
+| Flat textured polygons/E1 | All eight7/9-word variants replayed through mapped parser, retained snapshots and TS raster; independent128-position grid plus four inherited-flip rectangle samples, exact10-pixel example/raw contrast and scheduled costs agree. E1 reset/mask/all14bit bases, independent E6/status echoes, parser-start versus admission, queued T1 and old/new/following snapshots pass; direct depth3 and palette8 samples/page/gate/status arithmetic agree. | Paired C++ sources audited; not CPU program, native renderer or physical scanout. |
+| Gouraud textured polygons | All eight formats; independent five finite planes and two covered samples, marked/unmarked/raw/opaque/mask/zero contrasts;13 actual mapped-parser/snapshot/TS-raster cases reproduce FE77/FE7A and559/538 ticks. T1 merges3709→36A3 before retention; later state cannot reinterpret it. | Paired C++ sources audited, not native raster execution. |
+| Finite lines/polylines | All16 finite and16 polyline aliases plus seven boundary/contrast cases;39 independent actual mapped-parser/TS-raster cases. Exact4514/31ED steep samples and5 ticks, four flat-dither words, counted initial/continuation costs, shared additive joint twice, partial color/position state and marker recognition at the correct field boundaries agree. Real GP1 state produces retained parity per emission. | Paired sources audited; no native raster or CPU issue claim. |
+| Rectangles | All32 aliases and seven zero/origin/extent/raw/modulation/dither contrasts. Actual mapped parser, real GP1-produced odd parity, retained states, full candidate regions and deadlines. Flat70 gives ten518F stores; textured64 gives only25AB/8000;26/36 ticks. | Fixed-port words are issued by the fixture, not a CPU workload. |
+| Fill/upload/copy/readback |111 bounded actual mapped-parser/TS-software/readback cases. All32 aliases per transfer family; complete odd upload/mask table, consumed-prefix clear, header-only clear, wrapped reverse horizontal copy and protected downward cascade. All five wrapped readback words, prior latch DEADBEEF established by an actual earlier read, exact fence, retained Y gate, READY until final word and queued marker at release agree. Fill checks every installed word for its64/128/empty variants; command deadlines agree. | No native, physical throughput, full DMA program or display claim. |
+| E2–E6 environment | Five zero reset words, exact masks/ignored bits, window byte operands, signed offsets, both gated areas, E6 status echoes and complete retained state agree with independent arithmetic and actual mapped-owner/spec execution. Queued changes wait behind a draw, then update current state without changing its snapshot; reversed X is empty and each one-word command has a one-cycle interval. | Not CPU issue, native execution or display proof. |
+
+The uploaded-palette extension now also has a nonauthor source/math review:
+all twenty probes, both quad UV planes, CLUT/page/nibble decoding, disjoint
+source/destination regions, 55 drawing words, 72 readonly image/palette/index
+bytes and eight BSS bytes agree. Its eight printed Lua fragments concatenate to
+the current cart apart from whitespace. Actual rebuilt guest execution passes
+the odd-tail witness/readback and all twenty probes; the new capture was viewed.
+The complete BLua route now precedes the port/register inventory, as the manual
+standard requires, rather than hiding the first usable program at the chapter end.
+
+All command-family paragraph reviews are now complete. The separate full-reader
+acceptance is recorded below; the separate final visual report now accepts the actual publication layout. The existing renderer and review schema are unchanged.
+
+## Software authority and separately owned physical specifications
+
+The chapter follows the requested software-authority decision. Installed memory,
+33,868,800Hz system cycles, access charges, command-tick equations and visibility
+edges are specified positively. The scoped owners do not establish a separate
+GPU core/PLL frequency, electrical IO/VRAM bus clock or pin width, arbitration
+schedule, per-pixel electrical fetch counts, or guaranteed sustained command/
+pixel/byte rates. The public specification overview identifies these limits;
+it does not turn two command ticks per system cycle into a physical raster clock.
+Those ratings remain a separate hardware-specification task, not a reason to
+invent Sony values or leave the software-defined chapter permanently blocked.
+The upload/readback one-tick charge likewise supplies no fixed data-ready or
+full-image transfer deadline. No backend implementation is changed to make a
+stronger manual claim true.
+
+## Whole-reader acceptance and resolved cross-reference
+
+An independent complete-reader pass includes the final assembled C04/C06/C07/E1
+entries, not placeholders. It finds no open GPU-side reader/completeness task
+within the software-authoritative contract. The programmer can start from the
+real BLua static picture, vary its complete packets/state through the operation
+reference, predict numerical/memory effects, and use the separate admission,
+command, readback, IRQ and display-publication conditions. Undefined electrical
+rates, a full DMA-channel tutorial and a reusable frame-loop/buffer algorithm
+are not silently promised by this unit chapter. Book I is not complete merely
+because this chapter's scope is closed.
+
+The pass found one real cross-reference overclaim: W01 said that PCRTC already
+teaches displayed-buffer reuse/lifetime discipline. Its actual material teaches
+programmed/displayed configuration, the VBlank latch and the multiword race,
+not that general reuse algorithm. W01 now refers only to that sourced visibility
+contract and explicitly remains a static example. The changed sentence was
+independently reread; no new buffer guarantee or frame-loop implementation was
+invented. The reader also rechecked all eight exact-cart code fragments, all43
+internal links and the real BIOS storage/port/IRQ/DMA precedents. Earlier merged
+word/number spacing in W02 was corrected without changing its instruction math.
+
+
+## Final validation and publication
+
+The final bundle passes16 manual tests and78 GPU tests, the rebuilt BLua
+cartridge's actual guest case (20 raw probes plus counted readback/witness),
+all8 exact public cartridge fragments,43 internal links and364 source-path/line
+ranges. The capture was viewed. The independently executed complete scalar
+function remains83 cycles; no runtime/compiler/backend behavior was changed.
+
+All three recorded reviews and every coverage topic are closed. The ordinary
+`manual:check -- gpu` and `manual:publish -- gpu` succeed. Every full-page raster
+of canonical `build/manual/gpu.pdf`, including running matter, matches the approved
+actual publication-layout proof exactly. Final `git diff --check` passes.
+Machine owners, BIOS, shared publisher, stylesheet and fonts have no changes
+in this slice. Book I remains an unfinished larger scope.
