@@ -9,7 +9,7 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Sections 2.1–2.5 specify geometry, interlace, two-byte local-memory words, packing, address equations and wrap, zero samples, composition order, RGB rounding and coefficient saturation, and separate alpha selection. Matching TS/C++ software is authoritative by explicit user decision; the deferred WebGPU discrepancy is recorded in pcrtc-webgpu-constant-blend.md.",
+			"resolution": "Sections 2.1\u20132.5 specify geometry, interlace, two-byte local-memory words, packing, address equations and wrap, zero samples, composition order, RGB rounding and coefficient saturation, and separate alpha selection. Matching TS/C++ software is authoritative by explicit user decision; the independently fixed WebGPU discrepancy is recorded in pcrtc-webgpu-constant-blend.md.",
 			"open": []
 		},
 		"visibility": {
@@ -17,7 +17,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Section 2.7 and the timing-register entries give the clock and timing equations, run conditions, reset landmarks, FIELD behavior, and changed-write restart hazard. The timeline is explicitly not to scale and is not a waveform.",
+			"resolution": "Section1.1 consolidates installed CPU/system frequency,13.5MHz beam reference, reset-derived microsecond/millisecond and rounded cycle deadlines, fractional phase and scalar/word-sequence CPU costs. Section2.7 retains exact timing equations/run conditions/FIELD/restart hazards. Undefined electrical clocks, pin widths, arbitration and sustained rates are explicitly not inferred.",
 			"open": []
 		},
 		"interrupts": {
@@ -25,7 +25,7 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Sections 2.10–2.11 establish ordinary CPU mapped-access widths, alignment, CPU modes, successive-word access, ignored high-word writes, synchronous exception causes, and the separate system bus fault latch. Pixel selectors and framebuffer wrap are deterministic, not format/address exceptions.",
+			"resolution": "Sections 2.10\u20132.11 establish ordinary CPU mapped-access widths, alignment, CPU modes, successive-word access, ignored high-word writes, synchronous exception causes, and the separate system bus fault latch. Pixel selectors and framebuffer wrap are deterministic, not format/address exceptions.",
 			"open": []
 		},
 		"reset": {

@@ -14,9 +14,10 @@ without normal producers; CPU access/fault policy; and RESET/FLUSH retirement.
 The topic-by-topic decisions are recorded in [pcrtc.json](pcrtc.json).
 
 Matching TS/C++ software composition is authoritative by explicit user direction.
-The [WebGPU constant-blend discrepancy](pcrtc-webgpu-constant-blend.md) remains
-separate, deferred runtime work. No runtime change or real-GPU parity result is
-claimed by this review.
+The [WebGPU constant-blend correction](pcrtc-webgpu-constant-blend.md) records
+its separate reproduced-before/GPU-tested-after runtime fix. This documentation
+slice changes no backend and does not claim to have rerun that GPU regression.
+The same software composition contract remains authoritative.
 
 ## Claim review
 
@@ -78,3 +79,38 @@ All three SVGs were traced against the sourced datapath and timing:
 
 No semantic figure findings remain. Generated-PDF presentation is reviewed
 separately in [pcrtc-print.md](pcrtc-print.md).
+
+## Technical-specification supplement
+
+Section1.1 adds a consolidated licensee-facing resource, clock and cycle summary
+without replacing the existing exact datapath/register material. Extraction,
+authorship and independent source/math review were separate passes. Both mirrored
+owners agree; no unresolved factual, representation, timing or reader-blocking
+error was found in this addition. Narrow anchors and derived values are retained
+in the technical-specification supplement to [facts/pcrtc.md](../facts/pcrtc.md).
+
+The review independently checked:
+
+- 4MiB main RAM versus shared2MiB local memory;16-bit storage versus32-bit
+  programming words;26 slots split12+14;22 programmed words plus a separate
+  nonaddressable22-word display latch; two reading circuits and the raw window,
+  magnification and signal-step field capacities.
+- 33,868,800Hz installed system cycles versus the13.5MHz beam reference. Neither
+  is promoted to an independent PCRTC/PLL/electrical bus or pixel clock.
+- Reset32µs half-lines and20.096ms fields: exact field frequency31250/628Hz,
+  rounded deadlines2168/624270/634024/680628 from restart at cycle0, retained
+  fractional phase, late service and pending-HSINT suppression. Two independent
+  arithmetic reviews agree with fresh live timing/deadline-owner execution.
+- Ordinary scalar word transfers cost2base cycles, so22 separately issued
+  configuration stores contribute44base cycles before preparation/waiting.
+  Word-sequence base2+up(n/4) is per actual instruction, not a contiguous22-word
+  update across the intervening device gap or an automatic language block copy.
+- Physical clocks, pins, contention/arbitration, per-pixel fetch costs, rated
+  modes and sustained rates are undefined by the audited contract and clearly
+  labeled, not fabricated from word width or representable window ranges.
+
+Fresh owner assertions also verify reset-disabled output, maximum field decoding,
+zero-step output suppression and register/latch capacities. These are arithmetic
+and state checks, not a measured CPU application workload or physical output test.
+The current TS GPU suite passes78 tests. Native execution and the separately
+recorded WebGPU regression were not rerun for this documentation-only slice.

@@ -8,10 +8,10 @@ No architecture document or reference PDF was used. The existing timing facts
 include `ed2ceff96` (`retain PCRTC frame period as raw u32`).
 
 **Editorial authority:** at the user's explicit direction, matching TS/C++
-software composition is the manual's pixel-behavior authority. A conflicting
-WebGPU constant-blend coefficient is recorded separately in
-[the deferred backend note](../reviews/pcrtc-webgpu-constant-blend.md), not as
-alternate hardware behavior. No runtime fix is included. No disagreement was
+software composition is the manual's pixel-behavior authority. The independently
+corrected WebGPU constant-blend coefficient and its GPU regression evidence are
+recorded in [the backend correction note](../reviews/pcrtc-webgpu-constant-blend.md),
+not as alternate hardware behavior. This editorial slice changes no runtime. No disagreement was
 found between the inspected spec definitions and TS/C++ software/device facts.
 
 ## Register words
@@ -734,10 +734,10 @@ chapter review, not approval of the existing chapter or its publication record.
   descriptions, DMA exception delivery and instruction fetches from MMIO
   remain outside this chapter's extracted contract; no blanket fault-free
   or undo guarantee is implied.
-- The [WebGPU discrepancy](../reviews/pcrtc-webgpu-constant-blend.md) is
-  deferred runtime work. Pixel behavior here follows the user's explicit
-  TS/C++ software-authority decision, not an attempted reconciliation of
-  conflicting accelerated behavior.
+- The [WebGPU discrepancy](../reviews/pcrtc-webgpu-constant-blend.md) has a
+  separate recorded runtime correction and GPU regression. Pixel behavior here
+  continues to follow the user's explicit TS/C++ software-authority decision;
+  no alternate accelerated contract is introduced.
 
 [addr-ts]: ../../../machine/ts/spec/gx/pcrtc.ts#L100-L104
 [addr-cpp]: ../../../machine/cpp/spec/gx/pcrtc.h#L94-L98
@@ -948,3 +948,81 @@ chapter review, not approval of the existing chapter or its publication record.
 [gpu-present-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L276-L283
 [instruction-timing-ts]: ../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L656-L663
 [instruction-timing-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L380-L386
+
+## Consolidated technical specifications and reset cycle conversion
+
+This supplement supplies the upfront resource/clock/cycle inventory rather than
+implying that programming-word width defines electrical bandwidth. It does not
+change the previously sourced beam, sampling, event or register contracts.
+
+- Installed main RAM4MiB and separate shared GPU local memory2MiB:
+  [TS model](../../../machine/ts/spec/bmsx/model.ts#L46-L57),
+  [C++ model](../../../machine/cpp/spec/bmsx/model.h#L51-L62).
+  Low-byte-first local-word loading:
+  [TS](../../../machine/ts/render/backend/software/gx_gpu_vram.ts#L4-L8),
+  [C++](../../../machine/cpp/render/backend/software/gx_gpu_vram.cpp#L5-L12).
+- Two independently enabled reading circuits, extent/magnification fields,
+  and window/step conversion:
+  [TS](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L361-L446),
+  [C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L120-L202).
+  Derived field capacities: horizontal span1–4096 signal units, vertical1–2048,
+  magnificationX1–16/Y1–4. These are representable fields, not rated video modes.
+- 26 register slots in ranges12+14, of which22 programmed configuration words
+  have a separate22-word display latch:
+  [TS inventory](../../../machine/ts/spec/gx/pcrtc.ts#L9-L37),
+  [C++ inventory](../../../machine/cpp/spec/gx/pcrtc.h#L10-L38),
+  [TS programmed state](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L539-L599),
+  [C++ programmed state](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L305-L343),
+  [TS latch](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L723-L731),
+  [C++ latch](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L446-L454).
+  Address ranges/faults remain the facts above; the latch is not an extra
+  cartridge-addressable register bank.
+- Installed system frequency33,868,800Hz (cycle≈29.526ns):
+  [TS clock](../../../machine/ts/spec/bmsx/model.ts#L7-L7),
+  [C++ clock](../../../machine/cpp/spec/bmsx/model.h#L12-L12).
+  Beam reference13,500,000Hz and half-line numerator/denominator/vertical counts:
+  [TS](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L247-L282),
+  [C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L66-L101).
+  This equation specifies neither an independent execution/PLL/pixel waveform
+  clock nor electrical IO/VRAM pins, arbitration or guaranteed sustained rate.
+- Raw reset words:
+  [TS](../../../machine/ts/spec/gx/pcrtc.ts#L75-L98),
+  [C++](../../../machine/cpp/spec/gx/pcrtc.h#L69-L92).
+  Derived horizontal sum3456, divider product8,LC32,U1 yield
+  half-line27648/864000000s=32µs;628 half-lines give20.096ms and
+  exact31250/628≈49.761146496815286 field repetitions/s, not exactly50Hz.
+  The864000000 denominator is arithmetic, not a core-clock specification.
+- Fractional CPU-cycle remainder, upward-rounded deadlines, restart epoch and
+  half-line landmarks:
+  [TS](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L829-L881),
+  [C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L552-L603).
+  Derived restart-at-cycle0 events: HSync2/64µs/2168cycles;
+  VBlank576/18.432ms/624270; VSync585/18.720ms/634024;
+  field-end628/20.096ms/680628. Exact period680627.4048system cycles;
+  independent integer/rational math and live timing/deadline owner agree.
+- Event service retains beam phase rather than restarting at late CPU service;
+  pending HSINT suppresses repeat requests:
+  [TS](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L656-L721),
+  [C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L380-L444).
+  These are device deadlines, not a fixed handler-response latency. Instructions
+  are atomic relative to service; the existing fault/access facts qualify
+  multiword accesses separately.
+- PCRTC maps ordinary read/write callbacks, no write-readiness callback or
+  configuration command FIFO/CYCLES register:
+  [TS mapping](../../../machine/ts/machine/devices/gx/gpu.ts#L462-L472),
+  [C++ mapping](../../../machine/cpp/machine/devices/gx/gpu.cpp#L53-L63),
+  [TS ordinary readiness](../../../machine/ts/machine/memory/memory.ts#L261-L265),
+  [C++ ordinary readiness](../../../machine/cpp/machine/memory/memory.cpp#L181-L185).
+- Scalar word-load/store base cost2system cycles, including displaced forms:
+  [TS charges](../../../machine/ts/spec/blua32/opcode.ts#L75-L84),
+  [C++ charges](../../../machine/cpp/spec/blua32/opcode.cpp#L5-L69).
+  Thus22 separately issued admitted stores charge44base cycles, excluding
+  preparation/control flow and display-latch waiting. A word-sequence store has
+  base2 plus n/4 rounded upward for its nwords:
+  [TS sequence](../../../machine/ts/machine/cpu/cpu.ts#L2992-L3018),
+  [C++ sequence](../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L605-L618),
+  [TS absolute sequence](../../../machine/ts/machine/cpu/cpu.ts#L3155-L3170),
+  [C++ absolute sequence](../../../machine/cpp/machine/cpu/cpu_dispatch.inl#L672-L685).
+  This is per actual instruction, not an automatic block copy or a single
+  contiguous22-word PCRTC update across the intervening device address gap.
+  These charges do not establish electrical bus timing or sustained bandwidth.

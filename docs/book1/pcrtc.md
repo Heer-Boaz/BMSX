@@ -17,6 +17,73 @@ PCRTC register words occupy four bytes. The composition registers start at `0801
 the timing and status registers start at `080103ACH`. Use the individual addresses in
 Section 4: the intervening addresses are not PCRTC registers.
 
+### 1.1. TECHNICAL SPECIFICATIONS
+
+PCRTC supplies two reading circuits and one output-composition path. Both circuits
+read the same GPU local memory; enabling a second circuit does not add framebuffer
+storage. Distinguish that memory's sixteen-bit words from the thirty-two-bit words
+used to program PCRTC.
+
+| Resource or interface | Specification |
+|---|---|
+| Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
+| Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
+| Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
+| Register map | 26 thirty-two-bit slots: two separate address ranges containing 12 and 14 words; not contiguous RAM |
+| Configuration storage | 22 programmed words and a separate 22-word displayed-configuration latch; the latch is not another addressable register bank |
+| Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
+| Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
+| Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
+| Beam-timing reference | 13,500,000 Hz; not a specified independent core or memory clock |
+| Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
+| Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
+
+Window-field capacities are not rated video modes. Horizontal output boundaries
+require the signal-step conversion in Section 2.1; magnification alone does not
+determine output width. Both reading circuits are disabled at reset.
+
+**Calculated reset-timing example.** With the reset timing words, the horizontal
+sum H is 3456, divider product D is 8, LC is 32 and vertical multiplier U is 1.
+The half-line period is therefore:
+
+```text
+T = 27648 / 864000000 seconds = 32 microseconds
+```
+
+The denominator is part of the timing equation, not an 864 MHz clock specification.
+For a beam restart at system cycle zero:
+
+| Landmark | Half-line | Time from restart | Rounded system-cycle deadline |
+|---|---:|---:|---:|
+| First HSync point | 2 | 64 µs | 2168 |
+| VBlank entry; display latch | 576 | 18.432 ms | 624270 |
+| VSync; VSINT | 585 | 18.720 ms | 634024 |
+| Field end | 628 | 20.096 ms | 680628 |
+
+This gives approximately 49.761146497 field repetitions per second, not exactly
+50 Hz. Fractional system cycles are retained between events; deadlines round upward
+without accumulating a fresh rounding error each half-line. An executing CPU
+instruction may finish before a crossed deadline is serviced. These are event
+deadlines, not interrupt-handler response times or a supported-video-mode list.
+HSync points repeat every two half-lines, but a pending HSINT suppresses further
+interrupt requests until acknowledged.
+
+**CPU transfer costs.** Each ordinary scalar register-word load or store instruction,
+including its displacement form, has a two-system-cycle base cost. PCRTC adds no
+write-ready wait. Address and value preparation, polling and surrounding control
+flow have their own instruction costs. Thus 22 separately issued configuration
+stores contribute 44 base cycles before preparation or display-edge waiting; they
+do not form an atomic display update. A word-sequence store instead costs two base
+cycles plus `n/4` rounded upward for its `n` words. Respect the two address ranges.
+These are instruction charges, not an electrical transfer-time or bandwidth rating.
+Immediate readback confirms programmed words, not display-latch completion.
+
+**Unspecified physical guarantees.** No independent PCRTC core/PLL clock, electrical
+pixel-clock waveform, IO or local-memory bus clock or pin width, contention/arbitration
+schedule, per-pixel fetch-cycle cost, or guaranteed sustained transfer/pixel rate is
+specified. The reference clock, register width and representable window sizes must
+not be used to invent those guarantees.
+
 ## 2. FUNCTION
 
 ### 2.1. Framebuffer reading and display windows
@@ -187,6 +254,8 @@ block = (by & 1) | ((bx & 1) << 1) | (by & 4)
 A = (B + (page << 12) + (block << 7) + column) & M
 ```
 
+<section class="keep-together">
+
 #### GX16 and GPU24
 
 GX16 uses linear word addressing:
@@ -194,6 +263,8 @@ GX16 uses linear word addressing:
 ```text
 A = (B + y × W + x) & M
 ```
+
+</section>
 
 GPU24 uses the CT16 calculation twice, at the two word coordinates in Section 2.3.
 
