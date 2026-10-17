@@ -177,7 +177,10 @@ chapter. The existing publisher embeds PNG as normal tagged HTML images with
 authored alternative text and pixel-sharp scaling; two related frames may share
 a table. Inspect the actual printed image and caption at a readable size.
 
-Use ordinary Markdown for prose and tables. For a register entry that fits on
+Use ordinary Markdown for prose and tables. Escape literal pipe characters in
+table cells, including inside inline code; backticks alone do not protect a
+pipe from becoming a column boundary. Check the complete cell in the PDF.
+For a register entry that fits on
 one page, explicitly group its Markdown rather than relying on a section number:
 
 ```html

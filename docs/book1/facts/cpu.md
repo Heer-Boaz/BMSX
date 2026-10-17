@@ -77,8 +77,10 @@ not closed by a single working example. The separate
 [protected-call/coroutine chapter](../coroutines.md) now supplies all eleven
 installed interfaces with a complete ordinary example. The separate
 [BIOS base-services chapter](../bios-base.md) now covers the twelve remaining
-base globals. Other installed libraries and on-console environment
-references remain unfinished.
+base globals. The [BIOS table-library draft](../bios-table.md) now documents
+all six shared source procedures and a complete ordinary program, but retains
+the seventh length-producer stop as a publication blocker. Other installed
+libraries and on-console environment references remain unfinished.
 The current instruction manuscript remains a draft; no successful source,
 reader or PDF pass constitutes whole-manual completion.
 

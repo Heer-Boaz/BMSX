@@ -742,3 +742,51 @@ is table/string, math/os, source loading/environment and syntax authoring,
 actual exported firmware/cartlib interfaces and install lifetime. Remaining
 cross-unit graphics contrasts, Book II and whole-console newcomer acceptance
 remain on the manual list. Page counts and green cases do not close these tasks.
+
+## BIOS table-library procedures: reviewed draft, not a closed length contract
+
+The next bounded assignment covers all six installed table-library functions.
+Two facts-only authors separately cover counted tuples/ranges and mutations/
+sorting; a third supplies the complete ordinary31+73-line program. Default
+append, remove, concat, unpack and sort paths remain present. The text does not
+silently replace all length-dependent calls with an explicit packed count.
+
+The reference explains actual nil-result widths, ordinary inherited reads
+versus direct own writes, floor/negative/zero/NaN range normalization, unusual
+insertion/removal positions, arbitrary separator conversion, comparator truth
+versus a three-way result, prescan, original error identity and surviving swaps.
+Nonnumeric positioned insert/remove do not receive a fabricated arithmetic
+exception: the numeric-for producer has no comparison-driven exit for their
+NaN positions. Exact source mechanics and the bounded noncompletion observation
+are retained separately from successful finite recipes.
+
+The ordinary example passes30 retained assertions and separately emits14 real
+diagnostic lines. Nine supplemental bodies at O0/O3 produce18 true completions
+and equal decoded native/TS snapshots; their console fixture is not ordinary
+output evidence. The initial uncompleted wrong-position experiment is preserved,
+not counted as passing or silently discarded. No runtime/compiler/BIOS repair,
+publisher layer or shared harness was introduced.
+
+**Publication remains blocked.** The existing generic SETT/rawset refill
+disagreement still stops the common maintained-length producer contract. Naming
+its initial result L does not close default/relative ranges, sort extent or
+post-mutation length. See [the draft's source index](../book1/facts/bios-table.md)
+and its explicit open coverage. The seven runtime-owner questions and separate
+BZ01 compiler question remain open. String/math/os, source loading/environment,
+actual exported BIOS/cartlib, install lifetime, remaining graphics contrasts
+and Book II remain work, not completion by name count or page count.
+
+The acceptance test remains the user's whole-console requirement: an experienced
+programmer new to BMSX must be able to control every hardware operation from
+the manual without reverse-engineering implementation or examples. A locally
+usable API chapter, a complete program or a passing test is evidence for that
+slice only; it is not a substitute for the complete cross-unit reader route.
+
+The contract and complete-program source reviews pass within their stated
+scopes; the newcomer reading pass closes the missing prerequisite-build steps
+without claiming fresh SDK installation. All11 actual draft pages pass final
+individual-page inspection. That inspection caught a real truncated value:
+unescaped Markdown pipes had turned `10||30|` into extra table cells. The cell
+is corrected and the authoring guide now warns about this ordinary Markdown
+syntax hazard; no new publisher validation was added. The exact accepted draft
+artifact and all scope limits are recorded in the chapter's separate reviews.

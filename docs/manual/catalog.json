@@ -20,6 +20,13 @@
 		"facts": "docs/book1/facts/bios-base.md",
 		"review": "docs/book1/reviews/bios-base.json"
 	},
+	"bios-table": {
+		"book": "I",
+		"label": "BIOS TABLE",
+		"chapter": "docs/book1/bios-table.md",
+		"facts": "docs/book1/facts/bios-table.md",
+		"review": "docs/book1/reviews/bios-table.json"
+	},
 	"coroutines": {
 		"book": "I",
 		"label": "COROUTINES",
