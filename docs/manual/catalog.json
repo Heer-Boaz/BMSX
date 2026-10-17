@@ -33,5 +33,12 @@
 		"chapter": "docs/book1/dma.md",
 		"facts": "docs/book1/facts/dma.md",
 		"review": "docs/book1/reviews/dma.json"
+	},
+	"apu": {
+		"book": "I",
+		"label": "APU",
+		"chapter": "docs/book1/apu.md",
+		"facts": "docs/book1/facts/apu.md",
+		"review": "docs/book1/reviews/apu.json"
 	}
 }

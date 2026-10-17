@@ -180,6 +180,40 @@ the low and high words have different divisions:
 
 These are field-group tables, not drawings to a physical bit-width scale.
 
+## Scheduled follow-up work
+
+Requested 2026-10-17. Keep the current unit-by-unit writing plan; carry out this
+broader completeness pass after the active chapter rather than silently treating
+a source-accurate register reference as a complete technical specification.
+
+- [ ] **DMA rates by route.** Audit RAM, system-ROM, cartridge-ROM and GPU/VRAM
+  transfer routes separately. The DMA chapter already lists region cycle costs;
+  check that usable word/byte rates, setup and block-size effects, request waits,
+  arbitration/contention and destination completion are actually explained.
+  Trace VRAM through its real owning ports/datapath rather than assuming a
+  direct DMA aperture or equating DMA DONE with a completed VRAM operation.
+- [ ] **Every installed unit, including earlier chapters.** Inventory capacities,
+  organization, transfer widths, numerical formats, clocks/dividers, latency,
+  throughput, route-dependent timing, sharing and visibility limits. Check for
+  missing technical details beyond the DMA example, not just incorrect existing
+  claims. Assign concrete missing paragraphs and examples to the owning chapter.
+- [ ] **Evidence and limits.** Extract each number from the paired spec/owners,
+  state the operating assumptions and replay representative cycle/rate examples.
+  Distinguish scheduled budgets from end-to-end rates and electrical ratings.
+  Record genuinely unspecified hardware parameters as separate specification
+  decisions; do not fabricate them or import reference-console specifications.
+
+- [ ] **Actual graphics-output illustrations.** Add real BMSX result images to
+  the GTE and other graphics chapters, alongside the explanatory schematics.
+  Connect the programmed inputs and register settings to the visible output;
+  use before/after or contrasting cases where they teach the operation. Capture
+  actual cartridge output without Studio/debugger chrome. Keep the producing
+  program, settings and capture provenance in editorial evidence. Schematics or
+  generated “expected” pictures must not stand in for observed result images.
+
+This is pending editorial work, not a new publisher, schema or approval gate.
+Previously passed scoped reviews do not close this broader audit in advance.
+
 ## Repository commands
 
 After `npm ci`:

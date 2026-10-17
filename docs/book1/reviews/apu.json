@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Sixteen slots, separate staging/captured-command/live-bank paths, ROM/private sample sources and one 512-KiB private RAM are defined; no ordinary CPU sample-RAM aperture or main-RAM playback source is invented.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "All 60 word ports, 21+21 distinct parameter/reset banks, full fields and signed formats, special accepted queue/clock writes, nonadjacent fault ports and live effects are independently source-checked.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "PCM8/PCM16 stereo layout and interpolation, BADP seek/block/nibble format with all 89 steps, signed Q16 phase/loops, square duty, signed Q12 mix/fade and Q14 biquad recurrence/history are taught with checked numerical examples and real mirrored output replay.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Command capture differs from execution; selected reads/writes synchronize prior output; source stores rebind individually. Transfer count/deadline are captured, pending address remains live, mode changes cancel, and same-cycle RAM commit precedes output.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Installed 33,868,800 system cycles/s, 44,100 output frames/s, 768 cycles/frame and 1,058,400 transfer words/s/32 cycles per scheduled word are explicit. Controlled 20-word ROM upload reaches DMA DONE 680 and RAM commit 808 identically on both owners; electrical/end-to-end ratings are not fabricated.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Natural/faded ends clear banks and publish latest event/sequence before APU IRQ 20H; ascending multi-end overwrite and pending coalescence are explicit. Central acknowledgement, masked VBlank and predicate HALT waits are independently reviewed and actually exercised.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Only actual BAD_CMD and SOURCE_RANGE emitters, first-fault retention/nonzero ACK/no fault IRQ, failed PLAY versus retained failed live write, and separate system access faults are source-checked. Metadata-validation guarantees are not inferred from unused declarations.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "APU reset clears RAM, queues, transfer/voice/event/fault/clock state, restores staging defaults and zeros selected banks. STOP_SLOT and transfer STOP are not global reset or RAM-clear commands; pending-batch cancellation is explicit.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete two-module BIOS-style BLua uses existing central records, named readonly PCM/presets, BSS, actual asset symbols and preserved cartlib DMA/IRQ ownership. Ordinary guest execution checks four sound routes, all 16 transfer words, separate completions, four ends and zero faults; exact printed modules match source. Independent complete-reader review passes after the resource-name/metadata-producer clarifications.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/apu-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/apu-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/apu-print.md"
+		}
+	}
+}
