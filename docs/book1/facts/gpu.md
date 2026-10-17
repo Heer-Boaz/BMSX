@@ -723,3 +723,99 @@ necessary for raster commands, samples/CLUT/blend/dither/mask/coordinate rules.
 [control-tick-ts]: ../../../machine/ts/machine/devices/gx/gpu_command_timing.ts#L23-L23
 [control-tick-cpp]: ../../../machine/cpp/machine/devices/gx/gpu_command_timing.h#L7-L7
 [control-sync-cpp]: ../../../machine/cpp/machine/devices/gx/gpu.cpp#L684-L703
+
+
+# Actual output plate: bounded evidence — 2026-10-17
+
+Scope: software-path capture according to the parent task's run context. The supplied logs independently verify the headless run/capture/pass, **not** the backend selector. No native guest run or backend-parity proof is claimed.
+
+## Provenance and capture event
+
+- Actual viewed artifact: `tests/carts/gpu_manual/screenshots/frame_00001.png`, PNG RGBA8, **256 x 192**; viewed individually at original detail. SHA-256 `e1b4eed78b1b06fe737ac0e1ab69f6acfd66e3bd015d0e68ce3ee4be2bd124c4`. Source: the PNG itself (binary; no line numbers).
+- Fresh ordinary debug cart build exported the unchanged exact artifact `279600d973c99f45271b717506f8ee7857dcb033846ebb77fac5703d98d02e47`. Source: `/tmp/bmsx-manual-gpu-capture-build.log:8-14`.
+- Fresh guest run loaded `dist/gpu_manual.debug.rom`, captured this PNG under event name `gpu-manual-texture-materials-and-masks`, and reported `texture_materials_and_counted_readback: passed`. Source: `/tmp/bmsx-manual-gpu-capture-guest.log:3-6`.
+- Capture is after `wait_ticks(3)` and assertions of framebuffer word `0x000fa000`, masked GP1 value `0x04000000`, and GPUREAD word `0x000003e0`; it is before the test's subsequent readback transfers and 20 probes. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:31-40`.
+- The cart explicitly writes display words before drawing, initializes E1-E6 drawing state, issues a 256 x 192 fill at (0,0), and later enables PMODE with `0x0000ff21`. Do not infer physical display timing from those writes. Source: `carts/gpu_manual/cart.lua:72-89,135-145`.
+
+## Visually explainable regions and source packets
+
+Coordinates below are command-defined vertices/extents, not an independent proof of raster coverage rules. The inspected PNG visibly contains the corresponding shapes. Each row names the packet source rather than treating a comment as hardware authority.
+
+| Visible region | Command coordinates and packet/state evidence | Source |
+|---|---|---|
+| Dark background and margins | Fill header `0x02181008`, destination (0,0), size (256,192). Explicit drawing-area bottom-right word contains x=255,y=191. | `carts/gpu_manual/cart.lua:80-89` |
+| Upper-left red/green/blue/white block, plus black/background bottom-right area | Quad vertices (16,24), (80,24), (16,88), (80,88); header `0x2d808080`, UV corners (0,0)..(3,3), T1 attribute `0x010a`. | `carts/gpu_manual/cart.lua:29-35` |
+| Upper-middle darker-red/green/blue/tinted-white counterpart, plus black/background bottom-right area | Quad vertices (96,24), (160,24), (96,88), (160,88); header `0x2cc08040`; same UVs and T1 `0x010a` as first quad. The packet headers differ in the low opcode bit and RGB word. | `carts/gpu_manual/cart.lua:36-41` |
+| Small four-by-four texture block left of centre | Header `0x65000000`; destination (24,112), UV (0,0), extent (4,4). This packet appears directly after the second quad, with no intervening E1 packet. | `carts/gpu_manual/cart.lua:37-43` |
+| Separate RGB-gradient triangle in upper-right | Header `0x300000ff`, vertex (176,24); green word `0x0000ff00`, vertex (240,24); blue word `0x00ff0000`, vertex (208,88). No texture-coordinate words in this packet. | `carts/gpu_manual/cart.lua:44-47` |
+| Two lower-left base rectangles and crossing overlay | Base header `0x60402020` at (16,128), extent (64,40); base header `0x60204020` at (80,128), extent (64,40); E1 `0xe1000420`; overlay header `0x62202080` at (48,144), extent (64,24). | `carts/gpu_manual/cart.lua:48-52` |
+| Lower-right mustard/cyan overlap pair | E6 `0xe6000003`; first header `0x600080c0` at (176,128), extent (32,32); second header `0x60c08000` at (192,144), extent (32,32); then E6 `0xe6000000`. | `carts/gpu_manual/cart.lua:53-57` |
+| Sixteen-colour bottom strip, including a background-coloured interval and a black interval | Quad header `0x2d000000`; vertices (16,176), (240,176), (16,192), (240,192); UV u=0..15, v=16; CLUT attribute `0x4030`, T1 `0x000b`. | `carts/gpu_manual/cart.lua:58-63` |
+| Tiny three-pixel witness above the lower-left shapes | A0 upload at (16,112), extent (3,1), using the exact two words previously read by the cart from a C0 transfer at (640,0), extent (3,1). | `carts/gpu_manual/cart.lua:118-133` |
+
+## Source data and directly supported witnesses
+
+- Source direct-image data is 4 x 4 u16 words: rows `[001f,001f,03e0,03e0]`, `[001f,001f,03e0,03e0]`, `[7c00,7c00,7fff,7fff]`, `[7c00,7c00,8000,0000]`. In particular, `0x8000` and `0x0000` are distinct authored words at source positions (2,3) and (3,3). Source: `carts/gpu_manual/cart.lua:13-19`.
+- Those source words are uploaded with A0 destination (640,0), extent (4,4), via whole-word stores to GP0. Source: `carts/gpu_manual/cart.lua:91-98`.
+- Palette data has entry 0=`0x001f`, entry 3=`0x0000`, entry 4=`0x8000`, entry 5=`0x7fff`; its 16 authored entries are uploaded at (768,256), extent (16,1). Source: `carts/gpu_manual/cart.lua:21-25,99-106`.
+- Palette index source is four u16 words `0x3210,0x7654,0xba98,0xfedc`, uploaded at (704,16), extent (4,1). Source: `carts/gpu_manual/cart.lua:26,107-113`.
+- The passed test distinguishes sampled `0x8000` from background word `0x0c41`: upper-left quad at (59,84) versus (78,84); small rectangle at (26,115) versus (27,115); bottom strip at (76,180) versus (61,180). This is a sampled visible black-versus-background witness, not by itself a complete texture-discard specification. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:10-15,23-24`.
+- First quad sample (16,24)=`0x001f`, second quad sample (96,24)=`0x000f`; further second-quad samples (140,24)=`0x03e0` and (138,68)=`0x7fef`. These are concrete raw/modulated-packet sample results; do not derive the complete modulation/saturation formula solely from these samples. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:6-9`.
+- Crossing-overlay samples are (50,150)=`0x3114` and (90,150)=`0x2194`. These lie within the two command-defined intersections; they do not prove all blend modes or all output pixels. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:16-17`.
+- Overlap-pair samples are (200,150)=`0x8218` in the overlap and (220,165)=`0xe200` in the second rectangle only. Both returned words retain bit 15. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:18-19`.
+- Cart readback/re-upload witness is checked by a fresh test C0 read at (16,112), extent (3,1): reads must equal `0x001f001f` then `0x000003e0`, followed by GP1 read-ready bit clear. Thus this specific odd tail has a zero high half and exactly two reads; no general transfer-timing claim follows. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:39-48`.
+- Before that fresh readback the test requires GPUREAD=`0x000003e0`, matching the final cart read value after the cart's subsequent upload and marker traffic. Source: `tests/carts/gpu_manual/gpu_manual_assert.lua:33-36`.
+
+## Exact 20 sampled pixel words
+
+Every result below is asserted through a fresh single-pixel C0 read, with read-ready waiting, by the loop at `tests/carts/gpu_manual/gpu_manual_assert.lua:50-58`. Values are readback words, not 8-bit PNG channel values.
+
+| x | y | Expected/readback word | Probe source |
+|---:|---:|---:|---|
+|16|24|`0x001f`|`tests/carts/gpu_manual/gpu_manual_assert.lua:6`|
+|96|24|`0x000f`|`tests/carts/gpu_manual/gpu_manual_assert.lua:7`|
+|140|24|`0x03e0`|`tests/carts/gpu_manual/gpu_manual_assert.lua:8`|
+|138|68|`0x7fef`|`tests/carts/gpu_manual/gpu_manual_assert.lua:9`|
+|59|84|`0x8000`|`tests/carts/gpu_manual/gpu_manual_assert.lua:10`|
+|78|84|`0x0c41`|`tests/carts/gpu_manual/gpu_manual_assert.lua:11`|
+|24|112|`0x001f`|`tests/carts/gpu_manual/gpu_manual_assert.lua:12`|
+|26|114|`0x7fff`|`tests/carts/gpu_manual/gpu_manual_assert.lua:13`|
+|26|115|`0x8000`|`tests/carts/gpu_manual/gpu_manual_assert.lua:14`|
+|27|115|`0x0c41`|`tests/carts/gpu_manual/gpu_manual_assert.lua:15`|
+|50|150|`0x3114`|`tests/carts/gpu_manual/gpu_manual_assert.lua:16`|
+|90|150|`0x2194`|`tests/carts/gpu_manual/gpu_manual_assert.lua:17`|
+|200|150|`0x8218`|`tests/carts/gpu_manual/gpu_manual_assert.lua:18`|
+|220|165|`0xe200`|`tests/carts/gpu_manual/gpu_manual_assert.lua:19`|
+|16|180|`0x001f`|`tests/carts/gpu_manual/gpu_manual_assert.lua:20`|
+|31|180|`0x03e0`|`tests/carts/gpu_manual/gpu_manual_assert.lua:21`|
+|46|180|`0x7c00`|`tests/carts/gpu_manual/gpu_manual_assert.lua:22`|
+|61|180|`0x0c41`|`tests/carts/gpu_manual/gpu_manual_assert.lua:23`|
+|76|180|`0x8000`|`tests/carts/gpu_manual/gpu_manual_assert.lua:24`|
+|91|180|`0x7fff`|`tests/carts/gpu_manual/gpu_manual_assert.lua:25`|
+
+## Spec names actually inspected
+
+- Named GP0 opcode families identify fills, polygons, rectangles, CPU-to-VRAM and VRAM-to-CPU transfers. Source: `machine/ts/spec/gx/gp0.ts:10-22`.
+- Named draw-mode constants identify polygon texture-page mask `0x09ff`, dither bit 9, texture modes palette4=0/palette8=1/direct16=2, and blend modes half+half=0/add=1/subtract=2/background+quarter-foreground=3. These names alone do not decode every packet field or establish the rasterizer's equations. Source: `machine/ts/spec/gx/gp0.ts:44-56`.
+- Polygon texture attributes come from the high 16 bits of a texture word, and the polygon page contributes mask `0x09ff` to the existing draw-mode word. Source: `machine/ts/spec/gx/gp0.ts:103-112`.
+
+## Narrow paired software semantic appendix
+
+Only relevant symbols in the permitted owning leaves were inspected. No TS/C++ disagreement was found in these named fields, sampling, zero-discard, modulation dispatch, or output-mask writes. This source agreement is not executed native/backend-parity evidence.
+
+1. **Raw versus modulated opcodes:** raw-texture selection is opcode bit 0. Thus `0x2d`/`0x65` select raw texture colour; `0x2c` selects the modulation path. Sources: TS `machine/ts/render/backend/gx_gpu_render_rules.ts:79-81`; paired C++ `machine/cpp/render/backend/gx_gpu_render_rules.h:71-73`.
+2. **Visible modulation contrast:** the texture shade stage extracts RGB555 and only calls the three channel-modulation functions when raw texture is disabled. The second quad therefore uses the packet RGB rather than bypassing it as the first quad does. Sources: TS `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:160-167`; paired C++ `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:109-116`. Channel output is capped at 31 in both owners; the exact pre-dither multiplication helper was not audited in this bounded pass, so use the concrete observed word contrasts rather than presenting an unevaluated formula. Sources: TS `machine/ts/render/backend/software/gx_gpu_vram.ts:29-36`; paired C++ `machine/cpp/render/backend/software/gx_gpu_vram.h:41-48`.
+3. **Direct16 page:** base X is `(drawMode & 0x0f) << 6`, texture mode is `(drawMode >> 7) & 3`, and page Y uses bits 4/11. T1 `0x010a` therefore selects X=640, Y=0, mode=2 (named direct16). Sources: TS `machine/ts/render/backend/gx_gpu_render_rules.ts:299-308`; paired C++ `machine/cpp/render/backend/gx_gpu_render_rules.h:303-312`. Mode names: TS `machine/ts/spec/gx/gp0.ts:50-52`; paired C++ `machine/cpp/spec/gx/gp0.h:52-54`. The non-paletted fetch returns the word at page+UV directly. Sources: TS `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:129-139`; paired C++ `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:80-90`.
+4. **Paletted strip:** T1 `0x000b` selects page X=704, Y=0, mode=0 (named palette4); with v=16 the index source is the uploaded row at y=16. Same field sources as item 3. Each fetched word supplies four low-to-high nibbles; each nibble selects a CLUT word. Sources: TS `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:129-132`; paired C++ `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:80-83`. CLUT attribute `0x4030` decodes to (768,256). Sources: TS `machine/ts/render/backend/gx_gpu_render_rules.ts:248-253`; paired C++ `machine/cpp/render/backend/gx_gpu_render_rules.h:252-257`. This means authored index 0 selects the red CLUT word; index 3 selects the zero word; index 4 selects `0x8000`.
+5. **Zero versus visible black:** a sampled word equal to zero returns before any texture pixel write. `0x8000` is nonzero and produces zero RGB555 components, while retaining sample bit 15 for the output writer. Sources: TS `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:157-171`; paired C++ `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:106-120`. Thus this software-path rule explains the image's visible black versus unchanged-background texture regions; the exact listed probes establish their sample locations. The output writer retains `outputMaskBit & 0x8000` when set-mask mode is off. Sources: TS `machine/ts/render/backend/software/gx_gpu_vram.ts:121-126`; paired C++ `machine/cpp/render/backend/software/gx_gpu_vram.h:117-122`.
+6. **Crossing overlay blend selection:** opcode bit 1 enables semi-transparency; draw-mode bits 5..6 select the blend mode. Header `0x62` with E1 `0xe1000420` therefore enables mode 1, named background-plus-foreground. Sources: TS `machine/ts/render/backend/gx_gpu_render_rules.ts:83-85,311-313`; paired C++ `machine/cpp/render/backend/gx_gpu_render_rules.h:75-77,315-317`; names TS `machine/ts/spec/gx/gp0.ts:53-56`, paired C++ `machine/cpp/spec/gx/gp0.h:55-58`. Rectangles pass this selection to the output writer. Sources: TS `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:188-204`; paired C++ `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:187-203`. The writer invokes RGB555 blending when selected. Sources: TS `machine/ts/render/backend/software/gx_gpu_vram.ts:121-124`; paired C++ `machine/cpp/render/backend/software/gx_gpu_vram.h:117-120`. The complete blend helper was not inspected: retain the exact two overlap sample words rather than general claims about all modes/saturation.
+7. **Protected overlap:** E6 value 3 enables both set-mask and check-mask, as bits 0 and 1 respectively. Sources: TS `machine/ts/render/backend/gx_gpu_render_rules.ts:337-343`; paired C++ `machine/cpp/render/backend/gx_gpu_render_rules.h:341-347`. At write time an already-set destination bit 15 rejects the write; successful writes force bit 15 when set-mask is enabled. Sources: TS `machine/ts/render/backend/software/gx_gpu_vram.ts:115-126`; paired C++ `machine/cpp/render/backend/software/gx_gpu_vram.h:100-122`. This explains first-rectangle colour retained in the overlap sample `(200,150)=0x8218`, with second-only sample `(220,165)=0xe200`; these sample facts remain separately sourced to the test.
+8. **Small textured rectangle page consumption:** rectangle packet dispatch supplies its UV word while the textured rectangle rasterizer takes page/mode from the command's retained `commandDrawModeWord`, not a polygon-style T1 word inside the rectangle packet. Sources: TS `machine/ts/render/backend/software/gx_gpu_commands.ts:212-224`, `machine/ts/render/backend/software/gx_gpu_rasterizer.ts:606-615`; paired C++ `machine/cpp/render/backend/software/gx_gpu_commands.cpp:214-229`, `machine/cpp/render/backend/software/gx_gpu_rasterizer.cpp:656-668`. The cart has no E1 between the preceding quad and this packet and the samples show the same uploaded image. Producer-side draw-mode retention was not independently re-audited here, so avoid expanding this into a general state-latching claim.
+
+## Explicit scope limits / remaining gaps
+
+- No complete backend-parity, triangle edge/coverage, dithering, scanout conversion, FIFO physical timing, IRQ/display acknowledgement timing, palette8, line, or all-blend-mode claim is established by this image and these 20 samples.
+- There is no triangle pixel probe among the 20 listed; the triangle's presence is visual plus packet-source evidence only.
+- Cart comments are not hardware authority. The paired narrow appendix now supplies software-owner authority for the named caption effects; no PSX/SNES behavior was imported.
+- Remaining unaudited details include the exact pre-dither multiply helper, complete blend-helper arithmetic, producer-side page retention, complete triangle coverage/interpolation algorithm, scanout conversion, and physical timing. These are not needed to state the nine packet-defined visible regions and exact sampled contrasts.
+- The extraction changed no cartridge, runtime or publisher and created no replacement capture or synthetic image. Integration preserves the inspected PNG as `docs/book1/figures/gpu-output-materials.png`.

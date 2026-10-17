@@ -199,3 +199,42 @@ of canonical `build/manual/gpu.pdf`, including running matter, matches the appro
 actual publication-layout proof exactly. Final `git diff --check` passes.
 Machine owners, BIOS, shared publisher, stylesheet and fonts have no changes
 in this slice. Book I remains an unfinished larger scope.
+
+## Actual output plate — 2026-10-17
+
+The static BLua picture now has its actual unmodified 256×192 output beside
+the complete program, followed by a nine-region legend. The original capture
+was freshly regenerated through the ordinary guest case; the copied PNG is
+byte-identical. All 20 raw pixel probes and the counted odd readback/re-upload
+witness pass. The image is not used to infer those raw words from displayed
+colour components.
+
+A bounded extractor read the actual cartridge/test, viewed the PNG and checked
+only the named paired packet/raster/mask owners needed for these captions. A
+fresh author received only that fact sheet. Independent nonauthors then checked
+every caption, coordinate, sample and named effect against those primary sources
+and the original image. The final merged insertion, nine legend rows, copied
+bytes and appended fact sheet pass the separate integration check. The public
+prose contains no backend/test implementation language; the extraction's evidence
+limits remain in the internal facts/review.
+
+The plate explains the raw/modulated direct-image contrast, indexed palette
+strip, exact-zero versus bit-15 black samples, RGB triangle, additive overlay,
+protected overlap and tiny upload/readback witnesses. It does not establish
+all renderer paths, a complete interpolation/blending algorithm, native guest
+parity or physical display/transfer timing. Existing operation-reference source
+acceptance is separate from this bounded plate review.
+
+All eight printed BLua fragments still match the actual cartridge apart from
+indentation/blank lines. All 105 prior tables (515 rows) and 55 code blocks
+remain unchanged; the two legend tables add nine rows. Four existing short
+lead/table pairs now use the ordinary authored keep-together class. The unchanged
+final fence-versus-image-readback caution moves before the timeline, avoiding
+an otherwise nearly empty last page. No instruction, arithmetic or result was
+altered. Actual print acceptance is recorded separately in gpu-print.md.
+
+All 17 manual tests pass. No runtime, compiler, BIOS, cartlib, cartridge, runner,
+publisher, stylesheet or font was changed in this slice. Further dither/coverage
+contrasts, combined DMA image-transport execution, PCRTC before/after output and
+GEO sprite/hull scenes remain open; this plate does not finish Book I or the
+broader technical/visual audit.

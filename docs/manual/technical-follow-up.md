@@ -47,7 +47,13 @@ Already explicit:
 - `4831–4980` budgets an entire geometry/lighting/packet-construction instruction interval; `5716–5887` gives repeated PLUS work including feeding/readout. Thus the chapter is not currently missing all cycle-budget or CPU-fed-work teaching.
 - Frozen basis: `facts/gte.md:430–618` (capacity/clock/admission/limits), `1082–1125` (real BLua route), `1126` onward (expanded operations and repeated PLUS evidence).
 
-Concrete next paragraph/figure task: **connect the already executed triangle to actual output images** in/after `1814–2180`. Use the initial versus translated captured frames and their corresponding programmed translation/projection values, rather than another schematic. The existing screenshots do not yet appear in the chapter. Broader useful contrasts (clipping, lighting, depth cue, affine projection behavior) need separately controlled programs/captures; one triangle pair must not be reported as closing all graphics-output teaching. Do not republish a nominal-command count as instructions/second.
+**Bounded plate task completed since this baseline:** the initial/translated
+NCCT triangle frames now appear beside the complete executable program, with
+their source/settings and exact projected displacement. Independent source,
+image and final-print checks pass; see the GTE source/print reviews. Broader
+contrasts (clipping, lighting, depth cue, affine projection behavior) still need
+separately controlled programs/captures. This pair does not close all graphical
+teaching. Do not republish a nominal-command count as instructions/second.
 
 ### GPU
 
@@ -60,7 +66,12 @@ Already explicit:
 
 Concrete next paragraph tasks:
 1. **Cross-unit raw image transport budget:** add one actual RAM→GP0 image-upload route and one READY GPUREAD→RAM readout route, with header/payload counts, 16-word blocks/tail, request conditions and separately observed destination readiness/completion. This is missing from the currently detailed CPU picture example and the DMA chapter's five-word fill stream. Reuse frozen GPU ingress/readback contracts plus DMA DMT13–17/DMP07–14; do not claim a fixed C0-to-READY latency or a direct VRAM DMA aperture. Exact combined traces still require real owner execution.
-2. **Observed picture plate:** embed the actual `gpu_manual` output with captioned regions relating raw/modulated textures, palette/index interpretation, bit15 black versus zero transparency, blending/protection to the authored packet choices (`109–416`). Existing real output is available as a lead, not newly verified by this inventory. Further before/after dither/coverage comparisons remain distinct future capture tasks.
+2. **Observed picture plate — bounded insertion completed since this baseline:**
+   the actual `gpu_manual` frame and nine-region legend now connect raw/modulated
+   textures, palette indices, bit-15 black versus exact-zero transparency and
+   blending/protection to the executable packet choices. Fresh guest execution,
+   independent source/image checks and final actual-print review pass. Further
+   before/after dither/coverage comparisons remain distinct capture tasks.
 
 ### IRQ
 
@@ -293,7 +304,9 @@ authorship, independent caption/source/image checks and the complete final
 print review pass; see [the source review](../book1/reviews/gte-source.md) and
 [print review](../book1/reviews/gte-print.md). The publisher uses ordinary PNG
 images beside existing SVG figures, without a new capture or approval framework.
-The GPU plate has a separate bounded fact sheet and draft caption, not a
-published/print-approved insertion. Further GTE contrasts, GPU/PCRTC output
-teaching and the GEO dummy-game task remain open. This pair does not close
-the broad illustrations or technical audit.
+The GPU plate now also has its unmodified PNG, captioned nine-region legend,
+independent merged-source/image acceptance and final actual-print approval;
+see [its source review](../book1/reviews/gpu-source.md) and
+[print review](../book1/reviews/gpu-print.md). Further GTE/GPU contrasts,
+PCRTC before/after output and the GEO dummy-game task remain open. These three
+frames do not close the broad illustrations or technical audit.

@@ -414,6 +414,49 @@ IRQ marker do not acknowledge that publication. Packet preparation and issue
 costs also remain separate from queued command deadlines; the command-cost
 reference does not establish a sustained frame rate for arbitrary cartridge code.
 
+<div class="keep-together">
+
+### GPU output plate
+
+This plate brings several packet types into one 256 × 192 image. The two large upper quads sample the same 4 × 4 direct-colour texture: the left uses raw texture colour, while the middle applies the packet's RGB colour. Their red and white areas show the contrast. The bottom strip instead reads four-bit indices and looks up their colours in a CLUT; index zero is red here, not transparent.
+
+![Full 256 by 192 GPU output plate](figures/gpu-output-materials.png)
+
+**GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The tiny marks near the left edge are the readback/upload witness and the unscaled 4 × 4 texture, not missing image detail. The complete image is shown without a crop or added region labels.
+
+</div>
+
+The black texture areas and the background-coloured gaps are deliberately different. The source word `0x8000` supplies black and retains bit 15 in VRAM; a sampled `0x0000` leaves the background unchanged. This distinction appears in both the direct-colour texture and the indexed strip, whose entries 4 and 3 contain those words respectively.
+
+The lower-left overlay selects semi-transparency with background-plus-foreground blending. At the lower right, set-mask and check-mask are enabled together: the first rectangle sets destination bit 15, so the second cannot replace it in their overlap. These are different effects; the protected overlap is not a blend.
+
+<div class="keep-together">
+
+**Nine-region legend.** Positions and sizes below are packet coordinates, not a definition of raster edge coverage. The picture column describes the visible regions. The final column records selected raw VRAM readback words, separately from the image's displayed colour components.
+
+| Packet location | Picture and packet interpretation | Selected VRAM readback |
+|---|---|---|
+| Background: fill at `(0,0)`, `256 × 192` | Dark field and margins; fill header `0x02181008`. | Background visible through the upper-left texture at `(78,84)` is `0x0c41`. |
+| Quad: `(16,24)`, `(80,24)`, `(16,88)`, `(80,88)` | Raw red/green/blue/white texture, plus black and unchanged-background areas. Header `0x2d808080`; UV `(0,0)` to `(3,3)`; T1 `0x010a` selects direct16 at `(640,0)`. | `(16,24)` = `0x001f`; black at `(59,84)` = `0x8000`. |
+| Quad: `(96,24)`, `(160,24)`, `(96,88)`, `(160,88)` | Modulated counterpart: darker red and tinted white. Header `0x2cc08040`; same UVs and T1 as the raw quad. | `(96,24)` = `0x000f`; `(140,24)` = `0x03e0`; `(138,68)` = `0x7fef`. |
+| Rectangle: `(24,112)`, `4 × 4` | Small raw view of the same direct-colour image; header `0x65000000`, UV `(0,0)`. | `(26,114)` = `0x7fff`; `(26,115)` = `0x8000`; `(27,115)` = `0x0c41`. |
+
+</div>
+
+<div class="keep-together">
+
+**Nine-region legend, continued.** Packet positions, visible results and selected raw words remain separate.
+
+| Packet location | Picture and packet interpretation | Selected VRAM readback |
+|---|---|---|
+| Triangle: `(176,24)`, `(240,24)`, `(208,88)` | Separate untextured triangle with red, green and blue vertex colours. | No triangle pixel word is listed. |
+| Bases: `(16,128)` and `(80,128)`, each `64 × 40`; overlay: `(48,144)`, `64 × 24` | The overlay crosses both bases. Header `0x62202080` with E1 `0xe1000420` selects background-plus-foreground blending. | Intersections: `(50,150)` = `0x3114`; `(90,150)` = `0x2194`. |
+| Rectangles: `(176,128)` and `(192,144)`, each `32 × 32` | Mustard/cyan pair with E6 `0xe6000003`: the first rectangle remains in the protected overlap. E6 then returns to `0xe6000000`. | Overlap `(200,150)` = `0x8218`; second-only `(220,165)` = `0xe200`. Both retain bit 15. |
+| Strip: `(16,176)`, `(240,176)`, `(16,192)`, `(240,192)` | Raw indexed texture, U `0..15`, V `16`; T1 `0x000b` selects palette4 at page `(704,0)`. CLUT `0x4030` selects `(768,256)`. Indices come from `0x3210`, `0x7654`, `0xba98`, `0xfedc`, low nibble first. | Red `(16,180)` = `0x001f`; unchanged background `(61,180)` = `0x0c41`; black `(76,180)` = `0x8000`; white `(91,180)` = `0x7fff`. |
+| Witness: `(16,112)`, `3 × 1` | Three pixels read from `(640,0)` and uploaded at this destination. | The three-pixel row reads as two GPUREAD words: `0x001f001f`, then `0x000003e0`. |
+
+</div>
+
 <a id="gpu-ports-status"></a>
 ## GP0, GPUREAD, GP1 and GPUSTAT
 
@@ -1633,6 +1676,8 @@ a Gouraud continuation's position slot is position data, not a terminator. The
 terminator adds no segment. Without it, the stream remains a polyline; an
 unfinished Gouraud color/position pair remains unfinished.
 
+<div class="keep-together">
+
 For example, supply this Gouraud polyline followed by a drawing-environment
 command. The high byte `58H` selects the line family with both Gouraud and
 polyline bits set:
@@ -1647,6 +1692,8 @@ polyline bits set:
 | 6 | `001A002EH` | Continuation position `(46,26)`; completes the next segment |
 | 7 | `5ABC5DEFH` | Terminator at the next continuation-color boundary |
 | 8 | `E1000000H` | A new E1 drawing-environment command |
+
+</div>
 
 Word 3 belongs to the header, so its `E1H` high byte cannot change drawing state.
 Word 7 qualifies because masking it gives `50005000H`; the other bits need not
@@ -1681,6 +1728,8 @@ Bit 0 is ignored for these untextured polygons: it neither changes the color
 calculation nor adds a field. Bits 4 and 2 are clear in this entry's variants;
 setting them selects Gouraud or textured polygon formats instead.
 
+<div class="keep-together">
+
 Supply these thirty-two-bit words to GP0 in order:
 
 | Word | Triangle | Quad |
@@ -1690,6 +1739,8 @@ Supply these thirty-two-bit words to GP0 in order:
 | 3 | `P1` | `P1` |
 | 4 | `P2` | `P2` |
 | 5 | — | `P3` |
+
+</div>
 
 `C` contains red in bits 7:0, green in 15:8 and blue in 23:16. Each is an
 unsigned byte. Every `Pi` contains X in bits 10:0 and Y in bits 26:16, decoded
@@ -3151,6 +3202,8 @@ Q is an exact integral quotient used only in the narrow-width branches. The text
 
 The comparisons are strict, and the wide-row test comes first. Use the **original clipped H**, not H′, when choosing a texture branch. For a palette4 rectangle at `(6,6)`, size 11×6, drawing area X=8…15,Y=7…10 clips it to W=8,H=4. With both semitransparency and mask checking, q=`8+8+4=20`; active skipping gives H′=2 and N=`16+20×2=56` ticks/28 cycles. The two flags still add only one four-tick row surcharge.
 
+<div class="keep-together">
+
 With no semitransparency, mask check or skipping, these nonempty examples expose the texture boundaries:
 
 | Format | Clipped W×H | Texture overhead | Total ticks | Cycles |
@@ -3163,6 +3216,8 @@ With no semitransparency, mask check or skipping, these nonempty examples expose
 | 8-bit palette | 129×1 | 256 | 401 | 201 |
 | Direct 16-bit | 129×1 | 512 | 657 | 329 |
 | 4-bit palette | 129×1 | 129 | 274 | 137 |
+
+</div>
 
 At W=64, Q=2. Enabling skipping on the 64×33 palette8 case keeps its overhead 128 and q=192, but uses H′=16: `16+192×16=3088` ticks/1544 cycles. It must not switch to the lower-area branch. These thresholds specify command cost, not a physical texture-cache capacity. Even H=1 remains H′=1 when skipping is active; do not infer one stored row from that minimum cost.
 
@@ -3266,6 +3321,14 @@ this case instructions 16…19 execute nine unsuccessful passes, followed by
 one successful pass 16…18. Instructions 23…25 succeed at the first idle check;
 JMP at instruction 26 is not issued.
 
+This is an execution fence and status readout, not image readback or a displayed
+frame. A C0 image read requires its separate READY/ownership/count protocol and
+has no fixed whole-transfer latency established by the one-tick command cost.
+Neither the 83-cycle function nor a sum of drawing costs establishes physical bus
+bandwidth, sustained fill rate or the CPU cost of a complete game frame.
+
+<div class="keep-together">
+
 ### Follow issue, command completion and readout
 
 Count cycles relative to function entry. Each mapped access occurs at its
@@ -3285,6 +3348,8 @@ instruction's charged endpoint:
 | 77 | First separate idle read completes with bit 26 set |
 | 79 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
 | 81,83 | Second status is retained, then RET completes |
+
+</div>
 
 The fill costs 98 command ticks, 49 cycles. The marker adds its own one-cycle
 interval: completion of the queued work is at 68, not at the first IRQ observation
@@ -3309,9 +3374,3 @@ No direct CPU store stalls in this sequence; the marker fits in the input while
 the fill executes. The 49 IRQ-poll cycles are still charged CPU work, not free
 waiting. Replacing polling with an interrupt handler changes setup, entry,
 acknowledgement and resumption costs and needs its own budget.
-
-This is an execution fence and status readout, not image readback or a displayed
-frame. A C0 image read requires its separate READY/ownership/count protocol and
-has no fixed whole-transfer latency established by the one-tick command cost.
-Neither the 83-cycle function nor a sum of drawing costs establishes physical bus
-bandwidth, sustained fill rate or the CPU cost of a complete game frame.

@@ -1,10 +1,10 @@
 # GPU print review
 
-**Pass.** The complete chapter uses the ordinary shared renderer, stylesheet and
+**Original chapter acceptance.** The complete chapter uses the ordinary shared renderer, stylesheet and
 bundled fonts. No GPU-specific publisher, font, layout rule, assembler or
 freshness/validation layer was added.
 
-## Actual-page inspection
+## Original actual-page inspection (before the output plate)
 
 The existing renderer produced private publication-layout proofs before the
 canonical publication gate was approved. PDFium rasterized every actual page at
@@ -68,3 +68,65 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+## Actual output plate and current print review — 2026-10-17
+
+**PASS for the final 74-page output.**
+
+The current publication-layout proof has 74 pages, two figures (one SVG and one
+unmodified 256×192 PNG) and no reported layout errors. Page count records
+inspection scope, not whole-book completeness. Source/image acceptance remains
+separate in [gpu-source.md](gpu-source.md).
+
+The full native frame appears on page 8, with readable introduction, caption,
+texture/blend/mask explanations and intact margins. Page 9 contains all nine
+legend regions in two tables, with packet coordinates and selected VRAM words
+kept distinct from displayed colour components. The image was neither cropped
+nor relabelled; the tiny witness/source-image marks remain visible.
+
+Actual full-page rasters were inspected individually at original detail, one
+image per tool call. Root inspected 8–10, 12, 15, 20–21, 23, 25–26, 36–40 and
+45–48. An independent reviewer inspected 8–9, 51, 54, 56, 58, 60, 63, 65–66,
+68–71 and 73–74. These cover all 33 final changed/unmatched page bodies. The other
+41 page bodies, including their running headers, match the approved baseline
+exactly at their mapped positions. All same-numbered footer bands on 1–72 also
+match exactly; the new final-numbered footers were actually viewed. The prior
+complete-page acceptance therefore carries forward only where pixels match,
+not by assuming that unchanged source prevents reflow.
+
+The actual inspections found four short leads separated from their objects:
+the polyline framing packet, flat-polygon word order, texture-cost thresholds
+and the final complete-function timeline. Existing authored keep-together groups
+now retain each lead with its table, including the timeline heading. These
+groups change no technical text, table or code. The final two fixes changed
+only 70–71/73–74 and briefly added page 75; all five were individually inspected.
+Moving the unchanged fence/readback scope caution into available space before
+the timeline then removed that nearly empty last page. Only page 73 changed;
+it received a final individual reinspection, with the approved page 74 unchanged.
+No smaller font, special renderer, layout helper or gate was added.
+
+An initial missing-header impression was withdrawn after exact top-band checks:
+all reviewed header bands contain the same BMSX/Book I pixels. It was not a PDF
+defect or an odd-page convention, and no stylesheet change was justified.
+
+No clipping, overlap, malformed columns/rows, literal Markdown, unreadable code
+or words, detached short object lead or body/furniture collision remains in the
+reviewed scope. Ordinary longer narrative continuations remain breakable.
+Detailed actual-output evidence is in
+`/tmp/bmsx-gpu-output-root-print-review.md` and
+`/tmp/bmsx-gpu-output-plate-print-review.md`. Final inspected rasters are in
+`/tmp/bmsx-gpu-output-release-pages/`; the ordinary shared renderer produced
+`/tmp/bmsx-gpu-output-proof/gpu.pdf` in publication mode before approval.
+
+This accepts this sourced plate addition and its actual layout, not all visual
+teaching, physical/native/backend parity or completion of Book I. Chromium
+153.0.8010.12, Node v22.23.1, Linux x64, bundled fonts and shared stylesheet
+remain unchanged for this slice. All 17 manual tests pass.
+
+After the final approvals, ordinary `manual:check -- gpu` and
+`manual:publish -- gpu` succeed. Every one of the 74 canonical
+`build/manual/gpu.pdf` page rasters matches the final inspected release set
+pixel-for-pixel at scale 1.4, including running matter. The published artifact
+is therefore the reviewed output, not the older 72-page baseline. All 17
+manual tests pass again after publication; the PNG still matches the fresh
+capture byte-for-byte and `git diff --check` is clean.
