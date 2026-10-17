@@ -1,0 +1,70 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Installed capacities/windows/reservations, linked system/cartridge sections, language slots/budget and execution domains are independently source-checked; none grants a guessed free arena or RAM isolation.",
+			"open": [
+				"Complete shared-device-buffer ownership/admission/lifetime route and required call/permission reference."
+			]
+		},
+		"registers": {
+			"resolution": "All four Memory-owned fault registers have exact byte address, access, full-word contents, code/flag values and explicit construction/clear words. Selected CPU status/cause/EXEC facts are not presented as the full COP0 reference.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Byte units, type/aggregate layout, static initializer limits, typed views, zero-based scaling, raw byte arithmetic, BE instructions versus LE data/records, scalar widths and exact worked storage are source-checked.",
+			"open": [
+				"Complete required function-call/dynamic-value/string-byte programming contracts or finished owning references."
+			]
+		},
+		"visibility": {
+			"resolution": "Generated startup versus EXEC/image selection, scalar alignment/readiness, immediate fault publication/ACK and F64 ordered partial completion are explicit and source-checked.",
+			"open": [
+				"Complete device capture-versus-live-read, completion/fault and buffer-reuse/overlap boundaries."
+			]
+		},
+		"timing": {
+			"resolution": "Installed33,868,800cycle timebase and selected scalar-memory/arithmetic/WIDE base charges are explicit; no source-expression duration or electrical bandwidth is inferred.",
+			"open": [
+				"Complete required instruction/access timing reference and cross-unit DMA budgets; record the software-defined limits rather than invent separate electrical bus clocks."
+			]
+		},
+		"interrupts": {
+			"resolution": "BIOS central mask0 handoff, CPU IE/user entry bits, synchronous access exceptions and independent CPU cause/IRQ/NMI bits are distinguished.",
+			"open": [
+				"Connect complete central interrupt setup and supervisor/handler programming to the newcomer route."
+			]
+		},
+		"faults": {
+			"resolution": "First-pending words versus new fault sequence, exact codes/ACCESS, nonzero ACK, alignment-before-map and faulting-load destination behavior pass source audit.",
+			"open": [
+				"Complete supervisor/handler privilege, reporting, return/retry or terminal-fault policy and an actual fault-inspection/recovery programming route."
+			]
+		},
+		"reset": {
+			"resolution": "System reset/startup, BIOS selection/handoff, arbitrary EXEC and repeated own DATA/BSS initialization are source-checked; no blanket RAM-zero or persistence promise is made.",
+			"open": [
+				"Establish the required inherited device/register/buffer state and corresponding cartridge initialization/ownership rules."
+			]
+		},
+		"programming": {
+			"resolution": "Complete32- and30-line typed BLua modules exactly match the ordinary cartridge; full validation and its integration case pass initial DATA/BSS, all layouts/relative addresses/words/padding and final status.",
+			"open": [
+				"Complete public packaging/launch/inspection workflow or a finished programming-guide reference, shared-device-buffer use and whole-reader acceptance."
+			]
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/memory-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/memory-source.md"
+		},
+		"print": {
+			"passed": false,
+			"report": "docs/book1/reviews/memory-print.md"
+		}
+	}
+}

@@ -220,6 +220,41 @@ architecture document or an invented stack/heap layout.
 10. Hardware-shared buffers, admission and lifetime, with device cross-references.
 11. A complete executable cartridge start explaining every reserved location used.
 
+**Working manuscript progress:** [Memory and program storage](../book1/memory.md)
+now exists as a catalogued **DRAFT**, not a published/complete foundation.
+Separate authors supplied map, reservation/placement/startup and typed-BLua
+sections; nonauthors checked their exact claims against primary owners. The
+complete two-module memory-only program is printed, independently validated
+and executed with the ordinary guest case. It uses actual linked DATA/BSS/
+RODATA, typed scalar views and a single count constant, not guessed RAM or
+a Lua register-table facade. See [the manuscript review](../book1/reviews/memory-source.md)
+for the bounded evidence and remaining route gaps. The separate
+[typed-storage](../book1/facts/memory-storage.md),
+[fault-interface](../book1/facts/memory-faults.md) and
+[worked-example](../book1/facts/memory-example.md) sheets extend, rather than
+replace, the original ownership-specific extracts. No new publishing layer
+or runtime/compiler/firmware change was added.
+
+The worked program also exposed a concrete newcomer teaching boundary:
+named-static-array `#` support is not an accepted constant-module export
+expression. The accepted representation uses one numeric const for both
+dimensions and its exported count. Keep this distinction in the BLua teaching
+contract; do not silently fix the compiler or replace it with ordinary Lua.
+Public project packaging, entry/launch and memory-inspection instructions still
+need their owning development-workflow source/guide, not an invented API or
+permission to reverse-engineer the example.
+
+**VRAM reservation continuation:** BM36 already identifies the exported
+`gpu/system_vram_region` function. Its remaining narrow source route is
+`machine/bios/tty/layout.lua`, `toolchain/ts/rompack/system_texture.ts`,
+`scripts/rompacker/rombuilder.ts` (system atlas generation/upload), and
+`toolchain/ts/rompack/gp0_encode.ts`, beside the paired VRAM leaf. Audit the
+actual packed upload extent and returned rectangle before writing numerical
+bounds: atlas maximum dimensions are not automatically its emitted dimensions.
+The API's returned region must not silently become an unaudited lifetime,
+redraw, ownership-release or permission guarantee. This is a next extraction
+lead, not acceptance of a new public reservation contract.
+
 Do not substitute a language value-slot stack or a logical heap accounting
 budget for a byte-addressed RAM allocation. Do not infer free-memory rights
 from mapped read/write access, or DATA/BSS initialization from arbitrary EXEC:

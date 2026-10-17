@@ -1,4 +1,11 @@
 {
+	"memory": {
+		"book": "I",
+		"label": "MEMORY",
+		"chapter": "docs/book1/memory.md",
+		"facts": "docs/book1/facts/memory-map.md",
+		"review": "docs/book1/reviews/memory.json"
+	},
 	"pcrtc": {
 		"book": "I",
 		"label": "PCRTC",

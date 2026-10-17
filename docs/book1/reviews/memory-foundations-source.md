@@ -1,8 +1,10 @@
 # Memory foundations: preliminary source review
 
 2026-10-17. **Bounded source acceptance, not chapter/publication approval.**
-No public foundations chapter or new catalog entry is claimed. The full
-newcomer programming route and the gaps listed in each extract remain open.
+The initial source freeze did not approve a public foundations chapter. A
+subsequent working manuscript and catalog entry are tracked separately in
+[the draft source review](memory-source.md); publication remains blocked. The
+full newcomer programming route and the gaps listed in each extract remain open.
 No architecture document or reference PDF supplied hardware facts.
 
 ## Separately extracted and independently audited scopes
@@ -31,7 +33,7 @@ No architecture document or reference PDF supplied hardware facts.
   RAM writes. The corrected bounded claims pass; complete reboot persistence
   and all entry-time byte contents remain explicitly unproved.
 
-Every retained fact names its primary source lines. The three files preserve
+Every retained fact names its primary source lines. The original three files preserve
 separate ownership/scope limits so an author can receive only the relevant
 paragraph's facts. Their persistence adds no facts, validation manifest, schema,
 publication gate, runtime helper or executable code. The map extract's temporary
@@ -96,3 +98,64 @@ no new or overbroad claim was found. Evidence:
 
 This final check accepts copied facts/report scope only. It is not another
 live-source refresh or public chapter/print/programming-route approval.
+
+## Typed static-storage extension
+
+[The separate BS01–BS24 extract](../facts/memory-storage.md) now freezes actual
+BLua declaration spelling, primitive/aggregate layout, initializer limits,
+linked-address views, zero-based element scaling, byte arithmetic and existing
+BIOS precedents. An independent auditor read the actual parser/compiler/linker,
+paired access-kind/displaced-scalar CPU sources and cited BIOS code. The
+corrected bounded 24 claims pass; this is not a complete language/call/string
+ABI, whole-runtime parity, shared-buffer reuse or execution result.
+
+BS24 originally called the later GPU IRQ wait “GPU processing completion”. The
+source proves only the specific appended IRQ and subsequent poll/ack, not
+whole-unit idle, presentation or general buffer permission. The extract now
+uses that narrower wording, cites the actual command encoder, and explicitly
+labels firmware source precedents as distinct from a cartridge-callable export
+contract. All remaining gaps are retained. Evidence:
+`/tmp/bmsx-blua-memory-storage-source-audit.md` (including resolved final
+disposition). The public foundations draft is tracked separately in
+[memory-source.md](memory-source.md); no complete-chapter/publication approval
+follows from persisting these facts.
+
+## Bus-fault interface and ordinary scalar extension
+
+[BF01–BF41](../facts/memory-faults.md) separately cover the four bus-fault
+registers, numerical codes/ACCESS flags, first-pending latch versus internal
+sequence, any-nonzero ACK, mapped scalar widths and ordinary CPU scalar
+alignment/exception invocation. Root independently checked every numbered
+claim against the paired spec/Memory/CPU source scope and separately evaluated
+the actual four address constants in both languages; the bounded claims pass.
+Evidence: `/tmp/bmsx-bus-fault-interface-source-review.md`.
+
+The lower mapped access rule is not substituted for the earlier CPU alignment
+check. Returning zero from a faulting Memory read is not a guest-load result:
+the ordinary CPU load takes data-bus exception before assigning its destination.
+F64's two-word write has no invented rollback. Construction/clear words and
+Memory's three saved fault fields do not establish all reset/save-state or
+handler behavior. Full handler/recovery ABI, fetch/other instruction forms,
+DMA, unrelated device faults and timing remain the explicit separate scopes.
+No executable fault/recovery example or runtime repair is claimed.
+
+## Execution addressing and nominal scalar costs
+
+[EF01–EF10](../facts/memory-execution.md) freeze a separately bounded paired
+instruction-format/domain/fetch/function-record scope and narrow instruction
+base costs. A nonauthor read all named primary ranges, including actual
+installed-model producers, and accepted the corrected claims. EF10 originally
+said all ordinary scalar instructions cost two cycles; the actual source says
+scalar **memory** instructions have that base, while ADD/SUB/MUL have base one.
+The extractor corrected only that heading and extended its MUL source range.
+The auditor rechecked the exact final copy and direct LE-descriptor/frame-PC
+citations: `/tmp/bmsx-memory-execution-source-review.md`.
+
+The installed 33,868,800 cycle timebase and nominal instruction charges are
+not invented RAM/ROM/VRAM electrical clocks, byte bandwidth, source-expression
+costs or full scheduler/device timing. BE instruction words and LE data/record
+words remain distinct. Domain selection versus ambient-image fallback does
+not prove a universal executable/NX-region table or RAM program ABI. Original
+PC fetch faults, decode versus cached dispatch, and all excluded PC-overflow,
+coherency, arbitrary-call and handler scopes remain explicit. No runtime change
+or full CPU ISA/completeness/publication approval follows.
