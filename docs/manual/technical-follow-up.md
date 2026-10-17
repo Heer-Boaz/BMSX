@@ -564,3 +564,70 @@ without reverse engineering. Complete CPU instruction/timing and on-console
 source-loading/environment contracts, remaining graphics contrasts and Book II
 remain work; one correct SYSTEM chapter cannot close them. Source/reader/actual
 PDF decisions for this chapter are recorded separately in its review files.
+
+## CPU instruction reference and executable numerical route
+
+The new CPU draft separates ordinary values from numeric scalar transfers and
+contains all64 opcode identities in numeric/value, call/object and memory/
+control families. Three nonoverlapping authors wrote from separate live paired
+facts; the source-operator addendum comes from the owning ordinary cartridge
+lexer/parser/compiler, not stock Lua assumptions. The complete two-module
+`cpu_manual` cartridge uses typed BSS, actual BIOS `print`, f64/f32/word/byte
+views, calls and a surviving mutable capture. Its26 retained observations pass;
+ordinary playback separately emits the documented three lines. Twelve raw
+paired CPU programs additionally produce13 identical value/charge rows. These
+are bounded execution facts, not native execution of that cartridge, every
+instruction, physical throughput or complete on-console source loading.
+
+**Do not close publication by narrowing away these source disagreements:**
+
+- **LOADKR exceptional index boundary:** TS Number(B) is passed unchanged to
+  typed constant-array indexing (`machine/ts/machine/cpu/cpu.ts:2802–2809,
+  3517–3529`); native first casts to size_t
+  (`machine/cpp/machine/cpu/cpu_dispatch.inl:719–721`). Existing nonnegative
+  integral pool indices agree. A common coercion/fault contract for other
+  representable values has not been established.
+- **LOADNIL zero-count frame top:** TS performs an empty loop and does not
+  change top (`cpu.ts:2337–2341`); native always raises top to at least A+B,
+  also for B0 (`cpu_dispatch.inl:16–21`). Both write no values, but a following
+  open-argument/return operation cannot be given a common top guarantee from
+  these two bodies. Ordinary producer reachability is not proved absent:
+  compiler `emitLoadNil` emits LOADNIL for every count except1
+  (`toolchain/ts/lua/compiler.ts:3132–3138`); checking that helper alone is not
+  an audit of its callers.
+- **Scalar C outside0..5:** the six-entry alignment table and scalar switch
+  do not define a common machine result. TS directly indexes an absent entry
+  and has no scalar switch default (`cpu.ts:2996–3002,3026–3045,3052–3077,
+  3082–3114,3119–3149`); native has unchecked array access and unreachable
+  LOAD switch tail (`cpu_dispatch.inl:556,562–569,581,591–598,623,629–636,
+  648,658–665`). Do not invent a reserved-kind trap, no-op, zero result or
+  fallback. Counted-store C is a word count and is not this scalar-kind case.
+- **Top-of-address-space sequential/skip PC:** TS adds full byte width as an
+  ordinary Number (`cpu.ts:1842–1854,1994–2004`); native adds to u32
+  (`cpu.cpp:1008–1017,2465–2479`). Branch-target decode explicitly wraps in
+  both. A universal modulo32 sequential/skip PC claim is withheld pending the
+  owning-boundary audit, not inferred from the branch contract.
+- **maxStack0 clearing** and **simultaneous requested yield/HALT precedence**
+  retain their already recorded exact paired locations above. No reachability,
+  visible effect or intended common repair is invented here.
+
+These are specific owner/spec decisions, not style complaints or a reason to
+rewrite the interpreter during documentation work. The instruction reference
+uses proven common domains and records the open contracts separately. Source,
+public-reader and actual-PDF reviews are separate records; a green build does
+not silently approve any of these stopped claims. Complete BIOS signatures,
+on-console source loading/environment and whole-console connected workflows
+remain separate manual work, together with the earlier graphical contrasts
+and Book II socket/card hardware.
+
+**Next CPU reference paragraphs, independent of those six owner decisions:**
+extract the complete central finite Number text precision/notation/rounding
+contract, complete POW signed-zero/infinite-base outcomes, and Table key/
+missing-key/mutation-derived length rules. Current opcode prose deliberately
+stops at the verified bounded facts; a helper name or generic Lua/IEEE folklore
+does not finish those operation references. Complete builtin/protected-call/
+coroutine and installed BIOS/on-console environment signatures/routes also
+remain separate reference work. These coverage gaps are retained explicitly;
+the working numerical example and all64 named identities are not claimed as
+full CPU or language acceptance. Continue these ordinary source-extraction
+tasks without inventing a runtime fix for the six unrelated paired conflicts.

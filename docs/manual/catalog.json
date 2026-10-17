@@ -1,4 +1,11 @@
 {
+	"cpu": {
+		"book": "I",
+		"label": "CPU",
+		"chapter": "docs/book1/cpu.md",
+		"facts": "docs/book1/facts/cpu.md",
+		"review": "docs/book1/reviews/cpu.json"
+	},
 	"memory": {
 		"book": "I",
 		"label": "MEMORY",
