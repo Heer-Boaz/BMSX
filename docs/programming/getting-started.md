@@ -272,3 +272,45 @@ The build prepares the matching BIOS automatically. The expected case-result lin
 The case waits for `completed` to become 1, checks the structure size, and checks all 35 retained word observations against the chapter's result table. It runs on a fresh target with initialized BSS and installed library globals. It compiles a **derived integration image** containing the complete ordinary entry and the assertion fixture; it is not byte-for-byte playback of the ordinary cartridge ROM. Absolute linked addresses can therefore differ between those images.
 
 These commands and the reported result were checked on the current checkout. The system-VRAM result words describe its installed BIOS reservation, not a permanent layout promise. This check establishes the retained results for this headless execution; it does not establish native/backend parity, visible output, arbitrary dynamic-loader equivalence or a complete language-fault recovery contract.
+
+## Check raw input and software edges
+
+The [complete input sampling program](../book1/input.md#complete-input-sampling-program) is supplied as these project files:
+
+- `carts/input_manual/results.lua` — complete 25-line constant result module;
+- `carts/input_manual/cart.lua` — complete 62-line cartridge entry;
+- `carts/input_manual/res/manifest/manifest.rommanifest` — cartridge manifest;
+- `tests/carts/input_manual/input_manual_assert.lua` — retained-result integration check.
+
+The manifest is:
+
+```yaml
+title: Input Controller Manual
+hardware:
+    - type: rom
+```
+
+Run the commands from the repository root. If the headless tooling product has not been built, build it first:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+```
+
+Build the cartridge, then run its integration check:
+
+```sh
+npm run build:toolchain:cart -- input_manual --debug
+npm run headless:test -- input_manual tests/carts/input_manual/input_manual_assert.lua
+```
+
+The cartridge build handles its matching BIOS automatically. A successful check prints:
+
+```text
+[test] latched_levels_and_software_edges: passed
+```
+
+The check starts a fresh target with the ordinary entry plus a fixture in a derived integration image; it is not byte-identical playback of the ordinary cartridge image, and absolute addresses may differ. The fixture controls case-owned keyboard and pad input through the ordinary input sampling path. It does not write the sampled input registers or force a latch.
+
+The retained-result checks cover the 204-byte result layout; initially zero keyboard, pointer, pad and rumble-support observations; a KeyA press with mask `10H`; a held KeyA without a repeated press; separate first-pad A press and release with bit 0; and a KeyA release retaining `last_release = 10H`. The final completed observation has different before/after sample sequences and one KeyA press and release counted.
+
+This checks the specified keyboard/pad levels and software edges. It does not inspect all 51 words at every instant or establish physical attachment timing, pointer calibration, visible output or vibration behavior.

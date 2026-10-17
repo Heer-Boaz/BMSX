@@ -17,8 +17,8 @@ replays; see [its source review](../book1/reviews/geo-source.md). This closes th
 missing GEO chapter assignment below, not the broad technical audit or the real
 graphics-output illustrations. IMGDEC now also has a separately extracted,
 reviewed owner chapter and executed four-job BLua cartridge; see
-[its source review](../book1/reviews/imgdec-source.md). Input is the next unit
-assignment; its initial output-precision question is recorded below. The GEO
+[its source review](../book1/reviews/imgdec-source.md). INPUT now has a separately authored, source-checked raw-interface draft; its
+attachment and output-precision questions remain recorded below. The GEO
 scene/overlay and complete memory-foundation requirements remain open.
 
 ## What is already explicit, versus what still needs a paragraph
@@ -468,3 +468,56 @@ on-console loading/environment, CPU instruction/timing, privileged context,
 interrupt setup, inherited-device or recovery contracts. Those remain
 paragraph/reference assignments under the reader acceptance target above;
 passing this example is not whole-console acceptance.
+
+## INPUT: raw interface and attachment boundaries
+
+The new INPUT draft now covers all 47 mapped words, one-shot ARM/STATUS
+sampling, read-only snapshot storage, HID/pad/pointer bit layouts, signed
+16.16 words and the independent output request. A complete ordinary BLua
+program copies all 41 sampled words before re-arming and derives keyboard
+edges from retained levels. Its derived integration case passes for held and
+released KeyA and separate first-pad A; six TS owner cases and the rebuilt
+native target's three checks pass separately. These are bounded execution
+results, not physical peripheral timing, native execution of the new cartridge
+or whole-console acceptance. Final source/reader/actual-page decisions are
+recorded in the INPUT review files, not inferred from these tests.
+
+The baseline output-precision note above now has a narrow receiver audit.
+Native Libretro clamps decoded intensity before its 16-bit motor strength
+(`hosts/libretro/input.cpp:557–580`); the TS common route forwards unchanged
+(`hosts/common/input/manager.ts:206–212`,
+`hosts/common/input/player.ts:56–60`, `hosts/common/input/gamepad.ts:221–222`). Existing browser routes forward magnitudes or multiply
+duration by intensity (`hosts/browser/input.ts:76–95`,
+`hosts/browser/onscreen_gamepad.ts:154–155`). Thus the FFFFFFFFH decoder
+precision difference is masked on the inspected native path, not proved
+unobservable everywhere. No physical output or intended common saturation
+rule is inferred. Raw 00000000H–00010000H request values decode exactly and
+identically; the full-word output representation remains a separate owner task.
+
+Further source-defined attachment gaps are now explicit:
+
+- Common pointer origin, display transform and scale are not established:
+  browser forwards client coordinates (`hosts/browser/input.ts:448–458`),
+  whereas native maps/clamps to viewport extents
+  (`hosts/libretro/input.cpp:126–131,289–303,355–372`).
+- Wheel source quantities differ: browser deltaY (`hosts/browser/input.ts:580–590`) versus
+  native down-minus-up counts (`hosts/libretro/input.cpp:371–375`). The raw
+  retained word is not an accumulator over skipped ICU samples.
+- The raw latch does not define common stick calibration/dead zones, trigger
+  actuation or continuous analog-trigger refresh. The inspected native path
+  normalizes sticks and supplies digital trigger values, while the browser
+  path forwards axes and reports trigger values on pressed/released changes
+  (`hosts/libretro/input.cpp:120–124,217–240,260–270`;
+  `hosts/browser/input.ts:104–141`).
+- The central signed Q16 decoder also has different numeric precision
+  (`machine/ts/machine/common/numeric.ts:43–45` versus
+  `machine/cpp/machine/common/numeric.h:46–48`). That is not a change to the
+  raw signed16.16 format: INPUT copies those bits directly. Do not teach an
+  exact shared full-word helper-result ABI or infer a guest-visible
+  calibration outcome without auditing its actual consumer.
+
+Keep these contracts open in the coverage record. None authorizes a runtime
+repair, new input facade, clamp, fallback or invented physical guarantee in
+this documentation slice. The requested GEO dummy-game/sprite/hull plates,
+remaining installed CPU/system contracts and Book II are still whole-manual
+work.

@@ -61,5 +61,12 @@
 		"chapter": "docs/book1/imgdec.md",
 		"facts": "docs/book1/facts/imgdec.md",
 		"review": "docs/book1/reviews/imgdec.json"
+	},
+	"input": {
+		"book": "I",
+		"label": "INPUT",
+		"chapter": "docs/book1/input.md",
+		"facts": "docs/book1/facts/input.md",
+		"review": "docs/book1/reviews/input.json"
 	}
 }

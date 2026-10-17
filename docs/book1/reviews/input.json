@@ -1,0 +1,58 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "47 mapped words, 41 sampled words and separate immediate output path are extracted; raw sampling owner is distinct from cartlib action/evaluation ownership.",
+			"open": [
+				"Establish common attachment pointer-coordinate/wheel-unit and pad calibration/trigger-update contracts; full supervisor/inherited sampling policy remains shared-system work."
+			]
+		},
+		"registers": {
+			"resolution": "All 47 words have grouped addresses or exact base/offset formulas, access, fullword semantics and zero reset words; unknown bits remain retained, command words are exact equality tests.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "HID bitmap/name table, pad/pointer bits, signed 16.16 and exact common output intensity interval are explicit; word representations are not physical calibration promises.",
+			"open": [
+				"Resolve arbitrary full-word output intensity precision/receiver semantics; do not invent common saturation or physical-output behavior."
+			]
+		},
+		"visibility": {
+			"resolution": "One-shot ARM, STATUS publication after the full retained sample, stable unarmed reads, reset/control readback, and immediate output APPLY are distinct.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "PCRTC VBlank-begin invokes optional sample before central VBlank raise. No independent Input oscillator, sample transfer charge, electrical bandwidth or fixed delivery delay is inferred.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Owned central VBlank setup and IRQ acknowledgement are shown; STATUS, not coalesced pending flags or CTRL readback, establishes sample completion. No input/output-complete source is invented.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Mapped writes to read-only sampled/status words raise shared READ_ONLY code 3; unknown command words have their actual nonaction behavior, not a speculative fault.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "CTRL RESET and full unit reset are distinguished; sampled data/output parameters clear, but register reset does not send physical stop/cancellation.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete 25-line const and 62-line entry use real BLua with caller-owned BSS; executed derived integration case checks snapshot/keyboard held/released/pad transitions. Six TS owner cases and one native target containing three checks pass separately. A separate public-only reader accepts the complete raw-input route and exact project/manifest/build/result instructions; calculated transition table and actual retained assertions remain distinct.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/input-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/input-source.md"
+		},
+		"print": {
+			"passed": false,
+			"report": "docs/book1/reviews/input-print.md"
+		}
+	}
+}
