@@ -1233,3 +1233,28 @@ fff00000/80000000/7fffffff give counts32/32/20/12/1/1. A preloaded FLAG00400000
 remains unchanged through all these accesses. Count-minus-one headroom for a
 nonzero signed32 value is a software arithmetic consequence of counting its
 leading sign bits, not automatic normalization. C++ was source-inspected only.
+
+### Captured output plates for the complete BLua cartridge
+
+These are execution/image facts for the complete cartridge, not another GTE
+operation or a replacement for the software-authoritative arithmetic above.
+The plate author received only a bounded frozen sheet; a nonauthor independently
+checked the final captions against the actual source, assertions and PNGs.
+No architecture document or historical PDF supplied these facts.
+
+| ID | Fact | Source |
+|---|---|---|
+| GOP01 | The complete program's model-to-view and both lighting matrices are Q12 identity, ambient zero, initial translation zero, H256 and offsets128/96 in Q16. Positions are(-64,-64,512),(64,-64,512),(0,64,512); lighting directions are(4096,0,0),(0,4096,0),(0,0,4096). Input RGB is004080a0; RTPT uses shift12 and NCCT shift12/positiveLM. | `carts/gte_manual/cart.lua:18–55,71–88,106–123`; named flags `cartlib/gx/gte.lua:48–49`. |
+| GOP02 | Initial asserted SXY words00400060/004000a0/00800080 give(96,64),(160,64),(128,128); RGB words000000a0/00008000/00400000 and MAC01000/FLAG0 are asserted before the first capture. | `tests/carts/gte_manual/gte_manual_assert.lua:51–61`. |
+| GOP03 | The next captured pose has raw TRX32, asserted SXY00400070/004000b0/00800090: each projected X increases16 and Y is unchanged. This is a settings-specific result, not a universal translation scale. | `carts/gte_manual/cart.lua:106`; `tests/carts/gte_manual/gte_manual_assert.lua:62–70`. |
+| GOP04 | The two committed plates are byte-for-byte copies of the ordinary runner's initial/translated captures. Each is a complete256×192 RGBA display image, not a cropped or synthesized triangle. The reversed-winding mutation happens after both captures. | `figures/gte-output-initial.png` ← `tests/carts/gte_manual/screenshots/frame_00001.png`; `figures/gte-output-translated.png` ← `frame_00002.png`; capture order `tests/carts/gte_manual/gte_manual_assert.lua:51–79`. |
+| GOP05 | Both actual images were individually viewed. They show a black field and one gradient triangle, red upper-left, green upper-right, blue bottom. Independent decoded-RGBA comparison finds the second equals the first shifted16 pixels right, with opaque black filling the left strip; zero differing channel bytes. This is evidence about these captures, not other backends or a coverage/interpolation rule. | Both committed PNGs above; producer per-vertex RGB/XY packet `carts/gte_manual/cart.lua:119–129`; initial RGB assertions `tests/carts/gte_manual/gte_manual_assert.lua:56–58`. |
+| GOP06 | GTE coordinate and colour results precede the six-word GP0 submission; no interior pixels are obtained from GTE registers. The cartridge separately programs its framebuffer/PMODE and waits for its VBlank sequence. Captures do not specify atomic register/pixel snapshots or physical publication latency. | `carts/gte_manual/cart.lua:107–141`; preceding capture predicates `tests/carts/gte_manual/gte_manual_assert.lua:51–70`; existing paired GPU/PCRTC ownership ranges in the executable-operand facts above. |
+
+Fresh ordinary cart build and both existing guest cases passed on2026-10-17.
+The printed eight-part complete program matches `carts/gte_manual/cart.lua`
+apart from indentation and blank lines. No cart, BIOS, compiler, runtime or
+capture implementation was changed for these plates. This is headless guest
+execution/scanout, not native guest or physical-hardware proof. The standalone
+solid-red worked continuation earlier in the chapter is a different example;
+these plates belong only to the complete NCCT cartridge section.

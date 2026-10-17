@@ -1,14 +1,16 @@
 # GTE print review
 
-Approved for the reviewed expanded chapter. Facts, arithmetic and figure
-semantics are recorded separately in [gte-source.md](gte-source.md).
+Approved for the expanded chapter with the two actual output plates. Facts,
+arithmetic and figure semantics are recorded separately in [gte-source.md](gte-source.md).
 Page count is inspection scope, not evidence of instructional completeness.
 
 Engine: Chromium153.0.8010.12, Nodev22.23.1, Linuxx64. PDF inspection used the
-existing PDFium environment, with readable individual renders and contact sheets.
-The shared stylesheet, fonts and publisher are unchanged.
+existing PDFium environment. The current output-plate review below supersedes
+the original page and figure counts; the earlier evidence remains a baseline.
 
-## Actual PDF inspection
+## Original expanded chapter inspection (before output plates)
+
+At this baseline, the shared stylesheet, fonts and publisher were unchanged.
 
 The final draft and publish-mode release proof each contain120 pages. The release
 proof was rendered by the existing shared `renderChapter` to
@@ -50,6 +52,63 @@ whole register groups is accepted rather than shrinking type or splitting fields
 - Internal paragraph labels were replaced by explicit command inputs or a named
   link. The resulting page-break changes received the release inspection above.
 
+## Actual output plates and final print review — 2026-10-17
+
+The current publication-mode proof has 123 pages, six figures (four SVGs and
+two unmodified 256×192 captures), 13 register groups and no reported layout
+errors. It was rendered through the ordinary shared publisher to
+`/tmp/bmsx-gte-output-proof/gte.pdf`. The previous canonical 120-page artifact
+was not substituted for this proof. PNG support changes only binary image
+loading/output and image sizing; the typefaces and SVG presentation are unchanged.
+
+Three independent reviewers individually viewed all 121 pages of the initial
+plate proof at original raster detail, one page per image call: 1–40, 41–80 and
+81–121. Page 42 shows both complete NCCT frames, readable settings and results,
+and the GTE/GPU boundary. Page 43 explicitly starts the later finite register
+continuation rather than asking the reader to continue the infinite cartridge.
+
+The actual inspections found short table/equation introductions stranded by
+reflow. Existing authored `keep-together` groups now retain those introductions
+with their objects, not entire command sections. A missing blank after some
+closing group tags also exposed literal Markdown and one pipe-delimited table;
+correcting the manuscript whitespace restored ordinary parsing. The parsed
+151 tables, 743 rows and all code blocks remain identical to the pre-grouping
+inventory. No smaller fonts, parser repair, grouping helper or extra gate was
+introduced.
+
+The reviewers inspected the affected intermediate pages after each correction.
+Compared with the last individually reviewed grouped proof, the final correction
+changed 29 rasters. All 29 were individually reinspected in the final 123-page
+output, divided between the same three reviewers:
+
+- 73, 77–83, 85, 87;
+- 88, 90–91, 93, 96, 98–102;
+- 103–104, 109–110, 119–123.
+
+All three final scoped decisions are PASS. The other 94 final rasters are exactly
+identical to already individually inspected pages. Thus every final page has
+actual visual coverage or exact unchanged-raster carry-forward; the last edit
+was not followed by a claim that all 123 filenames were reopened. Reviewer
+reports are `/tmp/bmsx-gte-plate-print-001-040.md`,
+`/tmp/bmsx-gte-plate-print-041-080.md` and
+`/tmp/bmsx-gte-plate-print-081-121.md`. Final inspected rasters are in
+`/tmp/bmsx-gte-output-review-final/`.
+
+No clipping, literal Markdown, lost table, unreadable field, detached short
+object introduction, overlap or body/footer collision remains in the reviewed
+output. The new final appendix page 123 was individually inspected in full.
+This is print/layout approval, not a substitute for the independent source,
+image and reader reviews, nor closure of the broader illustrations backlog.
+
+The shared publisher's seven unchanged chapters were also republished through
+their normal gates. All 203 canonical page rasters match their approved final
+proofs exactly. Their individual print reports record this bounded revalidation.
+
+After normal `manual:check` and `manual:publish -- gte`, all 123 canonical
+`build/manual/gte.pdf` page rasters were independently rendered at the same
+1.4× scale and compared pixel-for-pixel with the final inspected set: all match
+exactly. The published artifact therefore has the reviewed content and layout.
+
 ## Reproduction
 
 ```sh
@@ -59,8 +118,8 @@ npm run manual:publish -- gte
 npm run test:manual
 ```
 
-Mechanical checks report4 figures,13 register groups and no overflow, oversized
-indivisible blocks or clipped SVG labels. All16 shared manual tests pass; they
+Mechanical checks report 6 figures, 13 register groups and no overflow, oversized
+indivisible blocks or clipped SVG labels. All 17 shared manual tests pass; they
 do not substitute for the visual/source/reader evidence. The canonical artifact
 is `build/manual/gte.pdf`; the separately generated preview retains its DRAFT
 banner/footer. The chapter continues to use the ordinary shared pipeline.

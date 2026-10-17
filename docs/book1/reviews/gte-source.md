@@ -153,3 +153,50 @@ specification decisions separately, these undefined physical guarantees are not
 filled with estimates and do not block this chapter's publication. Defining them
 would be a separate hardware-contract task, not editorial completion or a
 reason to invent Sony values.
+
+## Actual output plates — 2026-10-17
+
+The complete cartridge's initial and translated frames now have committed,
+unmodified 256×192 PNG assets. They are the NCCT per-vertex-colour program,
+not the separate solid-red register continuation. Both ordinary guest cases
+were freshly executed with current product/BIOS builds; each original image
+was individually viewed. The eight printed program parts still match the
+actual cartridge apart from indentation and blank lines.
+
+A bounded source/image extractor froze settings, capture predicates, geometry,
+colours and observed output. A fresh author used only that sheet. A nonauthor
+then checked every caption claim against the actual cartridge, existing test
+assertions and named GTE exports, viewed both images and independently compared
+all decoded RGBA samples. The translated image equals the first shifted exactly
+16 pixels right, including the unchanged gradient. No interpolation, coverage,
+photometric, backend-parity, atomic-capture or physical-timing rule was inferred.
+GOP01–06 in the fact sheet record the source and evidence boundaries.
+
+The final merged placement, captions, copied bytes and fact additions were
+independently rechecked: no failures. The subsequent translation example now
+explicitly continues the earlier finite RTPT→NCLIP→AVSZ3 register sequence,
+not the infinite cartridge above it. Its retained D[7]=1FFH and screen/depth
+histories agree with the existing facts and paired live GTE write sets. This
+clarification changes no address, arithmetic, result or hardware behavior.
+
+The existing publisher now reads figure bytes and emits ordinary embedded PNG
+images alongside its unchanged SVG path. An independent owner review found
+one real issue: literal Markdown/entity text reached PNG alternative text.
+The existing Marked text renderer and entities utilities now supply the
+correct attribute representation. A second independent check and the focused
+browser/PDF fixture pass, including emphasis, code, entities and quotes. Both
+actual GTE images decode at native size, fit the two-column table and appear
+as 256×192 PDF image objects with complete tagged alternative text. All 17
+manual tests pass; no review gate was weakened.
+
+All eight print reviews were reopened for the shared change. Before the plate
+insertion, fresh SVG-only publication proofs had all 323 page rasters identical
+to the old publisher's baseline. After the final alternative-text correction,
+the seven unchanged chapters' 203 rasters were compared again and remain
+identical. GTE's own complete actual-page review and pagination corrections
+are recorded separately in gte-print.md.
+
+No runtime, compiler, BIOS, cartlib, cartridge, test runner or capture framework
+was modified. Other graphical contrasts, the GPU material plate, PCRTC
+before/after output and GEO dummy-game/sprite/hull overlays remain open work;
+this pair does not complete the broader visual or technical audit.

@@ -9,6 +9,7 @@ import { coverageTopics, loadChapter, publicationFailures, repositoryRoot, revie
 import { chapterHtml, renderChapter } from '../../scripts/manual/render.mjs';
 
 const sampleFigure = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" role="img"><title>Fixture figure</title><text x="10" y="25">Fixture</text></svg>';
+const samplePng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAE0lEQVR4nGP4z8DAAMZAwICTAwBC8hHvOAjORwAAAABJRU5ErkJggg==', 'base64');
 const sampleChapter = `# Sample Unit
 
 ## Operation
@@ -51,6 +52,7 @@ async function fixture(t, chapterSource = sampleChapter) {
 		[entry.facts]: '# Fixture facts\n\nThe factual review is separate from printing.\n',
 		[entry.review]: JSON.stringify(review),
 		'docs/book2/figures/sample.svg': sampleFigure,
+		'docs/book2/figures/sample.png': samplePng,
 		'docs/book2/reviews/evidence.md': '# Synthetic review evidence\n\nOnly the test fixture is approved here.\n',
 	};
 	for (const [path, content] of Object.entries(files)) {
@@ -160,6 +162,37 @@ test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine
 	assert.doesNotMatch(await readFile(output.html, 'utf8'), /DRAFT/);
 });
 
+test('PNG figures retain binary pixels, authored alt text, print sizing, and PDF embedding beside SVG', async t => {
+	const alt = 'A red triangle & black "background"';
+	const root = await fixture(t, sampleChapter + '\n![A *red* triangle &amp; `black` "background"](figures/sample.png)\n');
+	const chapter = await loadChapter(root, 'sample');
+	assert.deepEqual(chapter.figures.get('figures/sample.png'), samplePng);
+	const output = await renderChapter(chapter, 'preview', join(root, 'build/manual'));
+	assert.deepEqual(output.layout, { figures: 2, registerEntries: 1, errors: [] });
+	const html = await readFile(output.html, 'utf8');
+	assert.match(html, /<img src="data:image\/png;base64,[^"]+" alt="A red triangle &amp; black &quot;background&quot;">/);
+	assert.match(html, /<svg xmlns=/);
+	assert.doesNotMatch(html, /<image[ >]|file:\/\//);
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	await page.setContent(html, { waitUntil: 'load' });
+	const image = await page.locator('.manual-figure img').evaluate(img => ({
+		complete: img.complete, width: img.naturalWidth, height: img.naturalHeight, alt: img.alt,
+		printedWidth: img.getBoundingClientRect().width, printedHeight: img.getBoundingClientRect().height,
+		rendering: getComputedStyle(img).imageRendering,
+	}));
+	assert.deepEqual({ complete: image.complete, width: image.width, height: image.height, alt: image.alt },
+		{ complete: true, width: 4, height: 3, alt });
+	assert.ok(Math.abs(image.printedWidth - 128 * 96 / 25.4) < 1);
+	assert.ok(Math.abs(image.printedHeight / image.printedWidth - 3 / 4) < .001);
+	assert.equal(image.rendering, 'pixelated');
+	const pdf = (await readFile(output.pdf)).toString('latin1');
+	assert.match(pdf, /\/Subtype \/Image\s*\/Width 4\s*\/Height 3/);
+	chapter.stylesheet += '\n.manual-figure img { width: 200mm; max-width: none; }\n';
+	await assert.rejects(renderChapter(chapter, 'preview', join(root, 'build/overflow')), /Horizontal overflow: IMG/);
+});
+
 test('figures are not hardcoded to three and repeated figure uses remain valid', async t => {
 	for (const [name, markdown, count] of [
 		['no figures', '# No Figures\n\nOrdinary text.\n', 0],
@@ -240,6 +273,6 @@ test('GTE draft renders through the shared pipeline without chapter-specific too
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-gte-publication-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const output = await renderChapter(chapter, 'preview', directory);
-	assert.equal(output.layout.figures, 4);
+	assert.equal(output.layout.figures, 6);
 	assert.match(await readFile(output.html, 'utf8'), /DRAFT/);
 });

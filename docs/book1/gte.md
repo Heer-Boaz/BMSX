@@ -2178,11 +2178,32 @@ while true do
 end
 ```
 
+<div class="keep-together">
+
+### Output plate: NCCT vertex-colour triangle
+
+The example cartridge uses RTPT for projected coordinates, NCLIP for the winding result, and NCCT for three vertex colours. These plates show the complete 256 × 192 display images.
+
+| Initial placement: `TRX = 0` | Translated placement: `TRX = 32` |
+| :---: | :---: |
+| ![Complete 256 by 192 frame showing a red-green-blue gradient triangle on black](figures/gte-output-initial.png) | ![Complete 256 by 192 frame showing the same gradient triangle shifted sixteen pixels right](figures/gte-output-translated.png) |
+| **Initial output.** Projected vertices: `(96,64)`, `(160,64)`, `(128,128)`. | **Translated output.** Projected vertices: `(112,64)`, `(176,64)`, `(144,128)`. |
+
+**Source and settings.** The position vectors are `(-64,-64,512)`, `(64,-64,512)` and `(0,64,512)`. The rotation is Q12 identity; translation is initially zero. Projection uses `H = 256` and offsets `(128 << 16, 96 << 16)`. Both lighting matrices are Q12 identity, with zero ambient. NCCT receives lighting directions `(4096,0,0)`, `(0,4096,0)` and `(0,0,4096)`, and input RGB word `0x004080a0`. RTPT uses shift-by-12; NCCT uses shift-by-12 and positive LM.
+
+**Results.** At the initial placement, RGB0–RGB2 are `0x000000a0`, `0x00008000` and `0x00400000`. The visible triangle has red at upper left, green at upper right and blue at the bottom. Changing `TRX` from `0` to `32` moves all three projected vertices **16 pixels right**, with Y unchanged for these settings. The second image is the same visible gradient shifted exactly 16 pixels right.
+
+**GTE and display output.** The cartridge sends the GTE's three coordinate/colour pairs to GP0. The GTE supplies those vertex results, not the interior pixels. The plates show the subsequent display output, including the interior gradient; they do not specify the GPU's interpolation or edge-coverage rules.
+
+</div>
+
+<div class="keep-together">
+
 ## A further geometry sequence
 
 ### Translate before projection
 
-Continue from the completed triangle sequence without resetting. Keep its identity matrix, H=256, screen origin `(128,96)`, and zero DQA/DQB. Change the translation to `(32,−16,512)` and project the new V0 `(64,32,512)`:
+Run the earlier **Project a triangle, test its orientation, and form a depth value** register sequence, not the complete frame-loop cartridge above. Continue from that sequence's retained state without resetting. Keep its identity matrix, H=256, screen origin `(128,96)`, and zero DQA/DQB. Change the translation to `(32,−16,512)` and project the new V0 `(64,32,512)`:
 
 | Step | Address / register | Raw word | Meaning |
 |---|---|---|---|
@@ -2192,6 +2213,8 @@ Continue from the completed triangle sequence without resetting. Keep its identi
 | 4 | `0x08010244` — D[0] | `0x00200040` | V0.X=64, V0.Y=32 |
 | 5 | `0x08010248` — D[1] | `0x00000200` | V0.Z=512 |
 | 6 | `0x08010344` — COMMAND | `0x00080001` | RTPS, SF=1, LM=0 |
+
+</div>
 
 The transformed position is `(64+32,32−16,512+512)=(96,16,1024)`. The new quotient is `16384`, a factor of ¼. Thus the screen result is `(128+96/4,96+16/4)=(152,100)`. Translation does not add a fixed number of screen units: its X/Y displacement is subject to perspective, while its Z displacement changes the denominator.
 
@@ -3186,6 +3209,8 @@ Under an equal-scale depth convention, ZSF4 represents a numerical multiplier of
 
 All other stored state is preserved: SZ0–SZ3 themselves, all screen/color histories, vectors, IR0–IR3, MAC1–MAC3, coefficients including ZSF4, leading-sign ports and all PLUS state. Screen/packed-color aliases retain their prior read values. Save a previous command's FLAG before AVSZ4 replaces it; save OTZ/MAC0 before a later command overwrites those results.
 
+<div class="keep-together">
+
 **FLAG.**
 
 | Bit / mask | Set condition |
@@ -3194,6 +3219,8 @@ All other stored state is preserved: SZ0–SZ3 themselves, all screen/color hist
 | 15 / `0x00008000` — MAC0 negative overflow | Full product < −2147483648 |
 | 18 / `0x00040000` — depth saturation | Full product ASR12 < 0 or > 65535 |
 | 31 / `0x80000000` — ERROR | Any of these three conditions |
+
+</div>
 
 Exactly in-range endpoints do not set a flag. A negative ZSF4 is not itself an error: with a zero sum its product is zero, OTZ is zero and FLAG is clear. With a positive sum, even a small negative product can set depth saturation after the arithmetic shift. No MAC1–MAC3, IR, color, screen or divide flags are generated.
 
@@ -3428,6 +3455,8 @@ NCCS converts supplied V0 into three light responses, mixes those responses and 
 
 The four option words are `0x0000001b`, `0x0000041b`, `0x0008001b`, `0x0008041b` for SF/LM `(0,0)`, `(0,1)`, `(1,0)`, `(1,1)`. Bits 18:13 containing matrix/vector/control selectors are ignored: they cannot redirect this command from V0 or the two prescribed matrices. Bits 31:20, 12:11 and 9:6 are also ignored for execution and retained in COMMAND readback.
 
+<div class="keep-together">
+
 **INPUT.** D[n] is at `0x08010244+4n`; C[n] is at `0x080102c4+4n`. Use aligned whole-word register accesses.
 
 | Input | Raw representation |
@@ -3439,6 +3468,9 @@ The four option words are `0x0000001b`, `0x0000041b`, `0x0008001b`, `0x0008041b`
 | D[6] — RGBC | Unsigned R/G/B bytes in bits 7:0/15:8/23:16; CODE in 31:24 |
 | Old D[21], D[22] | Existing RGB1/RGB2 words retained by the one color-history push |
 
+
+</div>
+
 For either matrix, with base b=8 for L or b=16 for K, rows are `(lo(C[b]),hi(C[b]),lo(C[b+1]))`, `(hi(C[b+1]),lo(C[b+2]),hi(C[b+2]))`, `(lo(C[b+3]),hi(C[b+3]),lo(C[b+4]))`, where every half is signed two's complement. C[b+4]'s upper half is not another coefficient. Signed16 range is −32768…32767; ambient words are signed32. D[1], C[12] and C[20] sign-extend their low half on write/read.
 
 No value is taken from old IR1–IR3, IR0, far color, the geometric rotation/translation, H or screen offsets. V1/V2 are not processed. CODE is copied as a byte; it is not interpreted or applied as an extra color channel.
@@ -3446,6 +3478,8 @@ No value is taken from old IR1–IR3, IR0, far color, the geometric rotation/tra
 **Useful SF=1 lighting convention.** Supply normal components and L/K coefficients at 4096 counts per unit. L's outputs then remain Q12 directional responses. The color stage combines those responses with ambient B in Q12 gain units; gain4096 means unity. Modulation converts byte×gain to byte×16, and the color-output shift restores a byte. The unit neither normalizes V0 nor checks that the chosen rows represent normalized directions. Raw signed values outside that software convention still follow the arithmetic below.
 
 **Ordered calculation.** `ASR(x,k)` divides by `2^k`, rounding negative fractions toward minus infinity. Each matrix row begins at its stated initial value, adds X/Y/Z terms in that order, and wraps signed44 after every addition. A signed44 overflow condition is retained even if later terms cancel it. After a stage's full row result A_i, write `MAC_i=signed32(ASR(A_i,12×SF))`, then clamp that signed word to `[Lmin,32767]` for IR_i, where Lmin is −32768 for LM=0 or zero for LM=1.
+
+<div class="keep-together">
 
 1. **Light responses.** Sample signed `(nx,ny,nz)` from V0. For each row i=1…3:
 
@@ -3455,6 +3489,8 @@ No value is taken from old IR1–IR3, IR0, far color, the geometric rotation/tra
    ```
 
    Start each accumulation at zero. Finish the three rows from the original vector before publishing their IR results. These **clamped responses**, not their unclamped MAC words, become the next stage's inputs.
+
+</div>
 
 2. **Channel gains plus ambient.** Sample those three responses. For each color row i:
 
@@ -3484,6 +3520,8 @@ Preserved stored state includes V0–V2, RGBC, OTZ, IR0, MAC0, every screen/dept
 
 **FLAG.** Clear previous FLAG before the first matrix and accumulate conditions across all four stages. Signed44 positive/negative row overflow sets the corresponding MAC1/2/3 bits 30/29/28 or 27/26/25. An actual selected-LM IR clamp at **any** stage sets IR1/2/3 bits24/23/22. IR3 uses the ordinary selected-SF/LM clamp rule, not projection's special test. Final byte clamps set R/G/B bits21/20/19 (`0x00200000`, `0x00100000`, `0x00080000`). ERROR bit31 summarizes the MAC-overflow and IR1/IR2 bits; IR3 or color saturation alone does not set it. No depth, divide, screen, MAC0 or IR0 flags are generated. Legal endpoints do not set saturation.
 
+<div class="keep-together">
+
 **Non-identity worked lighting and material.** Program the following complete inputs. The normal is approximately `(0.6,0,0.8)` in Q12; one chosen light faces away from it.
 
 | Register(s) | Raw words |
@@ -3496,6 +3534,8 @@ Preserved stored state includes V0–V2, RGBC, OTZ, IR0, MAC0, every screen/dept
 | D[20]–D[22] — old FIFO | `0x11112222`, `0x33334444`, `0x55556666` |
 | COMMAND | `0x0008041b` — SF=1, LM=1 |
 
+</div>
+
 L rows are `(3072,0,2048)`, `(−2048,0,3072)`, `(0,0,−4096)`. Their unshifted sums are `(14262272,5032960,−13422592)`, yielding MAC `(3482,1228,−3277)` and IR `(3482,1228,0)`. The last clamp sets IR3 saturation.
 
 K rows are `(4096,1024,0)`, `(2048,4096,0)`, `(1024,2048,4096)`. With ambient `(256,512,128)`, their full sums become `(16568320,14258176,6604800)` and gains become `(4045,3481,1612)`. The blue sum represents 1612.5 and truncates to 1612.
@@ -3503,6 +3543,8 @@ K rows are `(4096,1024,0)`, `(2048,4096,0)`, `(1024,2048,4096)`. With ambient `(
 Material products are `(10355200,5346816,4952064)`. Their fixed12 shifts give final MAC/IR `(2528,1305,1209)`, raw `0x000009e0`, `0x00000519`, `0x000004b9`. Fixed4 color conversion produces `(158,81,75)`.
 
 Final FIFO is `0x33334444`, `0x55556666`, **`0x344b519e`**. FLAG is `0x00400000`, retaining the earlier negative light-response clamp even though final IR3 is positive; ERROR is clear. CYCLES reads 17. With the same setup but a zero normal, ambient survives: final RGB2 is `0x34060c0a` — RGB `(10,12,6)` — and FLAG is zero.
+
+<div class="keep-together">
 
 **Options change intermediate values, not just the final sign.** Restore the original normal/material before each row:
 
@@ -3512,6 +3554,9 @@ Final FIFO is `0x33334444`, `0x55556666`, **`0x344b519e`**. FLAG is `0x00400000`
 | 1/0 | `(2528,1305,−1249)` | Same | `0x3400519e` | `0x00080000` — blue byte saturation only |
 | 0/1 | `(83883520,50330112,100660224)` | `(32767,32767,32767)` | `0x34ffffff` | `0x81f80000` |
 | 0/0 | `(83883520,50330112,−100663296)` | `(32767,32767,−32768)` | `0x3400ffff` | `0x81f80000` |
+
+
+</div>
 
 With LM=0 the back-facing negative response survives into color mixing; it is not replaced by the LM=1 blue gain. With SF=0, every matrix and modulation stage omits its shift, saturating IRs and final bytes in this setup. Neither setting is a substitute for choosing the input/output scales correctly.
 
@@ -3579,6 +3624,8 @@ by itself. Endpoints are legal; flags survive later in-range calculations.
 No MAC0, depth, divide, screen or IR0 stage runs. Preserve a needed batch FLAG
 before another command, and colors before later pushes displace them.
 
+<div class="keep-together">
+
 **Worked three-result lifetime.** Program L rows `(3072,0,2048)`,
 `(−2048,0,3072)`, `(0,0,−4096)` and K rows `(4096,1024,0)`,
 `(2048,4096,0)`, `(1024,2048,4096)`. Set ambient `(256,512,128)`
@@ -3591,6 +3638,9 @@ N0=(2458,0,3277), N1=(4096,0,0), N2=(0,0,0); their raw vector words are
 | V0 | (3482,1228,0) | (4045,3481,1612) | (2528,1305,1209) | 344b519e |
 | V1 | (3072,0,0) | (3328,2048,896) | (2080,768,672) | 342a3082 |
 | V2 | (0,0,0) | (256,512,128) | (160,192,96) | 34060c0a |
+
+
+</div>
 
 Starting with any RGB history `(A,B,C)`, the pushes leave `(B,C,color0)`, then
 `(C,color0,color1)`, then the three listed colors. The zero final normal still
@@ -3635,6 +3685,8 @@ are ignored for execution and retained in COMMAND readback. The zero-filled
 option words are `0x00000013`, `0x00000413`, `0x00080013` and `0x00080413`
 for SF/LM 0/0, 0/1, 1/0 and 1/1. SF=0 is not the same blend with extra precision.
 
+<div class="keep-together">
+
 **Inputs and representations.**
 
 | Input | Representation and role |
@@ -3646,6 +3698,9 @@ for SF/LM 0/0, 0/1, 1/0 and 1/1. SF=0 is not the same blend with extra precision
 | RGBC, D[6] | Unsigned R/G/B bytes and CODE high byte |
 | IR0, D[8] | Signed low-halfword cue coefficient; not automatically clamped on input |
 | C[21]–C[23] | Signed32 far red/green/blue components |
+
+
+</div>
 
 With SF=1 and Q12 matrices/normal, the matrices can produce Q12 channel gains:
 4096 is unit modulation gain. For ordinary color output the far vector is
@@ -3665,6 +3720,9 @@ coefficient belonging to this color; NCDS does not derive one from a depth.
    the same wrap/shift/IR rules. The resulting IR values are the channel gains.
 3. Form all three unshifted products `P_i=16×RGBC.byte_i×signed IR_i`.
    **Do not first shift, clamp or push a separate base-color result.**
+
+<div class="keep-together">
+
 4. Compute all three temporary differences:
 
    ```text
@@ -3674,6 +3732,9 @@ coefficient belonging to this color; NCDS does not derive one from a depth.
    Each difference updates MAC and flags; its clamp does not replace the IR
    register words. Signed-44 overflow is tested on the raw difference before
    wrapping. This pass permits a negative difference even with LM=1.
+
+</div>
+
 5. For each channel, form `P_i+signed IR0×D_i`, test/wrap that full sum to
    signed44, shift by s and expose its signed32 MAC word. Write selected-clamped
    IR from that MAC result. The original P terms, not shifted approximations
@@ -3710,6 +3771,8 @@ and far words `(0x00000500,0x00000600,0x00000a00)`. Thus the supplied normal
 is `(2458,0,3277)`, base RGB is `(160,96,192)`, and far RGB is `(80,96,160)`.
 Issue `0x00080413` (SF=1, LM=1).
 
+<div class="keep-together">
+
 The limited light responses are `(3482,1228,0)` and the channel gains are
 `(4045,3481,1612)`. The cue stages proceed as follows:
 
@@ -3718,6 +3781,9 @@ The limited light responses are `(3482,1228,0)` and the channel gains are
 | Red | 10355200 | −1249 | −1249 | 1903 | 118 |
 | Green | 5346816 | 230 | 230 | 1420 | 88 |
 | Blue | 4952064 | 1351 | 1351 | 1884 | 117 |
+
+
+</div>
 
 RGB2 reads **`0x34755876`**; final MAC/IR words are `0x0000076f`,
 `0x0000058c`, `0x0000075c`. IR0 remains `0x00000800`. FLAG is
@@ -3749,6 +3815,8 @@ NCDT does not project positions or derive three cue coefficients from their dept
 
 The four words are `0x00000016`, `0x00000416`, `0x00080016`, `0x00080416` for SF/LM `(0,0)`, `(0,1)`, `(1,0)`, `(1,1)`. All selectors in bits 18:13 are ignored, as are bits 31:20,12:11,9:6. They cannot choose different normal slots, matrices or per-vertex cue inputs. Ignored bits remain in last COMMAND readback.
 
+<div class="keep-together">
+
 **INPUT.** D[n] is at `0x08010244+4n`; C[n] at `0x080102c4+4n`. Access whole aligned words.
 
 | Input | Representation |
@@ -3760,6 +3828,9 @@ The four words are `0x00000016`, `0x00000416`, `0x00080016`, `0x00080416` for SF
 | D[6] — RGBC | R/G/B unsigned bytes at bits7:0/15:8/23:16; CODE at 31:24, shared by all outputs |
 | D[8] — IR0 | Signed low16 cue coefficient, shared by all three calculations |
 | C[21]–C[23] — F | Three signed complete far-color words |
+
+
+</div>
 
 With matrix base b=8 or16, rows are `(lo(C[b]),hi(C[b]),lo(C[b+1]))`, `(hi(C[b+1]),lo(C[b+2]),hi(C[b+2]))`, `(lo(C[b+3]),hi(C[b+3]),lo(C[b+4]))`, with signed halves. Signed16 range is −32768…32767, signed32 range −2147483648…2147483647. The upper half of each Z word or last matrix word supplies no extra component. IR0 is consumed as signed16 even when software normally treats 0…4096 as cue weights; NCDT does not clamp or replace IR0 itself.
 
@@ -3773,6 +3844,8 @@ In the useful SF=1 convention, normal and matrix coefficients use 4096 per unit;
 
 3. **Unshifted modulation source.** For each channel, form `source_i=16×RGBC.byte_i×g_i`. Keep this **unshifted product** for both following cue passes. NCDT does not first perform NCCS's shifted MAC/color push and then read a quantized color back.
 
+<div class="keep-together">
+
 4. **Signed cue differences.** For all three channels, calculate:
 
    ```text
@@ -3782,6 +3855,10 @@ In the useful SF=1 convention, normal and matrix coefficients use 4096 per unit;
    ```
 
    This clamp forces the signed interval even with LM=1, so cueing can move a channel downward. It contributes MAC/IR flags and writes temporary MAC words, but does **not** replace the IR register words with these differences.
+
+</div>
+
+<div class="keep-together">
 
 5. **Final cue result.** Using signed IR0 and the limited differences:
 
@@ -3793,6 +3870,8 @@ In the useful SF=1 convention, normal and matrix coefficients use 4096 per unit;
 
    The selected lower bound is −32768 for LM=0 or zero for LM=1. Final IR now replaces the gains. Both cue passes use selected SF, including the difference pass; there is no final-only SF option.
 
+</div>
+
 6. **Push color.** Limit `ASR(signed public MAC_i,4)` to 0…255 for each channel, independently of final IR clamping. Push RGB0←old RGB1, RGB1←old RGB2, RGB2←new RGB with CODE copied from RGBC. Continue to the next normal without clearing flags.
 
 Every signed44 stage retains its overflow conditions before wrapping. An IR or byte clamp does not stop later arithmetic or suppress the push. All three normals use the same preserved IR0 and far words.
@@ -3802,6 +3881,8 @@ Every signed44 stage retains its overflow conditions before wrapping. An IR or b
 Preserved stored state includes V0–V2, RGBC, IR0, MAC0, OTZ, screen/depth histories, leading-sign ports, packed-input latch, all C[0]–C[30] and all PLUS state. D[15] still reads unchanged SXY2; D[28]/D[29] derive from final IR by clamping each `IR ASR7` to 0…31 and packing bits 4:0/9:5/14:10. No separate light responses, gains, cue differences, per-normal flags or per-normal IR0 values are retained for software.
 
 **FLAG.** Signed44 positive/negative overflow sets row1/2/3 MAC bits 30/29/28 or 27/26/25. Every actual selected-LM matrix/final IR clamp and forced-signed temporary-difference clamp sets the corresponding IR bit 24/23/22. Final RGB byte clamps set R/G/B bits 21/20/19. ERROR bit 31 summarizes the MAC-overflow and IR1/IR2 conditions; IR3/color saturation alone does not set it. No MAC0, screen, depth, divide or IR0 saturation flags are generated. Conditions from earlier normals remain even if V2 is in range; neither legal endpoints nor a negative value inside its applicable signed interval sets saturation.
+
+<div class="keep-together">
 
 **Worked shared-material batch.** Program these independent inputs and issue `0x00080416` (SF=1, LM=1):
 
@@ -3816,6 +3897,10 @@ Preserved stored state includes V0–V2, RGBC, IR0, MAC0, OTZ, screen/depth hist
 | D[6]; D[8] | `0x34c060a0` — RGB `(160,96,192)`, CODE34; `0x00000800` — IR0=2048 |
 | C[21]–C[23] | `0x00000500`, `0x00000600`, `0x00000a00` — far `(1280,1536,2560)`, target bytes `(80,96,160)` |
 
+</div>
+
+<div class="keep-together">
+
 The two matrices' rows decode respectively to `(3072,0,2048)`, `(−2048,0,3072)`, `(0,0,−4096)` and `(4096,1024,0)`, `(2048,4096,0)`, `(1024,2048,4096)`.
 
 | Vector | Clamped light responses | Color-stage gains | Unshifted material source |
@@ -3824,6 +3909,11 @@ The two matrices' rows decode respectively to `(3072,0,2048)`, `(−2048,0,3072)
 | V1 | `(0,0,0)` | `(256,512,128)` | `(655360,786432,393216)` |
 | V2 | `(2048,3072,0)` | `(3072,4608,2176)` | `(7864320,7077888,6684672)` |
 
+<div class="keep-together">
+
+
+</div>
+
 V1 receives ambient despite having no positive directional response. V0/V2's negative third light responses set IR3 saturation. Cueing each source with the **shared** IR0 gives:
 
 | Vector | Limited cue differences | Final MAC/IR | Output RGB / packed word |
@@ -3831,6 +3921,9 @@ V1 receives ambient despite having no positive directional response. V0/V2's neg
 | V0 | `(−1249,230,1351)` | `(1903,1420,1884)` | `(118,88,117)` / `0x34755876` |
 | V1 | `(1120,1344,2464)` | `(720,864,1328)` | `(45,54,83)` / `0x3453362d` |
 | V2 | `(−640,−192,928)` | `(1600,1632,2096)` | `(100,102,131)` / `0x34836664` |
+
+
+</div>
 
 For example, V2 red uses `(7864320+2048×(−640)) ASR12=1600`, then ASR4 gives 100. Final MAC/IR are V2's raw `0x00000640`, `0x00000660`, `0x00000830`; IR0 remains `0x00000800`. FLAG is `0x00400000`, ERROR clear; all final gains and colors can be positive while an earlier light clamp remains recorded.
 
@@ -3862,6 +3955,8 @@ CODE. V0–V2, the light/rotation matrices, translation, old MAC, IR0 and far
 vector are not operands. The input IR vector is snapshotted before output
 writes; its components need not be a unit normal or a position.
 
+<div class="keep-together">
+
 **Ordered calculation.** Clear FLAG and:
 
 1. For each K row r, start with signed44 `4096*A[r]`, then add
@@ -3876,6 +3971,8 @@ writes; its components need not be a unit normal or a position.
 3. Shift each final signed MAC right4, clamp to0…255, and push packed RGB
    with **current RGBC.CODE**: old RGB1 becomes RGB0, old RGB2 becomes RGB1,
    and the new color becomes RGB2.
+
+</div>
 
 All right shifts are arithmetic, rounding negative fractions towards minus
 infinity. The push reads MAC rather than limited IR. For Q12 K/gains and SF1,
@@ -3897,6 +3994,8 @@ in-range results; exact endpoints are legal. No MAC0/depth/divide/screen/IR0
 stage runs. Preserve a needed FLAG before another command starts one, and RGB
 before subsequent pushes displace it.
 
+<div class="keep-together">
+
 **Worked preloaded responses.** Program K rows `(4096,1024,0)`,
 `(2048,4096,0)`, `(1024,2048,4096)`, ambient `(256,512,128)` and
 RGBC=`0x34c060a0`. Preload IR=(3482,1228,0): these are limited light
@@ -3908,6 +4007,8 @@ With SF1/LM1:
 | Red | 16568320 | 4045 | 10355200 | 2528 | 158 |
 | Green | 14258176 | 3481 | 5346816 | 1305 | 81 |
 | Blue | 6604800 | 1612 | 4952064 | 1209 | 75 |
+
+</div>
 
 RGB2 is **0x344b519e**, FLAG=0. NCCS's earlier negative light response does not
 magically accompany these preloaded values: CC starts a new flag calculation
@@ -4009,6 +4110,8 @@ CC does not merely add cue: it applies the color matrix to CC's final IR again.
 when the normal command write completes, without a busy poll or an automatic
 13-cycle CPU stall.
 
+<div class="keep-together">
+
 **Worked case: signed responses and a forced-signed cue difference.** Use
 the non-identity color matrix and offsets from
 [Normals, light directions and color mixing](#normals-light-directions-and-color-mixing),
@@ -4022,6 +4125,11 @@ participates:
 | D[8], IR0 | `0x00000800` | Coefficient 2048 |
 | C[21]–C[23] | `0x00000500`, `0x00000600`, `0x00000a00` | Far RGB `(80,96,160)` in byte×16 |
 
+<div class="keep-together">
+
+
+</div>
+
 Issue `0x00080414`, SF=1, LM=1. The ordered color-row accumulations finish
 at `(−1048576,8388608,20447232)`. Shifting gives MAC
 `(−256,2048,4992)`; selected limiting gives gains `(0,2048,4992)`.
@@ -4033,6 +4141,9 @@ the resulting red gain that clamped to zero.
 | Red | 0 | 1280 | 640 | 40 |
 | Green | 3145728 | 768 | 1152 | 72 |
 | Blue | 15335424 | −1184 | 3152 | 197 |
+
+
+</div>
 
 RGB2 reads **`0x34c54828`**. Final MAC/IR words are `0x00000280`,
 `0x00000480`, `0x00000c50`. FLAG is `0x81000000`: the earlier red
@@ -4058,6 +4169,8 @@ DPCS cues the finished RGB bytes in RGBC toward a programmed far color using cur
 
 Option words are `0x00000010`, `0x00000410`, `0x00080010`, `0x00080410` for SF/LM `(0,0)`, `(0,1)`, `(1,0)`, `(1,1)`. Selectors bits 18:13 and bits 31:20,12:11,9:6 are ignored for execution and retained in COMMAND readback. They do not select a matrix, vector or FIFO source.
 
+<div class="keep-together">
+
 **INPUT.**
 
 | Register | Address | Representation |
@@ -4066,6 +4179,9 @@ Option words are `0x00000010`, `0x00000410`, `0x00080010`, `0x00080410` for SF/L
 | D[8] — IR0 | `0x08010264` | Signed low16 coefficient, −32768…32767, read sign-extended |
 | C[21]–C[23] — far R/G/B | `0x08010318`, `0x0801031c`, `0x08010320` | Three complete signed32 words |
 | Old D[21],D[22] | `0x08010298`, `0x0801029c` | Retained history words only, not source colors |
+
+
+</div>
 
 Use aligned whole-word accesses. Neither old IR1–IR3 nor a supplied normal, matrix, H, DQA/DQB or depth history is an arithmetic input. IR0 is consumed as programmed; DPCS does not derive it from depth, constrain it to 0…4096 or write it back.
 
@@ -4103,6 +4219,8 @@ All other stored state is preserved, including RGBC, IR0, MAC0, OTZ, V0–V2, sc
 
 **FLAG.** Start with a clear word and accumulate both passes and byte conversion. Signed44 positive/negative overflow sets the corresponding MAC1/2/3 bits 30/29/28 or 27/26/25. Temporary forced-signed or final selected-LM IR clamps set IR1/2/3 bits 24/23/22. Byte clamps set R/G/B bits 21/20/19. ERROR bit 31 summarizes MAC overflow and IR1/IR2 saturation, but not IR3 or color saturation alone. No IR0 saturation flag is generated, even for an extrapolating weight; MAC0/screen/depth/divide flags are also absent. Legal endpoints do not set saturation. IR0=0 does **not** skip the difference pass or its flags.
 
+<div class="keep-together">
+
 **Worked half cue with a downward blue correction.** Program RGBC=`0x56604020` — RGB `(32,64,96)`, CODE `0x56`; IR0=`0x00000800` (2048); far words C[21]–C[23]=`0x00000a00`, `0x00000800`, `0x00000400`, corresponding to target RGB `(160,128,64)`. Issue `0x00080410` (SF=1, LM=1).
 
 | Channel | Source byte×65536 | Full difference | ASR12 limited difference | Final full expression | Final MAC/IR | Output byte |
@@ -4111,7 +4229,12 @@ All other stored state is preserved, including RGBC, IR0, MAC0, OTZ, V0–V2, sc
 | G | 4194304 | 4194304 | 1024 | 6291456 | 1536 | 96 |
 | B | 6291456 | −2097152 | −512 | 5242880 | 1280 | 80 |
 
+
+</div>
+
 The temporary negative blue correction is allowed despite LM=1. No clamp occurs. Final MAC/IR read `0x00000600`, `0x00000600`, `0x00000500`; new RGB2 is **`0x56506060`**, FLAG is zero and CYCLES is 8. If initial FIFO words were `0x11112222`, `0x33334444`, `0x55556666`, they become `0x33334444`, `0x55556666`, `0x56506060`.
+
+<div class="keep-together">
 
 **Endpoints, extrapolation and options.** With the same source/far setup, independently initialize each row:
 
@@ -4123,6 +4246,9 @@ The temporary negative blue correction is allowed despite LM=1. No clamp occurs.
 | SF1/LM0, IR0=−4096 (`0xfffff000`) | `(−1536,0,2048)` | `0x56800000` | `0x00200000` |
 | SF1/LM1, IR0=−4096 | Same MAC; IR1 becomes 0 | `0x56800000` | `0x81200000` — ERROR, IR1 and red byte saturation |
 | SF0/LM1, IR0=2048 (`0x00000410`) | `(69203968,71301120,−60817408)` | `0x5600ffff` | `0x81f80000` |
+
+
+</div>
 
 The normal byte-target setup reaches exact source/far endpoints with SF=1 because source byte×16 and far words have integral differences and no clamp. Do not extend that guarantee to arbitrary signed far words or fused modulation paths that retain additional source fractions. SF=0 in the last row leaves both passes unshifted; it is not another representation of a half blend.
 
@@ -4207,6 +4333,8 @@ not the legal far endpoint30000. FLAG=81000000 identifies the temporary IR1
 clamp even though the final result fits. A weight of4096 is not an unconditional
 endpoint-selection instruction.
 
+<div class="keep-together">
+
 **Option contrast.** Independently start at(5,−3,2), far=(9,1,−2), IR0=1024,
 CODE=0x5a:
 
@@ -4216,6 +4344,9 @@ CODE=0x5a:
 | 1/1 | (4,4,−4) | (6,−2,1) | (6,0,1) | 80900000 |
 | 0/0 | (16384,16384,−16384) | (16797696,16764928,−16769024) | (32767,32767,−32768) | 81f80000 |
 | 0/1 | (16384,16384,−16384) | Same | (32767,32767,0) | 81f80000 |
+
+
+</div>
 
 SF1 pushes CODE with black RGB; SF0 pushes 0x5a00ffff. The large SF0 results
 are not a preserved version of the same interpolation with extra output
@@ -4299,6 +4430,8 @@ color values, not the original gain vector.
 available when the normal command write completes. No busy poll or automatic
 eight-cycle CPU stall is added.
 
+<div class="keep-together">
+
 **Worked case: amplified, reduced and negative gains.** Program these word
 contents; no matrix setup is needed:
 
@@ -4309,6 +4442,11 @@ contents; no matrix setup is needed:
 | D[8], IR0 | `0x00000400` | Coefficient one quarter |
 | C[21]–C[23] | `0x00000200`, `0x00000400`, `0x00000c00` | Far RGB `(32,64,192)` in byte×16 |
 
+<div class="keep-together">
+
+
+</div>
+
 Issue `0x00080429`, SF=1, LM=1. The calculation is:
 
 | Channel | Unshifted P | Signed D after first pass | Final MAC / IR | Byte |
@@ -4316,6 +4454,9 @@ Issue `0x00080429`, SF=1, LM=1. The calculation is:
 | Red | 12582912 | −2560 | 2432 | 152 |
 | Green | 5242880 | −256 | 1216 | 76 |
 | Blue | −2097152 | 3584 | 384 | 24 |
+
+
+</div>
 
 RGB2 reads **`0x34184c98`**, final MAC/IR words are `0x00000980`,
 `0x000004c0`, `0x00000180`, and FLAG is zero. Although the incoming blue
@@ -4344,6 +4485,8 @@ DPCT cues the three existing colors in RGB0–RGB2 and replaces that FIFO with t
 
 Option words are `0x0000002a`, `0x0000042a`, `0x0008002a`, `0x0008042a` for SF/LM `(0,0)`, `(0,1)`, `(1,0)`, `(1,1)`. Selectors bits 18:13 and bits 31:20,12:11,9:6 are ignored for execution and retained in COMMAND readback. They do not choose a different FIFO or input count.
 
+<div class="keep-together">
+
 **INPUT.** Use aligned whole-word accesses.
 
 | Register | Address | Consumed fields |
@@ -4353,9 +4496,14 @@ Option words are `0x0000002a`, `0x0000042a`, `0x0008002a`, `0x0008042a` for SF/L
 | D[8] — IR0 | `0x08010264` | Signed low16 weight, −32768…32767 |
 | C[21]–C[23] — far R/G/B | `0x08010318`, `0x0801031c`, `0x08010320` | Three complete signed32 components |
 
+
+</div>
+
 The input FIFO's three CODE bytes are ignored. RGBC's RGB bytes are also ignored: this is not three repetitions of the same RGBC color. IR0 reads sign-extended and remains unchanged; it is not clamped to 0…4096 or recalculated between colors. Old IR1–IR3, normals, matrices, screen/depth histories and DQA/DQB are not operands.
 
 Under the useful SF=1 convention, far components are target bytes×16 and IR0/4096 is the numerical cue weight. Each source byte is promoted to byte×65536 before the cue passes. The final MAC has byte×16 units before its four-bit byte conversion. These are software scales, not normalization or validity checks performed by the device.
+
+<div class="keep-together">
 
 **Consume and push in order.** Let initial FIFO words be A,B,C. Each of three iterations reads the **then-current RGB0**, cues its RGB fields, and pushes a new result:
 
@@ -4364,6 +4512,9 @@ Under the useful SF=1 convention, far components are target bytes×16 and IR0/40
 | 0 | Original A | B, C, P(A) |
 | 1 | Original B | C, P(A), P(B) |
 | 2 | Original C | P(A), P(B), P(C) |
+
+
+</div>
 
 No newly produced color is cued again within this command. The trace describes ordered arithmetic/history updates during one normal command, not three separately published asynchronous operations. FLAG is cleared once before iteration 0 and accumulates through iteration 2.
 
@@ -4394,6 +4545,8 @@ Preserved stored state includes RGBC, IR0, MAC0, OTZ, all vectors, screen/depth 
 
 **FLAG.** Positive/negative signed44 overflow sets MAC1/2/3 bits 30/29/28 or 27/26/25. Any temporary forced-signed or final selected-LM IR clamp sets bits 24/23/22. Byte clamps set R/G/B bits 21/20/19. ERROR bit 31 summarizes MAC overflow and IR1/IR2 saturation, not IR3 or color saturation alone. All three iterations contribute to the same word; final MAC/IR need not expose the input that caused a flag. No IR0, MAC0, depth, screen or divide flags are generated, and legal clamp endpoints do not set saturation.
 
+<div class="keep-together">
+
 **Worked three-source FIFO.** Program these inputs, then issue `0x0008042a` (SF=1, LM=1):
 
 | Register(s) | Raw input | Meaning |
@@ -4405,6 +4558,11 @@ Preserved stored state includes RGBC, IR0, MAC0, OTZ, all vectors, screen/depth 
 | D[8] | `0x00000800` | Shared weight 2048 |
 | C[21]–C[23] | `0x00000500`, `0x00000600`, `0x00000a00` | Far `(1280,1536,2560)`, target bytes `(80,96,160)` |
 
+<div class="keep-together">
+
+
+</div>
+
 For these integral source/far values, the SF=1 difference equals far minus source-byte×16:
 
 | Source | Limited differences | Final MAC/IR | Output RGB / word |
@@ -4412,6 +4570,9 @@ For these integral source/far values, the SF=1 difference equals far minus sourc
 | A | `(768,512,1024)` | `(896,1280,2048)` | `(56,80,128)` / `0x7f805038` |
 | B | `(−1280,−512,1536)` | `(1920,1792,1792)` | `(120,112,112)` / `0x7f707078` |
 | C | `(−2560,1280,512)` | `(2560,896,2304)` | `(160,56,144)` / `0x7f9038a0` |
+
+
+</div>
 
 For C red, `(240×65536+2048×(−2560)) ASR12=2560`, then ASR4 gives 160. Final FIFO is exactly the three output words above, with CODE `0x7f` in **all** entries. Final MAC/IR raw words are `0x00000a00`, `0x00000380`, `0x00000900`; IR0 and RGBC are unchanged. FLAG is zero; CYCLES reads 17.
 
@@ -4466,6 +4627,8 @@ Retain an original signed vector before SQR if it is needed later: signs are
 not recoverable from its squares. Read needed MAC/FLAG before later commands
 replace them.
 
+<div class="keep-together">
+
 **Worked squared length.** Use the perpendicular vector from the practical
 arithmetic lesson, IR=(−144,−112,208). With SF0/LM0, normal word00000028:
 
@@ -4474,6 +4637,9 @@ arithmetic lesson, IR=(−144,−112,208). With SF0/LM0, normal word00000028:
 | −144 | 20736 | 20736 |
 | −112 | 12544 | 12544 |
 | 208 | 43264 | 32767 |
+
+
+</div>
 
 FLAG=00400000. Software can sum the valid complete MAC results to76544, the
 squared length in the selected component units. Summing limited IR instead
@@ -4486,12 +4652,17 @@ have two factors of4096; shifting twelve leaves Q12 squared components
 21/16. FLAG is zero. Neither the positive squared vector nor that scalar sum
 is the original vector normalized.
 
+<div class="keep-together">
+
 **Range and option boundary.** Independently supply(181,182,−32768):
 
 | SF | Signed MAC1–MAC3 | IR1–IR3, either LM | FLAG |
 |---|---|---|---|
 | 0 | (32761,33124,1073741824) | (32761,32767,32767) | 80c00000 |
 | 1 | (7,8,262144) | (7,8,32767) | 00400000 |
+
+
+</div>
 
 181² fits IR and182² does not at SF0. At SF1 the first two fit, but the third
 still exceeds the IR upper limit. Its MAC value262144 remains available.
@@ -4577,6 +4748,8 @@ available when the normal command write completes, without PLUS-style busy
 publication or an automatic five-cycle CPU wait. Operand preparation, issue
 and readout still cost CPU work.
 
+<div class="keep-together">
+
 **Worked case: a signed Q12 vector product with an unwanted color clamp.**
 Program these word contents:
 
@@ -4586,6 +4759,11 @@ Program these word contents:
 | D[9]–D[11] | `0x00001000`, `0xfffff800`, `0x00000400` | Q12 vector `(1,−1/2,1/4)` |
 | D[6], RGBC | `0x5a7f2040` | CODE `0x5a`; RGB bytes ignored |
 
+<div class="keep-together">
+
+
+</div>
+
 Issue `0x0008003d`, SF=1, LM=0. The three products and results are:
 
 | Lane | Unshifted product P | Final MAC / IR | Q12 meaning | Byte before limit |
@@ -4593,6 +4771,9 @@ Issue `0x0008003d`, SF=1, LM=0. The three products and results are:
 | 1 | 12582912 | 3072 | 3/4 | 192 |
 | 2 | −6291456 | −1536 | −3/8 | −96 |
 | 3 | 3145728 | 768 | 3/16 | 48 |
+
+
+</div>
 
 MAC/IR words are `0x00000c00`, `0xfffffa00`, `0x00000300`. The
 numeric vector is unsaturated, but the negative green-byte value clamps to
@@ -4623,6 +4804,8 @@ GPL adds signed IR0×IR1/2/3 products to the corresponding existing **public MAC
 
 Option words are `0x0000003e`, `0x0000043e`, `0x0008003e`, `0x0008043e` for SF/LM `(0,0)`, `(0,1)`, `(1,0)`, `(1,1)`. Selectors bits 18:13 and bits 31:20,12:11,9:6 are ignored for execution and retained in COMMAND readback; none selects a vector slot or matrix.
 
+<div class="keep-together">
+
 **INPUT.** Use aligned whole-word register accesses.
 
 | Register | Address | Consumed representation |
@@ -4632,6 +4815,9 @@ Option words are `0x0000003e`, `0x0000043e`, `0x0008003e`, `0x0008043e` for SF/L
 | D[25]–D[27] — old MAC1–MAC3 | `0x080102a8`, `0x080102ac`, `0x080102b0` | Three complete signed32 public words |
 | D[6] — RGBC | `0x0801025c` | Only CODE bits 31:24 for the new color; RGB bytes unused |
 | Old RGB1/RGB2, D[21]/D[22] | `0x08010298`, `0x0801029c` | Retained color-history words, not arithmetic operands |
+
+
+</div>
 
 IR inputs read sign-extended halfwords. MAC inputs are the signed interpretations of their raw 32 words, not their unsigned readback magnitudes and not private unshifted values retained by a previous command. Software may explicitly preload D[25]–D[27]. MAC0, vectors, matrices, far colors, screen/depth histories and projection constants are not operands. IR0 is not restricted to the usual cue interval 0…4096.
 
@@ -4659,6 +4845,8 @@ Preserved stored state includes IR0, RGBC, MAC0, OTZ, V0–V2, screen/depth hist
 
 **FLAG.** Clear old FLAG before calculation. A full lane sum above `2^43−1` or below `−2^43` sets its MAC1/2/3 positive bits 30/29/28 or negative bits 27/26/25. The final selected-LM IR clamps set bits 24/23/22; IR3 uses this ordinary rule, not projection's special test. Final byte clamps set R/G/B bits 21/20/19. ERROR bit 31 summarizes MAC overflow and IR1/IR2 clamps; IR3/color saturation alone does not set it. No MAC0, depth, screen, divide or IR0 flags are generated. Signed32 word wrap has no separate MAC overflow bit, and legal clamp endpoints do not set saturation.
 
+<div class="keep-together">
+
 **Worked signed increment with SF=1.** Program the following independent state and issue `0x0008003e` (SF=1, LM=0):
 
 | Register(s) | Raw word(s) | Value |
@@ -4668,6 +4856,9 @@ Preserved stored state includes IR0, RGBC, MAC0, OTZ, V0–V2, screen/depth hist
 | D[25]–D[27] | `0x00000320`, `0x00000280`, `0x00000460` | Old MAC `(800,640,1120)` |
 | D[6] | `0x7fabcdef` | Output CODE `0x7f`; RGB bytes irrelevant |
 | D[20]–D[22] | `0x11112222`, `0x33334444`, `0x55556666` | Old FIFO |
+
+
+</div>
 
 | Lane | Old MAC×4096 | IR0×IR | Full sum | New MAC/IR | Output byte |
 |---|---|---|---|---|---|
@@ -4679,6 +4870,8 @@ The negative input contribution lowers the second accumulated result without mak
 
 Issue GPL again **without** restoring IR: multiplicands are now `(960,560,1168)`, so new MAC/IR become `(1440,840,1752)` and RGB2=`0x7f6d345a`. If instead software restores original IR `(320,−160,96)` before that second command, MAC/IR become `(1120,480,1216)` and RGB2=`0x7f4c1e46`. This is operand lifetime, not a choice of accumulation mode.
 
+<div class="keep-together">
+
 Restore the original complete setup for each option comparison:
 
 | Options / scalar | New signed MAC | New IR | RGB2 | FLAG |
@@ -4687,6 +4880,9 @@ Restore the original complete setup for each option comparison:
 | SF1/LM0, IR0=−2048 (`0xfffff800`) | `(640,720,1072)` | Same | `0x7f432d28` | `0x00000000` |
 | SF0/LM0, IR0=2048 | `(656160,−327040,197728)` | `(32767,−32768,32767)` | `0x7fff00ff` | `0x81f80000` |
 | SF0/LM1, IR0=2048 | Same MAC | `(32767,0,32767)` | `0x7fff00ff` | `0x81f80000` |
+
+
+</div>
 
 **Visible-word and signed44 boundaries.** Independently set MAC1=`0x7fffffff`, IR1=1, MAC2/MAC3/IR2/IR3=0 and CODE `0x7f`:
 
@@ -4704,6 +4900,8 @@ separate PLUS registerfile, pending calculation and published result set. Choose
 it for this three-lane arithmetic without matrix/projection or a color push.
 It is not issued through normal GTE COMMAND and does not use normal MAC, IR,
 FLAG or FIFO state.
+
+<div class="keep-together">
 
 **Encoding and access.** Write an aligned **direct CPU word store** to PLUS
 COMMAND at `0x080103a4`. Low bits7:0 must be `0x01`. Bits31:8 are ignored for
@@ -4723,6 +4921,9 @@ is an invalid PLUS command, including values with low6 bits01 but bit6/7 set.
 | 7 / 080103a0 | FLAG | Published PLUS flags, not normal C[31] |
 | 8 / 080103a4 | COMMAND | Last accepted raw word; direct CPU write admission interlocked |
 | 9 / 080103a8 | CYCLES | Busy bit31 plus retained duration, not a countdown |
+
+
+</div>
 
 Writes to result/FLAG/CYCLES addresses do not change authoritative PLUS state;
 they are not a way to clear or acknowledge a result. That lack of device write
@@ -4746,6 +4947,8 @@ software convention uses A, M and result in the same integer coordinate counts
 and scalar/4096 as a dimensionless weight. The signed scalar supports negative
 weights too; it is not restricted to0…4096.
 
+<div class="keep-together">
+
 Pack the limited X/Y halves into pending RESULT_XY and Z's low half into pending
 RESULT_Z. A shifted lane strictly above32767 sets its positive flag and ERROR;
 a lane below−32768 sets its negative flag and ERROR. Exact integer endpoints
@@ -4758,6 +4961,9 @@ fractional output.
 | X+, Y+, Z+ saturation | 40000000, 20000000, 10000000 |
 | X−, Y−, Z− saturation | 08000000, 04000000, 02000000 |
 | Invalid command | 01000000 |
+
+
+</div>
 
 No other flag bits are set. Every VMAD3 starts a new **pending** flag result;
 the readable FLAG still belongs to the previous published job until completion.
@@ -4859,6 +5065,8 @@ or faults. No GTE matrix,
 projection or lighting setup is assumed to be preloaded: this interval supplies
 all of it.
 
+<div class="keep-together">
+
 The workset is stored in cartridge slot 0 ROM at `0x10001000`, not in the BIOS
 ROM. It contains 38 whole words, 152 bytes:
 
@@ -4872,10 +5080,15 @@ ROM. It contains 38 whole words, 152 bytes:
 | 26–31 | Positions `(-64,-64,512)`, `(64,-64,512)`, `(0,64,512)` | D[0]–D[5] |
 | 32–37 | Supplied directions `(4096,0,0)`, `(0,4096,0)`, `(0,0,4096)` | D[0]–D[5], after geometry |
 
+
+</div>
+
 These directions deliberately produce different vertex colors; they are not
 normals automatically derived from the planar triangle. RGBC is `0x004080a0`.
 The selected normal commands are RTPT=`0x00080030`, NCLIP=`0x00000006`, and
 NCCT=`0x0008043f`.
+
+<div class="keep-together">
 
 Twelve LOADK instructions establish all function constants:
 
@@ -4884,6 +5097,9 @@ Twelve LOADK instructions establish all function constants:
 | r0–r3 | Cartridge-ROM workset address `0x10001000`; control base `0x080102c4`; data base `0x08010244`; RAM output address `0x080c1000` |
 | r4–r7 | RTPT word; NCLIP word; NCCT word; RGBC word |
 | r8–r11 | Packet tag `0x30000000`; RGB mask `0x00ffffff`; sign mask `0x80000000`; zero |
+
+
+</div>
 
 Every subsequent memory operation uses the scalar `LOAD_MEM_D` or
 `STORE_MEM_D`, Word access, with address `base + 4*displacement`. For example,
@@ -4894,6 +5110,8 @@ counts must not be applied to compiled code that actually emits more address
 arithmetic, loop tests, spills, or helper calls.
 
 ### Count the complete accepted-triangle path
+
+<div class="keep-together">
 
 The current scalar ISA charges two base cycles per displaced word load/store,
 one per LOADK, BAND, BOR or EQ, and two for RET. The function's accepted path
@@ -4913,6 +5131,9 @@ executes:
 | Read/mask three colors, add the first-word opcode, write six packet words | 3 loads + 3 BAND + 1 BOR + 6 stores | 22 |
 | Return | 1 RET | 2 |
 | **Complete interval** | **120 instructions** | **221 cycles** |
+
+
+</div>
 
 The area selection is real control flow, not a free assumption. An EQ test
 rejects zero; BAND extracts the sign bit; a second EQ rejects negative area.
@@ -5004,6 +5225,8 @@ itself was free.
 
 ### PLUS: timed publication and store interlock
 
+<div class="keep-together">
+
 PLUS measures its completion interval in system cycles. At the installed
 33,868,800 Hz frequency:
 
@@ -5012,6 +5235,9 @@ PLUS measures its completion interval in system cycles. At the installed
 | One system cycle | Approximately 29.526 ns |
 | VMAD3 completion interval: five cycles | Approximately 147.628 ns |
 | Invalid-command completion interval: one cycle | Approximately 29.526 ns |
+
+
+</div>
 
 An accepted command takes all operands from the current PLUS input words and
 forms one pending result set. Before its completion deadline, RESULT_XY,
@@ -5093,6 +5319,8 @@ All addresses below are byte addresses. Each word occupies four bytes:
 - `C[n] = 0x080102c4 + 4n`, for `n=0`–`31`.
 - `PLUS[n] = 0x08010384 + 4n`, for `n=0`–`9`.
 
+<div class="keep-together">
+
 A register word is a raw 32-bit pattern. Signed interpretation occurs at the arithmetic input, not by changing the word's representation. In the tables, **low** means bits 15:0 and **high** means bits 31:16. Matrix rows and columns are numbered 0–2.
 
 | Access notation | Read and mapped-write operation |
@@ -5103,6 +5331,9 @@ A register word is a raw 32-bit pattern. Signed interpretation occurs at the ari
 | Push | Read the newest screen pair; write pushes a screen pair. |
 | Derived | Read a computed word; see the entry for its write behavior. |
 | Output | Read the result; a write has no GTE effect and does not fault as a read-only write. |
+
+
+</div>
 
 ### Data words
 
@@ -5225,6 +5456,8 @@ Writing `0xfffffc1f` to D[28] supplies five-bit components `(31,0,31)`;
 bits 31:15 are ignored. IR1–IR3 become `(3968,0,3968)`, each component
 multiplied by 128. Both D[28] and D[29] then read `0x00007c1f`.
 
+<div class="keep-together">
+
 Now write IR1=`0xffffff80` (−128), IR2=`0x00000880` (2176) and
 IR3=`0x00001000` (4096), without another D[28] write:
 
@@ -5234,10 +5467,15 @@ IR3=`0x00001000` (4096), without another D[28] write:
 | G | 2176 | 17 | 17 |
 | B | 4096 | 32 | 31 |
 
+
+</div>
+
 Both packed ports now read `0x00007e20`, not the previously written color.
 The reads derive from current IR; they neither change IR nor set FLAG, even
 when conversion limits a channel. Retain a packed result before another
 calculation changes its IR source. This conversion does not push the RGB FIFO.
+
+<div class="keep-together">
 
 The leading-sign ports can expose the headroom in a raw signed word without
 issuing an arithmetic command:
@@ -5250,6 +5488,9 @@ issuing an arithmetic command:
 | `0xfff00000` | 12 ones | 12 |
 | `0x80000000` | One one | 1 |
 | `0x7fffffff` | One zero | 1 |
+
+
+</div>
 
 The count includes the sign bit. For a nonzero signed32 source, count minus one
 gives the number of successive doublings whose exact result still fits signed32;
@@ -5529,6 +5770,8 @@ Thus cancellation after overflow does not erase its flag. The ordered wrap appli
 
 ### Operand selection
 
+<div class="keep-together">
+
 MVMVA's selectors have these complete encodings:
 
 | Selector | 0 | 1 | 2 | 3 |
@@ -5536,6 +5779,9 @@ MVMVA's selectors have these complete encodings:
 | mx | Matrix 0, C[0]–C[4] | Matrix 1, C[8]–C[12] | Matrix 2, C[16]–C[20] | Synthetic matrix below |
 | v | V0, D[0]/D[1] | V1, D[2]/D[3] | V2, D[4]/D[5] | Current signed IR1–IR3 |
 | cv | Signed C[5]–C[7] | Signed C[13]–C[15] | Signed C[21]–C[23] | (0,0,0) |
+
+
+</div>
 
 <div class="keep-together">
 
@@ -5731,6 +5977,8 @@ in this example. The numbers are supplied operands, not a built-in motion model.
 
 ### Prepare three independent calculations
 
+<div class="keep-together">
+
 Use the following work items. The first adds half a displacement. The second
 subtracts a quarter of a different displacement. The third deliberately exceeds
 the coordinate limits in opposite directions so that its result and flag must
@@ -5741,6 +5989,11 @@ be retained together.
 | 1 | `(120,−48,256)` | `(24,16,−32)` | 2048, one half | `(132,−40,240)` |
 | 2 | `(−96,80,512)` | `(−20,12,8)` | −1024, negative one quarter | `(−91,77,510)` |
 | 3 | `(32760,−32760,1024)` | `(32,−32,−2048)` | 2048, one half | `(32767,−32768,0)` |
+
+<div class="keep-together">
+
+
+</div>
 
 These are the complete raw operand words. X occupies the low half of each XY
 word and Y the high half. ADD_Z, MUL_Z and SCALAR consume signed low halves;
@@ -5755,10 +6008,15 @@ word contents, not a source-language array or store syntax.
 | MUL_Z | `0x08010390` | `0x0000ffe0` | `0x00000008` | `0x0000f800` |
 | SCALAR | `0x08010394` | `0x00000800` | `0x0000fc00` | `0x00000800` |
 
+
+</div>
+
 After supplying an item's five operands, issue it with an aligned CPU word store
 of `0x00000001` directly to PLUS COMMAND at `0x080103a4`. An accepted command
 takes the current five words for one pending calculation. Its publication
 deadline is five system cycles after acceptance.
+
+<div class="keep-together">
 
 The first two results are exact in the chosen integer units. Work 3's full
 sums are `(134250496,−134250496,0)`, shifting to `(32776,−32776,0)` before
@@ -5771,6 +6029,9 @@ themselves set saturation flags.
 | 1 | `0xffd80084` | `0x000000f0` | `0x00000000` |
 | 2 | `0x004dffa5` | `0x000001fe` | `0x00000000` |
 | 3 | `0x80007fff` | `0x00000000` | `0xc4000000` |
+
+
+</div>
 
 RESULT_Z's upper half is zero. Decode its low half as signed when consuming a
 negative Z result. These outputs and PLUS FLAG are independent of normal GTE
@@ -5841,6 +6102,8 @@ blocked attempt, wait and retry are distinct from the unit's five-cycle interval
 
 ### Budget preparation and readout, not just arithmetic
 
+<div class="keep-together">
+
 For the three displayed work items, one deliberately straightforward CPU
 instruction sequence preloaded all operand words, addresses, command word and
 poll threshold. It then used the read-before-next-issue order above and copied
@@ -5860,6 +6123,9 @@ each result triple to RAM. All accesses below were direct word operations.
 | Final CYCLES reads | Busy at 81; ready at 85 |
 | Work 3 result/flag loads and RAM copies | Cycles 86–98 |
 | CPU return completed | 100 |
+
+
+</div>
 
 The first two stores preparing work 2 occur while work 1 is pending, yet work 1
 still produces `(132,−40,240)`. In this schedule the next PLUS access after its

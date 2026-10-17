@@ -32,7 +32,7 @@ export async function loadChapter(root, id) {
 	});
 	const fontHrefs = new Set([...stylesheet.matchAll(/url\("([^"]+)"\)/g)].map(([, href]) => href));
 	const [figures, fonts] = await Promise.all([
-		Promise.all([...figureHrefs].map(async href => [href, await readFile(new URL(href, chapterURL), 'utf8')])),
+		Promise.all([...figureHrefs].map(async href => [href, await readFile(new URL(href, chapterURL))])),
 		Promise.all([...fontHrefs].map(async href => [href, await readFile(new URL(href, stylesheetURL))])),
 	]);
 	return { id, entry, review: JSON.parse(review), tokens, stylesheet, figures: new Map(figures), fonts: new Map(fonts) };

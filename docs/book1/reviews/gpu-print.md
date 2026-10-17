@@ -59,3 +59,12 @@ The eight BLua fragments concatenate to the actual cartridge apart from whitespa
 Source/whole-reader acceptance and actual guest execution remain separate records.
 This print pass does not establish physical/native/backend parity or completion
 of Book I; it accepts the actual layout of the sourced, complete GPU chapter.
+
+## Shared PNG publisher revalidation — 2026-10-17
+
+Print was reopened for the central PNG extension. Fresh publication-mode proofs
+before and after the final publisher change have all 72 page rasters
+pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
+content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
+are unchanged. The actual-page acceptance above therefore remains applicable;
+this comparison is not a new factual review or an output-image claim.

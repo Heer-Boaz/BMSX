@@ -11,6 +11,25 @@ copy its devices, addresses, diagrams, or behavior. `docs/book1_text.pdf` is onl
 style/order reference. Do not attach it to chapter-writing prompts. Do not use
 `docs/architecture.md` as chapter input.
 
+## Reader acceptance target
+
+The complete manual must let an experienced programmer who is **new to BMSX**
+program the whole console without reverse-engineering its source or examples.
+Book I covers the installed machine; Book II completes the cartridge/socket/card
+hardware. Familiarity with another console is not familiarity with this one.
+
+The reader must be able to establish startup and memory ownership, find usable
+and reserved addresses, prepare each unit's actual data representation, program
+every documented operation, connect adjacent units, synchronize work, inspect
+the result and handle the defined faults. Supply real BLua/BIOS usage and
+end-to-end examples, not just register inventories. Visual operations also need
+explanatory actual output images where they make the operation understandable.
+If a necessary step, address, reservation, encoding, timing condition or recovery
+rule still requires inspecting the implementation, record a documentation gap;
+do not call the chapter or book complete because it builds or reaches a page
+count. Explicitly undefined physical guarantees remain separate specification
+decisions, not invented numbers.
+
 ## Author's brief
 
 1. Write English for the cartridge programmer, who sees only the console.
@@ -149,6 +168,15 @@ system-font dependency for the authored glyphs. It applies the shared sans face
 to SVG text and the mono face to groups marked `font-family="monospace"`.
 Keep connections and coordinates in the authored SVG, not in publisher code.
 
+Use local PNG for actual output captures, referenced by the same Markdown image
+syntax. Keep the captured bytes unmodified in the chapter's figures directory;
+do not wrap them in SVG or replace them with a synthesized illustration. Record
+the executable source, settings, capture condition and what the result does and
+does not prove in the fact/review material. Caption the visible result in the
+chapter. The existing publisher embeds PNG as normal tagged HTML images with
+authored alternative text and pixel-sharp scaling; two related frames may share
+a table. Inspect the actual printed image and caption at a readable size.
+
 Use ordinary Markdown for prose and tables. For a register entry that fits on
 one page, explicitly group its Markdown rather than relying on a section number:
 
@@ -162,10 +190,13 @@ Register table, bit layout, encodings, effects, and cautions.
 </section>
 ```
 
-Blank lines inside the HTML boundary let Markdown parse normally. Use
+Blank lines around both HTML boundary tags let Markdown parse normally. Use
 `class="keep-together"` for another short indivisible group. If a group or table
 exceeds one printable page, split it editorially; do not shrink the whole chapter
 or hide overflow. Prose and longer sections otherwise paginate normally.
+Keep a table's short setup/lead paragraph with that table, and a calculation
+step's lead with its equation. Group these authored objects, not an entire long
+command section; this prevents reflow from stranding the programming inputs.
 
 Use real tables for register bit fields, not columns aligned with spaces. A
 `bit-fields` table pairs each bit range with its field; use separate tables when
@@ -256,7 +287,7 @@ not claimed to be byte-identical across platforms or PDF creation timestamps.
 Record the engine in visual-review evidence and repeat that review on an engine
 or platform change.
 
-To add a chapter, create its chapter/sheet/SVG/review files and add one entry to
+To add a chapter, create its chapter/sheet/figure/review files and add one entry to
 [catalog.json](catalog.json). Choose its Book I/II membership explicitly. Do not
 pre-fill facts, reviews, or publication status to make a new entry pass.
 
@@ -270,3 +301,8 @@ and [PDF API](https://playwright.dev/docs/api/class-page#page-pdf).
 Running labels/page counters use
 [Chromium's CSS page-margin support](https://developer.chrome.com/blog/print-margins).
 These are tooling references, **not sources of BMSX hardware behavior**.
+Binary-image ownership and normal HTML image output were also checked against
+[Sphinx's HTML image translator](https://github.com/sphinx-doc/sphinx/blob/master/sphinx/writers/html5.py)
+and [builder image selection](https://github.com/sphinx-doc/sphinx/blob/master/sphinx/builders/__init__.py).
+PNG uses the same figure/print review path; no extra asset manifest, approval
+signature or capture framework was added.

@@ -48,3 +48,12 @@ checks supplement, not replace, the source/semantic/actual-page inspections.
 Canonical publication `build/manual/irq.pdf` was regenerated after the gates
 passed; all13 whole-page rasters exactly match the accepted private final proof. The ordinary preview retains DRAFT
 marking and does not substitute for publication.
+
+## Shared PNG publisher revalidation — 2026-10-17
+
+Print was reopened for the central PNG extension. Fresh publication-mode proofs
+before and after the final publisher change have all 13 page rasters
+pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
+content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
+are unchanged. The actual-page acceptance above therefore remains applicable;
+this comparison is not a new factual review or an output-image claim.

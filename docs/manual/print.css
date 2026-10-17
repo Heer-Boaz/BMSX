@@ -126,6 +126,14 @@ a { color: inherit; text-decoration: none; }
 hr { border: 0; border-top: 1pt solid #000; margin: 6mm 0; }
 .manual-figure, .register-entry, .keep-together { break-inside: avoid; }
 .manual-figure { display: block; }
+.manual-figure img {
+	display: block;
+	width: 128mm;
+	max-width: 100%;
+	height: auto;
+	margin: 0 auto;
+	image-rendering: pixelated;
+}
 svg { display: block; width: 100%; height: auto; }
 svg text { font-family: "Manual Sans"; }
 svg [font-family="monospace"] text, svg text[font-family="monospace"] { font-family: "Manual Mono"; }

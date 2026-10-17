@@ -46,3 +46,12 @@ block exceeding a page and no label outside its viewBox. These checks only
 supplement actual inspection. The canonical publication's 26 rasters were
 compared with the inspected final proof and are pixel-identical. Page count
 identifies the inspected artifact, not completeness of GEO or Book I.
+
+## Shared PNG publisher revalidation — 2026-10-17
+
+Print was reopened for the central PNG extension. Fresh publication-mode proofs
+before and after the final publisher change have all 26 page rasters
+pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
+content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
+are unchanged. The actual-page acceptance above therefore remains applicable;
+this comparison is not a new factual review or an output-image claim.

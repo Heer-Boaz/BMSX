@@ -56,3 +56,12 @@ was rasterized again and matches the inspected final proof pixel for pixel.
 The receipt records the same engine and two figures with no layout errors.
 This does not close the pending broader technical-specification audit or actual
 graphics-output illustration work in the manual work list, or complete Book I.
+
+## Shared PNG publisher revalidation — 2026-10-17
+
+Print was reopened for the central PNG extension. Fresh publication-mode proofs
+before and after the final publisher change have all 28 page rasters
+pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
+content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
+are unchanged. The actual-page acceptance above therefore remains applicable;
+this comparison is not a new factual review or an output-image claim.

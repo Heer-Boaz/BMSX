@@ -4,6 +4,13 @@
 
 **Boundary:** this is an editorial inventory of the six current chapters and their existing frozen fact sheets, plus a unit/index inventory. It is not a new live owner-versus-spec extraction, a fresh factual approval, proof of full Book I coverage, or closure of the user's broad technical audit. The broad audit and graphics-output items in `README.md` remain open. The DMA supplement below addresses the first bounded rate/boundary teaching task, not this entire inventory. No new publisher/schema/check layer is proposed.
 
+**Completion target:** a programmer new to BMSX must be able to control the
+whole hardware from the manual alone, without reverse-engineering runtime,
+firmware or example code to discover missing contracts. Apply the reader
+acceptance target in [README.md](README.md) to the whole book and cross-unit
+programming route, not merely to isolated register tables. This inventory is
+still open until that target is demonstrated.
+
 **Progress after this baseline:** GEO now has a separately extracted and reviewed
 owner chapter, an executed three-operation BLua cartridge and paired timing/data
 replays; see [its source review](../book1/reviews/geo-source.md). This closes the
@@ -226,7 +233,13 @@ npm run headless:test -- gpu_manual tests/carts/gpu_manual/gpu_manual_assert.lua
 now been rebuilt/run with current product and BIOS; all cases pass and all
 three native 256×192 PNGs were individually viewed. The GTE pair is the NCCT
 gradient triangle from the complete cartridge, shifted 16 screen units by
-TRX 0→32, not the separate solid-red worked packet. A bounded source/caption
-extraction is in progress. Committed plate assets, publication support,
-independent caption review and actual final-PDF inspection remain outstanding;
-the broad illustrations item and this new GEO dummy-game task stay open.
+TRX 0→32, not the separate solid-red worked packet. Its unmodified PNG assets
+are now included beside the printed executable program. Bounded facts-only
+authorship, independent caption/source/image checks and the complete final
+print review pass; see [the source review](../book1/reviews/gte-source.md) and
+[print review](../book1/reviews/gte-print.md). The publisher uses ordinary PNG
+images beside existing SVG figures, without a new capture or approval framework.
+The GPU plate has a separate bounded fact sheet and draft caption, not a
+published/print-approved insertion. Further GTE contrasts, GPU/PCRTC output
+teaching and the GEO dummy-game task remain open. This pair does not close
+the broad illustrations or technical audit.

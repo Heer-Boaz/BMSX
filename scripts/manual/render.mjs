@@ -1,16 +1,20 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { escapeText } from 'entities';
+import { decodeHTML, escapeAttribute, escapeText } from 'entities';
 import { Marked } from 'marked';
 import { chromium } from 'playwright';
 
 export function chapterHtml(chapter, mode) {
 	const parser = new Marked({
 		renderer: {
-			image({ href }) {
-				// Manual figures are authored SVG. Inline them so body and figure
+			image({ href, tokens }) {
+				if (href.endsWith('.png')) {
+					const alt = escapeAttribute(decodeHTML(this.parser.parseInline(tokens, this.parser.textRenderer)));
+					return `<span class="manual-figure"><img src="data:image/png;base64,${chapter.figures.get(href).toString('base64')}" alt="${alt}"></span>`;
+				}
+				// Inline authored SVG so body and figure
 				// lettering use the same bundled fonts, without external resources.
-				return `<span class="manual-figure">${chapter.figures.get(href)}</span>`;
+				return `<span class="manual-figure">${chapter.figures.get(href).toString('utf8')}</span>`;
 			},
 		},
 	});
@@ -57,7 +61,7 @@ export async function renderChapter(chapter, mode, outputDirectory) {
 			const area = document.querySelector('main').getBoundingClientRect();
 			// A4 minus the 19 mm top and 18 mm bottom margins in print.css.
 			const pageHeight = CSSNumericValue.parse('260mm').to('px').value;
-			for (const element of document.querySelectorAll('main pre, main table, main p, main li, main h1, main h2, main h3, main h4, main svg')) {
+			for (const element of document.querySelectorAll('main pre, main table, main p, main li, main h1, main h2, main h3, main h4, main svg, main img')) {
 				const bounds = element.getBoundingClientRect();
 				if (bounds.left < area.left - 1 || bounds.right > area.right + 1 ||
 					(element.tagName !== 'svg' && element.scrollWidth > element.clientWidth + 1)) {
@@ -80,7 +84,7 @@ export async function renderChapter(chapter, mode, outputDirectory) {
 				}
 			}
 			return {
-				figures: document.querySelectorAll('.manual-figure svg').length,
+				figures: document.querySelectorAll('.manual-figure svg, .manual-figure img').length,
 				registerEntries: document.querySelectorAll('.register-entry').length,
 				errors,
 			};

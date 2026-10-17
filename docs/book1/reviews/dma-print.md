@@ -47,3 +47,12 @@ proof and are pixel-identical. Page count identifies the reviewed artifact,
 not instructional completeness. The wider technical audit and actual graphics
 output illustrations remain separate scheduled work. No publisher, stylesheet,
 font, figure framework or publication gate was added or changed.
+
+## Shared PNG publisher revalidation — 2026-10-17
+
+Print was reopened for the central PNG extension. Fresh publication-mode proofs
+before and after the final publisher change have all 17 page rasters
+pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
+content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
+are unchanged. The actual-page acceptance above therefore remains applicable;
+this comparison is not a new factual review or an output-image claim.
