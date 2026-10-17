@@ -1,0 +1,50 @@
+local state<const> = require('results')
+local result<const>: *bios_base_manual_result = state.result
+
+return {
+	kind = 'integration',
+	tests = {
+		base_service_observations = function(t)
+			t:wait_until('base service observations complete', function()
+				return result.completed == 1
+			end, 8)
+			assert(result.assert_first == 0)
+			assert(result.assert_last == 7)
+			assert(result.assert_count == 4)
+			assert(result.assert_hole == 1)
+			assert(result.assert_nil_error == 1)
+			assert(result.assert_default_error == 1)
+			assert(result.conversions[0] == 12.5)
+			assert(result.conversions[1] == -125)
+			assert(result.conversions[2] == 0.25)
+			assert(result.conversions[3] == 16)
+			assert(result.conversions[4] == -5)
+			assert(result.conversions[5] == 35)
+			assert(result.conversion_rejected == 1)
+			assert(result.conversion_bad_base == 1)
+			assert(result.type_names_match == 1)
+			assert(result.object_labels_match == 1)
+			assert(result.identity_same == 1)
+			assert(result.identity_distinct == 1)
+			assert(result.next_key == 4)
+			assert(result.next_value == 41)
+			assert(result.next_done_count == 1)
+			assert(result.next_done_nil == 1)
+			assert(result.pairs_count == 3)
+			assert(result.pairs_sum == 66)
+			assert(result.ipairs_count == 2)
+			assert(result.ipairs_sum == 30)
+			assert(result.ipairs_after_hole == 90)
+			assert(result.select_count == 3)
+			assert(result.select_suffix_count == 2)
+			assert(result.select_first_nil == 1)
+			assert(result.select_last == 9)
+			assert(result.select_empty_count == 0)
+			assert(result.global_values[0] == 11)
+			assert(result.global_values[1] == 22)
+			assert(result.global_error == 1)
+			assert(result.global_cleared == 1)
+			assert(result.print_count == 1)
+		end,
+	},
+}

@@ -13,6 +13,13 @@
 		"facts": "docs/book1/facts/memory-map.md",
 		"review": "docs/book1/reviews/memory.json"
 	},
+	"bios-base": {
+		"book": "I",
+		"label": "BIOS BASE",
+		"chapter": "docs/book1/bios-base.md",
+		"facts": "docs/book1/facts/bios-base.md",
+		"review": "docs/book1/reviews/bios-base.json"
+	},
 	"coroutines": {
 		"book": "I",
 		"label": "COROUTINES",

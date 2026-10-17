@@ -700,3 +700,45 @@ and installation lifetime. Each still needs owner facts, authored reference and
 executable programming coverage; private firmware imports and descriptor gaps
 must not silently become invented cartridge APIs. Graphics contrasts, Book II
 and whole-console newcomer acceptance remain open.
+
+
+## BIOS base-service reference and source-producer boundary
+
+A separate chapter now supplies the twelve remaining installed base globals:
+assert, rawequal, type, tostring, tonumber, next, pairs, ipairs, select, getglobal,
+setglobal and print. Together with the CPU's four metatable/raw-access names
+and the protected-call chapter's three globals, all nineteen installed base
+names now have reference locations. This is name/reference coverage, not closure
+of the stopped Table-length contract or the complete installed libraries.
+
+Two facts-only authors separately wrote value/conversion and traversal/tuple/
+global/output sections. The reference supplies exact numeral grammar, ordered
+binary64 digit/fraction/exponent arithmetic and termination limits; iterator
+factory versus step faults, stored versus inherited reads, nil result counts,
+signed-word selector conversion, live global writes, mutable/captured dependencies,
+actual codepoint diagnostic transport versus byte history, and incremental—not
+total—alias charges. Source/reader/actual-PDF decisions remain separate records.
+
+The ordinary two-module cartridge has143 literal source lines,37 retained
+assertions and17 separately observed diagnostic lines. Three long source
+statements were wrapped in the actual program and the complete toolchain,
+retained case and ordinary image were rerun, not just shortened in the printed
+listing. No publisher, runtime, BIOS, compiler, cartlib or shared-harness edit
+was needed. Nine bounded supplemental bodies at both O0/O3 pass18 native/TS
+comparisons with decoded snapshots; their empty console dependency is explicitly
+not output evidence. Ordinary diagnostic evidence uses the real installed BIOS.
+
+**New source-producer question, not runtime-mirror disagreement:** the same
+observation program formats literal `-0` as `-0` at O0 but `0` at O3; both owners
+agree at each level. Parsed negative zero still formats `-0` at both levels,
+and literal reciprocal `1/(-0)` still formats `-inf` at both. This is not a
+universal optimizer algebra rule or workaround recommendation. Exact producer
+locations and the bounded/not-fully-traced cause are recorded in
+[bios-base BZ01](../book1/facts/bios-base.md). Do not erase the finding by narrowing
+all probes to values that pass; no compiler repair is authorized by this slice.
+
+The seven earlier runtime-owner questions remain open. The remaining BIOS work
+is table/string, math/os, source loading/environment and syntax authoring,
+actual exported firmware/cartlib interfaces and install lifetime. Remaining
+cross-unit graphics contrasts, Book II and whole-console newcomer acceptance
+remain on the manual list. Page counts and green cases do not close these tasks.

@@ -75,7 +75,21 @@ missing-key, deletion and metatable lookup are likewise extracted; a complete
 common mutation-length contract is stopped by the seventh paired difference,
 not closed by a single working example. The separate
 [protected-call/coroutine chapter](../coroutines.md) now supplies all eleven
-installed interfaces with a complete ordinary example. The remaining public
-builtin/BIOS and on-console environment references remain unfinished.
+installed interfaces with a complete ordinary example. The separate
+[BIOS base-services chapter](../bios-base.md) now covers the twelve remaining
+base globals. Other installed libraries and on-console environment
+references remain unfinished.
 The current instruction manuscript remains a draft; no successful source,
 reader or PDF pass constitutes whole-manual completion.
+
+
+## Separate compiler producer question
+
+The base-services paired replay found a source-level signed-zero difference:
+`tostring(-0)` yields `-0` at O0 and `0` at O3 on both owners of each linked image.
+Actual negative zero returned by `tonumber('-0')` formats as `-0` at both levels;
+the formatter's input contract is not the disagreement. Exact observed rows,
+producer locations and the not-yet-fully-traced rewrite scope are retained in
+[bios-base BZ01](bios-base.md). No universal source-literal sign-preservation
+promise or compiler repair is inferred. This is separate from the seven
+runtime-owner questions, not an eighth runtime-mirror discrepancy.

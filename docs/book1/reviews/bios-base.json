@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Twelve installed base globals, actual primitive aliases versus ordinary BIOS closures, language values and ordinary globals; CPU/Memory/protected-calls/SYSTEM own connected contracts. No new MMIO unit or complete BIOS/library/loader claim.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "All12 actual source interfaces, argument kinds, optional/missing nil distinctions, exact results/counts/errors and mutable dependencies. These functions introduce no additional mapped register bank; SYSTEM owns diagnostic ports.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Assertion tuples/original errors, equality/type/text categories, complete numeral grammar and ordered Number arithmetic, iterator factories and ordinary inherited reads, raw next storage, select word conversion/suffix and live global identity.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Direct API effects, iterator construction versus stepping, failed operation after already-written global value, print codepoint output versus separate byte history and flush; no rollback or drawing/presentation promise.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Five primitive aliases add1 builtin cycle with zero argument/result coefficients; ordinary wrappers and digit/exponent/scanning/conversion/console work are not a fixed service time. Extremely large exponents carry no termination bound.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Ordinary CPU/IRQ delivery and protected-call hardware-exception boundaries are supplied by their owner chapters. These base interfaces do not provide IRQ setup, acknowledgement or an IRQ-wait replacement; SYSTEM owns diagnostic transport.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Exact wrapper error Strings, arbitrary/nil assertion payloads, alias argument errors and delayed iterator indexing/call faults; actual protected calls and SYSTEM fault publication supply connected routes. No generic all-failure recovery promise.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "BIOS main/base startup installs these public bindings; Memory supplies typed program storage/initialization and CPU/SYSTEM supply reset. No independent API register reset words or universal ordinary-global/history clearing promise is introduced.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete40+103-line ordinary BLua modules, all12 base globals;37 retained assertions and17 actual ordinary diagnostic lines. Full assembly/manifest/timeline procedure is companion material. Independent source and public-only reader passes, including two source and two reader corrections. All13 final publication pages covered by individual-page review and exact unchanged-raster comparison plus changed-pages5/6/7 reinspection; no outstanding print defect.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-base-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-base-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-base-print.md"
+		}
+	}
+}
