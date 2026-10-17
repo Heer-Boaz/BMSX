@@ -17,6 +17,13 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - Node.js 22 or later
 - `npm install -D`
 
+## First cartridge and hardware reference
+
+Start with [Build and inspect the memory example](docs/programming/getting-started.md)
+for the source layout, build commands and checked results. The corresponding
+[Memory and program storage chapter](docs/book1/memory.md) is a working hardware
+manual draft, not yet a complete console reference.
+
 ## Project Layout
 
 - `machine/ts/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle

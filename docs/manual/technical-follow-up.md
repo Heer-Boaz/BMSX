@@ -18,8 +18,8 @@ missing GEO chapter assignment below, not the broad technical audit or the real
 graphics-output illustrations. IMGDEC now also has a separately extracted,
 reviewed owner chapter and executed four-job BLua cartridge; see
 [its source review](../book1/reviews/imgdec-source.md). Input is the next unit
-assignment; its initial output-precision question is recorded below. The new
-GEO scene/overlay and memory-foundation requirements remain open.
+assignment; its initial output-precision question is recorded below. The GEO
+scene/overlay and complete memory-foundation requirements remain open.
 
 ## What is already explicit, versus what still needs a paragraph
 
@@ -240,20 +240,50 @@ named-static-array `#` support is not an accepted constant-module export
 expression. The accepted representation uses one numeric const for both
 dimensions and its exported count. Keep this distinction in the BLua teaching
 contract; do not silently fix the compiler or replace it with ordinary Lua.
-Public project packaging, entry/launch and memory-inspection instructions still
-need their owning development-workflow source/guide, not an invented API or
-permission to reverse-engineer the example.
 
-**VRAM reservation continuation:** BM36 already identifies the exported
-`gpu/system_vram_region` function. Its remaining narrow source route is
-`machine/bios/tty/layout.lua`, `toolchain/ts/rompack/system_texture.ts`,
-`scripts/rompacker/rombuilder.ts` (system atlas generation/upload), and
-`toolchain/ts/rompack/gp0_encode.ts`, beside the paired VRAM leaf. Audit the
-actual packed upload extent and returned rectangle before writing numerical
-bounds: atlas maximum dimensions are not automatically its emitted dimensions.
-The API's returned region must not silently become an unaudited lifetime,
-redraw, ownership-release or permission guarantee. This is a next extraction
-lead, not acceptance of a new public reservation contract.
+**Bounded newcomer-route continuation completed:** the separate
+[first-build companion](../programming/getting-started.md) now explains exact
+file/module/entry/manifest roles, build commands, result checking and ordinary
+playback. Its precise commands were executed; the original storage case still
+passes. This is an existing-checkout first build, not fresh-platform setup,
+whole SDK/debugging coverage or test/production address identity.
+
+The independent public-only reader's concrete R1–R3 findings are now resolved
+within this route: the companion also gives the supplied fault project's
+interactive browser launch, readable FIT presentation and real keyboard input;
+the exact named DMA result check; and the chapter's isolated pre-transfer
+fault-record baseline/ACK/attribution procedure. Root actually exercised the
+browser/keyboard route and reran the DMA case; a separate reader reconstructed
+the amended instructions without sources. First-pending attribution limits
+remain hardware limits, not an invented automatic isolation or counter API.
+
+**Firmware VRAM reservation completed within its stated scope:** the chapter
+now teaches the real `gpu/system_vram_region` call and word-column/row units.
+Independent extraction, current atlas-producer replay and an actual imported
+BIOS call confirm the current 216 × 12 atlas and 320 × 252 bounding region.
+The configured maximum is not the emitted extent. Preserve the entire queried
+region across handoff; no protection, release, complement-free arena or pixel
+restoration is promised. See [the VRAM facts](../book1/facts/memory-vram.md).
+
+**Installed fault inspection and DMA lifetime completed within their scopes:**
+an ordinary unmapped-load cartridge and real BIOS keyboard commands establish
+DBE, Memory CODE/ADDR/ACCESS, saved-report clearing and unchanged-EPC retry.
+The unmodified captured output is printed beside the exact program; 20 input/
+latch assertions pass. This does not supply a successful repair handler.
+Separately source-checked DMA preparation/capture/live-read/wait/check/reuse,
+overlap and non-successful DONE behavior now link to the complete DMA program;
+its actual copy/completion case was rerun successfully. Other units' lifetimes
+do not follow from DMA. See [the current source review](../book1/reviews/memory-source.md)
+for precise evidence and the remaining scope.
+
+**Still open:** complete call/permission/dynamic/string-byte contracts;
+non-DMA shared-buffer ownership and reuse; privileged supervisor/context,
+successful fault recovery and terminal/reset policy; inherited device state;
+remaining access/instruction timing and cross-unit budgets; broader SDK/live
+inspection and whole-reader acceptance. Current 22-page DRAFT readability is
+independently checked, but these gaps and final publication review remain
+explicit. Do not equate one successful build route with full memory/book
+coverage.
 
 Do not substitute a language value-slot stack or a logical heap accounting
 budget for a byte-addressed RAM allocation. Do not infer free-memory rights

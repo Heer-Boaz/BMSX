@@ -1,64 +1,74 @@
 # Memory and program storage: DRAFT print inspection
 
-2026-10-17. **Current DRAFT is visually reviewed; public print approval remains
-open.** This is not a published/complete chapter. Coverage gaps and the reader
-route remain tracked in memory.json and memory-source.md. No publisher, CSS,
-font, figure renderer or approval framework was changed.
+2026-10-17. **Current DRAFT readability passes; public print approval remains
+open.** This does not establish complete chapter coverage or the whole-book
+reader target. No publisher, CSS, font, figure renderer or review framework
+changed.
 
-## Actual output and scope
+## Actual final output
 
-Ordinary command: `npm run manual:preview -- memory`.
-Actual PDF: `build/manual/memory.preview.pdf`, 17 pages, zero image figures.
-Chromium 153.0.8010.12, Node v22.23.1, Linux/x64. Existing layout check reports no
-errors. It is build evidence, not the visual inspection itself.
+Command: `npm run manual:preview -- memory`.
+PDF: `build/manual/memory.preview.pdf`, **22 pages, one image**.
+Chromium 153.0.8010.12, Node v22.23.1, Linux/x64. The existing layout receipt
+reports `errors: []`; that build result is not the visual inspection.
 
-Each actual PDF page was rendered separately with PDFium at scale1.4
-(833×1179) and viewed at original detail, not through contact sheets or HTML:
+Each actual PDF page was separately rendered with PDFium at scale 1.4
+(833 × 1179) and viewed at original detail, not through HTML or contact sheets:
 
-- Root individually inspected pages1–8: map/reservations, DATA/BSS placement,
-  startup, typed declaration/size/alignment tables, firmware fragments, pointer
-  indexing, address-of, sizeof/offsetof and explicit byte-address maps.
-- A separate reviewer individually inspected pages9–17: execution/domains,
-  scalar access, complete fault/register/ACCESS/cause tables, both full BLua
-  modules, worked layout/address/result tables. Hex words and code indentation
-  are readable, tables/code are unclipped and margin page numbers remain clear.
+- Root inspected pages 1–11: map, reservations, firmware VRAM query, sections,
+  startup and typed storage. Tables, packed words, complete snippets and
+  coordinate units are readable and unclipped.
+- A separate reviewer inspected pages 12–22: scalar access, complete fault
+  tables, installed-monitor route, actual image, complete production listings,
+  result/layout tables and ordered DMA lifetime route. Code indentation and
+  hex words remain legible, with no clipped table rows or footer collisions.
 
-## Finding and final recheck
+Final rasters: `/tmp/bmsx-memory-reader-final-pages/page-001.png` through
+`page-022.png`. Independent report:
+`/tmp/bmsx-memory-continuation-print-review.md`.
 
-The initial page9 ended with the execution-domain heading and its lead while
-the whole table began on10. Grouped that short lead and table using the existing
-authored keep-together class. No words, cells, diagram logic or publisher code
-changed. After this first layout correction the PDF still has17 pages; exact full-page raster comparison
-shows only9and10 changed. The reviewer individually viewed those final two
-pages: heading/lead/table/explanation now stay together on10, page9 ends after
-a complete byte-order explanation, and the scalar heading retains its intro.
-Previously inspected pages1–8and11–17 are pixel-identical to their final pages.
-No unresolved current-draft clipping/stranding finding remains.
+## Found and corrected
 
-An initial reviewer impression of missing running headers/left draft footers
-was withdrawn, not worked around. Actual final top65-pixel bands are identical
-on all17 pages, with nonwhite header bounds(71,34,763,41); the left footer bands
-are also identical to the visibly present page1. These checks corroborate the
-actual images rather than treating a thumbnail impression as a publisher bug.
+The initial 21-page continuation put the real BIOS image on page 16 and its
+caption on page 17. Root confirmed both actual pages, then grouped only the
+image and caption with the existing authored `keep-together` class. No words,
+image bytes or publisher behavior changed.
 
-Evidence: `/tmp/bmsx-memory-draft-print-review.md`, initial inspected rasters
-`/tmp/bmsx-memory-integrated-pages/` and final rasters
-`/tmp/bmsx-memory-final-pages/`. A final non-DRAFT/publication-style review must
-follow when the incomplete programming contracts and chapter coverage are
-resolved. Do not promote this draft readability check to that approval.
+The final render has 22 pages. Pages 1–15 are pixel-identical to their already
+individually inspected originals. The separate reviewer individually viewed
+every changed final page, 16–22: the entire image and caption now stay together
+on page 17; the full short program/transcript remain readable on 16; both
+storage listings, result tables and the two closing DMA paragraphs are
+complete and unclipped. No outstanding DRAFT readability finding remains.
 
-## Reader-correction final reflow
+Running headers, DRAFT footers and page numbers are present. Read-only raster
+comparison corroborates their consistent pixels; an initial thumbnail
+impression of missing running labels was withdrawn, not worked around. The
+genuine black display area in the unmodified BIOS image is not missing print
+content.
 
-The four separately source/reader-reviewed clarifications were then applied;
-both production code blocks remain unchanged. The current ordinary DRAFT still
-has17 pages. Full-raster comparison against the prior accepted draft shows
-only4,5,6,14and16 changed. Root individually viewed final4–6 at original detail:
-status-setting text, the complete two-line section continuation before the
-next heading, and Word/initializer clarification are readable and unclipped.
-Root and the separate reviewer individually viewed final14and16 at original
-detail. The new type-scope and linked-RODATA explanations are complete and
-legible; code and tables remain unclipped, with no new stranded heading.
-All changed pages pass bounded DRAFT readability review; unchanged pages
-retain their exact prior visual evidence. This does not close the public
-print review or the remaining programming contracts. Current rasters:
-`/tmp/bmsx-memory-reader-corrected-pages/`.
+## Approval boundary
+
+This supersedes the previous 17-page, zero-image baseline print report.
+Current actual-page readability is accepted only as a **DRAFT**. The remaining
+programming/ownership contracts and public publication-style review keep
+`reviews.print.passed` false; a longer PDF or clean layout receipt does not
+close them. Reinspect changed actual pages after further manuscript edits.
+
+## Reader-directed final reflow
+
+The final fault-launch cross-reference and isolated DMA fault-attribution
+procedure leave the PDF at 22 pages. Exact full-page raster comparison against
+the above accepted draft shows only pages 16, 21 and 22 changed; all other pages
+retain their individually inspected, pixel-identical evidence. Root viewed
+those three final originals separately: the complete fault program/transcript/
+table and guide reference remain legible on 16; the before-START procedure and
+steps 1–3 fit 21; steps 4–5, full overlap explanation, both closing paragraphs
+and result-guide reference fit 22. No clipped content, stranded heading or
+footer collision was found.
+
+The separate reviewer independently compared all 22 final rasters, confirmed
+the same three-page delta, and individually viewed final 16/21/22 at original
+detail. **Bounded final DRAFT readability PASS; no outstanding finding.**
+Evidence: `/tmp/bmsx-memory-continuation-print-review.md`, reader-correction
+addendum. This leaves public print approval and remaining coverage open.

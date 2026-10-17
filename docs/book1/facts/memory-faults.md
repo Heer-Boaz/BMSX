@@ -103,7 +103,7 @@ ACCESS constants are flags, not the same enumeration as `MemoryAccessKind`. Bits
 |---|---|---|
 | BF41 | Memory save state carries RAM bytes plus exactly three bus-fault fields: CODE, ADDR, ACCESS. The internal sequence and ACK are not fields in this state type/capture. Restore writes those three fields and refreshes mapped slots/ACK=0; these methods do not restore/reset the internal sequence. This is the named Memory state, not every machine save-state component. | `machine/ts/machine/memory/memory.ts:113-118,289-310`; `machine/cpp/machine/memory/memory.h:19-24`; `machine/cpp/machine/memory/memory.cpp:204-225`. |
 
-## Explicit gaps / claims withheld
+## Original extraction limits (bounded extensions below)
 
 1. **Exception state and cartridge recovery ABI:** the bodies of synchronous exception/address-exception entry, saved EPC semantics, BAD_ADDRESS updates for each exception class, mode-stack effects, exception-vector dispatch, firmware handler policy, return/retry semantics, and whether/how a user-mode cartridge can acknowledge/recover have not been inspected. The invoked entry edge/constants above do not establish them.
 2. **Full IRQ/fault routing and latency:** no IRQ-controller owner, CPU IRQ arbitration loop, masking/NMI timing, cycle costs, asynchronous fault routing or device-fault-to-bus-fault mapping was audited. No automatic IRQ or cycle-latency claim is supplied.
@@ -115,3 +115,30 @@ ACCESS constants are flags, not the same enumeration as `MemoryAccessKind`. Bits
 8. **Runnable BLua fault example:** no real typed-BLua example/firmware handler or execution fixture was read or run in this extraction. No fake safe-recovery example should be generated from these facts alone.
 
 This sheet closes the four-register address/code/flag/latch and bounded ordinary scalar trap-entry facts. It does not close the foundations publication's whole exception/recovery or memory-programming gaps.
+
+## Installed monitor route: subsequently checked core facts
+
+These extend the original scope above; they do not claim the complete CPU,
+supervisor or recovery ABI. Root read the named primary owners and supplied
+public prose; a nonauthor independently checked the exact claims, actual
+example and image. Report: `/tmp/bmsx-memory-monitor-example-source-review.md`.
+The actual cartridge/keyboard observations are MF01–08 in `memory-example.md`.
+
+| ID | Fact | Primary source lines |
+|---|---|---|
+| BF42 | The example's emitted scalar LOAD_MEM_D checks alignment, performs the selected Word mapped read, checks the new fault sequence, and enters DBE before destination assignment. This extends applicability to this actual displaced load, not all memory opcodes. | `machine/ts/machine/cpu/cpu.ts:2992-3009,3051-3077`; `machine/cpp/machine/cpu/cpu_dispatch.inl:554-576`; emitted form `toolchain/ts/lua/compiler.ts:5222-5232`. |
+| BF43 | Synchronous memory/fetch exceptions choose the system exception function address. Maskable IRQ instead selects active-image IRQ in user mode and system-image IRQ otherwise. Synchronous memory entry resets the interrupted frame PC to the faulting instruction PC and passes that PC as EPC. | `machine/ts/machine/cpu/cpu.ts:1718-1745`; `machine/cpp/machine/cpu/cpu.cpp:2280-2304`. |
+| BF44 | `irq` and `exception` handler names resolve to system globals when compiling system code, cartridge globals when compiling cart code. Their ordinary function assignment uses that selection; separate GETSYS/SETSYS and GETGL/SETGL banks implement it. A cart `exception` declaration does not replace the installed system handler slot. | `toolchain/ts/lua/compiler/system_boot_symbols.ts:13-16`; `toolchain/ts/lua/compiler.ts:591-600,2885-2886,4643-4674`; `machine/ts/machine/cpu/cpu.ts:2344-2356`; `machine/cpp/machine/cpu/cpu_dispatch.inl:60-78`. |
+| BF45 | Generated system exception entry loads its `exception` global, calls it, then emits RFE. Installed BIOS `exception(error_value)` calls `monitor.enter(error_value)`. RFE returns to EPC and restores mode-stack bits; this return path does not acknowledge Memory's bus-fault report. | `toolchain/ts/lua/compiler.ts:1657-1665`; `machine/bios/main.lua:54-56`; `machine/ts/machine/cpu/cpu.ts:2773-2801`; `machine/cpp/machine/cpu/cpu_dispatch.inl:688-716`. |
+| BF46 | The address-exception helper updates CP0 BAD_ADDRESS before synchronous entry; the DBE path enters synchronous exception without that update. Thus this DBE does not establish a fresh CP0 bad address. The Memory ADDR latch remains its own addressed-fault report. | `machine/ts/machine/cpu/cpu.ts:1732-1739,3073-3077`; `machine/cpp/machine/cpu/cpu.cpp:2290-2297`; `machine/cpp/machine/cpu/cpu_dispatch.inl:571-575`. |
+| BF47 | BIOS MEM parses a hexadecimal address and word count, reads through a Word address view and advances the byte address by4 for each displayed word. The specific known-register command `MEM 08010208 3` displays CODE/ADDR/ACCESS; no claim that arbitrary invalid memory inspection is harmless. | `machine/bios/shell/commands.lua:68-77,631-647,827-847`; exact command/result MF05. |
+| BF48 | FAULT displays the saved BIOS fault report when valid. FAULT CLEAR sets that saved valid flag to0, drops its saved Lua message and clears saved source-location validity; it does not acknowledge Memory or resume. CONT returns the continue action, and the monitor restores its saved EPC/STATUS before ordinary return; no EPC advance, bus ACK or address repair is performed. The example therefore faults again on CONT. | `machine/bios/shell/commands.lua:557-595`; `machine/bios/shell/source_location.lua:106-108`; `machine/bios/shell/monitor.lua:168-175,190-194,406-413,494-505`; exception-return BF45; actual MF06–07. |
+| BF49 | Both MFC0 and MTC0 reject user-mode access by entering coprocessor-unusable before field access. This is not a cartridge recovery-registration API. | `machine/ts/machine/cpu/cpu.ts:2738-2759`; `machine/cpp/machine/cpu/cpu_dispatch.inl:386-409`; cause constants `machine/ts/spec/blua32/cop0.ts:22` / `machine/cpp/spec/blua32/cop0.h:28`. |
+
+Closed within this supplement: actual displaced-Word load applicability,
+installed system/monitor routing, named handler namespace, precise bus-report
+versus CP0 bad-address distinction, MEM inspection and unchanged-EPC retry.
+Still open: complete supervisor handoff/permissions/retained-device context,
+every opcode and exception class, arbitrary nested/NMI recovery, an authorized
+successful cartridge repair/return policy, and whole-CPU instruction reference.
+Do not turn the deliberate retry failure into a successful recovery example.

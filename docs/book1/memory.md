@@ -56,6 +56,47 @@ Each end in this table is exclusive and includes the section's alignment padding
 
 The linker checks that the linked static storage fits within the RAM byte count supplied for the build. This is a static-storage fit check, not an allocation service. Neither the installed RAM extent nor the end of cartridge BSS defines a free arena, stack reservation, or byte-addressed heap.
 
+## Firmware reservation in VRAM
+
+The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and linked static-storage reservations in main RAM.
+
+### Query the linked firmware
+
+The named BIOS function `gpu/system_vram_region` takes no arguments and returns two packed words. Call it through `require`; do not substitute a numerical function address or treat its name as an asset identifier.
+
+```lua
+local system_vram_region<const> = require('gpu/system_vram_region')
+local system_origin<const>, system_size<const> = system_vram_region()
+local x<const> = system_origin & 0x0000ffff
+local y<const> = system_origin >> 16
+local width<const> = system_size & 0x0000ffff
+local height<const> = system_size >> 16
+```
+
+The first return word contains x in its low half and y in its high half. The second contains width and height, not right and bottom coordinates. The returned rectangle is `[x, x + width) × [y, y + height)`.
+
+Here x and width count **16-bit VRAM words** across a row; y and height count **rows**. These are not CPU byte addresses, main-RAM offsets or counts of 32-bit transfer words. The query describes the linked terminal layout and actual atlas extent: it neither uploads pixels nor waits for a transfer, allocates storage or checks live VRAM contents.
+
+### Current-firmware example
+
+For the current firmware image's terminal layout and packed atlas, the rectangles are:
+
+| Use | x range, in 16-bit words | y range, in rows |
+|---|---|---|
+| Full terminal, 320 × 240 | `[704, 1024)` | `[720, 960)` |
+| Actual system atlas, 216 × 12 | `[768, 984)` | `[960, 972)` |
+| Returned bounding rectangle, 320 × 252 | `[704, 1024)` | `[720, 972)` |
+
+For those dimensions, the returned origin word is `0x02d002c0` and the size word is `0x00fc0140`. These numbers are a **current-firmware example**, not universal constants for cartridge code. The atlas's configured maximum is 256 × 64, but its actual packed extent need not fill that maximum; consume the query result instead.
+
+The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
+
+### Handoff is not release
+
+Clearing terminal text or status, or selecting a smaller active terminal viewport, does not shrink the queried full-layout reservation. Cartridge handoff does not release it either. The BIOS monitor later uses the same terminal coordinates and uploads the system atlas again before drawing its output.
+
+Keep the complete queried region out of cartridge allocations. The query does not install hardware write protection or grant permission to overwrite that region, and it does not establish that every coordinate outside it is free.
+
 ## ROM contents, RAM sections, and startup
 
 <div class="keep-together">
@@ -512,6 +553,68 @@ The CPU cause-code field occupies bits 6:2, selected by `CPU_CAUSE_CODE_MASK = 0
 
 These CPU cause codes are not the values 1–3 in `IO_SYS_BUS_FAULT_CODE`. They are not IRQ bits either: IRQ and NMI are independently represented by bits 10 and 16. Acknowledging the fault record and entering a CPU exception are distinct operations.
 
+## Installed response to a memory exception
+
+A synchronous memory exception enters the **system exception entry**, even when the faulting instruction belongs to a cartridge. This differs from a maskable IRQ, whose entry is selected according to the interrupted mode. Declaring a cartridge `exception` function does not install it as the handler for this memory-fault route.
+
+The system exception entry calls the BIOS exception function, which enters the BIOS monitor. Acknowledging the Memory fault record is not exception return: it clears the retained report but does not repair an address or advance the faulting instruction. Likewise, returning from an exception does not itself acknowledge that record.
+
+### Inspect an actual unmapped load
+
+The following is a complete cartridge program. Its Word view addresses `0x01000000`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
+
+```lua
+module<entry>
+
+bss reached_after_load: word
+local unmapped<const>: *word = 0x01000000
+
+-- This unmapped load enters the BIOS monitor before the assignment completes.
+*reached_after_load = *unmapped
+
+while true do
+	halt_until_irq
+end
+```
+
+This load produces a data bus error, displayed as **DBE**. The CPU cause field is `0x0000001c` (code 7); the Memory fault CODE is instead `0x00000001` (unmapped). These are different reports, not two encodings to write to the same register. DBE does not establish a new CP0 bad-address value. Inspect the Memory ADDR word for this bus fault's address.
+
+For the complete fault probe and a step-by-step route to a readable monitor prompt, see [Run and inspect the fault probe](../programming/getting-started.md#run-and-inspect-the-fault-probe).
+
+At the BIOS monitor prompt, type the following command and press Enter. Its address is hexadecimal, and the count selects three consecutive 32-bit words:
+
+```text
+MEM 08010208 3
+```
+
+The displayed result is:
+
+```text
+08010208: 00000001 01000000 00000801
+```
+
+| Displayed word | Meaning for this load |
+|---|---|
+| `00000001` | Memory CODE: unmapped access |
+| `01000000` | Memory ADDR: the invalid byte address |
+| `00000801` | Memory ACCESS: read direction and Word access kind |
+
+<div class="keep-together">
+
+![BIOS monitor after the unmapped Word load and the three-word MEM command](figures/memory-bus-fault.png)
+
+**Unmapped-load output.** The BIOS reports DBE, the faulting source statement and its EPC; the `MEM` line shows the three Memory report words. EPC is the instruction's address in this linked program, not a constant to copy into another cartridge.
+
+</div>
+
+### Clearing a report is not repairing the program
+
+The monitor's `FAULT` command displays its saved fault report when one is retained. `FAULT CLEAR` discards that saved BIOS report; it does not write `IO_SYS_BUS_FAULT_ACK`, clear the Memory CODE/ADDR/ACCESS words, or resume the cartridge.
+
+`CONT` returns using the saved EPC without advancing it. In the program above, the invalid address is unchanged, so `CONT` retries the load and enters the monitor again with another DBE. The first Memory fault remains latched. Clearing either report does not turn an unmapped address into usable storage.
+
+CP0 reads and writes require non-user mode; attempting them from ordinary cartridge user mode causes the coprocessor-unusable exception. Do not attempt to repair this example by reading or replacing CP0 fields in ordinary cartridge code. The example demonstrates inspection and an unchanged-instruction retry, not a cartridge recovery handler or a successful recovery.
+
 ## Worked example: prepare and copy two records
 
 This complete, memory-only program starts with two initialized input records,
@@ -696,3 +799,49 @@ These results establish the byte-storage preparation in this example, not a
 rendering or asynchronous device-buffer contract. A device-facing use still
 needs that device's address and layout requirements, count units, admission
 rules, and completion/lifetime contract.
+
+For the matching project layout, build and result-observation procedure, see
+[Build and inspect the memory example](../programming/getting-started.md).
+
+## DMA buffer lifetime
+
+DMA uses byte addresses but counts transfers in **32-bit words**. Starting a transfer does not copy its source into a private payload buffer. Source storage, destination storage and the channel's programmed words therefore have different lifetimes. The rules below describe aligned, backed main-RAM copies and the stated DMA-to-GPU example, not every hardware buffer.
+
+### Attribute a bus fault before START
+
+The shared record contains CODE (`0x08010208`), ADDR (`0x0801020c`) and ACCESS (`0x08010210`); ACCESS identifies direction and access kind, not a channel or bus master. Read them with aligned Word/U32 MMIO accesses from ordinary cartridge code, not privileged CP0 accesses; reads do not acknowledge them.
+
+Attribution requires an interval from saving the old report through final reads in which only the assessed operation produces bus faults and nobody else acknowledges them. Other channels, CPU accesses, interrupt handlers, BIOS work or devices must not introduce another fault. This is an assumption the program must establish, not automatic isolation.
+
+**Before START**, read CODE and preserve any older nonzero report's CODE/ADDR/ACCESS in owned storage. Write aligned Word/U32 `1` to ACK (`0x08010214`), then read CODE to establish a zero baseline. Start the prepared operation and wait for its real completion predicate. Read CODE again; if nonzero, preserve CODE/ADDR/ACCESS before another ACK. Under the stated assumption, this is the first reported fault since clearing and belongs to the assessed operation.
+
+If the old report must remain physically latched, do not clear it: saving its words preserves information, not the latch. An unchanged pending triple cannot reveal additional faults; concurrent producers or acknowledgers also prevent attribution. Use actual result observations without claiming attribution. Zero CODE is not transfer success: an unready port can discard a word without a bus fault. These registers expose no new-fault counter.
+
+### Prepare, start, wait, check, reuse
+
+1. **Prepare the storage.** Use the linked addresses of storage owned by the program. Fill the source before starting, reserve enough destination space for the word count, and use nonoverlapping source and destination ranges for an ordinary copy. A count of 20 means 20 words, or 80 bytes; it does not mean 20 bytes. Keep the source unchanged until DMA has finished reading it, and do not consume the destination as a completed copy before the final writes.
+
+2. **Program an idle channel completely.** Set its read address, write address, count, increment choices, request selectors and block length before START. An increment advances its address by four bytes per word; a fixed address advances by zero. The programmed block-length field specifies 1 through 16 words, and the last block uses only the remaining count. Both selected requests must be asserted before a block is admitted. `FORCE` is always asserted; `DISABLED` is never asserted. For a device port, choose its real request selectors rather than use FORCE to send words while the port is not ready.
+
+3. **Start once and preserve the live inputs.** An accepted START with a nonzero count sets BUSY; START while BUSY is ignored, not queued as a second transfer. A zero count finishes immediately, before testing requests. Admission retains one block's addresses, remaining count, control and length, but not its source words. At block service, each source word is read and immediately written to the destination before proceeding to the next word. Bytes changed after START can therefore affect later reads; START is not a source-buffer snapshot.
+
+   Leave the channel's programmed address/count/control words alone through completion. Writes to those words are not automatically rejected while BUSY: an already admitted block uses its captured configuration, and its later address/count writeback can overwrite changes made meanwhile. Reprogramming a busy channel is not a way to revise that admitted block safely.
+
+4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. The complete example uses IRQ-sequence predicates and HALT statements rather than an assumed transfer delay.
+
+   **DONE is not a success certificate.** An unmapped read can report a bus fault and supply zero to the transfer; an unmapped or read-only destination write can report a fault without writing its target. DMA nevertheless advances its addresses and count rather than aborting on those faults. A write to an I/O port that is not ready can be discarded without retrying that word. Use the before-START attribution procedure above when assessing the bus-fault record, and use the correct request selectors; completion alone does not prove that all intended destination bytes were written.
+
+5. **Reuse according to the completed operation.** Once DMA has finished its source reads, that transfer no longer needs the source bytes; once its final RAM writes have completed, the RAM destination can be inspected as the completed transfer's output. A receiving device may still have work to do. DMA transport completion does not establish GPU-job completion or permission to reuse a live display surface.
+
+### Overlap is not a buffered move
+
+For backed RAM, reads observe the current four little-endian bytes and writes immediately update their destination bytes. There is no block-sized source snapshot or special overlap-copy behavior. For example, start with RAM words `[1, 2, 3, 4, 5]` and copy a four-word block from *base* to *base + 4*, with both addresses incrementing. The access order produces `[1, 1, 1, 1, 1]`: each write changes the next source word before it is read.
+
+### Complete example
+
+The [DMA chapter's complete BLua program](dma.md#worked-blua-program) prepares 20 source words and performs two nonoverlapping RAM copies using linked storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
+
+The same program sends a five-word ROM stream to fixed GP0, then separately waits for a GPU marker and GPU idle. For this stream, its retained observations put DMA DONE before the marker/idle observations. That is a concrete distinction between DMA completion and device completion, not a universal ordering or lifetime rule for other units.
+
+For the matching project and result-observation commands, see
+[Check the DMA program’s results](../programming/getting-started.md#check-the-dma-programs-results).

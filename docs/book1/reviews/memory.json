@@ -1,9 +1,9 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Installed capacities/windows/reservations, linked system/cartridge sections, language slots/budget and execution domains are independently source-checked; none grants a guessed free arena or RAM isolation.",
+			"resolution": "Installed capacities/windows, main-RAM reservations, linked sections and execution domains are source-checked. The firmware VRAM bounding-region query and current-asset example are checked against producers and an actual BIOS call; no complement-free arena or hardware protection is inferred. DMA lifetime is bounded separately.",
 			"open": [
-				"Complete shared-device-buffer ownership/admission/lifetime route and required call/permission reference."
+				"Complete non-DMA shared-buffer ownership/admission/lifetime and required call/permission reference."
 			]
 		},
 		"registers": {
@@ -11,33 +11,33 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Byte units, type/aggregate layout, static initializer limits, typed views, zero-based scaling, raw byte arithmetic, BE instructions versus LE data/records, scalar widths and exact worked storage are source-checked.",
+			"resolution": "Byte units, type/aggregate layout, initializer limits, typed views/indexing, raw byte arithmetic, BE instructions versus LE data, scalar widths and complete storage program are checked. Firmware query units distinguish 16-bit VRAM word columns/rows from CPU bytes and 32-bit transport words.",
 			"open": [
 				"Complete required function-call/dynamic-value/string-byte programming contracts or finished owning references."
 			]
 		},
 		"visibility": {
-			"resolution": "Generated startup versus EXEC/image selection, scalar alignment/readiness, immediate fault publication/ACK and F64 ordered partial completion are explicit and source-checked.",
+			"resolution": "Startup versus EXEC, scalar alignment/readiness, fault publication/ACK and F64 partial completion are explicit. DMA configuration capture versus live payload reads, ordered overlap, service writeback and transport-versus-device completion are independently checked.",
 			"open": [
-				"Complete device capture-versus-live-read, completion/fault and buffer-reuse/overlap boundaries."
+				"Complete non-DMA device capture/live-read, completion/fault and buffer-reuse boundaries, including shared supervisor use."
 			]
 		},
 		"timing": {
-			"resolution": "Installed33,868,800cycle timebase and selected scalar-memory/arithmetic/WIDE base charges are explicit; no source-expression duration or electrical bandwidth is inferred.",
+			"resolution": "Installed 33,868,800-cycle timebase and selected scalar/arithmetic/WIDE charges are explicit; the complete DMA reference supplies route budgets. No electrical bandwidth, source-expression duration or new measured latency is inferred.",
 			"open": [
 				"Complete required instruction/access timing reference and cross-unit DMA budgets; record the software-defined limits rather than invent separate electrical bus clocks."
 			]
 		},
 		"interrupts": {
-			"resolution": "BIOS central mask0 handoff, CPU IE/user entry bits, synchronous access exceptions and independent CPU cause/IRQ/NMI bits are distinguished.",
+			"resolution": "BIOS central-mask handoff, CPU IE/user entry and synchronous exceptions versus mode-selected IRQ are distinguished. Installed system exception dispatch, separate handler namespace and CP0 user-mode restriction are source-checked.",
 			"open": [
 				"Connect complete central interrupt setup and supervisor/handler programming to the newcomer route."
 			]
 		},
 		"faults": {
-			"resolution": "First-pending words versus new fault sequence, exact codes/ACCESS, nonzero ACK, alignment-before-map and faulting-load destination behavior pass source audit.",
+			"resolution": "First-pending Memory words versus fault sequence, codes/ACCESS, ACK, alignment and load destination behavior pass source audit. An executed unmapped-load cartridge enters the BIOS monitor; actual MEM/FAULT CLEAR/CONT input and image distinguish hardware latch, saved report and unchanged-EPC retry, not successful recovery. An isolated DMA fault-record procedure explains saving old diagnostics, ordinary Word/U32 ACK1, clean baseline and limits of first-pending attribution; clean CODE is not transfer success.",
 			"open": [
-				"Complete supervisor/handler privilege, reporting, return/retry or terminal-fault policy and an actual fault-inspection/recovery programming route."
+				"Complete privileged supervisor/context programming, remaining instruction fault classes, supported successful recovery and terminal/reset policy."
 			]
 		},
 		"reset": {
@@ -47,9 +47,9 @@
 			]
 		},
 		"programming": {
-			"resolution": "Complete32- and30-line typed BLua modules exactly match the ordinary cartridge; full validation and its integration case pass initial DATA/BSS, all layouts/relative addresses/words/padding and final status.",
+			"resolution": "Exact complete 32/30-line storage modules and 11-line fault program execute successfully. The linked first-build companion teaches project/module/entry/manifest roles, exact build/result commands and separate ordinary playback; those commands were executed. DMA preparation/wait/check/reuse links to the complete owning program. A separate public-only reader re-exercised the supplied storage, interactive browser fault and DMA result routes; R1-R3 local gaps are resolved on paper, not whole-book acceptance.",
 			"open": [
-				"Complete public packaging/launch/inspection workflow or a finished programming-guide reference, shared-device-buffer use and whole-reader acceptance."
+				"Complete call/dynamic/string-byte teaching and owning references; non-DMA buffer programming; broader SDK/live inspection and whole-reader acceptance."
 			]
 		}
 	},

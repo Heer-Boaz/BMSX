@@ -5,6 +5,11 @@ records bounded accepted sections, not a complete CPU/boot/memory ABI or the
 whole-book newcomer acceptance target. No architecture document or reference
 PDF was used as a hardware source.
 
+The original foundation/reader-correction checks below describe the committed
+`f4a7138fb` baseline. The current continuation and its evidence are recorded in
+the final section; historical counts and zero-figure statements are not current
+publication claims.
+
 ## Paragraph authorship and independent checks
 
 - Address/data-size and installed-map units were written from only the frozen
@@ -37,14 +42,16 @@ Evidence: `/tmp/bmsx-memory-map-prose-notes.md`,
 `/tmp/bmsx-memory-placement-prose-notes.md` and
 `/tmp/bmsx-memory-placement-source-review.md`.
 
-## Incomplete route
+## Remaining route
 
-The integrated draft now covers bounded scalar/MMIO access and fault entry,
+The integrated draft covers bounded scalar/MMIO access and fault entry,
 BIOS handoff, fetch/domains, language slots versus byte storage, selected
-nominal costs and the executed two-module storage program. Remaining contracts
-are full exception-handler/recovery and call/permission programming, exact
-required inherited-device state, shared-device-buffer admission/lifetime, and
-the public project/launch/inspection workflow. No placeholder prose, guessed
+nominal costs and the executed two-module storage program. The continuation
+below adds first-build/result observation, installed BIOS fault inspection,
+firmware VRAM reservation and DMA buffer lifetime. Remaining contracts are
+full exception-handler/recovery and call/permission programming, exact
+required inherited-device state and other shared-device-buffer lifetimes.
+No placeholder prose, guessed
 permission, numerical raw arena or fabricated electrical rate fills these gaps.
 Whole-reader and final public-print acceptance remain open; a DRAFT rendering
 is not publication approval.
@@ -162,7 +169,7 @@ this report was corrected to distinguish already-integrated bounded sections
 from genuinely unfinished contracts. Final bounded integration PASS:
 `/tmp/bmsx-memory-integration-review.md`.
 
-There are no authored image/circuit figures in this memory-only draft, hence
+At that baseline there were no authored image/circuit figures, hence
 no unseen figure connections or image-output claims to approve. Hardware
 meaning in its tables and code is covered by the separate source checks above.
 This closes current-content source/figure semantics only, not the open reader
@@ -209,3 +216,154 @@ project/build/launch/result-inspection teaching; and the named excluded access,
 reset and timing contracts. Neither these paper exercises nor green builds
 establish whole-chapter/book acceptance. Current source/figure semantics pass;
 public print and the explicit coverage questions still block publication.
+
+## Current continuation: usable build, reservations, faults and DMA buffers
+
+The public chapter now adds three independently checked hardware sections;
+[the first-build companion](../../programming/getting-started.md) keeps tooling
+commands out of the hardware voice. No publisher, schema, compiler, runtime,
+BIOS or cartlib implementation changed. No reference PDF/architecture source
+was used. Production reference study was structural only: MAME's address-space
+manual and Zephyr's getting-started organization on their primary GitHub trees,
+not hardware facts or imported commands.
+
+- **VRAM:** separate extraction/producer replay followed by facts-only authorship
+  and root nonauthor primary-owner check. The named BIOS query returns origin/
+  extent in16-bit-word columns and rows. Current216x12 atlas gives320x252 bound,
+  not a maximum-derived universal320x304. Actual imported BIOS unit call returns
+  `02d002c0`/`00fc0140`; the original memory integration case also passes after
+  packaging that suite. Preserve the whole firmware bounding region; no release,
+  globally enforced protection, complement-free or restoration rule is invented.
+  Persistent facts: [memory-vram](../facts/memory-vram.md). Detailed acceptance:
+  `/tmp/bmsx-memory-vram-source-review.md` and
+  `/tmp/bmsx-memory-vram-prose-source-review.md`.
+- **Build/observe route:** a separate extractor checked the actual manifest,
+  module/entry producer, automatic matching-BIOS dependency, debug packaging,
+  result runner, derived test image and ordinary player. A different facts-only
+  author wrote the95-line companion; root checked it against the live owners
+  and executed the exact minimal sequence. It does not claim a fresh-platform
+  dependency install, numerical test/production address identity, ordinary-player
+  value assertions or full SDK coverage. Persistent facts:
+  [memory-workflow](../facts/memory-workflow.md); owner audit and execution logs
+  `/tmp/bmsx-memory-workflow-source-review.md`,
+  `/tmp/bmsx-memory-first-build-minimal.log`,
+  `/tmp/bmsx-memory-first-build-player.log`.
+- **Installed fault route:** public prose uses source-backed paired CPU/Memory,
+  compiler namespace/vector, COP0 and BIOS monitor/command facts. A nonauthor
+  independently checked the exact text, complete11-line fault cartridge,
+  45-line existing-harness keyboard case and actual320x240 image. Actual
+  validation and MEM/FAULT CLEAR/CONT case pass20assertions. The Memory report
+  is not CP0 BAD_ADDRESS; declaring a cart exception does not replace system
+  dispatch; clearing a report is not repair; unchanged-EPC CONT re-faults. Core
+  source facts extend [memory-faults](../facts/memory-faults.md) as BF42–49;
+  observations are MF01–08 in [memory-example](../facts/memory-example.md).
+  Nonauthor report `/tmp/bmsx-memory-monitor-example-source-review.md`; actual
+  execution `/tmp/bmsx-memory-fault-manual-execution.log`.
+- **DMA lifetime:** root extracted paired admission/capture/live-read/writeback/
+  fault/completion facts; a different author wrote the ordered preparation,
+  start, wait/check/reuse and overlap section. Root nonauthor checked exact
+  claims and reran the existing complete DMA cartridge/case successfully. One
+  mistaken attribution of the test's GPUREAD pixel to the program's retained
+  fields was found and removed by its original author. No force-ready fallback,
+  successful-DONE certificate, transactional copy or all-unit lifetime is
+  promised. [memory-buffers](../facts/memory-buffers.md) holds DB01–09;
+  `/tmp/bmsx-memory-dma-prose-source-review.md` and
+  `/tmp/bmsx-memory-dma-lifetime-validation.log` record source/execution.
+
+The sole image is the unmodified real BIOS terminal capture following
+`MEM 08010208 3`, independently viewed and traced to the actual program/command
+and physical words; no diagram or mock output substitutes for it. Its bytes
+match captured frame00146 exactly, SHA256
+`3885d206b7bd465c5e82b7165f5f30d3ed86aca3cd787ed51b2a0e76a32ca77d`.
+The full public storage listings remain the exact original32/30lines; the
+fault listing is the exact11-line production program, not a host test. The
+six-line BIOS query/decode follows the existing production calling convention.
+
+Current source/figure review is bounded to these factual claims and actual
+image. Independent whole-reader findings and final actual-PDF readability are
+recorded separately. Full CPU/call/dynamic/string-byte contracts, non-DMA
+buffer lifetimes, supervisor permissions/state restoration/successful recovery,
+remaining access/timing/reset and complete SDK/Book II still prevent claiming
+a complete console manual. Green executions and a longer PDF do not close them.
+
+### Pre-reader continuation checks
+
+A second independent DMA auditor accepted the current public prose against
+paired admission/service/Memory owners and actual cartridge/assertion/log
+sources. Its two internal fact precision findings were corrected: capture
+explicitly excludes a status snapshot, and DB08's storage citation includes
+its BSS declaration/export. Public text did not need another rewrite. Evidence:
+`/tmp/bmsx-memory-dma-lifetime-independent-source-review.md`.
+The separate bounded handler extraction also corroborates the narrow installed
+route; broader nested/missing-vector outcomes are withheld, not added as claims.
+
+Root's final literal checks confirm that both facts-only VRAM/DMA sections
+are included unchanged, the companion exactly matches its separate author's
+final text, and all three complete programs exactly match their actual source
+files. The image is byte-identical to the capture; linked local paths exist.
+The hardware chapter contains no tooling/source-path prose. The companion's
+file roles, commands, environment boundary and test-versus-player observations
+pass root's nonauthor live-owner and actual-execution check; internal symbol
+facts are deliberately not promoted to a newcomer inspection API.
+
+The final 22-page DRAFT was inspected as actual original-detail PDF rasters:
+root pages 1–11, separate reviewer pages 12–22. The genuine image/caption split
+was corrected using only existing authored grouping and every changed final
+page was re-viewed. [The print report](memory-print.md) records bounded DRAFT
+readability, not public approval. `npm run test:manual` passes all 17 tests;
+this proves the existing publisher contracts, not whole-book completeness.
+
+### Reader findings and final corrections
+
+A fresh reviewer read only public memory/companion material and the reached DMA
+chapter. Storage ownership/build/check was reconstructible, but three genuine
+local gaps remained: **R1**, launching/typing into the fault monitor; **R2**,
+obtaining the retained DMA results; **R3**, distinguishing this operation's
+fault from an older first-pending record. These were not dismissed as style or
+closed by already-green executions.
+
+Separate source extraction and facts-only authorship add explicit fault-project
+roles, debug browser/cart/server commands, the direct index URL, keyboard input
+and readable PICTURE=FIT. Root actually built/launched that ordinary browser
+product and typed MEM/FAULT CLEAR/CONT; all four final menu/output images were
+individually viewed. The direct index avoids the existing root redirect's lost
+query; FIT avoids the default overscan's cropped monitor edges. No server,
+player or input code was changed. The companion separately supplies the exact
+DMA result-case commands, freshly rerun successfully, without guessed BSS
+addresses. Primary/source/actual-input evidence:
+[memory-workflow](../facts/memory-workflow.md),
+`/tmp/bmsx-memory-observation-prose-source-review.md`,
+`/tmp/bmsx-memory-fault-browser-execution.md`,
+`/tmp/bmsx-memory-dma-reader-command.log`.
+
+A different extractor checked the paired Memory/DMA/CPU access owners before
+a separate author supplied the before-START fault-record procedure. Root
+nonauthor checked every new claim: save old information, ordinary Word/U32
+ACK1, clean baseline, real completion and new-record inspection are expressly
+conditional on no other fault producer or acknowledger. Keeping the old latch
+or concurrent actors prevents attribution; zero CODE plus DONE still does not
+prove delivery to an unready port. The registers expose no new-fault counter;
+no internal API, automatic isolation, hardware restore, transaction or newly
+executed corruption test is claimed. DAF01–09 extend
+[memory-buffers](../facts/memory-buffers.md); independent source disposition:
+`/tmp/bmsx-memory-dma-fault-attribution-source-review.md`.
+
+The same public-only reader then re-exercised exactly these amended routes.
+**R1–R3 closed on paper within this supplied-program scope; no remaining local
+instruction gap found.** Evidence:
+`/tmp/bmsx-memory-continuation-reader-review.md`, final recheck. This is not
+source/execution/print certification or whole-console acceptance. The existing
+coverage questions remain open; broader calls/dynamic storage, other buffers,
+supervisor/recovery/reset/timing and general SDK inspection are not silently
+closed.
+
+Final independent integration recheck accepts only the documented edit set:
+847-line chapter, 157-line companion with exact original-prefix/author-append,
+unchanged complete listings and image bytes, correct links and no hardware-
+voice implementation leakage. The final three changed PDF pages (16/21/22)
+were independently viewed and pass bounded DRAFT readability. Evidence:
+`/tmp/bmsx-memory-continuation-integration-review.md`, final addendum, and
+[the print report](memory-print.md). The final publisher regression run again
+passes all 17 tests. `manual:check -- memory` intentionally exits 1 for the
+remaining named coverage questions and public print review, not a hidden
+source/figure failure. No chapter/book completion is claimed.

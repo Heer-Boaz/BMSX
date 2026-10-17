@@ -144,3 +144,48 @@ while true do
 	halt_until_irq
 end
 ```
+
+---
+
+# Actual memory-fault cartridge and terminal observations
+
+Internal bounded facts-only author input, 2026-10-17. This is actual current TypeScript product/firmware execution, not native parity, a cycle measurement, UI-only verification, a new exception API, or general recovery proof. Other than the example and its ordinary host test, no runtime/compiler/BIOS/tooling changes.
+
+MF01: Complete program is literal `carts/memory_fault_manual/entry.lua`, 11lines, included below. It declares one BSS Word, creates a typed Word view at0x01000000 and attempts to assign the dereferenced value to that BSS word. The only later source is a HALT loop. It defines no irq or exception callback, no display setup, byte encoder or register wrapper. Source: actual source below. Declaration/startup meanings use already audited memory-storage and memory-boot facts, not new rules from this observation.
+
+MF02: Ordinary commands `npm run validate:toolchain:cart -- memory_fault_manual --debug` and `npm run ide:test -- memory_fault_manual tests/ide/memory_fault_manual.idetest.js` both exited0. Artifact9075e412f1a3486f1e27031ffe3e2915aef5ce79e817d2943d05d8aa8087573a. Test completed20assertions. Actual log `/tmp/bmsx-memory-fault-manual-execution.log`. This proves only this executed artifact and test, not all builds/platforms.
+
+MF03: After BIOS handled the fault, actual physical mapped words: faultCODE1 at08010208H, faultADDR01000000H at0801020CH, faultACCESS00000801H at08010210H. Saved supervisor cause0000001CH and faultdomain0 were asserted; a retained cartridge source stack was present. Exact test `tests/ide/memory_fault_manual.idetest.js:4-17`. Numeric supervisor words are inspection details, not a replacement for complete system-register reference. The actual load disassembled as LOAD_MEM_D Wordkind0 at1001A7ECH in this artifact. EPC is linked/build-specific, NOT universal.
+
+MF04: Actual BIOS terminal output included `EXCEPTION DBE  DATA BUS ERROR`, cause0000001C, status0000000C, IRQMASK00000000, and the faulting source statement. Root individually viewed original320×240 `tests/ide/screenshots/frame_00071.png` from this run. Image is unmodified, no labels or magnification painted into it. Meaning of the CPU status/cause uses separately extracted handler/COP0 facts. DBE does not by itself establish a new CP0 BAD_ADDRESS; actual paired primary evidence TS cpu.ts:1732-1739 versus3073-3077, C++cpu.cpp:2290-2297 versus cpu_dispatch.inl:571-575.
+
+MF05: Test sends real keyboard button down/up events for `MEM 08010208 3`, then Enter, without running guest expressions or changing registers/handlers. Actual terminal line:
+
+```text
+08010208: 00000001 01000000 00000801
+```
+
+Root individually viewed original screenshot `frame_00146.png`; console log reproduces the same line. This is three addressed 32bitwords starting at CODE, not three CPU cause registers or an electrical trace. Test source:21-32. The full-image target for the manual may be `figures/memory-bus-fault.png`; preserve bytes of this actual screenshot.
+
+MF06: Test then types `FAULT CLEAR`, Enter. Hardware CODE/ADDR/ACCESS remain exactly1/01000000H/801H; the physical supervisor fault sequence is unchanged. Root viewed `frame_00209.png`, showing typed command and prompt, no automatic resume. Test source:21-42. Software clearing semantics and no acknowledgment require the separate live monitor/commands facts; do not infer all effects solely from this observation.
+
+MF07: Test then types `CONT`, Enter, without repairing the invalid address. A new physical supervisor fault sequence appears and saved cause is againDBE; the original hardware CODE/ADDR/ACCESS remain latched. Console prints the same current-artifact EPC1001A7EC and faulting source. Root viewed `frame_00244.png`, visually equal to the initial fault screen; new fault sequence/console establish real reentry, not image difference. Test source:36-39. This is retry failure, NOT successful recovery or automatic instruction skipping.
+
+MF08: The host test is actual input plus read-only physical machine inspection. It never executes Studio commands, writes guest state through the runtime, restores snapshots, replaces exception handling, manipulates source, acknowledges the bus fault, or enables missing interrupts to make progress. It uses the existing IDE-test harness only as execution/evidence infrastructure. Do not describe it as pure UI-only proof, normal headless-player output, or a required cartridge dependency.
+
+## Literal complete cartridge
+
+```lua
+module<entry>
+
+bss reached_after_load: word
+local unmapped<const>: *word = 0x01000000
+
+-- This unmapped load enters the BIOS monitor before the assignment completes.
+*reached_after_load = *unmapped
+
+while true do
+	halt_until_irq
+end
+
+```
