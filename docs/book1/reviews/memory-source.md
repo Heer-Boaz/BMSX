@@ -504,3 +504,61 @@ source diagnosis and the retained observer follow-up distinguish the pending
 presentation/fixture defect from hardware timing; no runtime/harness change or
 guest delay is introduced. Final print evidence is recorded separately, and
 the remaining coverage still blocks public release.
+
+
+## Newcomer route: values, calls and text
+
+Separate bounded extraction produced [call facts MC01–33](../facts/memory-calls.md),
+[value facts MD01–16](../facts/memory-values.md) and
+[text facts MS01–09](../facts/memory-strings.md). Separate facts-only authors
+wrote the values/text and call sections, followed by the complete program from
+[LE01–10](../facts/memory-language-example.md) and its frozen ordinary sources.
+No architecture document, reference PDF or other machine's language semantics
+were author inputs. The new public text distinguishes typed bytes, dynamic
+values, ordinary functions, static BIOS targets and shared installed globals.
+
+Independent live-source reviews accept every final bounded claim and result
+cell. Two genuine draft overstatements were corrected: universal same-address
+byte aliasing was deleted, and numeric packing was narrowed to the numeric
+fields of `string.pack`. A one-line internal select-binding pointer was
+corrected to `base.lua:8`. Cartridge compilation and on-console `load` have
+different parenthesized-call producers; the prose scopes each rule rather than
+inventing a common ABI. The zero-maxStack clearing difference is withheld from
+the public contract and recorded in the technical follow-up, not repaired here.
+Final source disposition: **bounded PASS**, no unresolved public-source finding.
+Evidence: `/tmp/bmsx-memory-language-final-source-review.md` and
+`/tmp/bmsx-memory-values-text-prose-source-review.md`.
+
+The printed 34-line results module exactly equals its actual source; joining
+the consecutive 36/42-line entry parts exactly reproduces the full 78-line
+entry, including blank lines and escapes. Removing only the four new authored
+sections restores the previous chapter byte-for-byte. The old guide remains
+an exact prefix; all previous images, keep groups and program bodies are
+unchanged. Evidence: `/tmp/bmsx-memory-language-integration-review.md`.
+
+The forced validation and exact minimal build/test commands succeed.
+`calls_values_and_utf8_storage` checks all 35 retained words and the 140-byte
+layout on a fresh target. The existing real on-console loader call/global
+suites separately pass 48/48 tests. Neither result merges the two producers or
+proves native parity, visible output, ordinary-ROM retained-result playback,
+arbitrary loading, successful language-fault recovery or a complete BIOS API.
+Command provenance and current build artifact identity are retained in LE07.
+
+A separate public-only reader found a genuine reproduction gap: the new
+listing's basenames did not state its project/manifest layout. The companion
+now gives exact source/manifest paths and the literal minimal manifest. The
+reader rechecked the final public route; a nonauthor independently checked the
+path/manifest delta. **No remaining local newcomer call/value/text finding.**
+Evidence: `/tmp/bmsx-memory-language-public-reader-review.md`. This is bounded
+route acceptance, not whole-book completeness: full BIOS signatures, source
+loading/environment, CPU/timing, interrupt/supervisor/recovery and inherited
+device contracts remain recorded coverage gaps. No runtime, BIOS, compiler,
+cartlib, publisher or harness implementation changed.
+
+
+Final `npm run test:manual`: 17 existing tests pass. The current preview has
+no layout errors and retains the source/figure approvals. The publication
+check deliberately exits 1 only for the named remaining coverage and public
+print approval, not a pending factual/figure correction. Actual-page evidence
+is in [the print review](memory-print.md); neither check closes whole-book
+acceptance.

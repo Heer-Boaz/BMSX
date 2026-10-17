@@ -362,6 +362,239 @@ Function calls use language value slots. A frame's register area follows its var
 
 Language allocations are charged against a logical allocation budget, including charges for growth of slot-stack capacity. Although that accounting uses byte amounts, it does not describe a mapped byte-RAM heap or report free RAM bytes. In particular, its capacity calculation does not subtract the actual linked DATA and BSS extents. Keep mapped-memory byte addresses, call-slot counts and logical allocation charges distinct; an accounting amount does not define a buffer's physical layout or address.
 
+### Values are not byte buffers
+
+Keep ordinary BLua values separate from the bytes a cartridge places in memory. A local can hold nil, a boolean, a number, text, a table, a function or a thread. Declaring that local does not reserve a cartridge-addressable byte buffer. Nor does a value's presence in a table give it a byte layout suitable for a device.
+
+Nil, false, true and numeric zero are distinct values. Only nil and false are false in a condition; zero is true. In particular, a boolean is not an implicit numeric field containing zero or one. When a register or memory format requires such a field, supply its explicit numeric value.
+
+An ordinary table constructor creates a table of values. Its entries need not all have the same kind: numbers, strings, booleans, tables and functions can coexist. Positional constructor fields receive keys 1, 2 and so on; named fields use their string keys. Key zero can also be written explicitly. It is an ordinary numeric table key, not a byte address or an automatically supplied first positional entry.
+
+Assignment copies a value, not the contents of a referenced table. If two locals contain the same table, a table store through either local changes that shared table. Reassigning one local changes only the value held by that local. Putting the table in another table entry also preserves this sharing. Function arguments follow the same rule: passing a table preserves its identity rather than copying its entries into memory. Missing parameters receive nil.
+
+Function values likewise remain function values when copied, passed or stored in a table. They are not interchangeable with numeric code addresses. An ordinary function call requires a function value; storing a number does not turn it into one.
+
+Use typed byte storage when the task is to supply an exact memory layout. A typed pointer is a view of its numeric byte address. It neither allocates the pointed-to bytes nor turns a table into a buffer. Its index zero selects the first element; subsequent indices advance by the element size. This differs from a table constructor's positional keys. Typed fields and elements select byte offsets and scalar access kinds, rather than dynamic table entries. Do not infer an address for an arbitrary local, table or string from these storage operations.
+
+Scalar memory loads produce numbers. Integer access kinds read unsigned values of their specified width; floating access kinds interpret floating-point encodings. None reconstructs nil, a boolean, a table, a function or text from a generic word.
+
+Stores are numeric operations too. Integer stores discard the fractional part and write the low bits of the selected width. Floating stores encode the source number in the selected floating-point format. Reading those bytes with an integer access kind reads the integer bit pattern, not the floating-point value. Backed main RAM stores these multibyte scalars little-endian; device registers retain their own access rules and word meanings.
+
+A word store is therefore not a way to save any BLua value. Supply numeric addresses, words and field values explicitly. Neither assignment nor scalar memory access is an automatic table serializer, string-content copy or function serializer.
+
+### Function arguments, results and BIOS calls
+
+Function parameters are source names, not declarations of byte storage. Write the parameter identifiers in order, followed by `...` if the function accepts additional arguments. A parameter list does not accept the typed-local address-view syntax: do not put a `: *word` annotation on a parameter or assume that a caller's local view supplies a typed function signature. Function arguments and results are language values; the call does not place them in a cartridge-addressable byte-RAM stack.
+
+Each named parameter receives a copy of the corresponding argument value. Replacing that parameter's value does not replace the caller's local binding. Table and closure arguments retain the same references; they are not deep-copied. Passing a numeric address passes that address value, not an implicit address of the caller's variable. A missing named argument supplies `nil`. Extra arguments are discarded by a function without `...`; a vararg function retains the arguments beyond its named parameters, in order. The `...` expression reads those retained values. A call does not fail merely because its argument count differs from the named parameter count, although the called function or BIOS service can impose its own requirements.
+
+To access an address argument as word storage, establish a local view inside the body: `local destination<const>: *word = address`. This binds the existing numeric address and supplies access-type information. It neither allocates destination bytes nor converts a table into byte storage.
+
+A method call adds one argument. With colon-call syntax, the named method is looked up on the receiver, and that receiver is passed as the first argument; explicitly written arguments follow it. A colon-defined function receives that argument as implicit `self`, before its authored parameters. This is a calling convention for language values, not a byte-memory layout for objects.
+
+**Result adjustment.** In cartridge source compilation, an ordinary function call or `...` can supply several values. Whether those values expand depends on the expression's position, not on a separate result buffer that the cartridge must allocate.
+
+| Position | Values used |
+|---|---|
+| An argument before the final argument | One value |
+| A final argument that is a call or `...` | All its results become arguments |
+| An assignment expression before the final expression | One value |
+| A final assignment call or `...` | Enough results for the remaining targets |
+| A return expression before the final expression | One value |
+| A final returned call or `...` | All its results become return values |
+| A standalone call statement | No result is bound to a source name |
+
+Assignment keeps only as many values as it has targets and supplies `nil` for targets without a value. The same adjustment applies to local initialization. Thus a two-result call can initialize two names, while assigning it to one name retains only its first result. A one-value context also receives `nil` if the call supplies no value. A return list can combine individual leading values with the complete results of its final call or `...`; the receiving call context then determines how many of those returned values it uses. In cartridge source compilation, a bare `return`, or reaching the end of a function, returns **one `nil`**, not an empty result list.
+
+In cartridge source compilation, parentheses around a call do not by themselves reduce its results to one. In source compiled on-console by `load`, a parenthesized call is adjusted to one result. To select one result in cartridge source, assign the call to a single local.
+
+A local captured by an ordinary function remains available through that function after the enclosing function returns. The captured value is not an exposed, stable byte address of the departed call's local storage. Ordinary function values can be retained and passed as values; a numeric byte address or numeric identifier is not itself a callable function. Calling a nonfunction raises `CALL_NON_FUNCTION`, reason 1; it does not cast a number into a callable address.
+
+**BIOS calls.** Named static BIOS imports use ordinary function-call argument and result adjustment. The configured direct imports are `math/sin`, `string/float/decode` and `gpu/system_vram_region`; this is not a list of every installed library function. A name bound to such a static import is a call target, not a first-class function value to place in a table, pass as an argument or return. This restriction does not apply to ordinary authored function values.
+
+Installed library globals are a separate route. For example, the BIOS publishes the `string` library as an ordinary global library value; it is not the same mechanism as the named static imports above. Do not infer that every installed library function is a direct static import.
+
+Calling a BIOS function is still a normal function call. It is not `EXEC`, does not constitute a privilege transition, and does not by itself grant permission to access devices or arbitrary BIOS memory.
+
+### Text, codepoints and UTF-8 bytes
+
+A string is text, not a numeric address of encoded bytes. Work with strings when selecting characters, measuring text or constructing text. Work with typed byte storage when preparing an exact device payload. These are different operations even when the payload happens to contain UTF-8.
+
+Both `#s` and `string.len(s)` count codepoints. Neither reports the number of UTF-8 bytes needed to encode the text. A zero codepoint is an ordinary character: it contributes to the length and does not terminate the string. Keep a codepoint count separate from the byte count of any encoded memory span.
+
+Despite its name, `string.byte(s[, i])` selects one codepoint and returns its numeric scalar value. Positions are 1-based. Omitting `i`, or passing nil for it, selects position 1. A supplied position must be numeric and is converted to a signed 32-bit integer. Positions below 1 or beyond the end return nil. A negative position does not count backwards from the end. The operation returns one codepoint, not a range of characters or a sequence of UTF-8 bytes; an additional range-end argument does not extend it.
+
+`string.char(...)` constructs text from numeric Unicode scalar values. It is not restricted to values from 0 through 255. Each argument is converted to an unsigned 32-bit integer; values above 10FFFFH and values in the surrogate range D800H through DFFFH are rejected as invalid arguments. Zero is accepted as a character. With no arguments, the result is empty text. The numbers supplied to this operation describe characters, not separate bytes for a UTF-8 decoder.
+
+The same distinction applies to character escapes in a literal. A hexadecimal escape consists of `\x` followed by exactly two hexadecimal digits and contributes that character value. A decimal escape consumes up to three digits and accepts values from 0 through 255. Adjacent escapes are adjacent characters; they are not a request to decode a UTF-8 byte sequence.
+
+For UTF-8 already held in byte memory, the existing bridge is `string.from_utf8(address, byte_count)`. Supply the numeric address of a backed span containing complete, well-formed UTF-8 sequences, and its byte count. The count is not a codepoint count. A zero byte becomes the zero codepoint rather than ending the decode.
+
+This decoder is not a safe validator for malformed or truncated input. Its byte count does not make an incomplete final sequence safe: continuation reads for a sequence already begun can extend beyond that count. Provide complete valid spans rather than relying on truncation, zero termination or validation by this operation. The call does not establish ownership of the source storage.
+
+A static `string` field occupies four bytes containing a constant reference. Loading that field as a string obtains the text; the field's byte address locates the reference, not the characters. It is not a UTF-8 source pointer. Likewise, a dynamic string is not a device buffer. The numeric fields written by `string.pack` still form a string value, not a memory address or DMA source. Use explicit typed raw bytes for device payloads rather than treating text operations as byte storage.
+
+The installed library is available through the shared `string` global. Treat both that global and its library table as shared resources: do not overwrite them while other code depends on them. Library availability does not mean a cartridge receives a private table to repurpose.
+
+### Complete BLua call and text program
+
+Begin from fresh BIOS entry, with initialized cartridge BSS and the installed `string` and `select` facilities. This complete program owns one 140-byte result structure: 35 words, including its array elements. The exported result address is assigned when the cartridge is linked; no absolute address is assumed.
+
+`write_pair` takes plain parameter names. Its local `*word` view interprets the supplied numeric address; it allocates no destination buffer. The caller passes the actual address of its already declared `written` array. The function writes 17 and 25 there and returns 42 and 2. Missing arguments, an excess argument, varargs and a bare return leave separate observations in the result structure. `select('#', ...)` returns the number of following values, including `nil` values. The parenthesized call retains both results here: this is a cartridge-source example, not an on-console `load` example.
+
+The table alias changes the same table, without producing a mapped byte address. Its key 0 was never set. The counter's captured value survives the factory's return and advances from 10 to 12, then 15.
+
+The eight UTF-8 bytes decode to four codepoints: `0041H`, `00E9H`, `0000H` and `1F642H`. The zero codepoint does not end the text; the supplementary codepoint counts as one. By contrast, the literal `'\xc3\xa9'` contains two codepoints, `00C3H` and `00A9H`; it is not UTF-8 decoding.
+
+Keep the result-storage module `results` separate. The two entry listings are consecutive parts of **one** entry module: concatenate their contents in order, preserving every character and blank line. Do not concatenate the result-storage module with them.
+
+#### Result-storage module
+
+```lua
+module<const>
+
+struct language_manual_result
+	completed: word
+	written: word[2]
+	sum: word
+	written_count: word
+	argument_next: word[2]
+	missing_is_nil: word
+	second_with_extra: word
+	head: word
+	extra_count: word
+	extra: word[2]
+	bare_return_count: word
+	bare_return_is_nil: word
+	parenthesized: word[2]
+	table_alias_value: word
+	table_zero_is_nil: word
+	counter_values: word[2]
+	utf8_byte_count: word
+	text_length: word
+	codepoints: word[4]
+	constructed_matches: word
+	escape_length: word
+	escape_codepoints: word[2]
+	past_end_is_nil: word
+	zero_index_is_nil: word
+	system_origin: word
+	system_size: word
+end
+
+bss result: language_manual_result
+
+return { result = result }
+```
+
+#### Entry module: declarations and functions
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local system_vram_region<const> = require('gpu/system_vram_region')
+local result<const>: *language_manual_result = state.result
+
+-- Device payloads are byte storage, not string references.
+rodata utf8_bytes: u8[8] = { 0x41, 0xc3, 0xa9, 0, 0xf0, 0x9f, 0x99, 0x82 }
+
+-- Passing this address selects existing storage; it allocates no pointee bytes.
+local write_pair<const> = function(address, first, second)
+	local destination<const>: *word = address
+	destination[0] = first
+	destination[1] = second
+	return first + second, 2
+end
+
+local next_and_value<const> = function(first, value)
+	return first + 1, value
+end
+local tail<const> = function(head, ...)
+	return head, select('#', ...), ...
+end
+local empty<const> = function()
+	return
+end
+local pair<const> = function()
+	return 11, 22
+end
+local make_counter<const> = function(value)
+	return function(delta)
+		value = value + delta
+		return value
+	end
+end
+
+```
+
+#### Entry module: execution and retained results
+
+```lua
+result.sum, result.written_count = write_pair(&result.written[0], 17, 25)
+local missing
+result.argument_next[0], missing = next_and_value(4)
+result.missing_is_nil = missing == nil and 1 or 0
+result.argument_next[1], result.second_with_extra = next_and_value(4, 2, 3)
+result.head, result.extra_count, result.extra[0], result.extra[1] = tail(7, 8, 9)
+result.bare_return_count = select('#', empty())
+result.bare_return_is_nil = empty() == nil and 1 or 0
+-- Cartridge-source parentheses do not force this call to one result.
+result.parenthesized[0], result.parenthesized[1] = (pair())
+
+local values<const> = { 11, 22 }
+local alias<const> = values
+alias[1] = 33
+result.table_alias_value = values[1]
+result.table_zero_is_nil = values[0] == nil and 1 or 0
+local advance<const> = make_counter(10)
+result.counter_values[0] = advance(2)
+result.counter_values[1] = advance(3)
+
+-- Decode a complete mapped UTF-8 span with the installed string library.
+local text<const> = string.from_utf8(utf8_bytes, #utf8_bytes)
+result.utf8_byte_count = #utf8_bytes
+result.text_length = #text
+for index = 0, 3 do
+	result.codepoints[index] = string.byte(text, index + 1)
+end
+result.constructed_matches = string.char(0x41, 0xe9, 0, 0x1f642) == text and 1 or 0
+local escaped<const> = '\xc3\xa9'
+result.escape_length = #escaped
+result.escape_codepoints[0] = string.byte(escaped, 1)
+result.escape_codepoints[1] = string.byte(escaped, 2)
+result.past_end_is_nil = string.byte(text, 5) == nil and 1 or 0
+result.zero_index_is_nil = string.byte(text, 0) == nil and 1 or 0
+
+-- A linked BIOS call returns values; it is not a raw function-pointer cast.
+result.system_origin, result.system_size = system_vram_region()
+result.completed = 1
+
+while true do
+	halt_until_irq
+end
+```
+
+#### Retained results
+
+| Observation | Result |
+|---|---|
+| `written`; `sum`; `written_count` | 17, 25; 42; 2 |
+| `argument_next`; `missing_is_nil`; `second_with_extra` | 5, 5; 1; 2 |
+| `head`; `extra_count`; `extra` | 7; 2; 8, 9 |
+| `bare_return_count`; `bare_return_is_nil` | 1; 1 |
+| `parenthesized` | 11, 22 |
+| `table_alias_value`; `table_zero_is_nil`; `counter_values` | 33; 1; 12, 15 |
+| `utf8_byte_count`; `text_length`; `codepoints` | 8; 4; `0041H`, `00E9H`, `0000H`, `1F642H` |
+| `constructed_matches`; `escape_length`; `escape_codepoints` | 1; 2; `00C3H`, `00A9H` |
+| `past_end_is_nil`; `zero_index_is_nil` | 1; 1 |
+| `system_origin`; `system_size` | `02D002C0H`; `00FC0140H` |
+| `completed` | 1 |
+
+The zero-argument linked BIOS call returns the two system-VRAM words shown above for the current BIOS reservation; they are not permanent constants. Finally, `completed` becomes 1 and the program enters its `halt_until_irq` loop. The retained structure is the program's result, not visible text output.
+
+For the build-and-check procedure, see [Check calls, values and text results](../programming/getting-started.md#check-calls-values-and-text-results).
+
 ## Execution addresses and instruction reads
 
 ### Function records and instruction addresses

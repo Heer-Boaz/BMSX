@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Installed capacities/windows, main-RAM reservations, linked sections and execution domains are source-checked. The firmware VRAM bounding-region query and current-asset example are checked against producers and an actual BIOS call; no complement-free arena or hardware protection is inferred. DMA lifetime is bounded separately. GEO addressed jobs, GTE PLUS operands, IMGDEC copied stream words and APU retained sample sources now have distinct, source-checked lifetime boundaries; none creates allocation rights. Shared GPU storage now separates copied command/upload words from live texture, palette, copy and display sources; the complete example uses two explicitly scoped disjoint regions, not a free-complement allocator.",
+			"resolution": "Installed capacities/windows, main-RAM reservations, linked sections and execution domains are source-checked. The firmware VRAM bounding-region query and current-asset example are checked against producers and an actual BIOS call; no complement-free arena or hardware protection is inferred. DMA lifetime is bounded separately. GEO addressed jobs, GTE PLUS operands, IMGDEC copied stream words and APU retained sample sources now have distinct, source-checked lifetime boundaries; none creates allocation rights. Shared GPU storage now separates copied command/upload words from live texture, palette, copy and display sources; the complete example uses two explicitly scoped disjoint regions, not a free-complement allocator. Ordinary function values, numeric byte addresses, direct static BIOS call targets and shared installed library globals are now distinguished; a BIOS call is not EXEC or a privilege transition.",
 			"open": [
 				"Complete shared-VRAM allocation/ownership under supervisor and multiple readers, device inheritance, and required call/permission reference."
 			]
@@ -11,9 +11,9 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Byte units, type/aggregate layout, initializer limits, typed views/indexing, raw byte arithmetic, BE instructions versus LE data, scalar widths and complete storage program are checked. Firmware query units distinguish 16-bit VRAM word columns/rows from CPU bytes and 32-bit transport words.",
+			"resolution": "Byte units, type/aggregate layout, initializer limits, typed views/indexing, raw byte arithmetic, BE instructions versus LE data, scalar widths and complete storage program are checked. Firmware query units distinguish 16-bit VRAM word columns/rows from CPU bytes and 32-bit transport words. Ordinary value copying/aliasing, typed-address parameters, argument/result adjustment, captured locals and codepoint-versus-UTF-8 byte operations now have a separately authored, source-checked teaching route and complete retained-result program.",
 			"open": [
-				"Complete required function-call/dynamic-value/string-byte programming contracts or finished owning references."
+				"Complete required direct BIOS function signatures/formats, on-console source-loading/environment contract and remaining CPU instruction reference."
 			]
 		},
 		"visibility": {
@@ -47,9 +47,9 @@
 			]
 		},
 		"programming": {
-			"resolution": "Exact complete 32/30-line storage modules and 11-line fault program execute successfully. The linked first-build companion teaches project/module/entry/manifest roles, exact build/result commands and separate ordinary playback; those commands were executed. DMA preparation/wait/check/reuse links to the complete owning program. A separate public-only reader re-exercised the supplied storage, interactive browser fault and DMA result routes; R1-R3 local gaps are resolved on paper, not whole-book acceptance. Existing GEO/IMGDEC/APU result-command pairs were executed successfully; they inspect numeric/retained results, not GEO pictures or audible APU output. Existing normal GTE cartridge results are not PLUS execution evidence. A complete 16-line results module and 132-line display entry prepare A/B, select A then B, rebuild A and select it again. Its retained-result case passes separately from actual ordinary-ROM red/blue/green captures; all image pixels match the programmed regions. The companion provides both observation routes.",
+			"resolution": "Exact complete 32/30-line storage modules and 11-line fault program execute successfully. The linked first-build companion teaches project/module/entry/manifest roles, exact build/result commands and separate ordinary playback; those commands were executed. DMA preparation/wait/check/reuse links to the complete owning program. A separate public-only reader re-exercised the supplied storage, interactive browser fault and DMA result routes; R1-R3 local gaps are resolved on paper, not whole-book acceptance. Existing GEO/IMGDEC/APU result-command pairs were executed successfully; they inspect numeric/retained results, not GEO pictures or audible APU output. Existing normal GTE cartridge results are not PLUS execution evidence. A complete 16-line results module and 132-line display entry prepare A/B, select A then B, rebuild A and select it again. Its retained-result case passes separately from actual ordinary-ROM red/blue/green captures; all image pixels match the programmed regions. The companion provides both observation routes. The separate complete 34-line results module and 78-line entry demonstrate caller-owned storage, argument/results, table aliasing, retained captures, UTF-8 bytes/codepoints and a real BIOS call. Forced validation and the exact minimal commands pass; the derived integration case checks all 35 retained words and the 140-byte layout. A public-only reader identified the missing new-project paths/manifest; the final companion now supplies both, resolving that local reproduction gap.",
 			"open": [
-				"Complete call/dynamic/string-byte teaching and owning references; supervisor/multiple-owner shared-VRAM and coordinated recovery; broader SDK/live inspection and whole-reader acceptance."
+				"Complete direct BIOS signatures and source-loading/environment reference; supervisor/multiple-owner shared-VRAM and coordinated recovery; broader SDK/live inspection and whole-reader acceptance."
 			]
 		}
 	},

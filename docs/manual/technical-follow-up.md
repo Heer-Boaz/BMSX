@@ -433,3 +433,38 @@ recorded collision. Preserve both boundaries in a dedicated owner-level audit;
 no runtime/harness repair or new capture framework is part of this manual slice.
 Evidence: `/tmp/bmsx-memory-display-fixture-publication-diagnosis.md`. Accepted
 manual plates come only from the separately executed ordinary-ROM timeline.
+
+## Call and text programming: software-authority boundaries
+
+The language-foundation extraction found two facts that must not become an
+invented common ABI. Cartridge-source parsing removes parenthesized-expression
+wrappers (`toolchain/ts/lua/syntax/parser.ts:1345–1349`), whereas the installed
+on-console parser marks a parenthesized call non-expanding
+(`machine/bios/compiler/parser.lua:177–183`, consumed by
+`compiler.lua:652–656,1152–1155`). The normal cartridge example and existing
+on-console call-result cases establish the distinct current routes; do not
+publish one all-BLua parenthesis rule or change either producer as a
+documentation patch. Full on-console source-loading contracts remain a
+separate reference task.
+
+For a representable function record with `maxStack = 0`, TypeScript clears
+`max(maxStack,1)` reserved slots (`machine/ts/machine/cpu/cpu.ts:3175–3183`),
+while native reserves that capacity but clears only `maxStack`
+(`machine/cpp/machine/cpu/cpu.cpp:3022–3028,3099–3105`). Producer reachability
+and downstream effects are not established by this source observation. Retain
+it for an owner-level audit, not a universal slot-clearing guarantee, invented
+byte stack or runtime repair in this manual slice. Private value encodings are
+also not a shared raw slot ABI; the newcomer route teaches language values,
+numeric addresses and typed byte storage separately.
+
+
+**Bounded language-foundation progress:** Memory now teaches ordinary values
+versus typed bytes, function arguments/results and BIOS call binding, captured
+locals, codepoints versus UTF-8 bytes, and the existing decoder's input limits.
+A complete two-module BLua program retains 35 checked words; its public route
+includes exact source/manifest paths and commands. This closes the local
+newcomer call/value/text teaching gap, not the complete BIOS signature,
+on-console loading/environment, CPU instruction/timing, privileged context,
+interrupt setup, inherited-device or recovery contracts. Those remain
+paragraph/reference assignments under the reader acceptance target above;
+passing this example is not whole-console acceptance.

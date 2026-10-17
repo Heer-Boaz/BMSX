@@ -131,3 +131,32 @@ Evidence: `/tmp/bmsx-memory-display-current-print-review.md` and final rasters
 Remaining coverage and whole-reader/publication acceptance keep
 `reviews.print.passed` false. Neither the page count nor the clean layout
 receipt establishes a complete memory or whole-console programming contract.
+
+
+## Values, calls and text: current actual output
+
+Current `npm run manual:preview -- memory` produces 36 pages and the same four
+images, using Chromium 153.0.8010.12, Node v22.23.1, Linux/x64 and unchanged
+fonts/styles/publisher. Receipt layout errors are empty. Page count is an
+inspection scope, not completeness evidence.
+
+PDFium full-page comparison at scale 1.4 against the accepted 30-page baseline
+finds pages 1–9 identical. Root individually viewed all new foundation pages
+10–17 at original detail: result-adjustment table, codepoints/escapes, complete
+34-line result module, consecutive 36/42-line entry parts and all 35 result
+words are readable, unclipped and clear of the footer. An independent reviewer
+separately viewed every original 10–17 and found no local readability defect.
+Evidence: `/tmp/bmsx-memory-language-new-pages-print-review.md`.
+
+A second independent reviewer individually viewed every continuation page
+18–36 at original detail, including all register/access tables, complete older
+programs, actual monitor image, three display-program parts and final RGB
+plates. No clipping, column collision, stranded heading/caption or footer
+collision was found. Evidence:
+`/tmp/bmsx-memory-language-continuation-print-review.md`.
+
+After final companion/editorial corrections, all 36 final-page rasters are
+pixel-identical to that inspected candidate. No new print correction, CSS,
+grouping rule, figure or publishing machinery was required. Bounded current
+DRAFT readability: **PASS**. Remaining coverage and whole-reader/publication
+approval still keep `reviews.print.passed` false.

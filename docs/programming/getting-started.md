@@ -237,3 +237,38 @@ npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/display
 ```
 
 It captures presentation frames 1, 4 and 7 as `frame_00001.png`, `frame_00004.png` and `frame_00007.png` under `tests/carts/display_manual/screenshots/`: red A, blue B and rebuilt green A. Those are this playback's chosen capture points, not a hardware timing or frame-budget guarantee.
+
+## Check calls, values and text results
+
+Use the complete [BLua call and text program](../book1/memory.md#complete-blua-call-and-text-program). Its two modules retain 35 word observations in a 140-byte result structure; they do not print a transcript.
+
+If recreating the listings, put the result-storage listing in `carts/language_manual/results.lua` and concatenate the two entry parts in order into `carts/language_manual/cart.lua`. The supplied manifest at `carts/language_manual/res/manifest/manifest.rommanifest` contains:
+
+```yaml
+title: BLua Values and Byte Storage Manual
+hardware:
+    - type: rom
+```
+
+With the existing headless-tooling prerequisites installed, build that tooling once:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+```
+
+Then build the ordinary cartridge and run its integration case:
+
+```sh
+npm run build:toolchain:cart -- language_manual --debug
+npm run headless:test -- language_manual tests/carts/language_manual/language_manual_assert.lua
+```
+
+The build prepares the matching BIOS automatically. The expected case-result line is:
+
+```text
+[test] calls_values_and_utf8_storage: passed
+```
+
+The case waits for `completed` to become 1, checks the structure size, and checks all 35 retained word observations against the chapter's result table. It runs on a fresh target with initialized BSS and installed library globals. It compiles a **derived integration image** containing the complete ordinary entry and the assertion fixture; it is not byte-for-byte playback of the ordinary cartridge ROM. Absolute linked addresses can therefore differ between those images.
+
+These commands and the reported result were checked on the current checkout. The system-VRAM result words describe its installed BIOS reservation, not a permanent layout promise. This check establishes the retained results for this headless execution; it does not establish native/backend parity, visible output, arbitrary dynamic-loader equivalence or a complete language-fault recovery contract.
