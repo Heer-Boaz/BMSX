@@ -1,6 +1,7 @@
 # CPU frozen source index and stopped claims
 
-2026-10-17; baseline375de6170. Current software is the authority. This is a
+2026-10-17; instruction baseline375de6170, value supplement baseline5a5a26e15.
+Current software is the authority. This is a
 facts index, not chapter prose. No architecture document or historical reference
 PDF was used. All instruction families have separate paired-owner extractions.
 
@@ -25,6 +26,21 @@ PDF was used. All instruction families have separate paired-owner extractions.
 - [Bounded actual paired decode/cost replay](cpu-replay.md):12 raw programs,
  13 exact common output rows, not native execution of the new ordinary cartridge.
 
+- [Default Number text conversion](cpu-number-format.md): complete finite
+  normalization/rounding/carry/notation, separate nonfinite consumer spellings.
+- [POW special cases](cpu-pow-special.md): ordered zero/NaN/infinite exponent,
+  signed special bases, represented exponent parity and range limits.
+- [Table keys and mutation boundaries](cpu-table-semantics.md): nil-key fault,
+  NaN/zero/identity equality, deletion and table-only index chain; stopped
+  cross-capacity length-refill producer disagreement.
+- [Narrow installed table globals](cpu-table-bios.md): real set/getmetatable,
+  rawget/rawset signatures and faults, not a complete builtin reference.
+- [Value supplement bounded execution](cpu-values-execution.md):174 common
+  numeric rows;29 common/one differing direct Table rows; actual guest SETT/LEN
+  proof of the length mismatch, not an invented common result.
+- [Complete value and Table cartridge](cpu-values-example.md):136 literal source
+  lines,68 retained checks and separate ordinary diagnostic output.
+
 ## Stops; no editorial runtime repair
 
 1. LOADKR exceptional indices: TS passes a Number unchanged to typed constant
@@ -41,17 +57,23 @@ PDF was used. All instruction families have separate paired-owner extractions.
    the top of the address space and zero-maxStack clearing. Do not infer a
    common modulo32 sequential PC or spare-slot initialization promise.
 
+6. Table general numeric boundary refill: TS scans into numeric hash keys;
+   native generic SETT/rawset scans only its allocated array slots, unlike its
+   SETI path. Actual paired SETT/LEN program returns5 versus4 after the same
+   fill/delete/refill sequence, both33 cycles. The key above that boundary
+   remains present. Exact owners and bounded replay are retained separately.
+
 The instruction reference states the proven common domains; narrowing prose
 is not closure of these representable-state questions. Publication approval
 must not be inferred from successful execution, source accuracy or PDF length.
 
 ## Further reference coverage, not mirror disagreements
 
-The three authors also left explicit owning-abstraction gaps: complete finite
-Number formatting precision/notation/rounding; full signed-zero/infinite-base
-POW outcomes beyond the bounded table; table key/missing-key and mutation-
-derived length rules; protected calls/coroutines and the public builtin/BIOS
-environment. These are not closed by an opcode identity, generic helper name,
-ordinary example or source-accuracy pass. The coverage record retains them as
-separate reference tasks. They do not authorize runtime changes or guessed
-Lua/host behavior. The current instruction manuscript remains a draft.
+The finite Number formatting and full special-base POW references have now
+been extracted separately, with bounded paired replay. Table key admissibility,
+missing-key, deletion and metatable lookup are likewise extracted; a complete
+common mutation-length contract is stopped by the seventh paired difference,
+not closed by a single working example. Complete protected calls/coroutines,
+public builtin/BIOS and on-console environment references remain unfinished.
+The current instruction manuscript remains a draft; no successful source,
+reader or PDF pass constitutes whole-manual completion.

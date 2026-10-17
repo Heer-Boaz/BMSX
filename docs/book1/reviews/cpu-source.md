@@ -1,7 +1,7 @@
 # CPU source audit and bounded execution record
 
 The CPU manuscript is a **draft**, not an approved complete CPU specification.
-Its supported-domain claims are checked separately from six stopped paired-owner
+Its supported-domain claims are checked separately from seven stopped paired-owner
 contracts. The coverage record retains those open questions and publication
 remains blocked. A bounded source pass, reader pass and clean PDF are not a
 claim that those differences have disappeared or that Book I is finished.
@@ -150,3 +150,56 @@ entries above still open; it has no pending fact/figure/print review. It is not
 reported as a successful publication. Final preview generation remains DRAFT,
 and all 25 final page rasters are pixel-identical to the accepted visual review
 (25 initial individual pages, revised 18–20 rechecked). No release PDF was forced.
+
+
+## Value-reference expansion: independent review and execution
+
+Current slice baseline5a5a26e15. Before authoring, the production Lua owners
+[lobject.c](https://github.com/lua/lua/blob/master/lobject.c) and
+[ltable.c](https://github.com/lua/lua/blob/master/ltable.c) were inspected only
+as structural precedents for separating scalar conversion, key identity and
+mutation ownership. No Lua behavior was imported into BMSX facts. Three fresh
+facts-only authors wrote Number text, POW and Table paragraphs independently;
+root integrated their separate maps and supplied the complete ordinary example.
+Live cited paired owners and ordinary source descriptors were then audited by
+nonauthors, separately from public-reader and actual-PDF review.
+
+| Executed evidence | Actual bounded result |
+|---|---|
+| New ordinary cartridge build | validate:toolchain:cart cpu_values_manual --debug passes; artifact1242990b48df6932921df121eb4bc4bee7a54311b65d49c06e387cb25be08add |
+| Retained-result integration | power_text_and_table_contracts passes68 assertions after completion; derived image, not native cartridge parity |
+| Ordinary BIOS playback | Companion timeline command passes, prints18 indexed Number texts and two closing lines, completes frame4 timeline |
+| Direct paired numeric owners |174 byte-equal rows:135 special-base POW grid,32 finite formatter inputs,7 limit/ordinary powers |
+| Direct paired Table owners |30 rows:29 common, one generic cross-capacity refill difference; deliberately not a parity pass |
+| Actual paired CPU SETT/LEN program | TS5,1,5 versus native5,1,4; both33 cycles, affected common contract stopped |
+| Existing TS POW/Table cases |10 tests pass |
+| Current native owners | bmsx_cpu_supervisor_tests and bmsx_table_inspection_tests exit0 after current build; no-work rebuild confirmed |
+| Existing manual pipeline |17 tests pass; no publisher, stylesheet, harness or layout-check addition |
+
+The initial source extension omitted rawset's value and setmetatable's second
+argument. The actual ordinary-source build rejected those calls. Source now
+passes explicit nil, and the printed final source was rebuilt and rerun. This
+was a producer/signature fact to document, not a reason for a compatibility
+wrapper, a compiler/runtime fix or inferred stock-Lua call syntax. One long
+code expression was wrapped without a helper; literal source equality remains
+checked independently.
+
+Exact evidence and scope: cpu-number-format, cpu-pow-special,
+cpu-table-semantics, cpu-table-bios, cpu-values-execution and cpu-values-example
+fact sheets. Logs use /tmp/bmsx-cpu-values-* and the paired numeric/Table probe
+paths recorded there. The new source audit covers the added text and program;
+the earlier full instruction audit remains historical evidence for unchanged
+material, not a claim to have rerun every instruction. All seven owner questions
+and complete BIOS/protected-call/coroutine/environment coverage remain open.
+
+
+### Nonauthor numeric source verdict
+
+No failures found within the bounded source audit of the newly added POW and Default Number-to-text material in `docs/book1/cpu.md`, including the changed finite-Number conversion table row. Checked the added semantic claims against the frozen `cpu-number-format.md`, `cpu-pow-special.md`, and `cpu-values-execution.md` sheets and their live paired TypeScript/C++ POW, binary64-word, formatter, scalar conversion, and CONCAT/CONCATN owners. Special-case precedence, every special-base table cell, represented-exponent parity, signs, rounding subject and operation order, carry/notation thresholds, and the stated exact examples agree with the inspected evidence. These additions contain no new address, register-bit, reset, timing, or fault claims.
+
+This is a bounded source review, not an exhaustive finite-input POW accuracy or TypeScript/C++ parity claim. No architecture document or PDF was opened; no repository/runtime files were edited and no new runtime execution was performed.
+
+
+### Nonauthor Table/program source verdict
+
+No failures found within the bounded source audit of the new Table entries/inherited reads section, second complete program and its complete retained-result tables, companion README/cart/tests, supplied Table/BIOS/execution fact sheets, and their live paired Table/value/CPU/BIOS/compiler-descriptor owners. The latest chapter Lua fences reproduce both cart modules literally. This is a source audit, not new execution, native cartridge parity, a full GC audit, or PDF review.

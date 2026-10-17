@@ -470,24 +470,106 @@ DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard.
 </section>
 
 
+### POW: exponentiation
+
+POW computes a Number base `x` raised to a Number exponent `y`, written here as `x^y`. Its result is a Number, including when the result is a signed zero, an infinity, or NaN. In this section, `+0` and `-0` are distinct zeros; `+infinity` and `-infinity` have their usual signs. NaN means a not-a-number result, without a promise to preserve an operand's NaN payload.
+
+#### Order of special cases
+
+Apply these rules in order. The order matters when more than one description appears to fit.
+
+1. **Either zero exponent produces `+1`.** For every base, `x^(+0)` and `x^(-0)` are `+1`. This includes zero, infinity, and NaN bases.
+2. **Otherwise, either NaN operand produces NaN.** Consequently, `NaN^0` is `+1`, but `1^NaN` is NaN.
+3. **An infinite exponent uses the base's magnitude.** For a non-NaN base, the following table applies before the rules for finite exponents.
+
+| Base magnitude | Exponent `+infinity` | Exponent `-infinity` |
+|---|---|---|
+| `abs(x) < 1`, including either zero | `+0` | `+infinity` |
+| `abs(x) = 1`, meaning `+1` or `-1` | NaN | NaN |
+| `abs(x) > 1`, including either infinity | `+infinity` | `+0` |
+
+The base's sign does not change these infinite-exponent results. In particular, neither `1^(+infinity)` nor `(-1)^(-infinity)` is `1`. Every zero and infinity produced by this table is positive.
+
+#### Finite, nonzero exponents
+
+The next table covers all finite, nonzero exponents for the special bases. **Odd** and **even** mean integer exponents; **fractional** means nonintegral, not merely a decimal spelling. The exponent's sign selects a column group independently of its parity: `-3` is odd, while `-2` is even.
+
 <section class="keep-together">
 
-POW has defined treatment of NaN and infinite exponents. A zero exponent returns 1 even when the base is NaN. Otherwise a NaN operand returns NaN. The infinite-exponent cases depend on the magnitude of the base as follows.
+For a **positive finite exponent**:
 
-| Base x | Exponent y | POW result |
-|---|---|---|
-| Any base, including NaN | +0 or −0 | 1 |
-| NaN, or any base with NaN exponent | Any case not already covered by zero exponent | NaN |
-| Absolute value exactly 1 | +infinity or −infinity | NaN |
-| Absolute value greater than 1 | +infinity | +infinity |
-| Absolute value greater than 1 | −infinity | +0 |
-| Absolute value less than 1 | +infinity | +0 |
-| Absolute value less than 1 | −infinity | +infinity |
+| Base | Odd integer | Even integer | Nonintegral |
+|---|---|---|---|
+| `+0` | `+0` | `+0` | `+0` |
+| `-0` | `-0` | `+0` | `+0` |
+| `+infinity` | `+infinity` | `+infinity` | `+infinity` |
+| `-infinity` | `-infinity` | `+infinity` | `+infinity` |
+| `+1` | `+1` | `+1` | `+1` |
+| `-1` | `-1` | `+1` | NaN |
 
 </section>
 
+<section class="keep-together">
 
-For a negative finite, nonzero base, a nonintegral exponent produces NaN. An odd integral exponent gives a negative result for a negative base; an even integral exponent gives a nonnegative result. Signed zero and signed infinity have special-base treatment and must not be folded into the finite, nonzero negative-base rule. Overflow and underflow produce signed numeric results rather than a new arithmetic fault; subnormal results are supported.
+For a **negative finite exponent**:
+
+| Base | Odd integer | Even integer | Nonintegral |
+|---|---|---|---|
+| `+0` | `+infinity` | `+infinity` | `+infinity` |
+| `-0` | `-infinity` | `+infinity` | `+infinity` |
+| `+infinity` | `+0` | `+0` | `+0` |
+| `-infinity` | `-0` | `+0` | `+0` |
+| `+1` | `+1` | `+1` | `+1` |
+| `-1` | `-1` | `+1` | NaN |
+
+</section>
+
+Thus a fractional exponent does not itself make a negative-zero or negative-infinity base invalid. For example, `(-0)^0.5` is `+0`, `(-0)^(-0.5)` is `+infinity`, `(-infinity)^0.5` is `+infinity`, and `(-infinity)^(-0.5)` is `+0`.
+
+For other finite, nonzero bases:
+
+- A positive base has a positive result magnitude, which may become `+0` or `+infinity` at the range limits.
+- A negative base with a nonintegral exponent produces NaN. For example, `(-2)^0.5` is NaN.
+- A negative base with an odd integer exponent has a negative result; an even integer exponent has a positive result. This sign rule also applies when the magnitude becomes zero or infinity. A negative exponent takes a reciprocal magnitude; it does not reverse the result's sign.
+
+<section class="keep-together">
+
+#### Specific finite exponents
+
+Several exponents have particularly direct meanings. The earlier zero-exponent and NaN rules still take precedence.
+
+| Exponent | Result |
+|---|---|
+| `+1` | The base unchanged, including `-0` and `-infinity`. |
+| `-1` | The reciprocal `1/x`, preserving the reciprocal's sign: `-0` becomes `-infinity`, and `-infinity` becomes `-0`. |
+| `+2` | The Number product `x*x`. Either zero becomes `+0`; either infinity becomes `+infinity`. A finite product can overflow, become subnormal, or round to `+0`. |
+| `+0.5` | For a positive finite base, the positive square root. The special-base table gives `+0` for either zero and `+infinity` for either infinity; a negative finite, nonzero base produces NaN. |
+
+</section>
+
+In particular, `(-0)^0.5` does **not** preserve the base's negative-zero sign.
+
+#### Represented exponent parity
+
+Oddness and evenness refer to the exponent Number actually supplied. Numbers use binary64 precision. From `2^52` upward, every representable finite exponent is integral. From magnitude `2^53` upward, every representable finite exponent is even: no odd exponent exists at that precision.
+
+The largest positive representable odd integer is `2^53 - 1`, or `9007199254740991`. Therefore `(-1)^(2^53 - 1)` is `-1`, whereas `(-1)^(2^53)` is `+1`. The same parity distinction applies to the corresponding negative exponents. Sign selection cannot recover an intended odd integer that the supplied Number cannot represent.
+
+#### Range limits and subnormal results
+
+POW accepts nonzero subnormal bases and can produce subnormal results; it does not discard all such values as zero. Overflow produces infinity, while sufficiently small magnitudes round to zero. For negative bases with odd integer exponents, these results retain a negative sign.
+
+The following are exact result examples, not decimal display approximations:
+
+| Expression | Result |
+|---|---|
+| `2^(-1074)` | `2^(-1074)`, the smallest positive subnormal Number |
+| `2^(-1075)` | `+0` |
+| `2^1024` | `+infinity` |
+| `(-2)^1025` | `-infinity` |
+| `(-2)^(-1075)` | `-0` |
+
+These exact examples do not establish a universal correct-rounding or error guarantee for other finite powers.
 
 ### Bitwise operations and shifts
 
@@ -545,12 +627,80 @@ Concatenation uses language value-to-string conversion rather than accepting onl
 | NaN | `nan` |
 | Positive infinity | `inf` |
 | Negative infinity | `-inf` |
-| Finite Number | BMSX numeric text formatting; +0 becomes `0`, and −0 becomes `-0` |
+| Finite Number | Default six-significant-digit conversion below; +0 becomes `0`, and −0 becomes `-0` |
 
 </section>
 
 
 Concatenating a Table therefore does not serialize its entries, and concatenating a function does not print its contents or identity. Use concatenation to assemble readable text, but do not assume that its text distinguishes every language value. Finite Number formatting is shared numeric formatting, not a conversion to a 32-bit word.
+
+### Default Number-to-text conversion
+
+Concatenating a Number with a String uses the default Number-to-text conversion. For example, `'' .. 1.234565` produces `1.23456`. Both `CONCAT` and `CONCATN` use this ordinary conversion; neither supplies a format string, precision, field width, padding, or notation choice. The rules below describe that default conversion, not a configurable formatting operation.
+
+The precision target is **six significant decimal digits**, not six decimal places and not a requirement to display six digits. Fractional trailing zeros disappear. Thus `0.0001` has fewer visible digits, while a small value can have several zeros after the decimal point before its significant digits begin. Integer trailing zeros remain part of the printed integer.
+
+#### Sign, zero, and the integer shortcut
+
+Positive zero becomes `0`; negative zero becomes `-0`. Neither goes through normalization. For every other finite value, conversion works on the positive magnitude and prefixes one `-` if the input was negative. Positive inputs have no leading `+`.
+
+An exact integer magnitude **strictly below 1000000** is printed directly as a decimal integer, without normalization or rounding. For example, `999999` becomes `999999`, and `-999999` becomes `-999999`. The strict limit matters: `1000000` takes the normalized path and becomes `1e+06`.
+
+#### Normalization and rounding
+
+For all remaining finite inputs, let *n* initially be the positive magnitude and let the decimal exponent *e* initially be zero. Perform the following operations in the stated order, using ordinary Number arithmetic at each multiplication. The powers in the table steps are fixed Number constants, not exponentiation operations requested by the program.
+
+1. **Normalize the magnitude.** Use the descending stage order
+   **256, 128, 64, 32, 16, 8, 4, 2, 1**.
+
+   If the initial *n* is at least 10, visit each stage *k*. Whenever the current *n* is at least 10<sup>*k*</sup>, multiply *n* by the Number constant 10<sup>−*k*</sup> and add *k* to *e*. After the table stages, while *n* is still at least 10, multiply it by `0.1` and increment *e*.
+
+   If the initial *n* is below 1, visit the same descending stages instead. Whenever the current *n* is below 10<sup>−*k*</sup>, multiply *n* by the Number constant 10<sup>*k*</sup> and subtract *k* from *e*. After the table stages, while *n* is still below 1, multiply it by `10` and decrement *e*.
+
+   An initial magnitude in [1, 10) needs neither branch. These operations normalize a computed Number; they are not exact real-number decimal normalization.
+
+2. **Scale and round.** Multiply the computed *n* by `100000`. Round this computed result to the nearest integer: a fractional part below `0.5` rounds down, one above `0.5` rounds up, and exactly `0.5` selects the even integer. This produces the rounded digit integer used to construct the text.
+
+3. **Apply a carry before choosing notation.** If the rounded integer is `1000000`, replace it with `100000` and increment *e*. Both the digit buffer and the exponent now include the rounding carry.
+
+Nearest-even applies to the **computed normalized and scaled Number**, not directly to the original input's mathematical decimal expansion. This distinction is observable: `123456.5` prints `123457`, not `123456`. In contrast, `1.234565` prints `1.23456`, and `1.234575` prints `1.23458`. Do not substitute an ideal six-significant-digit decimal-rounding rule for the ordered Number operations above.
+
+#### Choosing and spelling the notation
+
+Use the exponent **after the carry**. Fixed notation is selected exactly when
+
+**−4 ≤ *e* < 6**.
+
+In fixed notation, the decimal point position is *e* + 1, counted from the start of the six-digit buffer. A positive position places that many digits before the point; insert a point only when the position is below six. A position of zero or less produces `0.`, followed by the required leading fractional zeros and then the six-digit buffer. Remove trailing fractional zeros, then remove the decimal point if no fractional digits remain. Do not remove integer trailing zeros.
+
+All other exponents use scientific notation. Place the point after the first digit of the six-digit buffer, then trim fractional zeros and an empty decimal point in the same way. Append lowercase `e`, an explicit `+` or `-`, and the exponent magnitude. Exponent magnitudes below 100 use exactly two digits, including a leading zero when needed; larger magnitudes use three digits. Examples of exponent suffixes are `e+06`, `e-05`, and `e-324`.
+
+The notation boundary is therefore not merely a comparison of the original magnitude with `0.0001` or `1000000`. Rounding can move the exponent across a boundary: `0.00009999995` prints `0.0001`, while `999999.5` prints `1e+06`.
+
+<section class="keep-together">
+
+#### Observed conversion examples
+
+Each row gives a Number input and its resulting text. The same conversion is obtained by using that input in `'' .. input`.
+
+| Number input | Resulting text |
+| --- | --- |
+| positive zero / negative zero | `0` / `-0` |
+| `0.0000999999` | `9.99999e-05` |
+| `0.0001` | `0.0001` |
+| `0.00001` | `1e-05` |
+| `0.00009999995` | `0.0001` |
+| `999999` | `999999` |
+| `999999.5` / `1000000` | `1e+06` / `1e+06` |
+| `1.234565` / `1.234575` | `1.23456` / `1.23458` |
+| `123456.5` / `123457.5` | `123457` / `123458` |
+| `2147483648` | `2.14748e+09` |
+| `5e-324` | `4.94066e-324` |
+| `1.7976931348623157e308` | `1.79769e+308` |
+
+</section>
+
+The output is not a lossless serialization: distinct inputs such as `999999.5` and `1000000` produce the same text. Nonfinite Numbers bypass the finite conversion described above: NaN becomes `nan`, positive infinity becomes `inf`, and negative infinity becomes `-inf`.
 
 ### Comparisons and conditional execution
 
@@ -679,13 +829,71 @@ The table instruction families differ in where the key comes from:
 - `GETI` and `SETI` carry the integer key directly in an instruction operand.
 - `GETFIELD`, `SETFIELD`, and `SELF` select a string key directly from the image constant pool. That constant operand is not an `RK` operand.
 
-Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. With a metatable, it uses table index resolution; an exhausted or failed resolution chain raises `METATABLE_LOOP`.
+Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. The table-only inherited lookup and its exact chain bound are specified below.
 
 Writes accept only table bases, including for integer and string-field forms. Assigning through any other value category, including a string, raises `ASSIGN_NON_TABLE`.
 
 `SELF` prepares both a method value and its receiver. It preserves the original `R(B)` in `R(A+1)` before looking up the string-keyed field into `R(A)`. The receiver therefore remains available as the first argument when the method value is called. Both destination writes extend `top` as needed. Preserving the original receiver also defines the result when a destination overlaps the source register.
 
 `NEWT` creates an empty table with an array-capacity request and a hash-size request. These operands request storage; they neither supply initial elements nor state the number of elements already present.
+
+### Table entries and inherited reads
+
+A Table maps admissible keys to non-nil values. Numeric and nonnumeric keys may coexist in the same Table. Array storage and hash storage are internal placement choices, not separate kinds of Table. Moving an entry between them does not change its key category.
+
+#### Keys and presence
+
+Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NIL` (4), even when the Table is empty or the value being written is nil. This is distinct from reading a missing admissible key, which returns nil.
+
+| Key category | Matching rule |
+| --- | --- |
+| Boolean | `false` and `true` are distinct keys. |
+| Number | Numeric matching, with the zero and NaN rules below. |
+| String | String identifiers match; no conversion to a numeric key occurs. |
+| Table, closure, thread | The same reference matches; separate objects do not match by contents. |
+| Builtin function | The same builtin identity matches. |
+
+Numeric `1`, string `"1"`, and boolean `true` are separate keys. Positive zero and negative zero address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
+
+Only positive integral numeric keys from 1 through `0x7fffffff` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
+
+A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.
+
+#### Stored length
+
+The Table length operation, `#t`, reads a stored length maintained by Table mutations. It does not count all mappings, find the largest numeric key, traverse a metatable, or search for a boundary when the length is read. Initial capacity allocates storage only: an empty Table has length zero regardless of its array or hash capacity.
+
+Let `L` denote the stored length. Deleting an array-eligible numeric key `k` shortens the length to `k - 1` when `k - 1 < L`. Otherwise that deletion does not shorten it. Entries above the new boundary remain mapped. Thus a Table can retain entries at keys greater than its reported length.
+
+When the next missing entry also lies within existing array capacity, filling the first hole at `L + 1` advances the length over consecutive non-nil entries up to that missing entry. A `false` entry participates in that advance. Other in-capacity non-nil writes do not advance the boundary merely because their key is large. Replacing an existing non-nil hash mapping does not itself recompute the stored length. Storage redistribution can rebuild length through reinsertion, so not every apparently unrelated insertion is guaranteed to leave an already path-dependent length unchanged.
+
+Cross-capacity length transitions remain incomplete in this reference. With array capacity four and keys 1 through 5 populated, deleting key 2 and then restoring it has conflicting recorded length results: 4 and 5, while key 5 remains present in both cases. No common result is specified here. In particular, neither a universal contiguous-prefix definition nor a claim that every boundary refill searches hash storage is established.
+
+#### Metatables and indexed reads
+
+A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. Only a Table-valued `__index` continues the lookup, using the original key on that next Table. Each subsequent Table is processed in the same way.
+
+An absent or non-Table `__index` terminates the read with nil. Function-valued indexers are not called. The `__index` member itself is read directly; its retrieval does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
+
+Writes always modify the named target Table directly. They do not redirect through `__newindex` and do not invoke a function stored there. Deleting an own mapping may therefore expose an inherited mapping on a later ordinary read.
+
+<section class="keep-together">
+
+#### BIOS interface
+
+All four functions below require a Table as their first argument; otherwise they raise `INVALID_ARGUMENT` (10). Ordinary BLua source must supply every listed argument. Pass explicit nil to delete a mapping or clear a metatable.
+
+| Signature | Operation and result |
+| --- | --- |
+| `setmetatable(t, mt)` | Sets the metatable to Table `mt`; nil clears it. Returns `t`. Any other `mt` raises `INVALID_ARGUMENT` (10). |
+| `getmetatable(t)` | Returns the actual metatable Table, or nil. No protected-metatable substitution is performed. |
+| `rawget(t, key)` | Returns only the own mapping, or nil when missing. Ignores the metatable. |
+| `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
+
+</section>
+
+For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` does not supply an alternative length contract.
+
 
 ### Instruction reference
 
@@ -744,6 +952,239 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 The `CALL` instruction's base charge is 2 cycles. Calling a builtin additionally incurs that builtin's own base charge before its normal or special call route. Builtin base-charge tiers are 1, 2, and 4 cycles; their per-argument and per-result charge coefficients are zero. Thus the instruction base alone is not the complete charge for a builtin call, nor does the builtin base describe every possible cost of its internal work.
 
 The symbolic faults named in this section identify failure reasons. They do not, by themselves, specify error text or which program context can catch a failure.
+
+## A complete value and table program
+
+This is a second, independent cartridge. Start it through the installed BIOS,
+with the result-storage module named `results`. It requires no device setup or
+raw address assignment. As in the first program, ordinary Tables use one-based
+list keys; typed byte-storage arrays use zero-based element indices. BSS starts
+zeroed, so the stored `zero` supplies an operand read from memory rather than a
+printed approximation. The program retains numeric results and comparison flags;
+Strings themselves are not stored as invented pointer words.
+
+### Result-storage module
+
+```lua
+module<const>
+
+struct cpu_values_manual_result
+	completed: word
+	zero: f64
+	powers: f64[12]
+	reciprocals: f64[4]
+	format_match: word[18]
+	table_lengths: word[8]
+	table_values: word[9]
+	table_checks: word[7]
+	metatable_checks: word[10]
+end
+
+bss result: cpu_values_manual_result
+
+return { result = result }
+```
+
+### Entry module
+
+The first part supplies runtime Table operands to POW. Reciprocals make the
+result's zero sign observable: `1 / -0` is negative infinity, while `1 / +0`
+is positive infinity.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *cpu_values_manual_result = state.result
+local zero<const> = result.zero
+local negative_zero<const> = -zero
+local infinity<const> = 1 / zero
+local nan<const> = zero / zero
+
+-- Parallel one-based tables supply runtime POW operands.
+local bases<const> = {
+	negative_zero, negative_zero, negative_zero, -infinity,
+	-infinity, -1, nan, -2, -1, -1, 2, -2,
+}
+local exponents<const> = {
+	3, 0.5, -3, 0.5, -3, infinity, zero, 0.5,
+	9007199254740991, 9007199254740992, -1074, -1075,
+}
+for index = 1, #bases do
+	result.powers[index - 1] = bases[index] ^ exponents[index]
+end
+-- Reciprocal infinities distinguish the two signs of zero.
+result.reciprocals[0] = 1 / result.powers[0]
+result.reciprocals[1] = 1 / result.powers[1]
+result.reciprocals[2] = 1 / result.powers[4]
+result.reciprocals[3] = 1 / result.powers[11]
+
+```
+
+Continue the same entry module. Concatenation produces the exact text listed
+in `expected`; each matching comparison stores flag 1.
+
+```lua
+-- Text stays in language values; only comparison flags go into byte storage.
+local inputs<const> = {
+	-7 / 3, 1.234565, 1.234575, 123456.5, 999999, 999999.5,
+	1000000, 0.0001, 0.00001, 0.00009999995, 2147483648,
+	5e-324, -infinity, infinity, nan, negative_zero, zero,
+	1.7976931348623157e308,
+}
+local expected<const> = {
+	'-2.33333', '1.23456', '1.23458', '123457', '999999', '1e+06',
+	'1e+06', '0.0001', '1e-05', '0.0001', '2.14748e+09',
+	'4.94066e-324', '-inf', 'inf', 'nan', '-0', '0', '1.79769e+308',
+}
+for index = 1, #inputs do
+	local text<const> = '' .. inputs[index]
+	result.format_match[index - 1] = text == expected[index] and 1 or 0
+	print('CPU format', index, text)
+end
+
+```
+
+Continue with own mappings. The simple hole/refill trace below is a bounded
+example, not a general cross-capacity length rule.
+
+```lua
+local values<const> = { 10, 20, 30 }
+result.table_lengths[0] = #values
+values[2] = nil
+result.table_lengths[1] = #values
+values[4] = 40
+result.table_lengths[2] = #values
+values[2] = 20
+result.table_lengths[3] = #values
+values[1] = nil
+result.table_lengths[4] = #values
+values[1] = 10
+result.table_lengths[5] = #values
+values[2] = false
+result.table_lengths[6] = #values
+
+values[0] = 90
+values[negative_zero] = 91
+values[-1] = 12
+values[1.5] = 15
+values['1'] = 16
+values[false] = 17
+values[true] = 18
+values[nan] = 21
+values[zero / zero] = 22
+values[infinity] = 23
+values[-infinity] = 24
+result.table_lengths[7] = #values
+result.table_values[0] = values[0]
+result.table_values[1] = values[-1]
+result.table_values[2] = values[1.5]
+result.table_values[3] = values['1']
+result.table_values[4] = values[false]
+result.table_values[5] = values[true]
+result.table_values[6] = values[nan]
+result.table_values[7] = values[infinity]
+result.table_values[8] = values[-infinity]
+result.table_checks[0] = values[99] == nil and 1 or 0
+result.table_checks[1] = values[1] == 10 and 1 or 0
+result.table_checks[2] = values[2] ~= nil and not values[2] and 1 or 0
+result.table_checks[3] = nan ~= nan and 1 or 0
+local first_key<const> = {}
+local other_key<const> = {}
+values[first_key] = 31
+result.table_checks[4] = values[first_key] == 31 and 1 or 0
+result.table_checks[5] = values[other_key] == nil and 1 or 0
+values[nan] = nil
+result.table_checks[6] = values[nan] == nil and 1 or 0
+
+```
+
+Finish the same entry module with actual BIOS metatable calls. Own entries
+and inherited entries are deliberately distinguished before the final wait.
+
+```lua
+-- Table-only inheritance is separate from direct mappings and writes.
+local inherited<const> = { answer = 42 }
+local metatable<const> = { __index = inherited }
+local target<const> = {}
+result.metatable_checks[0] = setmetatable(target, metatable) == target and 1 or 0
+result.metatable_checks[1] = getmetatable(target) == metatable and 1 or 0
+result.metatable_checks[2] = target.answer == 42 and 1 or 0
+result.metatable_checks[3] = rawget(target, 'answer') == nil and 1 or 0
+target.answer = 7
+result.metatable_checks[4] = target.answer == 7 and inherited.answer == 42 and 1 or 0
+result.metatable_checks[5] = rawset(target, 'answer', 8) == target and 1 or 0
+rawset(target, 'answer', nil)
+result.metatable_checks[6] =
+	target.answer == 42 and rawget(target, 'answer') == nil and 1 or 0
+setmetatable(target, nil)
+result.metatable_checks[7] = getmetatable(target) == nil and 1 or 0
+result.metatable_checks[8] = target.answer == nil and 1 or 0
+setmetatable(target, { __index = function() return 99 end })
+result.metatable_checks[9] = target.answer == nil and 1 or 0
+
+print('CPU values: reciprocal signs', result.reciprocals[0], result.reciprocals[1])
+print('CPU values: table length', result.table_lengths[7])
+result.completed = 1
+while true do
+	halt_until_irq
+end
+```
+
+### Results and output
+
+The retained arrays have the following values after `completed` becomes 1.
+The indices in these tables are typed-storage indices, starting at zero.
+
+<section class="keep-together">
+
+| `powers` index | Expression represented by the runtime operands | Result |
+|---|---|---|
+| 0 | `(-0)^3` | `-0` |
+| 1 | `(-0)^0.5` | `+0` |
+| 2 | `(-0)^(-3)` | `-infinity` |
+| 3 | `(-infinity)^0.5` | `+infinity` |
+| 4 | `(-infinity)^(-3)` | `-0` |
+| 5 | `(-1)^infinity` | NaN |
+| 6 | `NaN^0` | `1` |
+| 7 | `(-2)^0.5` | NaN |
+| 8 | `(-1)^9007199254740991` | `-1` |
+| 9 | `(-1)^9007199254740992` | `1` |
+| 10 | `2^(-1074)` | Smallest positive subnormal Number |
+| 11 | `(-2)^(-1075)` | `-0` |
+
+</section>
+
+The four `reciprocals` are negative infinity, positive infinity, negative
+infinity and negative infinity. All eighteen `format_match` flags are 1;
+the program prints the eighteen corresponding Strings in `expected`, in order,
+prefixed by `CPU format` and the one-based input index. Thus printed `nan`,
+`inf`, `-inf` and `-0` are observable text, not an assumed diagnostic spelling.
+
+<section class="keep-together">
+
+| Result array | Retained values, in increasing index order |
+|---|---|
+| `table_lengths` | 3, 1, 1, 4, 0, 4, 4, 4 |
+| `table_values` | 91, 12, 15, 16, 17, 18, 22, 23, 24 |
+| `table_checks` | Seven flags, all 1 |
+| `metatable_checks` | Ten flags, all 1 |
+
+</section>
+
+The metatable flags show return identity, actual metatable retrieval, inherited
+42, absence of an own mapping, direct-write override without changing the parent,
+raw-write return identity, nil deletion exposing inheritance, metatable clearing,
+absence after clearing, and a function-valued indexer returning nil without a
+call. The closing diagnostic lines are:
+
+```text
+CPU values: reciprocal signs   -inf   inf
+CPU values: table length   4
+```
+
+The actual separators are tabs. The final `halt_until_irq` loop waits after
+completion; this program does not render a picture or promise an IRQ wakeup.
 
 <section class="keep-together">
 

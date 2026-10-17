@@ -1,3 +1,32 @@
+# Current CPU actual-PDF layout acceptance
+
+Current verdict: **bounded print pass for the expanded draft**, not publication
+or completeness approval. The final expansion review below supersedes the
+historical25-page layout review retained afterward. The seven paired-owner
+questions and unfinished library/environment reference remain separate.
+
+# CPU values actual-PDF print review
+
+## Reviewed artifact
+- PDF: `build/manual/cpu.preview.pdf`
+- Final SHA256: `cdba96d1dda4b5ea57d93c5bc97bc8c0f2051b8d11f389d0158fed30126b454c`
+- 34 pages; actual PDF 1.4x rasters in `/tmp/bmsx-cpu-values-pages`.
+- Individually inspected every final page at original image size with `view_image`: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34.
+- This is actual rendered-PDF visual evidence, not a contact-sheet, HTML, source or text-only review.
+
+## Required layout failures
+None remaining.
+
+The original pp22-23 BIOS-interface finding is closed: the final p23 contains the heading, introductory paragraph and four-row signatures table together. The following calls table also fits completely with clear footer separation.
+
+## Bounded print pass
+PASS for the inspected final artifact's print layout: no required table-cell, code-block or diagram clipping, margin or running-header/footer collision, stranded table lead, or mathematical-superscript legibility failures were found. This includes POW pp11-13, Number-to-text pp15-17, table semantics/BIOS pp21-23 and the complete second program pp24-28.
+
+This pass is limited to visual layout of the exact final PDF hash above. It does not certify semantic correctness or source completeness. DRAFT markings are intentional and were not treated as failures.
+
+
+---
+
 # CPU actual-PDF layout acceptance
 
 Current verdict: **print-layout pass for the current draft**. The original

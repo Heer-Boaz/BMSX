@@ -620,14 +620,45 @@ on-console source loading/environment and whole-console connected workflows
 remain separate manual work, together with the earlier graphical contrasts
 and Book II socket/card hardware.
 
-**Next CPU reference paragraphs, independent of those six owner decisions:**
-extract the complete central finite Number text precision/notation/rounding
-contract, complete POW signed-zero/infinite-base outcomes, and Table key/
-missing-key/mutation-derived length rules. Current opcode prose deliberately
-stops at the verified bounded facts; a helper name or generic Lua/IEEE folklore
-does not finish those operation references. Complete builtin/protected-call/
-coroutine and installed BIOS/on-console environment signatures/routes also
-remain separate reference work. These coverage gaps are retained explicitly;
-the working numerical example and all64 named identities are not claimed as
-full CPU or language acceptance. Continue these ordinary source-extraction
-tasks without inventing a runtime fix for the six unrelated paired conflicts.
+## CPU value-reference expansion and seventh owner question
+
+Three facts-only paragraph authors separately expanded default finite Number
+text conversion, POW special outcomes and Table keys/metatables. The formatter
+reference specifies the actual ordered binary64 normalization, computed-value
+nearest-even rounding, carry-before-notation and exponent spelling. It does
+not substitute ideal decimal %.6g:123456.5 actually prints123457. The POW tables
+separate zero/NaN/infinite-exponent precedence, both signs of special bases,
+represented exponent parity and range limits. Table facts distinguish nil-key
+faults from missing admissible keys, NaN-key matching from numeric equality,
+false from absence, own mappings from table-only inherited reads, and the four
+actual BIOS table globals with their full ordinary-source arity.
+
+The complete second ordinary cartridge supplies136 printed source lines and68
+retained observations. Its actual BIOS playback separately emits all20 expected
+diagnostic lines. Existing POW/Table tests and current native CPU/Table targets
+pass. A bounded direct paired run gives174 common numeric rows. These results
+are not native execution of the cartridge, exhaustive finite-power accuracy,
+all fault routes, or a general Table-length guarantee. Independent nonauthor
+source, public-only newcomer and actual-PDF checks remain separately recorded;
+no publisher/framework/runtime/BIOS/compiler change was needed.
+
+**New STOP, proven by actual CPU execution:** generic numeric SETT boundary
+refill differs across array/hash capacity. After NEWT array4/hash8, SETT keys1..5,
+delete2 and refill2, the same LEN program returns5→1→5 in TS versus5→1→4 native,
+both33 charged cycles; key5 remains50. TS general write uses the cross-hash
+scanner (`machine/ts/machine/cpu/table.ts:801–812,1426–1440`); native SETT calls
+its numeric fast setter then the array-only scan
+(`machine/cpp/machine/cpu/cpu_dispatch.inl:152–161`,
+`machine/cpp/machine/cpu/table.h:36–43,172–184`). Native SETI instead uses its
+cross-hash scan (`table.h:53–59,186–195`). Exact source/disposition and bounded
+replay are retained in cpu-table-semantics and cpu-values-execution facts.
+This is a seventh paired-owner contract question, not an editorial repair,
+workaround recommendation or permission to promise universal prefix length.
+
+Finite default text and special-base POW coverage are now expanded. Complete
+Table-length publication still awaits its owning decision; the manuscript
+exposes rather than narrows away the disagreement. The six earlier owner
+questions remain open. Complete protected-call/coroutine, public builtin/BIOS
+and on-console environment references are the next independent source tasks.
+Remaining graphics teaching contrasts/output and Book II remain on the broader
+manual list. Whole-console newcomer acceptance has not been claimed.

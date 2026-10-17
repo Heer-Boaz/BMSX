@@ -1,3 +1,34 @@
+# Current CPU newcomer acceptance status
+
+The bounded programming routes pass the public-only reconstruction check, but
+this is **not a complete CPU-reference pass**: the new explicit cross-capacity
+Table-length STOP remains a necessary contract gap. The fresh expansion review
+below identifies no additional hidden programming step. Historical review of
+the first draft is retained afterward, not silently reused as a fresh review.
+
+# Independent public-only CPU reader review
+
+## Scope
+
+Reviewed `docs/book1/cpu.md` and the relevant public storage/startup, IRQ-wait and diagnostic-output explanations in `docs/book1/memory.md`, `irq.md` and `system.md`. The `cpu_manual` and `cpu_values_manual` companion READMEs were used only for their build/launch commands. No runtime/compiler/BIOS/cart implementation, tests, facts, architecture document or PDF was used.
+
+## Blocking finding: Table length is still an incomplete reference
+
+Exact chapter text, `docs/book1/cpu.md:862`:
+
+> Cross-capacity length transitions remain incomplete in this reference. With array capacity four and keys 1 through 5 populated, deleting key 2 and then restoring it has conflicting recorded length results: 4 and 5, while key 5 remains present in both cases. No common result is specified here.
+
+The public contract therefore still cannot tell a programmer the result of this representable mutation sequence. This known cross-capacity length STOP remains blocking a **complete** Table-length reference. The bounded eight-observation example does not resolve it; the chapter correctly says it is not a general cross-capacity rule.
+
+## No additional necessary source-programming gaps found
+
+Both independent programs print their result-storage module and all consecutive entry-module parts. Their initialization, typed storage, numeric-versus-word behavior and final wait can be understood from the permitted public chapters. The second program includes actual `setmetatable`, `getmetatable`, `rawget` and `rawset` calls, including explicit-nil clearing, own-entry override/deletion and a noncalled function-valued `__index`; no implementation inspection is necessary to reconstruct those calls or understand the documented outcomes.
+
+No additional internal contradiction or misleading behavioral claim was found in the reviewed programming path. This is a reader reconstruction review, not proof of source execution, retained-result accuracy, production-owner parity or PDF layout.
+
+
+---
+
 # Independent newcomer review — CPU manuscript
 
 ## Verdict: bounded pass

@@ -13,12 +13,10 @@
 			]
 		},
 		"datapath": {
-			"resolution": "Number versus Word conversion, bitwise/count semantics, predicates, variable result ranges, upvalue lifetime, key sources, instruction layouts and full-width branches.",
+			"resolution": "Number versus Word conversion, bitwise/count semantics, predicates, variable result ranges, upvalue lifetime, key sources, instruction layouts and full-width branches. Complete finite default Number formatting, ordered POW special outcomes, Table key identity/nil deletion and table-only metatable read rules now extracted separately.",
 			"open": [
 				"Top-of-address-space sequential/skip PC arithmetic differs; no universal modulo32 promise.",
-				"Complete finite Number text precision/notation/rounding must be extracted from the central formatter; current signed-zero/nonfinite spellings and observed example are bounded.",
-				"Complete POW signed-zero/infinite-base outcome table remains unexpanded; do not substitute generic host pow behavior.",
-				"Table key admissibility, missing-key and mutation-derived array-length behavior need their complete owning reference, not merely index-boundary opcode semantics."
+				"Generic SETT/rawset boundary refill length differs across array/hash capacity: actual paired CPU program returns5 versus4; cpu-table-semantics and cpu-values-execution. No universal hole-refill/prefix contract."
 			]
 		},
 		"visibility": {
@@ -36,7 +34,7 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Alignment and new bus-event detection, retained first-fault metadata, privilege/unknown CP0 hard halt, wrong callable/index values and ordered non-atomic effects; installed monitor route cross-referenced.",
+			"resolution": "Alignment and new bus-event detection, retained first-fault metadata, privilege/unknown CP0 hard halt, wrong callable/index values and ordered non-atomic effects; installed monitor route cross-referenced. Nil-key4, bounded table-only index chain5 and invalid table-global arguments10 now explicit.",
 			"open": []
 		},
 		"reset": {
@@ -46,7 +44,7 @@
 			]
 		},
 		"programming": {
-			"resolution": "Complete ordinary BLua results+entry modules, actual cop0/halt syntax and BIOS precedents,26 passing retained observations plus separate ordinary diagnostic output;12 paired raw programs/13 expected common rows.",
+			"resolution": "Complete ordinary BLua results+entry modules, actual cop0/halt syntax and BIOS precedents,26 passing retained observations plus separate ordinary diagnostic output;12 paired raw programs/13 expected common rows. Second complete value/Table cartridge:136 literal source lines,68 retained checks and separate ordinary20-line diagnostic run; full-arity BIOS metatable/raw signatures supplied, not a complete library reference.",
 			"open": [
 				"The complete builtin/protected-call/coroutine and BIOS/on-console environment reference is separate unfinished whole-manual work; the ordinary numerical cartridge does not close it."
 			]

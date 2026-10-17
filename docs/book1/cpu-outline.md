@@ -40,3 +40,17 @@ address-space sequential/skip PC and maxStack0 startup clearing are separately
 scoped by the boundary extraction. Existing simultaneous yield/HALT precedence
 is not republished as a common guarantee. Publication remains blocked where the
 required common hardware contract is still open.
+
+
+## Value-reference follow-through
+
+Default finite Number text and full POW special outcomes have separate frozen
+facts and paragraph authors. Table keys/missing/deletion/metatable rules and
+actual BIOS table signatures likewise have their own author and nonauthor
+audit. A second complete ordinary cartridge exposes results in typed BSS and
+prints actual default conversions. No host-style register array or local value
+encoder is used. The generic SETT cross-capacity length disagreement is an
+additional STOP, proven by actual paired CPU execution; it does not block
+unaffected reference extraction or authorize a docs-side runtime fix. Complete
+builtins/protected calls/coroutines and on-console development remain separate
+reference work, not hidden prerequisites accepted by a page-count milestone.
