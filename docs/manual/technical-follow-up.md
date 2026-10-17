@@ -39,6 +39,13 @@ Already recognizable rather than merely implicit:
 
 Concrete next paragraph/figure task: **observed display effect**, not another register table. Add a captured before/after for a sourced window/source-origin or PMODE change alongside the existing source and output coordinate explanation (`89–127`, `275–329`). State the settings and VBlank visibility condition. The frozen sheet has programming inputs (`540–669`) but does not supply an existing finished cart/capture for that contrast. A new bounded source/execution task is needed before claiming an observed result. No missing electrical number was established by this inventory.
 
+**Bounded continuation:** the Memory chapter now supplies a complete ordinary
+two-surface cartridge, changing only framebuffer base for its two switches.
+The red/blue/green outputs distinguish selected storage from a saved image;
+ordered readback and fresh-after-write VBlank observation have separate result
+checks. Actual ordinary-playback PNGs, not integration captures, supply the
+three plates. Window, PMODE and composition contrasts remain separate tasks.
+
 ### GTE
 
 Already explicit:
@@ -291,8 +298,22 @@ executions are recorded in [the source review](../book1/reviews/memory-source.md
 Numeric geometry is not the requested dummy-game plate, and APU result checks
 are not audible evidence. No runtime or publishing machinery was added.
 
+**Shared graphics storage continuation:** separate fact extraction and source
+review now establish copied packet/payload versus live texture/CLUT/copy uses,
+programmed versus retained display selection, and the limits of GPU IDLE,
+readback, DMA DONE and VBlank. A complete 132-line entry plus its 16-line typed
+result module prepare two disjoint GX16 regions, display A then B, rebuild A
+while B is selected and display A again. All four retained GPUREAD words and
+three fresh callback observations pass; actual ordinary red/blue/green plates
+are checked independently against every source-derived pixel. This teaches
+conditional reuse, not a general allocator, all-reader release or supervisor
+restoration contract. PCRTC partial-upload wording now counts assembly-consumed
+retained payload, not merely FIFO-admitted words. See the source/print reports
+for the current acceptance scope; no runtime or publishing changes are included.
+
 **Still open:** complete call/permission/dynamic/string-byte contracts;
-GPU/PCRTC shared-VRAM ownership and reuse; privileged supervisor/context,
+global shared-VRAM allocation and supervisor/multiple-reader ownership;
+privileged supervisor/context,
 successful fault recovery and coordinated cancellation/terminal/reset policy;
 inherited device state; remaining access/instruction timing and cross-unit
 budgets; broader SDK/live inspection and whole-reader acceptance. The current
@@ -391,3 +412,24 @@ see [its source review](../book1/reviews/gpu-source.md) and
 [print review](../book1/reviews/gpu-print.md). Further GTE/GPU contrasts,
 PCRTC before/after output and the GEO dummy-game task remain open. These three
 frames do not close the broad illustrations or technical audit.
+
+
+## Display-result observation follow-up
+
+The new two-surface ordinary cartridge produces the sourced red/blue/green
+poses, including a config-only final FBP switch, through the existing ordinary
+presentation timeline. Its retained-word integration case is a separate check,
+not visual proof. Initial fixture captures retained the earlier blue image;
+adding a completed tick did not repair it and was removed, not promoted to a
+hardware delay or forced redraw requirement.
+
+Narrow source diagnosis identifies a pending-presentation commit flag overwritten
+by a later unchanged tick (`hosts/common/presentation_state.ts:65–69,115–126`),
+while fixture capture requires a later tick before presenting
+(`ide/testing/fixture_operations.ts:72–77`). The resulting held-image capture can
+succeed without committing the config-only new game image. A separate possible
+suspended-execution/VBlank receipt loss was identified but not traced as the
+recorded collision. Preserve both boundaries in a dedicated owner-level audit;
+no runtime/harness repair or new capture framework is part of this manual slice.
+Evidence: `/tmp/bmsx-memory-display-fixture-publication-diagnosis.md`. Accepted
+manual plates come only from the separately executed ordinary-ROM timeline.

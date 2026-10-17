@@ -471,17 +471,17 @@ completion cannot later make that readback ready again.
 
 <section class="keep-together">
 
-A partial CPU-to-local-memory image upload is treated according to its accepted input:
+A partial CPU-to-local-memory image upload is treated according to the words already consumed by image assembly and retained with the upload. Words merely admitted to the GP0 FIFO or DMA ingress FIFO do not count; the action discards those still-queued words.
 
-| Accepted image input | Effect |
+| Image assembly state | Effect |
 |---|---|
 | No upload words | No upload action |
 | Three-word header only | Discard the header |
-| Header and at least one payload word | Retain an upload of the accepted pixel prefix |
+| Header and at least one retained payload word | Retain an upload of that payload prefix |
 
 </section>
 
-If `n` payload words have been accepted, the prefix contains
+If `n` payload words have been consumed by image assembly and retained, the prefix contains
 `min(width × height, 2 × n)` pixels. They are processed in row order under the accepted
 upload's retained mask-bit controls. With mask checking enabled, destination bit 15 = 1
 suppresses that pixel's write. On a write, mask-setting mode forces bit 15; otherwise
@@ -621,6 +621,9 @@ alpha, 0 or 128 from bit 15; it is not forced to 255 by ALP = 255.
 
 Read back the three programmed words to check the settings. The display uses them at
 VBlank entry when the latch takes the new configuration, as shown in Section 2.6.
+
+For a complete two-surface cartridge and its observed output, see
+[Prepare, publish and reuse two surfaces](memory.md#prepare-publish-and-reuse-two-surfaces).
 
 ### 3.2. Acknowledge stale HSINT and unmask only HSINT
 

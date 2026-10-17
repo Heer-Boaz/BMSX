@@ -107,3 +107,27 @@ baseline, and accepted the resolved bridge placement. **Bounded current DRAFT
 print PASS, no outstanding local readability finding.** Evidence:
 `/tmp/bmsx-memory-buffers-print-review.md`. Whole-reader/publication approval
 remains a separate, still-open decision.
+
+## Shared display storage: current actual output
+
+The current `manual:preview -- memory` output has 30 pages and four images,
+with no receipt layout errors, using the same Chromium/fonts/styles as above.
+Full PDFium comparison at scale 1.4 finds the accepted first 24 pages identical;
+root and an independent reviewer individually inspected every new page 25–30.
+The role/configuration/result tables and all three actual red/blue/green plates
+are readable, with complete captions and intact running furniture.
+
+The initial 132-line entry exceeded the existing indivisible-code page limit.
+It now uses three consecutive 48/46/38-line parts, preserving the complete
+source exactly on concatenation. Actual print inspection then found the
+part-2/3 labels stranded before their code. Using the existing semantic h4
+headings resolves both joins, without CSS, publisher, code or new grouping
+changes. Only pages 27–29 changed in that correction; root and the independent
+reviewer individually reopened all three final originals and accepted them.
+Final bounded DRAFT readability: **PASS**, no outstanding local finding.
+Evidence: `/tmp/bmsx-memory-display-current-print-review.md` and final rasters
+`/tmp/bmsx-memory-display-final-pages/page-001.png` through `page-030.png`.
+
+Remaining coverage and whole-reader/publication acceptance keep
+`reviews.print.passed` false. Neither the page count nor the clean layout
+receipt establishes a complete memory or whole-console programming contract.

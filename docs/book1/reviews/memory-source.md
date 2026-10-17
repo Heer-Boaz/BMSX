@@ -455,3 +455,52 @@ check still deliberately exits 1 for the named GPU/PCRTC, CPU/call/dynamic/strin
 supervisor/recovery/inheritance/timing/inspection coverage and public print
 approval, not an unresolved source/figure finding. Neither the successful cases
 nor the 24-page DRAFT is whole-console completeness evidence.
+
+## Shared graphics storage and executed display route
+
+Separate GPU and PCRTC extraction, followed by a nonauthor cross-boundary
+audit, supplies [copied/live GPU storage](../facts/memory-gpu.md),
+[PCRTC lifetime](../facts/memory-pcrtc.md) and
+[publication/IRQ ordering](../facts/memory-video-publication.md). A facts-only
+author wrote the shared-storage section without owners, architecture or PDF
+input. A separate live-source review accepts the exact section and its
+ceiling: a command limit does not undo later VRAM writes already applied,
+and a published configuration does not supply a pixel snapshot or release.
+Evidence: `/tmp/bmsx-memory-shared-video-source-review.md` and
+`/tmp/bmsx-memory-shared-vram-boundary-source-review.md`.
+
+The same author then received only the [executed example facts](../facts/memory-display-example.md)
+and its two frozen complete modules. The nonauthor checked every resulting
+claim/caption, the raw configuration arithmetic, true BIOS export, fresh-edge
+procedure and exact listings against live paired sources and actual artifacts:
+**bounded source PASS**, no mirror/spec disagreement. The 16-line const module
+is literal; concatenating the three printed entry parts exactly reproduces the
+132-line ordinary entry. Formatting-only splitting and semantic headings resolve
+actual print findings, not hardware defects. The 897-line chapter and 214-line
+companion remain exact prefixes; prior programs, groups and image are unchanged.
+Evidence: `/tmp/bmsx-memory-display-example-final-source-review.md`.
+
+Root executed the forced cart validation, exact minimal build/result commands
+and separate ordinary timeline. `publication_and_two_surface_reuse` passes;
+it checks four retained pixel words, programmed A/B/A words, three fresh callback
+observations, phases and the current BIOS query, not displayed output. The
+three ordinary-ROM PNGs are byte-identical to their manuscript assets. Root and
+the independent reviewer individually viewed all three and checked every pixel:
+each has 1024 white marker pixels and 48128 expected background pixels, no
+mismatch. The 82-test TS GPU owner bundle and existing GPU result case also pass.
+This is not native/all-backend execution, a DMA image-rate trace or GEO imagery.
+
+A separate public-only reader followed the printed modules and reached public
+GPU/IRQ/PCRTC/companion material, without facts, implementation or external
+examples. **Bounded PASS:** publication versus snapshot/release, complete
+prepare/switch/reuse, stale-event attribution, reservation scope and upload-prefix
+wording now answer all five local questions. Global allocation, supervisor and
+multiple-reader ownership remain open, alongside the other recorded CPU/SDK
+contracts. Evidence: `/tmp/bmsx-memory-display-public-reader-review.md`.
+
+Initial integration captures held the earlier blue image; an extra tick was
+ineffective and removed. Those captures are not accepted plates. Independent
+source diagnosis and the retained observer follow-up distinguish the pending
+presentation/fixture defect from hardware timing; no runtime/harness change or
+guest delay is introduced. Final print evidence is recorded separately, and
+the remaining coverage still blocks public release.

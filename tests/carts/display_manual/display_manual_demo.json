@@ -1,0 +1,5 @@
+[
+	{ "frame": 1, "capture": true, "description": "Surface A: red, marker at (16,64)" },
+	{ "frame": 4, "capture": true, "description": "Surface B: blue while A has been rebuilt" },
+	{ "frame": 7, "capture": true, "description": "Surface A reused: green, marker at (112,80)" }
+]

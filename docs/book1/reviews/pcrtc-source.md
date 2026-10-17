@@ -114,3 +114,18 @@ zero-step output suppression and register/latch capacities. These are arithmetic
 and state checks, not a measured CPU application workload or physical output test.
 The current TS GPU suite passes78 tests. Native execution and the separately
 recorded WebGPU regression were not rerun for this documentation-only slice.
+
+## Partial-upload wording precision — 2026-10-17
+
+Section 2.9 and its fact sheet now distinguish payload consumed by image
+assembly and retained with the upload from words merely admitted to either
+input FIFO. Both FIFOs are discarded before the retained prefix is flushed.
+The existing pixel-count formula, mask behavior and missing-remainder rule
+are unchanged. A nonauthor independently checked the exact changed prose and
+fact labels against both live owners and their consumers: **bounded PASS**,
+no source mismatch or unsupported claim. Evidence:
+`/tmp/bmsx-pcrtc-prefix-source-review.md`.
+
+Section 3.1 also links the complete shared-storage cartridge and actual output
+in the Memory chapter; it adds no register or behavior claim. Publication still
+requires the current changed-page print check, not the earlier page-9 proof.

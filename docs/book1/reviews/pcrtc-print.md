@@ -62,3 +62,17 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+## Partial-upload precision and example link — 2026-10-17
+
+The current publication-mode proof remains 22 pages, with three SVG figures,
+13 register groups and no receipt layout errors. Full PDFium raster comparison
+at scale 1.4 against the accepted release finds only pages 9 and 12 changed.
+Root and a separate reviewer individually inspected both current originals:
+the corrected partial-upload lead, tables and formula are readable on 9; the
+complete-example link, geometry table and HSINT procedure fit cleanly on 12.
+No clipped text, stranded heading or running-header/footer collision remains.
+Evidence: `/tmp/bmsx-pcrtc-prefix-current-print-review.md` and
+`/tmp/bmsx-pcrtc-prefix-current-proof/pcrtc.pdf`. Other pages retain their
+pixel-identical accepted evidence. The canonical publication must match this
+proof after the normal source/print gates pass.

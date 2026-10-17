@@ -436,17 +436,21 @@ All returned addresses are local-memory word indices, not byte addresses.
   [mirror][readback-request-cpp], [parser stop][parser-stop-ts],
   [mirror][parser-stop-cpp].
 - A partial CPU-to-VRAM upload with only its three-word header is removed.
-  If payload words were accepted, clearing emits the upload with its actual
-  accepted word count. Its pixel count is
-  `min(width * height, 2 * (accepted word count - 3))`; those pixels are
+  If payload words were consumed by image assembly and retained, clearing emits
+  the upload with its actual retained command word count, including the header.
+  Words still only in GP0 or DMA ingress FIFO are discarded first and do not
+  contribute to that count. Its pixel count is
+  `min(width * height, 2 * (retained command word count - 3))`; those pixels are
   **processed** in row order, subject to the accepted command's retained
   mask-bit mode. With mask checking enabled, destination bit15 suppresses
   that pixel's write. When a write occurs, mask-setting mode forces bit15;
   otherwise source bit15 is retained. The missing rectangle remainder is
   not padded. Thus FLUSH or RESET can commit a partial upload instead of
-  undoing it, but does not guarantee a memory write for every accepted pixel.
-  Sources: [partial upload][upload-flush-ts], [mirror][upload-flush-cpp],
-  [accepted pixel count][upload-count-ts], [mirror][upload-count-cpp],
+  undoing it, but does not guarantee a memory write for every prefix pixel.
+  Sources: [FIFO discard before prefix flush](../../../machine/ts/machine/devices/gx/gpu.ts#L1609-L1614),
+  [mirror](../../../machine/cpp/machine/devices/gx/gpu.cpp#L1087-L1092),
+  [partial upload][upload-flush-ts], [mirror][upload-flush-cpp],
+  [retained payload pixel count][upload-count-ts], [mirror][upload-count-cpp],
   [retained command controls][command-controls-ts], [mirror][command-controls-cpp],
   [software upload][upload-write-ts], [mirror][upload-write-cpp],
   [masked write][masked-write-ts], [mirror][masked-write-cpp].

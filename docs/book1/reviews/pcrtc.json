@@ -29,7 +29,7 @@
 			"open": []
 		},
 		"reset": {
-			"resolution": "Section 2.9 and CSR document action precedence, queued-input discard, accepted-work retirement, readback cancellation, partial-upload prefixes, reset versus flush scope, and the absence of local-memory clear/undo.",
+			"resolution": "Section 2.9 and CSR document action precedence, queued-input discard, retained-work retirement, readback cancellation, assembly-consumed partial-upload prefixes, reset versus flush scope, and the absence of local-memory clear/undo.",
 			"open": []
 		},
 		"programming": {

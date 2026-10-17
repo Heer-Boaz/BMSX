@@ -212,3 +212,28 @@ Expect:
 ```
 
 This checks 16 transfer words and private-RAM roundtrip, separate DMA/APU completion, paused voice state with advancing sample clock, four end events, ended-bank clearing and no faults. It does not establish audible output. These commands were checked in an existing checkout, not fresh-platform certification.
+
+## Check the display-surface program
+
+Use the memory chapter's complete `results` and cartridge entry modules. After the existing tooling build, build the ordinary cartridge and run its result check:
+
+```sh
+npm run build:toolchain:cart -- display_manual --debug
+npm run headless:test -- display_manual tests/carts/display_manual/display_manual_assert.lua
+```
+
+The expected case line is:
+
+```text
+[test] publication_and_two_surface_reuse: passed
+```
+
+This checks the reported installed BIOS reservation, all four retained pixel words, the A/B/A programmed framebuffer words, phases 1–3, and a changed callback counter at each publication. The matching-BIOS, derived-cartridge, fresh-target and linked-address caveats given above apply here too. These are current-checkout observations, not a fresh-platform installation check.
+
+The three pictures use a separate ordinary-playback route, not captures from that result check:
+
+```sh
+npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/display_manual/display_manual_demo.json display_manual
+```
+
+It captures presentation frames 1, 4 and 7 as `frame_00001.png`, `frame_00004.png` and `frame_00007.png` under `tests/carts/display_manual/screenshots/`: red A, blue B and rebuilt green A. Those are this playback's chosen capture points, not a hardware timing or frame-budget guarantee.
