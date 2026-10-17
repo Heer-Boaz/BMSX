@@ -155,3 +155,60 @@ Look for this exact successful line:
 The case checks all 60 RAM words and the supplied DMA/GPU completion observations. Its separate pixel readback is not a result retained by the program. A missing suite, failed assertion or expired test is a failure, not successful empty output.
 
 As with the storage check, this integration route compiles a derived cartridge containing the ordinary program entry and the fixture, and runs on a fresh target. It is not byte-for-byte playback of the ordinary ROM, and absolute linked addresses need not match. Use the named check to inspect this supplied program's results without guessing a `MEM` address; it is not a general live-address inspector.
+
+## Check hardware-buffer program results
+
+Use the supplied programs and named checks below to observe their results without guessing RAM addresses. After the tooling build above (`npm run build:product:node-headless-tooling -- --debug`), run each command pair from the repository root. Cart builds handle the matching BIOS automatically.
+
+All three suites compile derived integration images containing the ordinary program entry and fixture, then run on fresh targets. They are not byte-for-byte playback of the ordinary ROM; absolute linked addresses need not match. A missing suite, failed assertion or expired case is not success.
+
+### GEO
+
+Use the [complete GEO program](../book1/geo.md#complete-blua-program):
+
+```sh
+npm run build:toolchain:cart -- geo_manual --debug
+npm run headless:test -- geo_manual tests/carts/geo_manual/geo_manual_assert.lua
+```
+
+Expect:
+
+```text
+[test] transforms_sat_contacts_and_fault_ack: passed
+```
+
+This checks eight vertices, two AABBs, SAT words, two float contacts and summaries, phase progress, five DONE events, one ERROR event, and local fault acknowledgement—not a drawn picture.
+
+### IMGDEC
+
+Use the [complete IMGDEC program](../book1/imgdec.md#programming-imgdec-in-blua):
+
+```sh
+npm run build:toolchain:cart -- imgdec_manual --debug
+npm run headless:test -- imgdec_manual tests/carts/imgdec_manual/imgdec_manual_assert.lua
+```
+
+Expect:
+
+```text
+[test] ram_gp0_fault_and_recovery: passed
+```
+
+This checks 26 retained RAM words, phase/progress/DMA/status/IRQ observations, the retained fault header and fresh-START result. Its additional 12 texture and eight CLUT GPUREAD words are separate test observations, not program-retained results or a displayed picture.
+
+### APU
+
+Use the [complete APU program](../book1/apu.md#worked-blua-program):
+
+```sh
+npm run build:toolchain:cart -- apu_manual --debug
+npm run headless:test -- apu_manual tests/carts/apu_manual/apu_manual_assert.lua
+```
+
+Expect:
+
+```text
+[test] pcm_transfer_generator_and_badp: passed
+```
+
+This checks 16 transfer words and private-RAM roundtrip, separate DMA/APU completion, paused voice state with advancing sample clock, four end events, ended-bank clearing and no faults. It does not establish audible output. These commands were checked in an existing checkout, not fresh-platform certification.

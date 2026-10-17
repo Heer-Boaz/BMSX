@@ -276,14 +276,30 @@ its actual copy/completion case was rerun successfully. Other units' lifetimes
 do not follow from DMA. See [the current source review](../book1/reviews/memory-source.md)
 for precise evidence and the remaining scope.
 
+**Device-specific buffer contracts added within bounded scopes:** GEO now
+separates captured job configuration from live addressed inputs, destructive
+busy-command rejection, retained partial output and local versus central ACK.
+GTE PLUS separates captured operands and pending publication from RAM payloads;
+its existing normal geometry cartridge is not a PLUS execution test. IMGDEC
+separates input-source release, decoder/output drainage and output-DMA completion,
+including shared DATA and partial-stream/reset hazards. APU separates private
+sample storage, queued descriptors, retained nonexclusive voice references,
+live source rebinds, upload commit and download prefetch cancellation. Preserve
+all remaining shared uses before reuse; none is a free-buffer allocator.
+Independent source checks and actual supplied GEO/IMGDEC/APU result-command
+executions are recorded in [the source review](../book1/reviews/memory-source.md).
+Numeric geometry is not the requested dummy-game plate, and APU result checks
+are not audible evidence. No runtime or publishing machinery was added.
+
 **Still open:** complete call/permission/dynamic/string-byte contracts;
-non-DMA shared-buffer ownership and reuse; privileged supervisor/context,
-successful fault recovery and terminal/reset policy; inherited device state;
-remaining access/instruction timing and cross-unit budgets; broader SDK/live
-inspection and whole-reader acceptance. Current 22-page DRAFT readability is
-independently checked, but these gaps and final publication review remain
-explicit. Do not equate one successful build route with full memory/book
-coverage.
+GPU/PCRTC shared-VRAM ownership and reuse; privileged supervisor/context,
+successful fault recovery and coordinated cancellation/terminal/reset policy;
+inherited device state; remaining access/instruction timing and cross-unit
+budgets; broader SDK/live inspection and whole-reader acceptance. The current
+DRAFT's actual-page inspection is recorded separately in
+[the print report](../book1/reviews/memory-print.md); these gaps and final
+publication review remain explicit. Do not equate successful result checks or
+a longer PDF with full memory/book coverage.
 
 Do not substitute a language value-slot stack or a logical heap accounting
 budget for a byte-addressed RAM allocation. Do not infer free-memory rights

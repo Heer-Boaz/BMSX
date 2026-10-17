@@ -1,9 +1,9 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Installed capacities/windows, main-RAM reservations, linked sections and execution domains are source-checked. The firmware VRAM bounding-region query and current-asset example are checked against producers and an actual BIOS call; no complement-free arena or hardware protection is inferred. DMA lifetime is bounded separately.",
+			"resolution": "Installed capacities/windows, main-RAM reservations, linked sections and execution domains are source-checked. The firmware VRAM bounding-region query and current-asset example are checked against producers and an actual BIOS call; no complement-free arena or hardware protection is inferred. DMA lifetime is bounded separately. GEO addressed jobs, GTE PLUS operands, IMGDEC copied stream words and APU retained sample sources now have distinct, source-checked lifetime boundaries; none creates allocation rights.",
 			"open": [
-				"Complete non-DMA shared-buffer ownership/admission/lifetime and required call/permission reference."
+				"Complete GPU/PCRTC shared-VRAM ownership and lifetime, supervisor/device inheritance, and required call/permission reference."
 			]
 		},
 		"registers": {
@@ -17,9 +17,9 @@
 			]
 		},
 		"visibility": {
-			"resolution": "Startup versus EXEC, scalar alignment/readiness, fault publication/ACK and F64 partial completion are explicit. DMA configuration capture versus live payload reads, ordered overlap, service writeback and transport-versus-device completion are independently checked.",
+			"resolution": "Startup versus EXEC, scalar alignment/readiness, fault publication/ACK and F64 partial completion are explicit. DMA configuration capture versus live payload reads, ordered overlap, service writeback and transport-versus-device completion are independently checked. Separate GEO configuration capture/live reads and terminal partial output, PLUS pending publication, IMGDEC input/output drainage, and APU queued/live/source/transfer completion are established in their bounded subsections.",
 			"open": [
-				"Complete non-DMA device capture/live-read, completion/fault and buffer-reuse boundaries, including shared supervisor use."
+				"Complete GPU/PCRTC capture/live-read and display-buffer reuse boundaries, including supervisor use and coordinated cancellation/restart."
 			]
 		},
 		"timing": {
@@ -47,9 +47,9 @@
 			]
 		},
 		"programming": {
-			"resolution": "Exact complete 32/30-line storage modules and 11-line fault program execute successfully. The linked first-build companion teaches project/module/entry/manifest roles, exact build/result commands and separate ordinary playback; those commands were executed. DMA preparation/wait/check/reuse links to the complete owning program. A separate public-only reader re-exercised the supplied storage, interactive browser fault and DMA result routes; R1-R3 local gaps are resolved on paper, not whole-book acceptance.",
+			"resolution": "Exact complete 32/30-line storage modules and 11-line fault program execute successfully. The linked first-build companion teaches project/module/entry/manifest roles, exact build/result commands and separate ordinary playback; those commands were executed. DMA preparation/wait/check/reuse links to the complete owning program. A separate public-only reader re-exercised the supplied storage, interactive browser fault and DMA result routes; R1-R3 local gaps are resolved on paper, not whole-book acceptance. Existing GEO/IMGDEC/APU result-command pairs were executed successfully; they inspect numeric/retained results, not GEO pictures or audible APU output. Existing normal GTE cartridge results are not PLUS execution evidence.",
 			"open": [
-				"Complete call/dynamic/string-byte teaching and owning references; non-DMA buffer programming; broader SDK/live inspection and whole-reader acceptance."
+				"Complete call/dynamic/string-byte teaching and owning references; GPU/PCRTC buffer programming and coordinated recovery; broader SDK/live inspection and whole-reader acceptance."
 			]
 		}
 	},

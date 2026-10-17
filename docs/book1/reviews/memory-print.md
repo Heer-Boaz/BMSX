@@ -5,10 +5,11 @@ open.** This does not establish complete chapter coverage or the whole-book
 reader target. No publisher, CSS, font, figure renderer or review framework
 changed.
 
-## Actual final output
+## Previously accepted 22-page baseline
 
 Command: `npm run manual:preview -- memory`.
-PDF: `build/manual/memory.preview.pdf`, **22 pages, one image**.
+At that review: `build/manual/memory.preview.pdf`, **22 pages, one image**.
+The current device-buffer continuation is recorded below.
 Chromium 153.0.8010.12, Node v22.23.1, Linux/x64. The existing layout receipt
 reports `errors: []`; that build result is not the visual inspection.
 
@@ -72,3 +73,37 @@ the same three-page delta, and individually viewed final 16/21/22 at original
 detail. **Bounded final DRAFT readability PASS; no outstanding finding.**
 Evidence: `/tmp/bmsx-memory-continuation-print-review.md`, reader-correction
 addendum. This leaves public print approval and remaining coverage open.
+
+
+## Device-buffer continuation: current actual output
+
+Current command: `npm run manual:preview -- memory`.
+Current `build/manual/memory.preview.pdf`: **24 pages, one unchanged image**.
+Chromium 153.0.8010.12, Node v22.23.1, Linux/x64; receipt `layout.errors: []`.
+No publisher, stylesheet, font, figure or grouping change was made.
+
+Root independently rendered every final page with PDFium at scale 1.4 and
+compared full-page pixels against the previously individually inspected
+22-page baseline. Pages 1–21 are identical; pages 22–24 are changed or new.
+Root individually viewed final 22, 23 and 24 at original detail. The DMA/GEO
+transition, ordered continuation, GTE/IMGDEC/APU sections, register names and
+last result-procedure link are readable and unclipped, without stranded
+headings or footer collisions. Current rasters:
+`/tmp/bmsx-memory-buffers-final-pages/page-001.png` through `page-024.png`.
+
+The first 25-page render stranded only the one-line closing cross-reference
+on page 25. Both root and the independent reviewer found it in actual rasters.
+Joining that sentence to the preceding paragraph, without changing any words,
+puts it on the already short final line of page 24. Root re-viewed every
+changed final page; stale page-25 raster was removed. No speculative spacing,
+new helper or publishing rule was introduced to hide the problem.
+
+Current bounded readability does not close the remaining coverage questions or
+public publication-style approval; `reviews.print.passed` remains false.
+
+The independent reviewer also individually re-opened corrected final 22–24
+at original detail, checked the full 24-page/raster count and identical 1–21
+baseline, and accepted the resolved bridge placement. **Bounded current DRAFT
+print PASS, no outstanding local readability finding.** Evidence:
+`/tmp/bmsx-memory-buffers-print-review.md`. Whole-reader/publication approval
+remains a separate, still-open decision.

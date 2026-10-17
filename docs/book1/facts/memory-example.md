@@ -189,3 +189,24 @@ while true do
 end
 
 ```
+
+## Subsequent device-buffer example executions
+
+Root, 2026-10-17, starting at `dbf99b501`; no runtime/cartridge source changes.
+The current tooling product build, full cart validation and ordinary named guest
+suite for each of GEO, GTE, IMGDEC and APU exited zero. Exact test sources were
+read, not inferred from file names. These are existing working routes, not newly
+executed mutation/alias/fault-attribution tests.
+
+| Project / actual case | Primary assertions | Bounded observation and actual log |
+|---|---|---|
+| `geo_manual` / `transforms_sat_contacts_and_fault_ack` | `tests/carts/geo_manual/geo_manual_assert.lua:1-73` | All vertices/AABBs, SAT, both contacts/summaries, six phases, local fault ACK, five DONE/one ERROR; `/tmp/bmsx-memory-buffers-geo_manual.log` |
+| `gte_manual` / `static_operand_layout`, `geometry_color_and_buffer_lifetime` | `tests/carts/gte_manual/gte_manual_assert.lua:1-82` | Normal operand layout/projection/color and original triangle captures, NOT timed PLUS; `/tmp/bmsx-memory-buffers-gte_manual.log` |
+| `imgdec_manual` / `ram_gp0_fault_and_recovery` | `tests/carts/imgdec_manual/imgdec_manual_assert.lua:1-101` | 26 retained words/four phases plus separate 12 texture/8 CLUT GPUREAD checks; `/tmp/bmsx-memory-buffers-imgdec_manual.log` |
+| `apu_manual` / `pcm_transfer_generator_and_badp` | `tests/carts/apu_manual/apu_manual_assert.lua:1-93` | Sixteen-word private-RAM transfer, distinct upload/commit/download-STOP, paused active source, four end events; NOT audible evidence; `/tmp/bmsx-memory-buffers-apu_manual.log` |
+
+Separately, the existing TypeScript GTE owner suite ran 43 tests, all passed:
+`npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/gx_gte.test.ts`.
+Log `/tmp/bmsx-memory-plus-owner-tests.log`. This is owner-level PLUS coverage,
+not a new complete cartridge program or native execution. No universal latency,
+whole-console coverage or newly captured mutation result follows.

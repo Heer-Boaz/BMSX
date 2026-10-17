@@ -367,3 +367,91 @@ were independently viewed and pass bounded DRAFT readability. Evidence:
 passes all 17 tests. `manual:check -- memory` intentionally exits 1 for the
 remaining named coverage questions and public print review, not a hidden
 source/figure failure. No chapter/book completion is claimed.
+
+## Device-specific buffer continuation
+
+This continuation preserves the entire committed 847-line memory chapter and
+157-line programming companion as exact prefixes. Separate facts-only writers
+supply GEO/GTE, IMGDEC, APU and the result-observation appendix; no hardware
+writer is asked to retell the architecture document or a foreign manual.
+The installed BIOS image and all three complete BLua listings are unchanged.
+No runtime, BIOS, cartridge, assertion, publisher or review framework is added.
+
+- **GEO:** [GB01–07](../facts/memory-geo.md) distinguish captured configuration
+  from addressed live payload, valid empty records, launch-time summaries,
+  destructive busy-CMD rejection, partial writes and local fault ACK versus
+  central interrupt ACK. An independent first check found an imprecise command
+  alias and an overbroad matrix-read statement; the author corrected both.
+  Root checked the exact final prose against paired current controllers,
+  contracts and XFORM owners: bounded PASS. No arbitrary alias safety or
+  allocator/ownership grant follows. Evidence:
+  `/tmp/bmsx-memory-geo-gte-final-prose-source-review.md`.
+- **GTE PLUS:** [GT01–03](../facts/memory-gte.md) establish five writable
+  operands, pending-result capture, joint publication and CPU-only interlocked
+  command submission. The exact prose respects the independent auditor's
+  restriction to operand writes, not every bank word. Root separately checked
+  paired bindings, computation, readiness and publication: bounded PASS in the
+  same report. Existing normal GTE triangle execution is not PLUS execution.
+- **IMGDEC:** [IB001–017](../facts/memory-imgdec.md) distinguish supplied word
+  copies, input-DMA source release, header-inclusive output counts, progress,
+  decoder/output-DMA/downstream completion, retained DATA and partial output.
+  Root nonauthor checked actual paired stream/FIFO/controller and narrow DMA
+  owners, including admitted-block persistence across local IMGDEC reset or
+  START: bounded PASS. This is not a whole-machine reset claim or arbitrary
+  failed-stream recovery recipe. Evidence:
+  `/tmp/bmsx-memory-imgdec-lifetime-source-review.md`.
+
+The companion's exact build/test pairs and expected named pass lines are
+checked against the actual supplied suites and freshly executed minimal
+commands. GEO is numeric geometry, IMGDEC's extra GPUREAD words are separate
+test observations, and APU result checks are not audible evidence. The complete
+validation routes for GEO/GTE/IMGDEC/APU and the separate 43-test GTE owner suite
+also pass, within the limits in [the execution facts](../facts/memory-example.md)
+and [BW01–05](../facts/memory-workflow.md). No new active-buffer mutation,
+native-parity or physical-timing test is claimed. Appendix source check:
+`/tmp/bmsx-memory-buffer-example-workflow-source-review.md`.
+
+A separate public-only reader reconstructed the new sections and the reached
+public programming procedures without opening facts, specs, owners or tests.
+No further local route gap was found in GEO/GTE/IMGDEC or the command appendix.
+Two genuine APU summary ambiguities were retained as findings, not dismissed
+because the owning chapter already contains the answers: `END` must name the
+actual `SLOT_ENDED` notification (not promised by immediate STOP), and a fade
+must not be presented as safely clamped to source exhaustion. Narrow paired
+source extraction AB13–14 supports the corrections; author revision and exact
+source/reader recheck were required before accepting the final subsection.
+Initial report: `/tmp/bmsx-memory-buffer-reader-review.md`.
+
+
+The final 478-word APU subsection now includes those corrections and expressly
+limits CMD capture to supported nonzero commands, excluding NONE. A fresh
+nonauthor independently checked [AB01–14](../facts/memory-apu.md) and every final
+claim against the paired APU/Memory/DMA owners, then checked the final literal
+revision: **bounded factual PASS**, no genuine mirror/spec disagreement.
+The initially overbroad pause-ownership, fade-residency and CMD-capture phrases
+are resolved, not hardware fixes. Evidence:
+`/tmp/bmsx-memory-apu-lifetime-source-review.md`.
+
+The same public-only reader checked the revised APU text and the reached
+public procedures: fade caution, SLOT_ENDED terminology/no immediate-STOP event,
+and nonzero CMD qualification now answer all its local questions. **No local
+finding remains in these bounded additions.** This is not whole-book acceptance
+or a promise of arbitrary partial-stream recovery. The requested actual GEO
+sprite/hull plates, GPU/PCRTC shared-VRAM contracts, full CPU/call/dynamic/string
+route, supervisor/recovery/inheritance and broader live inspection remain open.
+
+Final independent integration accepts the 897-line manuscript and 214-line
+companion: exact 847/157-line committed prefixes, all four literal separately
+authored device sections, unchanged 32/30/11-line complete programs, eight
+existing groups and identical image bytes. Every new public link reaches its
+intended procedure. The sole print correction joins the unchanged shared
+result-procedure sentence to the preceding paragraph; no source claim changes.
+Evidence: `/tmp/bmsx-memory-buffers-integration-review.md` and
+[the current print report](memory-print.md).
+
+Final `npm run test:manual` passes all 17 existing tests. Current preview receipt
+has no layout errors; actual final-page checks are separate. The publication
+check still deliberately exits 1 for the named GPU/PCRTC, CPU/call/dynamic/string,
+supervisor/recovery/inheritance/timing/inspection coverage and public print
+approval, not an unresolved source/figure finding. Neither the successful cases
+nor the 24-page DRAFT is whole-console completeness evidence.
