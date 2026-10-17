@@ -13,6 +13,13 @@
 		"facts": "docs/book1/facts/memory-map.md",
 		"review": "docs/book1/reviews/memory.json"
 	},
+	"coroutines": {
+		"book": "I",
+		"label": "COROUTINES",
+		"chapter": "docs/book1/coroutines.md",
+		"facts": "docs/book1/facts/coroutines.md",
+		"review": "docs/book1/reviews/coroutines.json"
+	},
 	"pcrtc": {
 		"book": "I",
 		"label": "PCRTC",

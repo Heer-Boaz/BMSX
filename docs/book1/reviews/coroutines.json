@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Installed protected-call globals and8-member coroutine table, language values/retained execution contexts; not complete BIOS libraries, loader or a new MMIO unit.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "All11 public signatures, argument kinds, result tuples, source-vs-raw arity and optional nil distinctions; no new word ports are introduced by these call interfaces.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Original error identity, prefixes/interior nil/count shaping, handler first result, state collisions, create/resume/yield/wrap flows and failed-versus-closed upvalue effects; ordinary bare-return/fallthrough1nil owning producer addendum.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Immediate API effects and accepted transfers, caller Normal/target Running then yield/return/error to resumer; resume rejection leaves target unchanged, while wrapper may separately close Failed. Failed close still closes and second close returns true.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Primitive incremental error2/pcall4/xpcall4 and all7 coroutine primitive bases4; zero argument/result coefficients, additional wrapper/body/handler instructions. CPU chapter supplies accounting model, not a fabricated total latency.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "Entered hardware exception frame rejects resume before status rejection; nonyieldable main/exception/handler contexts, no unwinding across entered exception roots; actual IRQ controller interface separately complete.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Typed error payloads versus classified strings, handler validation before new boundary, caught nil key, handler-failure and OOM scope, six raw reason identities for fault route versus caught results; no bus-fault sandbox claim.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "New entry unstarted/suspended; live paired CPU reset clears active/resumer call/protection chain and starts selected system startup, not a close-result callback. No every-object/backing-byte reset promise.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete18+117-line actual BLua program,40 retained assertions and17 ordinary BIOS output lines; all8 public coroutine members, actual aliases, original error Table/nil and surviving capture. Independent source/program/figure and public-only newcomer checks pass, including corrected Failed wrapper cleanup. All12 actual publication PDF pages independently pass after two existing keep-together layout corrections.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/coroutines-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/coroutines-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/coroutines-print.md"
+		}
+	}
+}

@@ -658,7 +658,45 @@ workaround recommendation or permission to promise universal prefix length.
 Finite default text and special-base POW coverage are now expanded. Complete
 Table-length publication still awaits its owning decision; the manuscript
 exposes rather than narrows away the disagreement. The six earlier owner
-questions remain open. Complete protected-call/coroutine, public builtin/BIOS
-and on-console environment references are the next independent source tasks.
+questions remain open. The separate protected-call/coroutine chapter now covers
+those eleven installed interfaces. Remaining public builtin/BIOS and on-console environment
+references are the next independent source tasks.
 Remaining graphics teaching contrasts/output and Book II remain on the broader
 manual list. Whole-console newcomer acceptance has not been claimed.
+
+
+## Protected calls and cooperative threads
+
+The new chapter covers installed `error`, `pcall`, `xpcall` and all eight
+`coroutine` functions. Separate facts-only authors wrote the protected-call and
+lifecycle references. It teaches value identity and nil positions, nested success
+flags, handler validation and failure, ordinary bare-return/fallthrough nil,
+thread states, resume/yield tuples, failed-close reporting, surviving captures,
+wrapper cleanup, exception boundaries and incremental—not total—cycle charges.
+A transfer diagram follows the actual example, not a parallel CPU or time scale.
+
+The complete ordinary cartridge supplies135 literal source lines,40 retained
+observations and17 separately observed BIOS diagnostic lines. Existing22 TS
+cases and30 paired O0/O3 vectors pass. Nine additional bodies at both optimization
+levels give18 true completions and equal decoded final snapshots through the
+existing per-grant save/restore route; this is not raw encoded-byte equality,
+native execution of the ordinary cartridge or exhaustive exception/GC coverage.
+
+An independent source audit rejected the initial claim that a non-suspended
+wrapped resume never performs cleanup. The BIOS checks retained Failed state
+after any false resume, including rejection of an already-failed target. The
+corrected text distinguishes the newly returned rejection value from the older
+retained body error that cleanup clears. A separate paired vector confirms the
+case. The correction changes documentation only, not the BIOS or runtime.
+Source, public-only newcomer and actual-PDF decisions are recorded separately in
+[the chapter reviews](../book1/reviews/coroutines-source.md).
+
+This closes the assigned protected-call/cooperative-thread reference, not the
+whole BIOS or the CPU's seven outstanding owner questions. The finite inventory
+in [firmware-surface](../book1/facts/firmware-surface.md) divides the next work into
+base conversion/iteration/globals, table/string, math/os, source loading and
+environments, actual exported BIOS imports/cartlib, compiler/privileged forms,
+and installation lifetime. Each still needs owner facts, authored reference and
+executable programming coverage; private firmware imports and descriptor gaps
+must not silently become invented cartridge APIs. Graphics contrasts, Book II
+and whole-console newcomer acceptance remain open.

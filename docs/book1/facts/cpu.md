@@ -73,7 +73,9 @@ The finite Number formatting and full special-base POW references have now
 been extracted separately, with bounded paired replay. Table key admissibility,
 missing-key, deletion and metatable lookup are likewise extracted; a complete
 common mutation-length contract is stopped by the seventh paired difference,
-not closed by a single working example. Complete protected calls/coroutines,
-public builtin/BIOS and on-console environment references remain unfinished.
+not closed by a single working example. The separate
+[protected-call/coroutine chapter](../coroutines.md) now supplies all eleven
+installed interfaces with a complete ordinary example. The remaining public
+builtin/BIOS and on-console environment references remain unfinished.
 The current instruction manuscript remains a draft; no successful source,
 reader or PDF pass constitutes whole-manual completion.
