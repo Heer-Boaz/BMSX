@@ -10,7 +10,9 @@
 		},
 		"datapath": {
 			"resolution": "Operation-specific scale/packing guidance and per-command purpose/input/option/output entries cover all22 normal functions plus VMAD3. The retained exact arithmetic specifies44-bit ordered wrap, clamps, matrix/cv2 behavior, reciprocal algorithm and257 ROM bytes. H is an unscaled projection numerator, not a shared scene-coordinate scale; NCLIP is doubled oriented area with MAC0 overflow qualifications.",
-			"open": []
+			"open": [
+				"The exact arithmetic appendix does not substitute for a full usable instruction reference. Command paragraphs still need explicit ordered calculations, complete state footprints and distinguishing worked/boundary cases; see C01-C23 in docs/book1/gte-outline.md."
+			]
 		},
 		"visibility": {
 			"resolution": "Result visibility distinguishes immediate normal-command results from pending PLUS operands/results, old output visibility, deadline publication, direct word-store interlock and separate normal/PLUS state. Register-access cautions cover F64 second-word admission and word-sequence readiness preflight.",
@@ -36,7 +38,12 @@
 		},
 		"programming": {
 			"resolution": "Parallel-written programming sections teach matrix packing/scales/SF/LM, retained state, flags, and actual choices per command. Ordered triangle RTPT->NCLIP->AVSZ3 feeds an explicit GP0 clear/draw and PCRTC latch sequence with visible pixel results; translated RTPS, NCCS, DPCS and PLUS examples have independently checked numerical readbacks. The triangle+scanout recipe ran through mapped TS owners and software raster/scanout, not a guest cartridge or native run.",
-			"open": []
+			"open": [
+				"The manuscript is not a complete programming handbook. Paragraph acceptance criteria are tracked in docs/book1/gte-outline.md; previous source and print audits did not establish those reader outcomes.",
+				"Coordinate-space selection, constructing and composing transforms, meaningful nonidentity lighting, material selection and depth-cue coefficient derivation need integrated, independently reviewed programming lessons. New paragraph drafts are not yet part of the chapter.",
+				"Practical interpolation/general arithmetic, repeated PLUS work, numerical failure diagnosis and a full preparation/transfer/issue/wait/readout cycle budget remain incomplete.",
+				"The complete executable cartridge example and vertex-color/multiple-frame display explanation are not yet integrated into the manuscript. Its headless guest execution is separate evidence, not publication approval."
+			]
 		}
 	},
 	"reviews": {
