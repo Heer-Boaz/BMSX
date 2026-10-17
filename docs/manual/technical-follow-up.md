@@ -184,6 +184,60 @@ convention. Book I needs the installed address windows; cartridge socket/card
 protocol detail remains Book II. This assignment is documentation/evidence
 work, not authorization to redesign memory or firmware.
 
+### Paragraph assignments for the foundations chapter
+
+Author and independently review these bounded units separately, then merge and
+perform a whole-reader check. The bounded
+[map/access](../book1/facts/memory-map.md),
+[boot/linker/storage](../book1/facts/memory-boot.md) and
+[installed construction/reset](../book1/facts/memory-lifecycle.md) extracts
+have independent source acceptance with explicit withheld ranges and gaps;
+see [the source review](../book1/reviews/memory-foundations-source.md).
+None is yet a published, complete cartridge-memory contract. The separate
+files let each paragraph author receive its own relevant facts, not a whole
+architecture document or an invented stack/heap layout.
+
+1. Byte addresses, words, endian order, intervals and installed versus mapped size.
+2. Installed memory map, holes and the cartridge-bus boundary.
+3. Reservations versus cartridge ownership: MMIO, GEO and firmware/static storage.
+4. Executable/readonly/DATA/BSS placement, linking and initialization.
+5. Reset, BIOS startup and cartridge handoff, including inherited state.
+6. Actual BLua typed storage, pointers, calls and dynamic-value storage.
+7. Scalar loads/stores, alignment, MMIO widths and side effects.
+8. Instruction fetch, execution domains and access permissions.
+9. Fault inspection, acknowledgement and CPU-visible delivery.
+10. Hardware-shared buffers, admission and lifetime, with device cross-references.
+11. A complete executable cartridge start explaining every reserved location used.
+
+Do not substitute a language value-slot stack or a logical heap accounting
+budget for a byte-addressed RAM allocation. Do not infer free-memory rights
+from mapped read/write access, or DATA/BSS initialization from arbitrary EXEC:
+the generated startup is a distinct producer/edge. Each missing ownership,
+fetch, allocation or device-inheritance fact still needs its named owner before
+the relevant paragraph can be completed.
+
+### Bounded producer-representation follow-ups
+
+The boot/storage source audit found two arithmetic representation differences
+outside the currently established ordinary-image/configuration scope:
+
+- Cartridge image-address addition: `execution_address_space.ts:93–95` retains
+  the numeric base-plus-offset sum; `execution_address_space.cpp:73–75` returns
+  a u32 field. For base `10000000H` and offset `FFFFFFF0H`, isolated expression
+  checks yield `10FFFFFF0H` versus `0FFFFFF0H`. Full paths are under
+  `machine/ts/machine/` and `machine/cpp/machine/` respectively.
+- Supplied RAM below the logical heap reservation: TS
+  `machine/ts/machine/cpu/lua_heap.ts:19–22` subtracts numerically, while native
+  `machine/cpp/machine/cpu/lua_heap.cpp:11–13` and `lua_heap.h:23,41` use `size_t`.
+  A supplied `40000H` minus `80000H` is negative in the former and wraps in the
+  latter; this is not the ordinary installed RAM count.
+
+Withhold unqualified mirror-equivalence claims for these input ranges. Audit
+the actual image/configuration producers and downstream consumers before
+claiming a valid cartridge-visible difference or deciding on a runtime change.
+Neither finding proves such an effect, authorizes a fix/fallback, or blocks
+unrelated sourced chapters. They are not invented hardware guarantees.
+
 ## Real graphics-capture leads — backlog remains open
 
 ### GEO: dummy-game scene, sprites and convex hulls
