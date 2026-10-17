@@ -19,6 +19,7 @@ requires are not invented cartridge exports. No new publishing layer is needed.
 | P06 | Observe DMA completion, deliver/acknowledge its IRQ, and separately fence the destination's work. | DMR/DMT DONE and IRQ; published IRQ/GPU; DMB firmware wait sequence. | Integrated; independent source/reader and final print checks pass. |
 | R01 | Use all twelve address/access/reset/bit references, including retained fields, selector values and trigger/read-only behavior. | Complete DMR sheet, scoped DMP mapped access. | Integrated; independent source/reader and final print checks pass. |
 | T01 | Budget installed per-region transfers, setup, block tails, crossings and channel sharing in system cycles. | DMT installed model and complete cost equations; no invented electrical ratings. | Integrated; independent TS/C++ numerical replay, source/reader and final print checks pass. |
+| T02 | Convert route charges into word/byte rates; account for block size, request gaps and competing blocks; distinguish GPU-port transport from VRAM data readiness. | Fresh paired DMA/model/classifier and GPU ingress/upload/readback facts; explicit rate assumptions and independent arithmetic/replay. | Integrated; independent source/math/whole-reader review, paired controller replays and complete final PDF review pass. |
 | F01 | Diagnose bus faults without treating DONE as error-free success; distinguish reset, disabled requests and in-flight work. | DMR reset/status; DMP mapped faults; DMT progress and snapshot lifetime. | Integrated; independent source/reader and final print checks pass. |
 | W01 | Execute BIOS-style ROM/RAM and two-channel copies with real typed operands, retained observations and completion predicates. | Frozen DMR/DMT/DMP/DMB facts; ordinary guest-testing contract. | Implemented and executed through ordinary cartridge startup; final source/reader and print checks pass. |
 | W02 | Submit a real ROM command stream to fixed GP0; observe DMA completion separately from GPU marker/idle and actual pixel data. | Frozen DMA facts plus already-reviewed GPU packet/request/IRQ facts. | Implemented and executed through ordinary cartridge startup; final source/reader and print checks pass. |
@@ -34,5 +35,7 @@ their actual checks close. Page count and a green builder are not completeness.
 Earlier completed chapters are PCRTC, GTE, GPU and IRQ. The handbook as a whole
 remains unfinished; this work list does not redefine completion around DMA alone.
 
-Acceptance work above is completed for this DMA chapter. The installed handbook
-as a whole remains in progress; no additional publication framework was added.
+The initial DMA assignments passed acceptance. T02 is the requested technical
+completeness follow-up and is not covered by those earlier approvals. The
+installed handbook as a whole remains in progress; no additional publication
+framework was added.

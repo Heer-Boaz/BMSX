@@ -374,6 +374,75 @@ Assume uninterrupted request eligibility, no mapping crossings, and no programmi
 
 For RAM copies, a block of n words costs 2n + 2: the two endpoints share the RAM charge additively, and each has one setup charge. Smaller blocks increase repeated setup. In the cartridge examples the source cost dominates the maximum. **System ROM is different:** the corresponding 20-word system-ROM-to-RAM transfer with block size 16 costs 17 + 5 = 22 cycles, not 168.
 
+### Transfer rates by route
+
+The following rates convert the admitted DMA charge into transferred words and
+payload bytes. They assume one eligible channel, complete 16-word blocks,
+continuously asserted requests, successful endpoint accesses, no mapping
+crossings and no register changes. CPU setup, request gaps and work performed
+by the destination are outside this calculation. A fixed I/O address identifies
+a port, not a directly addressed VRAM word.
+
+For a block of 16 words charged C cycles:
+
+```text
+Words per second = 16 × 33,868,800 / C
+Bytes per second = 4 × words per second
+```
+
+Count each payload byte once, not once for its read and again for its write.
+The table uses decimal millions: Mword/s is 1,000,000 words/s and MB/s is
+1,000,000 bytes/s. Rates are rounded to three decimal places.
+
+| Source → destination | Cycles per 16 words | Mword/s | MB/s |
+|---|---:|---:|---:|
+| RAM → RAM | 34 | 15.938 | 63.753 |
+| System ROM → RAM | 17 | 31.877 | 127.506 |
+| Cartridge ROM → RAM | 132 | 4.105 | 16.421 |
+| RAM → fixed I/O | 17 | 31.877 | 127.506 |
+| System ROM → fixed I/O | 16 | 33.869 | 135.475 |
+| Cartridge ROM → fixed I/O | 132 | 4.105 | 16.421 |
+| Fixed I/O → RAM | 17 | 31.877 | 127.506 |
+| Fixed I/O → fixed I/O | 1 | 541.901 | 2167.603 |
+
+These are **DMA-charge rates**, not independent memory or device bandwidth
+ratings. In particular, the last row follows from zero I/O endpoint charges
+and the one-cycle whole-block minimum. It does not certify that any pair of
+ports can supply, accept or process sixteen words per cycle. FORCE removes a
+request condition; it does not make an unavailable port accept data. A count
+reaching zero after refused or faulting accesses is not useful payload delivery.
+
+### Block size, tails and waiting time
+
+For RAM → RAM, repeated setup changes the rate even without contention:
+
+| Words per full block | Cycles per block | Payload MB/s |
+|---:|---:|---:|
+| 1 | 4 | 33.869 |
+| 4 | 10 | 54.190 |
+| 16 | 34 | 63.753 |
+
+Use the actual final block when budgeting a finite transfer. The 20-word,
+16-word-block RAM copy above costs 44 cycles, so its 80-byte payload averages
+**61.580 MB/s** over admitted transfer time, not the full-block 63.753 MB/s.
+A larger block reduces repeated setup, but keeps the shared DMA path until
+that block completes. It does not make both channels progress simultaneously.
+
+For elapsed throughput, include intervals in which no block can be admitted.
+Suppose a 64-word RAM copy with 16-word blocks starts at cycle zero, but a
+selected request remains false until cycle 100. Its first block completes at
+134. If that request drops at 133, the admitted block still completes, but
+another block cannot start. If the request returns at 200 and remains true,
+the remaining blocks complete at 234, 268 and 302. The transfer has 136 charged
+cycles and 166 waiting cycles: 256 bytes over 302 cycles, or **28.710 MB/s**.
+Those request edges are conditions of this example, not prescribed device
+response times.
+
+When both channels are eligible, include the competing blocks in each
+channel's elapsed interval. The following round-robin trace shows why equal
+channel count does not imply an equal split of bandwidth: the channels can
+have different block lengths, endpoint costs and remaining counts.
+
 ### Worked block-round-robin trace
 
 A channel is eligible only when BUSY, its count is nonzero, and **both** its read and write requests are asserted. FORCE is always asserted. Selection scans from the retained next-channel turn, skipping ineligible channels. Admission gives the next turn to the other channel; skips and completions do not themselves advance it. Thus round-robin is at block granularity, not word interleaving or a promise to wait for an unready channel.
@@ -391,6 +460,55 @@ Take two incrementing RAM-to-RAM copies, each with count 20 and FORCE on both re
 | 7 | 1 | 4 | 10 | A + 94 | 0: complete |
 
 Each continuously eligible successor is anchored to the preceding block's deadline. Channel 0 completes at **A + 54**; channel 1 completes at **A + 94**. The complete sequence costs 34 + 6 × 10 = 94 cycles. After channel 0 completes, it is skipped: channel 1 continues without waiting, while the retained turn remains channel 0. Final addresses and count are published before DONE and the channel's completion IRQ; these completion boundaries do not specify when the CPU handles that IRQ.
+
+### Budgeting transfers to and from VRAM
+
+VRAM is GPU-local storage, not a separate mapped DMA endpoint. Uploads send a
+command and packed image words to **GP0 at 0801023cH**. Downloads read packed
+image words from **GPUREAD at that same address**. The DMA timing classification
+of that address is I/O. Select the proper GPU DMA direction and GX_WRITE or
+GX_READ request; the I/O row alone says nothing about the GPU's readiness.
+
+For an image containing P pixels, an A0–BF upload sends three command words
+followed by P/2 payload words, rounded upward. Each payload word contains two
+sixteen-bit pixels; an odd final pixel leaves one unused halfword. When DMA
+sends both command and image, its count includes the three command words.
+
+A C0–DF readback command also contains
+three words, but its returned data is a separate stream of P/2 words, rounded
+upward. Wait for **GPUSTAT bit 27, readback ready**, before consuming that stream.
+A word read before readiness returns retained GPUREAD data, not a newly
+transferred image word.
+
+For example, an 8×8 image has 64 pixels and 32 packed payload words. Assume
+16-word DMA blocks, no competing channel, no mapping crossing and uninterrupted
+request eligibility throughout each data transfer:
+
+| Operation | DMA words | Actual blocks | DMA charge |
+|---|---:|---|---:|
+| Upload command + image, RAM → fixed GP0 | 35 | 16, 16, 3 | 17 + 17 + 4 = **38 cycles** |
+| Same upload, cartridge ROM → fixed GP0 | 35 | 16, 16, 3 | 132 + 132 + 28 = **292 cycles** |
+| Ready readback data, fixed GPUREAD → RAM | 32 | 16, 16 | 17 + 17 = **34 cycles** |
+
+The readback row excludes submission of its three-word command and all waiting
+for readiness. The upload rows count command overhead, not just image bytes.
+All three rows describe DMA work, not a fixed interval to completed VRAM writes
+or a displayed result. Request gaps add elapsed time; an unready endpoint cannot
+be made ready by substituting FORCE.
+
+The GPU has a separate sixteen-word DMA ingress and a sixteen-word GP0 FIFO;
+they are not thirty-two interchangeable CPU input slots. A block's final word
+releases its captured ingress block for processing. Upload assembly and ordered
+GPU work are separate from DMA completion. The upload/readback command's
+one-tick charge is not a pixel-transfer bandwidth specification. A local VRAM
+copy uses no DMA payload path at all, so its command charge must not be
+substituted for a RAM-to-VRAM bus rate.
+
+For downloads, observe readback readiness and consume the full returned count.
+For other GPU work, use the command ordering and completion protocol in the
+[GPU chapter](gpu.md). Neither DMA DONE, GPU idle nor a GPU IRQ marker certifies
+that new pixels have reached the display latch; display publication belongs to
+[PCRTC](pcrtc.md).
 
 ## Worked BLua program
 

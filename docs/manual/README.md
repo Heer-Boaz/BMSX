@@ -186,12 +186,17 @@ Requested 2026-10-17. Keep the current unit-by-unit writing plan; carry out this
 broader completeness pass after the active chapter rather than silently treating
 a source-accurate register reference as a complete technical specification.
 
-- [ ] **DMA rates by route.** Audit RAM, system-ROM, cartridge-ROM and GPU/VRAM
+- [x] **DMA rates by route.** Audit RAM, system-ROM, cartridge-ROM and GPU/VRAM
   transfer routes separately. The DMA chapter already lists region cycle costs;
   check that usable word/byte rates, setup and block-size effects, request waits,
   arbitration/contention and destination completion are actually explained.
   Trace VRAM through its real owning ports/datapath rather than assuming a
   direct DMA aperture or equating DMA DONE with a completed VRAM operation.
+  The T02 supplement supplies conditional word/byte rates, block/tail and
+  request-gap examples, and distinct GPU upload/readback transport budgets.
+  Paired controller replays and independent source/reader review are recorded
+  in [the DMA review](../book1/reviews/dma-source.md). This is not a rated
+  end-to-end VRAM bandwidth or closure of the broader audit below.
 - [ ] **Every installed unit, including earlier chapters.** Inventory capacities,
   organization, transfer widths, numerical formats, clocks/dividers, latency,
   throughput, route-dependent timing, sharing and visibility limits. Check for
@@ -213,6 +218,8 @@ a source-accurate register reference as a complete technical specification.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.
+The [bounded technical inventory](technical-follow-up.md) assigns concrete
+follow-up paragraphs, actual graphics-capture leads and remaining owner chapters.
 
 ## Repository commands
 

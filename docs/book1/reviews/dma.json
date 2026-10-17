@@ -1,11 +1,11 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Two installed channels share one admitted block; captured configuration is not payload RAM, source data is read at service, and downstream device/display completion remains separate. Independent source and complete-reader checks pass.",
+			"resolution": "Two installed channels share one admitted block; captured configuration is not payload RAM, source data is read at service, and downstream device/display completion remains separate. Independent source and complete-reader checks pass. T02 separately traces GP0/GPUREAD transport, packed image/header counts and READY, with independent GPU source and complete-reader review.",
 			"open": []
 		},
 		"registers": {
-			"resolution": "All twelve nonadjacent addresses, access/reset words, complete CONTROL fields and retained upper bits, selectors including unnamed 11–14, STATUS and command/read-zero TRIGGER are covered and independently source-checked.",
+			"resolution": "All twelve nonadjacent addresses, access/reset words, complete CONTROL fields and retained upper bits, selectors including unnamed 11\u201314, STATUS and command/read-zero TRIGGER are covered and independently source-checked.",
 			"open": []
 		},
 		"datapath": {
@@ -17,7 +17,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Installed 33,868,800 Hz timebase and RAM/system-ROM/cartridge setup/word costs, span sum/max formula, whole-block minimum, tails/crossings and exact 94-cycle two-channel schedule are source-checked and executed identically on TS/C++ owners. Undefined electrical ratings remain separate specification decisions.",
+			"resolution": "Installed 33,868,800 Hz timebase and RAM/system-ROM/cartridge setup/word costs, span sum/max formula, whole-block minimum, tails/crossings and exact 94-cycle two-channel schedule are source-checked and executed identically on TS/C++ owners. Undefined electrical ratings remain separate specification decisions. T02 adds source-checked conditional route word/byte rates, block/tail and302-cycle request-gap examples; all11 paired64-word replays agree. Source-derived image transport budgets are not VRAM-completion ratings.",
 			"open": []
 		},
 		"interrupts": {

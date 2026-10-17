@@ -2,8 +2,10 @@
 
 Editorial evidence for `docs/book1/dma.md`; frozen sources are in
 `docs/book1/facts/dma.md`. Book I as a whole remains unfinished.
-The complete source/listing/figure and whole-reader reviews pass with no open
-factual or instructional failures. Print acceptance is separate in dma-print.md.
+The initial and T02 source/listing/figure and whole-reader reviews pass with no
+open factual or instructional failures. The T02 source/math and full-reader
+checks are recorded separately below; earlier approvals were not reused to
+accept new prose. Print acceptance is separate in dma-print.md.
 
 ## Scope and independent assignments
 
@@ -164,3 +166,67 @@ A separate final whole-reader reread found no remaining instructional failure
 or placeholder. Both independently verified the exact printed two-module source.
 All 16 existing manual tests pass; `git diff --check` is clean. These checks do
 not substitute for the separately completed actual PDF-page visual inspection.
+
+## T02: route rates and the VRAM transfer boundary
+
+Requested technical-completeness follow-up, not a new device implementation.
+Fresh separate extractions read the installed model, paired DMA owners, memory
+classifier/timing injection, and the actual GPU ingress/upload/readback and
+local-memory completion boundaries. DRT01–11 and GXB01–22 in the frozen sheet
+record those facts. No scoped spec/owner/mirror disagreement was found. MAME's
+AM9517 source was read again only for separation of request, transport and
+terminal-count responsibilities; no timing or hardware behavior was imported.
+
+Root authored the bounded prose from those facts. Separate nonauthor checks
+covered all rate arithmetic and assumptions, GPU packet/packing/ready and
+completion statements, and the entire updated chapter as a cartridge reader.
+They independently verify the eight full-block route rates, block-size and
+short-tail examples, the 302-cycle request-gap example, and 38/292/34-cycle
+image-transport substitutions. The sole reader finding was an unconditional
+statement that DMA count includes the header. The final text explicitly says
+this applies **when DMA sends both command and image**; both source and reader
+reviewers rechecked the correction and closed it.
+
+The rate extractor also corrected its own preliminary readiness wording before
+merge: DREQ is not rechecked within an admitted block, but the mapped write
+boundary can check a DMA write-ready callback for each word. A refusal does not
+stop DMA count progression. The public prose already distinguished these and
+required no behavior change. This was a fact-sheet wording correction, not an
+owner disagreement.
+
+Fresh real-owner scratch replays used the installed timing in both runtimes.
+Every case transferred 64 words; all eleven result records were byte-identical:
+
+| Route / case | Charged or elapsed cycles | Blocks |
+|---|---:|---:|
+| RAM → RAM | 136 | 4 |
+| System ROM → RAM | 68 | 4 |
+| Cartridge ROM → RAM | 528 | 4 |
+| RAM → fixed I/O | 68 | 4 |
+| System ROM → fixed I/O | 64 | 4 |
+| Cartridge ROM → fixed I/O | 528 | 4 |
+| Fixed I/O → RAM | 68 | 4 |
+| Fixed I/O → fixed I/O | 4 | 4 |
+| RAM → RAM, one-word blocks | 256 | 64 |
+| RAM → RAM, four-word blocks | 160 | 16 |
+| RAM → RAM, controlled request gaps | 302 = 136 admitted + 166 waiting | 4 |
+
+Destination data, final count zero and DONE were asserted. The request case
+asserted at100, dropped at133, serviced its captured block at134, resumed at200
+and completed at234/268/302. These are deliberately supplied request edges,
+not a claimed GPU response timeline. Fixed-I/O cases used ordinary backing
+words **without a GPU owner**: they prove controller classification, transfers
+and charges, not GPU acceptance or VRAM throughput. The image-budget table is
+independently source-derived arithmetic, not an executed end-to-end image
+latency measurement. A combined actual raw-image upload/download trace remains
+in the GPU follow-up inventory.
+
+The existing ordinary `dma_manual` cartridge was rebuilt with the normal
+product and BIOS and executed again. The integration case passed: all60 RAM
+words, both BUSY observations, DMA sequences3/1, completed register records,
+distinct GPU marker/idle observations and actual red0000001F pixel readback.
+The 24 TypeScript DMA tests, rebuilt native DMA suite and16 manual tests also
+pass. No runtime, BIOS, cartlib, compiler, cart, runner, publisher or stylesheet
+was changed. These checks do not turn scheduled charge rates into electrical
+or destination-completion ratings, and do not close the handbook-wide audit or
+actual graphics-illustration backlog.

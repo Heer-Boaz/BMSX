@@ -491,3 +491,286 @@ patterns and DMR/DMT/DMP hardware facts.
 | DME03 | Ordinary guest execution observes all60 copied words exact, sequences3/1, both post-START STATUS samples1, all final count0/status2/trigger0, incremented80-byte memory endpoints, fixedGP0 and20-byte GPU-source advancement. | `tests/carts/dma_manual/dma_manual_assert.lua:20–54`; exact input code in DME01–02. This is a controlled observation, not atomic STATUS sampling or an IRQ-latency guarantee. |
 | DME04 | For this supplied fill workload execution samples GPU-local24/idle26 both clear after DMA service, later local24/controller6 set at marker, then idle26 set. Explicit local and controller ACKs clear their respective owned bits; masked VBlank pending is not required to be zero. | `carts/dma_manual/cart.lua:115–138`; `tests/carts/dma_manual/dma_manual_assert.lua:55–63`; hardware latches DMP29–31. |
 | DME05 | An actual C0 one-pixel readback at(0,0) returns0000001f after the fill. This is pixel evidence distinct from marker/idle observations. | `tests/carts/dma_manual/dma_manual_assert.lua:65–72`; GPU fill quantization/traversal paired owners in `docs/book1/facts/gpu.md:V01–V02`, marker/readback in that same reviewed sheet; input stream DME01. |
+
+
+---
+
+## T02 route-rate and VRAM-boundary follow-up
+
+Fresh extraction at `cb893c6d5`, 2026-10-17. DRT names rate facts separately
+from the original DMR register facts; GXB names the GPU boundary extraction.
+These are paired source facts and explicitly derived arithmetic, not an
+electrical qualification or an assertion that renderer completion has a fixed
+image-size-to-cycle formula.
+
+# DMA technical-rate fact sheet
+
+Fresh extraction from the installed model leaves, paired DMA owners, directly owning memory-region classifier, and the narrowly permitted installed timing injection. No architecture document, style PDF, existing manual prose, tests, or unrelated device owners were used. No repository files were edited.
+
+Result: no confirmed spec/owner or TypeScript/C++ disagreement in this scope.
+
+## DRT01 — Installed timebase and DMA timing inputs
+
+- Installed cycle frequency: **33,868,800 Hz**.
+- Configured endpoint costs: RAM 1 cycle/word plus 1 burst-setup cycle; system ROM 1 cycle/word with no setup term; cartridge 8 cycles/word plus 4 burst-setup cycles.
+- These constants populate the installed model and are passed in that order into the live DMA controller. The controller stores them and uses them for admission-time block costing. Do not substitute its preconfiguration field initializers (RAM setup 0, cartridge cost 0) for the installed configuration.
+- Sources: `machine/ts/spec/bmsx/model.ts:7–12,46–52`; `machine/cpp/spec/bmsx/model.h:12–17,51–57`; injection `machine/ts/machine/machine.ts:98–105` and `machine/cpp/machine/machine.cpp:41–48`; consumer `machine/ts/machine/devices/dma/controller.ts:146–168,473–484` and `machine/cpp/machine/devices/dma/controller.cpp:76–98,397–408`.
+
+## DRT02 — Transfer word, block length, and increments
+
+- One DMA transfer word is **4 bytes**.
+- CONTROL bits 13:10 encode programmed block length minus one: **1–16 words**.
+- Admitted length is `min(remaining transfer count, programmed block words)`. A nonzero short tail is admitted as its actual word count, not padded to 16.
+- READ_INCREMENT is bit 0 and WRITE_INCREMENT bit 1. Each independently chooses an address step of 4 or 0. The addresses progress modulo 2^32 during service.
+- Sources: `machine/ts/spec/bmsx/memory_map.ts:23`; `machine/cpp/spec/bmsx/memory_map.h:29`; `machine/ts/spec/bmsx/io.ts:374–382`; `machine/cpp/spec/bmsx/io.h:387–395`; admission `machine/ts/machine/devices/dma/controller.ts:412–429` and `machine/cpp/machine/devices/dma/controller.cpp:336–353`; service `machine/ts/machine/devices/dma/controller.ts:220–235` and `machine/cpp/machine/devices/dma/controller.cpp:150–165`.
+
+## DRT03 — Region classification, not asset type
+
+- DMA timing regions are **RAM, system ROM, cartridge, I/O, other**. There is no separate VRAM timing region in this classifier.
+- I/O recognition is tested first. Remaining addresses below RAM_BASE classify as system ROM only when the full word fits in the system ROM aperture; otherwise other. Between RAM_BASE and CART_ROM_BASE, the full word must fit actual installed RAM to classify as RAM. Above that, a full word within the cartridge bus aperture classifies as cartridge; otherwise other.
+- Cartridge ROM, cartridge RAM, and cartridge MMIO share the cartridge timing-region kind. It is therefore incorrect to infer a cheap RAM timing cost merely from the name “cartridge RAM”.
+- Sources: `machine/ts/machine/memory/memory.ts:83,721–735`; `machine/cpp/machine/memory/memory.h:17`; `machine/cpp/machine/memory/memory.cpp:636–653`; aperture constants `machine/ts/spec/bmsx/memory_map.ts:3–21` and `machine/cpp/spec/bmsx/memory_map.h:9–27`.
+
+## DRT04 — Per-endpoint span cost
+
+For a span of N words, let S be 1 when that endpoint starts a new region span and 0 otherwise:
+
+| Endpoint region | Installed span cost, cycles |
+|---|---:|
+| RAM | N + S |
+| System ROM | N |
+| Cartridge | 8N + 4S |
+| I/O | 0 |
+| Other | 0 |
+
+- The I/O zero is a **DMA endpoint-cost term**, not a claim that the attached device has zero latency or unlimited acceptance/storage throughput.
+- Sources: `machine/ts/machine/devices/dma/controller.ts:473–484`; `machine/cpp/machine/devices/dma/controller.cpp:397–408`; installed constants DRT01.
+
+## DRT05 — Combining source and destination
+
+- Each admitted block is divided into common spans ending at the earlier source/destination region boundary.
+- Within each common span, if both endpoint region kinds are RAM, or both are cartridge, add the two endpoint costs. Otherwise use the greater endpoint cost.
+- Add those common-span costs for the block.
+- If the whole block cost is zero, schedule it for **1 cycle**, not zero cycles. This is one whole-block minimum, not one cycle per word.
+- Sources: `machine/ts/machine/devices/dma/controller.ts:430–462`; `machine/cpp/machine/devices/dma/controller.cpp:354–386`.
+
+## DRT06 — Setup recurrence and boundaries
+
+- Every admitted block begins with both endpoint region-start flags set. RAM and cartridge setup costs therefore recur per block, including a short tail.
+- If an incrementing endpoint reaches its region-span boundary before block end, it is reclassified and its region-start flag is set again. The other endpoint does not repeat setup unless its own boundary is also exhausted.
+- Cartridge span boundaries distinguish ROM end, RAM end, and MMIO end even though those apertures retain the same cartridge region kind. Crossing such a boundary renews that endpoint’s setup term.
+- A fixed endpoint initially spans the entire block; it does not advance to another timing region.
+- Sources: `machine/ts/machine/devices/dma/controller.ts:424–457`; `machine/cpp/machine/devices/dma/controller.cpp:348–381`; classifier spans `machine/ts/machine/memory/memory.ts:738–774` and `machine/cpp/machine/memory/memory.cpp:655–692`.
+
+## DRT07 — One-channel uninterrupted 16-word block rate table
+
+**Assumptions for this derived table:** installed timebase; one continuously eligible channel; configured 16-word blocks; 16 actual words in each block; addresses remain within their named timing-region spans; no DREQ wait; no second channel; no software gap between blocks; fixed I/O address really classifies as I/O. RAM/ROM linear buffers increment by 4; I/O endpoint remains fixed. Every block still pays setup. Rates are DMA block-completion payload rates, not electrical bus ratings or universal sustained destination-device throughput.
+
+For a 16-word/64-byte block costing C cycles:
+
+`words/s = 16 * 33,868,800 / C`
+
+`bytes/s = 64 * 33,868,800 / C`
+
+Fractions below are exact; the MHz/MB prefixes are not needed to interpret them.
+
+| Source → destination | Derivation, cycles | Cycles/block | Exact words/s | Exact bytes/s |
+|---|---|---:|---:|---:|
+| RAM → RAM | (16 + 1) + (16 + 1) | 34 | 270950400 / 17 | 1083801600 / 17 |
+| System ROM → RAM | max(16, 16 + 1) | 17 | 541900800 / 17 | 2167603200 / 17 |
+| Cartridge ROM → RAM | max(8×16 + 4, 16 + 1) | 132 | 45158400 / 11 | 180633600 / 11 |
+| RAM → fixed I/O | max(16 + 1, 0) | 17 | 541900800 / 17 | 2167603200 / 17 |
+| System ROM → fixed I/O | max(16, 0) | 16 | 33868800 | 135475200 |
+| Cartridge ROM → fixed I/O | max(8×16 + 4, 0) | 132 | 45158400 / 11 | 180633600 / 11 |
+| Fixed I/O → RAM | max(0, 16 + 1) | 17 | 541900800 / 17 | 2167603200 / 17 |
+| Fixed I/O → fixed I/O | max(0, 0) = 0, then whole-block minimum | 1 | 541900800 | 2167603200 |
+
+- Sources for every row: DRT01, DRT02, DRT04–06; actual block chaining without an added arbitration cycle `machine/ts/machine/devices/dma/controller.ts:250–253,386–406,463–470` and `machine/cpp/machine/devices/dma/controller.cpp:180–183,310–330,387–394`.
+- Optional human-readable rounded values: C34 = 15,938,258.824 words/s and 63,753,035.294 bytes/s; C17 = 31,876,517.647 words/s and 127,506,070.588 bytes/s; C132 = 4,105,309.091 words/s and 16,421,236.364 bytes/s. Rounded to nearest 0.001; exact fractions above are authoritative.
+- In the all-I/O row, **16 word operations per charged cycle** is solely the controller's minimum-block rule. It is not a useful payload-throughput, attached-device acceptance, electrical bandwidth, or zero-latency promise. Request gating still controls block admission, and the endpoint's actual port/data/acceptance protocol must be checked in its own owner. DREQ is not rechecked per word. The mapped-memory write boundary separately checks a bound DMA write-ready callback and can refuse a word without retry; the controller still progresses its address/count.
+- Additional source inspected for the latter review correction: `machine/ts/machine/memory/memory.ts:623–641` and `machine/cpp/machine/memory/memory.cpp:518–535`; continued count/address progression `machine/ts/machine/devices/dma/controller.ts:229–243` and `machine/cpp/machine/devices/dma/controller.cpp:159–173`. This narrows the original extraction's incorrect phrase “service loop itself does not recheck readiness per word”: the controller has no direct check, but its mapped write call does.
+
+## DRT08 — Short tails and small programmed blocks
+
+For N actual words, 1 ≤ N ≤ 16, no boundaries/waits:
+
+| Path | Cycles for one N-word block | N=1 | N=4 | N=16 |
+|---|---:|---:|---:|---:|
+| RAM → RAM | 2N + 2 | 4 | 10 | 34 |
+| System ROM → RAM | N + 1 | 2 | 5 | 17 |
+| Cartridge ROM → RAM | 8N + 4 | 12 | 36 | 132 |
+| RAM → fixed I/O | N + 1 | 2 | 5 | 17 |
+| System ROM → fixed I/O | N | 1 | 4 | 16 |
+| Cartridge ROM → fixed I/O | 8N + 4 | 12 | 36 | 132 |
+| Fixed I/O → RAM | N + 1 | 2 | 5 | 17 |
+| Fixed I/O → fixed I/O | 1 | 1 | 1 | 1 |
+
+- Example count 20 with programmed length 16: blocks 16 + 4 cost 44 cycles RAM→RAM, 22 system ROM→RAM, 168 cartridge ROM→RAM, 22 RAM→fixed I/O, 20 system ROM→fixed I/O, 168 cartridge ROM→fixed I/O, and 22 fixed I/O→RAM, before waits or other-channel service.
+- Count 16 programmed as one-word blocks is not equivalent to one 16-word block: RAM→RAM costs 64 cycles, system ROM→RAM 32, cartridge ROM→RAM 192.
+- Sources: DRT02, DRT04–06. These are arithmetic derivations of verified owner rules, not measured sustained-device ratings.
+
+## DRT09 — DREQ eligibility and waiting
+
+- A channel is eligible only if **both** selected request inputs assert.
+- Request 0 FORCE always asserts; request 15 DISABLED never asserts; other requests test the corresponding line bit.
+- Requests are tested at block admission, not between words of an admitted block. A request-line change triggers arbitration at the current cycle, but an active block prevents readmission/preemption.
+- A waiting channel remains BUSY; the other eligible channel can be chosen. There is no finite waiting-time guarantee in these owners if the required request never asserts.
+- Sources: request selectors `machine/ts/spec/bmsx/io.ts:376–394` and `machine/cpp/spec/bmsx/io.h:389–407`; line changes `machine/ts/machine/devices/dma/controller.ts:171–177` and `machine/cpp/machine/devices/dma/controller.cpp:101–107`; arbiter `machine/ts/machine/devices/dma/controller.ts:386–406,487–501` and `machine/cpp/machine/devices/dma/controller.cpp:310–330,412–426`; no request recheck in service `machine/ts/machine/devices/dma/controller.ts:211–253` and `machine/cpp/machine/devices/dma/controller.cpp:141–183`.
+
+## DRT10 — Two-channel sharing, not doubled bandwidth
+
+- There are two channels and only one admitted block at a time.
+- After admitting channel k, next selection begins with `(k + 1) modulo 2`; the scan can skip an ineligible channel. If both stay eligible, they alternate admitted blocks, not individual words.
+- At completion, the next block is anchored to the previous block deadline. No extra per-arbitration cycle is added by this owner.
+- **Derived identical-path case:** two continuously eligible channels each transferring complete 16-word blocks of cost C share the same aggregate `16H/C` words/s; each receives `8H/C` words/s in the repeating steady pattern. This is not two independent datapaths.
+- **Derived unequal-path case:** repeating costs C0 and C1 with 16 words each give each channel `16H/(C0+C1)` words/s and aggregate `32H/(C0+C1)` words/s. Startup/finite-tail effects differ. DREQ stalls, unequal lengths, changing paths, and software gaps invalidate that simple repeating-pattern rate.
+- Sources: `machine/ts/spec/bmsx/io.ts:11`; `machine/cpp/spec/bmsx/io.h:23`; `machine/ts/machine/devices/dma/controller.ts:386–406,469–470,250–253`; `machine/cpp/machine/devices/dma/controller.cpp:310–330,393–394,180–183`.
+
+## DRT11 — Completion edge and data visibility
+
+- Admission captures both addresses, remaining count, CONTROL, actual block length, and a deadline `anchor + blockCycles`.
+- At block service, every word is read and written in loop order, then address/count mirrors are advanced together; zero count then produces channel DONE and the selected DMA done interrupt.
+- These sources do not expose intermediate per-word DMA completion edges within the block-cost interval.
+- Sources: capture/deadline `machine/ts/machine/devices/dma/controller.ts:463–470` and `machine/cpp/machine/devices/dma/controller.cpp:387–394`; transfer/mirrors/finish `machine/ts/machine/devices/dma/controller.ts:211–253,365–374` and `machine/cpp/machine/devices/dma/controller.cpp:141–183,287–298`.
+
+## Scope limits and gaps — not invented facts
+
+- The timing classifier has no VRAM region. A DMA transfer to a device I/O port has the I/O endpoint timing term above. Internal VRAM write/read/command completion, FIFO admission cadence, rendering contention, or device-specific transfer engines require that device’s own frozen facts and must not be inferred from the table.
+- No independent electrical memory clock, pin/bus frequency, electrical bus width, or guaranteed sustained product rating is declared in these bounded sources. The 4-byte DMA word is a transaction representation, not proof of external pin width.
+- The table cannot be advertised as a sustained APU/GX/IMGDEC rate without incorporating the respective device’s request/transfer/commit owner. Device stalls can dominate even when DMA’s I/O timing term is zero.
+- No benchmark was substituted for the specified admission model. Fractions were independently calculated with Python integer/Fraction arithmetic; no host execution timing was used.
+
+
+# GPU / VRAM transfer-boundary facts for the DMA timing supplement
+
+Read-only extraction from live mirrored leaves, GPU owners, command-buffer/timing owners and the actual VRAM execution datapath. No architecture document, historical manual PDF or external console facts were opened. No repository edits. No scoped spec/owner or TS/C++ disagreement was found. Scope is not an audit of every renderer operation.
+
+This is editorial input, not chapter prose. Internal retained-command/render-service details below must not appear as host/backend narrative in the licensee manual. Absence statements are restricted to the files inspected, not claims about missing electrical specifications everywhere in the repository.
+
+## Bus port and storage are different units
+
+**GXB01.** The GPU maps GP0 write / GPUREAD read to the same word address `0801023CH`, and GPUSTAT read / GP1 write to `08010240H`. A mapped write-ready callback belongs to GP0; no separate GP0 mapped read-ready callback is installed here. Source constants compute the addresses from the shared IO base and word size. This extraction executed the current constants to confirm those numeric addresses.
+
+- TS: `machine/ts/spec/bmsx/io.ts:115–117,172–173`; `machine/ts/spec/bmsx/memory_map.ts:23,32`; `machine/ts/machine/devices/gx/gpu.ts:462–467`.
+- C++: `machine/cpp/spec/bmsx/io.h:128–130,185–186`; `machine/cpp/spec/bmsx/memory_map.h:29,38`; `machine/cpp/machine/devices/gx/gpu.cpp:53–58`.
+
+**GXB02.** In this GPU device boundary, DMA write data enters GP0's DMA ingress buffer, not a VRAM address/cell; DMA read data comes from the GPUREAD readback port/latch, not a DMA dereference of VRAM. CPU GP0 writes enter packet assembly. Thus the supported transfer route is ordinary memory → GP0 packet/payload → GPU local-memory execution, and local-memory readback → GPUREAD → ordinary memory. A VRAM-to-VRAM copy is itself a GP0 command, not a DMA channel's direct local-memory copy. The GPU exposes no CPU/DMA VRAM aperture in its mapped port registrations. This alone is not an audit of all system memory decoding; pair with the independent memory/DMA extraction before making a global no-aperture claim.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:462–472,1019–1052,1251–1256`; `machine/ts/render/backend/software/gx_gpu_commands.ts:75–99,121–137`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:53–63,536–569,830–835`; `machine/cpp/render/backend/software/gx_gpu_commands.cpp:40–75,118–136`.
+
+**GXB03.** Installed local VRAM is `00200000H` bytes (2 MiB). Its raw storage contains 1,048,576 sixteen-bit words; coordinate X period1024, Y period1024. Ordinary GP0/GPUREAD bus words carry32 bits. Do not call one bus word one VRAM pixel or confuse local16-bit storage width with an independently specified external electrical bus width.
+
+- TS: `machine/ts/spec/bmsx/model.ts:46–56`; `machine/ts/spec/gx/vram.ts:1–5`; `machine/ts/render/backend/software/gx_gpu_state.ts:104–107`; `machine/ts/machine/devices/gx/gpu.ts:1034–1040`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:163–184`.
+- C++: `machine/cpp/spec/bmsx/model.h:51–61`; `machine/cpp/spec/gx/vram.h:9–14`; `machine/cpp/render/backend/software/gx_gpu_state.h:90–99`; `machine/cpp/machine/devices/gx/gpu.cpp:551–556`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:107–128`.
+
+## DMA capture, FIFO and command assembly
+
+**GXB04.** The GP0 command FIFO capacity is16 bus words. A separate DMA ingress capacity is16 bus words. DMA writes first retain the full word in the last-write latch; if ingress is not full they append it; if ingress is full the word is not appended. Before DMA `BLOCK_END`, the method returns without synchronizing/processing that captured ingress. At `BLOCK_END`, existing command timing is synchronized and the GP0 pipeline runs. Therefore bus transport of a block and its GPU packet consumption are distinct boundaries.
+
+- TS: `machine/ts/spec/gx/gp0.ts:33–34`; `machine/ts/machine/devices/gx/gpu.ts:1034–1052,1135–1144`.
+- C++: `machine/cpp/spec/gx/gp0.h:35–36`; `machine/cpp/machine/devices/gx/gpu.cpp:551–569,653–662`.
+
+**GXB05.** GP0 pipeline first processes the command FIFO, then moves ingress words into it while accepted, repeating while ingress advances. A non-NOP word is not accepted when the command FIFO is full. Command FIFO execution is blocked while a command completion deadline is pending or readback is not IDLE. Packet/payload assembly state persists across bus blocks; a DMA block is not a GP0 command boundary.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1062–1074,1075–1113,1135–1159,1177–1191`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:579–590,591–630,653–662,721–758`.
+
+**GXB06.** CPU GP0 write admission uses physical FIFO availability: no retained DMA ingress, FIFO count<16, and no active DMA write-port owner (also not supervisor-stopped). DMA GP0 write-ready, by contrast, returns true whenever not supervisor-stopped; it does not add a per-word FIFO-full check. Request-line gating is separate from this mapped write-ready callback. Do not describe GP0 as having one universal readiness signal or assume the DMA per-word callback protects an oversized/forced block from16-word ingress truncation.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1915–1921,2025–2034`; overflow behavior in `1034–1042`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1392–1398,1499–1508`; overflow behavior in `551–559`.
+
+## Request-mode predicates
+
+**GXB07.** GP1 opcode04H sets DMA direction from low2 bits. Directions are0 OFF,1 FIFO,2 CPU_TO_GP0,3 GPUREAD_TO_CPU. GPUSTAT stores direction in bits30:29; bit25 is the aggregate DMA request indication; bit27 is READY_TO_SEND_VRAM; bit28 is READY_TO_RECEIVE_DMA. GPUSTAT bit26 is GPU_IDLE, a separate predicate.
+
+- TS: `machine/ts/spec/gx/gp1.ts:5`; `machine/ts/spec/gx/gp0.ts:39–42`; `machine/ts/machine/devices/gx/gpu.ts:179–184,1362–1364,1862–1875`.
+- C++: `machine/cpp/spec/gx/gp1.h:11`; `machine/cpp/spec/gx/gp0.h:41–44`; `machine/cpp/machine/devices/gx/gpu.h:54–59`; `machine/cpp/machine/devices/gx/gpu.cpp:871–873,1340–1353`.
+
+**GXB08.** Direction0 does not assert GPU DMA request. Direction1 requests when DMA ingress is empty and command FIFO count<16. Direction2 requests according to READY_TO_RECEIVE_DMA. In directions1/2 this drives DMA_REQUEST_GX_WRITE (request selector1). Direction3 mirrors READY_TO_SEND_VRAM in GPUSTAT's aggregate request; separate readback ownership drives DMA_REQUEST_GX_READ (request selector2) only when DMA read is enabled and readback phase is READY.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1930–1962`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:114–117,187–192`; `machine/ts/spec/bmsx/io.ts:384–385`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1407–1437`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:83–85,157–159`; `machine/cpp/spec/bmsx/io.h:397–398`.
+
+**GXB09.** READY_TO_RECEIVE_DMA requires readback IDLE, empty DMA ingress and no supervisor ingress stop. With image payload still being consumed, command FIFO count<16 suffices. During an active polyline it is false. An entirely empty assembler/FIFO is ready; otherwise only an incomplete nonpolygon/nonline fixed packet is ready. This is stricter than the CPU's physical FIFO availability.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1878–1901,1915–1921`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1356–1378,1392–1398`.
+
+**GXB10.** GPU_IDLE requires readback IDLE, no pending command completion, empty DMA ingress/FIFO, no partial fixed packet, no unfinished image payload, and no active polyline. It does not test whether all completed retained commands have already been physically consumed by a renderer; completion visibility is addressed separately below.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1905–1914`; compare actual execution in `machine/ts/render/backend/software/gx_gpu.ts:18–45`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1382–1391`; compare `machine/cpp/render/backend/software/gx_gpu.cpp:26–64`.
+
+## Upload packet, data packing and completion
+
+**GXB11.** OpcodesA0H–BFH start CPU→VRAM image load; C0H–DFH start VRAM→CPU readback;80H–9FH copy VRAM→VRAM. Upload/readback headers are3 GP0 words; local copy is4 words. Image extents decode width `(((low16−1)&3FFH)+1)` and height `(((high16−1)&1FFH)+1)`, so widths1…1024 and heights1…512, including zero component encoding as the respective maximum. These extents are not byte counts.
+
+- TS: `machine/ts/spec/gx/gp0.ts:17–22,57–60,95–100`; `machine/ts/machine/devices/gx/gpu.ts:1736–1740`.
+- C++: `machine/cpp/spec/gx/gp0.h:24–29,59–62,97–102`; `machine/cpp/machine/devices/gx/gpu.cpp:1219–1223`.
+
+**GXB12.** For areaP=width×height, upload expects `(P+1)>>1` additional32-bit payload words. The first pixel is the payload's low16 bits, second high16 bits. Pixels traverse rows in order, not one padding halfword per row: one continuous emittedPixel index spans odd-width row boundaries. If totalP is odd, the last high halfword is not stored. Writes use the retained mask-bit set/check mode and wrapped local X/Y addressing.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1805–1812`; `machine/ts/render/backend/gx_gpu_render_rules.ts:218–237`; `machine/ts/render/backend/software/gx_gpu_commands.ts:75–99`; `machine/ts/render/backend/software/gx_gpu_vram.ts:11–12`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1285–1292`; `machine/cpp/render/backend/gx_gpu_render_rules.h:222–241`; `machine/cpp/render/backend/software/gx_gpu_commands.cpp:40–75`; `machine/cpp/render/backend/software/gx_gpu_vram.h:16–24`.
+
+**GXB13.** In the normal full-upload path, consuming image payload appends retained words and decrements the remaining-word counter. Only the final required payload word finishes the image and queues an UPLOAD_CPU_TO_VRAM command. That retained command captures draw/texture/area/offset/mask/Y-gate/skipped-line state and starts the GPU command timing charge. GP0 DMA transport completion is not that timing charge's completion.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1675–1681,1652–1660,1770–1802`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:418–445`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1152–1157,1130–1137,1253–1282`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:401–427`.
+
+**GXB14.** GP1 CLEAR_FIFO is an explicit exception to full-payload finishing: it flushes an accepted partial image if more than its3 header words are retained, or removes a header-only partial image; accepted pending raster/upload work is completed through the retained count before pending deadline state is cleared. Therefore do not phrase GXB13 as an absolute prohibition on any partial image becoming effective.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1609–1627,1663–1672`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:1087–1105,1140–1148`.
+
+## Actual installed timing charge versus VRAM execution
+
+**GXB15.** GPU command timing owns2 GPU command ticks per system CPU cycle. For a positive tick budgetT, pending completion is `startCycle + ((T+1)>>1)`; zero ticks complete the retained command count without scheduling a positive deadline. The owner therefore rounds a positive odd tick budget up to the next CPU cycle; minimum positive delay is1 CPU cycle. This is not an independently specified physical VRAM bus clock. The installed CPU frequency is33,868,800Hz; arithmetic equivalent command-tick frequency is67,737,600ticks/s if the conversion is expressed as a rate, not an independent oscillator assertion.
+
+- TS: `machine/ts/machine/devices/gx/gpu_command_timing.ts:23`; `machine/ts/machine/devices/gx/gpu.ts:1264–1273`; `machine/ts/spec/bmsx/model.ts:7,46–47`.
+- C++: `machine/cpp/machine/devices/gx/gpu_command_timing.h:7`; `machine/cpp/machine/devices/gx/gpu.cpp:762–770`; `machine/cpp/spec/bmsx/model.h:12,51–52`.
+
+**GXB16.** The timing function returns1 GPU command tick for UPLOAD_CPU_TO_VRAM and READ_VRAM_TO_CPU, independent of image extent or payload length. Local VRAM→VRAM copy charges `2×width×height` ticks, i.e. `width×height` CPU cycles under GXB15. Fill rectangle charges `46+((roundedWidth>>3)+9)×height` ticks where roundedWidth is `(low10+15)&~15`, height is bits24:16; it is a different operation/rate. No payload-size-dependent upload/readback delivery-rate term appears in this timing function.
+
+- TS: `machine/ts/machine/devices/gx/gpu_command_timing.ts:290–306`.
+- C++: `machine/cpp/machine/devices/gx/gpu_command_timing.cpp:249–264`.
+
+**GXB17.** **The1-tick upload charge is command-scheduling eligibility, not a measured or specified VRAM write bandwidth.** Deadline synchronization updates `executedCommandCount`; it does not write VRAM or dirty rectangles. Actual software VRAM stores occur when retained commands are later iterated up to `commandLimit`. The command deadline, actual local-memory execution, GPUREAD readiness, and field presentation are distinct producer boundaries. A public statement “the complete image transfers to VRAM in1 tick” would incorrectly collapse them.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1276–1287`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:410–415`; `machine/ts/render/backend/software/gx_gpu.ts:18–45,49–56`; `machine/ts/render/backend/software/gx_gpu_commands.ts:75–99,276–302`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:684–695`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:393–398`; `machine/cpp/render/backend/software/gx_gpu.cpp:26–64,70–87`; `machine/cpp/render/backend/software/gx_gpu_commands.cpp:40–75,289–319`.
+
+**GXB18.** Completed retained command counts are sealed for presentation at the VBlank presentation edge; with readback active the sealed count is its fence, otherwise it is the executed count. Software frame rendering executes up to that sealed count and only then scans local memory. That establishes why DMA DONE / GPU idle / next displayed field cannot be presented as one shared completion test. This extraction does not re-specify PCRTC field timing.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1493–1513`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:384–389`; `machine/ts/render/backend/software/gx_gpu.ts:49–56`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:975–995`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:368–373`; `machine/cpp/render/backend/software/gx_gpu.cpp:70–87`.
+
+## Readback availability, ownership and consumption
+
+**GXB19.** Completing the C0–DF command activates readback with decoded position/extents, pixelCursor0, a fence equal to that command's retained count, and phase PENDING. A readback executor can claim only when phase is PENDING and its executed count equals that fence, changing phase to SUBMITTED. Only a completion callback for matching token in SUBMITTED changes phase to READY. The timing deadline alone activates PENDING, not READY.
+
+- TS: `machine/ts/machine/devices/gx/gpu_command_buffer.ts:120–130,147–159,205–207,410–415`.
+- C++: `machine/cpp/machine/devices/gx/gpu_command_buffer.h:88–100,131–141,185–188,393–398`.
+
+**GXB20.** Software readback first executes ordered commands to the fence, then copies every addressed raw16-bit VRAM word to little-endian byte pairs, then completes the readback. The copied pixels form the response consumed by GPUREAD; availability is all-buffer READY, not a per-pixel timed producer here. No fixed cycles-per-readback-pixel or payload-size-to-READY deadline is programmed in these methods.
+
+- TS: `machine/ts/render/backend/software/gx_gpu.ts:18–45`.
+- C++: `machine/cpp/render/backend/software/gx_gpu.cpp:26–64`.
+
+**GXB21.** A GPUREAD access synchronizes command timing. If READY, a DMA read consumes next response word; a CPU read consumes only if no DMA channel owns this read port. Otherwise it returns the existing `gpuReadWord` latch without consuming pixels. A consumed32-bit response contains low16 first pixel, high16 next pixel if present. Final odd pixel leaves high16 zero. After the last pixel, readback returns to IDLE and deasserts its request; subsequent reads retain the previous GPU read latch until some other operation updates it. The CPU/DMA read behavior does not supply a fixed VRAM response latency.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1019–1031`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:163–192`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:536–548`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:107–128,157–159`.
+
+**GXB22.** While readback is PENDING/SUBMITTED/READY, normal GP0 command execution does not proceed; after the last READY word is consumed, `readGp0` runs the GP0 pipeline again. In editorial execution terms PENDING/SUBMITTED additionally blocks machine progress for required execution/readback service; this is not a cartridge-visible host wait API or an extra numeric electrical transfer-rate guarantee.
+
+- TS: `machine/ts/machine/devices/gx/gpu.ts:1023–1026,1153–1156,1476–1490`.
+- C++: `machine/cpp/machine/devices/gx/gpu.cpp:540–543,721–724`; `machine/cpp/machine/devices/gx/gpu.h:236–249`.
+
+## Scope limits / separate specification decisions
+
+The mirrored leaves/owners above define storage capacity, word packing, command/FIFO boundaries, request/ready predicates, installed CPU frequency, command-tick conversion, local-copy timing charge and upload/read command scheduling charge. They do **not** give an independent electrical VRAM-bus oscillator, pin width/protocol, sustained VRAM read/write bandwidth rating, or per-pixel fixed delivery deadline for GPU upload/readback. Do not invent one by dividing VRAM image bytes by the1-tick scheduling charge. DMA transport throughput and source-region setup/word charges must come from the DMA owner extraction, not from GPU local storage or renderer execution speed.
+
+No tests/runtime edits were needed or made for this factual slice. Numeric address constants were evaluated live; no throughput measurement is claimed.
