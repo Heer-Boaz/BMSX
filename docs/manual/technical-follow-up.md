@@ -8,7 +8,11 @@
 owner chapter, an executed three-operation BLua cartridge and paired timing/data
 replays; see [its source review](../book1/reviews/geo-source.md). This closes the
 missing GEO chapter assignment below, not the broad technical audit or the real
-graphics-output illustrations. IMGDEC is the next chapter assignment.
+graphics-output illustrations. IMGDEC now also has a separately extracted,
+reviewed owner chapter and executed four-job BLua cartridge; see
+[its source review](../book1/reviews/imgdec-source.md). Input is the next unit
+assignment; its initial output-precision question is recorded below. The new
+GEO scene/overlay and memory-foundation requirements remain open.
 
 ## What is already explicit, versus what still needs a paragraph
 
@@ -86,15 +90,50 @@ Already explicit:
 
 Concrete next paragraph task: **a controlled download timing companion** to the upload trace. Start from defined sample RAM and DMA_READ setup, account for full-16-word prefill even when the requested count/tail is short, DMA transport, final BLOCK_END prefetch and STOP cancellation, and distinguish requested data receipt from an unneeded busy prefetch. Current text teaches all these rules, but supplies only an upload numerical timeline. APT08/09/12–18 plus DMT13–17 support extraction/replay. This can be a short teaching addition; do not build a new audio harness or fake transport latency. Per-format physical fetch rates/independent DAC clocks are not present in the frozen sources and must not be invented.
 
-## Installed units still without an owner chapter
+## Installed-unit chapter assignments and follow-ups
 
-Catalog currently contains only PCRTC/GTE/GPU/IRQ/DMA/APU (`docs/manual/catalog.json:1–44`). Actual construction/index evidence, **not filename behavior inference**:
+### IMGDEC software-authority follow-up: repeated DONE on empty DATA read
+
+The IMGDEC extraction found a shared, representable edge, not a mirror
+disagreement: after successful completion and complete output drain, a further
+eligible empty DATA read returns the retained word and runs the DONE/IRQ stop
+again. The completion check has no active-state guard. Earlier return cases
+are CPU access while DMA owns the read port and DMA access without BLOCK_END.
+
+Sources: `machine/ts/machine/devices/imgdec/controller.ts:583–605,512–535`;
+`machine/cpp/machine/devices/imgdec/controller.cpp:491–515,417–440`.
+Paired actual-owner ACK→empty-read replays reproduce IRQ80 for both tested
+successful streams; the eight malformed cases retain their fault result and
+do not acquire a successful completion from that read. The chapter states the
+installed behavior and exact-count read caution. No runtime change was made.
+
+**Separate future decision:** whether terminal DONE should be a one-shot edge.
+That would change both owners and needs its own implementation/validation
+task. It is not an undocumented promise, a TypeScript/C++ parity failure or a
+publication blocker once the current behavior is accurately documented.
+
+### Baseline chapter assignments
+
+**Input extraction note — precision boundary, unresolved:** the raw intensity
+word decoder differs between the mirrors. TypeScript divides the unsigned
+word directly (`machine/ts/machine/devices/input/contracts.ts:141–145`); native
+converts to binary32 before division and exposes a binary32 output argument
+(`machine/cpp/machine/devices/input/contracts.h:122–129`). With raw FFFFFFFFH,
+direct current-owner checks return 65535.99998474121 versus 65536. This is a
+confirmed decoder-representation difference, **not proof of a different
+end-to-end vibration effect**; the receiving output boundary is not yet audited.
+No runtime fix or public input chapter was inferred. Before authoring the
+affected output semantics, resolve the intended representation at that owner
+and audit the actual receiver; keep unaffected raw-register facts separate.
+
+At the baseline, the catalog contained only PCRTC/GTE/GPU/IRQ/DMA/APU (`docs/manual/catalog.json:1–44` in that snapshot). Actual construction/index evidence, **not filename behavior inference**:
 - `machine/ts/machine/machine.ts:58–97` constructs CPU, GeometryController, ImgDecController, SystemController and InputController in addition to documented units; paired `machine/cpp/machine/machine.cpp:14–38` confirms them.
 - `machine/ts/spec/bmsx/io.ts:20–56,110–114,123–124,138–148` exposes GEO, input, system and IMGDEC register groups. These names/indices identify extraction scope only; this report makes no claim about their register behavior.
 - `machine/ts/spec/bmsx/memory_map.ts:1–33` is the index for CPU/memory/bus overview extraction, not evidence that address-window size equals installed capacity.
 - Cartridge controller/socket/card work remains Book II by the existing manual boundary. Naming cartridge request bits in Book I does not finish Book II.
 
-Recommended authoring order, keeping one unit per source extraction:
+Baseline authoring order, keeping one unit per source extraction (GEO and
+IMGDEC have since been completed as noted above):
 1. **GEO:** existing GTE boundary explicitly says it is separate (`gte.md:9`); an owner chapter is absent. This completes a named graphics-adjacent gap without pretending GTE covers it.
 2. **IMGDEC:** another installed graphics-adjacent unit with named DMA request interactions already used in the DMA chapter. Extract its own capacities/stream/format/timing/destination ownership first.
 3. **Input controller/output ports:** separate installed unit and register group, no chapter.
@@ -102,9 +141,71 @@ Recommended authoring order, keeping one unit per source extraction:
 
 This order is editorial dependency reasoning, not a claim about an uninspected reference manual's order. Source extraction could change paragraph assignments if actual owners/specs disagree.
 
+## Programmer foundations: address space and reserved memory
+
+**Requested addition; open.** A newcomer must not have to infer the installed
+machine's usable address space from individual device chapters. Give the
+CPU/memory chapter a complete sourced address-map overview, with explicit
+start/end addresses, byte units, installed capacity versus mapped window,
+access permissions and ownership. Cover RAM, system ROM, cartridge windows,
+shared graphics memory and MMIO without implying that every address in a
+window names installed storage or that all units can access every region.
+
+Separate these meanings rather than calling all of them “reserved”:
+
+- Firmware/system-owned RAM versus storage available to the cartridge;
+  startup contents and lifetimes where the actual boot/runtime contract
+  establishes them.
+- Program/readonly data/BSS, stack and other execution storage requirements,
+  including who places/initializes them and which published addresses the
+  cartridge must leave alone. Do not invent fixed stack/heap reservations.
+- Unmapped holes, reserved address windows, unimplemented MMIO words and
+  read-only/write-only ports: state the actual read/write/fetch outcome and
+  bus-fault behavior, not an assumed zero, ignored write or “safe” access.
+- Documented aliases/mirrors, address arithmetic/wrap, alignment and access
+  width; distinguish CPU access from DMA and addressed-unit restrictions.
+- Reserved/unused/retained register bits and future-use regions: use the
+  actual owner behavior, not an unsupported must-zero or compatibility rule.
+
+Include an ordinary BLua memory-placement/access example and a beginner's
+startup/ownership route that connects BIOS startup, program storage, MMIO,
+interrupt setup and device use. Cross-reference complete existing chapters
+instead of duplicating their register inventories. Extract paired memory-map,
+memory/CPU and actual boot/ABI owners before authoring; record any conflicting
+ownership or missing reservation contract rather than filling gaps from
+convention. Book I needs the installed address windows; cartridge socket/card
+protocol detail remains Book II. This assignment is documentation/evidence
+work, not authorization to redesign memory or firmware.
+
 ## Real graphics-capture leads — backlog remains open
 
-Existing ignored files are present, but were not freshly executed or visually approved here:
+### GEO: dummy-game scene, sprites and convex hulls
+
+**Requested addition; open.** Add a small executable dummy-game scene with real
+sprites, then pair its normal output with a clearly labelled geometry overlay.
+Show the sprites' authored convex hulls in local space and their transformed
+hulls in the same screen/world scene. Use controlled separated, touching and
+overlapping poses to connect the picture to XFORM2, SAT2 and OVERLAP2D inputs
+and results. Depict the applicable hit result, contact point, normal and depth
+with their stated coordinate space and direction; do not substitute sprite
+rectangles for the actual tested hulls.
+
+Keep the boundary visible: GEO produces transformed geometry and collision
+results; the cartridge submits sprites and diagnostic lines/markers to GPU.
+The overlay is cartridge-drawn explanatory output, not a GEO rendering mode.
+Include the actual BLua setup, sprite/hull data, programmed operations and
+observable results. Capture the executed scene and overlays through the
+existing runner, preserve the source/settings for each pose, independently
+check every overlay against its geometry/result words, and inspect the final
+printed plates for readable alignment and labels. This is not satisfied by
+the chapter's current numeric square examples, a schematic alone or the
+separate GTE triangle captures. No new capture or publishing framework is
+needed.
+
+### Initial GTE/GPU capture leads
+
+The following files were present but not freshly executed or visually approved
+at the baseline inventory:
 - `tests/carts/gte_manual/screenshots/frame_00001.png` and `frame_00002.png`; actual test capture calls at `tests/carts/gte_manual/gte_manual_assert.lua:51–70`, with initial/transformed projected coordinates checked before each capture. Producer: `carts/gte_manual/cart.lua`; documented reproducible commands `carts/gte_manual/README.md:101–115`.
 - `tests/carts/gpu_manual/screenshots/frame_00001.png`; capture call `tests/carts/gpu_manual/gpu_manual_assert.lua:31–37`, producer `carts/gpu_manual/cart.lua`; commands/scope `carts/gpu_manual/README.md:60–72`.
 
@@ -120,3 +221,12 @@ npm run headless:test -- gpu_manual tests/carts/gpu_manual/gpu_manual_assert.lua
 ```
 
 `package.json:44–45` owns the headless-tooling/test entrypoint. Fresh execution, actual image inspection, a readable crop/scale for the publication, exact source/settings/capture provenance and complete final-PDF inspection remain required before embedding. An already existing capture filename is not that evidence. These leads do not close the broad request for explanatory actual graphics outputs.
+
+**Subsequent preparation:** the ordinary GTE and GPU cartridges and cases have
+now been rebuilt/run with current product and BIOS; all cases pass and all
+three native 256×192 PNGs were individually viewed. The GTE pair is the NCCT
+gradient triangle from the complete cartridge, shifted 16 screen units by
+TRX 0→32, not the separate solid-red worked packet. A bounded source/caption
+extraction is in progress. Committed plate assets, publication support,
+independent caption review and actual final-PDF inspection remain outstanding;
+the broad illustrations item and this new GEO dummy-game task stay open.

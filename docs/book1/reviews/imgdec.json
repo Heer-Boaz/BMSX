@@ -1,0 +1,54 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "IMGDEC expands a word stream into GP0 upload headers and payload, not direct VRAM writes or rendering. Input32/output64/history4096 capacities, 32-bit words and adjacent transport ownership are explicitly source/semantic checked (ICR/IST).",
+			"open": []
+		},
+		"registers": {
+			"resolution": "All nine words include exact address/access/reset/bit behavior; five configuration admission gates, full-word retention, START self-clear/retained high bits, STATUS replacement and progress/data effects are independently checked. Internal save state is not invented as cartridge registers.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "All four token fields/ranges, literal/repeat/zero/overlapping back-reference behavior, shared texture/CLUT history, generated headers, raw GP0 words, modulo counters and exact worked output streams are independently audited.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Accepted configuration versus CPU stall/DMA rejection, submitted versus consumed input, atomic whole output batches, DATA latch/ownership, block-ending DMA updates and output-read completion are source-checked; partial prefix retention and new START are distinct.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Installed33868800 cycles/s, two cycles per output word including headers,16-word payload groups and3-word headers, delayed service/input starvation/backpressure, DREQ thresholds and overlapping DMA transport are explicit. Eleven paired timing edges plus final output agree; no electrical/end-to-end rating is invented.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "DONE and FORMAT_FAULT both raise central bit7; DMA bits0/8, masks/ACK, unrelated pending and accepted-interrupt HALT latch are separate. Post-DONE eligible empty DATA read re-raises IRQ80; exact-count caution and paired ACK/read evidence are recorded.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Read-only access fault, all actual malformed-stream causes/order, equality-only exhaustion, modulo counts, partial output, withdrawn DREQ and potentially stranded DMA are documented. Fixed demonstration uses CPU for its fault job; no unsourced ABORT/general recovery is invented.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "Unit reset cancels pending decoding, clears all nine words/FIFOs/progress/history validity and pause; it does not central-ACK. Fresh START and system-pause boundary/preservation/resumption are separately source-checked.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Actual53+213line two-module typed BLua cartridge executes RAM,GP0,CPU fault and fresh-START recovery with sequence predicates. Full cart validation/ordinary execution and separate12+8word raw GPUREAD checks pass; six printed blocks reproduce both files. Independent whole-reader five findings are resolved; optional readback is clearly outside the listing.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/imgdec-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/imgdec-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/imgdec-print.md"
+		}
+	}
+}

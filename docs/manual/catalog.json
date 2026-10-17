@@ -47,5 +47,12 @@
 		"chapter": "docs/book1/geo.md",
 		"facts": "docs/book1/facts/geo.md",
 		"review": "docs/book1/reviews/geo.json"
+	},
+	"imgdec": {
+		"book": "I",
+		"label": "IMGDEC",
+		"chapter": "docs/book1/imgdec.md",
+		"facts": "docs/book1/facts/imgdec.md",
+		"review": "docs/book1/reviews/imgdec.json"
 	}
 }
