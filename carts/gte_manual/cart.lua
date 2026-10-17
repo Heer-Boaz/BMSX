@@ -15,11 +15,52 @@ local source<const>: *word = 0x08010360
 local display_extent<const>: *word = 0x08010368
 local pcrtc_csr<const>: *word = 0x080103d4
 
-local vblank_sequence = 0
+-- Fixed ROM operands. Matrix coefficients use the Q12 convention.
+rodata model_to_view: gte_transform = {
+	rotation = {
+		rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
+		pad = 0,
+	},
+	translation = { 0, 0, 0 },
+}
+
+rodata projection: gte_projection = {
+	offset_x = 128 << 16,
+	offset_y = 96 << 16,
+	h = 256,
+	cue_gain = 0,
+	cue_offset = 0,
+}
+
+rodata light_directions: gte_matrix = {
+	rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
+	pad = 0,
+}
+rodata light_colors: gte_matrix = {
+	rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
+	pad = 0,
+}
+rodata ambient: word[3] = { 0, 0, 0 }
+
+rodata triangle: gte_vector[3] = {
+	{ x = -64, y = -64, z = 512, pad = 0 },
+	{ x = 64, y = -64, z = 512, pad = 0 },
+	{ x = 0, y = 64, z = 512, pad = 0 },
+}
+-- Deliberately supplied vertex-lighting directions, not positions.
+rodata normals: gte_vector[3] = {
+	{ x = 4096, y = 0, z = 0, pad = 0 },
+	{ x = 0, y = 4096, z = 0, pad = 0 },
+	{ x = 0, y = 0, z = 4096, pad = 0 },
+}
+
+bss vblank_sequence: word
+bss back_buffer: word
+bss frame_number: word
 
 function irq(flags)
 	*irq_ack = flags
-	vblank_sequence = vblank_sequence + 1
+	*vblank_sequence = *vblank_sequence + 1
 end
 
 *irq_mask = 0
@@ -27,47 +68,34 @@ end
 *source = 0x00000000
 *display_extent = 0x000bf3ff
 
--- Rotation: Q12 identity. Translation: integer position units.
-control[gte.control_r11r12] = gte.pack_i16_pair(4096, 0)
-control[gte.control_r13r21] = gte.pack_i16_pair(0, 0)
-control[gte.control_r22r23] = gte.pack_i16_pair(4096, 0)
-control[gte.control_r31r32] = gte.pack_i16_pair(0, 0)
-control[gte.control_r33] = 4096
-control[gte.control_trx] = 0x00000000
-control[gte.control_try] = 0x00000000
-control[gte.control_trz] = 0x00000000
--- Project onto a 256 x 192 drawing area centred at (128,96).
-control[gte.control_ofx] = 128 << 16
-control[gte.control_ofy] = 96 << 16
-control[gte.control_h] = 256
-control[gte.control_dqa] = 0x00000000
-control[gte.control_dqb] = 0x00000000
-
--- Light and color matrices: Q12 identity, zero ambient.
-control[gte.control_l11l12] = gte.pack_i16_pair(4096, 0)
-control[gte.control_l13l21] = gte.pack_i16_pair(0, 0)
-control[gte.control_l22l23] = gte.pack_i16_pair(4096, 0)
-control[gte.control_l31l32] = gte.pack_i16_pair(0, 0)
-control[gte.control_l33] = 4096
-control[gte.control_rbk] = 0x00000000
-control[gte.control_gbk] = 0x00000000
-control[gte.control_bbk] = 0x00000000
-control[gte.control_lr1lr2] = gte.pack_i16_pair(4096, 0)
-control[gte.control_lr3lg1] = gte.pack_i16_pair(0, 0)
-control[gte.control_lg2lg3] = gte.pack_i16_pair(4096, 0)
-control[gte.control_lb1lb2] = gte.pack_i16_pair(0, 0)
-control[gte.control_lb3] = 4096
+-- Copy raw words from the authored operands; MMIO never uses halfword stores.
+local transform_words<const>: *word = model_to_view
+for index = 0, sizeof(gte_transform) // 4 - 1 do
+	control[gte.control_r11r12 + index] = transform_words[index]
+end
+local projection_words<const>: *word = projection
+for index = 0, sizeof(gte_projection) // 4 - 1 do
+	control[gte.control_ofx + index] = projection_words[index]
+end
+local direction_words<const>: *word = light_directions
+local color_words<const>: *word = light_colors
+for index = 0, sizeof(gte_matrix) // 4 - 1 do
+	control[gte.control_l11l12 + index] = direction_words[index]
+	control[gte.control_lr1lr2 + index] = color_words[index]
+end
+for channel = 0, #ambient - 1 do
+	control[gte.control_rbk + channel] = ambient[channel]
+end
+local position_words<const>: *word = triangle
+local normal_words<const>: *word = normals
 
 *gp0 = 0xe1000400
 *gp0 = 0xe6000000
 *irq_ack = 0xffffffff
 *irq_mask = 0x00000004
 
-local back = 0
-local frame = 0
-
 while true do
-	local base_y<const> = back << 8
+	local base_y<const> = *back_buffer << 8
 	*gp0 = 0xe3000000 | (base_y << 10)
 	*gp0 = 0xe40000ff | ((base_y + 191) << 10)
 	*gp0 = 0xe5000000 | (base_y << 11)
@@ -75,13 +103,10 @@ while true do
 	*gp0 = base_y << 16
 	*gp0 = 0x00c00100
 
-	control[gte.control_trx] = ((frame >> 5) & 1) << 5
-	data[gte.data_vxy0] = gte.pack_i16_pair(-64, -64)
-	data[gte.data_vz0] = 0x00000200
-	data[gte.data_vxy1] = gte.pack_i16_pair(64, -64)
-	data[gte.data_vz1] = 0x00000200
-	data[gte.data_vxy2] = gte.pack_i16_pair(0, 64)
-	data[gte.data_vz2] = 0x00000200
+	control[gte.control_trx] = ((*frame_number >> 5) & 1) << 5
+	for index = 0, sizeof(gte_vector[3]) // 4 - 1 do
+		data[gte.data_vxy0 + index] = position_words[index]
+	end
 	*command = gte.opcode_rtpt | gte.command_sf_shift_12
 	local xy0<const> = data[gte.data_sxy0]
 	local xy1<const> = data[gte.data_sxy1]
@@ -91,13 +116,9 @@ while true do
 
 	-- MAC0 is read as a raw word; select positive signed area, excluding zero.
 	if doubled_area ~= 0 and (doubled_area & 0x80000000) == 0 then
-		-- Supplied vertex-lighting directions, not triangle positions.
-		data[gte.data_vxy0] = gte.pack_i16_pair(4096, 0)
-		data[gte.data_vz0] = 0x00000000
-		data[gte.data_vxy1] = gte.pack_i16_pair(0, 4096)
-		data[gte.data_vz1] = 0x00000000
-		data[gte.data_vxy2] = gte.pack_i16_pair(0, 0)
-		data[gte.data_vz2] = 4096
+		for index = 0, sizeof(gte_vector[3]) // 4 - 1 do
+			data[gte.data_vxy0 + index] = normal_words[index]
+		end
 		data[gte.data_rgb] = 0x004080a0
 		*command = gte.opcode_ncct | gte.command_sf_shift_12 | gte.command_lm_positive
 		*gp0 = 0x30000000 | (data[gte.data_rgb0] & 0x00ffffff)
@@ -110,12 +131,12 @@ while true do
 
 	while (*gp1 & 0x04000000) == 0 do
 	end
-	*framebuffer = 0x000fa000 | (back << 6)
+	*framebuffer = 0x000fa000 | (*back_buffer << 6)
 	*pmode = 0x0000ff21
-	local before<const> = vblank_sequence
-	while vblank_sequence == before do
+	local before<const> = *vblank_sequence
+	while *vblank_sequence == before do
 		halt_until_irq
 	end
-	back = 1 - back
-	frame = frame + 1
+	*back_buffer = 1 - *back_buffer
+	*frame_number = *frame_number + 1
 end

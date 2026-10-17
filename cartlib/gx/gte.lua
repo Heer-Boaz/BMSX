@@ -1,5 +1,31 @@
 module<const>
 
+-- Fixed-layout operands for whole-word transfers to the GTE register windows.
+struct gte_matrix
+	rows: i16[3][3]
+	pad: i16
+end
+
+struct gte_vector
+	x: i16
+	y: i16
+	z: i16
+	pad: i16
+end
+
+struct gte_transform
+	rotation: gte_matrix
+	translation: word[3]
+end
+
+struct gte_projection
+	offset_x: word
+	offset_y: word
+	h: word
+	cue_gain: word
+	cue_offset: word
+end
+
 local data<const>: *word[32] = 0x08010244
 local control<const>: *word[32] = 0x080102c4
 local command<const>: *word = 0x08010344

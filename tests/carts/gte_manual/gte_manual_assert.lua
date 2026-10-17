@@ -1,3 +1,18 @@
+local gte<const> = require('cartlib/gx/gte')
+
+rodata signed_positions: gte_vector[3] = {
+	{ x = -64, y = -64, z = 512, pad = 0 },
+	{ x = 64, y = -64, z = 512, pad = 0 },
+	{ x = 0, y = 64, z = 512, pad = 0 },
+}
+rodata ordered_transform: gte_transform = {
+	rotation = {
+		rows = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } },
+		pad = 0,
+	},
+	translation = { -1, 2, -3 },
+}
+
 local data<const>: *word[32] = 0x08010244
 local control<const>: *word[32] = 0x080102c4
 local command<const>: *word = 0x08010344
@@ -6,6 +21,33 @@ local framebuffer<const>: *word = 0x0801035c
 return {
 	kind = 'integration',
 	tests = {
+		static_operand_layout = function(t)
+			assert(sizeof(gte_vector) == 8)
+			assert(offsetof(gte_vector.z) == 4)
+			assert(offsetof(gte_vector.pad) == 6)
+			assert(sizeof(gte_matrix) == 20)
+			assert(offsetof(gte_matrix.pad) == 18)
+			assert(sizeof(gte_transform) == 32)
+			assert(offsetof(gte_transform.translation) == 20)
+			assert(sizeof(gte_projection) == 20)
+			assert(offsetof(gte_projection.cue_offset) == 16)
+			local positions<const>: *word = signed_positions
+			assert(positions[0] == 0xffc0ffc0)
+			assert(positions[1] == 0x00000200)
+			assert(positions[2] == 0xffc00040)
+			assert(positions[3] == 0x00000200)
+			assert(positions[4] == 0x00400000)
+			assert(positions[5] == 0x00000200)
+			local transform<const>: *word = ordered_transform
+			assert(transform[0] == 0x00020001)
+			assert(transform[1] == 0x00040003)
+			assert(transform[2] == 0x00060005)
+			assert(transform[3] == 0x00080007)
+			assert(transform[4] == 0x00000009)
+			assert(transform[5] == 0xffffffff)
+			assert(transform[6] == 0x00000002)
+			assert(transform[7] == 0xfffffffd)
+		end,
 		geometry_color_and_buffer_lifetime = function(t)
 			t:wait_ticks(2)
 			assert(data[12] == 0x00400060)
