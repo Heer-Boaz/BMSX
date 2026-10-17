@@ -12,5 +12,12 @@
 		"chapter": "docs/book1/gte.md",
 		"facts": "docs/book1/facts/gte.md",
 		"review": "docs/book1/reviews/gte.json"
+	},
+	"gpu": {
+		"book": "I",
+		"label": "GPU",
+		"chapter": "docs/book1/gpu.md",
+		"facts": "docs/book1/facts/gpu.md",
+		"review": "docs/book1/reviews/gpu.json"
 	}
 }

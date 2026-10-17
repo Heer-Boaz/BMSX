@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="400" viewBox="0 0 1000 400" role="img" aria-labelledby="gpu-shared-edge-title gpu-shared-edge-desc">
+  <title id="gpu-shared-edge-title">Integer sample ownership on a quad's shared diagonal</title>
+  <desc id="gpu-shared-edge-desc">A six by two rectangle uses vertices zero at40,24, one at46,24, two at40,26 and three at46,26. The first triangle zero-one-two owns nine integer samples; the second two-one-three owns three. The sample43,25 lies exactly on the shared diagonal and belongs only to the second triangle. Right and bottom candidate-boundary samples are excluded.</desc>
+  <defs><marker id="gpu-shared-edge-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#263642"/></marker></defs>
+  <rect width="1000" height="400" fill="white"/>
+  <g font-family="sans-serif" fill="#1d2b36">
+    <text x="35" y="33" font-size="21" font-weight="700">A shared diagonal has one sample owner</text>
+    <text x="35" y="60" font-size="15">Integer X/Y samples; full drawing area and no skipped rows.</text>
+    <polygon points="100,110 640,110 100,310" fill="#e9f1f8"/>
+    <polygon points="100,310 640,110 640,310" fill="#fff1de"/>
+    <g stroke="#c4cdd3" stroke-width="1">
+      <path d="M100,110H640 M100,210H640 M100,310H640"/>
+      <path d="M100,110V310 M190,110V310 M280,110V310 M370,110V310 M460,110V310 M550,110V310 M640,110V310"/>
+    </g>
+    <path d="M100,110H640V310H100Z M640,110L100,310" fill="none" stroke="#263642" stroke-width="1.6"/>
+    <g font-size="14" text-anchor="middle">
+      <text x="100" y="96">40</text><text x="190" y="96">41</text><text x="280" y="96">42</text>
+      <text x="370" y="96">43</text><text x="460" y="96">44</text><text x="550" y="96">45</text><text x="640" y="96">46</text>
+    </g>
+    <g font-size="14" text-anchor="end"><text x="78" y="115">24</text><text x="78" y="215">25</text><text x="78" y="315">26</text></g>
+    <g fill="#21628c" stroke="white" stroke-width="1.5">
+      <circle cx="100" cy="110" r="6"/><circle cx="190" cy="110" r="6"/><circle cx="280" cy="110" r="6"/>
+      <circle cx="370" cy="110" r="6"/><circle cx="460" cy="110" r="6"/><circle cx="550" cy="110" r="6"/>
+      <circle cx="100" cy="210" r="6"/><circle cx="190" cy="210" r="6"/><circle cx="280" cy="210" r="6"/>
+    </g>
+    <g fill="#b35d00" stroke="white" stroke-width="1.5"><circle cx="370" cy="210" r="6"/><circle cx="460" cy="210" r="6"/><circle cx="550" cy="210" r="6"/></g>
+    <g fill="white" stroke="#7c8992" stroke-width="1.3">
+      <circle cx="640" cy="110" r="4"/><circle cx="640" cy="210" r="4"/>
+      <circle cx="100" cy="310" r="4"/><circle cx="190" cy="310" r="4"/><circle cx="280" cy="310" r="4"/>
+      <circle cx="370" cy="310" r="4"/><circle cx="460" cy="310" r="4"/><circle cx="550" cy="310" r="4"/><circle cx="640" cy="310" r="4"/>
+    </g>
+    <circle cx="370" cy="210" r="10" fill="none" stroke="#263642" stroke-width="1.3"/>
+    <g font-size="14" font-weight="700"><text x="90" y="80">V0 = (40,24)</text><text x="510" y="80">V1 = (46,24)</text><text x="90" y="345">V2 = (40,26)</text><text x="510" y="345">V3 = (46,26)</text></g>
+    <g font-size="15">
+      <circle cx="710" cy="113" r="6" fill="#21628c"/><text x="729" y="118">First triangle: (0,1,2)</text><text x="729" y="140">9 covered samples</text>
+      <circle cx="710" cy="172" r="6" fill="#b35d00"/><text x="729" y="177">Second triangle: (2,1,3)</text><text x="729" y="199">3 covered samples</text>
+      <text x="705" y="248" font-weight="700">On the diagonal: (43,25)</text><text x="705" y="271">First rejects; second accepts.</text>
+      <circle cx="710" cy="311" r="4" fill="white" stroke="#7c8992" stroke-width="1.3"/>
+      <text x="729" y="316">Excluded right/bottom</text><text x="729" y="338">candidate boundaries</text>
+    </g>
+    <path d="M689,245 L382,212" fill="none" stroke="#263642" stroke-width="1.2" marker-end="url(#gpu-shared-edge-arrow)"/>
+  </g>
+</svg>

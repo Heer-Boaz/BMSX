@@ -1,0 +1,72 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Unit, raw storage, primitive and PCRTC boundaries are taught and scoped reviews pass.",
+			"open": [
+				"Final whole-reader integration and cross-references remain pending."
+			]
+		},
+		"registers": {
+			"resolution": "Both GPU ports/accesses/reset, every GPUSTAT field, all GP1 control/query operations, ingress ownership and GP0 framing plus flat/Gouraud untextured packets are integrated and independently checked.",
+			"open": [
+				"Remaining textured polygon, line/polyline, rectangle, transfer and environment packet entries need authorship/integration/review."
+			]
+		},
+		"datapath": {
+			"resolution": "Storage, placement, coverage, finite planes, line sampling, textures, gain/dither, blend/mask and fill/copy lessons are integrated with independent checks.",
+			"open": [
+				"Whole-reader connection to the complete command reference and final figures remains pending."
+			]
+		},
+		"visibility": {
+			"resolution": "Admission, DMA BLOCK_END, retained snapshots, GP1 reset/clear/readback phases and VBlank presentation are taught and scoped checks pass.",
+			"open": [
+				"Remaining packet-family visibility integration and final whole-reader review remain open."
+			]
+		},
+		"timing": {
+			"resolution": "Installed resources/access costs and all command-cost equations pass independent arithmetic plus actual TS/C++ replay57 bounded cases; physical guarantees are not fabricated.",
+			"open": [
+				"Complete actual CPU issue/wait/readout budget W02 and final whole-reader integration remain open."
+			]
+		},
+		"interrupts": {
+			"resolution": "Marker ordering/suppression/re-arming, separate GPU/controller acknowledgements and idle-alone non-IRQ behavior are covered and checked.",
+			"open": [
+				"Final whole-reader/complete-packet integration remains pending."
+			]
+		},
+		"faults": {
+			"resolution": "CPU access-width/alignment/side effects, admission/ownership and ignored versus payload opcodes are taught with paired-source checks.",
+			"open": [
+				"Final complete packet-reference/whole-reader audit remains open; DMA-controller register programming is outside this unit."
+			]
+		},
+		"reset": {
+			"resolution": "GP1 RESET/FIFO-clear, accepted/partial work, readback phase aborts and PCRTC reset coupling are taught and checked.",
+			"open": [
+				"Final whole-reader integration remains pending."
+			]
+		},
+		"programming": {
+			"resolution": "All pixel lessons and the complete BIOS-style cartridge are integrated; actual guest readback/probes and capture pass.",
+			"open": [
+				"Remaining command-family reference, full CPU work budget and whole-reader/print acceptance remain outstanding."
+			]
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": false,
+			"report": "docs/book1/reviews/gpu-source.md"
+		},
+		"figures": {
+			"passed": false,
+			"report": "docs/book1/reviews/gpu-source.md"
+		},
+		"print": {
+			"passed": false,
+			"report": "docs/book1/reviews/gpu-print.md"
+		}
+	}
+}

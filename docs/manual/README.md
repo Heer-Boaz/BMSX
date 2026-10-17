@@ -115,7 +115,7 @@ Each topic has a `resolution` and an `open` array. An empty resolution or any op
 question blocks publication. Explain a genuinely inapplicable topic in its
 resolution, with evidence; do not silently delete checklist topics. The PCRTC
 record documents the closed contracts and the explicit software-authority
-decision; its deferred backend discrepancy has a separate follow-up note.
+decision; its separately corrected backend discrepancy has a recorded follow-up.
 
 The `facts`, `figures`, and `print` reviews each have a `passed` flag and a
 repository-relative `report` path. Leave `passed` false until that review's
