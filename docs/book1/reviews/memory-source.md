@@ -653,3 +653,39 @@ Production reference before the edit: PSn00bSDK's
 [GPU common routines](https://github.com/Lameguy64/PSn00bSDK/blob/master/libpsn00b/psxgpu/common.c),
 separating reset, DMA and drawing synchronization. No foreign address, timing or
 behavior was supplied to the author or used as a BMSX fact.
+
+## Mutable word-load recovery — bounded continuation, 2026-10-18
+
+The separate [recovery facts](../facts/memory-recovery.md) supplied two
+facts-only authors: the new hardware lesson and its development-companion
+route. The complete 32-line listing exactly matches
+`carts/memory_recovery_manual/cart.lua`; the earlier constant-address fault
+probe is unchanged. No low-level helper API, runtime, compiler, BIOS, publisher
+or CSS change is included.
+
+Independent actual-source review accepts the added claims against installed
+BIOS command/scope owners and paired CPU/Memory/SYSTEM owners: mutable live
+register assignment, hexadecimal frame selection, same-EPC retry, old CODE
+versus a new access fault, post-read ACK and restart versus repair. It also
+accepts the unmodified 320×240 pre-CONT figure and its caption. Detailed
+report: `/tmp/bmsx-memory-recovery-source-review.md`. A separate public-only
+reader reconstructs the source/manifest/build/browser/command/result route:
+`/tmp/bmsx-memory-recovery-public-reader.md`.
+
+Root executed the exact minimal tooling/cart/keyboard-scenario commands; the
+ordinary default-O3 debug ROM passes all ten assertions without host evaluation
+or guest writes outside the BIOS keyboard path. The result is two payload
+words `12345678/9ABCDEF0`, old CODE1 then CODE0, with no further physical fault.
+O0 was separately exercised. An ordinary Chromium/Linux browser run used real
+mouse/key input; its console supplies those diagnostics while old monitor
+pixels remain visible. The figure is before CONT, not synthetic success output.
+These are not native, other-browser, fresh-installation or arbitrary-local
+recovery guarantees. REBOOT is source-checked, not an executed restart claim.
+
+All 19 existing manual tests pass. Public source SHA256:
+`7dd0b87f41abbeb1e31f092e5f58a1a126cd77a8e32c081b0c07432a434b3d3e`.
+Production reference before this slice: MAME's
+[debugger reset/continue commands](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcmd.cpp),
+ownership distinction only; no foreign behavior was supplied as a BMSX fact.
+Privileged handlers, other fault classes, coordinated cross-unit recovery and
+whole-console reader acceptance remain open. BH01 remains a separate API audit.

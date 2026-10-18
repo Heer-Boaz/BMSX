@@ -237,3 +237,31 @@ The 19 manual tests regenerated PCRTC. All 37 complete RGBA page images and
 dimensions match its previously accepted `26afd66a…` output; current PDF SHA256
 `cc96a683cbd444e669b8c55b5b10ed035c21420592c16d71832d8306ac9b69e0`.
 This carries print evidence only, not a fresh PCRTC behavior audit.
+
+## Mutable word-load recovery — actual DRAFT, 2026-10-18
+
+The 39-page candidate `build/manual/memory.preview.pdf`, SHA256
+`8f59cbed512a603c994a72700ee9f35a105c38d2ab9d434f2fd32efaeea16e16`,
+adds the complete recovery program and an unedited pre-CONT monitor image.
+Root individually viewed ORIGINAL pages 24–27; an independent nonauthor
+individually viewed ORIGINAL 28–39. Root also viewed 29, 30, 32, 33, 35, 36,
+38 and 39, confirming running matter where shared-image preview suppression
+had obscured it. No clipping, orphaned caption or other local layout blocker
+was found. No CSS or publisher change was needed.
+
+Pages 1–23 match the accepted 37-page `7cf3e48b…` predecessor in complete
+decoded RGBA bytes and dimensions, including running matter. Evidence:
+`/tmp/bmsx-memory-recovery-print/memory-identity.json` and
+`/tmp/bmsx-memory-recovery-print-review.md`. This is bounded DRAFT readability,
+not whole-chapter publication approval; `print.passed` remains false.
+
+The 19 manual tests regenerate PCRTC. Its current 37-page PDF, SHA256
+`295aa7fe2c57d5caf1267e63161a4eb7741cb31d32fda1753fc03546ff00792d`,
+matches all 37 accepted predecessor page images in complete RGBA bytes and
+dimensions: `/tmp/bmsx-memory-recovery-pcrtc-print/pcrtc-identity.json`.
+This carries print inspection only, not a new technical audit.
+
+The final review-metadata refresh produces SHA256
+`bd8c567700b440c6927c3109f74f3a2dbc0946aa3f2ecac8718652d5e65a92e8`;
+all 39 complete page images and dimensions equal the inspected candidate:
+`/tmp/bmsx-memory-recovery-final-print/memory-identity.json`.

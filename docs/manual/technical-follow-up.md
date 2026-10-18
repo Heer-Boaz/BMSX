@@ -1606,3 +1606,23 @@ discovery gaps, not exhaustive inherited-state, supervisor/multiple-reader VRAM,
 coordinated cancellation/restart, successful recovery, SDK or whole-console
 newcomer acceptance. BH01 remains a separate interface-design question; NAV01
 still requires a portable delivered-series link contract.
+
+## Successful word-load retry — bounded continuation, 2026-10-18
+
+Memory now includes a separate complete mutable-pointer cartridge and the
+[repair-and-retry lesson](../book1/memory.md#repair-a-word-load-and-retry).
+The companion supplies exact project/manifest/build/keyboard/browser steps.
+Actual BIOS frame assignment repairs the live operand; CONT retries the same
+read, then the cartridge reads both words and acknowledges the old report.
+This does not replace the earlier constant-address failed-retry example.
+
+Independent source, semantic-figure and public-reader reviews pass. The
+ordinary debug-ROM keyboard scenario passes ten assertions; actual Chromium
+mouse/key playback separately produces the expected diagnostics. The image
+is genuinely before CONT, not drawn success output. All 19 manual tests pass;
+changed actual PDF pages were individually inspected. See the
+[source record](../book1/reviews/memory-source.md) for scoped evidence.
+This closes one supported successful-recovery route, not privileged handlers,
+remaining fault classes, coordinated cancellation/restart, full takeover,
+SDK/live-inspection or whole-console acceptance. BH01 is not standardized by
+this unrelated hardware lesson.

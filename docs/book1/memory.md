@@ -899,6 +899,79 @@ The monitor's `FAULT` command displays its saved fault report when one is retain
 
 CP0 reads and writes require non-user mode; attempting them from ordinary cartridge user mode causes the coprocessor-unusable exception. Do not attempt to repair this example by reading or replacing CP0 fields in ordinary cartridge code. The example demonstrates inspection and an unchanged-instruction retry, not a cartridge recovery handler or a successful recovery.
 
+<a id="repair-a-word-load-and-retry"></a>
+
+### Repair a word load and retry
+
+The preceding constant-address probe remains faulty after its report is cleared. This example instead makes the address a mutable local pointer, so you can repair the operand of the stopped read. Use a debug cartridge with installed source symbols. Frame evaluation needs the correct source scope and an available, mutable live binding; it cannot recover arbitrary optimized-out locals. The [Development companion — Repair and retry a word load](../programming/getting-started.md#repair-and-retry-a-word-load) provides the build and run procedure.
+
+```lua
+module<entry>
+
+struct memory_recovery_result
+	first: word
+	second: word
+	fault_before_ack: word
+	fault_after_ack: word
+	completed: word
+end
+
+data source_address: word = 0x01000000
+data safe_words: word[2] = { 0x12345678, 0x9abcdef0 }
+bss result: memory_recovery_result
+
+local source: *word = *source_address
+local fault_code<const>: *word = 0x08010208
+local fault_ack<const>: *word = 0x08010214
+
+result.first = *source
+source = source + sizeof(word)
+result.second = *source
+result.fault_before_ack = *fault_code
+*fault_ack = 1
+result.fault_after_ack = *fault_code
+result.completed = 1
+print('RECOVERED')
+print(string.format('WORDS %08X %08X', result.first, result.second))
+print(string.format('FAULT %08X -> %08X', result.fault_before_ack, result.fault_after_ack))
+
+while true do
+	halt_until_irq
+end
+```
+
+`source` first receives the invalid address stored in `source_address`. The first read faults before assigning `result.first`. `safe_words`, by contrast, names the linked address of two backed DATA words. Repair the existing `source` binding to that address: changing the `source_address` word alone would leave the stopped read’s already loaded pointer unchanged. Do not change EPC; the same read must be retried with the repaired operand.
+
+At the monitor, inspect `FRAMES`. In the supplied sample, the source frame is physical index `00000001`, depth `0`, and its PC matches the fault EPC. Indices are displayed in hexadecimal, but bare command counts are decimal: use the `0x` prefix. Other programs or builds need not use this index. For the supplied sample, the sequence is:
+
+```text
+FRAMES
+LUA --FRAME 0x00000001 0 source = safe_words
+CONT
+```
+
+The single `LUA` assignment changes the selected frame's live pointer; it does not redeclare a typed local or change the `safe_words` address binding. It returns to the prompt without resuming execution or acknowledging Memory's report. A success banner is not required.
+
+<div class="keep-together">
+
+![Monitor after inspecting frames and assigning the repaired pointer, before continuing.](figures/memory-fault-repair.png)
+
+**Repair before retry.** The monitor after `FRAMES` and `source = safe_words`, still at the prompt before `CONT`; this is not a completed-recovery screen.
+
+</div>
+
+`CONT` retries the saved instruction. The first read now succeeds; the program advances `source` by `sizeof(word)` (four bytes) and reads the second word. The old Memory CODE can remain `1` throughout both successful reads: a pending report does not make a valid address invalid. Only afterward does the program save that old code, write `1` to ACK, and read the cleared code.
+
+The successful run produces these diagnostic lines, not newly drawn text in the monitor image:
+
+```text
+RECOVERED
+WORDS 12345678 9ABCDEF0
+FAULT 00000001 -> 00000000
+```
+
+`REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [System control and timing — Reset requests](system.md#reset-requests).
+
 ## Worked example: prepare and copy two records
 
 This complete, memory-only program starts with two initialized input records,

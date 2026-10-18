@@ -1280,3 +1280,76 @@ Expect loading/game-loop/TTL messages, not a printed payload or a new image.
 A normal player exit is not a value check. Use the named integration case for
 the retained hardware observations; neither route is physical-bandwidth proof
 or native execution of this complete cartridge.
+
+<a id="repair-and-retry-a-word-load"></a>
+
+## Repair and retry a word load
+
+Keep the existing fault-probe cartridge unchanged. Create
+`carts/memory_recovery_manual/cart.lua` using the complete listing in
+[Repair a word load and retry](../book1/memory.md#repair-a-word-load-and-retry).
+Create `carts/memory_recovery_manual/res/manifest/manifest.rommanifest`:
+
+```yaml
+title: Memory Recovery Manual
+hardware:
+  - type: rom
+```
+
+From the repository root, build the debug tooling and this separate cartridge,
+then run the maintained keyboard scenario with the standard default O3 build:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- memory_recovery_manual --debug
+npm run ide:test -- memory_recovery_manual tests/ide/memory_recovery_manual.idetest.js
+```
+
+The observed result is `memory_recovery_manual.idetest.js passed (10 assertions)`.
+This runs the ordinary ROM and enters BIOS monitor commands through physical
+keyboard input; it is not the guest integration runner. The assertions verify
+both payload words and Memory CODE changing from 1 to 0. The **cartridge itself**
+must contain debug symbols for its source bindings; a debug BIOS or debug page
+alone does not supply them.
+
+For a manual browser run, reuse the prerequisites, `PICTURE=FIT` setting and
+keyboard-focus directions in [Run and inspect the fault probe](#run-and-inspect-the-fault-probe),
+but build and open this **distinct** ROM:
+
+```sh
+npm run build:product:browser-player -- --debug
+npm run build:toolchain:cart -- memory_recovery_manual --debug
+npm run serve:dist
+```
+
+Keep the server running and open
+`http://127.0.0.1:8080/index.html?rom=memory_recovery_manual.debug.rom`.
+This sequence was exercised in Chromium on Linux using mouse/keyboard input and the ordinary debug ROM. It does not establish other-browser or native execution.
+
+At the fault prompt, enter:
+
+```text
+FRAMES
+LUA --FRAME 0x00000001 0 source = safe_words
+CONT
+```
+
+`FRAMES` displays hexadecimal indices. For this supplied example, the retained
+source scope at the fault EPC is physical index `00000001`, depth `0`; use the
+`0x` prefix when entering that displayed index. Other programs/builds require
+their own matching scope. Binding names are case-sensitive. Assign the live
+mutable `source`, not `source_address`, `safe_words`, source text or EPC.
+Assignment returns to the prompt; it does not resume execution or clear CODE.
+`CONT` retries the repaired read.
+
+Expected **diagnostic output**, visible in the browser developer console or the keyboard scenario’s log, not new terminal pixels drawn by `print`:
+
+```text
+RECOVERED
+WORDS 12345678 9ABCDEF0
+FAULT 00000001 -> 00000000
+```
+
+The old monitor image can remain visible after `CONT`; use the diagnostic result rather than expecting a new on-screen success message.
+
+`REBOOT` requests a fresh BIOS/system startup, not saved-EPC continuation. The unchanged cartridge starts with its bad initial pointer again; restarting is not repairing it.
