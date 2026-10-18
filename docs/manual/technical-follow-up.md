@@ -790,3 +790,62 @@ unescaped Markdown pipes had turned `10||30|` into extra table cells. The cell
 is corrected and the authoring guide now warns about this ordinary Markdown
 syntax hazard; no new publisher validation was added. The exact accepted draft
 artifact and all scope limits are recorded in the chapter's separate reviews.
+
+## BIOS String base operations: codepoints and mapped input
+
+The next bounded chapter covers all nine actual base exports of the installed
+`string` global: byte, char, len, upper, lower, sub, reverse, rep and from_utf8.
+Two facts-only authors separately supplied scalar/mapped-input and wrapper
+reference sections. The source index distinguishes aliases from ordinary
+procedures, codepoints from UTF-8 bytes, signed/U32 word conversion from floored
+relative bounds, ASCII-only mapping, non-String passthrough branches, captured
+calls from still-live transitive globals, and lead-driven mapped reads from a
+validating UTF-8 parser. The 256-codepoint decoder staging is not an input-size
+limit; a declared byte count is not a continuation-read barrier.
+
+The complete ordinary two-module program supplies37+95 literal source lines,
+32 retained scalar assertions and9 separately observed real BIOS diagnostic
+lines. It uses typed readonly bytes and caller-owned BSS, no local codec. The
+257-byte example rewrites its first input byte after decoding and observes that
+the returned text still contains the earlier codepoint while storage readback
+shows the new byte. Seven supplemental bodies at O0/O3 supply14 true completions
+and equal decoded native/TS final snapshots through the existing grant/save
+route. Their empty console fixture is not ordinary diagnostic-output evidence
+or native execution of the complete cartridge.
+
+**This chapter remains a draft.** Accepted Table inputs to len, case mapping,
+sub and reverse still depend on the stopped common SETT/rawset length producer.
+Calling the cached result L or restricting examples to Strings does not close
+that contract. All seven runtime-owner questions and separate BZ01 compiler
+question remain open. Pattern matching, format and binary packing are separate
+remaining String interfaces; math/os, source loading/environments, exported
+firmware/cartlib interfaces, installation lifetime, graphics contrasts and
+Book II also remain work. No runtime, compiler, BIOS, cartlib, publisher or
+shared-harness repair was introduced. Independent contract/program-source,
+public-reader and actual final-PDF decisions pass within their recorded bounded
+scopes. All12 final draft pages were individually inspected; the source and PDF
+hashes are retained in the print review. These decisions are not inferred from
+the successful program and do not approve the provisional book classification.
+
+The user's acceptance target remains whole-console operation by a programmer
+new to BMSX, without implementation or example reverse-engineering. This
+bounded library reference and its execution evidence do not constitute that
+whole-manual acceptance.
+
+
+## Booklet structure and naming: separate reference audit
+
+Requested2026-10-18. The existing volume numbers and `HARDWARE REFERENCE` running
+label are provisional, not an accepted classification for the protected-call/
+coroutine and BIOS software chapters. After the active chapter, inspect the five
+MSX-related booklets supplied under `docs/examples/` and actual NES/SNES/N64/PSX
+manuals for their specifications, hardware-programming and software-reference
+organization. The detailed task and exact local filenames are in the
+[scheduled work](README.md#scheduled-follow-up-work).
+
+The outcome is a source-referenced book/chapter/title proposal and a consistent
+label assignment, not an automatic extra volume, a publisher redesign or a
+reason to import another machine's facts. Current chapter-level source, reader
+and rendering passes do not close this editorial structure task. Preserve the
+separation between installed hardware, language/BIOS software and cartridge/
+expansion content while reconsidering their eventual volume numbers.

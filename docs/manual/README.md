@@ -4,12 +4,16 @@ This is the editorial and publication standard for the architecture booklet.
 [The PCRTC chapter](../book1/pcrtc.md) is the first reviewed chapter and **style
 baseline**, not a compulsory outline for every unit.
 
-Book I describes the installed machine. Cartridge sockets and card devices belong
-in Book II. Work on one unit at a time. Chapter order may follow the reference
+The current working layout places the installed machine in Book I and
+cartridge/socket/card material in Book II. Work on one unit at a time. Chapter order may follow the reference
 manual's progression from hardware operation to programming and registers; do not
-copy its devices, addresses, diagrams, or behavior. `docs/book1_text.pdf` is only a
-style/order reference. Do not attach it to chapter-writing prompts. Do not use
-`docs/architecture.md` as chapter input.
+copy its devices, addresses, diagrams, or behavior. **The current volume numbers,
+volume titles and running labels are provisional.** The 2026-10-18 booklet
+organization task below must establish where technical specifications, hardware
+programming, BLua/BIOS and cartridge/expansion reference belong; software chapters
+must not receive a final hardware-reference label merely from the current catalog.
+`docs/book1_text.pdf` is only a style/order reference. Do not attach it to
+chapter-writing prompts. Do not use `docs/architecture.md` as chapter input.
 
 ## Reader acceptance target
 
@@ -242,6 +246,28 @@ a source-accurate register reference as a complete technical specification.
   Record genuinely unspecified hardware parameters as separate specification
   decisions; do not fabricate them or import reference-console specifications.
 
+- [ ] **Booklet organization, volume titles and running labels (2026-10-18).**
+  Compare real MSX/MSX2, NES, SNES, N64 and PlayStation documentation before
+  fixing the book divisions. Inspect the user's local examples:
+  `docs/examples/V9938-programmers-guide.pdf`,
+  `docs/examples/z80cpu_um.pdf`, `docs/examples/HB-75 computer.pdf`,
+  `docs/examples/s3527datasheetenglish.pdf`, and `docs/examples/z8400.pdf`.
+  Use actual front matter, contents, chapter divisions and running labels,
+  with identifiable booklet/page references; use official/scanned originals
+  for the other consoles, not an invented retro-manual template. Decide how
+  technical specifications, hardware operation/programming, BLua/BIOS software
+  reference and cartridge/expansion material should be divided. A separate
+  specifications volume might move hardware reference to Book II and software
+  to Book III, but those numbers/titles are proposals, not settled policy.
+  Produce a concise chapter-to-volume mapping, then update titles/running labels
+  consistently. In particular, the present `BOOK I · HARDWARE REFERENCE` label
+  is not a final classification for **Protected calls and coroutines** or the
+  BIOS-library chapters. Do not force the present Book I/II catalog membership
+  into the answer, rename everything prematurely, or add another publishing
+  framework. These booklets supply organization/presentation evidence only;
+  none supplies a BMSX address, format, timing or behavior. Do not attach them
+  to facts-only chapter-authoring prompts.
+
 - [ ] **Actual graphics-output illustrations.** Add real BMSX result images to
   the GTE and other graphics chapters, alongside the explanatory schematics.
   Connect the programmed inputs and register settings to the visible output;
@@ -293,7 +319,8 @@ Record the engine in visual-review evidence and repeat that review on an engine
 or platform change.
 
 To add a chapter, create its chapter/sheet/figure/review files and add one entry to
-[catalog.json](catalog.json). Choose its Book I/II membership explicitly. Do not
+[catalog.json](catalog.json). Record its provisional volume membership explicitly;
+the scheduled structure review owns the final divisions and titles. Do not
 pre-fill facts, reviews, or publication status to make a new entry pass.
 
 ### Publishing implementation references

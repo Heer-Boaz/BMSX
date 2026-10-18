@@ -27,6 +27,13 @@
 		"facts": "docs/book1/facts/bios-table.md",
 		"review": "docs/book1/reviews/bios-table.json"
 	},
+	"bios-string": {
+		"book": "I",
+		"label": "BIOS STRING",
+		"chapter": "docs/book1/bios-string.md",
+		"facts": "docs/book1/facts/bios-string.md",
+		"review": "docs/book1/reviews/bios-string.json"
+	},
 	"coroutines": {
 		"book": "I",
 		"label": "COROUTINES",

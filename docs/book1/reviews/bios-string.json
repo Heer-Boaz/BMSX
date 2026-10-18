@@ -1,0 +1,58 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Nine installed String-base exports, codepoint values versus mapped encoded bytes, public fields and actual String-index route; pattern/format/pack remain separate work.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "Actual function signatures, arguments/defaults, word/codepoint conversion and returned values/counts; no new mapped register bank or per-function reset words.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Codepoint selection/construction, ASCII-only mapping, exact substring bounds and clamping, reversal/repetition, scalar validity and lead-driven UTF-8 mapped reads.",
+			"open": [
+				"Accepted non-String branches that use #Table inherit the existing unresolved common SETT/rawset length producer. A String-only passing example does not close those branches or authorize a universal Table-prefix formula."
+			]
+		},
+		"visibility": {
+			"resolution": "Ordinary ordered calls and mapped reads, String construction rather than a live byte view, caller-owned source stable during decoding and demonstrated reuse after return; no atomic snapshot or rollback promise.",
+			"open": []
+		},
+		"timing": {
+			"resolution": "Ordinary instruction/helper work, byte scans, intermediate tables/Strings, repeated doubling and 256-codepoint decoder staging; no fixed total-cycle/physical-bandwidth or arbitrary-size resource guarantee.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "CPU/IRQ chapters supply delivery and waiting; these ordinary library functions add no separate IRQ-control interface or interrupt-wait replacement.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Reached primitive argument/length errors, scalar validity and mapped-memory access boundaries; no validating UTF-8 parser or universal wrapper argument check is invented.",
+			"open": []
+		},
+		"reset": {
+			"resolution": "BIOS startup supplies the public String Table and String-index installation. Memory/CPU supply startup/reset; no per-function hardware reset or universal binding/history restoration is introduced.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Complete37+95-line ordinary source,32 retained assertions,9 separate actual ordinary diagnostic lines, exact assembly/prerequisites and source-byte reuse observation. Independent nine-API and complete-program source audits pass; public-only newcomer reconstruction finds no additional local assembly/API-use gap. All12 actual final draft PDF pages individually pass visual review. Current book classification remains provisional pending the separately requested reference-booklet structure audit. No runtime/BIOS/compiler/publisher/shared-harness changes.",
+			"open": [
+				"Keep required common Table-dependent input contracts open; normal String recipes and14 bounded paired comparisons do not clear the existing length STOP."
+			]
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-string-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-string-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/bios-string-print.md"
+		}
+	}
+}
