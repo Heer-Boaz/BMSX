@@ -131,13 +131,112 @@ test('HTML is self-contained, preserves author grouping at any heading number, a
 	assert.match(preview, /BMSX Book II · BLua32 and BIOS Reference — SAMPLE — DRAFT/);
 	assert.match(preview, /<p class="draft-status">DRAFT — NOT FOR PUBLICATION<\/p>/);
 	assert.match(preview, /SAMPLE — DRAFT \/ NOT FOR PUBLICATION/);
-	assert.match(preview, /<section class="register-entry">\s*<h3>8\.7\. MODE<\/h3>/);
+	assert.match(preview, /<section class="register-entry">\s*<h3 id="87-mode">8\.7\. MODE<\/h3>/);
 	assert.match(preview, /<svg xmlns=/);
 	assert.match(preview, /data:font\/ttf;base64,/);
 	assert.doesNotMatch(preview, /<img|file:\/\/|url\("fonts\//);
 	const publication = chapterHtml(chapter, 'publish');
 	assert.doesNotMatch(publication, /DRAFT|class="draft-status"/);
 	assert.match(publication, /content: "SAMPLE"/);
+});
+
+test('heading targets use inline label text, preserving literal code and escaped characters', async t => {
+	const source = `# Targets
+
+## Plain &amp; word
+
+## **Outer [Link](https://example.test/hidden)** _em_ ~~gone~~
+
+## \`&amp;\` &amp;\\* &lt;x&gt;
+
+## <kbd>A &amp; B</kbd> \`a<b\` \\<tag\\>
+
+## **![Fixture *label*](figures/sample.png)**
+
+## Één 日本語
+
+## &copy &notable
+
+## <kbd>&copy &notable</kbd>
+
+## &copycat;
+`;
+	const chapter = await loadChapter(await fixture(t, source), 'sample');
+	const html = chapterHtml(chapter, 'publish');
+	assert.deepEqual([...html.matchAll(/<h\d id="([^"]*)">/g)].map(match => match[1]), [
+		'targets', 'plain--word', 'outer-link-em-gone', 'amp--x',
+		'a--b-ab-tag', 'fixture-label', 'één-日本語', 'copy-notable', '-able', 'cat',
+	]);
+	assert.match(html, /<h2 id="amp--x"><code>&amp;amp;<\/code> &amp;\* &lt;x&gt;<\/h2>/);
+	assert.match(html, /<h2 id="a--b-ab-tag"><kbd>A &amp; B<\/kbd> <code>a&lt;b<\/code> &lt;tag&gt;<\/h2>/);
+	assert.match(html, /<h2 id="copy-notable">&amp;copy &amp;notable<\/h2>/);
+	assert.match(html, /<h2 id="-able"><kbd>&copy &notable<\/kbd><\/h2>/);
+});
+
+test('heading suffixes reserve generated IDs and restart for every chapter rendering', async t => {
+	const chapter = await loadChapter(await fixture(t, '# Foo\n\n## Foo\n\n## Foo-1\n\n## Foo\n'), 'sample');
+	for (const mode of ['preview', 'publish', 'preview']) {
+		const html = chapterHtml(chapter, mode);
+		assert.deepEqual([...html.matchAll(/<h\d id="([^"]*)">/g)].map(match => match[1]),
+			['foo', 'foo-1', 'foo-1-1', 'foo-2']);
+	}
+});
+
+test('authored anchors stay unique without shifting heading suffixes or treating code as HTML', async t => {
+	const source = `<a id="stable-alias"></a>
+
+# Different title
+
+<a id="foo"></a>
+
+## Foo
+
+## Foo
+
+\`<a id="not-an-anchor">\`
+
+## Not an anchor
+
+<!-- <a id="commented"> -->
+
+## Commented
+
+<a data-id="attribute"></a>
+
+## Attribute
+
+<a id="&aacutex"></a>
+
+## áx
+
+<a id="&#98;ar"></a>
+
+## Bar
+
+## Bar
+`;
+	const chapter = await loadChapter(await fixture(t, source), 'sample');
+	const html = chapterHtml(chapter, 'publish');
+	assert.match(html, /<a id="stable-alias"><\/a>/);
+	assert.match(html, /<h1 id="different-title">Different title<\/h1>/);
+	assert.equal([...html.matchAll(/\bid="foo"/g)].length, 1);
+	assert.match(html, /<h2>Foo<\/h2>\s*<h2 id="foo-1">Foo<\/h2>/);
+	for (const id of ['not-an-anchor', 'commented', 'attribute']) {
+		assert.ok(html.includes(`<h2 id="${id}">`));
+	}
+	assert.match(html, /<a id="&aacutex"><\/a>/);
+	assert.match(html, /<h2 id="áx">áx<\/h2>/);
+	assert.match(html, /<a id="&#98;ar"><\/a>/);
+	assert.match(html, /<h2>Bar<\/h2>\s*<h2 id="bar-1">Bar<\/h2>/);
+});
+
+test('current chapter heading references have targets and existing Memory anchors are not duplicated', async () => {
+	const system = chapterHtml(await loadChapter(repositoryRoot, 'system'), 'preview');
+	assert.match(system, /<h2 id="device-boundaries-during-supervisor-service">/);
+	const memory = chapterHtml(await loadChapter(repositoryRoot, 'memory'), 'preview');
+	assert.match(memory, /<h3 id="prepare-publish-and-reuse-two-surfaces">/);
+	assert.equal([...memory.matchAll(/\bid="firmware-reservation-in-vram"/g)].length, 1);
+	assert.match(memory, /<a href="#firmware-reservation-in-vram">/);
 });
 
 test('shared volume titles identify every book in document and running titles', async t => {
@@ -189,6 +288,23 @@ test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine
 	assert.equal(receipt.engine.node, process.version);
 	assert.match(receipt.engine.chromium, /^\d+\./);
 	assert.doesNotMatch(await readFile(output.html, 'utf8'), /DRAFT/);
+});
+
+test('Chromium retains a local PDF link and named destination for an implicit heading target', async t => {
+	const root = await fixture(t, `# Synthetic navigation fixture
+
+[Go to the implicit heading](#implicit-target)
+
+<div style="break-before: page"></div>
+
+## Implicit target
+
+Synthetic destination, not a hardware specification.
+`);
+	const output = await renderChapter(await loadChapter(root, 'sample'), 'preview', join(root, 'build/manual'));
+	const pdf = (await readFile(output.pdf)).toString('latin1');
+	assert.match(pdf, /\/Dest \/implicit-target\b/);
+	assert.match(pdf, /\/implicit-target \[\d+ 0 R \/XYZ /);
 });
 
 test('PNG figures retain binary pixels, authored alt text, print sizing, and PDF embedding beside SVG', async t => {

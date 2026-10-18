@@ -1,12 +1,44 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { decodeHTML, escapeAttribute, escapeText } from 'entities';
+import { decodeHTML, decodeHTMLAttribute, escapeAttribute, escapeText } from 'entities';
+import GithubSlugger from 'github-slugger';
 import { Marked } from 'marked';
 import { chromium } from 'playwright';
 
+function headingText(tokens, renderer) {
+	let text = '';
+	for (const token of tokens) {
+		switch (token.type) {
+			case 'link':
+			case 'image':
+			case 'strong':
+			case 'em':
+			case 'del':
+				text += headingText(token.tokens, renderer);
+				break;
+			case 'text':
+				text += token.tokens ? headingText(token.tokens, renderer) : decodeHTML(renderer.text(token));
+				break;
+			case 'codespan':
+			case 'escape':
+				text += token.text;
+				break;
+		}
+	}
+	return text;
+}
+
 export function chapterHtml(chapter, mode) {
+	const slugger = new GithubSlugger();
+	const authoredTargets = new Set();
 	const parser = new Marked({
 		renderer: {
+			heading({ tokens, depth }) {
+				const id = slugger.slug(headingText(tokens, this).trim());
+				// Preserve explicit source targets without shifting duplicate-heading suffixes.
+				const target = authoredTargets.has(id) ? '' : ` id="${escapeAttribute(id)}"`;
+				return `<h${depth}${target}>${this.parser.parseInline(tokens)}</h${depth}>\n`;
+			},
 			image({ href, tokens }) {
 				if (href.endsWith('.png')) {
 					const alt = escapeAttribute(decodeHTML(this.parser.parseInline(tokens, this.parser.textRenderer)));
@@ -17,6 +49,12 @@ export function chapterHtml(chapter, mode) {
 				return `<span class="manual-figure">${chapter.figures.get(href).toString('utf8')}</span>`;
 			},
 		},
+	});
+	parser.walkTokens(chapter.tokens, token => {
+		if (token.type === 'html') {
+			const anchor = /^<a id="([^"]+)">$/.exec(token.text);
+			if (anchor) authoredTargets.add(decodeHTMLAttribute(anchor[1]));
+		}
 	});
 	const stylesheet = chapter.stylesheet.replace(/url\("([^"]+)"\)/g, (_, href) =>
 		`url("data:font/ttf;base64,${chapter.fonts.get(href).toString('base64')}")`);

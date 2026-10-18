@@ -86,6 +86,12 @@ controller port may need a transaction sequence. Do not invent a display-like
 datapath, timing equation, or example merely to imitate PCRTC's headings. Do not
 add a chapter-local table of contents, migration note, or implementation survey.
 
+Use source chapter paths and heading fragments for cross-references. The renderer
+generates document-local GitHub-style heading IDs, including duplicate suffixes;
+existing explicit `<a id="…"></a>` targets remain unchanged. A heading ID is not
+proof of a cross-PDF destination or portable delivered-series navigation; that
+remaining work is tracked as [NAV01](technical-follow-up.md#nav01-pdf-navigation-is-not-yet-delivered-series-navigation).
+
 The register reference must be usable without hunting through narrative paragraphs:
 
 - Address, exact register name, access, reset word, and bit positions.

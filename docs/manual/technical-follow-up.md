@@ -1480,6 +1480,25 @@ encoding helpers. Existing source-linked Markdown remains usable; source-reader
 PASS is not proof of PDF navigation. Evidence: `/tmp/bmsx-gte-cue-proof/gte.pdf`
 page125, PDFium link enumeration, and the GTE cue public-reader review.
 
+**First producer repair, 2026-10-18:** the existing heading renderer now emits
+document-local GitHub-style targets from rendered inline labels. It preserves
+authored anchors, distinguishes literal code from HTML entities, and restarts
+duplicate suffixes for each rendering. Independent current-code review checked
+all 1,212 headings and 69 authored anchors across the 22 catalog chapters;
+no duplicate heading/anchor IDs were found. The 24 manual tests pass, including a real
+Chromium local-link/named-destination fixture. PDFium independently resolves
+that fixture's page-1 link to its implicit heading on page 2.
+
+Exact HTML comparison across all 44 chapter/mode combinations finds only the
+new heading attributes changed. All 126 pages of the regenerated Memory and
+SYSTEM previews and PCRTC publication/preview match the accepted originals by
+complete decoded RGBA bytes and dimensions, including running matter. Evidence:
+`/tmp/bmsx-manual-heading-target-implementation-review-current.md` and
+`/tmp/bmsx-manual-heading-targets/`. **NAV01 remains open:** `.md` cross-chapter
+links, the admitted delivery set and portable cross-PDF actions are not repaired
+by heading IDs; unreferenced IDs are not automatically exported as PDF named
+destinations. No source prose, hardware behavior or publication approval changed.
+
 
 ## First Book III chapter: cartridge sockets and mapped cards
 

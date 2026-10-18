@@ -22,6 +22,7 @@
 		"entities": "^8.1.0",
 		"esbuild": "*",
 		"esbuild-plugin-glsl": "*",
+		"github-slugger": "^2.0.0",
 		"js-yaml": "*",
 		"marked": "^16.3.0",
 		"picocolors": "*",
