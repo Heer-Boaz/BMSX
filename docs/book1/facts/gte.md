@@ -1258,3 +1258,13 @@ capture implementation was changed for these plates. This is headless guest
 execution/scanout, not native guest or physical-hardware proof. The standalone
 solid-red worked continuation earlier in the chapter is a different example;
 these plates belong only to the complete NCCT cartridge section.
+
+## Actual depth-cue color plate and complete program
+
+The [bounded cue fact sheet](gte-cue.md) records fresh paired-owner arithmetic,
+actual mapped-owner readback, the fixed typed BLua operands, ordinary cartridge
+results and the separate lossy GX16 presentation path. It distinguishes one
+retained IR0 from a per-vertex FIFO, calculation RGB2 bytes from displayed RGB,
+per-command flags from later commands, and equal screen-space shapes from
+projected geometry. Source/actual-output/public-reader and print decisions are
+retained in the separate cue review, not inferred from this fact packet alone.

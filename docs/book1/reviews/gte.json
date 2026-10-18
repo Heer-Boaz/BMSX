@@ -9,7 +9,7 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "All22 normal functions and PLUS VMAD3 have complete individual purpose, encoding/options, operands, ordered calculation, modified/preserved state, flags, timing and worked boundaries. Every entry received an independent non-author source/math review; the exact-stage definitions and257-byte reciprocal ROM remain available.",
+			"resolution": "All22 normal functions and PLUS VMAD3 have complete individual purpose, encoding/options, operands, ordered calculation, modified/preserved state, flags, timing and worked boundaries. Every entry received an independent non-author source/math review; the exact-stage definitions and257-byte reciprocal ROM remain available. The new actual cue plate explicitly separates GTE RGB2 bytes from ordinary GX16 truncation/expansion and the one live IR0 coefficient from per-vertex histories.",
 			"open": []
 		},
 		"visibility": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Independent reader review closes the programming route: coordinate conventions, transform construction/composition, precision and clipping, meaningful supplied normals/light/material/cue choices, general arithmetic, PLUS lifetime, numeric diagnosis, packed/leading-sign ports, actual BIOS-style typed ROM/BSS code, GPU packet submission, two-buffer publication and qualified complete-work cycle budgets. The real guest suite and both displayed images pass.",
+			"resolution": "Independent reader review closes the programming route: coordinate conventions, transform construction/composition, precision and clipping, meaningful supplied normals/light/material/cue choices, general arithmetic, PLUS lifetime, numeric diagnosis, packed/leading-sign ports, actual BIOS-style typed ROM/BSS code, GPU packet submission, two-buffer publication and qualified complete-work cycle budgets. The real guest suite and both displayed images pass. The depth-cue addition now has a complete175-line BLua program, four actual per-command result/flag rows and an ordinary256x192 constant-shape output plate, with paired source/math, all-pixel image, byte-exact public reconstruction and executed supplied-checkout route checks.",
 			"open": []
 		}
 	},

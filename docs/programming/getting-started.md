@@ -1027,3 +1027,37 @@ is not a fabricated selected-frame descriptor. No forced collection, code
 reuse/exhaustion, reset/snapshot, native/all-input/optimizer, fresh installation,
 SDK or whole-console acceptance follows from these finite executions. The
 common Table-length dependency and dynamic unary-& lowering hole remain open.
+
+## Build and inspect GTE depth cue
+
+Use the complete [four-swatch GTE program](../book1/gte.md#gte-depth-cue-output).
+Put its two modules in `carts/gte_cue_manual/cart.lua` and
+`carts/gte_cue_manual/results.lua`, and its manifest in
+`carts/gte_cue_manual/res/manifest/manifest.rommanifest`. The supplied assertion
+suite and capture timeline are in `tests/carts/gte_cue_manual/`; keep those files
+present before building the debug cartridge. No earlier example cartridge is a
+prerequisite. With the [checkout prerequisites](#prerequisites), run from the
+repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- gte_cue_manual --debug
+npm run headless:test -- gte_cue_manual tests/carts/gte_cue_manual/gte_cue_manual_assert.lua
+npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/gte_cue_manual/gte_cue_manual_demo.json gte_cue_manual
+```
+
+The cartridge build exports `dist/gte_cue_manual.debug.rom` and its matching
+`dist/system/bmsx-bios.debug.rom`. The supplied integration case reports:
+
+```text
+[test] depth_cue_and_display_words: passed
+```
+
+That case checks all four retained IR0/RGB2/FLAG results, raw stored-pixel probes,
+firmware exclusion and a fresh VBlank observation. The final command separately
+runs the ordinary ROM and captures the native 256×192 four-swatch image in
+`tests/carts/gte_cue_manual/screenshots/frame_00001.png`. The observed frame is
+not a fixed hardware-latency guarantee. Displayed GX16 RGB values differ from
+GTE's retained eight-bit calculation results; compare the two tables in the
+hardware chapter rather than replacing one with the other. This route was
+checked in the working checkout, not on every OS or a fresh SDK installation.

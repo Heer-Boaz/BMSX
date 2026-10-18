@@ -155,3 +155,81 @@ indivisible blocks or clipped SVG labels. All 17 shared manual tests pass; they
 do not substitute for the visual/source/reader evidence. The canonical artifact
 is `build/manual/gte.pdf`; the separately generated preview retains its DRAFT
 banner/footer. The chapter continues to use the ordinary shared pipeline.
+
+## Four actual depth-cue swatches — 2026-10-18
+
+**PASS for the final129-page publication-layout proof:**
+`/tmp/bmsx-gte-cue-proof/gte.pdf`, SHA256
+`bbf01dbe1c0f44ce9dc325f7ff915d2609eb192d1de63605365b71bcbbd5b2c6`.
+Receipt:7 figures,13 register groups,no layout errors; Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64. Page count records inspected scope, not completeness.
+
+Final pages1–121 have exact full decoded RGBA bytes and dimensions equal to the
+accepted123-page canonical baseline, SHA256
+`305ea0d92fb60a809143f969b2ad47b828a7a5a9c3e8513a4c06d926a54ed4e3`.
+Root individually viewed final122–125 at scale1.4/original detail, including125
+again after naming the development guide/subsection explicitly. Independent
+print reviewer individually viewed126–129; final126–129 remain exact fullRGBA/
+dimensions matches to that accepted first proof, SHA256
+`09339629efb46a5ae2eac2660d3dfa6cd798890b5e4f85a958f51b52dc79d4a4`.
+Identity evidence `/tmp/bmsx-gte-cue-print/{identity,label-identity}.json` and
+`/tmp/bmsx-gte-cue-print-3/first-proof-identity.json`. No unchanged-source,
+alpha-only bbox, page-count, receipt or contact-sheet substitute is used.
+
+Actual inspection caught a detached procedure lead and a separated complete-
+program introduction. Two existing authored keep groups close those splits;
+all affected final122–125 were individually re-viewed. All175 literal BLua
+lines, both four-row result tables, the native actual picture/caption, full
+manifest and moved reciprocal-ROM appendix remain complete, readable and
+within bounds. Running matter/folios remain present. No publisher/CSS/font,
+smaller-type workaround, new helper or layout gate was needed. One existing
+reference fixture now expects7actual GTEfigures rather than6, not a new check.
+
+Print acceptance does not certify interactive cross-document PDF links or SDK
+bundle delivery. Actual PDFium enumeration finds no development-companion link
+action on125; the printed guide/section name is explicit, public Markdown route
+works and executes, but series-level portable navigation remains NAV01 in the
+technical follow-up. It must be resolved before whole-series completion.
+
+### Independent finite tail report
+
+# GTE cue tail: bounded actual-PDF print review
+
+**Result: PASS for the observed print-layout scope below. No observed print defect.**
+
+- Artifact: `/tmp/bmsx-gte-cue-proof/gte.pdf`
+- Verified SHA-256: `09339629efb46a5ae2eac2660d3dfa6cd798890b5e4f85a958f51b52dc79d4a4`
+- Actual-PDF rasters individually viewed using `view_image` with `detail: original`: `/tmp/bmsx-gte-cue-print/page-126.png`, `page-127.png`, `page-128.png`, `page-129.png` (each 833 × 1179).
+- This report is limited to pages 126–129. No chapter source, source owners, runtime, semantics, numeric truth, or other pages were reviewed or accepted here.
+
+## Observations
+
+- **126:** Both headings and their leads are legible and attached to the intended blocks. All printed lines of the fixed-operands and display-configuration code were visually inspected; text and borders fit without clipping or overlap. Running matter and page number 126 are present; content clears the footer.
+- **127:** Both headings and leads are legible. All printed lines of both control-transfer and coefficient/swatch code blocks were visually inspected, including the long command expressions; no clipping, overlap, or unintended code-line wrap was observed. Both blocks and the footer/page number 127 stay within the page boundaries.
+- **128:** Heading and lead are legible. All printed lines of the readback/publication code and the manifest were visually inspected. The manifest introduction, path, and complete printed manifest block are unobstructed. Borders, whitespace, and footer/page number 128 are clean; no content runs into the page boundary.
+- **129:** Appendix heading and two-line lead are legible. The reciprocal-seed table's Index and +0 through +f headings, rows 00 through f0, every printed cell, and separate Index 100 / Value 00 table were visually inspected. All cells are legible and aligned within unbroken borders. The singleton table remains on this page with clear separation. Running matter and page number 129 are present; no clipping or page-boundary collision was observed.
+
+## Running-header viewer-artifact check
+
+The image viewer visually omitted the top running header on pages 127 and 128. The actual PNG pixel band was checked before treating that as a defect: the full-width band x=0–832, y=20–59 contains ink on all four pages and its decoded 8-bit RGBA bytes have the **same** SHA-256 on pages 126, 127, 128, and 129:
+
+`0db235556e1a06378a57a4fe09717f7fac86ce3fb423fb22dd937fd99e6c34b4`
+
+Pages 126 and 129 visibly show BMSX at left and BOOK I · SYSTEM AND HARDWARE REFERENCE at right in that band. Thus the apparent omission on 127/128 is a viewer artifact, not missing running matter in the actual rasters.
+
+No repository changes or publisher repair were made. This is print-only, four-page evidence, not runtime, semantic, whole-chapter, or full-book acceptance.
+
+### Canonical publication verification
+
+Ordinary `manual:check -- gte` and `manual:publish -- gte` pass. All129 canonical
+page rasters equal the accepted final proof in full decoded RGBA bytes and
+dimensions. Canonical SHA256:
+`6fa8a1fa7b12602ceee178b271842f55a799b747838e4ce39d60da178ee6547d`.
+Final public-source SHA256:
+`afd34b8e9dc46e4dee7eb62091ec43205ba911d45524415155e6d8ccbf2d4a75`.
+Evidence `/tmp/bmsx-gte-cue-published-identity.json`. The19 existing manual tests
+pass after updating only their actual GTE figure expectation6→7. Their PCRTC
+CLI check also republishes its unchanged chapter: all32 current canonical PCRTC
+rasters remain exact matches to its accepted sampling proof, independently
+verified in `/tmp/bmsx-gte-cue-pcrtc-identity.json`. This does not refresh older
+DRAFT previews. `git diff --check` passes.

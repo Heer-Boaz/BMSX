@@ -200,3 +200,15 @@ No runtime, compiler, BIOS, cartlib, cartridge, test runner or capture framework
 was modified. Other graphical contrasts, the GPU material plate, PCRTC
 before/after output and GEO dummy-game/sprite/hull overlays remain open work;
 this pair does not complete the broader visual or technical audit.
+
+## Actual depth-cued color plate — 2026-10-18
+
+The [bounded cue review](gte-cue-source.md) accepts the complete175-line real
+BLua program, four executed RTPS/NCDS rows, exact per-command FLAG/IR0 lifetime,
+ordinary opaque-rectangle/GX16 conversion and actual256×192 output plate.
+Paired owners agree; independent arithmetic and all49,152 image pixels match.
+A fresh public-only reader reconstructs both modules and manifest byte-exact;
+the missing build-route pointer was supplied through the existing development
+companion and the exact minimal commands execute. Source, image, reader and
+print evidence remain distinct; no full hardware/SDK/series acceptance follows.
+Material-versus-lighting, near-plane and PDF-delivery navigation work remain.

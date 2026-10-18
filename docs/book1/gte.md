@@ -6162,6 +6162,341 @@ published result's lifetime separate from the next command's readiness.
 
 <section class="keep-together">
 
+<a id="gte-depth-cue-output"></a>
+
+## Depth-cued color: four equal swatches
+
+Four equal-size, equal-shape screen-space swatches make the depth-cue color change easy to compare. They are not projections of equal-size world geometry. Each sample uses position `(0,0,Z)`; only `Z` varies. Keep the normal, light and color matrices, ambient light, material, far color, transform and projection controls fixed. The normal is `(2458,0,3277)` in Q12, the material RGB is `(160,96,192)`, and the programmed far RGB is `(80,96,160)`.
+
+</section>
+
+<section class="keep-together">
+
+For each row, use this sequence:
+
+1. Put the position in `V0` and issue `RTPS` with `SF=1, LM=0`. Retain `IR0` and the projection `FLAG` immediately.
+2. Replace `V0` with the same fixed normal. Do not write `IR0`.
+3. Issue `NCDS` with `SF=1, LM=1`. Retain `RGB2` and the new `FLAG` immediately.
+
+</section>
+
+`IR0` is a single coefficient register, not a per-vertex FIFO. `NCDS` consumes it without changing it. Do not replace this sequence with `RTPT` followed by `NCDT`: `RTPT` leaves only its last vertex's coefficient, which `NCDT` then shares across all three normals.
+
+| Position Z | IR0 | GTE RGB2 | GTE RGB8 |
+|---:|---:|---|---|
+| 256 | 0 | `0x344b519e` | (158,81,75) |
+| 384 | 2048 | `0x34755876` | (118,88,117) |
+| 512 | 3072 | `0x348a5c63` | (99,92,138) |
+| 768 | 4096 | `0x34a05f4f` | (79,95,160) |
+
+Thus `Z=384` gives half cue; `Z=512` gives three-quarter cue. Full cue at `IR0=4096` produces `(79,95,160)`, not exactly the programmed far bytes: ordered fixed-point shifts retain this precision difference. `RGB2` preserves `CODE=0x34`.
+
+Every projection `FLAG` is `0x00000000`. Every `NCDS FLAG` is `0x00400000`: the negative third light component saturates `IR3` under `LM=1`. This is not the `ERROR` bit. Each command resets `FLAG`, so retain the two results separately.
+
+### Displaying the retained color in GX16
+
+Retain the complete GTE RGB2 result, including its CODE byte. For drawing, remove `CODE=0x34` and form the opaque, untextured rectangle command as `0x60000000 | (RGB2 & 0x00ffffff)`. The retained CODE byte is not the rectangle opcode.
+
+Disable dithering with `0xe1000400` and force stored bit 15 with `0xe6000001`; mask checking is off. Each RGB8 channel is truncated to five bits by shifting right three places. GX16 stores `R5 | (G5 << 5) | (B5 << 10) | 0x8000`. PCRTC expands each channel as `(c5 << 3) | (c5 >> 2)`.
+
+Consequently, the GTE result bytes and the visible output bytes differ. Keep the original RGB2 values as calculation results; do not substitute the displayed RGB values.
+
+| Z | Raw GX16 | Displayed RGB8 |
+|---:|---:|---|
+| 256 | `0xa553` | (156, 82, 74) |
+| 384 | `0xb96e` | (115, 90, 115) |
+| 512 | `0xc56c` | (99, 90, 140) |
+| 768 | `0xd169` | (74, 90, 165) |
+
+<section class="keep-together">
+
+![Four equal GTE depth-cued color swatches](figures/gte-depth-cue.png)
+
+*Figure: Actual 256×192 picture on black. Four equal 44×96 rectangles start at X=16, 76, 136 and 196, all at Y=48; left to right, Z=256, 384, 512 and 768. These are equal screen-space swatches, not projected geometry.*
+
+</section>
+
+This example exclusively owns the GTE, GPU ports, display configuration, VBlank handler and chosen image region. Its queried firmware reservation lies outside that region; this does not make other coordinates generally available. Do not run concurrent users of these resources. After the final display-enable write, acknowledge stale controller VBlank bit 2 and wait for a fresh callback sequence. Register readback alone does not establish displayed output or a fixed presentation latency.
+
+<section class="keep-together">
+
+### Complete BLua cartridge
+
+For project layout, building and checking this cartridge, use the
+[Build and inspect example cartridges — “Build and inspect GTE depth cue”](../programming/getting-started.md#build-and-inspect-gte-depth-cue).
+
+Use the existing `cartlib/gx/gte` operand layouts. These typed ROM records hold
+fixed matrices, vectors and projection settings; whole-word views transfer them
+to the named GTE register windows. The position and normal deliberately reuse
+V0, but the projection result and flags are retained before that reuse.
+
+<section class="keep-together">
+
+Create `results.lua` as this complete const module. Its explicit BSS keeps the
+calculation results separate from raw display probes and callback observations.
+
+```lua
+module<const>
+
+struct gte_cue_result
+	completed: word
+	vblank_sequence: word
+	before_vblank: word
+	after_vblank: word
+	system_origin: word
+	system_size: word
+	projected_xy: word[4]
+	projected_z: word[4]
+	ir0: word[4]
+	ir0_after_color: word[4]
+	rgb2: word[4]
+	projection_flags: word[4]
+	color_flags: word[4]
+	swatch_words: word[4]
+end
+
+bss result: gte_cue_result
+
+return { result = result }
+```
+
+</section>
+
+</section>
+
+<section class="keep-together">
+
+### Declare the mapped ports
+
+Create `cart.lua` by concatenating the following six blocks in order.
+
+```lua
+module<entry>
+
+local gte<const> = require('cartlib/gx/gte')
+local state<const> = require('results')
+local system_vram_region<const> = require('gpu/system_vram_region')
+local result<const>: *gte_cue_result = state.result
+local data<const>: *word[32] = gte.data
+local control<const>: *word[32] = gte.control
+local command<const>: *word = gte.command
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local window<const>: *word = 0x08010364
+local extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+```
+
+</section>
+
+<section class="keep-together">
+
+### Author the fixed operands
+
+Continue the entry module with typed ROM data, not runtime table construction.
+
+```lua
+
+-- Fixed ROM operands, not heap tables or a mutable register image.
+rodata model_to_view: gte_transform = {
+	rotation = {
+		rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
+		pad = 0,
+	},
+	translation = { 0, 0, 0 },
+}
+rodata projection: gte_projection = {
+	offset_x = 0,
+	offset_y = 0,
+	h = 128,
+	cue_gain = -768,
+	cue_offset = 0x01800100,
+}
+rodata light_directions: gte_matrix = {
+	rows = { { 3072, 0, 2048 }, { -2048, 0, 3072 }, { 0, 0, -4096 } },
+	pad = 0,
+}
+rodata light_colors: gte_matrix = {
+	rows = { { 4096, 1024, 0 }, { 2048, 4096, 0 }, { 1024, 2048, 4096 } },
+	pad = 0,
+}
+rodata ambient: word[3] = { 256, 512, 128 }
+rodata far_color: word[3] = { 80 << 4, 96 << 4, 160 << 4 }
+rodata normal: gte_vector = { x = 2458, y = 0, z = 3277, pad = 0 }
+rodata positions: gte_vector[4] = {
+	{ x = 0, y = 0, z = 256, pad = 0 },
+	{ x = 0, y = 0, z = 384, pad = 0 },
+	{ x = 0, y = 0, z = 512, pad = 0 },
+	{ x = 0, y = 0, z = 768, pad = 0 },
+}
+rodata swatch_x: word[4] = { 16, 76, 136, 196 }
+```
+
+</section>
+
+<section class="keep-together">
+
+### Take ownership and configure the display
+
+The BIOS query reports the firmware reservation; the chosen image is not a general allocation policy.
+
+```lua
+
+function irq(flags)
+	if (flags & 0x00000004) ~= 0 then
+		result.vblank_sequence = result.vblank_sequence + 1
+	end
+	*irq_ack = flags & 0x00000004
+end
+
+-- Own the GTE, GPU ports, display, handler and raw (0,0)..(255,191).
+result.system_origin, result.system_size = system_vram_region()
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0
+*window = 0x018252a8
+*extent = 0x000bf3ff
+*gp1 = 0x09000000
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Transfer the fixed GTE controls
+
+Copy complete words from the fixed layouts. The loops do not issue halfword MMIO stores.
+
+```lua
+local transform_words<const>: *word = model_to_view
+for index = 0, sizeof(gte_transform) // 4 - 1 do
+	control[gte.control_r11r12 + index] = transform_words[index]
+end
+local projection_words<const>: *word = projection
+for index = 0, sizeof(gte_projection) // 4 - 1 do
+	control[gte.control_ofx + index] = projection_words[index]
+end
+local direction_words<const>: *word = light_directions
+local color_words<const>: *word = light_colors
+for index = 0, sizeof(gte_matrix) // 4 - 1 do
+	control[gte.control_l11l12 + index] = direction_words[index]
+	control[gte.control_lr1lr2 + index] = color_words[index]
+end
+for channel = 0, 2 do
+	control[gte.control_rbk + channel] = ambient[channel]
+	control[gte.control_rfc + channel] = far_color[channel]
+end
+data[gte.data_rgb] = 0x34c060a0
+local position_words<const>: *word = positions
+local normal_words<const>: *word = normal
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Compute each coefficient and draw its swatch
+
+Keep each coefficient with its own position, then restore the normal before the color command.
+
+```lua
+-- Opaque, untextured rectangles, no dither, stored mask bit set.
+*gp0 = 0xe1000400
+*gp0 = 0xe2000000
+*gp0 = 0xe3000000
+*gp0 = 0xe40000ff | (191 << 10)
+*gp0 = 0xe5000000
+*gp0 = 0xe6000001
+*gp0 = 0x60000000
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+
+for index = 0, 3 do
+	-- A position chooses this sample's cue; save it before reusing V0.
+	data[gte.data_vxy0] = position_words[index * 2]
+	data[gte.data_vz0] = position_words[index * 2 + 1]
+	*command = gte.opcode_rtps | gte.command_sf_shift_12
+	result.projected_xy[index] = data[gte.data_sxy2]
+	result.projected_z[index] = data[gte.data_sz3]
+	result.ir0[index] = data[gte.data_ir0]
+	result.projection_flags[index] = control[gte.control_flag]
+
+	-- Restore the same supplied normal, not the position; retain IR0.
+	data[gte.data_vxy0] = normal_words[0]
+	data[gte.data_vz0] = normal_words[1]
+	*command = gte.opcode_ncds | gte.command_sf_shift_12 | gte.command_lm_positive
+	local rgb<const> = data[gte.data_rgb2]
+	result.ir0_after_color[index] = data[gte.data_ir0]
+	result.rgb2[index] = rgb
+	result.color_flags[index] = control[gte.control_flag]
+
+	-- CODE is not a GP0 opcode. Draw equal 44x96 screen-space swatches.
+	*gp0 = 0x60000000 | (rgb & 0x00ffffff)
+	*gp0 = swatch_x[index] | (48 << 16)
+	*gp0 = 44 | (96 << 16)
+end
+```
+
+</section>
+
+<section class="keep-together">
+
+### Read the stored pixels and publish the image
+
+Raw GPUREAD probes and immediate register reads are separate from the fresh VBlank observation.
+
+```lua
+for index = 0, 3 do
+	*gp0 = 0xc0000000
+	*gp0 = (swatch_x[index] + 22) | (96 << 16)
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.swatch_words[index] = *gp0
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+
+*pmode = 0x0000ff21
+*irq_ack = 0x00000004
+local before<const> = result.vblank_sequence
+result.before_vblank = before
+*irq_mask = 0x00000004
+while result.vblank_sequence == before do
+	halt_until_irq
+end
+result.after_vblank = result.vblank_sequence
+result.completed = 1
+while true do
+	halt_until_irq
+end
+```
+
+</section>
+
+<section class="keep-together">
+
+Create `res/manifest/manifest.rommanifest` with these complete contents:
+
+```yaml
+title: GTE Depth Cue Manual Example
+hardware:
+    - type: rom
+```
+
+</section>
+
+<section class="keep-together">
+
 <a id="appendix-reciprocal-seed-rom"></a>
 
 ## Appendix: reciprocal seed ROM

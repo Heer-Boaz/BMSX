@@ -357,7 +357,10 @@ a source-accurate register reference as a complete technical specification.
   The [PCRTC source/window contrast](../book1/pcrtc.md#pcrtc-source-and-window)
   now has three real controlled output plates and complete executed BLua code,
   with source/reader/image and actual-print checks. This closes one lesson,
-  not the remaining PMODE or GTE contrasts. The separate
+  not the remaining PMODE or GTE contrasts. The
+  [GTE depth-cue plate](../book1/gte.md#gte-depth-cue-output) now adds four actual
+  constant-shape swatches, raw calculation/display distinction and a complete
+  executed program; material-versus-lighting and near-plane cases remain. The separate
   [horizontal-sampling lesson](../book1/pcrtc.md#pcrtc-horizontal-sampling)
   explains unequal step/magnification and first-pixel phase with a complete
   91-line BLua program, exact eight-sample table and actual output strip;
