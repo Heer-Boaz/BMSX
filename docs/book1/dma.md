@@ -1,12 +1,12 @@
 # Direct memory access
 
-The DMA unit moves whole words between mapped addresses without a CPU load and
-store for each word. It has two programmable channels and one shared block
-transfer path. A channel selects its source and destination, the number of
-words, address increments, two request gates and a block length. The unit does
-not transform the payload or interpret it as a graphics, sound or image command.
+The BMSX provides two programmable DMA channels for moving words between memory and device endpoints. Both channels have the same transfer capabilities; neither is reserved for graphics or audio. They may both be BUSY, but share a single block-transfer path: only one block transfers at a time. Priority rotates between eligible channels after each block admission, rather than giving either channel permanent precedence.
 
-### Installed resources
+The APU also has a separate path between its transfer FIFO and sample RAM. Programmable DMA fills or drains that FIFO; the APU moves completed batches between the FIFO and sample RAM. This path is not a third general-purpose DMA channel.
+
+Transfer cost depends on the endpoint regions and block length, while request readiness determines when work can begin. With the same block length and uninterrupted transfers wholly within their endpoint regions, cartridge-ROM-to-RAM copies incur more DMA cycles than RAM-to-RAM copies; system-ROM-to-RAM copies incur fewer. The [route-rate comparison](#transfer-rates-by-route) gives the operating assumptions and separates these transport charges from request waits and destination work. A transfer to GP0 delivers words to GPU command ingress, not directly to VRAM; GPU execution remains separate from DMA completion.
+
+## DMA specifications
 
 | Resource | Specification |
 |---|---|

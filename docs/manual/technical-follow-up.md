@@ -1803,5 +1803,14 @@ image. Preserve the existing admitted-budget assumptions rather than converting
 them into unconditional speeds. Apply the same reader-first check to each
 remaining hardware chapter using its own facts; no stock opening paragraph.
 
-This item is queued after the active IMGDEC output lesson. It does not reopen
-the general Lua-library expansion or defer the manual's technical details.
+The IMGDEC output lesson is now complete at its bounded content scope. DMA's
+reader-first opening subsequently passed separate actual-source and public-reader
+checks: it introduces equivalent channels and the shared block path, distinguishes
+the APU transfer unit, and states the qualified RAM/system-ROM/cartridge-ROM
+comparison before the specification table. The table and entire following
+chapter are unchanged byte-for-byte. Evidence: [DMA source review](../book1/reviews/dma-source.md).
+
+This completes the DMA opening, not the across-chapter revision or final print.
+The remaining openings receive a public-reader inventory before assigning
+further unit-specific facts and prose. The work does not reopen general Lua
+library expansion, change runtime behavior or defer technical detail.

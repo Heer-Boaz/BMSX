@@ -1,5 +1,12 @@
 # DMA print acceptance
 
+## Reader-first opening: review pending — 2026-10-19
+
+The new hardware overview precedes the retained specification table. Earlier
+page acceptance below does not approve the changed layout; the current print
+flag is false. Content/source/reader checks remain separate from final print.
+PDF navigation/viewer work is deferred while content takes priority.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/dma.pdf`:

@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Two installed channels share one admitted block; captured configuration is not payload RAM, source data is read at service, and downstream device/display completion remains separate. Independent source and complete-reader checks pass. T02 separately traces GP0/GPUREAD transport, packed image/header counts and READY, with independent GPU source and complete-reader review.",
+			"resolution": "Two installed channels share one admitted block; captured configuration is not payload RAM, source data is read at service, and downstream device/display completion remains separate. Independent source and complete-reader checks pass. T02 separately traces GP0/GPUREAD transport, packed image/header counts and READY, with independent GPU source and complete-reader review. A reader-first hardware overview now explicitly introduces the equivalent channels/shared block path, APU transfer-unit boundary and qualified RAM/system-ROM/cartridge-ROM transport distinctions before specifications; bounded actual-source and public-reader checks pass.",
 			"open": []
 		},
 		"registers": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/dma-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/dma-print.md"
 		}
 	}

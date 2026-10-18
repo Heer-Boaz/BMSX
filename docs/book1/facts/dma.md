@@ -13,7 +13,7 @@ Unspecified independent pin/bus clocks, physical arbitration waveforms and
 sustained electrical ratings remain future specification decisions, not invented
 values or a claim of physical qualification. No DMA-specific payload RAM size is
 inferred from its registers or admitted configuration. Cartridge request names
-are retained; socket/card programming is Book II. Executable examples follow
+are retained; socket/card programming belongs to Book III. Executable examples follow
 actual firmware data declarations and service predicates; private firmware
 modules are not presented as cartridge exports.
 
@@ -789,3 +789,11 @@ Sources: `machine/ts/machine/devices/dma/controller.ts:218–232,463–470,504�
 The public DMA paragraph's contrary socket-denial was removed; the existing
 Book III **DMA between sockets** section supplies exact routing/lifetime,
 card-RAM/mailbox pricing and a complete program without duplicating it here.
+
+## Reader-first hardware orientation
+
+[The bounded opening supplement](dma-opening.md) rechecks the two channels'
+shared block-transfer path, equivalent programming capabilities, APU FIFO/sample
+transfer boundary and qualified RAM/system-ROM/cartridge-ROM route comparisons.
+It supports the plain hardware introduction before the specification table,
+not a new transfer engine, physical bandwidth rating or changed device behavior.

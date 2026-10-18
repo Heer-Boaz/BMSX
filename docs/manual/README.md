@@ -316,6 +316,10 @@ a source-accurate register reference as a complete technical specification.
   and their assumptions, not an unqualified bandwidth claim. Preserve useful
   specification tables after this orientation; changing a generic heading alone
   does not complete the task. See the [assigned revision](technical-follow-up.md#reader-first-hardware-openings).
+  DMA now has its reviewed hardware-first opening, with the specification table
+  and all subsequent technical material retained unchanged. Its bounded source
+  and public-reader checks pass; the other hardware openings and final print
+  remain separate work.
 - [x] **DMA rates by route.** Audit RAM, system-ROM, cartridge-ROM and GPU/VRAM
   transfer routes separately. The DMA chapter already lists region cycle costs;
   check that usable word/byte rates, setup and block-size effects, request waits,
