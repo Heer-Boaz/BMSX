@@ -254,9 +254,23 @@ A source description is programmed explicitly. PCM playback does not obtain its 
 
 A frame contains the channel samples at one source-time position. Thus a stereo frame is two samples, not two frames. START_SAMPLE and loop bounds count frames; byte offsets count bytes.
 
-For source-buffer playback, PLAY binds the entire region identified by SOURCE_ADDR and SOURCE_BYTES when the command executes. The cartridge selection at that execution determines the cartridge ROM slot used. Sources may reside in ROM or in the 512-KiB sample RAM beginning at 40000000H. A sample-RAM binding must have a nonzero extent and fit wholly inside sample RAM. Ordinary main RAM is not a playback source.
+For source-buffer playback, PLAY binds the entire region identified by SOURCE_ADDR and SOURCE_BYTES when the command executes. Every accepted binding requires a nonzero byte count and the complete requested extent within the applicable storage.
+
+| Source region | Admitted storage |
+|---|---|
+| System ROM | Actual installed firmware-image bytes, starting at 00000000H |
+| Selected cartridge ROM | Entire extent within 10000000H–2FFFFFFFH, with a ROM device present and the extent within that card's actual ROM bytes |
+| Private sample RAM | 512 KiB at 40000000H–4007FFFFH |
+
+Main RAM, cartridge RAM and cartridge mailbox space are not buffer-playback sources. Transfer sample data from other storage into private sample RAM through the documented transfer ports first. Source-format descriptors do not create another memory route. Descriptor binding does not wrap at the end of private sample RAM. Zero-filled CPU reads beyond an installed system-ROM image do not make that tail valid descriptor padding.
+
+CMD capture does not retain a cartridge socket. PLAY uses the socket selected when PLAY executes; keep SELECT correct until binding occurs. A later SELECT write alone does not redirect the playing voice. An accepted live write to a source field performs another binding using the selection current for that access, not the voice's retained socket. For the source-field group and failed-write effects, see **Source fields are individually live**. For SELECT itself, see [Book III: Cartridge sockets and mapped card devices — Cartridge controller](../book3/cartridge.md#cartridge-controller).
+
+<div class="keep-together">
 
 The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use its current contents. BADP retains its current and previous decoded frames, so changing compressed bytes does not guarantee that already-decoded samples change immediately.
+
+</div>
 
 A failed source binding raises SOURCE_RANGE (00000102H), with SOURCE_ADDR as fault detail. A failed PLAY leaves the previous voice and slot bank unchanged. This binding check is not metadata validation: PLAY does not reject sample rate, channel count, frame count, data offset, data-byte count or bit depth on those grounds.
 
@@ -569,8 +583,6 @@ The following active-slot stores each replace the source description: SOURCE_ADD
 A successful replacement preserves cursor, accumulated phase remainder, current gain, fade progress and filter histories. It reconfigures the rate conversion, loop bounds and filter coefficients. BADP state is reset and sought to the retained source position. Thus even a change to a rate or extent word in this group takes the full source-replacement route.
 
 If a live replacement cannot bind, it stops and deactivates the slot and raises SOURCE_RANGE with the newly programmed SOURCE_ADDR. Unlike a failed PLAY, this failure occurs after the raw bank write. The bank words are retained rather than cleared.
-
-Other live changes have these effects:
 
 | Field written | Active or paused voice effect |
 |---|---|

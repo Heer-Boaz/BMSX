@@ -144,3 +144,50 @@ accepted composition proof. Current canonical SHA256:
 Unchanged accepted GTE canonical SHA256 remains
 `cd99150c94a8ff86e08f604d780784cfc6d7575458c1172e719e52401e45ca0e`.
 `git diff --check` passes. No whole-book/SDK or native/physical approval follows.
+
+
+## Actual source extents and selection lifetime — 2026-10-18
+
+The new admitted-source table and selection/lifetime paragraph use the existing
+shared publisher. The final unpublished publish-mode proof is32 pages:
+`/tmp/bmsx-apu-source-proof/apu.pdf`, SHA256
+`fe64ef5eeaf6beaf8a3e6b8339fd713f5c9a508ac3b99d5432b372434206747b`.
+Final source SHA256:
+`9b4da3fa8ec603d2444e4b1fbf644ecd7f80e36ae3c64a627c393d2afe8cf49a`.
+This is the print companion to [the bounded source review](apu-source-binding.md),
+not another whole-unit source approval.
+
+Against the previously accepted32-page canonical baseline09abdfe9…, pages1–6
+and16–32 match **complete decoded RGBA bytes and dimensions**, including running
+matter. Root individually viewed the actual original final7–9 and15; the
+independent print reviewer viewed10/11 in the first proof and12–14 in the next
+proof, then explicitly carried their final identity and individually viewed the
+new final15. Thus every changed page7–15 has actual-page acceptance, while the
+remaining23 pages carry their prior individual acceptance by exact identity.
+The source-region table, descriptor names, numerical/formula tables, code boxes,
+headings, full-page prose and headers/footers fit and remain readable.
+
+Two real defects were fixed, without font/CSS/publisher changes: a one-word
+payload-lifetime continuation at8, and an isolated fact-free table announcer at
+the bottom of15. Shorter cross-reference wording plus the existing bounded
+keep-group fixes the former; deleting the redundant announcer fixes the latter.
+No hardware assertion was removed. Final7–14 exactly match their individually
+accepted preceding states; only15 changed in the final pass. Records:
+`/tmp/bmsx-apu-source-print/{identity,first-proof-identity,final-proof-identity}.json`
+and `/tmp/bmsx-apu-source-print-review.md`. No thumbnail, bbox, text extraction,
+contact sheet or figure-count receipt substitutes for these page views.
+
+### Canonical verification
+
+All19 existing manual-tool tests, ordinary APU check and publication pass.
+Every canonical32-page raster equals the accepted proof in full decoded RGBA
+and dimensions; canonical SHA256:
+`8fb96bf643239238c26e999a02d5fccb7d311bbddb9b2c05a658c24c81f479e1`.
+Record `/tmp/bmsx-apu-source-published-identity.json`; logs
+`/tmp/bmsx-apu-source-manual-{tests,check,publish}.log`.
+The publishing fixture also regenerates PCRTC: all37 complete rasters equal
+its accepted baseline, record `/tmp/bmsx-apu-source-pcrtc-identity.json`.
+Current PCRTC SHA256:
+`226794ec705b5cc4345941e72014bc79d84f97f8952322e03229b34e85abc2cf`.
+GTE and cartridge canonical PDFs remain unchanged. Whole-series/SDK and portable
+PDF navigation acceptance remain open. `git diff --check` passes.

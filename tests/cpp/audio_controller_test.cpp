@@ -7,6 +7,7 @@
 #include "machine/devices/audio/biquad_filter.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/pcm_decoder_hot_path.h"
+#include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/irq/controller.h"
@@ -385,6 +386,53 @@ void testApuVoiceLatchesCartridgeSocketAcrossRestore() {
 	harness.scheduler.advanceTo(1);
 	harness.audio.onService(1);
 	require(harness.output.outputRing.readFramePacked() == 0x7f007f00u, "restored playback should remain bound to the latched cartridge socket");
+}
+
+void testSourceDescriptorFitsActualBacking() {
+	const std::array<bmsx::u8, 4> systemRom{{0xc0u, 0x80u, 0x80u, 0x80u}};
+	const std::array<bmsx::u8, 4> cartRom{{0x40u, 0x80u, 0x80u, 0x80u}};
+	bmsx::CartridgeSocketMediaPair cards{};
+	cards[0] = bmsx::CartridgeCardMedia{cartRom, 16u, true};
+	cards[1] = bmsx::CartridgeCardMedia{std::nullopt, 16u, true};
+	bmsx::Memory memory(bmsx::MemoryInit{systemRom, cards}, bmsx::PSX_MACHINE_SPEC.ramBytes);
+	bmsx::ApuSampleMemory sampleMemory(memory);
+	bmsx::ApuSourceByteView view{};
+	for (bmsx::u32 base : std::array<bmsx::u32, 2>{{bmsx::SYSTEM_ROM_BASE, bmsx::CART_ROM_BASE}}) {
+		require(sampleMemory.bindSource(base, 4u, 0u, view), "the full installed ROM descriptor should bind");
+		require(sampleMemory.bindSource(base + 3u, 1u, 0u, view), "the final installed ROM byte should bind");
+		require(!sampleMemory.bindSource(base + 3u, 2u, 0u, view), "a ROM descriptor must not receive scalar-style tail padding");
+		require(!sampleMemory.bindSource(base + 4u, 1u, 0u, view), "a mapped aperture must not extend installed ROM bytes");
+		require(!sampleMemory.bindSource(base, 0u, 0u, view), "an empty ROM descriptor must not bind");
+	}
+	require(!sampleMemory.bindSource(bmsx::CART_ROM_BASE, 4u, 1u, view), "card presence without ROM must not supply a source");
+	require(!sampleMemory.bindSource(bmsx::CART_RAM_BASE, 4u, 0u, view), "installed card RAM is not an APU source route");
+	require(!sampleMemory.bindSource(bmsx::CART_MMIO_BASE, 4u, 0u, view), "installed mailbox MMIO is not an APU source route");
+	require(sampleMemory.bindSource(bmsx::APU_SAMPLE_RAM_BASE + bmsx::APU_SAMPLE_RAM_BYTES - 1u, 1u, 0u, view), "the final private-RAM byte should bind");
+	require(!sampleMemory.bindSource(bmsx::APU_SAMPLE_RAM_BASE + bmsx::APU_SAMPLE_RAM_BYTES - 1u, 2u, 0u, view), "a private-RAM descriptor must fit completely");
+	require(!sampleMemory.bindSource(bmsx::APU_SAMPLE_RAM_BASE, 0u, 0u, view), "an empty private-RAM descriptor must not bind");
+}
+
+void testPlayResolvesSocketAtExecution() {
+	AudioHarness harness(true);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::CART_ROM_BASE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	harness.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	harness.audio.onService(0);
+	harness.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
+	harness.scheduler.advanceTo(1);
+	harness.audio.onService(1);
+	require(harness.output.outputRing.readFramePacked() == 0x7f007f00u, "PLAY should use execution-time selection and retain it after reselection");
+	require(harness.audio.captureState().output.voices[0].sourceCartridgeSlot == 1u, "the playing voice should retain the execution-time socket");
 }
 
 void testSampleBusDmaAndMidTransferRestore() {
@@ -1072,6 +1120,8 @@ int main() {
 	testBadpInterpolationWindowAndRestore();
 	testSampleTransferEdgeOrdering();
 	testApuVoiceLatchesCartridgeSocketAcrossRestore();
+	testSourceDescriptorFitsActualBacking();
+	testPlayResolvesSocketAtExecution();
 	testSampleBusDmaAndMidTransferRestore();
 	testSampleTransferWrongDirectionBlock();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();

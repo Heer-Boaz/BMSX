@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Sixteen slots, separate staging/captured-command/live-bank paths, ROM/private sample sources and one 512-KiB private RAM are defined; no ordinary CPU sample-RAM aperture or main-RAM playback source is invented.",
+			"resolution": "Sixteen slots, separate staging/captured-command/live-bank paths, actual installed system/selected-card ROM extents and one 512-KiB private RAM are defined; nonzero complete descriptors do not admit main RAM, card RAM or mailboxes. No ordinary CPU sample-RAM aperture is invented.",
 			"open": []
 		},
 		"registers": {
@@ -13,7 +13,7 @@
 			"open": []
 		},
 		"visibility": {
-			"resolution": "Command capture differs from execution; selected reads/writes synchronize prior output; source stores rebind individually. Transfer count/deadline are captured, pending address remains live, mode changes cancel, and same-cycle RAM commit precedes output.",
+			"resolution": "Command capture differs from execution and does not capture a cartridge socket; PLAY uses execution-time selection, retains bound storage across SELECT alone, and individually live source stores rebind using access-time selection. Selected reads/writes synchronize prior output. Transfer count/deadline are captured, pending address remains live, mode changes cancel, and same-cycle RAM commit precedes output.",
 			"open": []
 		},
 		"timing": {

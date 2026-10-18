@@ -179,3 +179,13 @@ review. Guest snapshots deliberately do not claim STOP's exact cycle or strict
 cancellation. Fresh public-only reconstruction matches all three executed files
 byte-for-byte. Actual-page acceptance is separate in apu-print.md. This closes
 this numerical/programming gap, not whole-machine/SDK or physical specifications.
+
+
+## Actual source admission and cartridge-selection lifetime — 2026-10-18
+
+The [bounded source-binding review](apu-source-binding.md) accepts the new
+admitted-region/actual-ROM table and capture/execution/retained/live-selection
+clarification. Paired owner checks, two added cases per implementation and a
+fresh public-only reader pass. The complete ordinary four-route program is
+unchanged and freshly executes successfully. Component selection tests are not
+an ordinary CPU scheduling-window guarantee; print acceptance remains separate.

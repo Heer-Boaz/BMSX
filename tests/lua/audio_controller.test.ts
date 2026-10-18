@@ -126,7 +126,7 @@ import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DEVICE_SERVICE_APU_TRANSFER, DEVICE_SERVICE_DMA, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -391,6 +391,31 @@ test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory
 	assert.equal(sampleMemory.bindSource(RAM_BASE, 4, 0, view), false);
 });
 
+test('APU source descriptors must fit actual ROM bytes, not their mapped windows', () => {
+	const memory = new Memory({
+		systemRom: new Uint8Array([0xc0, 0x80, 0x80, 0x80]),
+		cartridgeSlots: [
+			{ rom: new Uint8Array([0x40, 0x80, 0x80, 0x80]), ramByteCount: 16, mailboxPresent: true },
+			{ rom: null, ramByteCount: 16, mailboxPresent: true },
+		],
+	}, PSX_MACHINE_SPEC.ramBytes);
+	const sampleMemory = new ApuSampleMemory(memory);
+	const view: ApuSourceByteView = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0, cartridgeSlot: 0 };
+	for (const base of [SYSTEM_ROM_BASE, CART_ROM_BASE]) {
+		assert.equal(sampleMemory.bindSource(base, 4, 0, view), true);
+		assert.equal(sampleMemory.bindSource(base + 3, 1, 0, view), true);
+		assert.equal(sampleMemory.bindSource(base + 3, 2, 0, view), false);
+		assert.equal(sampleMemory.bindSource(base + 4, 1, 0, view), false);
+		assert.equal(sampleMemory.bindSource(base, 0, 0, view), false);
+	}
+	assert.equal(sampleMemory.bindSource(CART_ROM_BASE, 4, 1, view), false);
+	assert.equal(sampleMemory.bindSource(CART_RAM_BASE, 4, 0, view), false);
+	assert.equal(sampleMemory.bindSource(CART_MMIO_BASE, 4, 0, view), false);
+	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE + APU_SAMPLE_RAM_BYTES - 1, 1, 0, view), true);
+	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE + APU_SAMPLE_RAM_BYTES - 1, 2, 0, view), false);
+	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE, 0, 0, view), false);
+});
+
 function writeSampleRamBytes(memory: Memory, bytes: Uint8Array): void {
 	memory.writeMappedWord(IO_APU_TRANSFER_ADDRESS, 0);
 	memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 1);
@@ -471,6 +496,26 @@ test('APU voices latch their cartridge socket across CPU selection changes and r
 	harness.audio.restoreState(saved, 0);
 	advanceRealApu(harness, 1);
 	assert.equal(harness.audioOutput.outputRing.readFramePacked(), 0x7f00_7f00);
+});
+
+test('APU PLAY resolves the selected ROM at execution and retains it during later selection', () => {
+	const memory = new Memory({
+		systemRom: new Uint8Array(0),
+		cartridgeSlots: cartridgeSlots(new Uint8Array(4), new Uint8Array([0xff, 0xff, 0xff, 0xff])),
+	}, PSX_MACHINE_SPEC.ramBytes);
+	const harness = createRealAudioHarness(memory);
+	writePcmSourceRegisters(memory, CART_ROM_BASE, 4);
+	memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	memory.writeMappedWord(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
+	// Accepted CMD captured the words, not the cartridge selection.
+	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	harness.audio.onService(0);
+	memory.writeMappedU32LE(IO_CART_SELECT, 0);
+	advanceRealApu(harness, 1);
+	assert.equal(harness.audioOutput.outputRing.readFramePacked(), 0x7f00_7f00);
+	assert.equal(harness.audio.captureState().output.voices[0]!.sourceCartridgeSlot, 1);
 });
 
 function serviceScheduledDmaBlock(harness: ReturnType<typeof createAudioHarness>): void {

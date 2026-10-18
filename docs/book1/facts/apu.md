@@ -680,3 +680,12 @@ short4-word read-side schedules, exact-deadline STOP boundary and source paths.
 It keeps the derived/actual-owner timelines separate from the complete74-line
 ordinary BLua cartridge and its retained data/status observations. Neither
 TRANSFER_ADDRESS readback nor CPU DATA reads expose the moving offset/FIFO.
+
+
+## Actual source extents and cartridge-selection lifetime
+
+The [bounded source-binding supplement](apu-source-binding.md) freezes the
+actual installed-ROM bounds, complete nonzero extent, non-playback regions,
+capture/execution/retained-selection distinction and live-rebind behavior.
+It does not turn scalar ROM zero-tail reads into descriptor padding or supply
+a guaranteed CPU instruction window before command execution.

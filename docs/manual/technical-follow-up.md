@@ -1498,3 +1498,28 @@ external API reuse is not approved. The source evidence in
 scoped triage. Keep the general capture-storage precondition/caller audit as
 separate engineering follow-up. No runtime repair, fallback/normalization,
 validation layer or fictitious hardware behavior was introduced to hide it.
+
+
+## Technical inventory continuation: APU source extents and GPU startup
+
+The bounded APU check found a real admission/lifetime teaching gap, not missing
+sample or transfer clocks: descriptors must fit **actual installed ROM bytes**,
+not merely a CPU-readable aperture. The [source-binding supplement](../book1/apu.md#voice-sources-and-their-lifetime)
+now distinguishes all admitted regions, excluded main/card RAM and mailboxes,
+whole-descriptor/nonzero bounds, execution-time cartridge selection, retained
+playback storage and individually live rebinding. Its paired source/test and
+public-reader evidence is in [the finite review](../book1/reviews/apu-source-binding.md).
+The existing full four-route BLua cartridge is retained, not replaced by another
+small harness or a fictional BIOS API. General Lua exposition remains deferred;
+all BLua extensions, including non-hardware extensions, remain in scope.
+
+The separate GPU check found a still-open startup-state paragraph: full device
+reset initializes a reproducible patterned VRAM store, unlike GP1 reset or the
+PCRTC reset strobe. This is **not** a cartridge-entry pixel guarantee; BIOS
+initialization subsequently uses VRAM. Use [the frozen paired-owner facts](../book1/facts/gpu-startup.md)
+for the next bounded writing assignment. An optional GPU-local link to Memory's
+existing firmware-VRAM reservation contract is an onramp improvement, not a
+newly missing whole-manual reservation. No GPU public prose or runtime changed
+in this source-binding supplement. Do not invent physical MHz or sustained
+rates to fill unsourced electrical specifications. The fresh technical inventory
+of **every** installed unit and whole-console newcomer acceptance remain open.
