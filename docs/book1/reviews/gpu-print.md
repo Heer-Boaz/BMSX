@@ -1,10 +1,11 @@
 # GPU print review
 
-## Dither lesson: print review pending — 2026-10-19
+## Dither and coverage lessons: print review pending — 2026-10-19
 
-The new polygon OFF/ON and rectangle-control lesson has a DRAFT preview only.
-Its source, executable cartridge and actual output checks are recorded separately
-in gpu-source.md. The existing canonical PDF does not contain this addition.
+The new polygon OFF/ON, rectangle-control and shared-edge/joint output lessons
+have DRAFT previews only. Their source, executable cartridges and actual output
+checks are recorded separately in gpu-source.md. The existing canonical PDF
+does not contain these additions.
 The earlier accepted page sets below do not approve the new chapter layout;
 the current print flag remains false. PDF navigation/viewer work is deferred
 while manual content takes priority.

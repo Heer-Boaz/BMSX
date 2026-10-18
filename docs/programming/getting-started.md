@@ -1174,6 +1174,46 @@ npm run headless:game -- gpu_dither_manual --ttl 2
 TTL 2 means 2000 ms of virtual host time. Reaching it alone does not validate
 the picture. Neither route establishes native or accelerated-backend parity.
 
+## Build and inspect GPU shared edges
+
+The [shared-edge and joint comparison](../book1/gpu.md#gpu-coverage-output)
+has a complete standalone program at `carts/gpu_coverage_manual/cart.lua`.
+Its manifest at
+`carts/gpu_coverage_manual/res/manifest/manifest.rommanifest` is:
+
+```yaml
+title: GPU Coverage Manual Example
+hardware:
+    - type: rom
+```
+
+With the same prerequisites, run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- gpu_coverage_manual --debug
+npm run headless:test -- gpu_coverage_manual tests/carts/gpu_coverage_manual/gpu_coverage_manual_assert.lua
+```
+
+Expect `[test] shared_polygon_edge_and_polyline_joint: passed` and the full
+256 × 192 capture at
+`tests/carts/gpu_coverage_manual/screenshots/frame_00001.png`. The upper-left
+quad is uniform; the upper-right has a brighter overlap wedge and uncovered
+black; the lower band has a bright vertical joint. The check captures before
+probing twelve complete 96-pixel quad rows and one 97-pixel polyline row:
+625 packed GPUREAD words, including the zero high half of the odd final word.
+These raw checks sample specified rows, not every pixel of the picture.
+
+This capture uses a derived integration image. For separate ordinary-ROM playback:
+
+```sh
+npm run build:product:node-headless-player -- --debug
+npm run headless:game -- gpu_coverage_manual --ttl 2
+```
+
+The virtual 2000-ms TTL is not picture verification. Native/accelerated parity
+and physical throughput are not established by these routes.
+
 ## Build and inspect PCRTC composition
 
 Use the complete [composition program](../book1/pcrtc.md#pcrtc-composition-output).

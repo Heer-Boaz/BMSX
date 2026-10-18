@@ -842,3 +842,11 @@ polygon OFF/ON and rectangle-control packets, source fill, absolute-phase
 RGB555 arithmetic and actual image/readback observations. It extends the
 existing Q02–Q04 teaching; it does not claim universal dither eligibility,
 new display behavior or backend parity.
+
+## Shared-edge and joint output comparison
+
+[The bounded coverage-output supplement](gpu-coverage.md) freezes the
+normal/moved-vertex quad and polyline packets, integer sample counts and
+brighter additive material. Actual image and selected complete-row readback
+observations are separate from the derivation. It extends the existing P03
+lesson without claiming arbitrary quad outlines have once-only coverage.

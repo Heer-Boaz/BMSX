@@ -1,7 +1,7 @@
 # GPU source and reader review
 
-**Previously accepted chapter; new dither lesson source checks pass.** The
-new lesson's final [print review](gpu-print.md) is pending; prior print acceptance
+**Previously accepted chapter; new output-lesson source checks pass.** The
+new lessons' final [print review](gpu-print.md) is pending; prior print acceptance
 does not approve the changed layout. The [reader-task work list](../gpu-outline.md) separates paragraph
 writing, independent checks, actual guest execution and final PDF acceptance.
 No architecture document or hardware-reference PDF supplies chapter facts.
@@ -318,3 +318,43 @@ Independent reports: `/tmp/bmsx-gpu-dither-sentence-source-review-current.md`,
 `/tmp/bmsx-gpu-dither-` prefix. All24 existing manual tests and `git diff --check`
 pass. No runtime, BIOS, compiler, publisher or harness implementation changed.
 The DRAFT preview is not final print acceptance or completion of Book I.
+
+## Shared polygon edges and polyline joints — 2026-10-19
+
+**Bounded source, figure and public-reader PASS.** The new `gpu-coverage-output`
+plate connects the existing edge equations to an actual normal quad, inward
+fourth-vertex overlap and 24 drawn polylines. The brighter material and 16-times
+vertex differences are explicit; it is not an enlarged capture of the small
+numerical example. Independent actual-mirror arithmetic confirms 3072 single
+normal-quad samples; the folded comparison box has 1072 single, 512 double and
+1488 clear samples. The joint band has 2304 single and 24 doubled samples.
+
+The three printed changes independently reconstruct the complete executed
+71-line `gpu_coverage_manual` cartridge from the complete dither example,
+apart from comments/whitespace. Source SHA256:
+`68957ce0d42ebcc7cf994eaba92004a372afb9336c8341d886b8fee3767786c1`.
+Its six environment words, thirteen readonly words, 24 five-word polylines and
+marker total 140 GP0 stores. It preserves firmware VRAM and the accepted typed
+MMIO/display/IRQ recipe, without a local ABI or runtime helper.
+
+Fresh ordinary cartridge build and the actual derived-image guest case
+`shared_polygon_edge_and_polyline_joint` pass. Capture precedes twelve complete
+96-pixel quad rows and one 97-pixel joint row: 625 packed GPUREAD comparisons,
+including clear samples, doubled material and zero odd high tail. This is not
+complete raw readback of the whole image. Independent original-image inspection
+and passive full-region counts agree with the source arithmetic. Public PNG
+SHA256 `6e96d461e213b7c93eb062d58570c39a87109fc85d6b39ae7494282c3e4336f7`
+is byte-identical to the unmodified 256×192 capture.
+
+Independent reports: `/tmp/bmsx-gpu-coverage-math-review-current.md`,
+`/tmp/bmsx-gpu-coverage-program-image-review-current.md`,
+`/tmp/bmsx-gpu-coverage-sentence-source-review-current.md` and
+`/tmp/bmsx-gpu-coverage-public-reader-current.md`. Logs use the
+`/tmp/bmsx-gpu-coverage-` prefix. Separate ordinary-ROM playback reaches its
+2000-ms virtual TTL; exit is not picture verification. All24 manual tests and
+`git diff --check` pass. No runtime, BIOS, compiler, publisher or harness
+implementation changed; an invalid scalar annotation in the first test draft
+was corrected in that consumer, not made into a language contract.
+
+This closes the finite coverage-output contrast, not arbitrary quad once-only
+coverage, native/accelerated parity, physical throughput, final print or Book I.

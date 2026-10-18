@@ -215,13 +215,21 @@ Concrete next paragraph tasks:
    textures, palette indices, bit-15 black versus exact-zero transparency and
    blending/protection to the executable packet choices. Fresh guest execution,
    independent source/image checks and final actual-print review pass. Further
-   coverage comparisons remain a distinct capture task. The separate
+   coverage comparisons were a distinct capture task. The separate
    [dither/control lesson](../book1/gpu.md#gpu-dither-output) now adds the
    same-material polygon OFF/ON comparison and two rectangle controls, a complete
    73-line BLua cartridge, the actual full output plate and forty checked packed
    GPUREAD words. It separates destination-phase quantization from texture
    traversal and display RGB; native/accelerated parity and the broader graphics
-   inventory are not established by this lesson. Final print approval is separate.
+   inventory are not established by this lesson. The new
+   [shared-edge/joint plate](../book1/gpu.md#gpu-coverage-output) now supplies
+   the normal diagonal, moved-vertex overlap and polyline double-joint contrast.
+   Its brighter, rerasterized geometry is explicitly not an enlarged pixel
+   capture of the small numerical lesson. The exact three printed changes
+   reconstruct the complete standalone cartridge; actual execution checks
+   625 packed words across thirteen complete selected rows. This closes that
+   finite contrast, not every graphics-output scenario. Final print approval
+   for both new lessons is separate.
 
 ### IRQ
 

@@ -1,0 +1,3 @@
+title: GPU Coverage Manual Example
+hardware:
+    - type: rom

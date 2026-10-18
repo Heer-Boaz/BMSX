@@ -1156,6 +1156,63 @@ There is no once-only coverage operation over an arbitrary four-vertex outline. 
 
 A polyline joint is different again. Two accepted, unclipped segments `(40,30)→(43,30)→(46,30)` each include **both endpoints** and generate four samples. The shared endpoint `(43,30)` is consequently written by both segments and finishes at `0008H` under the same state; either outer endpoint finishes at `0004H`. A zero-length accepted line generates one sample, rather than following the triangle's zero-area rule. Plan additive or other repeated-write effects around the primitive's actual coverage, not around its apparent outline.
 
+<a id="gpu-coverage-output"></a>
+
+### See shared edges and repeated writes
+
+Additive blending makes repeated writes visible. This example clears to black and uses the brighter drawing colour RGB=(96,64,32), rather than the preceding red material. One write stores VRAM word `110CH`; two writes store `2218H`.
+
+![Shared polygon edges, overlapping triangles, and a repeated polyline endpoint](figures/gpu-coverage-controls.png)
+
+*Actual 256 × 192 output. Bright regions identify two additive writes, not a different drawing colour.*
+
+| Region | Geometry | What to observe |
+|---|---|---|
+| Upper left | Quad vertices (16,24), (112,24), (16,56), (112,56) | The 96 × 32 rectangle is written once throughout. Its shared diagonal is not doubled. |
+| Upper right | Quad vertices (144,24), (240,24), (144,56), (160,40) | Moving only the fourth vertex produces a bright overlap wedge. Black parts of the 96 × 32 comparison area remain uncovered. |
+| Lower left | Twenty-four polylines at Y=112…135, each X=16 → 64 → 112 | These actually drawn rows form a 97 × 24 band. Both segments include X=64, producing the one-pixel-wide bright joint. |
+
+The polygon vertex differences are 16 times those of the preceding numerical example. These larger polygons are rasterized afresh; the picture is not an enlargement of its small pixel result. The upper-left result is not a guarantee that an arbitrary quad writes every covered position only once: the upper-right case shows why.
+
+#### Program changes
+
+Start from the complete [dither comparison program](#gpu-dither-output). Make a separate cartridge and apply exactly these three changes:
+
+1. Replace the entire `drawing_commands` array with this 13-word array.
+
+```lua
+rodata drawing_commands: word[] = {
+	-- Black background; the two quads use the same additive material.
+	0x02000000, 0, 256 | (192 << 16),
+	-- Normal ordering: (0,1,2), then (2,1,3).
+	0x2a204060,
+	16 | (24 << 16), 112 | (24 << 16),
+	16 | (56 << 16), 112 | (56 << 16),
+	-- Move only vertex 3 inward. The second triangle overlaps the first.
+	0x2a204060,
+	144 | (24 << 16), 240 | (24 << 16),
+	144 | (56 << 16), 160 | (40 << 16),
+}
+```
+
+2. Replace the initial `*gp0 = 0xe1000400` with `*gp0 = 0xe1000420`: additive blending, dither disabled, both field parities enabled.
+
+3. Immediately after the command-stream loop, before the final marker, insert this loop drawing the 24 polylines.
+
+```lua
+for y = 112, 135 do
+	*gp0 = 0x4a204060
+	*gp0 = 16 | (y << 16)
+	*gp0 = 64 | (y << 16)
+	*gp0 = 112 | (y << 16)
+	*gp0 = 0x50005000
+end
+```
+
+Retain all other port declarations, the IRQ callback, startup, E2–E6 state, stream loop, and marker/acknowledgement/display tail unchanged.
+
+The [Development companion — GPU shared edges](../programming/getting-started.md#build-and-inspect-gpu-shared-edges) supplies the complete standalone cartridge and build/observation procedure.
+
 <a id="gpu-interpolation"></a>
 ## Predict interpolated colors and texture coordinates
 

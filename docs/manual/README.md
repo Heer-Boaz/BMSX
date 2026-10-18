@@ -399,8 +399,11 @@ a source-accurate register reference as a complete technical specification.
   The [GPU dither/control lesson](../book1/gpu.md#gpu-dither-output) now compares
   identical material on polygons and rectangles with the dither bit off/on,
   joining a complete executable BLua program, a real output plate and separate
-  raw-word checks. It does not close the remaining coverage contrasts or the
-  whole-console target; final print approval remains separate.
+  raw-word checks. The [shared-edge and joint plate](../book1/gpu.md#gpu-coverage-output)
+  now contrasts a once-written diagonal, overlapping quad halves and doubled
+  polyline endpoints with actual output and a reproducible complete cartridge.
+  These finite lessons do not close the whole-console target; final print
+  approval remains separate.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.
