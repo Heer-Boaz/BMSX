@@ -1,17 +1,17 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Nine installed String-base exports, codepoint values versus mapped encoded bytes, public fields and actual String-index route; pattern/format/pack remain separate work.",
+			"resolution": "Nine installed String-base exports plus the separate string.format API, codepoint values versus mapped encoded bytes and actual String-index lookup; pattern and binary-pack interfaces remain separate authored work.",
 			"open": []
 		},
 		"registers": {
-			"resolution": "Actual function signatures, arguments/defaults, word/codepoint conversion and returned values/counts; no new mapped register bank or per-function reset words.",
+			"resolution": "Actual base and format signatures, arguments/defaults, word/codepoint conversion and returned values/counts; complete format grammar/flags/specifiers, not a mapped register bank or per-function reset words.",
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Codepoint selection/construction, ASCII-only mapping, exact substring bounds and clamping, reversal/repetition, scalar validity and lead-driven UTF-8 mapped reads.",
+			"resolution": "Codepoint selection/construction, ASCII mapping, exact substring and lead-driven UTF-8 reads; format field/sign/prefix/padding order, signed/U32 and fixed/scientific/general/quoted construction, default numeric-text dependency and actual installed two-result %c delivery.",
 			"open": [
-				"Accepted non-String branches that use #Table inherit the existing unresolved common SETT/rawset length producer. A String-only passing example does not close those branches or authorize a universal Table-prefix formula."
+				"Accepted #Table branches and ordinary String formats using precision-substring, general zero stripping or uppercase helper Tables inherit the unresolved common SETT/rawset length producer. Neither conditional cached-length wording nor passing String examples closes the complete shared contract."
 			]
 		},
 		"visibility": {
@@ -19,7 +19,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Ordinary instruction/helper work, byte scans, intermediate tables/Strings, repeated doubling and 256-codepoint decoder staging; no fixed total-cycle/physical-bandwidth or arbitrary-size resource guarantee.",
+			"resolution": "Ordinary instruction/helper work, repeated codepoint scans, intermediate Tables/Strings, repeated doubling, 256-codepoint decoder staging and value-dependent format padding/scaling/normalization/base conversion; no fixed total-cycle, physical bandwidth or arbitrary-size resource guarantee.",
 			"open": []
 		},
 		"interrupts": {
@@ -27,7 +27,7 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Reached primitive argument/length errors, scalar validity and mapped-memory access boundaries; no validating UTF-8 parser or universal wrapper argument check is invented.",
+			"resolution": "Reached primitive argument/length and scalar-validity errors, mapped accesses, exact incomplete/unsupported format error Strings and ordered star consumption; no validating UTF-8 parser or universal wrapper/type validator.",
 			"open": []
 		},
 		"reset": {
@@ -35,9 +35,9 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete37+95-line ordinary source,32 retained assertions,9 separate actual ordinary diagnostic lines, exact assembly/prerequisites and source-byte reuse observation. Independent nine-API and complete-program source audits pass; public-only newcomer reconstruction finds no additional local assembly/API-use gap. All12 actual final draft PDF pages individually pass visual review. Current book classification remains provisional pending the separately requested reference-booklet structure audit. No runtime/BIOS/compiler/publisher/shared-harness changes.",
+			"resolution": "Complete base37+95 and separate formatting27+69 ordinary BLua listings; base32 and formatting18 retained assertions, separate seven-assertion format-call unit case and9/8 actual ordinary diagnostic lines. Independent added-format contract/program audits pass within their scopes; public-only supplied-checkout reconstruction is clear, and all19 current draft pages are covered by actual individual-page inspection plus exact retained-pixel/delta evidence. Book II software classification is applied. No runtime/BIOS/compiler/publisher/shared-harness change.",
 			"open": [
-				"Keep required common Table-dependent input contracts open; normal String recipes and14 bounded paired comparisons do not clear the existing length STOP."
+				"Required common Table-dependent input and helper contracts remain open; normal String recipes, bounded paired base comparisons and current formatting execution do not clear the existing length STOP."
 			]
 		}
 	},

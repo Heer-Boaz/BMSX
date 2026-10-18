@@ -878,3 +878,55 @@ Current publication hashes and bounded inspection scope are in the same print
 reports. The other five chapters remain drafts; no gate was bypassed. These are
 bounded classification/layout results, not whole-manual acceptance or completion
 by page count.
+
+## Installed String formatting: current software, not assumed Lua semantics
+
+The String chapter now adds the separate `string.format` interface: complete
+conversion grammar and argument order, flags and padding, integer and floating
+construction, quoted text, live/captured dependencies, errors and work limits.
+The default six-significant-digit numeric-text dependency is not a universal
+printf-decimal-accuracy promise. A separate complete27+69-line ordinary BLua
+cartridge supplies18 retained assertions and8 independently observed diagnostic
+lines. Its compact examples demonstrate useful fields/stars as well as actual
+counterexamples: `%.0f` at1,000,000 returns `1e+06`, a missing signed integer can
+yield empty digits, and numeric-looking width text is not parsed.
+
+Execution contradicted the first source-sheet assumption that parentheses in
+`char((modf(value)))` force one result. The existing cartridge/system source
+parser removes grouping, the final-call lowerer expands the two `modf` results,
+and both char owners consume every supplied codepoint. The installed `%c`
+therefore produces a two-codepoint String in the verified cases, not two format
+return values or two consumed format arguments. The corrected section and
+example follow that actual behavior. A separate seven-assertion unit checks
+0,65,65.75,width3, direct-char distinction and grouped/ungrouped result counts.
+The existing Memory grouping boundary remains canonical; no new compiler bug
+number, BIOS/compiler repair or compatibility wrapper was invented.
+
+A [separate narrow SF1 audit](../book1/facts/bios-string-pattern-plain.md) establishes that the descriptor's omitted fourth
+`find` argument is a tooling-signature omission, not a maximum-three call limit
+or observed TS/native argument-delivery disagreement. That metadata also drives
+minimum-arity diagnostics; it is not merely hover text. Actual current O3 TS
+guest calls pass for true/false literal-vs-pattern mode, method syntax, captured
+function and the two-result count. This is bounded derived-test execution, not
+native ordinary playback or a general pattern result contract. Preserve the
+signature omission for separate tooling work; no descriptor fix is part of this
+manual slice. Pattern-API/grammar and packing prose are separately drafted from
+frozen facts but not yet source/reader/execution/print-approved or merged.
+
+Independent current format-contract and complete-program source audits find no
+remaining failure within their stated scopes. The public-only newcomer pass
+closed exact assembly and explicit debug-image selection; the endpoint is
+specified as a zero-based presentation offset rather than elapsed frames.
+All19 actual initial PDF pages were individually viewed. Existing authored
+keep-together markup closes two detached leads and one paragraph widow; only
+final14–17 differ from that inspected snapshot and all changed pages were
+independently rechecked. Source/PDF hashes and finite decisions are retained in
+the existing String source/program/reader/print reports. No smaller type, CSS,
+new publisher branch or inferred source approval was used.
+
+The shared Table-length publication stop still explicitly includes ordinary
+String formats whose substring/general helpers use Tables. The seven CPU
+questions, BZ01, resource limits, remaining BIOS/environment/language coverage,
+whole-machine overview/specifications, graphics contrasts, cartridge/expansion
+references and whole-console newcomer acceptance all remain open. No publisher
+framework, new gate, runtime or shared harness was added.

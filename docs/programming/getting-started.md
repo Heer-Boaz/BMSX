@@ -369,3 +369,87 @@ The existing timeline writes the following actual 256 × 192 PNGs under `tests/c
 | `frame_00049.png` | Separated return with no stale contact marker; identical to frame 22 in the checked run |
 
 Those are observed capture points in this ordinary playback, not guest callback-counter values or a hardware latency guarantee. The eight-VBlank holds are the demonstration's chosen cadence. The retained-result check and these ordinary software-rendered captures are separate evidence; neither certifies native guest execution, accelerated rendering or a physical frame budget.
+
+## Build and inspect formatted text
+
+The [complete formatting program](../book1/bios-string.md#complete-program-formatted-text)
+is a separate cartridge, not an addition to the earlier codepoint/UTF-8 entry.
+Create:
+
+```text
+carts/bios_format_manual/
+  results.lua
+  cart.lua
+  res/manifest/manifest.rommanifest
+```
+
+Save **Formatting result storage** as `results.lua`. Concatenate **Formatting
+entry, part 1**, **part 2** and **part 3** in that order as `cart.lua`, separating
+adjacent parts with one blank line and adding no other module declaration.
+These are the complete 27-line result module
+and 69-line entry; `require('results')` resolves the former. Use this entire
+manifest:
+
+```yaml
+title: BIOS String Formatting Manual
+hardware:
+    - type: rom
+```
+
+The two modules and manifest suffice for the ordinary cartridge. There is no
+external asset, cartridge BIOS import, buffer allocation step or local formatting
+helper. With the development prerequisites above, run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_format_manual --debug
+npm run headless:test -- bios_format_manual tests/carts/bios_format_manual/bios_format_manual_assert.lua
+```
+
+The validated cart build checks the actual source and prepares the matching
+BIOS automatically. Expect `[test] formatted_text: passed`. The case waits for
+completion and checks 18 retained fields/relations, including both zero
+codepoints emitted by the installed `%c`. The test source is a debug-only suite,
+not another gameplay module to append to the printed entry. Its fresh derived
+integration image is not byte-identical ordinary playback or native execution.
+
+The additional debug-only unit suite is:
+
+```sh
+npm run headless:test -- bios_format_manual tests/carts/bios_format_manual/format_char_assert.lua
+```
+
+Expect `[test] format_char_call_results: passed`. It checks the specific 0,
+65, 65.75 and width 3 `%c` cases, direct `char` versus the grouped `modf` call,
+and grouped/ungrouped result counts. It does not certify every numeric input
+or source-compilation route.
+
+For independent ordinary output, save this as
+`tests/carts/bios_format_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BIOS String formatting retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_format_manual/ordinary_timeline.json bios_format_manual
+```
+
+The command explicitly selects the debug cartridge built above and uses the
+script’s debug BIOS.
+After startup, compare the eight `Format ...` lines with the chapter's
+**Formatting observations** output. Brackets expose padding spaces, and the
+quoted result contains visible escapes. The `%c` observation is printed as
+numeric length 2 and codepoints 0,0, not an invisible display claim. The timeline’s
+`frame: 4` is the chosen zero-based presentation offset, not an elapsed-frame,
+startup-time or cycle guarantee.
+The original common Table-length and CPU/compiler questions remain open; a
+passing example does not resolve the helper-Table paths or arbitrary resource
+limits.

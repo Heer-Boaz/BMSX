@@ -1,5 +1,85 @@
 # BIOS String chapter: bounded newcomer reader review
 
+## Public-only newcomer review — original current snapshot
+
+### Scope and method
+
+Read only the public `docs/book1/bios-string.md` string-format section and connected example/context, `docs/programming/getting-started.md` formatting route plus its shared prerequisites/file-role explanation, and `carts/bios_format_manual/README.md`. No BIOS/compiler/runtime source, internal facts, architecture, other reviewers' reports, or reference PDFs were consulted. No program/build/test command was executed for this review. This is an experienced-programmer/new-to-BMSX reading audit, not a confirmation of implementation behavior, current executable output, native parity, or complete manual accuracy.
+
+Snapshot began 2026-10-18 02:08:10 UTC and was rechecked at 02:09:37 UTC with no changes:
+
+| Public source | SHA-256 | Lines | Bytes |
+| --- | --- | ---: | ---: |
+| `docs/book1/bios-string.md` | `2c2a256817c5efca8b28b9e6306feee18f2584ed55a5bcc4ea07c2e36e1e33ec` | 948 | 50591 |
+| `docs/programming/getting-started.md` | `dcdf60c1769fa5c74c65d3320bf952fc8fa7be4cad5a3b3ee14c4bebf0caf7ec` | 451 | 22342 |
+| `carts/bios_format_manual/README.md` | `f750fff14409e512a31af1ddfcf4e036f3584577edf803a6941d134d0e229472` | 32 | 2027 |
+
+### Verdict
+
+**Usable supplied-checkout route, with two small clarity points; no demonstrated practical blocker.** An experienced programmer can identify the separate cartridge, reconstruct the two modules and manifest, choose documented formatting options, run the named checks, and compare ordinary diagnostic output using only these public pages. The route is explicitly limited to a working checkout with its prerequisites, not a fresh-platform installation recipe.
+
+### What the public material supplies
+
+- Installed `string.format` availability without a cartridge import; one String result, codepoint-width semantics, no caller buffer.
+- Conversion syntax, all accepted flags/modifiers/conversions, sequential width/precision/value star consumption, padding/sign/prefix interactions, ignored precision cases, quoted escaping, integer conversion and floating construction rules.
+- Explicit departures from ordinary printf/Lua expectations: `%c` returns a two-codepoint String in the described installed BIOS; large requested fixed output can contain `1e+06`; missing/nonnumeric arguments do not receive a common type-check policy. These are documented behavior claims, not behavior newly established by this reader audit.
+- The common Table-length boundary and its affected helper paths remain explicitly unresolved rather than being silently promised to work. The example uses alternate general format to bypass one such path.
+- Exact cartridge tree, manifest, module filenames, sole entry declaration, separate debug-only suites, tooling/validated-cart/test commands and expected case lines.
+- Separate ordinary-playback timeline and command; eight expected `Format ...` lines; brackets to expose padding; visible `%q` escapes; numeric length 2 and both zero codepoints for `%c`; the derived-test/ordinary-playback and frame-endpoint caveats.
+
+### Exact clarity points
+
+1. **Ordinary debug-image selection is implicit.** `getting-started.md:403–405` builds tooling and validates the cart with `--debug`, but its ordinary command at line 441 omits `--debug`. Nearby ordinary `headless:tooling` examples explicitly include it. The public formatting route does not say how that final command chooses the ROM and matching BIOS prepared above. This is a clarity ambiguity, not an assertion that the command fails: no CLI implementation or execution was inspected. Make the command's intended debug selection explicit, or explain its selection rule.
+2. **Claimed 69-line entry depends on seam spacing.** The three printed entry blocks contain 20, 15 and 32 lines: 67 total. The claimed 69 lines result when one blank line is inserted between adjacent parts. The original route says concatenate in order but does not spell out these two blank separators. This does not alter program semantics, but a reader counting the supposedly exact listing could reasonably pause. State the intended blank-line seams if retaining the exact line count.
+
+No additional expected output was invented. No implementation discrepancy is inferred merely from these public claims. No need was found to follow additional CPU/Memory/base prerequisite links to complete this bounded build-and-observe reading task.
+
+### Public-text closure — 2026-10-18 02:21:44 UTC
+
+Re-read the current public formatting route and README after the root's narrow wording changes. Both original clarity points are closed as reading issues:
+
+- `getting-started.md:386–390` now explicitly specifies one blank line between adjacent entry parts, making the stated 69-line entry reproducible; README line 6 matches.
+- `getting-started.md:442–446` now explicitly passes `--debug` for ordinary playback and states that it selects the previously built debug cartridge and the script's debug BIOS.
+
+**Current reader verdict: clear for the bounded supplied-checkout build-and-observe route.** This reviewer still did not execute the route or inspect the CLI/runtime implementation. The root's independent runtime evidence is separate and is not being claimed as this reading audit.
+
+Current hashes/counts at this closure:
+
+| Public source | SHA-256 | Lines | Bytes |
+| --- | --- | ---: | ---: |
+| `docs/book1/bios-string.md` | `a52c63f2abb3e3b3a9d7990b4e5442b9711d838b61d19337bc0f374c9218473d` | 956 | 50681 |
+| `docs/programming/getting-started.md` | `c01f9cfa65f71a01eebda36e203336b84b7850b133ddb9ec158128f364320762` | 454 | 22492 |
+| `carts/bios_format_manual/README.md` | `0689a4d2dff39335568487ee5651d5ee83cf9e3c23ce2b6183d0e1c2546bb259` | 32 | 2071 |
+
+### Final bounded snapshot — 2026-10-18 02:23:21–02:23:50 UTC
+
+Final chapter: SHA-256 `32db34535a77fda7a4e4efa53ecdfba866e581f1e340356fcb2680e38a144666`, 960 lines / 50726 bytes. Companion and README hashes/counts remain exactly as in the public-text closure above. All three hashes were unchanged across this final review interval.
+
+Independently removing only the three newly authored formatting-section `<section class="keep-together">` / `</section>` marker pairs and their added blank lines reproduces the **original chapter SHA-256 exactly** (`2c2a256817c5efca8b28b9e6306feee18f2584ed55a5bcc4ea07c2e36e1e33ec`). Thus no original chapter words/listings were altered by the reviewed pagination closures. This is a source-identity check, not proof that those words match runtime semantics.
+
+**Final reader verdict remains clear within this bounded public-only review.** Both reported practical-clarity points are closed. No new reading blocker is introduced by the three print grouping markers. The draft's explicitly unresolved Table-length/helper paths, runtime/native scope and resource-limit caveats remain unresolved; this review does not promote them to complete contracts.
+
+### Final public-guide precision closure — 2026-10-18 02:25:49 UTC
+
+Re-read the last wording change in the companion and README. The supplied timeline's `frame: 4` is now explicitly called a **zero-based presentation offset**, not an elapsed-frame/startup-time/cycle guarantee. The README's introduced `offset4` spacing typo is fixed to `offset 4`. This is clear as public guidance; the underlying endpoint implementation proof belongs to the separate source audit and is not claimed by this public-only reader review.
+
+Final public-guide hashes/counts supersede the earlier chronological snapshots:
+
+| Public source | Final SHA-256 | Lines | Bytes |
+| --- | --- | ---: | ---: |
+| `docs/book1/bios-string.md` | `32db34535a77fda7a4e4efa53ecdfba866e581f1e340356fcb2680e38a144666` | 960 | 50726 |
+| `docs/programming/getting-started.md` | `4b3bd85016426d32ac65967cc6a4d62f8439aceea56f989052dcd52fbf848a88` | 455 | 22525 |
+| `carts/bios_format_manual/README.md` | `aa38ca28afb7112efdc1ca6571812cb851060be7a54bdcc4cdfda348e6c96398` | 32 | 2090 |
+
+The accepted final2 PDF/chapter hashes are unchanged. **Final bounded reader verdict: clear; no outstanding reported practical reading issue.** Execution, fresh-platform certification, native parity and unresolved helper contracts remain outside this review.
+
+---
+
+## Earlier base-operation evidence
+
+The following source/artifact review is retained at its earlier bounded scope;
+it is not an approval of the later formatting extension or a current hash.
+
 ## Scope and method
 
 Reading-only reconstruction by an experienced programmer new to BMSX. The

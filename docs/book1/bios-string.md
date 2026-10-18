@@ -1,11 +1,11 @@
 # BIOS String operations
 
 The installed BIOS supplies the `string` global before cartridge entry. The
-nine base operations in this chapter construct text, select codepoints, change
-ASCII case, take substrings, reverse or repeat values, and decode a mapped
-UTF-8 byte span. No cartridge import is required. Pattern matching, formatted
-text and binary packing are separate interfaces, not additional modes of
-these nine operations.
+nine base operations construct text, select codepoints, change ASCII case,
+take substrings, reverse or repeat values, and decode a mapped UTF-8 byte span.
+The separate `string.format` interface builds formatted text. No cartridge
+import is required for these installed operations. Pattern matching and binary
+packing remain separate interfaces, not additional modes of the base operations.
 
 ## Text values and encoded byte storage
 
@@ -625,4 +625,336 @@ Scalar conversion	1	1	122	65	1	0
 Rejected arguments	false	Invalid argument.	false	Invalid argument.
 Mapped decoding	1	3	0	233
 Chunk boundary	257	65	65	65	90
+```
+
+## `string.format`
+
+```lua
+string.format(format, ...)
+```
+
+Number arithmetic and value categories follow [Values and numeric instructions](cpu.md#values-and-numeric-instructions). Hexadecimal limits below use the `H` suffix.
+
+Builds formatted text and, on normal completion, returns exactly one String. It does not return a character count or write into a caller-supplied buffer. Unused arguments are ignored.
+
+For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format. The main scan uses the initial format length; decimal width and precision parsing re-evaluate that length at each loop test.
+
+**Table-length boundary.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The common Table-length contract remains unresolved. This also affects ordinary String formats: general-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can construct temporary Tables and use their lengths. Their complete results cannot be specified unconditionally here. Do not assume every Table `format` argument fails at entry.
+
+### Conversion syntax and argument order
+
+An immediate `%%` emits one percent and consumes no argument. All other conversions have this order:
+
+```text
+% flags width .precision modifiers conversion
+```
+
+Each component except `%` and the final conversion is optional. The dot belongs to the precision component.
+
+| Component | Accepted form |
+| --- | --- |
+| Flags | Any order and repetition of `-`, `+`, space, `0`, `#`. Repeating a flag has no additional effect. |
+| Width | `*` or a run of ASCII decimal digits. Leading zeros are parsed as flags before the width stage. |
+| Precision | `.` followed by `*` or zero or more ASCII decimal digits. A dot with no following digits records precision zero, provided a conversion still follows. |
+| Modifiers | Any order and repetition of `l`, `L`, `h`. They are ignored and do not change the numeric representation. |
+| Conversion | Exactly one of `s c d i u o x X f F e E g G q`. |
+
+Decimal fields are accumulated by multiplying the previous value by ten and adding the next digit. There is no field digit-count or numeric cap. There is no positional `$` syntax. No additional conversion is supplied for `a`, `A`, `p` or `n`; a percent reached after parsing flags, width or precision is not the `%%` escape.
+
+Arguments are selected sequentially: width `*` first, precision `*` second, then one value for a recognized conversion. An unsupported conversion does not select a conversion value, although its stars have already selected their arguments. There is no argument-count preflight or too-many-arguments error. With the installed argument-selection function, an exhausted argument list supplies Nil to a scalar selection; an omitted `format` is also Nil.
+
+A star uses the first result of `math.modf`. For finite Numbers this truncates toward zero. A negative width enables left alignment and uses the negated width. A precision is retained only when its truncated value is nonnegative; a negative or NaN precision is absent. A non-Number star argument reaches this arithmetic as Number NaN, rather than being parsed as numeric text or rejected by a formatter-specific type check. For that width, the negative-width test and padding comparison are false; that precision is absent.
+
+### Flags, signs and padding
+
+Width is a minimum, never a truncation limit. Padding measures the combined codepoint lengths of sign, base prefix and content. If padding is needed, `-` appends spaces and overrides `0`. Otherwise `0` inserts zeros after the sign and base prefix; ordinary padding inserts spaces before both.
+
+For signed conversions, a value less than zero selects `-`; otherwise `+` selects `+`, then space selects one leading space. Thus `+` overrides space. Sign selection does not inspect a negative-zero sign bit.
+
+| Conversion group | Flag and precision effects |
+| --- | --- |
+| `s`, `c`, `q` | Space padding only; `+`, space and `#` have no conversion effect. |
+| `d`, `i` | Signed decimal; `+` and space select a nonnegative sign. `#` adds no prefix. |
+| `u`, `o`, `x`, `X` | No sign from `+` or space. `#` affects octal and hexadecimal as described below. |
+| All integers | Any present precision disables width zero-padding, including precision zero. |
+| Floating conversions | Width zero-padding remains active when precision is present. `#` retains a point at zero precision in fixed/scientific construction and disables general-format zero stripping. |
+
+### Text, codepoint and quoted conversions
+
+**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction is subject to the Table-length boundary above.
+
+**`%c` — codepoints from integer and fraction.** The installed function passes both `math.modf` results to `string.char`, integer part first and fractional part second. It consumes one format value and returns one String, not two return values. Each Number is converted to an unsigned 32-bit word by truncation and wrapping. A resulting word greater than `10FFFFH` or within `D800H`–`DFFFH` raises the codepoint error; zero is String content, not a terminator. Number NaN and either infinity become word zero. Original non-Number arguments become Number NaNs through `modf`, rather than reaching `char` with their original category.
+
+For the installed bindings, `string.format('%c', 0)` contains two zero codepoints; both `string.format('%c', 65)` and `string.format('%c', 65.75)` contain codepoints 65 and 0. This differs from the one-codepoint `string.char(65)` form. Width measures the complete formatted String. Precision is ignored, but a precision star still consumes an argument.
+
+<section class="keep-together">
+
+**`%q` — quoted text.** Calls the current `tostring`, surrounds the resulting text with double quotes, and escapes its codepoints as follows:
+
+| Codepoint | Emitted escape |
+| --- | --- |
+| 10 | `\n` |
+| 13 | `\r` |
+| 9 | `\t` |
+| 92, backslash | `\\` |
+| 34, double quote | `\"` |
+| Other values below 32, and 127 | Backslash followed by the decimal code, zero-padded to three digits. |
+
+</section>
+
+Every other codepoint is copied unchanged. Width applies after quoting. Precision is ignored, including after consuming a precision star. Because conversion to text happens first, `%q` is not a promise of round-trip serialization of the original value.
+
+### Integer conversions
+
+`%d` and `%i` take the first `math.modf` result. Finite fractions truncate toward zero, and a negative integer is formatted using its positive magnitude and a separate minus sign. These conversions do not impose a 32-bit word limit.
+
+`%u`, `%o`, `%x` and `%X` take that same first result, apply a bitwise AND with `FFFFFFFFH`, and interpret the result as an unsigned 32-bit magnitude. `%u` uses decimal, `%o` octal, and `%x`/`%X` hexadecimal with lowercase/uppercase letters.
+
+Zero initially produces one `0`. Other magnitudes are converted by repeated remainder and floor division in the selected base. Integer precision adds leading zeros to the requested minimum digit count. Precision zero clears the digits when the magnitude is zero.
+
+For `#` octal, empty digits are restored to one `0`; otherwise a leading `0` is added only if the first digit is not already zero. For `#` hexadecimal, `0x` or `0X` is added only for a nonzero magnitude. The common width rules then place sign, prefix and padding.
+
+A signed NaN magnitude produces no initial digits; sign flags, precision and width can still add text. Non-Number arguments reach signed integer formatting as Number NaN. Unsigned conversion maps both that result and Number NaN or either infinity to zero. Either infinity in signed integer conversion produces a positive-infinite magnitude and enters repeated base division without a finite progress condition; completion is not guaranteed.
+
+### Floating conversions
+
+`f`/`F` select fixed construction, `e`/`E` scientific construction, and `g`/`G` general construction. They do not validate the original argument as a Number or parse numeric Strings.
+
+A Number NaN is handled before construction as `nan` or `NAN`; either infinity is handled as `inf` or `INF`. Sign selection is separate, so negative infinity receives a minus sign and nonnegative special values may receive `+` or space. For other arguments, sign is selected from the original value and a value less than zero is negated to obtain the magnitude.
+
+Non-Number arguments do not match the initial Number-special cases. Comparisons with the numeric constants are false, and subsequent arithmetic produces Number NaN. The selected construction below therefore proceeds with NaN arithmetic and text pieces; this is not the initial `nan`/`NAN` shortcut or a formatter-specific argument error.
+
+<section class="keep-together">
+
+**Fixed construction (`f`, `F`).** Precision defaults to six; explicit zero is retained. For magnitude `v` and precision `p`, construct `scale` by starting at one and multiplying by ten `p` times, then calculate:
+
+```text
+rounded  = first modf result of (v * scale + 0.5)
+whole    = rounded // scale
+fraction = rounded % scale
+```
+
+</section>
+
+Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tostring(fraction)`, padding that fraction text on the left with zeros to at least `p` codepoints. At precision zero, append a dot only for `#`.
+
+**Scientific construction (`e`, `E`).** Precision also defaults to six. Zero uses fixed construction followed by exponent zero. Otherwise repeatedly divide the magnitude by ten while it is at least ten, or multiply it by ten while it is positive and below one, tracking the exponent from zero. Round the resulting mantissa using the same multiply-plus-half and first-`modf` operation. If the rounded value is at least `10 * scale`, divide it by ten using floor division and increment the exponent. Construct the whole/fraction text as above, then append `e` or `E`, an explicit exponent sign, and the current `tostring` of the absolute exponent, left-padded with zeros to at least two codepoints. Two is a minimum, not an exponent limit.
+
+**General construction (`g`, `G`).** Precision defaults to six significant digits; explicit zero becomes one. Determine the decimal exponent from the unrounded magnitude, using exponent zero for zero. If the exponent is below −4 or at least the significant-digit precision, select scientific construction with precision one less than the significant-digit count. Otherwise select fixed construction with precision `significant − exponent − 1`. The choice is not repeated after rounding.
+
+Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing are subject to the Table-length boundary above.
+
+**Default numeric text dependency.** The whole, fraction and exponent text pieces above use `tostring`; precision does not substitute an arbitrary-length decimal writer. Under the installed default, Nil becomes `nil`, Booleans become `false` or `true`, Tables become `table`, Threads become `thread`, function values become `function`, and Strings retain their contents. Number specials become `nan`, `-inf` or `inf`.
+
+For finite Numbers, default text conversion writes positive zero as `0`, preserves a received negative zero as `-0`, and writes nonzero integral magnitudes below 1,000,000 exactly. Other finite-number text uses a six-significant-digit general algorithm: normalize, scale by 100,000, round with ties to even, adjust a six-digit carry, then choose fixed notation only for a post-rounding exponent from −4 through 5. Otherwise it uses lowercase `e`, an explicit sign and at least two exponent digits. Fractional trailing zeros are removed. This text algorithm is distinct from the formatter's multiply-plus-half rounding. Consequently, requested floating precision does not guarantee that all whole/fraction pieces are plain fixed decimal digits, or that every requested decimal digit is accurate.
+
+### Errors, completed work and limits
+
+With the installed `error`, an incomplete conversion raises the String:
+
+```text
+string.format incomplete format specifier.
+```
+
+This includes a final bare `%`, a final dot, and a conversion that ends after its flags, fields or ignored modifiers. An unsupported conversion raises `string.format unsupported format specifier '%C'.`, where `C` is replaced by that actual codepoint, not restricted to ASCII.
+
+<section class="keep-together">
+
+These checks are not a preflight of the whole format. Earlier literals, conversions and star selections may already have been processed. A raised error returns neither the partial String nor a count. There is no formatter recovery or rollback. Length evaluation and codepoint operations can also fail; no exact caught-error text for those failures is specified here.
+
+</section>
+
+The formatter retains the installed `string.byte`, `string.char`, `string.sub`, `string.rep`, `table.concat` and `math.modf` functions. Changing those table fields later does not replace the retained functions. In contrast, `tostring`, `select` and `error` are looked up when called; replacing them can alter conversion, argument selection and error behavior. Retained substring and concatenation operations can themselves depend on the current `tostring`.
+
+There is no formatter-level output-length, conversion-count, width, precision or total-work cap. Padding can request large Strings; decimal scaling, normalization and base conversion use value-dependent loops. Positive-infinite precision can leave scaling without progress, and positive-infinite width can reach String repetition. No finite completion, resource-failure outcome or fixed cost is guaranteed for such requests. Repeated codepoint reads start from the beginning of their String, so a format scan is not a one-pass work guarantee. String/heap capacities, allocation-failure handling and fault routing are outside this section's specified boundary.
+
+### Complete program: formatted text
+
+This is a separate cartridge from the codepoint/UTF-8 program. The two complete
+modules use the installed `string.format` directly; no cartridge-local formatter
+or output-buffer address is involved. The result module is again named `results`,
+but declares its own `bios_format_manual_result` layout. Do not combine the two
+entry modules in one cartridge. The [formatting build route](../programming/getting-started.md#build-and-inspect-formatted-text)
+gives the complete file tree, manifest, commands and observation procedure.
+
+The program covers width and precision argument order, signs and prefixes,
+zero integer precision, unsigned conversion, fixed/scientific/general output,
+quoted text, the installed `%c` pair, nonnumeric argument paths and two reached
+format errors. Its general conversion uses `#` to retain the point and bypass
+zero stripping. It does not settle the common Table-length boundary or impose
+a general output-size or execution-time limit.
+
+#### Formatting result storage
+
+Every retained field is one word. Comparison words are one when the stated
+relation is true, otherwise zero; String values themselves are not written
+into those fields.
+
+```lua
+module<const>
+
+struct bios_format_manual_result
+	completed: word
+	basic_match: word
+	sign_match: word
+	prefix_match: word
+	stars_match: word
+	left_match: word
+	zero_integer_match: word
+	float_match: word
+	quote_match: word
+	unsigned_match: word
+	special_match: word
+	fixed_large_match: word
+	empty_integer_length: word
+	nul_length: word
+	nul_codepoint: word
+	nul_trailing_codepoint: word
+	nonnumeric_width_match: word
+	incomplete_error: word
+	unsupported_error: word
+end
+
+bss result: bios_format_manual_result
+
+return { result = result }
+```
+
+#### Formatting entry, part 1: fields and stars
+
+Width six includes the sign in `+00042`; width eight includes `0x` in
+`0x00002a`. In `%*.*f`, the arguments are width 8, precision 2, then value 1.25.
+Four spaces precede `1.25`. The negative width in `%*s` selects left alignment,
+so three spaces follow `go`. The printed brackets expose those spaces and are
+not part of the formatted Strings.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *bios_format_manual_result = state.result
+
+-- Width is a minimum; zeros follow the sign or base prefix.
+local basic<const> = string.format('HP %d/%d', 7, 10)
+local signed<const> = string.format('%+06d', 42)
+local prefixed<const> = string.format('%#08x', 42)
+result.basic_match = basic == 'HP 7/10' and 1 or 0
+result.sign_match = signed == '+00042' and 1 or 0
+result.prefix_match = prefixed == '0x00002a' and 1 or 0
+print('Format fields', basic, signed, prefixed)
+
+-- Stars consume width, then precision, then the value.
+local stars<const> = string.format('%*.*f', 8, 2, 1.25)
+local left<const> = string.format('%*s', -5, 'go')
+result.stars_match = stars == '    1.25' and 1 or 0
+result.left_match = left == 'go   ' and 1 or 0
+print('Format stars', '[' .. stars .. ']', '[' .. left .. ']')
+```
+
+#### Formatting entry, part 2: integer and floating output
+
+Integer precision zero removes zero's decimal digits. Alternate octal still
+emits one zero, giving `/0`. Unsigned conversion of −1 gives `4294967295`.
+The three floating conversions produce `1.25/1.3e+01/100.`. The final point is
+retained by `#`; significant-digit precision does not divide the input.
+
+The large fixed-format example deliberately exposes the numeric-text
+construction rule: `string.format('%.0f', 1000000)` returns `1e+06`, not
+`1000000`. Its whole-number text uses the default numeric conversion described
+above. Do not use requested fixed precision as a guarantee of a plain-decimal
+output grammar.
+
+```lua
+-- Integer precision zero clears zero digits; alternate octal restores one.
+local zeros<const> = string.format('%.0d/%#.0o', 0, 0)
+local unsigned<const> = string.format('%u', -1)
+result.zero_integer_match = zeros == '/0' and 1 or 0
+result.unsigned_match = unsigned == '4294967295' and 1 or 0
+print('Format integers', zeros, unsigned)
+
+-- Alternate general format retains its point and skips zero stripping.
+local floating<const> = string.format('%.2f/%.1e/%#.3g', 1.25, 12.5, 100)
+local special<const> = string.format('%+F/%e', 1 / 0, 0 / 0)
+local large<const> = string.format('%.0f', 1000000)
+result.float_match = floating == '1.25/1.3e+01/100.' and 1 or 0
+result.special_match = special == '+INF/nan' and 1 or 0
+result.fixed_large_match = large == '1e+06' and 1 or 0
+print('Format numbers', floating, special, large)
+```
+
+#### Formatting entry, part 3: codepoints and reached errors
+
+The quoted text contains a tab and double quote. `%q` emits visible escapes
+inside double quotes. `%c` receives zero and returns two zero codepoints in
+the installed BIOS; length and both codepoints are printed numerically, not
+as visible glyphs. A missing `%d` value gives empty digits. The String width
+argument `'5'` is not parsed as a Number: its NaN width does not request padding.
+
+The final protected calls report the original incomplete-specifier and
+unsupported-`p` error Strings. The width star in `%*p` is processed before the
+unsupported conversion is reached. Completion is recorded only after these
+observations, followed by the ordinary interrupt-halt loop.
+
+```lua
+-- Quoting emits visible escapes; %c retains both modf results in this BIOS.
+local quoted<const> = string.format('%q', 'A\t"')
+local nul<const> = string.format('%c', 0)
+result.quote_match = quoted == '"A\\t\\""' and 1 or 0
+result.nul_length = #nul
+result.nul_codepoint = string.byte(nul)
+result.nul_trailing_codepoint = string.byte(nul, 2)
+print('Format text', quoted, result.nul_length, result.nul_codepoint,
+	result.nul_trailing_codepoint)
+
+-- These branches do not parse numeric text or impose a common type check.
+result.empty_integer_length = #string.format('%d')
+result.nonnumeric_width_match = string.format('%*s', '5', 'go') == 'go' and 1 or 0
+print('Format argument paths', result.empty_integer_length,
+	result.nonnumeric_width_match)
+
+local incomplete_ok<const>, incomplete_error<const> = pcall(string.format, '%')
+local unsupported_ok<const>, unsupported_error<const> =
+	pcall(string.format, '%*p', 4, 'unused')
+result.incomplete_error = not incomplete_ok
+	and incomplete_error == 'string.format incomplete format specifier.'
+	and 1 or 0
+result.unsupported_error = not unsupported_ok
+	and unsupported_error == "string.format unsupported format specifier '%p'."
+	and 1 or 0
+print('Format incomplete', incomplete_ok, incomplete_error)
+print('Format unsupported', unsupported_ok, unsupported_error)
+
+result.completed = 1
+while true do
+	halt_until_irq
+end
+```
+
+#### Formatting observations
+
+| Fields | Retained values |
+| --- | --- |
+| `completed` | `1` |
+| `basic_match`, `sign_match`, `prefix_match` | `1`, `1`, `1` |
+| `stars_match`, `left_match` | `1`, `1` |
+| `zero_integer_match`, `unsigned_match` | `1`, `1` |
+| `float_match`, `special_match`, `fixed_large_match` | `1`, `1`, `1` |
+| `quote_match` | `1` |
+| `nul_length`, `nul_codepoint`, `nul_trailing_codepoint` | `2`, `0`, `0` |
+| `empty_integer_length`, `nonnumeric_width_match` | `0`, `1` |
+| `incomplete_error`, `unsupported_error` | `1`, `1` |
+
+After startup the ordinary cartridge prints these eight lines. Argument
+separators are literal tabs; the `\t` within the quoted result is a visible
+backslash followed by `t`, not another argument separator.
+
+```text
+Format fields	HP 7/10	+00042	0x00002a
+Format stars	[    1.25]	[go   ]
+Format integers	/0	4294967295
+Format numbers	1.25/1.3e+01/100.	+INF/nan	1e+06
+Format text	"A\t\""	2	0	0
+Format argument paths	0	1
+Format incomplete	false	string.format incomplete format specifier.
+Format unsupported	false	string.format unsupported format specifier '%p'.
 ```

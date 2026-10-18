@@ -1,5 +1,120 @@
 # BIOS String complete-program source sub-audit
 
+## Current formatting program/source-evidence review
+
+2026-10-18. Independent, finite read-only review of the current worktree and retained artifacts. **No remaining failure found in the reviewed program/public-literal/build-and-observation contract after the wording corrections described below.** This is not an unconditional formatter or publication sign-off.
+
+This agent did not edit repository files, build, execute guest tests, or mutate the frozen cartridge/BIOS artifacts. It inspected the supplied logs, current sources and artifact bytes. `docs/book1/facts/bios-string-format.md` was used as an owner index, not as independent proof of its own claims. No architecture document or reference PDF was opened. The full earlier formatter prose and every fact-card assertion were not independently re-audited in this program-focused pass.
+
+### Literal source reconstruction and boundaries
+
+- `docs/book1/bios-string.md:789-817` contains a 27-line Lua block exactly equal, including final newline, to `carts/bios_format_manual/results.lua`.
+- The three entry blocks at `docs/book1/bios-string.md:827-848,863-879,894-927` contain respectively 20, 15 and 32 lines. Joining them in order **with one blank line between adjacent parts** produces the exact 69-line `carts/bios_format_manual/cart.lua`, including final newline. No omitted function, prelude, extra entry declaration or local formatter is needed.
+- Initial audit finding, now corrected: plain byte concatenation of those three blocks gives 67 lines, not the asserted 69. `docs/programming/getting-started.md:386-390` now explicitly says “separating adjacent parts with one blank line”; `carts/bios_format_manual/README.md:5-6` has the same correction. This was a source-assembly wording issue, not a source/runtime change.
+- The complete manifest block in the companion exactly matches `carts/bios_format_manual/res/manifest/manifest.rommanifest:1-3`: title plus one `type: rom` hardware entry. The printed JSON block exactly matches `tests/carts/bios_format_manual/ordinary_timeline.json`.
+- The cart has only `require('results')` (`cart.lua:3`), a typed pointer to that module's result (`:4`), installed library/global calls, scalar observations and the normal halt loop (`:66-69`). There is no hidden API import, cartridge-local encoding/fixed-point/ABI/allocator helper, caller output-buffer address, generated game-specific support module or asset requirement in these complete source files.
+- The ordinary result module declares 19 fields, all `word`, and one BSS instance (`results.lua:3-25`); it exports that instance at `:27`. Shared owner `toolchain/ts/lua/compiler/struct_types.ts:44-55` defines `word` as size/alignment 4 with Word memory access. The cart writes numeric comparison/count/codepoint observations, never guest Strings into numeric address/word fields. This is a local representation verification, not an audit of all BSS or memory behavior.
+
+### Retained observations: all fields and all 18 assertions
+
+The chapter table at `docs/book1/bios-string.md:931-941` covers all 19 declared fields. The completion field is used by the integration wait (`tests/carts/bios_format_manual/bios_format_manual_assert.lua:8-10`); the following 18 explicit assertions occupy `:11-28`.
+
+| Field(s) | Actual producer | Required retained value(s) |
+| --- | --- | --- |
+| `completed` | `cart.lua:66` | 1 |
+| `basic_match`, `sign_match`, `prefix_match` | `cart.lua:7-12` | 1, 1, 1 |
+| `stars_match`, `left_match` | `cart.lua:16-19` | 1, 1 |
+| `zero_integer_match`, `unsigned_match` | `cart.lua:23-26` | 1, 1 |
+| `float_match`, `special_match`, `fixed_large_match` | `cart.lua:30-35` | 1, 1, 1 |
+| `quote_match` | `cart.lua:39-41` | 1 |
+| `nul_length`, `nul_codepoint`, `nul_trailing_codepoint` | `cart.lua:40,42-44` | 2, 0, 0 |
+| `empty_integer_length`, `nonnumeric_width_match` | `cart.lua:49-50` | 0, 1 |
+| `incomplete_error`, `unsupported_error` | `cart.lua:54-62` | 1, 1 |
+
+`/tmp/bmsx-format-cart-final-test.log:5` is exactly `[test] formatted_text: passed`; its command at `:2` names the current integration suite, and `:3-4` identify both debug ROM paths. Passing here is retained derived-target execution evidence, not an ordinary-image identity claim.
+
+The separate current unit suite `format_char_assert.lua:5-21` has seven explicit assertions covering `%c` 0, 65, 65.75, width 3; direct one-argument char versus the grouped modf call; and grouped/ungrouped select result counts. `/tmp/bmsx-format-char-final-test.log:5` is exactly `[test] format_char_call_results: passed`. The log does not expose the three diagnostic `print` lines from that suite; those values are evidenced by its asserted conditions and pass, not falsely quoted as visible unit stdout.
+
+### Actual `%c` source chain, not stock-Lua grouping
+
+I opened these direct owners rather than treating the fact card as proof:
+
+1. Installed String composition obtains `string/format` and installs its member (`machine/bios/string.lua:12-20`). Format captures base char and Math modf at module initialization (`machine/bios/string/format.lua:1-9`). Base char is the VM primitive (`machine/bios/string/base.lua:1-2,39-40`).
+2. Math modf explicitly returns **two results**, `integer, value - integer` (`machine/bios/math.lua:59-62`; trunc at `:27-32`).
+3. The `%c` branch selects one format argument, advances the format argument index once, and calls exactly `formatted = char((modf(value)))` (`machine/bios/string/format.lua:386-390`).
+4. The host parser consumes parentheses and returns the inner expression directly (`toolchain/ts/lua/syntax/parser.ts:1345-1349`). Host lowering tests the final argument for multireturn (`toolchain/ts/lua/compiler.ts:5648-5652`) and emits its all-results/open-argument call path (`:5685-5690`). The actual classifier, including the known-single-result optimization exception, is at `:5754-5764`.
+5. The TS char owner iterates **all** received arguments and appends every decoded codepoint (`machine/ts/machine/cpu/cpu.ts:4353-4367`). The native consumer likewise iterates all received arguments (`machine/cpp/machine/cpu/cpu.cpp:2209-2222`); this is native source inspection, **not native playback**.
+
+Thus the named tested pipeline forwards both modf results into one char call and constructs one two-codepoint String, not two formatter returns and not two format arguments consumed. The program, unit fixture, current chapter table and ordinary log agree. There is no authorized or actual compiler/BIOS fix in this example, and no new BZ identity or all-optimization/all-source-pipeline theorem is inferred. The existing cartridge-source grouping distinction is also stated at `docs/book1/memory.md:409`.
+
+The initial failure is not hidden: `/tmp/bmsx-format-cart-test.log:5-8` reads `[test] formatted_text: failed`, `[test:body] assertion failed!`, and points to integration fixture line 23. `/tmp/bmsx-format-ordinary-initial.log:17` already prints a NUL length of 2. `docs/book1/facts/bios-string-format-example.md:45-51` and the README record that the original expectation was one codepoint and that it was corrected only after the actual producer/consumer chain and separate unit observations. The failed log alone identifies the old failing assertion location, not its historical RHS; I did not pretend the now-corrected current line is a retained copy of that old assertion text.
+
+### Direct formatting algorithm checks for the program claims
+
+The entire format owner was inspected. The finite claims illustrated by this program match its branches: sign/prefix padding `machine/bios/string/format.lua:80-106`; width then precision star selection `:324-363`; U32 and base output `:108-137,391-429`; zero precision then alternate octal `:409-427`; fixed/scientific/general construction `:150-207,232-255`; special floating text `:139-148,430-445`; visible quoting escapes `:258-280`; and the two reached explicit errors `:293-295,451-452`.
+
+In particular, fixed whole text calls current tostring (`:150-162`), whose installed default is `machine/bios/base.lua:235-237`; ordinary TS Number text delegates to central formatNumber (`machine/ts/machine/cpu/value.ts:182-195`). The observed `1e+06` is not silently replaced by an assumed fixed-decimal grammar. Alternate general format bypasses the zero-strip branch (`format.lua:249-250`) without claiming universal safety or closure of other helper-Table paths. The nonnumeric-width and missing-integer observed paths are not recast as stock-Lua type errors: format selects raw values, modf uses arithmetic, TS numeric slot access maps non-Numbers to NaN (`machine/ts/machine/cpu/value_slots.ts:128-130`), select can emit no result (`cpu.ts:4286-4318`), and a requested missing result becomes Nil (`:3421-3439`). These owner reads explain the particular observed program cases; no broad arbitrary-input proof is asserted.
+
+### Actual ordinary stdout, debug selection and endpoint
+
+`docs/book1/bios-string.md:947-956` and `docs/book1/facts/bios-string-format-example.md:34-43` each contain exactly the same eight output lines, byte-for-byte, as `/tmp/bmsx-format-ordinary-final.log:13-20`. Actual argument separators are tabs, while the quoted result contains visible backslash escapes:
+
+```text
+Format fields	HP 7/10	+00042	0x00002a
+Format stars	[    1.25]	[go   ]
+Format integers	/0	4294967295
+Format numbers	1.25/1.3e+01/100.	+INF/nan	1e+06
+Format text	"A\t\""	2	0	0
+Format argument paths	0	1
+Format incomplete	false	string.format incomplete format specifier.
+Format unsupported	false	string.format unsupported format specifier '%p'.
+```
+
+The current companion command at `docs/programming/getting-started.md:441-446` explicitly includes `--debug`; the refreshed final ordinary log `:2` records this command, `:3-4` records the exact cartridge/BIOS `.debug.rom` paths, and `:5` records `debug=true`. This resolves the earlier implicit selection ambiguity without changing the eight output lines or source/artifact hashes. The fact sheet's command is updated consistently at `docs/book1/facts/bios-string-format-example.md:31-32`. The npm script supplies the debug BIOS (`package.json:44`).
+
+Endpoint wording now states zero-based presentation offset 4, not an elapsed-frame/time/cycle guarantee. The exact owner boundary is `scripts/bootrom/platforms/input_timeline.ts:68-95` (largest entry frame 4 yields completionFrame 5), `:127-143` (origin is first cartridge-active presentation; cartridgeFrame is presentedIndex - origin + 1), and `:155-157` (completion). Therefore completion corresponds to presented-index offset 4, the fifth presentation relative to that origin. The final log `:8,21` records arming and completion. This fixture has no event or capture request; description alone does not establish a screenshot claim. No broader timeline audit was undertaken.
+
+### Build/result boundary and frozen identities
+
+`/tmp/bmsx-format-cart-final-build.log:8-9` identifies `bios_format_manual`, debug -O3; `:11,25` records system/cart lint; `:17-18,24-29` records compilation/publication/export; `:30` names artifact ID `0b695c2184d8761e2a70e006b0c6ced96cb10ca2473e5d683ffddc48bf5c39d9`.
+
+The current build owner really captures/prepares system and cart together, builds or selects the system and uses its actual imports for the cart (`scripts/rompacker/build.ts:23-79`), rather than relying on a manual BIOS prerequisite. Cart compilation includes the lint phases (`scripts/rompacker/compile.ts:36-40,138-165`); semantic compile diagnostics are gathered and rejected by the compiler (`toolchain/ts/lua/compiler.ts:6181-6185`). This supports the bounded lint/semantic checking claim, not runtime/performance certification.
+
+The test boundary is also honest: `scripts/bootrom/platforms/hostrunner/test_runner.ts:16-33` loads source/media and uses O3 with an OffscreenMachine; `ide/testing/run.ts:38-45` builds a test cart and creates a target from its derived bytes; `toolchain/ts/rompack/test_cartridge.ts:156-182,199-217` adds suite/dependencies and changes the entry for a unit suite. This is not byte-identical ordinary playback.
+
+All six hashes recorded at `docs/book1/facts/bios-string-format-example.md:6-11` match the actual current bytes:
+
+| File | SHA-256 |
+| --- | --- |
+| `carts/bios_format_manual/results.lua` | `ab32c6d93fd8c58f6845ab8c70d41abe072a3c2a9eb86071e18b6b7075ec62ae` |
+| `carts/bios_format_manual/cart.lua` | `166d4775667d8e618e5f5679bfcbeb2efcb19df1e570fb7e7efe23f0d9d2176c` |
+| `tests/carts/bios_format_manual/bios_format_manual_assert.lua` | `c30bb8fe93b83a2c65c3e4daaef19e6506a0ad01af08cb43be087073cb0b82ec` |
+| `tests/carts/bios_format_manual/format_char_assert.lua` | `3b7570487239d79a06c8d03fedc34ec77e95744e7efe32dc7480484c81684bdd` |
+| `dist/bios_format_manual.debug.rom` | `c1f449e1c9f6eea7468ab7eef342a64e7dfcd6ab3239e849f447359c4b2cba3c` |
+| `dist/system/bmsx-bios.debug.rom` | `01b9f2f197e59144867d5844863aa7fd9752811e227e7a6901a1541a17b6e664` |
+
+I also checked both ROMs in `.bmsx/builds/artifacts/0b695c2184d8761e2a70e006b0c6ced96cb10ca2473e5d683ffddc48bf5c39d9/` against their `artifact.json` output digests and the exported dist bytes; all match. Artifact ID is not confused with a ROM's digest.
+
+Reviewed final log SHA-256 values:
+
+- `/tmp/bmsx-format-cart-final-build.log`: `fd7ae62611bd88db227f6d6fbc188535f24a49da77cce57486b3476b3c8ecdfe`
+- `/tmp/bmsx-format-cart-final-test.log`: `addea4e6dc461c3416ae696a4c3db0f506389ebb9e3ec0af4c277628e088f8ef`
+- `/tmp/bmsx-format-char-final-test.log`: `bea2902ce1a7c1d895bee3ce645287d02ef2e0b87c6ec8d78ba9a414ca9783d5`
+- `/tmp/bmsx-format-ordinary-final.log`: `a5ff48474c8d9885fac83a9b8a94f6ab26d04544c14dacb86e88ff49a0caf744`
+
+`git diff --check` passed at the end of this review. The worktree also contains concurrent/out-of-scope changes; this agent did not attribute those to this finite program slice.
+
+### Explicit limits
+
+No remaining failure was found within the exact reviewed program/source-literal/result/log/hash contract after the assembly, debug-selection and endpoint wording clarifications. No claim is made about native end-to-end playback, all inputs, all compilation paths/optimization levels, universal common Table length, arbitrary resource limits, a physical CPU/throughput budget, the existing seven CPU questions, or BZ01 closure. The README, companion and example fact sheet retain those limits. No runtime/compiler/BIOS repair or new encoding/helper abstraction is needed or proposed by this bounded review.
+
+---
+
+## Earlier base-operation evidence
+
+The following source/artifact review is retained at its earlier bounded scope;
+it is not an approval of the later formatting extension or a current hash.
+
 **No concrete false or unsupported claim found in the bounded scope.** This
 nonauthor review inspected the complete-program section of
 `docs/book1/bios-string.md`, the literal ordinary cartridge, its manifest and

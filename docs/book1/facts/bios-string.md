@@ -2,8 +2,9 @@
 
 2026-10-18, baseline ea4ba90ab. Current software is the authority. No
 architecture document or historical PDF supplies facts. This slice is exactly
-the nine base exports, not a complete reference for patterns, formatting,
-binary packing, all BIOS libraries or Book II devices.
+the nine base exports plus the separately indexed formatting interface, not a
+complete reference for patterns, binary packing, all BIOS libraries or cartridge/
+expansion devices. Book II now contains this software chapter.
 
 - [Base-operation facts](bios-string-reference.md): actual byte/char/len,
   ASCII case, substring/reversal/repetition and mapped-byte decoder contracts,
@@ -12,6 +13,13 @@ binary packing, all BIOS libraries or Book II devices.
   lines,32 retained assertions,9 separately observed ordinary diagnostic lines
   and final source/artifact identity. The program uses real BIOS functions,
   not a local codec or a raw String-address fiction.
+- [Formatting source facts](bios-string-format.md): conversion grammar,
+  complete flags/specifiers, actual numeric-text construction, argument/error/
+  resource boundaries and the corrected installed `%c` two-result call chain.
+- [Formatting example evidence](bios-string-format-example.md): complete27+69-line
+  ordinary BLua program,18 retained assertions, separate call-result unit case
+  and8 observed ordinary diagnostic lines. It does not supply native execution
+  or resolve the common Table-length stop.
 - [Earlier text/byte boundary](memory-strings.md) and the public Memory chapter
   own typed storage, mapped addresses, String reference versus bytes, literal
   encoding, initialization and reservations. CPU owns Number/word conversion,
