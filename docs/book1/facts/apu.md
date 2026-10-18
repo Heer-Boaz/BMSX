@@ -671,3 +671,12 @@ are zero, final ACTIVE_MASK0/STATUS0020H/faultcode0/detail0/MASK0/FLAGS4. These
 controlled observations are not electrical timings, audible output or fixed
 CPU instruction-to-handler latency. The ordinary headless audio sink discards
 sound; discrete sample identity requires separate output-owner execution.
+
+
+## Read-side prefill, DMA receipt and surplus service
+
+The [finite download fact sheet](apu-download.md) supplies the20-word16+4 and
+short4-word read-side schedules, exact-deadline STOP boundary and source paths.
+It keeps the derived/actual-owner timelines separate from the complete74-line
+ordinary BLua cartridge and its retained data/status observations. Neither
+TRANSFER_ADDRESS readback nor CPU DATA reads expose the moving offset/FIFO.

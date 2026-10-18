@@ -384,6 +384,13 @@ Previously passed scoped reviews do not close this broader audit in advance.
 The [bounded technical inventory](technical-follow-up.md) assigns concrete
 follow-up paragraphs, actual graphics-capture leads and remaining owner chapters.
 
+The finite [APU download lesson](../book1/apu.md#apu-download-budget) now closes
+the inventory's missing read-side numerical companion:20/4-word schedules,
+full initial prefill, requested DMA receipt versus surplus work, exact STOP
+boundary and a complete 74-line ordinary BLua cartridge. It adds real returned
+word/status evidence, not an audio screenshot or physical-bandwidth promise.
+Its bounded acceptance does not close the whole-console/SDK target above.
+
 ## Repository commands
 
 After `npm ci`:

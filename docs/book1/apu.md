@@ -1234,3 +1234,167 @@ The event source for the square is zero; the other three are the actual ROM,
 private-RAM and packed-ROM source addresses. Natural and faded ends clear their
 banks. The four BSS records are observations from these controlled operations,
 not additional hardware event storage.
+
+
+<section class="keep-together">
+
+<a id="apu-download-budget"></a>
+
+## Worked download: requested data and surplus prefetch
+
+The following timelines separate sample-RAM prefill from DMA transport. Let **O** be a word-aligned programmed starting byte offset within sample RAM, and **Wi** the word at **O + 4i**. Moving offsets below are shown as additions to O, not CPU addresses or `TRANSFER_ADDRESS` readback. These bounded examples do not wrap sample RAM.
+
+Assume the installed clock is 33,868,800 Hz, the FIFO is empty, and timing carry is zero. Program `TRANSFER_ADDRESS` while stopped, then prearm DMA0 with a fixed `TRANSFER_DATA` source, an aligned incrementing RAM destination, count 20 or 4, APU_READ qualification, FORCE write qualification and 16-word blocks (`CONTROL=00003C12H`). The channel is BUSY but waiting. **Cycle 0** is the register-access edge that genuinely changes `TRANSFER_CONTROL` to DMA_READ, not the start of setup instructions. Keep the CPU inactive afterward. There is no competing DMA, quiescence, destination-boundary crossing, intervening address/control write or clock change; scheduled work completes at its exact deadlines. Rewriting an already-selected DMA_READ mode does not establish this starting state.
+
+</section>
+
+Sample transfer costs 32 cycles per word. The initial prefill always contains 16 words and therefore takes 512 cycles, even for a four-word DMA request. APU_READ is asserted by a full FIFO, not by the requested count. Once admitted, a DMA block completes without rechecking that request between words. Fixed-port-to-RAM transport costs **N + 1** cycles per block: 17 for 16 words, then 5 for four. Prefill and transport are separate stages; the tables show states after each completed operation, not individual word-access edges.
+
+**Twenty-word request: 16 + 4 DMA words**
+
+| Cycle | Completed work | FIFO contents | Moving offset | Next work |
+|---:|---|---|---|---|
+| 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
+| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 16, 17 cycles |
+| 529 | DMA writes W0–W15 | Empty | O + 64 | Prefill 16, 512 cycles |
+| 1041 | Prefill 16 | W16–W31 | O + 128 | DMA 4, 5 cycles |
+| 1046 | DMA writes W16–W19; DONE | W20–W31: 12 words | O + 128 | Surplus prefill 4, 128 cycles |
+| 1174 | Surplus prefill 4 | W20–W35: 16 words | O + 144 | None |
+
+**Four-word request**
+
+| Cycle | Completed work | FIFO contents | Moving offset | Next work |
+|---:|---|---|---|---|
+| 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
+| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 4, 5 cycles |
+| 517 | DMA writes W0–W3; DONE | W4–W15: 12 words | O + 64 | Surplus prefill 4, 128 cycles |
+| 645 | Surplus prefill 4 | W4–W19: 16 words | O + 80 | None |
+
+DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block schedules prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
+
+After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. These device-work timelines guarantee neither actual CPU instruction elapsed time nor polling or STOP latency; the STOP boundary names its access edge.
+
+<section class="keep-together">
+
+### Complete BLua download cartridge
+
+For project layout, building and checking, use the [Build and inspect APU downloads](../programming/getting-started.md#build-and-inspect-apu-downloads) development guide. No earlier example cartridge or audio asset is required. This program moves raw words; it does not start a voice.
+
+Create `results.lua` with these complete contents. `received[0..19]` retains the twenty-word download; `received[20..23]` retains the four-word download from byte offset 40H.
+
+```lua
+module<const>
+
+struct apu_download_result
+	completed_phase: word
+	received: word[24]
+	dma_status: word[2]
+	remaining: word[2]
+	pending: word[2]
+	apu_after_dma: word[2]
+	apu_after_stop: word[2]
+	mode_after_stop: word[2]
+end
+
+bss result: apu_download_result
+
+return { result = result }
+```
+
+</section>
+
+<section class="keep-together">
+
+Create `res/manifest/manifest.rommanifest` with these complete contents:
+
+```yaml
+title: APU Download Manual Example
+hardware:
+    - type: rom
+```
+
+</section>
+
+<section class="keep-together">
+
+### Entry module: preload, arm, receive and stop
+
+Create `cart.lua` with this complete entry module. It exclusively owns DMA0, the transfer ports and sample-RAM bytes 0–159. It polls with interrupts masked instead of sharing the cartlib DMA callback service used by the earlier four-source program.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *apu_download_result = state.result
+local irq_flags<const>: *word = 0x08000000
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local dma_read<const>: *word = 0x0800000c
+local dma_write<const>: *word = 0x08000010
+local dma_count<const>: *word = 0x08000014
+local dma_control<const>: *word = 0x08000018
+local dma_status<const>: *word = 0x0800001c
+local dma_trigger<const>: *word = 0x08000020
+local apu_status<const>: *word = 0x08000178
+local transfer_address<const>: *word = 0x080001e8
+local transfer_data<const>: *word = 0x080001ec
+local transfer_control<const>: *word = 0x080001f0
+
+rodata counts: word[2] = { 20, 4 }
+rodata offsets: word[2] = { 0, 0x40 }
+
+-- Own DMA0, the APU transfer ports and sample-RAM bytes0..159. No voices.
+-- Poll DMA directly; no interrupt callback or cartlib DMA service owns it.
+*irq_mask = 0
+*transfer_control = 0
+*transfer_address = 0
+*transfer_control = 1
+for index = 0, 39 do
+	*transfer_data = 0x5a000000 | index
+end
+
+for phase = 0, 1 do
+	*transfer_control = 0
+	*transfer_address = offsets[phase]
+	*irq_ack = 0x00000001
+	*dma_read = 0x080001ec
+	*dma_write = &result.received[phase * 20]
+	*dma_count = counts[phase]
+	-- Fixed APU_READ source, incrementing FORCE destination, block16.
+	*dma_control = 0x00003c12
+	*dma_trigger = 1
+	*transfer_control = 3
+	while (*dma_status & 0x00000001) ~= 0 do
+	end
+	result.apu_after_dma[phase] = *apu_status
+	result.dma_status[phase] = *dma_status
+	result.remaining[phase] = *dma_count
+	result.pending[phase] = *irq_flags & 0x00000001
+	-- Requested RAM receipt is complete. Do not wait for surplus prefetch.
+	*transfer_control = 0
+	result.apu_after_stop[phase] = *apu_status
+	result.mode_after_stop[phase] = *transfer_control
+	result.completed_phase = phase + 1
+end
+
+while true do
+	halt_until_irq
+end
+```
+
+</section>
+
+### Retained observations
+
+All 24 retained destination words match the programmed raw source words. The second download starts at byte offset 40H, so its four words repeat source indices 16–19 rather than source indices 0–3. No source words are rewritten between downloads; their unchanged return after STOP shows that STOP did not erase the overlapping source bytes. These markers have no voice or audio-format meaning.
+
+In both phases, DMA0 is DONE and not BUSY, its remaining count is zero, and its pending bit is one despite IRQ_MASK being zero. The APU status snapshots distinguish DMA completion from the remaining transfer activity: 420H is retained at the status read after DMA completion, followed by 20H and mode 0 after STOP. They do not establish STOP's exact timing, strict cancellation before a refill deadline, or an ideal elapsed CPU-cycle count.
+
+This cartridge owns DMA0 and the transfer ports and polls DMA0 directly. That ownership route is separate from the earlier cartlib `apu.download`/`dma.wait0_idle` route with its interrupt service; the two routes must not be mixed.
+
+| Retained observation | Value |
+|---|---|
+| `received[0..19]` | `5A000000H OR 0..19` |
+| `received[20..23]`, offset 40H after STOP | `5A000010H..5A000013H` |
+| Both phases: DMA status / remaining / pending; IRQ_MASK | `2 / 0 / 1; 0` |
+| Both phases: APU status at read → after STOP; mode after STOP | `420H → 20H; 0` |

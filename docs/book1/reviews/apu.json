@@ -17,7 +17,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Installed 33,868,800 system cycles/s, 44,100 output frames/s, 768 cycles/frame and 1,058,400 transfer words/s/32 cycles per scheduled word are explicit. Controlled 20-word ROM upload reaches DMA DONE 680 and RAM commit 808 identically on both owners; electrical/end-to-end ratings are not fabricated.",
+			"resolution": "Installed 33,868,800 system cycles/s, 44,100 output frames/s, 768 cycles/frame and 1,058,400 transfer words/s/32 cycles per scheduled word are explicit. Controlled 20-word ROM upload reaches DMA DONE 680 and RAM commit 808 identically on both owners; electrical/end-to-end ratings are not fabricated. The appended download lesson supplies controlled 20-word 16+4 and short4-word schedules, surplus refill and STOP-before/exact-edge behavior, with separate actual-owner execution. CPU setup/polls are explicitly excluded from those device-work tables.",
 			"open": []
 		},
 		"interrupts": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete two-module BIOS-style BLua uses existing central records, named readonly PCM/presets, BSS, actual asset symbols and preserved cartlib DMA/IRQ ownership. Ordinary guest execution checks four sound routes, all 16 transfer words, separate completions, four ends and zero faults; exact printed modules match source. Independent complete-reader review passes after the resource-name/metadata-producer clarifications.",
+			"resolution": "Complete two-module BIOS-style BLua uses existing central records, named readonly PCM/presets, BSS, actual asset symbols and preserved cartlib DMA/IRQ ownership. Ordinary guest execution checks four sound routes, all 16 transfer words, separate completions, four ends and zero faults; exact printed modules match source. Independent complete-reader review passes after the resource-name/metadata-producer clarifications. A separate complete 74-line raw-port BLua cartridge checks20-word and4-word downloads, all 24 destination words, exact count/DONE/masked pending and APU status snapshots with unchanged source lifetime. Fresh public-only extraction matches all 3 files; snapshots are not used as exact STOP timing proof.",
 			"open": []
 		}
 	},

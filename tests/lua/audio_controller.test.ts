@@ -128,7 +128,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_APU_TRANSFER, DEVICE_SERVICE_DMA, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -650,6 +650,72 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.mappedWriteReady(IO_APU_TRANSFER_DATA), false);
 });
+
+for (const count of [20, 4]) {
+	for (const stopBeforeDeadline of [true, false]) {
+		test(`APU ${count}-word download STOP ${stopBeforeDeadline ? 'before' : 'at'} surplus deadline`, () => {
+			const machine = createAudioMachine();
+			machine.refreshDeviceTimings({
+				cpuHz: PSX_MACHINE_SPEC.cpuFreqHz,
+				geoWorkUnitsPerSec: PSX_MACHINE_SPEC.geoWorkUnitsPerSec,
+			}, 0);
+			const { memory, scheduler, audioController: audio } = machine;
+			const destination = DYNAMIC_RAM_BASE;
+			memory.writeMappedU32LE(destination + count * 4, 0xcdcdcdcd);
+			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_MANUAL_WRITE);
+			for (let index = 0; index < 40; index += 1) {
+				memory.writeMappedU32LE(IO_APU_TRANSFER_DATA, 0x5a000000 | index);
+			}
+			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);
+			memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
+			const sourceRam = audio.captureState().sampleRam;
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
+			memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, destination);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, count);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c12);
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_READ);
+			const deadlines: number[] = [];
+			while (memory.readIoU32(IO_DMA0_TRANSFER_COUNT) !== 0) {
+				machine.advanceDevices(scheduler.nextDeadline() - scheduler.nowCycles);
+				while (scheduler.hasDueTimer()) {
+					const kind = scheduler.popDueTimer();
+					machine.runDeviceService(kind);
+					if (kind === DEVICE_SERVICE_APU_TRANSFER || kind === DEVICE_SERVICE_DMA) {
+						deadlines.push(scheduler.nowCycles);
+					}
+				}
+			}
+			assert.deepEqual(deadlines, count === 20 ? [512, 529, 1041, 1046] : [512, 517]);
+			assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), DMA_STATUS_DONE);
+			assert.equal(memory.readMappedU32LE(IO_APU_STATUS), 0x420);
+			const pending = audio.captureState().sampleTransfer;
+			assert.equal(pending.fifoCount, 12);
+			assert.equal(pending.scheduledWords, 4);
+			const due = scheduler.nowCycles + pending.scheduledCycles;
+			assert.equal(due, count === 20 ? 1174 : 645);
+			machine.advanceDevices(due - (stopBeforeDeadline ? 1 : 0) - scheduler.nowCycles);
+			assert.equal(scheduler.hasDueTimer(), !stopBeforeDeadline);
+			// No capture/status read or timer dispatch: CONTROL itself must service due work.
+			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);
+			const stopped = audio.captureState();
+			assert.equal(stopped.sampleTransfer.currentAddress,
+				count === 20 ? (stopBeforeDeadline ? 128 : 144) : (stopBeforeDeadline ? 64 : 80));
+			assert.equal(stopped.sampleTransfer.fifoCount, 0);
+			assert.equal(stopped.sampleTransfer.scheduledWords, 0);
+			assert.equal(memory.readMappedU32LE(IO_APU_STATUS), 0x20);
+			assert.equal(memory.readMappedU32LE(IO_APU_TRANSFER_CONTROL), 0);
+			assert.equal(memory.readMappedU32LE(IO_DMA0_TRANSFER_COUNT), 0);
+			assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), DMA_STATUS_DONE);
+			assert.deepEqual(stopped.sampleRam, sourceRam);
+			for (let index = 0; index < count; index += 1) {
+				assert.equal(memory.readMappedU32LE(destination + index * 4), 0x5a000000 | index);
+			}
+			assert.equal(memory.readMappedU32LE(destination + count * 4), 0xcdcdcdcd);
+			audio.dispose();
+		});
+	}
+}
 
 test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
 	const harness = createAudioHarness();

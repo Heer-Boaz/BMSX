@@ -222,12 +222,21 @@ Already explicit:
 - `640–726`: private RAM extent versus transfer offset, wrap, modes, 16-word FIFO/DREQ, CPU/DMA ownership and download's unwanted prefetch hazard. `42–79` explicitly says there is no specified per-command elapsed-cycle charge.
 - Frozen basis: `facts/apu.md:241–353` APT01–20, `372–585` voice/format/rate/filter, `603–606` scope limits, `650–673` executed actual cart observations.
 
-Concrete next paragraph task: **a controlled download timing companion** to the upload trace. Start from defined sample RAM and DMA_READ setup, account for full-16-word prefill even when the requested count/tail is short, DMA transport, final BLOCK_END prefetch and STOP cancellation, and distinguish requested data receipt from an unneeded busy prefetch. Current text teaches all these rules, but supplies only an upload numerical timeline. APT08/09/12–18 plus DMT13–17 support extraction/replay. This can be a short teaching addition; do not build a new audio harness or fake transport latency. Per-format physical fetch rates/independent DAC clocks are not present in the frozen sources and must not be invented.
-
-A fresh2026-10-18 paired-owner/current-public recheck confirms this next slice:
-work one20-word16+4 download and a short initial read, including surplus
-BLOCK_END prefetch and STOP exactly at its deadline. Reuse the documented
-16-word helper route; it is cartlib, not an invented APU BIOS service.
+**Finite download companion completed — 2026-10-18:** the
+[read-side lesson](../book1/apu.md#apu-download-budget) now supplies a 20-word 16+4
+and a short 4-word numerical schedule: full 16-word initial prefill,17/5-cycle
+RAM-bound DMA stages,12 leftover FIFO words and four-word surplus service.
+STOP before/exactly at the deadline is separately source-checked and actually
+executed, not inferred from the CPU program's snapshots. The complete 74-line
+ordinary BLua cartridge returns all 24 expected words and preserves overlapping
+sample-RAM bytes across STOP; exact status/pending/fault and fresh public-only
+reconstruction checks pass. Four normal existing-suite regression cases retain
+the exact STOP boundary without a new harness or publisher gate. The earlier
+16-word cartlib helper route remains; no APU BIOS service is invented.
+Source, execution, reader and actual-PDF boundaries are retained in the
+[bounded review](../book1/reviews/apu-download-source.md). This closes the
+concrete read-side teaching task, not physical fetch/DAC/electrical guarantees
+or the broad technical inventory.
 
 ## Installed-unit chapter assignments and follow-ups
 
@@ -1026,7 +1035,7 @@ Independent current format-contract and complete-program source audits find no
 remaining failure within their stated scopes. The public-only newcomer pass
 closed exact assembly and explicit debug-image selection; the endpoint is
 specified as a zero-based presentation offset rather than elapsed frames.
-All19 actual initial PDF pages were individually viewed. Existing authored
+All 19 actual initial PDF pages were individually viewed. Existing authored
 keep-together markup closes two detached leads and one paragraph widow; only
 final14–17 differ from that inspected snapshot and all changed pages were
 independently rechecked. Source/PDF hashes and finite decisions are retained in

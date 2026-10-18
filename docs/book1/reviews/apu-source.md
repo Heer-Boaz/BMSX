@@ -167,3 +167,15 @@ all three initial findings corrected and independently reconstructed both
 modules from the nine printed blocks. No instructional failures remain for
 this chapter. This does not close the scheduled cross-chapter specification
 and actual graphics-output illustration work in `docs/manual/README.md`.
+
+## Download prefill, requested receipt and surplus service — 2026-10-18
+
+The [finite download review](apu-download-source.md) accepts the new20/4-word
+read-side timing companion and complete 74-line real BLua cartridge. Fresh
+paired-owner checks and exact-deadline execution agree; separate ordinary guest
+checks retain all 24 returned words and exact completion/status observations.
+The source-offset alignment/range assumption is explicit after independent
+review. Guest snapshots deliberately do not claim STOP's exact cycle or strict
+cancellation. Fresh public-only reconstruction matches all three executed files
+byte-for-byte. Actual-page acceptance is separate in apu-print.md. This closes
+this numerical/programming gap, not whole-machine/SDK or physical specifications.

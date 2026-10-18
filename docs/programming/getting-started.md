@@ -1144,3 +1144,37 @@ One setup and two immutable sources supply all four phases. The selected frame
 numbers and holds are observation checkpoints, not fixed hardware latency.
 This route was checked in the working checkout, not on every OS or a fresh SDK
 installation.
+
+
+## Build and inspect APU downloads
+
+Use the complete [APU download program](../book1/apu.md#apu-download-budget).
+Put its two modules in `carts/apu_download_manual/cart.lua` and
+`carts/apu_download_manual/results.lua`, and its manifest in
+`carts/apu_download_manual/res/manifest/manifest.rommanifest`. Keep the supplied
+assertion at `tests/carts/apu_download_manual/apu_download_manual_assert.lua`
+before the debug build. No earlier example cartridge or audio asset is needed.
+With the [checkout prerequisites](#prerequisites), run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- apu_download_manual --debug
+npm run headless:test -- apu_download_manual tests/carts/apu_download_manual/apu_download_manual_assert.lua
+```
+
+The build exports `dist/apu_download_manual.debug.rom` and its matching
+`dist/system/bmsx-bios.debug.rom`. The supplied case reports:
+
+```text
+[test] requested_words_before_surplus_prefetch: passed
+```
+
+It checks all twenty first-download words and four second-download words,
+DMA count/DONE, masked pending, APU transfer-busy before STOP, cleared transfer
+state after STOP and zero APU/system bus faults. The second download recovers
+four words also present in the first, after STOP. Silence or an unchanged
+picture is not this data-transfer proof; no voice is started by the example.
+The chapter's ideal cycle tables count separate device work, not the CPU
+program's setup/polling/observation instructions or a promised STOP latency.
+This route was checked in the working checkout, not every OS or a fresh SDK
+installation.

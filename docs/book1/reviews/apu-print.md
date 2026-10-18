@@ -87,3 +87,60 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+## Download timing companion and complete cartridge — 2026-10-18
+
+**PASS for the finite 32-page publication-layout proof**:
+`/tmp/bmsx-apu-download-proof/apu.pdf`, SHA256
+`053d2dd186a97cab0ddd63e2c372f7403f047d39efc9dcca615ecc267074dd3c`.
+Unchanged shared renderer: two figures, zero register-group blocks and no layout
+errors; Chromium153.0.8010.12, Nodev22.23.1/Linuxx64. Page count is inspection
+scope, not completion of the manual or console reference.
+
+Final1–28 match the accepted28-page canonical baseline in **full decoded RGBA
+bytes and dimensions**, not a contact sheet/bounding-box/text shortcut. Baseline
+SHA256 `c914b74cfbd486af205bac25d38afd4ba39aa2582071193b8c2d04cbd0ce382d`.
+Record `/tmp/bmsx-apu-download-print/identity.json`, raster scale1.4.
+
+Root individually viewed final29 and30 at ORIGINAL detail: the full new heading,
+units/assumptions/cycle0 definition, both complete timelines, STOP discussion,
+complete results module and manifest all fit with readable tables/code and
+running matter. Initial inspection found the cycle0 definition split across
+28/29. Extending the existing bounded intro keep-group closes that defect and
+restores exact baseline28; no CSS, font shrinking, publisher or helper change.
+Normal prose continuation29→30 remains readable with adequate lines on both.
+
+An independent print-only reviewer individually viewed original31/32: every
+entry-code line/border, final observations and full table pass, as do headers,
+folios and footer (the latter independently crop-verified). Final31/32 exactly
+match those reviewed states in **full RGBA and dimensions**; actual record
+`/tmp/bmsx-apu-download-opening-delta/identity.json`. The reviewer read that
+record and explicitly carries only31/32 to the final proof; no source/semantic
+or other-page claim follows. Bounded report:
+`/tmp/bmsx-apu-download-print-review.md`.
+
+Source, exact-owner timing, ordinary guest and fresh public-only reconstruction
+are separately recorded in [apu-download-source.md](apu-download-source.md).
+No new figure-count fixture or approval gate was required; existing two diagrams
+are unchanged. Whole-book, native/physical and SDK acceptance remain open.
+
+### Canonical publication verification
+
+All 19 existing manual-tool tests, ordinary `manual:check -- apu` and
+`manual:publish -- apu` pass after completed source, public-reader and actual
+print acceptance. Every canonical 32-page raster equals the accepted final
+proof in full decoded RGBA bytes and dimensions. Canonical SHA256:
+`09abdfe9daa1cf3ba56b5043ec129048758492a8d39c96c65f66468c8edf54c2`.
+Final public-source SHA256:
+`445f6067108caf7a2f41844326ddbd931abd6f3e88568d7a2f4e36aaece13e4a`.
+Record `/tmp/bmsx-apu-download-published-identity.json`; logs
+`/tmp/bmsx-apu-download-manual-{tests,check,publish}.log`.
+The older draft preview is not this canonical publication.
+
+The existing PCRTC publishing fixture also rewrites its canonical PDF. Every
+one of its37 pages remains exact full-RGBA/dimensions equal to its independently
+accepted composition proof. Current canonical SHA256:
+`d3bfc8af100b85ed6bb3daa832a95d72ce0edea22fcc35d99cf8b74779fe8c16`.
+Unchanged accepted GTE canonical SHA256 remains
+`cd99150c94a8ff86e08f604d780784cfc6d7575458c1172e719e52401e45ca0e`.
+`git diff --check` passes. No whole-book/SDK or native/physical approval follows.
