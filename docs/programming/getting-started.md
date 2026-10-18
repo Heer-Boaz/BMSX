@@ -1,6 +1,6 @@
-# Build and inspect the memory example
+# Build and inspect example cartridges
 
-Use this guide with the two program listings in the [worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records). It takes the supplied `memory_manual` cartridge from source files to an executable storage check, then shows ordinary headless playback separately. It is a first-build route, not a complete SDK or debugging guide.
+The first route uses the two listings in the [worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records): build the supplied `memory_manual` cartridge, check its storage result, then run ordinary headless playback separately. Later sections give the corresponding routes for the other named example cartridges, including [modules and globals](#build-and-inspect-modules-and-globals). Use the section matching the program you are building; earlier example cartridges are not prerequisites. This is a supplied-checkout first-build route, not a complete SDK or debugging guide.
 
 ## Prerequisites
 
@@ -586,3 +586,75 @@ values. The final three lines deliberately report protected errors. Again,
 `frame: 4` is the selected zero-based presentation offset, not a hardware latency
 guarantee. The common Table-length and existing CPU/compiler questions remain
 open.
+
+## Build and inspect modules and globals
+
+The [complete modular program](../book1/blua-programs.md#complete-program-modules-and-ordinary-globals)
+is a separate cartridge. Save the six complete listings at these exact paths:
+
+```text
+carts/modules_manual/
+  entry.lua
+  results.lua
+  lib/settings.lua
+  lib/counter.lua
+  lib/false_export.lua
+  lib/nil_export.lua
+  res/manifest/manifest.rommanifest
+```
+
+Use this complete manifest:
+
+```yaml
+title: BLua Modules Manual
+hardware:
+    - type: rom
+```
+
+`entry.lua` is selected by its `module<entry>` declaration, not its filename.
+The literal `lib/` imports use the corresponding nested source files. Do not
+add another entry or combine these independently named modules with another
+example. Start this program through a fresh BIOS boot; its observations are not
+a promise that executing an image again clears a retained global environment.
+
+From the repository root, with the prerequisites above:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- modules_manual --debug
+npm run headless:test -- modules_manual tests/carts/modules_manual/modules_manual_assert.lua
+```
+
+Expect `[test] modules_and_globals: passed`. The force-validation build includes
+normal system/cartridge compilation and quality checks and selects the matching
+BIOS. The supplied debug-only test waits for completion, then checks 19 retained
+observations: pre-entry constructor counts, shared module identity and state,
+false/nil exports, and ordinary global changes versus a same-named lexical local.
+It runs a derived integration image on a fresh target, not byte-for-byte playback
+of the ordinary ROM. Linked addresses can differ; no guessed `MEM` address is
+required.
+
+For separate ordinary playback, create
+`tests/carts/modules_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BLua module observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/modules_manual/ordinary_timeline.json modules_manual
+```
+
+Compare all five `Modules ...` lines with **Observations** in the chapter.
+The timeline selects zero-based presentation offset 4, not an elapsed startup,
+frame or cycle guarantee, and does not assert the printed values. The retained
+checks and ordinary diagnostics are separate TS executions, not native proof,
+exhaustive module-graph/lifetime guarantees, fresh-OS/whole-SDK acceptance or
+validation of the separate BIOS runtime source compiler.

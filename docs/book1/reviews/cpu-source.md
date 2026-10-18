@@ -203,3 +203,16 @@ This is a bounded source review, not an exhaustive finite-input POW accuracy or 
 ### Nonauthor Table/program source verdict
 
 No failures found within the bounded source audit of the new Table entries/inherited reads section, second complete program and its complete retained-result tables, companion README/cart/tests, supplied Table/BIOS/execution fact sheets, and their live paired Table/value/CPU/BIOS/compiler-descriptor owners. The latest chapter Lua fences reproduce both cart modules literally. This is a source audit, not new execution, native cartridge parity, a full GC audit, or PDF review.
+
+## Later public-reader logical-expression correction
+
+The new source-program reader could reconstruct all six files and build steps
+but could not justify the numeric flags without an unstated `and`/`or` rule.
+A separate [finite extraction](../facts/cpu-logical-expressions.md), facts-only
+paragraph author and [independent actual-owner audit](cpu-logical-source.md)
+now supply the canonical Logical expressions subsection. The public-only
+reader rechecked the fix in [its report](blua-programs-reader.md). The only
+source-review refinement qualifies skipped faults as **runtime** faults;
+compile-time diagnostics are not hidden by source short circuit. This is a
+missing shared contract, not a runtime repair, new execution claim or closure
+of any of the seven stopped CPU questions, Table length or BZ01.

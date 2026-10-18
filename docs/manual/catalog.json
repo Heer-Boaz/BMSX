@@ -20,6 +20,13 @@
 		"facts": "docs/book1/facts/memory-map.md",
 		"review": "docs/book1/reviews/memory.json"
 	},
+	"blua-programs": {
+		"book": "II",
+		"label": "BLUA PROGRAMS",
+		"chapter": "docs/book1/blua-programs.md",
+		"facts": "docs/book1/facts/blua-programs.md",
+		"review": "docs/book1/reviews/blua-programs.json"
+	},
 	"bios-base": {
 		"book": "II",
 		"label": "BIOS BASE",

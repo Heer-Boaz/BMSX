@@ -19,6 +19,9 @@ PDF was used. All instruction families have separate paired-owner extractions.
   partial effects, counted stores, branches, CP0/EXEC/RFE/HALT.
 - [Ordinary source operators](cpu-source-operators.md): owning producer's
   spellings/lowering, not an assumption of stock Lua or one instruction per line.
+- [Logical expressions](cpu-logical-expressions.md): actual left-first short-circuit
+  lowering, selected one-result operands, paired truth and Boolean NOT; the
+  public-reader numeric-flag gap is resolved without a foreign Lua assumption.
 - [Ordinary BLua control forms](cpu-source-control.md): actual cop0 members,
   halt statement, generated RFE return and installed BIOS precedents.
 - [Complete executable BLua example](cpu-example.md): actual cartridge source,

@@ -11,3 +11,7 @@ Scope: ordinary cartridge-source producer only, not on-console source loading or
 - S07. `and` and `or` take separate compiler branches rather than arithmetic opcodes. The complete short-circuit lowering/precedence is outside this addendum. Source: `toolchain/ts/lua/compiler.ts:5351–5356`.
 - S08. `..` tokenizes as DotDot. Binary Concat routes to compileConcatExpression, not an unconditional one-CONCAT claim. Exact concat flattening is outside this addendum. Sources: `toolchain/ts/lua/syntax/lexer.ts:204–213`; `toolchain/ts/lua/compiler.ts:5408–5410`.
 - S09. emitLoadNil(target,count) emits KNIL for count1, LOADNIL for every other count. This helper alone does NOT establish that all producer callsites omit count0; do not claim zero-count is unreachable. Source: `toolchain/ts/lua/compiler.ts:3132–3138`.
+
+## Later logical-expression scope
+
+The former S07 scope exclusion is covered separately by [the logical-expression extraction](cpu-logical-expressions.md). It does not change this frozen arithmetic/bitwise extraction or settle the seven stopped owner contracts.

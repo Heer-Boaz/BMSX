@@ -1,3 +1,29 @@
+# Current CPU actual-PDF layout acceptance: logical-expression addition
+
+2026-10-18. Current `build/manual/cpu.preview.pdf` has **34 pages**, SHA-256
+`6cea99cafe3ea1963925d650227d6ec01a463c9098146f0fc5d5d600fd403524`;
+source SHA-256 `3b83050c8a28398079f8ffa6fc5d3439a6e8ded2cf1cd96aed6af1540b9c16e3`.
+The only public addition is the missing logical-expression subsection, found
+by the fresh source-program reader. It defines selected operands and
+short-circuit evaluation rather than assuming stock Lua.
+
+Compared every full page at PDFium1.5× with the accepted 34-page baseline
+`69be53bbde4e2898c99fc13fd371745db22798ffb3dd93375111f912c06e07ed`.
+Pages **1–7 and10–34 are exact full-raster matches**. Root actually viewed both
+changed pages **8–9** at readable size: the new logical table and prose fit
+page8 together; page9 starts the numeric-value section with clear tables,
+body, running title and footer. No clipping, overlap, stranded lead or new
+layout defect. Rasters: `/tmp/bmsx-cpu-logical-print-qa/page-08.png` and
+`page-09.png`; baseline retained at `/tmp/bmsx-cpu-before-logical.pdf` during
+the check. The old full-page approval below supplies the unchanged32 pages.
+Chromium153.0.8010.12 / Node22.23.1 / Linuxx64; receipt reports no layout errors.
+
+**Bounded current DRAFT print pass only.** Source audit is separate and all
+seven CPU-owner stops, common Table-length STOP and BZ01 remain open.
+Earlier exact-artifact records below are historical, not the current hash.
+
+---
+
 # Current CPU actual-PDF layout acceptance
 
 ## Volume-title revalidation — 2026-10-18

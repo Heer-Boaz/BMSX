@@ -1022,3 +1022,57 @@ script/suite implementation correctness, fresh-OS dependency installation,
 whole SDK acceptance, common Table length, CPU7 or BZ01. The publication check
 remains blocked by the original shared-contract coverage items. The chapter
 and accepted44-page PDF body did not change; no rerendered artifact is claimed.
+
+## Linked-cartridge source-program route
+
+2026-10-18, baseline `fce16b952` plus this documentation/example slice. The new
+[Book II source-program chapter](../book1/blua-programs.md) supplies source
+spelling, declarations, expression grouping and statement forms; literal
+module paths, entry selection, eager dependency startup and ordinary/const
+exports; and the installed BIOS/global-name environment. Canonical CPU/Memory
+remain the value, arithmetic, call/result, table, typed storage and address
+references. This is not a second ISA or a claim that the BIOS runtime compiler
+accepts the same source/module/environment contract.
+
+Three separately extracted finite sheets feed nonoverlapping facts-only
+authors. Independent actual-owner audits and public-only reader/actual-PDF
+checks are recorded with the chapter, not inferred from a successful build.
+Source review corrected an interface-wide failure-tuple overclaim: only the
+public `load` wrapper protects compilation and translates failure to nil plus
+error; direct `compile_syntax` is not covered by that wrapper contract.
+Integration also corrected uppercase identifiers in an illustrative const
+namespace rather than importing ordinary Lua spelling assumptions.
+
+The real `modules_manual` cartridge has six complete source files and typed
+BSS observations. Current quality-checked build and 19 retained assertions
+pass; separate ordinary playback prints five exact diagnostic lines. The
+nil-export dependency runs before its false-export importer, all ordinary
+constructors precede entry, repeated imports share a stateful operation, and
+a caller's same-named local does not replace the operation's current global.
+The public companion gives the exact tree, manifest, commands and observation
+endpoint; neither the test-image nor that endpoint is a timing guarantee.
+No BIOS/compiler/runtime/publisher/harness implementation was changed.
+
+**Still open:** complete math/os interfaces, BIOS runtime compilation/loading
+and environment/source-mode contracts, `<init>` lifecycle, the source sheet's
+unusual goto/repeat/vararg/loop-mutation and zero-step contract gaps, broader SDK quality
+diagnostics and fresh installation/debugging, Book III and connected graphical
+teaching contrasts. All seven paired CPU-owner questions, common Table length
+and BZ01 remain open. This finite linked-cartridge onramp neither resolves nor
+hides them; it adds no numerical/call/Table-length rule beyond the canonical
+references. The previous whole-machine orientation item is now supplied by
+the separately reviewed System overview, not still queued as an empty volume.
+Whole-console newcomer acceptance remains the goal, not the page count or
+presence of a new chapter.
+
+The source-blind reader found one additional shared-definition omission: CPU
+did not define `and`/`or` selected operands or short-circuit evaluation, despite
+the complete programs using numeric flag idioms. A separate finite extraction,
+facts-only paragraph and actual-owner review now supply the canonical CPU
+Logical expressions subsection; the reader rechecked the public fix. Its
+print delta changes only CPU pages8–9; the other32 pages match the accepted
+full rasters exactly. This is not a new CPU-owner repair or stopped-contract
+closure. All22 source-program DRAFT pages have separate actual print evidence.
+The source-program coverage record keeps lifecycle/source-corner-case work
+open, so passing finite source, reader and layout checks does not publish an
+incomplete language reference.

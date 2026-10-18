@@ -1,0 +1,58 @@
+{
+	"coverage": {
+		"boundary": {
+			"resolution": "Linked cartridge-source forms, module linkage and installed ordinary-name environment; separate BIOS runtime compiler and shell are boundaries, not equivalent language/load contracts.",
+			"open": []
+		},
+		"registers": {
+			"resolution": "No new mapped registerfile. Literal headers/imports/exports, source forms and installed-name inventory are specified; CPU/Memory own canonical instruction and address interfaces.",
+			"open": []
+		},
+		"datapath": {
+			"resolution": "Lexical forms and binding, static dependency inclusion and eager startup, retained ordinary exports versus compile-time namespaces/static targets, ordinary global bank versus runtime library Tables.",
+			"open": []
+		},
+		"visibility": {
+			"resolution": "Dependency initialization before dependents and entry, export completion distinct from nil/false, shared ordinary export mutation and current-global lookup versus lexical caller locals; static namespaces are not allocated runtime Tables.",
+			"open": [
+				"The source function <init> attribute invocation/lifetime is not yet authored: module fact M22 establishes restrictions only, not an automatic boot callback."
+			]
+		},
+		"timing": {
+			"resolution": "Startup ordering is defined, not a fixed total startup/frame/cycle budget. Canonical CPU costs and Memory section startup remain referenced; the observation endpoint is not a latency specification.",
+			"open": []
+		},
+		"interrupts": {
+			"resolution": "halt_until_irq is a dedicated source statement; CPU/IRQ own masks, pending state, acceptance and wake behavior. No invented BIOS-call or module IRQ contract.",
+			"open": []
+		},
+		"faults": {
+			"resolution": "Finite lexer/parser/compiler rejections for source spellings, binding, imports, export/static restrictions and duplicate/cyclic modules. Runtime argument/access/fault contracts stay canonical; load wrapper protection is not generalized to compile_syntax.",
+			"open": [
+				"The source-form sheet leaves out-of-context varargs, goto scope crossings, repeat-local condition visibility, numeric-loop variable mutation and zero-step behavior unaudited. Complete current legality/behavior still needs an owning-source follow-up."
+			]
+		},
+		"reset": {
+			"resolution": "Normal BIOS installation, fresh system reboot bank clearing and EXEC non-clearing are distinct. No per-image private environment, arbitrary reset/lifetime, heap reset or module-reload promise.",
+			"open": []
+		},
+		"programming": {
+			"resolution": "Six complete ordinary cartridge modules with exact public listings/tree/manifest/build/observation route; actual quality-checked build, 19 retained assertions and five separate ordinary diagnostics. Independent actual-owner section audits, source-blind supplied-checkout reconstruction and final actual22-page DRAFT print inspection pass. Reader R1 exposed missing canonical logical semantics; separately extracted/authored/audited CPU definition and public recheck close that gap, not remaining source-legality or whole-manual scope.",
+			"open": []
+		}
+	},
+	"reviews": {
+		"facts": {
+			"passed": true,
+			"report": "docs/book1/reviews/blua-programs-source.md"
+		},
+		"figures": {
+			"passed": true,
+			"report": "docs/book1/reviews/blua-programs-source.md"
+		},
+		"print": {
+			"passed": true,
+			"report": "docs/book1/reviews/blua-programs-print.md"
+		}
+	}
+}

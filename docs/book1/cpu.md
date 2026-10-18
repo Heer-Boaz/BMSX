@@ -388,6 +388,20 @@ can therefore require Boolean loads and a jump as well as the predicate. Use
 the instruction path, not the number of source operators, when calculating a
 cycle budget.
 
+### Logical expressions
+
+Only `nil` and `false` are false-valued. Every other value is true-valued, including all numbers (zero and NaN included), the empty string, and object references.
+
+| Expression | Result | Evaluation |
+| --- | --- | --- |
+| `a and b` | `a` if it is false-valued; otherwise `b` | Evaluate `a` first; evaluate `b` only if `a` is true-valued. |
+| `a or b` | `a` if it is true-valued; otherwise `b` | Evaluate `a` first; evaluate `b` only if `a` is false-valued. |
+| `not a` | Boolean `true` if `a` is false-valued; otherwise Boolean `false` | Evaluate `a` and negate its truth value. |
+
+`and` and `or` select an operand value without converting it to a Boolean. Each operand is adjusted to one result, so the expression produces one selected value, not multiple results. An unneeded right operand is not evaluated, including its side effects or runtime faults; short-circuit evaluation also applies when the expression is used as a condition.
+
+Thus `condition and 1 or 0` yields numeric `1` for a true-valued condition and numeric `0` otherwise: the intermediate `1` is true-valued. However, `condition and a or b` is not a general ternary expression: even when `condition` is true-valued, a selected `a` of `nil` or `false` causes `or` to select `b`.
+
 ## Values and numeric instructions
 
 ### Values are not register words
