@@ -1,0 +1,3 @@
+title: GPU Image DMA Manual Example
+hardware:
+    - type: rom

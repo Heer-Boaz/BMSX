@@ -3378,3 +3378,243 @@ No direct CPU store stalls in this sequence; the marker fits in the input while
 the fill executes. The 49 IRQ-poll cycles are still charged CPU work, not free
 waiting. Replacing polling with an interrupt handler changes setup, entry,
 acknowledgement and resumption costs and needs its own budget.
+
+<a id="gpu-image-dma-program"></a>
+## Move a raw image through DMA
+
+Move an image along this route: RAM → fixed GP0 port → GPU local memory → fixed GPUREAD port → RAM. GP0 and GPUREAD share address `0x0801023c`; GP1 and GPUSTAT share `0x08010240`. GP1 opcode `04` selects the GPU DMA direction, but does not start a DMA channel.
+
+This example owns DMA0 and the GPU ports, masks interrupts, and polls completion. It uploads a raw 9 × 9 image at local-memory coordinate (96, 64), then reads the same rectangle into a separate RAM buffer. It does not program PCRTC or display the image.
+
+| Transfer | GP1 direction | DMA CONTROL | Read endpoint | Write endpoint | Requests |
+|---|---:|---:|---|---|---|
+| RAM → GP0 | 2 (`0x04000002`) | `0x00003c41` | RAM, incrementing | GP0, fixed | Read FORCE; write GX_WRITE |
+| GPUREAD → RAM | 3 (`0x04000003`) | `0x00003c0a` | GPUREAD, fixed | RAM, incrementing | Read GX_READ; write FORCE |
+
+Both controls select up to 16 words per block. COUNT counts words, not pixels or bytes. Each admitted block captures its addresses, count, and control; requests are sampled at admission. Both request selectors must permit admission. FORCE permits it unconditionally.
+
+<section class="keep-together">
+
+### Complete BLua program
+
+Create `storage.lua` as the complete const module below. Its `data` image is
+initialized in RAM at startup; the DMA source is not cartridge ROM. The result
+array and status record are explicit BSS.
+
+```lua
+module<const>
+
+struct gpu_dma_status
+	phase: word
+	upload_status: word
+	upload_count: word
+	upload_source_end: word
+	upload_destination: word
+	upload_gpu_status: word
+	read_latch_before: word
+	read_ready_status: word
+	read_busy_status: word
+	read_owned_latch: word
+	read_status: word
+	read_count: word
+	read_source: word
+	read_destination_end: word
+	read_gpu_status: word
+	marker_status: word
+	idle_status: word
+	final_latch: word
+end
+
+-- Initialized RAM, not a readonly cartridge-ROM DMA source.
+data upload: word[44] = {
+	0xa0000000, 0x00400060, 0x00090009, 0x00020001,
+	0x00040003, 0x00060005, 0x00080007, 0x000a0009,
+	0x000c000b, 0x000e000d, 0x0010000f, 0x00120011,
+	0x00140013, 0x00160015, 0x00180017, 0x001a0019,
+	0x001c001b, 0x001e001d, 0x0020001f, 0x00220021,
+	0x00240023, 0x00260025, 0x00280027, 0x002a0029,
+	0x002c002b, 0x002e002d, 0x0030002f, 0x00320031,
+	0x00340033, 0x00360035, 0x00380037, 0x003a0039,
+	0x003c003b, 0x003e003d, 0x0040003f, 0x00420041,
+	0x00440043, 0x00460045, 0x00480047, 0x004a0049,
+	0x004c004b, 0x004e004d, 0x0050004f, 0xffff0051,
+}
+
+bss returned: word[41]
+bss status: gpu_dma_status
+
+return { upload = upload, returned = returned, status = status }
+```
+
+</section>
+
+<section class="keep-together">
+
+Create `cart.lua` by concatenating the following three parts in order. They
+form one entry module, not three functions or files. `#storage.upload` and
+`#storage.returned` refer to declared static arrays; a typed local address is
+not a dynamic buffer-capacity object.
+
+### Prepare storage and port ownership
+
+```lua
+module<entry>
+
+local storage<const> = require('storage')
+local upload<const>: *word[44] = storage.upload
+local returned<const>: *word[41] = storage.returned
+local result<const>: *gpu_dma_status = storage.status
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local dma_read<const>: *word = 0x0800000c
+local dma_write<const>: *word = 0x08000010
+local dma_count<const>: *word = 0x08000014
+local dma_control<const>: *word = 0x08000018
+local dma_status<const>: *word = 0x0800001c
+local dma_trigger<const>: *word = 0x08000020
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+
+function irq(flags)
+	*irq_ack = flags & 0x00000041
+end
+
+-- Sole ownership of DMA0 and the GPU ports. Polling, not an IRQ wait.
+*irq_mask = 0
+while (*gp1 & 0x04000000) == 0 do
+end
+*gp1 = 0x00000000
+*irq_ack = 0x00000041
+*gp1 = 0x09000000
+*gp0 = 0xe6000000
+
+```
+
+</section>
+
+### Submit the upload and request its readback
+
+```lua
+-- RAM -> fixed GP0, GX_WRITE, blocks of up to sixteen words.
+*gp1 = 0x04000002
+*dma_read = upload
+*dma_write = 0x0801023c
+*dma_count = #storage.upload
+*dma_control = 0x00003c41
+*dma_trigger = 1
+while (*dma_status & 2) == 0 do
+end
+result.upload_gpu_status = *gp1
+result.upload_status = *dma_status
+result.upload_count = *dma_count
+result.upload_source_end = *dma_read
+result.upload_destination = *dma_write
+result.phase = 1
+
+-- DONE releases DMA's write ownership. Finish the GPU stream separately.
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
+result.read_latch_before = *gp0
+
+-- Three C0 header words; the following marker is NOT readback payload.
+*gp0 = 0xc0000000
+*gp0 = 96 | (64 << 16)
+*gp0 = 9 | (9 << 16)
+*gp0 = 0x1f000000
+while (*gp1 & 0x08000000) == 0 do
+end
+result.read_ready_status = *gp1
+
+```
+
+### Drain the readback and finish the stream
+
+```lua
+-- Fixed GPUREAD -> RAM, GX_READ, forty-one packed words, not 81 reads.
+*gp1 = 0x04000003
+*dma_read = 0x0801023c
+*dma_write = returned
+*dma_count = #storage.returned
+*dma_control = 0x00003c0a
+*dma_trigger = 1
+result.read_busy_status = *dma_status
+result.read_owned_latch = *gp0
+while (*dma_status & 2) == 0 do
+end
+result.read_gpu_status = *gp1
+result.read_status = *dma_status
+result.read_count = *dma_count
+result.read_source = *dma_read
+result.read_destination_end = *dma_write
+result.phase = 2
+
+-- Final read releases the barrier; marker and idle remain separate conditions.
+while (*gp1 & 0x01000000) == 0 do
+end
+result.marker_status = *gp1
+while (*gp1 & 0x04000000) == 0 do
+end
+result.idle_status = *gp1
+result.final_latch = *gp0
+*gp1 = 0x02000000
+*irq_ack = 0x00000041
+*gp1 = 0x04000000
+result.phase = 3
+while true do
+	halt_until_irq
+end
+```
+
+### Inspect the returned words
+
+The upload source contains **44 words**: three A0 command words (`0xa0000000`, `0x00400060`, `0x00090009`) and 41 payload words. Its 81 sixteen-bit pixels are the raw values 1 through 81, packed continuously, low halfword first. Packing does not restart at each nine-pixel row. Consequently, payload word 4, counting from zero, is `0x000a0009`: its halves belong to different rows.
+
+The first payload word is `0x00020001`; the last is `0xffff0051`. Only its low halfword is a pixel. The unused `ffff` neither supplies another pixel nor begins another command. The upload source occupies 176 bytes.
+
+The C0 readback returns **41 words**, occupying 164 bytes, without command headers. The completed transfer returned first word `0x00020001`, word 4 `0x000a0009`, word 39 `0x0050004f`, and final word `0x00000051`. All first forty returned words matched the input payload; only the final high halfword changed. Readback zeroes that unused high halfword of the final odd pixel pair.
+
+<section class="keep-together">
+
+### Account for admitted transfer time
+
+Installed RAM timing charges one cycle per word plus one per burst; the I/O side charges zero. Transfers between these regions use the larger side charge.
+
+| Transfer | Words | Admitted blocks | Block charges | Total |
+|---|---:|---|---|---:|
+| Upload packet | 44 | 16 + 16 + 12 | 17 + 17 + 13 | 47 cycles |
+| READY readback | 41 | 16 + 16 + 9 | 17 + 17 + 10 | 44 cycles |
+
+These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. The final blocks are partial blocks, not padded sixteen-word transfers.
+
+</section>
+
+### Keep completion boundaries separate
+
+DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word staging buffer; block-end processing advances the pipeline. GP0 parsing consumes the counted A0 payload and emits the retained upload command. Neither channel DONE nor packet acceptance alone establishes command completion.
+
+An ordered GPU marker and GPU idle are polled separately after upload. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes pending deadlines, FIFO contents, partial packets, image transfers, polylines, and readback. GPU and controller acknowledgements remain separate.
+
+Wait for READY; accepting the C0 header and reaching its command deadline do not promise that pixels can be read. Draining its last word clears READY and its DMA request; parsing can then advance beyond the readback barrier to the queued marker. None of DONE, READY, drain, marker, or idle establishes PCRTC publication.
+
+DMA owns its selected endpoint throughout BUSY, even before admission. Do not interleave CPU GP0 writes or consume GPUREAD pixels as a second reader. The deliberate CPU GPUREAD access while DMA owns readback returns the retained latch, not the next pixel. Writing START while DMA is BUSY does not restart it.
+
+### Retained completion observations
+
+| Observation | Completed transfer |
+|---|---|
+| Upload channel | STATUS `2`, COUNT `0`; source advanced 176 bytes; GP0 destination fixed |
+| Before read DMA | READY set; queued marker and idle clear |
+| First read-DMA observation | STATUS `1` (BUSY); CPU GPUREAD repeated the earlier latch |
+| Read channel completed | STATUS `2`, COUNT `0`; GPUREAD source fixed; RAM destination advanced 164 bytes |
+| After counted drain | READY clear; marker observed, then idle checked separately |
+| Final retained GPUREAD latch | `0x00000051`; no extra pixel was consumed |
+
+Use the returned storage words to check packing and transfer counts. These
+status samples do not resolve every intermediate edge or specify a fixed CPU
+issue-to-DONE interval. To display the image, program PCRTC and apply its
+publication sequence separately.

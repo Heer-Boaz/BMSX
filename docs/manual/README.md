@@ -297,7 +297,10 @@ a source-accurate register reference as a complete technical specification.
   request-gap examples, and distinct GPU upload/readback transport budgets.
   Paired controller replays and independent source/reader review are recorded
   in [the DMA review](../book1/reviews/dma-source.md). This is not a rated
-  end-to-end VRAM bandwidth or closure of the broader audit below.
+  end-to-end VRAM bandwidth or closure of the broader audit below. The later
+  [complete GPU raw-image DMA program](../book1/gpu.md#gpu-image-dma-program)
+  adds the actual RAM upload/READY readback roundtrip, exact odd-tail words and
+  separately observed ownership/completion; this finite route is now accepted.
 - [ ] **Every installed unit, including earlier chapters.** Inventory capacities,
   organization, transfer widths, numerical formats, clocks/dividers, latency,
   throughput, route-dependent timing, sharing and visibility limits. Check for

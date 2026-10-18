@@ -819,3 +819,10 @@ Only relevant symbols in the permitted owning leaves were inspected. No TS/C++ d
 - Cart comments are not hardware authority. The paired narrow appendix now supplies software-owner authority for the named caption effects; no PSX/SNES behavior was imported.
 - Remaining unaudited details include the exact pre-dither multiply helper, complete blend-helper arithmetic, producer-side page retention, complete triangle coverage/interpolation algorithm, scanout conversion, and physical timing. These are not needed to state the nine packet-defined visible regions and exact sampled contrasts.
 - The extraction changed no cartridge, runtime or publisher and created no replacement capture or synthetic image. Integration preserves the inspected PNG as `docs/book1/figures/gpu-output-materials.png`.
+
+## Executed raw-image DMA programming supplement
+
+The separate [GPU image DMA fact sheet](gpu-dma.md) records the bounded
+RAM→GP0→local-memory→GPUREAD→RAM route, paired owner references, exact
+control/count/tail arithmetic and real ordinary cartridge observations. It does
+not replace the full opcode/pixel/ingress facts above.

@@ -238,3 +238,14 @@ publisher, stylesheet or font was changed in this slice. Further dither/coverage
 contrasts, combined DMA image-transport execution, PCRTC before/after output and
 GEO sprite/hull scenes remain open; this plate does not finish Book I or the
 broader technical/visual audit.
+
+## Executed raw-image DMA route — 2026-10-18
+
+The [separate bounded source, replay, guest and reader record](gpu-dma-source.md)
+accepts the complete 44-word RAM upload and 41-word READY-gated readback program
+now printed at the chapter's end. Separate facts-only prose authorship, actual
+paired-owner checking, real software-VRAM replay, ordinary compiled BLua guest
+execution and fresh public-only byte-exact reconstruction all pass. The 47/44
+cycle values are admitted DMA charges, not whole-program or READY latencies.
+The actual final print acceptance is separately recorded in gpu-print.md.
+No baseline opcode reference, image, runtime or publisher was rewritten.

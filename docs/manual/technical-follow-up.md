@@ -51,13 +51,63 @@ technical inventory, book navigation, software/environment, SDK/debugging,
 Book III or whole-console newcomer acceptance. Unspecified electrical clocks,
 CPU/fetch wait states and sustained physical rates were not fabricated.
 
+## Current bounded GX audit — 2026-10-18
+
+Fresh separate source audits rechecked the current GTE specifications and
+normal/PLUS timing, GPU ingress/raw-image/readback/DMA boundaries, and PCRTC
+geometry/timing/latch/event surfaces against their paired live owners. These
+are bounded checks, not another whole-console or every-backend approval. They
+found substantial existing technical coverage, not three missing-spec stubs,
+and no contradiction in the checked surfaces. The old PCRTC Q16 truncation/wrap
+disagreement is visibly corrected; its historical special testcase was not
+re-executed by this audit.
+
+The concrete writing/observation assignments are:
+
+- **GPU image transport:** the new
+  [complete raw-image DMA program](../book1/gpu.md#gpu-image-dma-program)
+  supplies the missing RAM→fixed GP0 upload and READY fixed GPUREAD→RAM roundtrip.
+  It uses 44 upload words and 41 readback words, odd-row packing, three blocks
+  and a short tail each way, retained channel/READY/marker/idle observations,
+  and separately qualified 47/44-cycle admitted charges. Source, ordinary
+  guest, independent reader and actual-print evidence are recorded in the GPU
+  reviews. This closes that finite route, not every GPU transport scenario,
+  physical bandwidth or graphics-illustration task.
+- **GTE depth cue first:** add actual constant-shape swatches for the existing
+  reciprocal-depth example, with the observed IR0/RGB2 values beside the output.
+  Material-versus-lighting and supplied near-plane-intersection contrasts are
+  separate later plates. Existing initial/translated NCCT pictures remain
+  useful but do not demonstrate these effects. Current public cue/projection
+  paragraphs and paired arithmetic owners supply the facts; captures still
+  require a controlled program and independent image checks.
+- **PCRTC source versus destination:** capture a fixed 256×192 circuit-2 canvas
+  and a 128×96 circuit-1 cutout in three states: source(0,0)/destination(64,48),
+  source(32,16)/same destination, then same source/destination(96,48). This keeps
+  source cropping distinct from output-window movement and avoids a single
+  circuit's origin being cropped back to output(0,0). Existing geometry and
+  VBlank visibility rules apply; raw words remain unexecuted recipe inputs,
+  not accepted screenshots. A controlled PMODE coefficient/alpha contrast is
+  a distinct subsequent plate, with the parallel backend work left alone.
+- **PCRTC unequal magnification:** extract the consuming software sampler and
+  its mirror before adding an exact nonzero-phase sample-progression formula.
+  The current PCRTC owner exposes phase/step/magnification fields, but that
+  alone is not evidence for a consumer's rounding rule. This remains an open
+  finite paragraph, not a missing electrical-clock assertion.
+
+The underlying source boundaries are the current GTE normal/PLUS dispatch and
+projection/lighting/cue owners, GPU ingress/readback and DMA controller, and
+PCRTC timing/scanout/latch owners. Their chapter fact sheets and source reviews
+retain exact paths; no architecture document or reference-console behavior was
+used. Undefined physical clocks and sustained rates are still specification
+decisions, not numbers to manufacture.
+
 ## What is already explicit, versus what still needs a paragraph
 
 Line ranges describe the inspected baseline, not stable manuscript anchors.
 The T02 DMA supplement adds the route-rate table, block/tail/wait examples and
-GPU image transport budgets identified below. A combined actual raw-image
-upload/download trace remains a separate GPU teaching task; the controller
-rate replays alone are not VRAM completion evidence.
+GPU image transport budgets identified below. The later GPU roundtrip above
+closes the finite combined-route teaching task; the earlier controller-only
+rate replays remain insufficient by themselves as VRAM completion evidence.
 
 ### PCRTC
 
@@ -102,7 +152,7 @@ Already explicit:
 - Frozen basis: `facts/gpu.md:19–38,253–271,397–420,538–565`.
 
 Concrete next paragraph tasks:
-1. **Cross-unit raw image transport budget:** add one actual RAM→GP0 image-upload route and one READY GPUREAD→RAM readout route, with header/payload counts, 16-word blocks/tail, request conditions and separately observed destination readiness/completion. This is missing from the currently detailed CPU picture example and the DMA chapter's five-word fill stream. Reuse frozen GPU ingress/readback contracts plus DMA DMT13–17/DMP07–14; do not claim a fixed C0-to-READY latency or a direct VRAM DMA aperture. Exact combined traces still require real owner execution.
+1. **Cross-unit raw image transport — finite route completed 2026-10-18:** the later complete GPU program and separately observed real-owner roundtrip close the original assignment, including header/payload counts, 16-word blocks/tails, request conditions and readiness/completion distinctions. The original CPU picture and DMA five-word fill remain unchanged. No fixed C0-to-READY latency, physical sustained rate or direct VRAM DMA aperture is claimed. See the current bounded audit above and GPU source/print evidence.
 2. **Observed picture plate — bounded insertion completed since this baseline:**
    the actual `gpu_manual` frame and nine-region legend now connect raw/modulated
    textures, palette indices, bit-15 black versus exact-zero transparency and
@@ -131,7 +181,7 @@ Already explicit:
 
 Concrete missing paragraph assignments:
 1. **Rate table for named routes:** the chapter gives cycle formulas but no usable words/s or bytes/s comparison. Convert explicitly defined admitted work by `words × 33,868,800 / charged cycles`, bytes = four times words. Compare 16-word versus 4-word blocks and a short tail for RAM→RAM, system-ROM→RAM, cartridge-ROM→RAM and RAM/cartridge→fixed GPU port. Label all as uninterrupted admitted-budget rates under stated requests/no crossing/no competition assumptions, not electrical ratings or guaranteed end-to-end rates. DMT13–17 supplies the derivation; independently replay representative substitutions.
-2. **What a VRAM transfer actually is:** add a compact route explanation with a real raw-image upload/readback, not just the existing five-word GP0 fill. Cross-reference the GPU's pixel packing and READY rules and include command/header/payload distinctions. A memory-to-GP0 rate is not an arbitrary RAM-to-VRAM completion rate. Combine this with the GPU assignment above rather than duplicate explanations.
+2. **What a VRAM transfer actually is — finite route completed 2026-10-18:** the complete GPU roundtrip above supplies the raw upload/readback bridge without duplicating it here. It includes packet/payload counts, packing, READY/ownership and distinct transport/command/pixel/display boundaries. A memory-to-GP0 rate remains different from arbitrary RAM-to-VRAM completion bandwidth.
 3. **Request waits and competing work in the budget:** existing prose explains eligibility and round-robin. Put the rate table beside a clear denominator statement: count admitted block costs, add actual request-starved gaps/other-channel block intervals to obtain a defined observed interval. Do not invent fixed waits or CPU-versus-DMA electrical contention. The existing two-channel trace is usable evidence and should be reused, not replaced by a new abstraction.
 
 ### APU

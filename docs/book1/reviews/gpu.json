@@ -5,7 +5,7 @@
 			"open": []
 		},
 		"registers": {
-			"resolution": "Both port addresses/access/reset scopes, all 32 GPUSTAT bits, all GP1 controls/query aliases, all 256 GP0 classifications and every polygon/line/polyline/rectangle/fill/upload/readback/copy/E1–E6 word/field/option/reset/state effect are integrated. Independent paragraph audits and complete-reader review cover the operation reference.",
+			"resolution": "Both port addresses/access/reset scopes, all 32 GPUSTAT bits, all GP1 controls/query aliases, all 256 GP0 classifications and every polygon/line/polyline/rectangle/fill/upload/readback/copy/E1\u2013E6 word/field/option/reset/state effect are integrated. Independent paragraph audits and complete-reader review cover the operation reference.",
 			"open": []
 		},
 		"datapath": {
@@ -17,7 +17,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Installed resources/access costs and all command-cost equations pass independent arithmetic plus actual TS/C++ timing replay; the complete specified 29-word/63-instruction issue/poll/ack/readout/return function executes in 83 cycles through ordinary and observed CPU dispatch. Physical guarantees are not fabricated.",
+			"resolution": "Installed resources/access costs and all command-cost equations pass independent arithmetic plus actual TS/C++ timing replay; the complete specified 29-word/63-instruction issue/poll/ack/readout/return function executes in 83 cycles through ordinary and observed CPU dispatch. Physical guarantees are not fabricated. Its 47/44-cycle admitted image-transport charges are independently source-checked and replayed, with deliberately varied readback-service timing explicitly excluded from a fixed READY or whole-program guarantee.",
 			"open": []
 		},
 		"interrupts": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "The complete BIOS-style BLua route precedes the register inventory: typed readonly direct image/palette/indices/packets, explicit BSS, fixed-port transfers, drawing/display setup, counted odd readback, two-latch IRQ handling and separate idle/publication. Actual rebuilt guest 20 probes/readback/witness/capture plus independent source/math/representation and whole-reader reviews pass. The static example does not promise a general frame-loop/buffer-reuse algorithm.",
+			"resolution": "The complete BIOS-style BLua route precedes the register inventory: typed readonly direct image/palette/indices/packets, explicit BSS, fixed-port transfers, drawing/display setup, counted odd readback, two-latch IRQ handling and separate idle/publication. Actual rebuilt guest 20 probes/readback/witness/capture plus independent source/math/representation and whole-reader reviews pass. The static example does not promise a general frame-loop/buffer-reuse algorithm. The separate raw-image DMA program now supplies the complete 44-word RAM-to-GP0 upload and 41-word READY GPUREAD-to-RAM roundtrip; all returned words, ownership and completion observations pass ordinary guest execution and fresh byte-exact public-reader reconstruction.",
 			"open": []
 		}
 	},

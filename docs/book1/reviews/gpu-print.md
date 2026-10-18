@@ -156,3 +156,43 @@ pixel-for-pixel at scale 1.4, including running matter. The published artifact
 is therefore the reviewed output, not the older 72-page baseline. All 17
 manual tests pass again after publication; the PNG still matches the fresh
 capture byte-for-byte and `git diff --check` is clean.
+
+## Raw-image DMA program: final actual print — 2026-10-18
+
+**PASS for the final 80-page publication-layout proof.** The ordinary existing
+renderer produced `/tmp/bmsx-gpu-dma-proof/gpu.pdf`; SHA256
+`aa87bb17b052217db4a3760d0c0389d764811b8f725028ef9612e54a87a72ffd`.
+It retains the two accepted figures and reports no layout errors. Page count
+records inspection scope, not technical or whole-book completeness.
+
+Full decoded RGBA bytes and dimensions of pages1–74 match the accepted canonical
+74-page baseline exactly, including running matter. Baseline PDF SHA256 is
+`0aaaf2be73f705a63cf537943d87344360c1ad9eefaad1801e6eeae877a6673b`.
+No alpha-only difference bounding box or unchanged-source assumption was used.
+The final six new pages75–80 were individually viewed as actual page rasters at
+scale1.4/original detail, one page per tool call. The final hardware-voice
+qualification changed only page80; that page was individually re-viewed, with
+all other79 decoded pages exactly equal to their accepted counterparts.
+Identity records: `/tmp/bmsx-gpu-dma-print-3/{identity,print2-identity}.json`.
+
+Initial actual inspection found the storage heading/lead separated from its
+code, the concatenation instruction separated from the entry code, and the
+47/44-cycle table separated from its limiting qualification. Three ordinary
+authored keep-together groups close those observed splits. No font reduction,
+CSS/publisher/helper change or new layout gate was needed. The complete code
+blocks intentionally remain intact; shorter pages do not justify code overflow.
+All raw words, table columns, code, headings and furniture are readable without
+clipping, overlaps, literal Markdown or body/footer collision in the accepted
+new pages. The original74 pages remain pixel-identical.
+
+Source/guest/reader acceptance remains separate in gpu-dma-source.md. This print
+pass does not establish displayed output, native parity or completion of Book I.
+
+Ordinary `manual:check -- gpu` and `manual:publish -- gpu` then pass. Every one
+of the canonical80 page rasters is exactly equal in full decoded RGBA bytes and
+dimensions to the accepted proof. Published SHA256:
+`cc788b2dd20ead9e16d55257b7d4ad0fcf4ff033f8123cec8aa3016a5a4d23fd`.
+Proof: `/tmp/bmsx-gpu-dma-published-identity.json`. Final source SHA256:
+`7df226ce58166ba1bf799dc0e883b9531a854040f22597b0121a86c1f84ddfad`.
+All19 existing manual-tool tests pass again after publication. `git diff --check`
+is clean. This is the accepted canonical output, not the older preview PDF.
