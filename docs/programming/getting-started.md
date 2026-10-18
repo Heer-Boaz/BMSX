@@ -1104,3 +1104,43 @@ submits ABC as well as the clipped triangles. The selected frame numbers are
 observation checkpoints, not fixed hardware latency. Source numeric coordinates,
 raw typed transfer records and displayed GX16 color are distinct. This route
 was checked in the working checkout, not on every OS or a fresh SDK installation.
+
+## Build and inspect PCRTC composition
+
+Use the complete [composition program](../book1/pcrtc.md#pcrtc-composition-output).
+Put its two modules in `carts/pcrtc_mix_manual/cart.lua` and
+`carts/pcrtc_mix_manual/results.lua`, and its manifest in
+`carts/pcrtc_mix_manual/res/manifest/manifest.rommanifest`. Keep the supplied
+assertion and timeline in `tests/carts/pcrtc_mix_manual/` before the debug build.
+No earlier example cartridge is needed. With the [checkout prerequisites](#prerequisites),
+run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- pcrtc_mix_manual --debug
+npm run headless:test -- pcrtc_mix_manual tests/carts/pcrtc_mix_manual/pcrtc_mix_manual_assert.lua
+npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/pcrtc_mix_manual/pcrtc_mix_manual_demo.json pcrtc_mix_manual
+```
+
+The build exports `dist/pcrtc_mix_manual.debug.rom` and its matching
+`dist/system/bmsx-bios.debug.rom`. The supplied case reports:
+
+```text
+[test] composition_words_and_source_lifetime: passed
+```
+
+It checks the four programmed PMODE words, raw source probes, unchanged
+framebuffer/source/window/background words, firmware exclusion and four fresh
+VBlank observations. Those are register/source observations, not readback of
+composed output. The last command separately runs the ordinary ROM and saves
+four unscaled 256 × 192 images under `tests/carts/pcrtc_mix_manual/screenshots/`:
+`frame_00001.png` is A (constant coefficient), `frame_00004.png` B (source
+alpha), `frame_00007.png` C (background) and `frame_00010.png` D (circuit-2
+output alpha). D has the same RGB image as B; these opaque PNGs cannot verify
+output alpha. That independent channel is specified in the chapter's table,
+not inferred from screenshot transparency.
+
+One setup and two immutable sources supply all four phases. The selected frame
+numbers and holds are observation checkpoints, not fixed hardware latency.
+This route was checked in the working checkout, not on every OS or a fresh SDK
+installation.

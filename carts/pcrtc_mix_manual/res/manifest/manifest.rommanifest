@@ -1,0 +1,3 @@
+title: PCRTC Composition Manual Example
+hardware:
+    - type: rom

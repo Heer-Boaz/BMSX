@@ -1,0 +1,6 @@
+[
+	{ "frame": 1, "capture": true, "description": "A: constant ALP128, unchanged red source over blue" },
+	{ "frame": 4, "capture": true, "description": "B: source alpha0/128 selects RGB coefficient0/255" },
+	{ "frame": 7, "capture": true, "description": "C: same source coefficient over green background" },
+	{ "frame": 10, "capture": true, "description": "D: circuit2 output alpha, same visible RGB as B" }
+]

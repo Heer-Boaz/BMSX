@@ -96,8 +96,8 @@ The concrete writing/observation assignments are:
   (96,48). Fresh paired-owner/source/image checks, ordinary guest/captures, all
   RGB pixels against the authored scene, byte-exact fresh-reader reconstruction
   and final actual-print inspection pass. This closes that isolation lesson,
-  not every display/PMODE scenario. A controlled coefficient/alpha contrast
-  remains a distinct next plate; parallel backend work was left alone.
+  not every display scenario. The separate coefficient/alpha contrast is now
+  completed below; parallel backend work was left alone.
 - **PCRTC unequal magnification — completed finite lesson:** the
   [horizontal-sampling section](../book1/pcrtc.md#pcrtc-horizontal-sampling)
   now derives source selection from signal step, source magnification and
@@ -110,6 +110,18 @@ The concrete writing/observation assignments are:
   final actual-PDF inspection are retained in the sampling review. This closes
   that formula/rounding/example gap, not PMODE contrasts, native/accelerated
   parity, electrical clocks or whole-manual acceptance.
+- **PCRTC coefficient and alpha — completed finite lesson:** the
+  [composition section](../book1/pcrtc.md#pcrtc-composition-output) supplies a
+  complete125-line BLua cartridge and three distinct ordinary256×192 plates.
+  Four complete PMODE words keep both raw sources/windows/background unchanged:
+  A/B isolates MMOD, B/C SLBG and B/D AMOD. GX16 sample alpha128 selects RGB
+  coefficient255, not half strength; output alpha is selected separately.
+  All raw source words and fresh callbacks pass the ordinary guest. Separate
+  actual production-render replay checks every raw RGBA pixel, including the
+  B/D alpha difference hidden by opaque PNGs. Independent paired-source/image,
+  public-only byte-exact reconstruction and actual-PDF checks are recorded in
+  the composition review. This closes the controlled PMODE task, not all
+  graphical states, backend matrices or whole-manual acceptance.
 
 The underlying source boundaries are the current GTE normal/PLUS dispatch and
 projection/lighting/cue owners, GPU ingress/readback and DMA controller, and
@@ -134,7 +146,7 @@ Already recognizable rather than merely implicit:
 - Formats/addressing: `145–273` gives sample packing, zero-format results and the complete page/block/linear layout families. Sharing: `22–25` says both circuits share one local memory. `81–85` expressly does not invent an electrical arbitration/fetch/bandwidth contract.
 - Frozen basis: `facts/pcrtc.md:148–252,308–365,952–1028`.
 
-The originally missing window/source-origin output contrast is completed by the later full cartridge and three actual plates recorded above; its original frozen inputs are no longer mistaken for execution evidence. The next distinct figure task is a controlled **PMODE coefficient/alpha** contrast. Source-coordinate progression at unequal magnification also remains a separate sourced paragraph. No missing electrical number was established by the bounded inventory.
+The originally missing window/source-origin output contrast is completed by the later full cartridge and three actual plates recorded above; its original frozen inputs are no longer mistaken for execution evidence. The controlled **PMODE coefficient/alpha** contrast and unequal-magnification source progression are now completed by the separate finite lessons recorded above. No missing electrical number was established by the bounded inventory.
 
 **Bounded continuation:** the Memory chapter now supplies a complete ordinary
 two-surface cartridge, changing only framebuffer base for its two switches.
@@ -211,6 +223,11 @@ Already explicit:
 - Frozen basis: `facts/apu.md:241–353` APT01–20, `372–585` voice/format/rate/filter, `603–606` scope limits, `650–673` executed actual cart observations.
 
 Concrete next paragraph task: **a controlled download timing companion** to the upload trace. Start from defined sample RAM and DMA_READ setup, account for full-16-word prefill even when the requested count/tail is short, DMA transport, final BLOCK_END prefetch and STOP cancellation, and distinguish requested data receipt from an unneeded busy prefetch. Current text teaches all these rules, but supplies only an upload numerical timeline. APT08/09/12–18 plus DMT13–17 support extraction/replay. This can be a short teaching addition; do not build a new audio harness or fake transport latency. Per-format physical fetch rates/independent DAC clocks are not present in the frozen sources and must not be invented.
+
+A fresh2026-10-18 paired-owner/current-public recheck confirms this next slice:
+work one20-word16+4 download and a short initial read, including surplus
+BLOCK_END prefetch and STOP exactly at its deadline. Reuse the documented
+16-word helper route; it is cartlib, not an invented APU BIOS service.
 
 ## Installed-unit chapter assignments and follow-ups
 

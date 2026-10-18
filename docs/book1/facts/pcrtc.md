@@ -1045,3 +1045,12 @@ source progression, nonzero first-pixel phase and an eight-pixel GX16 example.
 It records the actual paired software consumers as well as the PCRTC producer.
 Complete real cartridge and independent actual-output evidence are retained in
 [the sampling review](../reviews/pcrtc-sampling-source.md).
+
+
+## Constant coefficient, sample alpha and output alpha
+
+The [finite composition fact sheet](pcrtc-mix.md) adds four complete PMODE
+words, exact source-bit/coefficient/output-alpha distinctions, immutable-source
+program observations and separate actual raw-RGBA corroboration. Ordinary PNGs
+supply three distinct RGB pictures, not output-alpha evidence. Existing register,
+reset, timing and geometry contracts above are unchanged.

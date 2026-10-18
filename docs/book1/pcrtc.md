@@ -1605,3 +1605,257 @@ title: PCRTC Source Sampling Manual Example
 hardware:
     - type: rom
 ```
+
+<section class="keep-together">
+
+<a id="pcrtc-composition-output"></a>
+
+## 7. Composition: constant coefficient and source alpha
+
+Both reading circuits cover the same 256 × 192 output. Circuit 1 contains red across the whole picture, divided into two 128-column halves: the left half has sample alpha 0, and the right half has sample alpha 128. Circuit 2 contains blue with sample alpha 128 throughout. The background is green. These sources, their windows and the background remain unchanged through all four phases; only PMODE changes.
+
+</section>
+
+The stored GX16 words are `0x001F` for circuit 1's left half, `0x801F` for its right half, and `0xFC00` for circuit 2. The two red words decode to identical RGB `(255, 0, 0)`. Their differing bit 15 supplies the differing sample alpha; it does not change red intensity. Both reading circuits remain enabled, and ALP remains 128:
+
+| Phase | PMODE_LOW | MMOD | AMOD | SLBG | ALP |
+|---|---:|---:|---:|---:|---:|
+| A | `0x00008023` | 1 | 0 | 0 | 128 |
+| B | `0x00008003` | 0 | 0 | 0 | 128 |
+| C | `0x00008083` | 0 | 0 | 1 | 128 |
+| D | `0x00008043` | 0 | 1 | 0 | 128 |
+
+For each RGB channel, composition uses `Q = (S*k + D*(255-k) + 127) div 255`, where S is circuit 1's channel and D is the destination channel. Multiplication and addition precede the integer quotient; the denominator is 255, with 127 added for rounding.
+
+Compare A with B to isolate MMOD. A selects constant `k = ALP = 128`, independently of sample alpha. Both halves therefore become `(128, 0, 127)`: even the left half, whose output alpha is zero, retains this purple RGB. B selects `k = min(2*A1, 255)`, where A1 is circuit 1's sample alpha. Alpha 0 leaves blue; alpha 128 saturates k to 255 and gives full red, not half-strength red.
+
+| Phase | Left RGB | Right RGB | Left output alpha | Right output alpha |
+|---|---|---|---:|---:|
+| A | `(128, 0, 127)` | `(128, 0, 127)` | 0 | 128 |
+| B | `(0, 0, 255)` | `(255, 0, 0)` | 0 | 128 |
+| C | `(0, 255, 0)` | `(255, 0, 0)` | 0 | 128 |
+| D | `(0, 0, 255)` | `(255, 0, 0)` | 128 | 128 |
+
+Compare B with C to isolate SLBG: circuit 2's RGB is suppressed, exposing green as the destination. Compare B with D to isolate AMOD: output alpha changes from circuit 1's sample alpha to circuit 2's, without RGB changes. Output alpha is selected independently, not blended. The three distinct RGB pictures cannot demonstrate this alpha difference. The adjacent C-to-D transition restores SLBG as well as changing AMOD; it is not a single-bit comparison.
+
+Two immutable 256×192 sources occupy raw VRAM rows 0–191 and 256–447, with pitch 1024 words and both source origins (0,0). Circuit 2 uses FBP=64, base word 40000H. E5 drawing offsets are relative; C0 probes use absolute raw coordinates. Their words 001FH, 801FH, and FC00H describe the sources, not composed output.
+
+One program exclusively owns the ports, circuits, VBlank handler, and surfaces. The firmware region query reports storage outside these surfaces; it neither allocates nor grants ownership. Sources are never rewritten. Each phase waits for fresh VBlank publication after programming PMODE; this establishes no atomic switching, source-release, minimum-latency, or physical-display-timing guarantee.
+
+<section class="keep-together">
+
+![A: uniform purple output](figures/pcrtc-mix-constant.png)
+
+*A — PMODE=8023H: constant mixing of red source 1 and blue source 2 produces uniform RGB (128,0,127), despite source 1’s split alpha.*
+
+</section>
+
+| B — source-alpha selection | C — background selection |
+| --- | --- |
+| ![B: blue left and red right](figures/pcrtc-mix-source.png) | ![C: green left and red right](figures/pcrtc-mix-background.png) |
+| *PMODE=8003H: source 1’s alpha split yields blue source 2 on the left and red source 1 on the right.* | *PMODE=8083H: SLBG substitutes green background for blue source 2; source 1’s right half stays red.* |
+
+<section class="keep-together">
+
+### Complete BLua composition cartridge
+
+For project layout, building and checking this cartridge, use the [Build and inspect example cartridges](../programming/getting-started.md#build-and-inspect-pcrtc-composition) development guide — “Build and inspect PCRTC composition”. No earlier example cartridge is required.
+
+Create `results.lua` as this complete const module. Explicit BSS retains raw source words and programmed-word/callback observations, not a composed-output readback port.
+
+```lua
+module<const>
+
+struct pcrtc_mix_result
+	completed_phase: word
+	vblank_sequence: word
+	system_origin: word
+	system_size: word
+	source_words: word[3]
+	before_vblank: word[4]
+	after_vblank: word[4]
+	programmed_pmode: word[4]
+end
+
+bss result: pcrtc_mix_result
+
+return { result = result }
+```
+
+</section>
+
+<section class="keep-together">
+
+Create `res/manifest/manifest.rommanifest` with these complete contents:
+
+```yaml
+title: PCRTC Composition Manual Example
+hardware:
+    - type: rom
+```
+
+</section>
+
+<section class="keep-together">
+
+### Declare the mapped ports
+
+Create `cart.lua` by concatenating the following five blocks in order.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local system_vram_region<const> = require('gpu/system_vram_region')
+local result<const>: *pcrtc_mix_result = state.result
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer1<const>: *word = 0x0801035c
+local source1<const>: *word = 0x08010360
+local window1<const>: *word = 0x08010364
+local extent1<const>: *word = 0x08010368
+local framebuffer2<const>: *word = 0x0801036c
+local source2<const>: *word = 0x08010370
+local window2<const>: *word = 0x08010374
+local extent2<const>: *word = 0x08010378
+local background<const>: *word = 0x0801037c
+local pcrtc_csr<const>: *word = 0x080103d4
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Supply the complete PMODE words and VBlank handler
+
+ALP remains 128 in all four words. Compare A/B for MMOD, B/C for SLBG and B/D for AMOD; moving from C to D also restores SLBG to zero.
+
+```lua
+-- A: constant; B: source alpha; C: background; D: circuit-2 output alpha.
+rodata modes: word[4] = { 0x00008023, 0x00008003, 0x00008083, 0x00008043 }
+rodata probes: word[3] = {
+	64 | (96 << 16), 192 | (96 << 16), 64 | (352 << 16),
+}
+
+function irq(flags)
+	if (flags & 0x00000004) ~= 0 then
+		result.vblank_sequence = result.vblank_sequence + 1
+	end
+	*irq_ack = flags & 0x00000004
+end
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Configure both reading circuits and the owned sources
+
+Both circuits select equal full-size windows. Their framebuffer bases differ; both relative source origins stay zero. The BIOS query reports firmware reservations, not a general allocator.
+
+```lua
+-- Own both reading circuits, GPU ports, handler and both 256x192 sources.
+result.system_origin, result.system_size = system_vram_region()
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer1 = 0x000fa000
+*source1 = 0
+*window1 = 0x018252a8
+*extent1 = 0x000bf3ff
+*framebuffer2 = 0x000fa040
+*source2 = 0
+*window2 = 0x018252a8
+*extent2 = 0x000bf3ff
+*background = 0x0000ff00
+*gp1 = 0x09000000
+*gp0 = 0xe1000400
+*gp0 = 0xe2000000
+*gp0 = 0xe3000000
+*gp0 = 0xe40000ff | (191 << 10)
+*gp0 = 0xe5000000
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Draw and recover the immutable source pixels
+
+The two circuit-1 halves have identical red RGB but different stored bit15. Circuit2 reads blue from the separate raw rows256–447. Drain the absolute C0 probes, then wait separately for GPU idle.
+
+```lua
+-- Circuit 1 is red throughout, but its two halves have different stored bit15.
+*gp0 = 0xe6000000
+*gp0 = 0x600000ff
+*gp0 = 0
+*gp0 = 128 | (192 << 16)
+*gp0 = 0xe6000001
+*gp0 = 0x600000ff
+*gp0 = 128
+*gp0 = 128 | (192 << 16)
+
+-- Circuit 2 is opaque blue at raw rows256..447, not a display source-Y shift.
+*gp0 = 0xe3000000 | (256 << 10)
+*gp0 = 0xe40000ff | (447 << 10)
+*gp0 = 0xe5000000 | (256 << 11)
+*gp0 = 0x60ff0000
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+
+-- C0 takes absolute raw positions, independent of E5.
+for index = 0, 2 do
+	*gp0 = 0xc0000000
+	*gp0 = probes[index]
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.source_words[index] = *gp0
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Publish each PMODE word and observe a fresh callback
+
+Source pixels and both source/window configurations remain unchanged throughout all four phases. Programmed-word readback is not proof of display-latch visibility. The two extra callback increments hold each early case for viewing; they are not fixed latency guarantees.
+
+```lua
+-- Source pixels and both source/window settings remain unchanged from here.
+for phase = 0, 3 do
+	*irq_mask = 0
+	*pmode = modes[phase]
+	result.programmed_pmode[phase] = *pmode
+	*irq_ack = 0x00000004
+	local before<const> = result.vblank_sequence
+	result.before_vblank[phase] = before
+	*irq_mask = 0x00000004
+	while result.vblank_sequence == before do
+		halt_until_irq
+	end
+	result.after_vblank[phase] = result.vblank_sequence
+	result.completed_phase = phase + 1
+	if phase < 3 then
+		local hold<const> = result.vblank_sequence
+		while result.vblank_sequence - hold < 2 do
+			halt_until_irq
+		end
+	end
+end
+while true do
+	halt_until_irq
+end
+```
+
+</section>

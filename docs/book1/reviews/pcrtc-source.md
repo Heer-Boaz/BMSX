@@ -153,3 +153,14 @@ all table entries. Independent source/image and public-only reader checks pass,
 including byte-exact reconstruction and the corrected explicit manifest path.
 No reciprocal register, physical rate or native/accelerated parity is invented.
 Actual PDF acceptance is separately recorded in pcrtc-print.md.
+
+
+## Constant coefficient and source/output alpha — 2026-10-18
+
+The [finite composition review](pcrtc-mix-source.md) records Section7's complete
+125-line BLua cartridge, four exact PMODE words and three distinct actual RGB
+plates. Paired owners ground the coefficient equation and independent alpha
+selection; actual raw-RGBA execution corroborates all four output rows rather
+than inferring alpha from opaque PNGs. Ordinary guest, independent source/image
+and public-only reconstruction evidence remain separate from final PDF review.
+This closes the bounded contrast, not whole-console or backend-matrix acceptance.

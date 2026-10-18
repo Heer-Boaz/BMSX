@@ -9,7 +9,7 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Sections 2.1\u20132.5 specify geometry, interlace, two-byte local-memory words, packing, address equations and wrap, zero samples, composition order, RGB rounding and coefficient saturation, and separate alpha selection. Matching TS/C++ software is authoritative by explicit user decision; the independently fixed WebGPU discrepancy is recorded in pcrtc-webgpu-constant-blend.md. Section6 supplies exact bounded integer-quotient source selection with named signal/output/source units, nonzero first-sample phase and unequal step/magnification; both actual software consumers agree.",
+			"resolution": "Sections 2.1\u20132.5 specify geometry, interlace, two-byte local-memory words, packing, address equations and wrap, zero samples, composition order, RGB rounding and coefficient saturation, and separate alpha selection. Matching TS/C++ software is authoritative by explicit user decision; the independently fixed WebGPU discrepancy is recorded in pcrtc-webgpu-constant-blend.md. Section6 supplies exact bounded integer-quotient source selection with named signal/output/source units, nonzero first-sample phase and unequal step/magnification; both actual software consumers agree. Section7 isolates constant ALP versus doubled/saturated sample-alpha RGB coefficient and independent result alpha with four complete PMODE words; exact actual raw-RGBA replay corroborates all output rows separately from opaque PNGs.",
 			"open": []
 		},
 		"visibility": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Section 3 supplies ordered raw-word source/window and mask/acknowledge/unmask examples with explicit starting assumptions, derived values, latch visibility, output alpha, and the HSINT race. Hardware cautions are bounded by the sourced contracts. Section5 now supplies a complete154-line BLua/BIOS cartridge, exact raw stage words and source probes, and three actual output plates isolating source-origin versus output-window movement. Ordinary guest, independent source/image and byte-exact fresh-reader checks pass within the controlled ownership scope. Section6 adds a complete91-line executed BLua cartridge and actual8\u00d71 output strip, all-source-word guest assertions, exact RGB checks and byte-exact fresh public-only reconstruction.",
+			"resolution": "Section 3 supplies ordered raw-word source/window and mask/acknowledge/unmask examples with explicit starting assumptions, derived values, latch visibility, output alpha, and the HSINT race. Hardware cautions are bounded by the sourced contracts. Section5 now supplies a complete154-line BLua/BIOS cartridge, exact raw stage words and source probes, and three actual output plates isolating source-origin versus output-window movement. Ordinary guest, independent source/image and byte-exact fresh-reader checks pass within the controlled ownership scope. Section6 adds a complete91-line executed BLua cartridge and actual8\u00d71 output strip, all-source-word guest assertions, exact RGB checks and byte-exact fresh public-only reconstruction. Section7 supplies a complete125-line BLua cartridge and three real RGB plates from four phases, unchanged source/window/background state, raw source probes and fresh VBlank observations; A/B, B/C and B/D isolate MMOD, SLBG and AMOD respectively.",
 			"open": []
 		}
 	},

@@ -268,3 +268,73 @@ Final public-source SHA256:
 `aeda58e18fdcf737ef9e47f509eaf13248deab8f8f0f4a3441b369a8e047028f`.
 Identity record: `/tmp/bmsx-pcrtc-sampling-published-identity.json`. This renews
 `build/manual/pcrtc.pdf`, not the older draft preview. `git diff --check` passes.
+
+## Composition coefficients and source/output alpha — 2026-10-18
+
+**PASS for the bounded current publication-layout proof**:
+`/tmp/bmsx-pcrtc-mix-proof/pcrtc.pdf`, SHA256
+`bbe768a0cc71b8473b5ce83f835e1ac37fba7a0bd859c305ffa4dc4b8bcaeecc`.
+The unchanged shared renderer reports10 figures,13 register groups, no layout
+errors; Chromium153.0.8010.12, Nodev22.23.1, Linuxx64. The37-page count describes
+inspection scope, not chapter/console completeness.
+
+All final pages1–32 match the accepted prior32-page canonical baseline in exact
+full decoded RGBA bytes **and dimensions**, not a bounding box or contact sheet.
+Baseline SHA256 `d4c16317c24acc9b150a49c93f04671a8578786817575ddc469bf7ca9e0b051e`.
+Identity record `/tmp/bmsx-pcrtc-mix-print/identity.json`, scale1.4.
+
+Root individually viewed all new final page states at ORIGINAL detail:
+33 (both tables/formula/teaching),34 (three output plates/captions),35 (complete
+results/manifest and declarations),36 (mode words/handler and shared setup),
+37 (source drawing/readback and final publication loop). No clipped lines,
+overlap, split table/box, detached caption/lead or missing folio remains.
+The constant plate/caption stay together; the B/C table preserves image aspect
+and sharp boundaries. Every literal BLua line and full manifest fits.
+
+The initial proof left only the three-line manifest on page38. Moving its
+unchanged lead/fence into the setup on35 removes that near-blank last page;
+no font shrinking, CSS/publisher change or layout helper was needed. Root
+individually re-viewed final35. All other final pages match the preceding proof
+in exact full RGBA/dimensions, including36–37; record
+`/tmp/bmsx-pcrtc-mix-manifest-delta/identity.json`. Earlier page33 was also
+re-viewed after removing one redundant paragraph.
+
+Root directly resolves a repeated-image display artifact reported in the
+independent tail inspection: final36/37 **do** contain the identical BMSX/book
+running header and PCRTC footer. Full top band(x0..833,y20..60) SHA256
+`0db235556e1a06378a57a4fe09717f7fac86ce3fb423fb22dd937fd99e6c34b4`,
+full bottom-left band(x60..180,y1120..1160) SHA256
+`8f066e9c8fbed7bc5794a307aac2a0bc6a7d851fa9539ab6345f289f627a733d`
+on both final pages. Root separately viewed both original full-page rasters.
+This is actual raster evidence, not a renderer/CSS inference.
+
+Source/actual-output/ordinary guest and fresh public-only reader acceptance are
+separate in [pcrtc-mix-source.md](pcrtc-mix-source.md). The existing reference
+fixture simply now expects the actual10 figures instead of7; no count gate,
+framework, schema or new validation layer was added.
+
+### Canonical publication verification
+
+All19 existing manual-tool tests, ordinary `manual:check -- pcrtc` and
+`manual:publish -- pcrtc` pass after completed source/image/reader and actual
+print acceptance. Every one of the37 canonical PDF pages equals the accepted
+final proof in **full decoded RGBA bytes and dimensions**. Canonical SHA256:
+`c2fa0caea5de7a899a9c3904e5e8e496f4ab6973f6f955731e784dc481cd512f`.
+Final public-source SHA256:
+`2a1dd127384e62231f03a54b644f17ab993f1c8b9897f9cf4aea681ba783acd8`.
+Record `/tmp/bmsx-pcrtc-mix-published-identity.json`; logs
+`/tmp/bmsx-pcrtc-mix-manual-{tests,check,publish}.log`. The canonical
+`build/manual/pcrtc.pdf` is current; the old preview is not this publication.
+Unchanged accepted GTE canonical SHA256 remains
+`cd99150c94a8ff86e08f604d780784cfc6d7575458c1172e719e52401e45ca0e`.
+`git diff --check` passes. Whole-book/SDK acceptance remains open.
+
+### Independent finite tail check
+
+A separate print-only reviewer individually viewed original36/37 (and removed38),
+then read the final full-RGBA identity record carrying36/37. Both final pages
+pass text/code/box/heading/folio inspection without clipping or overlap. The
+reviewer withdrew its initial display-only running-matter impression and
+explicitly leaves that resolved byte/visual proof to root above. No source,
+semantics or other-page approval is inferred. Bounded report:
+`/tmp/bmsx-pcrtc-mix-print-review.md`.
