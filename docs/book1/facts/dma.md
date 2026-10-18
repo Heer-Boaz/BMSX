@@ -790,10 +790,10 @@ The public DMA paragraph's contrary socket-denial was removed; the existing
 Book III **DMA between sockets** section supplies exact routing/lifetime,
 card-RAM/mailbox pricing and a complete program without duplicating it here.
 
-## Reader-first hardware orientation
+## APU transfer boundary
 
-[The bounded opening supplement](dma-opening.md) rechecks the two channels'
-shared block-transfer path, equivalent programming capabilities, APU FIFO/sample
-transfer boundary and qualified RAM/system-ROM/cartridge-ROM route comparisons.
-It supports the plain hardware introduction before the specification table,
-not a new transfer engine, physical bandwidth rating or changed device behavior.
+DMA fills or drains the APU transfer FIFO. The APU's own scheduled batches move
+words between that FIFO and sample RAM; this is not a third programmable DMA
+channel. Sources: `machine/ts/machine/devices/audio/sample_transfer.ts:159-179,201-236`;
+`machine/cpp/machine/devices/audio/sample_transfer.cpp:122-150,195-235`.
+The channel count, shared arbitration and route costs are already sourced above.

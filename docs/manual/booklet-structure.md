@@ -122,7 +122,7 @@ loading, syntax construction and code lifetime with a complete ordinary program;
 its source/publication dependencies and the full SDK route remain open.
 
 **Next software-writing priority (2026-10-18):** the
-[BLua-specific extension/difference route](README.md#next-writing-priority-blua-specific-programming)
+[BLua-specific extension/difference route](technical-follow-up.md#next-priority-explain-blua-itself-not-another-lua-library-catalogue)
 needs coherent BLua-specific treatment, not limited to hardware-related
 extensions. Mentioning source forms and linking to CPU/Memory is not sufficient
 teaching. The user's follow-up defers general Lua explanation: refer readers to the official Lua

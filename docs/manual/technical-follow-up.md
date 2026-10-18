@@ -8,7 +8,7 @@ classification. Current public chapter cross-references use III.
 
 2026-10-17; checkout `cb893c6d5`; worktree was clean at inspection. Baseline inventory recorded before the T02 DMA supplement. Neither `docs/architecture.md` nor a reference PDF was opened.
 
-**Boundary:** this is an editorial inventory of the six current chapters and their existing frozen fact sheets, plus a unit/index inventory. It is not a new live owner-versus-spec extraction, a fresh factual approval, proof of full Book I coverage, or closure of the user's broad technical audit. The broad audit and graphics-output items in `README.md` remain open. The DMA supplement below addresses the first bounded rate/boundary teaching task, not this entire inventory. No new publisher/schema/check layer is proposed.
+**Boundary:** this is an editorial inventory of the six current chapters and their existing frozen fact sheets, plus a unit/index inventory. It is not a new live owner-versus-spec extraction, a fresh factual approval, proof of full Book I coverage, or closure of the user's broad technical audit. The whole-console audit and graphics-output work remain open. The DMA supplement below addresses the first bounded rate/boundary teaching task, not this entire inventory. No new publisher/schema/check layer is proposed.
 
 **Completion target:** a programmer new to BMSX must be able to control the
 whole hardware from the manual alone, without reverse-engineering runtime,
@@ -1442,8 +1442,7 @@ interrupted-startup and all-caller replacement guarantees are not claimed.
 BLua's extensions/differences sufficiently discoverable. The current source
 mentions some forms and delegates typed storage/intrinsics to CPU/Memory;
 that scattered presence is not acceptance of a complete BLua-specific guide.
-The [priority work item](README.md#next-writing-priority-blua-specific-programming)
-requires a coherent, source-derived programming route through BLua's
+The request requires a coherent, source-derived programming route through BLua's
 extensions and genuine examples before another general BIOS-library chapter.
 The user's follow-up explicitly defers general Lua explanation: link the official
 Lua documentation instead of expanding a language tutorial or exhaustive
@@ -1782,35 +1781,7 @@ BH01, physical specifications or final whole-console newcomer acceptance.
 
 ## Reader-first hardware openings
 
-Requested 2026-10-19 after reading `build/manual/dma.pdf`. The opening must
-explain what hardware the BMSX provides before presenting its specification
-inventory. This is an editorial task across the hardware chapters, not a new
-publisher/template/gate or an instruction to change device behavior.
-
-Start with DMA: its current opening already names two programmable channels
-and one shared block path, but the immediate generic **Installed resources**
-section does not give enough conversational orientation. Write a coherent
-hardware overview explaining the channels' capabilities, sharing and relationship
-to APU transfer machinery; connect the meaningful RAM/ROM/device-port route
-costs to that overview. Keep detailed capacities, fields and qualified rate
-calculations available afterward. Do not just rename the heading or narrate
-all of the table rows.
-
-Verify concurrency/equivalence/APU-boundary claims against paired owners before
-writing. Two active channels do not establish two simultaneously serviced
-blocks, and a route to GP0 is not a direct VRAM aperture or a completed rendered
-image. Preserve the existing admitted-budget assumptions rather than converting
-them into unconditional speeds. Apply the same reader-first check to each
-remaining hardware chapter using its own facts; no stock opening paragraph.
-
-The IMGDEC output lesson is now complete at its bounded content scope. DMA's
-reader-first opening subsequently passed separate actual-source and public-reader
-checks: it introduces equivalent channels and the shared block path, distinguishes
-the APU transfer unit, and states the qualified RAM/system-ROM/cartridge-ROM
-comparison before the specification table. The table and entire following
-chapter are unchanged byte-for-byte. Evidence: [DMA source review](../book1/reviews/dma-source.md).
-
-This completes the DMA opening, not the across-chapter revision or final print.
-The remaining openings receive a public-reader inventory before assigning
-further unit-specific facts and prose. The work does not reopen general Lua
-library expansion, change runtime behavior or defer technical detail.
+Open with what the hardware does, its channels/units, sharing and adjacent units,
+then give specifications and qualified route costs. Do not just rename an
+“Installed resources” table. DMA's opening is updated; apply this to remaining
+chapters where the orientation is missing. Preserve technical detail.

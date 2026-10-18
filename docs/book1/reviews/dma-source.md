@@ -7,10 +7,6 @@ open factual or instructional failures. The T02 source/math and full-reader
 checks are recorded separately below; earlier approvals were not reused to
 accept new prose. Print acceptance is separate in dma-print.md.
 
-The new reader-first opening passes its separate source and public-reader
-checks below. Its prose/heading changes do not inherit earlier layout
-acceptance; final print remains pending.
-
 ## Scope and independent assignments
 
 Separate extractions cover the twelve register words, admitted transfers and
@@ -252,28 +248,8 @@ current native DMA suite pass; native build needs no changes. No new code,
 test/harness/publisher or duplicate card-program example was added, and no fresh
 full-cartridge execution or whole-machine acceptance follows from these tests.
 
-## Reader-first hardware orientation — 2026-10-19
+## Hardware opening — 2026-10-19
 
-**Bounded source and public-reader PASS.** Three opening paragraphs now explain
-what the BMSX provides before the retained DMA specification table: equivalent
-programmable channels sharing one block-transfer path, the APU's separate FIFO/
-sample-RAM work, and route-dependent transport costs. Both BUSY is not two
-simultaneous admitted blocks. System ROM is distinguished from cartridge ROM;
-the relative-cost comparison is qualified by the existing route-table assumptions.
-GP0 transport is not presented as direct VRAM access or GPU completion.
-
-A fresh facts-only author supplied the opening from the bounded paired-owner
-extract. Integration narrowed its broad timing statement to the actual
-uninterrupted route comparison. Independent source review then read the actual
-DMA/APU/GPU boundaries and recalculated the cited table; a separate public-only
-reader found no orientation gap. Reports:
-`/tmp/bmsx-dma-opening-source-review-current.md` and
-`/tmp/bmsx-dma-opening-public-reader-current.md`.
-Frozen evidence: `../facts/dma-opening.md`.
-
-The resource table and all following chapter content are unchanged byte-for-byte,
-including the diagram, operation reference, rates and executable source. No
-runtime, BIOS, compiler, cartridge, harness or publisher change is involved;
-this source check is not a new execution or electrical-bandwidth qualification.
-MAME's AM9517A source was consulted for ownership/priority separation methodology,
-not BMSX facts. Final print and the remaining hardware openings are separate.
+Source and reader checks pass for the three introductory paragraphs. Evidence:
+`../facts/dma.md` (channels, arbitration, route costs and APU transfer boundary).
+Technical tables, programs and subsequent chapter text are unchanged. Print pending.
