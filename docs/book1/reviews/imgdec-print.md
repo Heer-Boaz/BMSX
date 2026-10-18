@@ -1,5 +1,28 @@
 # IMGDEC print acceptance
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/imgdec.pdf`:
+25 pages, SHA-256 `e4a60c4d7f4527885f2f28ca646e47ae85a1b56a9f746a076a17c561b95f7837`.
+Page 1 was independently viewed; every body page matches the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current DRAFT: `build/manual/imgdec.preview.pdf`,25 pages, SHA-256
+`980443fbe843146d05f6e918ec74a50d6e9d382c4a7aeaf07cea315282a509b2`.
+Root individually viewed every full PDFium1.4× page1–25 at original detail.
+The new Book I System and Hardware Reference header fits on every page;
+BMSX, chapter/DRAFT identification and folios remain legible and separate.
+The datapath figure, complete register/stream/result tables, timing and all
+program parts remain readable without clipped words, borders or labels.
+No body/style correction was needed. Existing Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64; one figure and no receipt layout errors.
+This renews the changed draft's print-layout evidence, not source/coverage or
+whole-manual acceptance. The historical publication-mode evidence follows.
+
 Accepted for print/layout after independent inspection of the actual
 publication-mode proof. Source, arithmetic, semantic-figure and whole-reader
 acceptance are separate in [imgdec-source.md](imgdec-source.md).

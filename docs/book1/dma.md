@@ -154,7 +154,7 @@ independently; their meanings are not reversed when used on the other side.
 
 FORCE is always asserted and DISABLED is never asserted. Do not equate the
 unnamed encodings with either one. Cartridge request names do not specify a
-socket or card protocol; those devices belong to Book II.
+socket or card protocol; those devices belong to Book III.
 
 ### STATUS and TRIGGER
 
@@ -251,7 +251,7 @@ CONTROL selects a read request and a write request independently. Both must be a
 
 In GPU FIFO direction, GX_WRITE requires ingress not stopped, empty DMA ingress, and room in the command FIFO. In CPU_TO_GP0 direction, packet acceptance requires readback IDLE, ingress not stopped, and empty DMA ingress. With image-load words outstanding, it tests command-FIFO space. During polyline payload it is false. Otherwise, no partial fixed packet and an empty FIFO permit acceptance; the remaining case requires an incomplete packet that is neither a polygon nor a line. This packet request is not the CPU's one-word write-ready condition.
 
-IMGDEC's remaining quantities belong to its stream, not to the DMA channel. APU requests describe transfer-FIFO batches, not completion of sample-memory filling or draining. Selectors 7–10 are cartridge-slot 0 write/read and slot 1 write/read respectively; their device protocols belong to Book II.
+IMGDEC's remaining quantities belong to its stream, not to the DMA channel. APU requests describe transfer-FIFO batches, not completion of sample-memory filling or draining. Selectors 7–10 are cartridge-slot 0 write/read and slot 1 write/read respectively; their device protocols belong to Book III.
 
 ### Admission is a block boundary
 

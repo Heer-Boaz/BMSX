@@ -3,7 +3,7 @@
 Editorial work list, not a public contents page or a new publishing manifest.
 The installed unit expands a word stream into generated GPU upload headers and
 payload words. A downstream GPU port is not an IMGDEC VRAM destination aperture.
-Book II retains cartridge socket/card protocols.
+Book III retains cartridge socket/card protocols.
 
 Extractors read only paired leaves/live owners plus named direct boundaries.
 Fresh prose authors receive frozen facts, not architecture prose, owners or a

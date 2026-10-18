@@ -14,28 +14,28 @@
 		"review": "docs/book1/reviews/memory.json"
 	},
 	"bios-base": {
-		"book": "I",
+		"book": "II",
 		"label": "BIOS BASE",
 		"chapter": "docs/book1/bios-base.md",
 		"facts": "docs/book1/facts/bios-base.md",
 		"review": "docs/book1/reviews/bios-base.json"
 	},
 	"bios-table": {
-		"book": "I",
+		"book": "II",
 		"label": "BIOS TABLE",
 		"chapter": "docs/book1/bios-table.md",
 		"facts": "docs/book1/facts/bios-table.md",
 		"review": "docs/book1/reviews/bios-table.json"
 	},
 	"bios-string": {
-		"book": "I",
+		"book": "II",
 		"label": "BIOS STRING",
 		"chapter": "docs/book1/bios-string.md",
 		"facts": "docs/book1/facts/bios-string.md",
 		"review": "docs/book1/reviews/bios-string.json"
 	},
 	"coroutines": {
-		"book": "I",
+		"book": "II",
 		"label": "COROUTINES",
 		"chapter": "docs/book1/coroutines.md",
 		"facts": "docs/book1/facts/coroutines.md",

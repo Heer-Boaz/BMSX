@@ -1,5 +1,28 @@
 # DMA print acceptance
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/dma.pdf`:
+17 pages, SHA-256 `9348b608be7582384bbe24046e3dde2a02b0b26b2aa55bcc747bf1a11376fac8`.
+Pages 1, 4 and 7 were independently viewed; all other body pages match the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/dma.preview.pdf`: 17 pages, SHA-256
+`c44494bc907a9d6bb000ca4afc546074bfbac1ded13299585ea3daf17f8ea5b8`.
+A nonauthor individually inspected every full PDFium1.4× page1–17 at readable
+size. The Book I System and Hardware Reference header fits; BMSX, chapter/DRAFT
+footer, folios, complete tables, diagrams and program parts remain readable
+without clipping, overlap or lost labels. The corrected cartridge-reference pages4/7 were independently reopened; every
+other page raster matches the already inspected candidate. Evidence:
+`/tmp/bmsx-volume-small-hardware-print-review.md`. Existing Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews print-layout evidence,
+not technical coverage or whole-series publication approval. Historical
+publication/draft evidence follows.
+
 Print/layout review accepted for the current chapter, including T02. Source
 and programming acceptance is separate in [dma-source.md](dma-source.md); this
 is not an acceptance of unfinished Book I as a whole.

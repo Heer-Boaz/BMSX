@@ -1,5 +1,27 @@
 # BIOS base preview: actual-PDF visual review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/bios-base.pdf`:
+13 pages, SHA-256 `fb0672844aa0470194f48bbbf398d057e9d6f3780f8138888294402f46ae0e06`.
+Every publication page 1–13 was independently viewed; removing the draft banner changes the preview’s pagination.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/bios-base.preview.pdf`: 14 pages, SHA-256
+`1ad428f112e1d19b79f31d111d0efc024837d18f79a05215d21165e3095bc385`.
+A nonauthor independently opened every full PDFium1.4× page1–14 at original
+size. The document title and every running header now identify **Book II —
+BLua32 and BIOS Reference**. Headers, chapter/DRAFT footers, folios, complete
+tables, code and any figures fit without clipping or collisions. No body/style
+change was needed. Receipts retain Chromium153.0.8010.12, Nodev22.23.1/Linuxx64
+and no layout errors. Evidence: `/tmp/bmsx-volume-software-print-review.md`.
+This renews bounded draft-layout acceptance, not factual/coverage decisions or
+whole-series publication approval. Earlier artifact evidence follows.
+
 ## Artifact and method
 
 - PDF: `/home/boaz/BMSX/build/manual/bios-base.preview.pdf`

@@ -1,5 +1,11 @@
 # Bounded Book I technical-detail inventory
 
+**Volume-name update, 2026-10-18:** the [adopted series](booklet-structure.md)
+uses I for System and Hardware, II for BLua32 and BIOS, and III for Cartridge
+and Expansion. Earlier progress entries below use the old provisional II for
+cartridge/socket/card work; preserve that evidence chronology, not that old
+classification. Current public chapter cross-references use III.
+
 2026-10-17; checkout `cb893c6d5`; worktree was clean at inspection. Baseline inventory recorded before the T02 DMA supplement. Neither `docs/architecture.md` nor a reference PDF was opened.
 
 **Boundary:** this is an editorial inventory of the six current chapters and their existing frozen fact sheets, plus a unit/index inventory. It is not a new live owner-versus-spec extraction, a fresh factual approval, proof of full Book I coverage, or closure of the user's broad technical audit. The broad audit and graphics-output items in `README.md` remain open. The DMA supplement below addresses the first bounded rate/boundary teaching task, not this entire inventory. No new publisher/schema/check layer is proposed.
@@ -842,11 +848,33 @@ manuals. It distinguishes originals from the reworked V9938 edition, consumer
 instructions from service/developer literature, and parts from physical books.
 NES manufacturer developer-manual structure remains explicitly unverified.
 
-The review proposes a hardware volume with an opening specification/orientation
-part, a BLua32/BIOS software volume and a separately scoped cartridge/expansion
-volume, plus the existing development companion. It does not claim those books
-have been authored or assign every mixed CPU/Memory section automatically.
-The current catalog and running labels have not been changed. Applying the
-chosen map, checking companion links and inspecting newly rendered labels are
-still separate work. Technical source reviews, owner questions and whole-console
-newcomer acceptance remain unchanged; a title proposal is not completion.
+The selected map is now applied: I System and Hardware Reference, II BLua32
+and BIOS Reference, III Cartridge and Expansion Reference, plus the existing
+development companion. Four software chapters are II; twelve machine chapters
+are I. CPU/Memory remain the canonical mixed foundations, with explicit
+software-reader section links rather than blind moves or duplicate definitions.
+Shared title metadata drives both document and running identification. Current
+IRQ/DMA cartridge references are corrected to III. Stable source paths and
+chapter identities remain unchanged; no publisher framework or runtime repair
+was introduced. Changed PDF titles receive separate print revalidation, not
+inherited old hashes. Technical source reviews, owner questions, unwritten
+material and whole-console newcomer acceptance remain unchanged; classification
+is not completion.
+
+All sixteen current preview chapters were rebuilt and every actual page was
+individually inspected at readable PDFium resolution. The new titles fit;
+three cartridge cross-references were corrected to III. Inspection also found
+stranded GPU/GTE table/formula leads and one paragraph tail; existing authored
+keep-together markup resolves them without changing technical words, smaller
+type, CSS or publisher special cases. Exact artifact hashes, final changed-page
+inspections and pixel-identical retained-page evidence are in each chapter's
+print report. The original false public print flags for Memory and Input remain
+false; no factual/coverage stop was cleared by relabeling. The shared publisher's
+nineteen tests pass. The eleven chapters with closed publication gates also
+have regenerated canonical PDFs: an independent final-PDF delta audit viewed
+all changed bodies and each first page, checked all current rasters against the
+PDFs, and accounted for retained pixels against the accepted proof/preview.
+Current publication hashes and bounded inspection scope are in the same print
+reports. The other five chapters remain drafts; no gate was bypassed. These are
+bounded classification/layout results, not whole-manual acceptance or completion
+by page count.

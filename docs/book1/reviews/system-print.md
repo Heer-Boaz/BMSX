@@ -1,5 +1,27 @@
 # SYSTEM actual-page acceptance
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/system.pdf`:
+13 pages, SHA-256 `e9d40db33fcf0389ade842cce10cbc68931b6cb0613fbac56d228e139467f57e`.
+Page 1 was independently viewed; every body page matches the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/system.preview.pdf`: 13 pages, SHA-256
+`7f1ae42bc78fe272003857bc985b3e98fd45c8b2f25ff337d6ee278913972985`.
+A nonauthor individually inspected every full PDFium1.4× page1–13 at readable
+size. The Book I System and Hardware Reference header fits; BMSX, chapter/DRAFT
+footer, folios, complete tables, diagrams and program parts remain readable
+without clipping, overlap or lost labels. Evidence:
+`/tmp/bmsx-volume-small-hardware-print-review.md`. Existing Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews print-layout evidence,
+not technical coverage or whole-series publication approval. Historical
+publication/draft evidence follows.
+
 Reviewed through the unchanged shared publisher, stylesheet and bundled fonts:
 Chromium 153.0.8010.12, Node v22.23.1, Linux/x64. Both the final preview and the
 separate release-layout proof have 13 pages, one original PNG and three short

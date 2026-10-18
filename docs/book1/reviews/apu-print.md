@@ -1,5 +1,27 @@
 # APU print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/apu.pdf`:
+28 pages, SHA-256 `c914b74cfbd486af205bac25d38afd4ba39aa2582071193b8c2d04cbd0ce382d`.
+Page 1 was independently viewed; every body page matches the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/apu.preview.pdf`: 28 pages, SHA-256
+`c48db28966d08cec8014b50a536f8d3bce7a2826e1119f68c2710c695d2d0c92`.
+A nonauthor individually inspected every full PDFium1.4× page1–28 at readable
+size. The Book I System and Hardware Reference header fits; BMSX, chapter/DRAFT
+footer, folios, complete tables, diagrams and program parts remain readable
+without clipping, overlap or lost labels. Evidence:
+`/tmp/bmsx-volume-small-hardware-print-review.md`. Existing Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews print-layout evidence,
+not technical coverage or whole-series publication approval. Historical
+publication/draft evidence follows.
+
 The publication-mode proof contains 28 A4 pages and two semantic SVG figures.
 It uses the existing shared stylesheet and bundled fonts; no publisher, layout
 framework or stylesheet was changed for this chapter.

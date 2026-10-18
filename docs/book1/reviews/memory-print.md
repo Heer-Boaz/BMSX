@@ -1,5 +1,20 @@
 # Memory and program storage: DRAFT print inspection
 
+## Volume-title revalidation — 2026-10-18
+
+Current `build/manual/memory.preview.pdf`: 36 pages, SHA-256
+`c68939b966174e6cea497e9b646656b74f732fd8917e9c6a4ba30e14d9b94935`.
+A nonauthor individually viewed every full PDFium1.4× page1–36 at readable
+original detail. The Book I System and Hardware Reference header fits; chapter/
+DRAFT footers, folios, tables, complete listings and any figures remain readable
+and unclipped. No new layout blocker or source/style correction was found.
+A missing-margin impression was withdrawn after direct original/enlarged views;
+all actual headers and chapter-footer regions are present. Evidence:
+`/tmp/bmsx-volume-foundations-print-review.md`. Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. The pre-existing false public print-approval flag remains false.
+This is bounded DRAFT layout evidence, not whole-series publication acceptance.
+Earlier exact-artifact evidence follows.
+
 2026-10-17. **Current DRAFT readability passes; public print approval remains
 open.** This does not establish complete chapter coverage or the whole-book
 reader target. No publisher, CSS, font, figure renderer or review framework

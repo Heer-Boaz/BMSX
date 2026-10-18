@@ -2853,6 +2853,8 @@ upload or reset-memory contents are implied:
 | 0 | `0044H` | `8055H` | `0066H` |
 | 1 | `0077H` | `8088H` | `0099H` |
 
+<section class="keep-together">
+
 Issue:
 
 | Word | Raw word | Meaning |
@@ -2860,6 +2862,8 @@ Issue:
 | 1 | `D9ABCDEFH` | Readback alias D9H; ABCDEFH ignored |
 | 2 | `03FF03FFH` | X=1023; supplied Y=1023 masks to 511 |
 | 3 | `00030003H` | W=3,H=3 |
+
+</section>
 
 Each row addresses X=1023,0,1; generated rows address 511,0,1. While bit 27 remains
 clear, a GP0 read returns `DEADBEEFH` and does not advance this image. Once READY,

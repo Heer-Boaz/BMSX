@@ -1,5 +1,32 @@
 # PCRTC print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/pcrtc.pdf`:
+22 pages, SHA-256 `209830f285e5935a23d41d412d12ddb221eda76e2d4038478fe021dd98f377f6`.
+Page 1 was independently viewed; every body page matches the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+The current publication-mode proof is
+`/tmp/bmsx-volume-pcrtc-proof/pcrtc.pdf`, SHA-256
+`9923f281af6d6fe5582f8ae017fa02d239104343bda03ce4dba72f786a5df155`.
+Root individually inspected all22 full pages at1.4× using PDFium. The new
+`BOOK I · SYSTEM AND HARDWARE REFERENCE` running title fits inside the existing
+margin, remains legible and does not collide with BMSX or body text. The PDF
+document title also identifies this volume. Chapter identification, folios,
+diagrams, numerical tables and every LOW/HIGH bit-field table remain contained;
+no clipping, lost labels or stranded heading was found. No body or style change
+was needed. The receipt reports3 figures,13 register groups and no layout errors;
+engine Chromium153.0.8010.12, Nodev22.23.1, Linuxx64.
+
+This renews print acceptance for the changed volume title only. Existing factual,
+figure-semantic and chapter-coverage decisions remain separate. It does not
+approve the completeness of the whole hardware volume or the developer series.
+
 Approved for the reviewed chapter and shared print assets. Source/figure semantics
 are reviewed separately in [pcrtc-source.md](pcrtc-source.md).
 

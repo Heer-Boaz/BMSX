@@ -2946,6 +2946,8 @@ There is no separate flag for signed32 word wrap. No screen, depth, divide, colo
 | D[2], D[3] | `0xfff9000c`, `0x00000005` | V1 `(12,−7,5)` |
 | COMMAND | `0x00088012` | SF=1, mx=0, v=1, cv=0, LM=0 |
 
+<section class="keep-together">
+
 The three ordered sums, with no signed44 overflow, are:
 
 ```text
@@ -2953,6 +2955,8 @@ A1 = 3×4096 + 4096×12 + 2048×(−7) − 1024×5 = 41984
 A2 = −2×4096 − 2048×12 + 4096×(−7) + 1024×5 = −56320
 A3 = 10×4096 + 1024×12 − 1024×(−7) + 4096×5 = 80896
 ```
+
+</section>
 
 The unrounded mathematical results are `(10.25,−13.75,19.75)`. ASR12 produces `(10,−14,19)`, not `(10,−13,19)`. Both MAC1–MAC3 and IR1–IR3 read `0x0000000a`, `0xfffffff2`, `0x00000013`. FLAG is zero and CYCLES is 8. The same operands expose the option differences:
 
@@ -3104,6 +3108,8 @@ Thus ZSF3=4096 preserves the depth sum before output limiting, ZSF3=1365
 approximately divides it by three, and a negative coefficient produces a
 negative product unless the sum is zero. SZ0, D[16], is not an operand.
 
+<section class="keep-together">
+
 **Ordered calculation.** With exact integer intermediates:
 
 ```text
@@ -3113,6 +3119,8 @@ MAC0 = low 32 bits of P
 u    = P ASR 12
 OTZ  = clamp(u,0,65535)
 ```
+
+</section>
 
 The sum has range 0–196605. The full product P is retained for the fixed
 twelve-bit arithmetic shift. MAC0's visible word wraps to its low 32 bits;
@@ -3167,9 +3175,13 @@ A small negative product also follows the signed shift exactly: with depths
 MAC0 reads `0xffffffff`, OTZ is zero, and FLAG is `0x80040000` from the output
 clamp alone. The coefficient's sign is arithmetic input, not an invalid setting.
 
+<section class="keep-together">
+
 #### AVSZ4 — scale all four depth-history entries
 
 AVSZ4 forms a scaled sum of SZ0, SZ1, SZ2 and SZ3, then writes its unsigned16 limited result to OTZ. Use it when four retained depths belong to the primitive being processed, for example after projecting a quadrilateral's four vertices. Use AVSZ3 for only the newest three entries. Neither command sorts or draws a primitive, and AVSZ4 does not divide by four automatically.
+
+</section>
 
 **Encoding.** Write `0x0000002e` to COMMAND at `0x08010344`; function bits 5:0 are `101110`. All bits 31:6 are ignored, including SF, LM and every selector. `0x0008042e` and `0xffffffee` therefore perform the same arithmetic as `0x0000002e`. Ignored bits remain in COMMAND readback. The output shift is always 12; SF cannot change it.
 

@@ -128,7 +128,7 @@ test('HTML is self-contained, preserves author grouping at any heading number, a
 	const root = await fixture(t);
 	const chapter = await loadChapter(root, 'sample');
 	const preview = chapterHtml(chapter, 'preview');
-	assert.match(preview, /BMSX Book II — SAMPLE — DRAFT/);
+	assert.match(preview, /BMSX Book II · BLua32 and BIOS Reference — SAMPLE — DRAFT/);
 	assert.match(preview, /<p class="draft-status">DRAFT — NOT FOR PUBLICATION<\/p>/);
 	assert.match(preview, /SAMPLE — DRAFT \/ NOT FOR PUBLICATION/);
 	assert.match(preview, /<section class="register-entry">\s*<h3>8\.7\. MODE<\/h3>/);
@@ -138,6 +138,33 @@ test('HTML is self-contained, preserves author grouping at any heading number, a
 	const publication = chapterHtml(chapter, 'publish');
 	assert.doesNotMatch(publication, /DRAFT|class="draft-status"/);
 	assert.match(publication, /content: "SAMPLE"/);
+});
+
+test('shared volume titles identify every book in document and running titles', async t => {
+	const root = await fixture(t);
+	const catalogPath = join(root, 'docs/manual/catalog.json');
+	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+	for (const [book, title] of [
+		['I', 'System and Hardware Reference'],
+		['II', 'BLua32 and BIOS Reference'],
+		['III', 'Cartridge and Expansion Reference'],
+	]) {
+		catalog.sample.book = book;
+		await writeFile(catalogPath, JSON.stringify(catalog));
+		const chapter = await loadChapter(root, 'sample');
+		assert.equal(chapter.volumeTitle, title);
+		const html = chapterHtml(chapter, 'publish');
+		assert.ok(html.includes(`<title>BMSX Book ${book} · ${title} — SAMPLE</title>`));
+		assert.ok(html.includes(`content: ${JSON.stringify(`Book ${book} · ${title}`.toUpperCase())}`));
+	}
+});
+
+test('current BIOS and coroutine chapters belong to software, not hardware', async () => {
+	const catalog = JSON.parse(await readFile(resolve(repositoryRoot, 'docs/manual/catalog.json'), 'utf8'));
+	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'II').map(([id]) => id),
+		['bios-base', 'bios-table', 'bios-string', 'coroutines']);
+	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'I').map(([id]) => id),
+		['cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
 });
 
 test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {

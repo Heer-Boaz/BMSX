@@ -2,7 +2,7 @@
 
 Completion target: an experienced programmer new to BMSX can use the installed
 base functions without guessing stock-Lua behavior or inspecting firmware.
-This chapter is not the complete library, loader/environment or Book II reference.
+This chapter is not the complete library, loader/environment or cartridge/expansion reference.
 No architecture document or historical reference PDF is source material.
 
 1. Installation and boundary: existing firmware-surface installation facts,

@@ -1,14 +1,14 @@
 # Developer-manual series: organization review
 
-2026-10-18; BMSX baseline `e21e2d5d9`. Editorial reference review and a concrete
-working proposal, **not an implemented volume assignment or publication
-approval**. Reference books supply document organization and presentation only.
+2026-10-18; source research at BMSX baseline `e21e2d5d9`, followed by adoption of
+the working volume map below. **Classification is not publication approval or
+whole-manual completion.** Reference books supply organization and presentation only.
 They supply no BMSX address, encoding, capacity, timing or behavior. No
 architecture document was used. Do not supply these PDFs to chapter authors.
 
 ## Finding
 
-The present pairing of `BOOK I · HARDWARE REFERENCE` with **Protected calls and
+The previous pairing of `BOOK I · HARDWARE REFERENCE` with **Protected calls and
 coroutines** is a classification error, not a missing ornamental heading.
 Moving the chapter later in the same undifferentiated hardware volume would
 not fix it. Its subject is a software interface. Its existing chapter title
@@ -58,7 +58,7 @@ complete on that basis. This does not invalidate the other primary evidence.
    current manuscripts have per-device specifications but no complete global
    specification/orientation chapter. Put that reader function first in the
    hardware material; make it a separate physical volume only if its actual
-   sourced contents justify one. This is a proposed editorial choice, not a
+   sourced contents justify one. This is the adopted working choice, not a
    rule established by a historical manual.
 3. **Use real navigation, not decorative retro styling.** State each volume's
    scope, prerequisites and companion references. Identify the actual volume,
@@ -76,49 +76,63 @@ complete on that basis. This does not invalidate the other primary evidence.
    typography, C prototypes, foreign registers and historical terminology do
    not become BMSX language or hardware rules.
 
-## Proposed working series and current chapter map
+## Adopted working series and current chapter map
 
-This is the recommended **working proposal**, not the current catalog state.
+This is the adopted **working series**, applied to the catalog and publisher.
 It chooses a specifications opening part rather than an unfilled standalone
 specifications book. If a distinct specifications volume is later justified,
 renumber the complete series consistently; do not mix the two schemes.
 
-| Proposed volume/companion | Reader purpose and material |
+| Volume/companion | Reader purpose and material |
 | --- | --- |
 | **Book I — System and Hardware Reference** | Begin with console orientation and a sourced whole-machine specification summary. Follow with CPU execution/ISA/control, memory/address/ownership and installed-unit operation/reference. Keep the per-device specifications and genuine programming examples. |
-| **Book II — BLua32 and BIOS Reference** | Source-language/program model, values/calls/captures/storage syntax, protected calls/coroutines, installed BIOS libraries, loading/environments and actual exported firmware interfaces. This is the containing title for the current coroutine and BIOS chapters. |
+| **Book II — BLua32 and BIOS Reference** | The four current BIOS/coroutine chapters, followed by the still-unwritten complete source-language/program/environment route. That route cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
 | **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. This material is still unwritten; the old provisional Book II label must not silently erase it. |
 | **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
 
-The [current catalog](catalog.json) inventory is **16 entries, all provisionally
-Book I**, at the baseline above.
+The [current catalog](catalog.json) inventory is **16 entries: twelve in I and
+four in II**. The source-research baseline had all sixteen provisionally in I.
 The content map is based on public chapter headings, not a fresh semantic audit:
 
-| Current material | Proposed treatment |
+| Current material | Assignment |
 | --- | --- |
 | PCRTC, GTE, GPU, IRQ, DMA, APU, GEO, IMGDEC, INPUT, SYSTEM: ten primarily hardware chapters | Hardware volume, with the overview/specification route before detailed devices. Presence of BLua examples is not grounds for moving the device reference to software. |
-| CPU and BLua32 instruction reference | Mixed. Preserve execution words, ISA, control and fault definitions with the processor reference. Explicitly assign source-language/value/call sections to the software reader route or canonical crossreferences. Do not move every CPU section wholesale based only on its filename. |
-| Memory and program storage | Mixed. Preserve mapped windows, reservations, access/fault/shared-buffer contracts with hardware. Explicitly assign typed declarations and source/program-model teaching to the language route, retaining the hardware storage/ABI connection. Avoid duplicate address and lifetime rules. |
+| CPU and BLua32 instruction reference | Book I, including the canonical value, arithmetic, call and control foundations. Software readers follow the section-level links below; do not move or duplicate definitions based only on the filename. |
+| Memory and program storage | Book I, including the canonical typed-declaration, startup, address, reservation and ownership foundations. The software route links to these definitions rather than copying partial address/lifetime rules. |
 | BIOS base services, BIOS table library, BIOS String operations, Protected calls and coroutines: four software chapters | Software volume. Keep the factual chapter titles and protected-call material discoverable; do not classify the whole group as hardware. |
 | Global specification summary; complete language/environment coverage; cartridge/expansion reference; full SDK onboarding/debugging | Remaining authored work, not completed books produced by changing labels. Existing unit facts, examples and partial setup instructions do not close these reader routes. |
 
-The CPU and Memory partition is an explicit later editorial decision at section
-level. This map authorizes neither a blind file move nor deletion of their
-cross-domain foundations. Stable chapter identities and links must survive a
-future reorganization.
+CPU and Memory remain coherent canonical references, not pending whole-file
+moves. Their software-facing foundations are intentionally shared by cross-reference.
+Stable chapter identities and links remain unchanged.
 
-## Applying the proposal
+### Canonical foundations and the software reader route
 
-- The immediate defect is in the owning publication representation: every
-  current catalog entry has the same book membership, while
-  `scripts/manual/render.mjs:24,33` uses it for the document title and hardcodes
-  `HARDWARE REFERENCE` for every running title. Correct membership and actual
-  volume titles together when applying the selected map; do not hide the
-  mismatch with per-chapter CSS, guessed labels or compatibility wrappers.
+These are section assignments and navigation, not another semantic approval.
+The existing BIOS base and coroutine introductions already direct readers to
+CPU for values/ordinary calls and Memory for typed storage/modules/startup.
+Retain that route. A complete Book II source-language guide is still unwritten.
+
+| Canonical Book I material | Book II reader route |
+| --- | --- |
+| CPU: instruction words/resources, cycle boundaries, reset/replacement, memory transfers, branches, CP0 and faults | Link source forms to their execution, privilege, access and timing definitions; do not reproduce another ISA or fault contract. |
+| CPU: [BLua operators and instruction costs](../book1/cpu.md#blua-operators-and-instruction-costs), [Values and numeric instructions](../book1/cpu.md#values-and-numeric-instructions) and [Calls, closures, globals, and tables](../book1/cpu.md#calls-closures-globals-and-tables) | Keep these value/word, arithmetic, call, capture, global and table definitions canonical in I, including the current raw table/metatable BIOS entries and builtin charges. The separate Table-length publication stop remains open. |
+| CPU: [BLua control syntax](../book1/cpu.md#blua-control-syntax) and the two complete computation/value-table programs | Keep source-control bridges with their instruction/privilege context and examples beside the operations demonstrated. II links to them; examples alone do not make a hardware reference a software volume. |
+| Memory: address sizes/windows/reservations, ROM/RAM sections, startup, instruction reads, scalar access and fault/monitor response | II links module/storage/startup teaching to these address, allocation and fault contracts. Existing cartridge windows/startup are also prerequisites for III, not its complete device reference. |
+| Memory: [Typed byte storage and address views](../book1/memory.md#typed-byte-storage-and-address-views) and [Language execution storage and byte RAM](../book1/memory.md#language-execution-storage-and-byte-ram) | Retain declarations/layout/access and values/calls/text-versus-bytes together in I. II teaches source use while pointing to these canonical boundaries, including their complete call/text program. |
+| Memory: worked record copy, DMA/device-buffer lifetimes and shared GPU/display publication | Retain their complete programs and observations with the owning allocation/access/lifetime definitions; II must not invent independent device-buffer rules. |
+| [Development companion](../programming/getting-started.md), including [call/value/text checks](../programming/getting-started.md#check-calls-values-and-text-results) | Preserve its existing links into Memory and back for build and observation instructions. It is not yet a complete SDK/debugging guide or another numbered reference volume. |
+
+## Applied publication representation and remaining work
+
+- [volumes.json](volumes.json) owns each book's title; [catalog.json](catalog.json)
+  owns chapter membership. `loadChapter` resolves the title once and the shared
+  renderer consumes it in the document and running titles. The four software
+  entries are II; the other twelve remain I. No per-chapter CSS, guessed labels
+  or compatibility wrappers hide the classification.
 - Keep the existing publisher. Updating the central title/membership data does
   not call for another schema, validation framework, helper layer or review
-  harness. Do not renumber everything before the section assignments and
-  companion links have been checked.
+  harness. Stable source paths, chapter IDs and companion links are retained.
 - A changed running title is a changed printed artifact. Render affected
   chapters and inspect the affected pages; old PDF hashes do not approve new
   headers automatically. Classification approval and visual rendering are
@@ -133,12 +147,12 @@ This review changes the next organization task; it does not finish the manual.
 All seven runtime-owner questions, the common Table-length publication stop,
 the separate BZ01 compiler question, remaining BIOS/environment and graphics
 work, cartridge/expansion coverage and whole-console newcomer acceptance stay
-open. Book I/II/III above are proposed assignments, not newly published volumes.
+open. Book I/II/III are adopted scopes, not newly completed or published volumes.
 The NES primary-source comparison also remains unverified.
 
 
 Independent bounded exemplar-source and current-content/reader-map reviews
 found no remaining unsupported organization or inventory claim. Their scope is
 the inspected source pages and current chapter categories above, not every
-page of the exemplars, BMSX technical correctness, final volume adoption or
+page of the exemplars, BMSX technical correctness, printed-artifact approval or
 whole-manual completion. The NES limitation remains explicit.

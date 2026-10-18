@@ -4,18 +4,24 @@ This is the editorial and publication standard for the BMSX developer references
 [The PCRTC chapter](../book1/pcrtc.md) is the first reviewed chapter and **style
 baseline**, not a compulsory outline for every unit.
 
-The current working layout places the installed machine in Book I and
-cartridge/socket/card material in Book II. Work on one unit at a time.
-Chapter order may follow the reference manual's progression from hardware
-operation to programming and registers; do not copy its devices, addresses,
-diagrams, or behavior. **The current volume numbers,
-volume titles and running labels are provisional.** The 2026-10-18 booklet
-organization task below must establish where technical specifications, hardware
-programming, BLua/BIOS and cartridge/expansion reference belong; software chapters
-must not receive a final hardware-reference label merely from the current catalog.
-The [reference-booklet review and working proposal](booklet-structure.md)
-distinguish document genres and map the current chapters; its proposed numbers
-have not been applied to the catalog or printed artifacts.
+The working series, adopted after the [reference-booklet review](booklet-structure.md),
+is **Book I — System and Hardware Reference**, **Book II — BLua32 and BIOS
+Reference**, and **Book III — Cartridge and Expansion Reference**. A sourced
+specification/orientation opening part is planned for the hardware volume but
+still needs authorship; an empty separate specifications book is not published.
+The current catalog assigns the four BIOS
+and protected-call/coroutine chapters to II, and the twelve machine/installed-unit
+chapters to I. III reserves the cartridge/socket/card scope; its chapters are not
+yet authored. These assignments do not claim any volume is complete.
+
+Work on one unit or bounded software interface at a time. Chapter order may
+follow a reference manual's progression from operation to programming and
+reference entries; do not copy its devices, addresses, diagrams, or behavior.
+The shared [volume titles](volumes.json) own document and running identification;
+the [catalog](catalog.json) owns chapter membership. Existing `docs/book1/` source
+paths and chapter identities remain stable; a directory name is not book
+membership. Evidence written before this adoption may use the old provisional
+Book II designation for cartridge/expansion material; that scope is now III.
 `docs/book1_text.pdf` is only a style/order reference. Do not attach it to
 chapter-writing prompts. Do not use `docs/architecture.md` as chapter input.
 
@@ -25,7 +31,7 @@ The complete manual must let an experienced programmer who is **new to BMSX**
 program the whole console without reverse-engineering its source or examples.
 The series must cover the installed machine, software/programming interfaces
 and cartridge/socket/card hardware. Familiarity with another console is not
-familiarity with this one; provisional volume numbers do not change this scope.
+familiarity with this one; volume numbering does not change this scope.
 
 The reader must be able to establish startup and memory ownership, find usable
 and reserved addresses, prepare each unit's actual data representation, program
@@ -268,13 +274,13 @@ a source-accurate register reference as a complete technical specification.
   with identifiable booklet/page references; use official/scanned originals
   for the other consoles, not an invented retro-manual template. Decide how
   technical specifications, hardware operation/programming, BLua/BIOS software
-  reference and cartridge/expansion material should be divided. A separate
-  specifications volume might move hardware reference to Book II and software
-  to Book III, but those numbers/titles are proposals, not settled policy.
+  reference and cartridge/expansion material should be divided. Consider a
+  separate specifications volume only if its actual sourced contents justify
+  it; numbering alone is not a reader purpose.
   Produce a concise chapter-to-volume mapping, then update titles/running labels
-  consistently. In particular, the present `BOOK I · HARDWARE REFERENCE` label
+  consistently. In particular, the previous `BOOK I · HARDWARE REFERENCE` label
   is not a final classification for **Protected calls and coroutines** or the
-  BIOS-library chapters. Do not force the present Book I/II catalog membership
+  BIOS-library chapters. Do not force the inherited catalog membership
   into the answer, rename everything prematurely, or add another publishing
   framework. These booklets supply organization/presentation evidence only;
   none supplies a BMSX address, format, timing or behavior. Do not attach them
@@ -282,8 +288,12 @@ a source-accurate register reference as a complete technical specification.
   The [bounded evidence review and working series map](booklet-structure.md)
   now cover the supplied MSX-related documents and original SNES/N64/PSX
   examples. NES manufacturer developer-manual structure is still unverified.
-  Applying final section assignments, volume data and inspected new running
-  labels remains work; this checklist item is not closed by the proposal.
+  The selected three-book map is now applied to central volume data, catalog
+  membership and the shared publisher. CPU/Memory retain their canonical mixed
+  machine foundations in I, with the software reader route documented in the
+  map. New printed labels are re-reviewed separately; a metadata change does
+  not inherit old PDF approval. The NES-source gap and unfinished book-level
+  orientation/navigation keep this broader checklist item open.
 
 - [ ] **Actual graphics-output illustrations.** Add real BMSX result images to
   the GTE and other graphics chapters, alongside the explanatory schematics.
@@ -336,8 +346,8 @@ Record the engine in visual-review evidence and repeat that review on an engine
 or platform change.
 
 To add a chapter, create its chapter/sheet/figure/review files and add one entry to
-[catalog.json](catalog.json). Record its provisional volume membership explicitly;
-the scheduled structure review owns the final divisions and titles. Do not
+[catalog.json](catalog.json). Assign its book from [volumes.json](volumes.json)
+according to the [adopted scope map](booklet-structure.md). Do not
 pre-fill facts, reviews, or publication status to make a new entry pass.
 
 ### Publishing implementation references

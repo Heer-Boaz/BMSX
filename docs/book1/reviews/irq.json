@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Three installed controller word ports retain source requests, mask delivery and clear selected pending bits; source-unit latches and the CPU IE gate remain separate. Book II source names do not add socket programming.",
+			"resolution": "Three installed controller word ports retain source requests, mask delivery and clear selected pending bits; source-unit latches and the CPU IE gate remain separate. Cartridge-source names do not add socket programming.",
 			"open": []
 		},
 		"registers": {

@@ -1,5 +1,27 @@
 # Coroutines print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/coroutines.pdf`:
+12 pages, SHA-256 `86ab392b3a621b161ec717893b019bce03c03121d5c5158a8f0f376cabd028a2`.
+Page 1 was independently viewed; body pages 2–12 match the reviewed preview exactly.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/coroutines.preview.pdf`: 12 pages, SHA-256
+`9a301df0ac7df2a44b1be1a2868159b8b21a6ae6c31de6f120a5fe11b5def219`.
+A nonauthor independently opened every full PDFium1.4× page1–12 at original
+size. The document title and every running header now identify **Book II —
+BLua32 and BIOS Reference**. Headers, chapter/DRAFT footers, folios, complete
+tables, code and any figures fit without clipping or collisions. No body/style
+change was needed. Receipts retain Chromium153.0.8010.12, Nodev22.23.1/Linuxx64
+and no layout errors. Evidence: `/tmp/bmsx-volume-software-print-review.md`.
+This renews bounded draft-layout acceptance, not factual/coverage decisions or
+whole-series publication approval. Earlier artifact evidence follows.
+
 - Reviewed PDF: `/home/boaz/BMSX/build/manual/coroutines.preview.pdf`
 - SHA256: `5e930021e24380f73f65c3a47e59114e87352eaae08fc9c4fe238668ad62320a`
 - Page count: **12** (independently verified with Ghostscript `pdfpagecount`).

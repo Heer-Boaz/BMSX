@@ -1,5 +1,29 @@
 # GEO print acceptance
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/geo.pdf`:
+44 pages, SHA-256 `d8901f2edddac52730ac90354a2001638a5c3a58cbd81a5b9a968d2a29524742`.
+Page 1 was independently viewed; every body page matches the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/geo.preview.pdf`: 44 pages, SHA-256
+`3052db7f696b54c729a99b97e225c2e149c72fbab537fe21f84253651fb305f2`.
+A nonauthor individually viewed every full PDFium1.4× page1–44 at original
+readable size. The Book I System and Hardware Reference title fits on every
+page, with intact BMSX/chapter/DRAFT identification and folios. No remaining
+clipped table/code/figure, collision or stranded lead-in was found.
+This includes every actual dummy-game/sprite/hull/contact plate and caption,
+all register/operation tables and deeply indented complete scene listings.
+Evidence: `/tmp/bmsx-volume-geo-print-review.md`. Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews bounded print-layout
+evidence, not technical coverage or whole-series publication approval.
+Historical publication/artifact evidence follows.
+
 The current 44-page chapter is accepted after actual-page inspection,
 including five real docking-scene plates and the complete additional program.
 The earlier 26-page record below describes the prior edition. Source and

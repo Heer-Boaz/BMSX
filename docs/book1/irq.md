@@ -348,7 +348,7 @@ source; they do not make all source units use the same request or re-arm rule.
 Bits 31:11 are unnamed, not hardwired-zero fields. MASK retains their written
 values, and the controller's pending, clear and output equations operate on
 the complete 32-bit words. This does not assign a cartridge-programmable request
-source to an unnamed bit. Cartridge-source device programming belongs to Book II.
+source to an unnamed bit. Cartridge-source device programming belongs to Book III.
 
 ## Register access, faults and reset
 

@@ -1,5 +1,18 @@
 # INPUT actual-page review
 
+## Volume-title revalidation — 2026-10-18
+
+Current `build/manual/input.preview.pdf`: 12 pages, SHA-256
+`d0f1b59d74c782fb99a21ebc4fcd9bca02b31962e012048c43cf04e7180c38df`.
+A nonauthor individually inspected every full PDFium1.4× page1–12 at readable
+size. The Book I System and Hardware Reference header fits; BMSX, chapter/DRAFT
+footer, folios, complete tables, diagrams and program parts remain readable
+without clipping, overlap or lost labels. Evidence:
+`/tmp/bmsx-volume-small-hardware-print-review.md`. Existing Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews print-layout evidence,
+not technical coverage or whole-series publication approval. The pre-existing false public print-approval flag remains false. Historical
+publication/draft evidence follows.
+
 Command: `npm run manual:preview -- input`.
 Current `build/manual/input.preview.pdf`: 12 pages, one SVG figure.
 Chromium 153.0.8010.12, Node v22.23.1, Linux/x64; receipt layout errors empty.

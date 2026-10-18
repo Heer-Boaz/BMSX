@@ -1,5 +1,37 @@
 # GTE print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/gte.pdf`:
+123 pages, SHA-256 `305ea0d92fb60a809143f969b2ad47b828a7a5a9c3e8513a4c06d926a54ed4e3`.
+Pages 1 and 63–69 were independently viewed; all other body pages match the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/gte.preview.pdf`:123 pages, SHA-256
+`0e7436fcfc24fa1bfe35db735c562c7e73fd43e6c6f5454a95233da3f5454801`.
+Root individually viewed full PDFium1.4× pages1–60; a separate nonauthor viewed
+every61–123 at original detail. Exact comparison across all123 final rasters
+finds only63–69 changed from that inspected candidate; the nonauthor separately
+opened every final63–69. Pages1–60 remain pixel-identical to root's accepted
+images. Evidence: `/tmp/bmsx-volume-gte-1-60-print-review.md` and
+`/tmp/bmsx-volume-gte-61-123-print-review.md`.
+
+The new Book I System and Hardware Reference header, DRAFT footer, folios,
+figures/actual output plates, word/command/result tables and complete program
+parts remain readable and unclipped. Actual inspection found isolated ordered-
+sums/AVSZ3 formula leads and an AVSZ4 introduction tail. Three existing authored
+keep-together groups now retain the complete leads/formulas and heading/intro;
+all words, formula values and technical tables are unchanged. Current64/67/68
+show the corrected groups together, with no new defect on changed63–69.
+No font, stylesheet, publisher helper or framework change was needed.
+Chromium153.0.8010.12, Nodev22.23.1/Linuxx64; six figures,13 register groups and
+no receipt layout errors. This renews bounded draft-layout evidence, not a
+new semantic/coverage or whole-series publication decision. Earlier evidence follows.
+
 Approved for the expanded chapter with the two actual output plates. Facts,
 arithmetic and figure semantics are recorded separately in [gte-source.md](gte-source.md).
 Page count is inspection scope, not evidence of instructional completeness.

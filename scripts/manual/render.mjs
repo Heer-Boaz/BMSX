@@ -21,7 +21,8 @@ export function chapterHtml(chapter, mode) {
 	const stylesheet = chapter.stylesheet.replace(/url\("([^"]+)"\)/g, (_, href) =>
 		`url("data:font/ttf;base64,${chapter.fonts.get(href).toString('base64')}")`);
 	const preview = mode === 'preview';
-	const title = `BMSX Book ${chapter.entry.book} — ${chapter.entry.label}${preview ? ' — DRAFT' : ''}`;
+	const volume = `Book ${chapter.entry.book} · ${chapter.volumeTitle}`;
+	const title = `BMSX ${volume} — ${chapter.entry.label}${preview ? ' — DRAFT' : ''}`;
 	const footer = chapter.entry.label + (preview ? ' — DRAFT / NOT FOR PUBLICATION' : '');
 	return `<!doctype html>
 <html lang="en">
@@ -30,7 +31,7 @@ export function chapterHtml(chapter, mode) {
 <title>${escapeText(title)}</title>
 <style>${stylesheet}
 @page {
-	@top-right { content: ${JSON.stringify(`BOOK ${chapter.entry.book} · HARDWARE REFERENCE`)}; }
+	@top-right { content: ${JSON.stringify(volume.toUpperCase())}; }
 	@bottom-left { content: ${JSON.stringify(footer)}; }
 }
 </style>

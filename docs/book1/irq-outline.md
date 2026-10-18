@@ -2,7 +2,7 @@
 
 Editorial work list, not a chapter-local contents page or a publishing manifest.
 The unit is the three-word installed interrupt controller and its CPU-delivery
-boundary. Cartridge-source bits may be named; socket/device programming is Book II.
+boundary. Cartridge-source bits may be named; socket/device programming is Book III.
 The fact sheet freezes source facts before authorship. Actual BIOS examples supply
 the BLua storage, MMIO and waiting patterns; they are not invented cartridge APIs.
 

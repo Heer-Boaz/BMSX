@@ -2,7 +2,7 @@
 
 Editorial assignments, not a public contents page or another publishing layer.
 Acceptance is complete programming without reverse-engineering BMSX, not page
-count. Book I describes the installed unit; sockets and card devices remain Book II.
+count. Book I describes the installed unit; sockets and card devices remain Book III.
 
 | Assignment | Reader task | Separate work / state |
 |---|---|---|

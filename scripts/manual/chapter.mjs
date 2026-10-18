@@ -16,10 +16,11 @@ export async function loadChapter(root, id) {
 		throw new Error(`Unknown manual chapter ${id}. Available: ${Object.keys(catalog).join(', ')}`);
 	}
 	const entry = catalog[id];
-	const [markdown, stylesheet, review] = await Promise.all([
+	const [markdown, stylesheet, review, volumes] = await Promise.all([
 		readFile(resolve(root, entry.chapter), 'utf8'),
 		readFile(resolve(root, 'docs/manual/print.css'), 'utf8'),
 		readFile(resolve(root, entry.review), 'utf8'),
+		readFile(resolve(root, 'docs/manual/volumes.json'), 'utf8'),
 	]);
 	const tokens = marked.lexer(markdown);
 	const chapterURL = pathToFileURL(resolve(root, entry.chapter));
@@ -35,7 +36,7 @@ export async function loadChapter(root, id) {
 		Promise.all([...figureHrefs].map(async href => [href, await readFile(new URL(href, chapterURL))])),
 		Promise.all([...fontHrefs].map(async href => [href, await readFile(new URL(href, stylesheetURL))])),
 	]);
-	return { id, entry, review: JSON.parse(review), tokens, stylesheet, figures: new Map(figures), fonts: new Map(fonts) };
+	return { id, entry, volumeTitle: JSON.parse(volumes)[entry.book], review: JSON.parse(review), tokens, stylesheet, figures: new Map(figures), fonts: new Map(fonts) };
 }
 
 export async function publicationFailures(root, chapter) {

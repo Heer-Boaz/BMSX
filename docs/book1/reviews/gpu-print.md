@@ -1,5 +1,31 @@
 # GPU print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current canonical publication artifact `build/manual/gpu.pdf`:
+74 pages, SHA-256 `0aaaf2be73f705a63cf537943d87344360c1ad9eefaad1801e6eeae877a6673b`.
+Pages 1 and 61–64 were independently viewed; all other body pages match the accepted publication proof.
+All header bands match the fully reviewed new preview; clean chapter footers,
+folios and absence of DRAFT were independently verified. Current-PDF rasters
+and retained-pixel accounting passed. Evidence:
+`/tmp/bmsx-volume-publication-delta-review.md`. This renews layout evidence only;
+source/coverage decisions and whole-volume acceptance are unchanged.
+
+Current `build/manual/gpu.preview.pdf`: 74 pages, SHA-256
+`87649fde32a574fae51cebdb52c9e88e35ea738325c2b25e224fb19553e2f64d`.
+A nonauthor individually viewed every full PDFium1.4× page1–74 at original
+readable size. The Book I System and Hardware Reference title fits on every
+page, with intact BMSX/chapter/DRAFT identification and folios. No remaining
+clipped table/code/figure, collision or stranded lead-in was found.
+The inspection found a stranded Issue lead-in on61. Only existing authored
+keep-together tags were added around that lead and its three-row table; every
+word/value is unchanged. All final61–64 were individually re-viewed, and the
+other70 full-page rasters match the individually inspected candidate exactly.
+Evidence: `/tmp/bmsx-volume-gpu-print-review.md`. Chromium153.0.8010.12,
+Nodev22.23.1/Linuxx64, no receipt layout errors. This renews bounded print-layout
+evidence, not technical coverage or whole-series publication approval.
+Historical publication/artifact evidence follows.
+
 **Original chapter acceptance.** The complete chapter uses the ordinary shared renderer, stylesheet and
 bundled fonts. No GPU-specific publisher, font, layout rule, assembler or
 freshness/validation layer was added.

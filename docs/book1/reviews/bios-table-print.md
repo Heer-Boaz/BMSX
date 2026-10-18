@@ -1,5 +1,18 @@
 # BIOS table draft preview — independent print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current `build/manual/bios-table.preview.pdf`: 11 pages, SHA-256
+`7bb9faa3112b4db46517e390ada0217bd9e0f3f501a7984e6eed6d976680dab7`.
+A nonauthor independently opened every full PDFium1.4× page1–11 at original
+size. The document title and every running header now identify **Book II —
+BLua32 and BIOS Reference**. Headers, chapter/DRAFT footers, folios, complete
+tables, code and any figures fit without clipping or collisions. No body/style
+change was needed. Receipts retain Chromium153.0.8010.12, Nodev22.23.1/Linuxx64
+and no layout errors. Evidence: `/tmp/bmsx-volume-software-print-review.md`.
+This renews bounded draft-layout acceptance, not factual/coverage decisions or
+whole-series publication approval. Earlier artifact evidence follows.
+
 ## Decision and bounded scope
 
 **PASS for print layout/readability of this exact draft preview artifact. No remaining concrete visual defects found.** This is not publication approval and does not establish correctness of the unresolved Table-length contract. The chapter remains **DRAFT / NOT FOR PUBLICATION**. No claim is made about other manual chapters or a future render.

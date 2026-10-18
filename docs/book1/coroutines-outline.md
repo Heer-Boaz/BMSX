@@ -25,4 +25,4 @@ byte storage remain distinct. No architecture document or reference PDF input.
 
 Owner disagreements stop only affected common claims and remain explicitly
 tracked. A successful program or bounded semantic pass is not evidence that
-whole-console newcomer acceptance, all BIOS libraries or Book II is finished.
+whole-console newcomer acceptance, all BIOS libraries or the cartridge/expansion reference is finished.

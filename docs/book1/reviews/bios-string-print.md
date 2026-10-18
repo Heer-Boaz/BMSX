@@ -1,5 +1,18 @@
 # BIOS String draft preview — independent print review
 
+## Volume-title revalidation — 2026-10-18
+
+Current `build/manual/bios-string.preview.pdf`: 12 pages, SHA-256
+`bfef61ff36bb464b0adb939d0b8190368ebdcb3a781f27af243c5e0d50e428cd`.
+A nonauthor independently opened every full PDFium1.4× page1–12 at original
+size. The document title and every running header now identify **Book II —
+BLua32 and BIOS Reference**. Headers, chapter/DRAFT footers, folios, complete
+tables, code and any figures fit without clipping or collisions. No body/style
+change was needed. Receipts retain Chromium153.0.8010.12, Nodev22.23.1/Linuxx64
+and no layout errors. Evidence: `/tmp/bmsx-volume-software-print-review.md`.
+This renews bounded draft-layout acceptance, not factual/coverage decisions or
+whole-series publication approval. Earlier artifact evidence follows.
+
 ## Decision and evidence
 
 **PASS for visual rendering of this exact draft artifact. No remaining concrete visual defect found.** This is not publication approval: the common Table-length dependency remains open. The current Book I / hardware-reference classification is provisional; the separately requested booklet-structure/title review is outside this rendering decision.

@@ -2,7 +2,7 @@
 
 Editorial work list, not a public contents page or a publishing manifest.
 The installed two-channel DMA unit is this chapter's scope. Cartridge request
-selectors may be named; socket/card-device programming remains Book II.
+selectors may be named; socket/card-device programming remains Book III.
 
 Facts come from the scoped mirrored leaves and live owners. Authors receive a
 frozen fact-sheet slice, not the architecture document or historical reference

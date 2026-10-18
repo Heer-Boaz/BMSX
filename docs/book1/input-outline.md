@@ -25,5 +25,5 @@ Source extraction, finished authorship, nonauthor source audit, a public-only
 newcomer review and every-actual-page inspection remain separate. The source
 and format gaps above are not closed by a correct snapshot program or green
 owner tests. Full on-console development, supervisor/inherited-device policy,
-remaining installed units, Book II and requested GEO scene/hull plates remain
+remaining installed units, Book III and requested GEO scene/hull plates remain
 whole-manual work.
