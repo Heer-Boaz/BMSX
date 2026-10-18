@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" role="img" aria-labelledby="cart-irq-title cart-irq-desc">
+  <title id="cart-irq-title">Two acknowledgement domains</title>
+  <desc id="cart-irq-desc">CONTROL bit zero sets a card-local pending latch. Only its clear-to-set transition raises the socket's central pending bit, bit nine for socket zero or bit ten for socket one. Mailbox IRQ_ACK clears the local latch. The separate central ACK clears selected central pending bits. Neither acknowledgement clears the other latch.</desc>
+  <defs><marker id="cart-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#111"/></marker></defs>
+  <g fill="#fff" stroke="#111" stroke-width="2">
+    <rect x="15" y="60" width="210" height="70"/>
+    <rect x="295" y="60" width="210" height="70"/>
+    <rect x="650" y="60" width="325" height="70"/>
+    <rect x="295" y="210" width="210" height="65"/>
+    <rect x="650" y="210" width="325" height="65"/>
+  </g>
+  <g fill="none" stroke="#111" stroke-width="2" marker-end="url(#cart-arrow)">
+    <path d="M225 95 H295"/><path d="M505 95 H650"/>
+    <path d="M400 210 V130"/><path d="M812 210 V130"/>
+  </g>
+  <g fill="#111" font-family="sans-serif" font-size="22" text-anchor="middle">
+    <text x="120" y="88">CONTROL write</text><text x="120" y="115">bit 0 = 1</text>
+    <text x="400" y="88">Local pending</text><text x="400" y="115">STATUS bit 0</text>
+    <text x="578" y="58" font-size="19">0 → 1 only</text>
+    <text x="812" y="88">Central pending</text><text x="812" y="115">FLAGS bit 9 or 10</text>
+    <text x="400" y="239">Mailbox IRQ_ACK</text><text x="400" y="264">any nonzero word</text>
+    <text x="812" y="239">Central ACK</text><text x="812" y="264">one in the socket's bit</text>
+    <text x="416" y="178" text-anchor="start" font-size="19">clear local</text>
+    <text x="828" y="178" text-anchor="start" font-size="19">clear central</text>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+title: Cartridge Sockets Manual Example
+hardware:
+    - type: rom
+    - type: ram
+      bytes: 256
+    - type: mailbox

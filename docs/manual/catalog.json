@@ -145,5 +145,12 @@
 		"chapter": "docs/book1/system.md",
 		"facts": "docs/book1/facts/system.md",
 		"review": "docs/book1/reviews/system.json"
+	},
+	"cartridge": {
+		"book": "III",
+		"label": "CARTRIDGE",
+		"chapter": "docs/book3/cartridge.md",
+		"facts": "docs/book3/facts/cartridge.md",
+		"review": "docs/book3/reviews/cartridge.json"
 	}
 }

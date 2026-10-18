@@ -1178,3 +1178,105 @@ The chapter's ideal cycle tables count separate device work, not the CPU
 program's setup/polling/observation instructions or a promised STOP latency.
 This route was checked in the working checkout, not every OS or a fresh SDK
 installation.
+
+## Build and inspect two cartridge sockets
+
+Use the complete two-module program in **Book III, Cartridge sockets and mapped
+card devices — Two-card programming example**. This is a separate raw polling
+example, not a prerequisite for earlier examples. Its source files are
+`carts/cartridge_manual/results.lua` and `carts/cartridge_manual/cart.lua`.
+The project-relative module name `results` supplies the entry's typed BSS
+record; `module<entry>` selects the entry. The supplied assertion is
+`tests/carts/cartridge_manual/cartridge_manual_assert.lua`; have it present
+before the debug build.
+
+Two distinct media definitions are required. Place the bootable program in
+**socket0**, not socket1. Its manifest is
+`carts/cartridge_manual/res/manifest/manifest.rommanifest`:
+
+```yaml
+title: Cartridge Sockets Manual Example
+hardware:
+    - type: rom
+    - type: ram
+      bytes: 256
+    - type: mailbox
+```
+
+The separate **socket1** data-card manifest is
+`carts/cartridge_manual_data/res/manifest/manifest.rommanifest`:
+
+```yaml
+title: Cartridge Sockets Manual Data Card
+hardware:
+    - type: ram
+      bytes: 256
+    - type: mailbox
+```
+
+The data-card project has no Lua entry or ROM device. Its packaged `.rom`
+filename does not turn the package into installed ROM. Both cards have 256 bytes
+of RAM and a mailbox, not the whole 15 MiB RAM aperture.
+
+With the [prerequisites](#prerequisites), run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- cartridge_manual --debug
+npm run build:toolchain:cart -- cartridge_manual_data --debug
+npm run headless:test -- cartridge_manual \
+  tests/carts/cartridge_manual/cartridge_manual_assert.lua \
+  --slot1 dist/cartridge_manual_data.debug.rom
+```
+
+The first cartridge build resolves the matching BIOS automatically. The data
+card exports `dist/cartridge_manual_data.debug.rom`; `--slot1` explicitly keeps
+it in physical socket1. This existing guest-test route looks up its supplied
+suite in socket0, so do not swap the two command arguments to demonstrate a
+socket1 boot. The BIOS's general scan policy and the scope of this particular
+verification route are distinct.
+
+This starts a fresh machine and fresh card RAM. Do not substitute a warm reset
+or rerun: card reset retains RAM, whereas the program's untouched socket0
+copy destination is expected to begin zero. The program owns DMA0, both
+mailboxes, both central cartridge pending bits and card-RAM bytes 0–31 in both
+sockets. IRQ delivery remains masked; it polls raw pending/status instead of
+installing a DMA callback service.
+
+Look for exactly:
+
+```text
+[test] two_sockets_local_edges_and_cross_socket_dma: passed
+```
+
+The suite checks raw SELECT `80000001H`, derived STATUS `00010003H`, no ROM on
+the data-only card, separate RAM sentinels `10203040H`/`50607080H`, and two local
+IRQ edges on each socket separated by source acknowledgement. A central ACK
+without a source ACK does not produce another edge. It then checks all four
+socket0-ROM→socket1-RAM words:
+
+```text
+01234567 89ABCDEF 55AA33CC F00DCAFE
+```
+
+It also checks CPU SELECT remains 1 during the transfer, DMA CONTROL `00000E63H`,
+DONE `2`, count 0, correct final addresses, masked DMA pending 1, untouched socket0
+copy words 0 and bus fault 0. The linked seed address comes from the actual
+`rodata`; it is not a guessed absolute ROM offset.
+
+This integration route compiles a derived socket0 image containing the ordinary
+program and assertions, while preserving both media definitions. Its linked
+addresses need not match the ordinary image. The retained values do not measure
+the chapter's conditional 72-cycle admitted-block budget or IRQ entry latency.
+For ordinary playback without the assertions, build and run separately:
+
+```sh
+npm run build:product:node-headless-player -- --debug
+npm run headless:game -- cartridge_manual \
+  --slot1 dist/cartridge_manual_data.debug.rom --ttl 2
+```
+
+Expect loading/game-loop/TTL messages, not a printed payload or a new image.
+A normal player exit is not a value check. Use the named integration case for
+the retained hardware observations; neither route is physical-bandwidth proof
+or native execution of this complete cartridge.

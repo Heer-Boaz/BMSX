@@ -1,0 +1,5 @@
+title: Cartridge Sockets Manual Data Card
+hardware:
+    - type: ram
+      bytes: 256
+    - type: mailbox

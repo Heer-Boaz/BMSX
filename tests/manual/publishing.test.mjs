@@ -165,6 +165,8 @@ test('current source-language, BIOS and coroutine chapters belong to software, n
 		['blua-programs', 'bios-base', 'bios-math', 'bios-os', 'bios-loader', 'bios-table', 'bios-string', 'coroutines']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'I').map(([id]) => id),
 		['console', 'cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
+	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'III').map(([id]) => id),
+		['cartridge']);
 });
 
 test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {

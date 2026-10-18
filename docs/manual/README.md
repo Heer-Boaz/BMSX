@@ -13,7 +13,10 @@ an empty separate specifications book is not published.
 The current catalog assigns the source-program chapter and the seven BIOS and
 protected-call/coroutine chapters to II, and the overview plus twelve
 machine/installed-unit chapters to I.
-III reserves the cartridge/socket/card scope; its chapters are not yet authored.
+III now begins with [Cartridge sockets and mapped card devices](../book3/cartridge.md):
+controller selection, optional ROM/RAM/mailbox, IRQ rearming and independent
+DMA endpoints. Other expansion protocols and physical specification decisions
+remain uncompleted.
 These assignments do not claim any volume is complete.
 
 Work on one unit or bounded software interface at a time. Chapter order may

@@ -1451,3 +1451,50 @@ points. Do not patch each chapter with workstation file URLs or local link
 encoding helpers. Existing source-linked Markdown remains usable; source-reader
 PASS is not proof of PDF navigation. Evidence: `/tmp/bmsx-gte-cue-proof/gte.pdf`
 page125, PDFium link enumeration, and the GTE cue public-reader review.
+
+
+## First Book III chapter: cartridge sockets and mapped cards
+
+A bounded cartridge chapter now supplies the missing controller/card/mailbox
+programming route: independently optional device composition and installed
+capacities, raw SELECT/derived STATUS, instruction-domain distinction,
+little-endian widths/tails, local and central IRQ acknowledgements, request
+levels and independent DMA endpoint socket selection. The actual installed
+DMA wiring is checked, including cartridge pricing for **card RAM and mailbox
+MMIO**, not just ROM. The four-word card-to-card budget is 72 admitted cycles;
+it is not a CPU launch-to-completion measurement or physical bus rating.
+
+The complete 133-line ordinary BLua program and both manifests build. Its
+existing-route guest case passes all retained selection/RAM/mailbox/IRQ/DMA
+payload/address/count/status/masked-pending and bus-fault checks. The separate
+ordinary two-media player launch reaches its finite TTL, not an asserted
+payload display. Ten focused TS owner tests and three native suites pass;
+neither is native execution of the full new cartridge. Separate source, public-reader
+and actual final-print decisions pass and are recorded in the chapter reviews,
+not inferred from those executions. All twelve canonical pages match the
+individually inspected proof by exact full decoded RGBA and dimensions. Book III expansion/third-party protocols,
+physical/electrical guarantees and whole-console newcomer acceptance remain
+incomplete. This does not reopen general Lua exposition; all BLua extensions,
+including non-hardware features, remain in scope as already recorded above.
+
+### Separate capture-storage topology issue
+
+TS cartridge/controller capture (`controller.ts:131–138`) emits null for an
+absent socket; C++ (`controller.cpp:100–107`) preserves a supplied stale occupied
+slot when the current socket is absent. Card capture similarly emits absent
+RAM/mailbox as null in TS (`card.ts:111–120`), while native capture updates only
+present regions and allocates missing supplied RAM (`card.cpp:81–89`). These
+are paths under `machine/{ts,cpp}/machine/devices/cartridge/`. This is an actual
+reusable capture-storage API asymmetry when supplied storage has a different
+topology, not a demonstrated cartridge register/IRQ/DREQ disagreement.
+
+The examined normal reuse producer is RuntimeHistory, bound to one Runtime
+and recycling only its own checkpoint ring; socket/card-region topology is
+constructed once, and installRom replaces existing ROM bytes only. Fresh
+matching-topology capture agrees. No normal cross-topology reuse caller or
+cartridge-visible consequence was established in this bounded audit; universal
+external API reuse is not approved. The source evidence in
+[cartridge facts](../book3/facts/cartridge.md) retains both the initial stop and
+scoped triage. Keep the general capture-storage precondition/caller audit as
+separate engineering follow-up. No runtime repair, fallback/normalization,
+validation layer or fictitious hardware behavior was introduced to hide it.

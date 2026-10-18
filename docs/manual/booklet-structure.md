@@ -88,11 +88,11 @@ renumber the complete series consistently; do not mix the two schemes.
 | --- | --- |
 | **Book I — System and Hardware Reference** | Begin with console orientation and a sourced whole-machine specification summary. Follow with CPU execution/ISA/control, memory/address/ownership and installed-unit operation/reference. Keep the per-device specifications and genuine programming examples. |
 | **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the seven BIOS/coroutine chapters, including Math, the time/calendar draft and the runtime-compilation draft. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the separate runtime-compilation or still-incomplete SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
-| **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. This material is still unwritten; the old provisional Book II label must not silently erase it. |
+| **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. The first [cartridge chapter](../book3/cartridge.md) now covers two sockets, optional ROM/RAM/mailbox, source IRQ rearming and independent DMA endpoints with a complete two-card program. Other expansion protocols and physical guarantees remain work; the old provisional Book II label must not silently erase this scope. |
 | **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
 
-The [current catalog](catalog.json) inventory is **21 entries: thirteen in I and
-eight in II**. The added System overview is an opening orientation, not another
+The [current catalog](catalog.json) inventory is **22 entries: thirteen in I,
+eight in II and one in III**. The added System overview is an opening orientation, not another
 device or a claim of complete whole-machine programming coverage. The
 source-research baseline had all sixteen provisionally in I.
 The content map is based on public chapter headings, not a fresh semantic audit:
