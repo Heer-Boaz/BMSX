@@ -611,3 +611,45 @@ remain exactly equal to the accepted baseline; no example code was rewritten
 or rerun as supposed evidence for this table. All 19 existing manual tests pass;
 they are publishing regressions, not a substitute for actual-page inspection.
 The chapter remains a DRAFT with its pre-existing open coverage/print flags.
+
+## Ordinary BIOS handoff — bounded reader bridge, 2026-10-18
+
+A fresh source-blind reader found existing CPU/IRQ/SYSTEM/DMA contracts hard
+to discover from Memory, rather than missing replacement chapters. A separate
+author used only the HB01–05 packet, now retained in
+[the boot facts](../facts/memory-boot.md). The new ownership subsection and
+reciprocal SYSTEM link connect prior BIOS use, mask-zero versus pending/CPU IE,
+first-source preparation, the firmware reservation and context-versus-pixels.
+The timing paragraph links canonical CPU accounting/transfer tables and DMA
+budgets without duplicating them. No universal device reset or entry snapshot
+is supplied.
+
+Independent actual-source review accepts every new claim: BIOS handoff/setup;
+paired CPU EXEC/status leaves; IRQ mask, pending and selected ACK owners; GPU
+register/packet banking without VRAM copies; later monitor atlas reuse; and
+the distinct CPU instruction versus DMA service accounting owners. The final
+ROM-tail sentence is also checked against paired Memory scalar helpers: backed
+bytes remain, absent bytes are zero, and the full-access-in-window condition
+is retained. Detailed report: `/tmp/bmsx-memory-handoff-source-review.md`.
+Final public-source SHA256:
+`364571f94a3857069707437f0010eaa3273ba4c6e84124c8d28bbddfb3f4ff77`.
+
+A separate public-only review accepts the final route and all 11 distinct
+heading/anchor targets: `/tmp/bmsx-memory-handoff-public-review.md`. The old
+remaining-CPU-reference and timing-route obligations are resolved by real
+existing contracts, not deleted on a build result. Full inherited per-unit
+state, privileged supervisor programs, multiple-reader VRAM, coordinated
+cancellation/restart and successful recovery remain open. Markdown target
+existence does not close the portable-PDF navigation issue NAV01.
+
+The current product/BIOS and unchanged IRQ cartridge build; its existing
+`masked_pending_coalescing_and_source_ack` integration case passes, observing
+phases 0–7, handler flags `44/44`, two services, final pending `04` and MASK zero.
+This is a derived integration execution, not new ordinary-ROM output, native
+parity or exhaustive entry-state proof. All 16 existing Memory fenced listings
+and all image references are unchanged. The 19 existing manual tests pass.
+No runtime, BIOS, compiler, cartlib, publisher, CSS, helper or test code changed.
+Production reference before the edit: PSn00bSDK's
+[GPU common routines](https://github.com/Lameguy64/PSn00bSDK/blob/master/libpsn00b/psxgpu/common.c),
+separating reset, DMA and drawing synchronization. No foreign address, timing or
+behavior was supplied to the author or used as a BMSX fact.

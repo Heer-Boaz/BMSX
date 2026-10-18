@@ -56,6 +56,8 @@ Each end in this table is exclusive and includes the section's alignment padding
 
 The linker checks that the linked static storage fits within the RAM byte count supplied for the build. This is a static-storage fit check, not an allocation service. Neither the installed RAM extent nor the end of cartridge BSS defines a free arena, stack reservation, or byte-addressed heap.
 
+<a id="firmware-reservation-in-vram"></a>
+
 ## Firmware reservation in VRAM
 
 The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and linked static-storage reservations in main RAM.
@@ -91,11 +93,15 @@ For those dimensions, the returned origin word is `0x02d002c0` and the size word
 
 The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
 
+<a id="handoff-is-not-release"></a>
+
 ### Handoff is not release
 
 Clearing terminal text or status, or selecting a smaller active terminal viewport, does not shrink the queried full-layout reservation. Cartridge handoff does not release it either. The BIOS monitor later uses the same terminal coordinates and uploads the system atlas again before drawing its output.
 
 Keep the complete queried region out of cartridge allocations. The query does not install hardware write protection or grant permission to overwrite that region, and it does not establish that every coordinate outside it is free.
+
+For the limits of later device-context restoration, see [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service). Restoring device context does not restore overwritten VRAM pixels.
 
 ## ROM contents, RAM sections, and startup
 
@@ -214,6 +220,16 @@ EXEC is not a hardware reset and does not itself initialize DATA or BSS. Enterin
 Calling another static function through EXEC does not implicitly run this startup sequence. Re-entering generated startup repeats initialization of that image's DATA and BSS.
 
 These operations do not establish an all-zero-RAM cartridge-entry state or promise that unrelated RAM contents persist across a reset or handoff.
+
+<a id="taking-ownership-after-the-bios"></a>
+
+### Taking ownership after the BIOS
+
+Ordinary BIOS boot hands over a running machine, not an untouched hardware-reset state. The BIOS has already used graphics and the display before `EXEC`. Register reset values therefore do not describe a complete cartridge-entry state. Preserve the existing display deliberately, or program the units you will use according to their chapters. For timing readouts, see [System control and timing — System time and frame timing](system.md#system-time-and-frame-timing); for CPU control fields, see [CPU — CP0 and execution control](cpu.md#cp0-and-execution-control).
+
+The BIOS writes zero to the central interrupt mask before handoff. This masks delivery; it does not clear pending flags or clear CPU interrupt enable, which is set at cartridge entry. Enabling a pending source can make it deliverable without another event. Choose one dispatch owner, install the first source's handler and prepare that source before enabling its delivery. Acknowledge local source state and central pending state as required by the unit; they are separate responsibilities. See [Interrupt controller — Choose one cartridge dispatch route](irq.md#choose-one-cartridge-dispatch-route) and [Acknowledge the source and the controller separately](irq.md#acknowledge-the-source-and-the-controller-separately). The complete experiment's [Starting conditions](irq.md#starting-conditions) show this ordering for its chosen configuration, not a universal device-reset recipe.
+
+Execution handoff also does not release the [Firmware reservation in VRAM](#firmware-reservation-in-vram); see [Handoff is not release](#handoff-is-not-release). Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
 
 ## Typed byte storage and address views
 
@@ -696,6 +712,8 @@ A `WIDE` instruction uses its body's base charge; the prefix does not add
 another base charge. These charges do not specify the cost of a source
 expression, total program execution time, or sustained memory bandwidth.
 
+Use [CPU — Cycle accounting and execution boundaries](cpu.md#cycle-accounting-and-execution-boundaries) for admission, retries and additional instruction work, and its [Memory instruction reference](cpu.md#memory-instruction-reference) for the complete transfer-instruction table. [DMA — Transfer timing and sharing the bus](dma.md#transfer-timing-and-sharing-the-bus) supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
+
 ## Scalar memory accesses
 
 The rules in this section apply to ordinary scalar `LOAD_MEM` and `STORE_MEM` instructions with the access kinds listed below. Addresses are unsigned 32-bit byte addresses. I/O registers occupy four-byte slots.
@@ -715,7 +733,7 @@ The CPU checks alignment before making the mapped access. A misaligned ordinary 
 
 ### System-ROM data accesses
 
-The declared system-ROM window is `0x00000000` through `0x00ffffff` (16 MiB). When the full width of a mapped scalar read fits this window, bytes beyond the installed ROM image are returned as zero. A U16 or U32 read that straddles the installed image's end is zero-filled for its missing bytes rather than faulting for those bytes.
+The declared system-ROM window is `0x00000000` through `0x00ffffff` (16 MiB). When the full width of a mapped scalar read fits this window, bytes beyond the installed ROM image are returned as zero. A U16 or U32 read that straddles the installed image's end is zero-filled only for its missing bytes.
 
 Scalar writes to the system-ROM window do not modify ROM. They report `BUS_FAULT_UNMAPPED`, **not** `BUS_FAULT_READ_ONLY`. The CPU alignment check still comes first. These are system-ROM data-access rules, not cartridge-ROM or instruction-fetch rules.
 

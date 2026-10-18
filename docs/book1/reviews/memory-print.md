@@ -202,3 +202,38 @@ The 19 existing manual tests regenerated PCRTC; all 37 resulting pages match its
 accepted predecessor in complete decoded RGBA bytes and dimensions. Its current
 PDF SHA256 is `26afd66ac808b1e7a8a1cc1869183230c2648e82cd4a0da55f2f08a8692ea22f`.
 This is identity carry, not a new PCRTC technical/behavior review.
+
+## BIOS handoff bridge — actual final DRAFT, 2026-10-18
+
+Current `build/manual/memory.preview.pdf` remains 37 pages, SHA256
+`7cf3e48b84cc541491698d40f85830204b411614105133f3b783d697b5113436`.
+Public source SHA256
+`364571f94a3857069707437f0010eaa3273ba4c6e84124c8d28bbddfb3f4ff77`.
+Engine, fonts, CSS and publisher are unchanged. Page count is not completeness.
+
+Complete decoded RGBA bytes and dimensions at PDFium 1.4× identify 18 changed
+pages against the accepted `fadeebc60…` baseline: 3, 7–15 and 19–26. The other
+19 pages, including running matter, are exactly equal and carry their accepted
+inspection. Root individually viewed ORIGINAL 3, 7, 8, 10, 12, 14, 20, 22, 24
+and 26; an independent nonauthor individually viewed every ORIGINAL 9–15 and
+19–26. These views cover every changed page, not thumbnails or layout receipts.
+
+Both reviewers found a real one-word continuation from 19 to 20. Shortening a
+redundant sentence preserved the existing ROM zero-fill fact and removed that
+widow; no CSS, keep wrapper or new machinery was added. Root individually
+reopened the corrected final ORIGINAL 19 and 20. Every other page is fully
+RGBA/dimensions-identical to the inspected candidate. The final metadata/review
+refresh also leaves all 37 pages exactly equal to that corrected output.
+Root's full views show intact running labels; the independent preview's
+temporary absent-label impression was not a raster defect and prompted no fix.
+
+Bounded DRAFT readability: **PASS**, no remaining local layout finding. Detailed
+evidence: `/tmp/bmsx-memory-handoff-print-review.md`;
+`/tmp/bmsx-memory-handoff-{print,print-final,final-publication,final-baseline}/memory-identity.json`.
+Remaining coverage and whole-chapter publication approval keep the public
+`print.passed` flag false. NAV01 is not closed by Markdown target checks.
+
+The 19 manual tests regenerated PCRTC. All 37 complete RGBA page images and
+dimensions match its previously accepted `26afd66a…` output; current PDF SHA256
+`cc96a683cbd444e669b8c55b5b10ed035c21420592c16d71832d8306ac9b69e0`.
+This carries print evidence only, not a fresh PCRTC behavior audit.

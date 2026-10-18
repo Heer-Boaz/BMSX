@@ -94,3 +94,27 @@ After independent source audit, paired spec values and the stated bounded reset/
 10. **Two simultaneously resident cartridge static sections:** domains 0 and 1 exist, but the linker uses one system-exported cartridge-static base; no concurrent cartridge-RAM allocation/isolation claim is made. Need cartridge-slot invocation/lifetime policy before teaching inter-cartridge execution.
 
 No public chapter should claim these gaps are resolved by this fact sheet.
+
+## Ordinary BIOS handoff: bounded reader bridge, 2026-10-18
+
+This supplement supplies only the new handoff consequences and links, not a
+complete entry-register image, reset recipe or shared-memory allocator. The
+independent actual-source audit is `/tmp/bmsx-memory-handoff-verified-current.md`.
+
+| ID | Fact | Current source lines |
+|---|---|---|
+| HB01 | Ordinary boot has already configured graphics/display/draw origin, uploaded its system texture and flushed terminal output. Handoff clears status and flushes terminal output, writes MASK zero and EXECs startup; that block performs no general device reset or reservation release. Reset values are not an untouched cartridge-entry image. | `machine/bios/main.lua:105-143`; setup `machine/bios/gpu/gpu.lua:59-107` |
+| HB02 | EXEC replaces CPU execution state, not device/memory state; cartridge entry sets IE and user mode. Generated startup, not EXEC itself, initializes its sections. | `machine/ts/machine/cpu/cpu.ts:1523-1547`; `machine/cpp/machine/cpu/cpu.cpp:1095-1119`; `machine/ts/spec/blua32/cop0.ts:8-14`; `machine/cpp/spec/blua32/cop0.h:14-20`; `toolchain/ts/lua/compiler.ts:1505-1555,1561-1584` |
+| HB03 | MASK changes do not clear pending bits. A pending enabled bit asserts the maskable line without a new request. GPU-local ACK and central ACK affect different retained state; no universal ACK-all or exact entry FLAGS word follows. | `machine/ts/machine/devices/irq/controller.ts:72-80,107-126`; `machine/cpp/machine/devices/irq/controller.cpp:29-35,76-93`; `machine/cpp/machine/devices/irq/controller.h:19`; `machine/ts/machine/devices/gx/gpu.ts:1355-1358`; `machine/cpp/machine/devices/gx/gpu.cpp:864-867` |
+| HB04 | Boot waits on VBlank before its updates. Unit reset values therefore do not specify a current frame/timing sample at later cartridge entry. | `machine/bios/main.lua:136-143`; `machine/bios/kernel/vblank.lua:6-20`; existing SYSTEM timing owners/reference remain canonical |
+| HB05 | The firmware query uses the immutable full terminal layout and retained texture header; handoff does not release it. Monitor service later reuses the same coordinates and uploads the atlas. GPU context banks retain registers/packet state, not VRAM bytes; restoring them cannot undo overwritten pixels. | `machine/bios/gpu/system_vram_region.lua:10-29`; `machine/bios/shell/monitor.lua:455-472`; `machine/ts/machine/devices/gx/gpu.ts:669-729,940-963`; `machine/cpp/machine/devices/gx/gpu.cpp:97-157,470-492`; `machine/ts/machine/devices/system/controller.ts:215-240`; `machine/cpp/machine/devices/system/controller.cpp:167-192` |
+
+Public navigation targets were independently checked in CPU
+**Cycle accounting and execution boundaries**, **Memory instruction reference**,
+and **CP0 and execution control**; DMA **Transfer timing and sharing the bus**;
+IRQ **Choose one cartridge dispatch route**, **Acknowledge the source and the
+controller separately**, and **Starting conditions**; SYSTEM **System time and
+frame timing** and **Device boundaries during supervisor service**. Links route
+the reader to those existing contracts; they do not duplicate or reapprove
+every operation in those chapters. GPU marker ordering alone is deliberately
+not promoted to all-queue-idle or rendered/presented-frame evidence here.

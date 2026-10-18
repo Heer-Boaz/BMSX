@@ -1552,3 +1552,57 @@ The earlier source-binding slice itself changed no GPU prose or runtime.
 Do not invent physical MHz or sustained rates to fill unsourced electrical
 specifications. The remaining foundation inventories and whole-console newcomer
 acceptance remain open; the routing table above identifies the finite next work.
+
+## BH01: named BIOS helpers are not automatically a public API standard
+
+**2026-10-18, withdrawn draft:** the proposed additional `math/sin` and
+`string/float/decode` contract sections and their dedicated example were not
+published or committed. They have been removed from the publication change.
+Their source and execution checks established current behavior, not that every
+observed branch should become a supported cartridge interface. The existing
+BLua source reference and ordinary BIOS-library material are retained.
+
+The bounded live-source audit distinguishes three questions:
+
+- Ordinary `math.sin` accepts radians and rescales the underlying phase-word/Q16
+  result (`machine/bios/math.lua:100-103,373`). The separate helper uses a
+  32-bit turn phase and integer Q16 result (`machine/bios/math/sin.lua:38-64`).
+  The explicit export list exposes that helper (`toolchain/ts/rompack/system.ts:9-13`);
+  this is not an accidental change to the ordinary `math.sin` call.
+- The float decoder is an explicit export with existing users, not a function
+  invented for the manual (`system.ts:14-17`; `cartlib/bin.lua:3,118-121,134-137`).
+  The installed `string.unpack` implementation also uses it
+  (`machine/bios/string/pack.lua:161-175`). These callers supply unsigned words
+  and sizes 4 or 8. No numerical defect was established for that input domain
+  by the bounded source check of `machine/bios/string/float/decode.lua:8-37`.
+- Its `byte_count == 4`/otherwise branch is an implementation fact, not evidence
+  that arbitrary other sizes ought to be supported aliases. In particular, the
+  withdrawn draft's tests for sizes 0 and 16 must not establish that policy.
+
+**Remaining engineering question:** decide whether these low-level exports are
+appropriate public cartridge primitives or implementation dependencies, and
+which guarantees the owning interfaces should provide. Existing export/use is
+evidence of the current boundary, not a design approval. Any demonstrated
+defect belongs at its owner before the corresponding manual promise is made;
+do not add validation, compatibility aliases or cosmetic wrappers to preserve
+it. No BIOS/runtime/compiler change is inferred from this documentation audit.
+This does not block unrelated hardware teaching or reopen general Lua lessons.
+
+## BIOS-to-cartridge ownership bridge — bounded continuation, 2026-10-18
+
+Memory now connects its existing EXEC/startup account to
+[Taking ownership after the BIOS](../book1/memory.md#taking-ownership-after-the-bios):
+reset defaults versus prior firmware work, masked versus acknowledged IRQ,
+handler/source preparation before first enable, retained firmware VRAM and
+later SYSTEM context limits. The same chapter now links the already-complete
+CPU instruction/accounting and DMA endpoint/block/transport references instead
+of carrying stale requests for another partial timing table.
+
+Facts-only authorship, independent actual paired-source and public-only route
+reviews pass at this finite boundary; see [Memory's source record](../book1/reviews/memory-source.md).
+The existing IRQ integration case and all 19 manual tests pass. No new sample,
+API, runtime fix or publishing mechanism was added. These links close actual
+discovery gaps, not exhaustive inherited-state, supervisor/multiple-reader VRAM,
+coordinated cancellation/restart, successful recovery, SDK or whole-console
+newcomer acceptance. BH01 remains a separate interface-design question; NAV01
+still requires a portable delivered-series link contract.
