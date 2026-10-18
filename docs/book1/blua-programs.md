@@ -12,9 +12,12 @@ execution. [Memory](memory.md#typed-byte-storage-and-address-views) defines
 static storage, typed declarations, address views and initialization. These
 remain the companion definitions for the source forms below.
 
-The final program supplies every source file. Follow its
-[development-companion route](../programming/getting-started.md#build-and-inspect-modules-and-globals)
-for the complete project tree, manifest, build commands and output observation.
+Each of the three complete programs supplies every source file. Follow its
+separate development-companion route for the project tree, manifest, build
+commands and output observation:
+[modules and globals](../programming/getting-started.md#build-and-inspect-modules-and-globals),
+[numeric loops](../programming/getting-started.md#build-and-inspect-numeric-loops), or
+[generic iteration](../programming/getting-started.md#build-and-inspect-generic-iteration).
 
 ## Source text and names
 
@@ -279,6 +282,10 @@ end
 
 Written parameters are comma-separated identifiers. A final `...` is permitted, including as the entire parameter list; no parameter may follow it. Captures, frames, argument adjustment, vararg values and call results are specified by the [CPU reference](cpu.md).
 
+### `<init>` and normal startup
+
+The `<init>` attribute is permitted only on a local function declared directly at chunk or runtime-module top level, with the attribute between its name and parameter list: `local function name <init>()`. The function must have no parameters or varargs. It cannot be declared in a compile-time module, inside another function or a block (including `if`, loop, and `do` bodies), or as an ordinary global or method declaration. A non-entry module containing such a function must be in the [scheduled module set](#initialization-happens-before-entry); an otherwise unscheduled source file is rejected. The declaration creates an ordinary lexical closure; it does not execute the function body. **`<init>` does not call the function automatically during normal cartridge startup.** Normal startup initializes the data and zero-initialized sections, performs ordinary module top-level work, and then calls the entry function. Put ordinary boot initialization in module top-level code or the entry function; explicitly call a function there if its body must run at boot.
+
 <div class="keep-together">
 
 ### Call spelling
@@ -299,6 +306,14 @@ The following table shows call forms. `callee`, `receiver` and the argument name
 
 Call, index and member suffixes may be chained. A colon member must be followed by call arguments; `receiver:advance` on its own is not a colon-property expression. Receiver handling and argument/result behavior are defined by the [CPU reference](cpu.md).
 
+### Variable arguments and result positions
+
+`...` reads the variable arguments available to the **current call**. A nested function does not inherit an enclosing call’s variable arguments.
+
+The current software accepts `...` as an expression even when the function’s written parameter list contains no `...`, and in the entry chunk. This does not make a bare `...` a statement. A function without `...` in its parameter list has **zero available variable arguments**, even if its caller supplies extra arguments; the entry chunk likewise has zero available variable arguments.
+
+Zero available arguments are not the same as one `nil` result. With zero available variable arguments, an open-result use of `...` supplies zero values. When a context requests a fixed number of result positions, unavailable positions are filled with `nil`; selecting one result therefore gives `nil` in this case. For argument and result transfer at the machine-call boundary, see [CPU calls](cpu.md#calls-closures-globals-and-tables).
+
 ### Return statements
 
 A return expression list is written as:
@@ -313,12 +328,16 @@ A semicolon may follow that list:
 return position, velocity;
 ```
 
+<div class="keep-together">
+
 An expressionless `return` is recognized only when its next significant token is `end`, `else`, `elseif`, `until` or the end of the source. A newline alone does not terminate it. For example, this still supplies the expression `position`:
 
 ```lua
 return
     position
 ```
+
+</div>
 
 `return;` is not an accepted spelling of an expressionless return. To return without a written expression, place `return` before one of the terminators listed above, as in:
 
@@ -434,40 +453,108 @@ until attempts >= 3
 
 These are the source forms `while expression do block end` and `repeat block until expression`. Runtime condition behavior is defined in the [CPU reference](cpu.md).
 
-### For loops
-
-The numeric source form is:
-
-```lua
-for index = start, limit, step do
-    total += index
-end
-```
-
-The step expression is optional:
-
-```lua
-local total = 0
-for index = 1, 4 do
-    total += index
-end
-```
-
-The compiler initializes the start, limit and step before the loop, using step `1` when omitted. Numeric-loop arithmetic and termination are covered by the [CPU reference](cpu.md).
-
-<div class="keep-together">
-
-The generic form accepts one or more names and an expression list:
+### Numeric `for`
 
 ```text
-for name, name in expression, expression do
+for name = start, limit [, step] do
     block
 end
 ```
 
-</div>
+Square brackets mark the optional step; they are not written in the source.
 
-The number of names and expressions is not fixed by this illustration. Generic loops use the iterator/state/control protocol. See the [CPU reference](cpu.md) and the [BIOS iteration operations](bios-base.md) for that contract; the syntax alone does not make an arbitrary value iterable.
+The header evaluates `start`, then `limit`, then the explicit `step`, once
+before the first test on each ordinary entry into the statement. Each
+expression supplies one result, including a call expression. Omitting `step`
+supplies Number `1`; supplying `0` does not omit it. The start result initializes the loop variable. The limit
+and step results are retained for subsequent tests and updates: assigning to
+an outer variable used by a header expression does not reevaluate that
+expression or replace its retained result.
+
+The header expressions use the enclosing scope. Only the body has the new
+local binding named by `name`, so a same-named reference in the header still
+refers to its enclosing binding. The loop binding is not visible after the
+loop. A distinct local declared inside the body can shadow it in the usual
+lexical way.
+
+Before each body entry, let `i` denote the current loop variable, `limit` the
+retained limit, and `step` the retained step. The selector and exit tests are:
+
+| Selector | Exit before the body when | Finite-Number reading |
+| --- | --- | --- |
+| `0 < step` is true | `limit < i` | The body is allowed while `i <= limit`. |
+| `0 < step` is false | `i < limit` | The body is allowed while `i >= limit`. |
+
+The exit predicates are the strict comparisons shown, not universal
+`<=`/`>=` tests. The inclusive paraphrases apply to finite Numbers; they do not
+establish termination for every Number value. For Number operands, the loop
+uses ordinary Number arithmetic rather than an integer-only counter.
+
+Ordinary fallthrough from the body adds the retained step to the loop
+variable's **current** value, then repeats the selector and test. Assignment to
+the unshadowed loop variable is permitted and changes that same control
+variable, not a hidden copy. It affects the tail addition and next test; it
+does not trigger a new range check halfway through the body. A `break` leaves
+the loop without performing the tail addition.
+
+An explicit zero step is accepted, not replaced by one or rejected as a
+zero-step error. It takes the second test above. With finite Numbers, a start
+below the limit skips the body, while a start equal to or above the limit
+allows initial entry. If the body leaves the variable unchanged, adding zero
+makes no counter progress. This does not make every zero-step loop empty or
+promise that every entered one runs forever: changing the loop variable can
+make the next test exit, and `break` can leave immediately.
+
+See the [complete numeric-loop control program](#complete-program-numeric-loop-control)
+for evaluated headers, retained limits and steps, forward and reverse body
+mutation, and finite zero-step examples. Its entered zero-step loops use
+explicit `break` statements.
+
+The control path uses ordinary [Number addition and comparison](cpu.md#values-and-numeric-instructions);
+header and body calls have the usual [call and result-adjustment costs](cpu.md#calls-closures-globals-and-tables).
+Use the [instruction-cost guide](cpu.md#blua-operators-and-instruction-costs) and
+[cycle-accounting boundaries](cpu.md#cycle-accounting-and-execution-boundaries)
+for the selected instructions and executed path, rather than assigning the
+source loop a fixed per-iteration cycle charge.
+
+### Generic `for`
+
+A generic `for` obtains each set of loop-variable values by calling an iterator:
+
+```text
+for name [, name ...] in expression [, expression ...] do
+    block
+end
+```
+
+There must be at least one loop name and one expression after `in`.
+
+Before the first iteration, the expression list is evaluated once, in source order, and adjusted to three values: **iterator, state, control**. Each expression before the last supplies one value. Only the final expression can supply multiple results: a final call or `...` can fill the remaining entries. Missing entries become `nil`; surplus values are discarded. With three or more expressions, each supplies one value and only the first three values are retained. **Every expression is still evaluated**, including expressions whose results are discarded. Their effects and errors occur before the first iterator call.
+
+Grouping parentheses do not force a call to supply only one result in BLua. In particular, a final `(factory())` can still supply multiple values to this list.
+
+The three retained values are cached, not recomputed on subsequent iterations. Rebinding a source variable does not replace its cached value. Caching a mutable value does not copy its contents: changes to shared contents remain visible.
+
+Each attempted iteration calls exactly:
+
+```text
+iterator(state, control)
+```
+
+The call requests as many results as there are loop names. Extra results are discarded and missing results become `nil`.
+
+- If the first adjusted result is `nil`, the loop ends without assigning that call's results to the loop variables or executing the body.
+- Otherwise, all adjusted results are assigned to the visible loop variables. The first result also becomes the hidden control value **before** the body starts. After the body, the next iterator call uses that control.
+
+Only `nil` stops iteration: a first result of `false` continues and becomes the next control value. A later result of `nil` does not stop the loop. See [values](cpu.md#values-and-numeric-instructions).
+
+The visible loop variables are writable locals. Reassigning them in the body does not change the already saved hidden control; the next successful iteration replaces their values with new results. Their lexical scope is the loop body. The new locals are not in scope in the `in` expressions or after `end`; a loop name in its own initializer does not refer to the new local.
+
+A reached `break` exits the nearest enclosing loop, skipping the remaining body and subsequent iterator calls.
+
+Iteration uses [ordinary calls](cpu.md#calls-closures-globals-and-tables), passing state and control unchanged. A non-callable iterator causes an error at the attempted call, not an empty loop. Other errors occur at the expression, call or body operation reached. The ordinary [execution costs and boundaries](cpu.md#cycle-accounting-and-execution-boundaries) apply to the loop operations, iterator calls and body.
+
+See [iteration routines](bios-base.md#traversal-argument-selection-globals-and-output) and the [complete generic-iteration program](#complete-program-generic-iteration).
 
 <div class="keep-together">
 
@@ -499,6 +586,8 @@ end
 
 There is no `continue` statement keyword.
 
+<div class="keep-together">
+
 ### Labels and goto
 
 A label is written `::name::`; a branch to it is written `goto name`.
@@ -512,7 +601,15 @@ if attempts < 3 then
 end
 ```
 
-Forward label references are permitted. A label reference left unresolved at function finalization is rejected, as are duplicate label names within the same function's label map. These checks should not be read as a complete specification of every possible jump across local scopes.
+</div>
+
+Label names have **function-wide scope**, not block scope. A `goto` can name a label written before or after it, including a label in another lexical block of the same function. A nested function has its own label names: a label in another function cannot satisfy the jump. Each chunk also has its own label scope.
+
+A second label with the same name in one function is rejected as `Duplicate label 'name'.`, even if the labels occupy different blocks. A target name not defined in that function is reported as `Missing label(s): ...`. A same-spelling label in a separate function is independent.
+
+The current software does not reject a jump merely because it crosses a local declaration or enters or leaves a lexical block. The jump must still have a defined target and an encodable displacement. These are not checks on local scope or initialization.
+
+Acceptance does **not** insert skipped initialization, local cleanup, or capture-close operations. A forward jump can skip initializers; a backward jump resumes at its earlier target. Neither crossing establishes a blanket value for a skipped local: in particular, it does not guarantee a fresh `nil` value or recreate locals on a backward jump. Keep required initialization on the executed path; a jump is not a block-entry initialization operation.
 
 ### Waiting for an interrupt
 
@@ -915,6 +1012,8 @@ result.nil_loads = result.nil_loads + 1
 return nil
 ```
 
+<div class="keep-together">
+
 ### Entry module: `entry.lua`
 
 The first observations precede the entry's ordinary-module import assignments.
@@ -983,6 +1082,8 @@ while true do
 end
 ```
 
+</div>
+
 <div class="keep-together">
 
 ### Observations
@@ -1009,5 +1110,276 @@ Modules globals	1	2	99	36	4	5	46
 These observations demonstrate this program's initialization dependencies,
 shared ordinary export and lexical/global distinction. They do not specify a
 startup cycle budget or the behavior of the separate runtime source loader.
+
+</div>
+
+## Complete program: numeric loop control
+
+Use a separate `loops_manual` cartridge for this program. Do not combine its
+`results` module or entry with the preceding cartridge. The two complete files
+own typed BSS observations; no numeric RAM address or device-register Table is
+needed. [Memory](memory.md#typed-byte-storage-and-address-views) defines the
+storage and startup initialization. The [build and observation route](../programming/getting-started.md#build-and-inspect-numeric-loops)
+supplies the exact tree, manifest and commands.
+
+The program exercises seven finite loops. The two zero-step loops that enter
+their bodies end with the written `break` statements, not because the step
+advances the index. Its observations do not establish a general termination
+rule for arbitrary numerical inputs.
+
+### Result storage: `results.lua`
+
+```lua
+module<const>
+
+struct loops_manual_result
+	completed: word
+	header_calls: word
+	header_count: word
+	header_sum: word
+	cached_count: word
+	cached_sum: word
+	changed_limit: word
+	changed_step: word
+	forward_count: word
+	forward_sum: word
+	reverse_count: word
+	reverse_sum: word
+	zero_empty_count: word
+	zero_fixed_count: word
+	zero_fixed_sum: word
+	zero_equal_count: word
+	zero_equal_sum: word
+end
+
+bss result: loops_manual_result
+
+return { result = result }
+```
+
+Save the following three parts **in order as one `entry.lua`**. They are not
+three independently entered modules; only the first part declares the entry.
+
+### Entry part 1: retained header values
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *loops_manual_result = state.result
+
+-- Three state-changing calls supply start, limit and step, in that order.
+local header_cursor = 0
+local advance_header<const> = function()
+	header_cursor += 1
+	return header_cursor
+end
+for index = advance_header(), advance_header() + 2, advance_header() - 2 do
+	result.header_count += 1
+	result.header_sum += index
+end
+result.header_calls = header_cursor
+
+-- Changing the source locals does not replace the retained limit and step.
+local limit = 4
+local stride = 1
+for index = 1, limit, stride do
+	result.cached_count += 1
+	result.cached_sum += index
+	limit = 0
+	stride = 7
+end
+result.changed_limit = limit
+result.changed_step = stride
+
+```
+
+### Entry part 2: mutation and zero step
+
+```lua
+-- Body writes affect the same variable used by the test and update.
+for index = 1, 5 do
+	result.forward_count += 1
+	result.forward_sum += index
+	index += 1
+end
+for index = 5, 1, -1 do
+	result.reverse_count += 1
+	result.reverse_sum += index
+	index -= 1
+end
+
+-- Zero uses the non-positive test. The following body is not entered.
+for index = 1, 3, 0 do
+	result.zero_empty_count += 1
+end
+
+-- These bodies deliberately end with break, not with progress from step 0.
+for index = 3, 1, 0 do
+	result.zero_fixed_count += 1
+	result.zero_fixed_sum += index
+	if result.zero_fixed_count == 3 then
+		break
+	end
+end
+for index = 2, 2, 0 do
+	result.zero_equal_count += 1
+	result.zero_equal_sum += index
+	if result.zero_equal_count == 2 then
+		break
+	end
+end
+
+```
+
+### Entry part 3: output and completion
+
+```lua
+print('Loops headers', result.header_calls, result.header_count,
+	result.header_sum)
+print('Loops cached', result.cached_count, result.cached_sum,
+	result.changed_limit, result.changed_step)
+print('Loops mutation', result.forward_count, result.forward_sum,
+	result.reverse_count, result.reverse_sum)
+print('Loops zero-empty', result.zero_empty_count)
+print('Loops zero-fixed', result.zero_fixed_count, result.zero_fixed_sum)
+print('Loops zero-equal', result.zero_equal_count, result.zero_equal_sum)
+result.completed = 1
+
+while true do
+	halt_until_irq
+end
+```
+
+<div class="keep-together">
+
+### Numeric-loop observations
+
+After startup, the program prints six lines; tabs separate distinct `print`
+arguments:
+
+```text
+Loops headers	3	4	10
+Loops cached	4	10	0	7
+Loops mutation	3	9	3	9
+Loops zero-empty	0
+Loops zero-fixed	3	9
+Loops zero-equal	2	4
+```
+
+| Observation | Meaning in this program |
+| --- | --- |
+| Headers `3, 4, 10` | Three state-changing calls supply start 1, limit 4 and step 1. Four visits sum to 10; the header calls are not repeated per visit. |
+| Cached `4, 10, 0, 7` | Changing the source limit and step locals to 0 and 7 does not replace the retained 4 and 1. The body still visits 1 through 4. |
+| Mutation `3, 9, 3, 9` | The ascending loop visits 1, 3, 5; the descending loop visits 5, 3, 1. Body writes affect the variable subsequently tested and updated. |
+| Zero-empty `0` | With start 1, limit 3 and step 0, the body is not entered. |
+| Zero-fixed `3, 9` | With start 3, limit 1 and step 0, three visits retain index 3 until the explicit break. |
+| Zero-equal `2, 4` | With start and limit both 2 and step 0, two visits retain index 2 until the explicit break. |
+
+</div>
+
+## Complete program: generic iteration
+
+Use a separate `iterators_manual` cartridge. Its two complete files are not
+additional modules in either preceding example. The result module owns typed
+BSS under the [Memory storage contract](memory.md#typed-byte-storage-and-address-views).
+Follow the [build and observation route](../programming/getting-started.md#build-and-inspect-generic-iteration)
+for the exact project tree, manifest and commands.
+
+The iterator returns `false, 10`, then `2, 20`, then `nil, 999`. Three loop
+variables request a third result position. The body also writes the first
+visible variable, allowing its value to be distinguished from the retained
+iteration control.
+
+### Iterator result storage: `results.lua`
+
+```lua
+module<const>
+
+struct iterators_manual_result
+	completed: word
+	iterator_calls: word
+	body_count: word
+	payload_sum: word
+	false_key_count: word
+	missing_third_count: word
+	first_control: word
+	second_control_false: word
+	third_control: word
+	visible_after_write: word
+	stop_payload: word
+end
+
+bss result: iterators_manual_result
+
+return { result = result }
+```
+
+### Iterator entry: `entry.lua`
+
+```lua
+module<entry>
+
+local storage<const> = require('results')
+local result<const>: *iterators_manual_result = storage.result
+
+local context<const> = { calls = 0 }
+local iterator<const> = function(state, control)
+	state.calls += 1
+	if state.calls == 1 then
+		result.first_control = control
+		return false, 10
+	elseif state.calls == 2 then
+		result.second_control_false = control ~= nil and not control and 1 or 0
+		return 2, 20
+	end
+	result.third_control = control
+	result.stop_payload = 999
+	return nil, 999
+end
+
+for key, value, missing in iterator, context, 0 do
+	result.body_count += 1
+	result.payload_sum += value
+	if not key then
+		result.false_key_count += 1
+	end
+	if missing == nil then
+		result.missing_third_count += 1
+	end
+	key = 99
+	result.visible_after_write += key
+end
+result.iterator_calls = context.calls
+
+print('Iter calls', result.iterator_calls, result.body_count, result.payload_sum)
+print('Iter controls', result.first_control, result.second_control_false,
+	result.third_control)
+print('Iter values', result.false_key_count, result.missing_third_count,
+	result.visible_after_write, result.stop_payload)
+result.completed = 1
+
+while true do
+	halt_until_irq
+end
+```
+
+<div class="keep-together">
+
+### Iterator observations
+
+After startup, the program prints:
+
+```text
+Iter calls	3	2	30
+Iter controls	0	1	2
+Iter values	1	2	198	999
+```
+
+| Observation | Meaning in this program |
+| --- | --- |
+| Calls `3, 2, 30` | Three calls produce two body visits. Payloads 10 and 20 sum to 30; first result `false` permits a visit, while `nil` stops before another visit. |
+| Controls `0, 1, 2` | The iterator sees Number 0, then `false` (flag 1), then Number 2. Writing the first visible variable to 99 does not change the next control. |
+| Values `1, 2, 198, 999` | One false-valued key reaches the body. The missing third result is nil on both visits. The body sees its written 99 twice, sum 198. Terminal payload 999 is produced with nil but never added to the payload sum. |
 
 </div>

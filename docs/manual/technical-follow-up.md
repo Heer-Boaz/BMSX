@@ -1076,3 +1076,44 @@ closure. All22 source-program DRAFT pages have separate actual print evidence.
 The source-program coverage record keeps lifecycle/source-corner-case work
 open, so passing finite source, reader and layout checks does not publish an
 incomplete language reference.
+
+## Linked-cartridge control flow and normal-startup continuation
+
+2026-10-18, baseline `e43ee94f1`. Separate finite extractions and facts-only
+paragraph authors now supply the normal-startup `<init>` boundary, current-call
+varargs, function-wide labels and jump-only scope crossings, numeric-loop
+control, and the complete generic-for iterator/state/control protocol. The
+normal boot path does not automatically call an attributed local function;
+the separately invoked generated mechanism is not published as a cartridge API.
+Numeric loop variables and hidden generic controls have different mutation
+rules, now stated explicitly rather than left to foreign Lua assumptions.
+
+Two separate complete ordinary cartridges accompany the reference. Numeric
+loops have sixteen retained assertions and six separate ordinary diagnostics;
+generic iteration has ten assertions and three ordinary diagnostics. Both
+quality-checked builds and both retained checks pass. Public listings, complete
+manifests, build/observation routes and finite limits are in the chapter and
+development companion. Independent actual-source checks, a public-only reader
+and actual-page print review have separate records in the
+[source acceptance index](../book1/reviews/blua-programs-source.md). No runtime,
+BIOS, compiler, publisher, stylesheet or shared harness was changed.
+
+**LS01 remains OPEN: repeat-body local versus `until`.** The actual consumed
+binder retains the body scope through the condition at
+`toolchain/ts/lua/semantic/model.ts:921–930`; the compiler pops that scope before
+lowering the condition at `toolchain/ts/lua/compiler.ts:4465–4479`. Its bare-name
+load can then reach a named global instead of the body's local. A separate
+ordinary probe sets only its owned global true and observes one pass; reading
+the body local would require three passes. The
+[exact source conflict and captured observation](../book1/facts/blua-programs-repeat-scope.md)
+record current software, not an intended scoping rule or a compatibility
+contract. There is no assertion that a future compiler repair must preserve
+this defect. Keep the intended repeat-local guarantee stopped and resolve
+the owning compiler/binder question in a separate implementation task.
+
+The source chapter stays DRAFT for LS01; finite source/reader/layout passes
+do not waive it. Full math/os and BIOS runtime loading/compiler/lifecycle,
+SDK installation/debugging and diagnostics, Book III, remaining graphics
+contrasts, CPU7, common Table length, BZ01 and whole-console newcomer acceptance
+remain work. The separately adopted Book I/II/III scope and correct software
+running title do not imply these volumes are complete.

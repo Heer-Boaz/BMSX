@@ -658,3 +658,125 @@ frame or cycle guarantee, and does not assert the printed values. The retained
 checks and ordinary diagnostics are separate TS executions, not native proof,
 exhaustive module-graph/lifetime guarantees, fresh-OS/whole-SDK acceptance or
 validation of the separate BIOS runtime source compiler.
+
+## Build and inspect numeric loops
+
+The [complete numeric-loop program](../book1/blua-programs.md#complete-program-numeric-loop-control)
+is its own cartridge, not an extra entry in `modules_manual`. Save the storage
+listing as `results.lua` and concatenate the three entry parts in order as
+`entry.lua` at these exact paths:
+
+```text
+carts/loops_manual/
+  entry.lua
+  results.lua
+  res/manifest/manifest.rommanifest
+```
+
+Use this complete manifest:
+
+```yaml
+title: BLua Numeric Loops Manual
+hardware:
+    - type: rom
+```
+
+From the repository root with the shared prerequisites above:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- loops_manual --debug
+npm run headless:test -- loops_manual tests/carts/loops_manual/loops_manual_assert.lua
+```
+
+Expect `[test] numeric_loop_control: passed`. The supplied suite waits for
+completion and checks sixteen retained observations. It runs a fresh derived
+integration image, not byte-for-byte ordinary playback; linked addresses can
+differ. The builder selects the matching BIOS. No earlier example cartridge is
+a prerequisite.
+
+For separate ordinary playback, create
+`tests/carts/loops_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BLua numeric loop observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/loops_manual/ordinary_timeline.json loops_manual
+```
+
+Compare all six `Loops ...` lines with **Numeric-loop observations**. The
+zero-step cases that enter use explicit breaks; the ordinary result is not an
+assertion that zero step eventually advances the index. The timeline chooses
+zero-based presentation offset 4, not startup/frame/cycle latency, and does not
+assert output values. The retained checks and ordinary run are separate TS
+executions, not native or all-Number/NaN/infinite termination proof, a separate
+BIOS runtime-parser contract, or whole-SDK/whole-console acceptance.
+
+## Build and inspect generic iteration
+
+The [complete generic-iteration program](../book1/blua-programs.md#complete-program-generic-iteration)
+is a separate cartridge. Save its two complete listings at these exact paths;
+do not combine its entry or `results` module with the other examples:
+
+```text
+carts/iterators_manual/
+  entry.lua
+  results.lua
+  res/manifest/manifest.rommanifest
+```
+
+Use this complete manifest:
+
+```yaml
+title: BLua Iterators Manual
+hardware:
+    - type: rom
+```
+
+From the repository root with the shared prerequisites above:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- iterators_manual --debug
+npm run headless:test -- iterators_manual tests/carts/iterators_manual/iterators_manual_assert.lua
+```
+
+Expect `[test] generic_iteration_control: passed`. Ten retained assertions
+follow the completion wait on a fresh derived integration target, not the
+byte-identical ordinary ROM. The builder selects the matching BIOS; absolute
+linked addresses can differ. No earlier example cartridge is a prerequisite.
+
+For separate ordinary playback, create
+`tests/carts/iterators_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BLua iterator observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/iterators_manual/ordinary_timeline.json iterators_manual
+```
+
+Compare all three `Iter ...` lines with **Iterator observations**. False and
+nil are deliberately distinct, as are the visible variable and hidden control.
+The timeline's zero-based presentation offset 4 is an endpoint, not a
+startup/frame/cycle guarantee or an assertion. Retained checks and ordinary
+playback are separate TS executions, not native, all-input/iterator/optimizer,
+Table-length or separate BIOS runtime-parser acceptance. CPU7, Table length,
+BZ01 and the repeat-scope issue remain open.

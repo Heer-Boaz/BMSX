@@ -1,10 +1,11 @@
 # BLua source programs — bounded source and execution acceptance
 
 Current public chapter SHA-256:
-`e8f25c7b05be1f97da18694c9a73c4c8017af41cba6b3bc41a6c8c902066c289`.
-Baseline `fce16b952`, 2026-10-18. **Finite source/claim pass, not a complete
+`6823cbd1ecc504b03f2d5c17908617c9688a634b8410bbae65b263effd2e741e`.
+Initial baseline `fce16b952`, continuation `e43ee94f1`, 2026-10-18.
+**Finite source/claim pass, not a complete
 language/SDK/BIOS or whole-manual publication decision.** The coverage record
-keeps source-legality and `<init>` lifecycle work open; the chapter remains a
+keeps the repeat binder/compiler conflict OPEN LS01; the chapter remains a
 DRAFT. CPU7, common Table length and BZ01 are not closed or narrowed away.
 
 ## Independent extraction, authorship and owner review
@@ -12,6 +13,10 @@ DRAFT. CPU7, common Table length and BZ01 are not closed or narrowed away.
 Three read-only extractors supplied separate frozen source-form, module and
 installed-environment sheets. Three fresh authors each consumed only their
 assigned sheet. Root integrated them with the real six-file ordinary cartridge.
+The continuation uses four separately frozen init, scope-edge, numeric-loop
+and generic-for sheets with fresh facts-only paragraph authors, plus two
+separate executed ordinary programs. No author needed the entire architecture
+or an historical reference book as factual input.
 The owners/specs are the authority; no architecture manuscript or historical
 reference PDF supplied a BMSX fact. A historical manual is not a source-language
 specification. The actual cartridge source compiler has no invented C++ mirror;
@@ -22,6 +27,11 @@ CPython's [modules tutorial organization](https://github.com/python/cpython/blob
 and [interpreter tutorial organization](https://github.com/python/cpython/blob/main/Doc/tutorial/interpreter.rst).
 These informed teaching sequence only, not BMSX syntax, imports or execution;
 no Python facts were sent to the section authors.
+The control-flow continuation also inspected CPython's
+[compound-statement reference](https://github.com/python/cpython/blob/main/Doc/reference/compound_stmts.rst)
+and the official Lua repository's
+[loop-test organization](https://github.com/lua/lua/blob/master/testes/nextvar.lua)
+for structure only. Their language semantics were not BMSX facts or expected results.
 
 | Independent actual-owner pass | Result and correction |
 | --- | --- |
@@ -29,6 +39,9 @@ no Python facts were sent to the section authors.
 | [Modules and complete program](blua-programs-modules-source.md) | Header/path/import/export/static contracts and actual six-file behavior checked against live owners. Explicitly distinguish syntactic dependency discovery from lexical built-in recognition, and ordinary named global slots from a per-closure environment object. Both refinements rechecked. |
 | [Installed environment](blua-programs-environment-source.md) | Paired banks, get/setglobal, EXEC versus reboot and actual BIOS installation/captures checked. Interface-wide failure tuple narrowed to the `load` wrapper; `_G`/`_ENV` wording remains installer-only. Changed claims rechecked. |
 | [Canonical logical-expression addition](cpu-logical-source.md) | Fresh public reader found missing `and`/`or` selected-operand/short-circuit semantics in the linked CPU reference. A separate finite extraction and facts-only author supplied the missing definition, independently checked against actual compiler and paired truth/branch/NOT owners. Skipped faults are explicitly runtime faults, not compile-diagnostic immunity. |
+| [Init, variable arguments and label edges](blua-programs-scope-edges-source.md) | Actual parser/binder/compiler, startup producer and paired call/vararg/global/jump owners checked. Normal boot does not call `<init>` automatically; a non-entry participant must be scheduled. Current-call varargs and function-wide jump-only labels do not imply scope cleanup or fresh nil. LS01's actual source conflict and one-pass ordinary probe are corroborated, not approved as an intended language rule. |
+| [Numeric loops and complete program](blua-programs-numeric-loops-source.md) | Ordered cached headers, strict selector/exits, writable counter, zero step, break and ordinary instruction/call costs checked against actual producers and paired owners. Exact 25+76-line public reconstruction, sixteen assertions and all six captured ordinary lines match. No all-Number termination or optimizer-wide claim. |
+| [Generic iteration and complete program](blua-programs-generic-for-source.md) | Header-list adjustment/effects, cached references, fixed two arguments and visible-result count, nil-only exit and hidden-control copy checked against actual producers and paired owners. Exact 19+44-line reconstruction, ten assertions and three captured ordinary lines match. No direct Table traversal or all-iterator/capture/optimizer guarantee. |
 
 Integration also corrected uppercase identifiers in the illustrative const
 namespace, using the independently extracted lowercase-only source rule. It
@@ -55,6 +68,16 @@ ABI encoder, getter wrapper, fallback, rollback or rule suppression was added.
 Initial example-quality failures were fixed in the example, not in the rules.
 No runtime, compiler, BIOS, publisher, stylesheet or shared harness changed.
 
+The [numeric-loop](../facts/blua-programs-loops-program.md) and
+[iterator](../facts/blua-programs-iterators-program.md) evidence records supply
+the new independent builds, sixteen/ten retained assertions and six/three
+separate ordinary diagnostic lines. Their four source files add164 complete
+Lua lines, all literally reproduced by the public listings. Numeric entry is
+three named consecutive chunks of one file, not three entry modules. The
+[LS01 investigation](../facts/blua-programs-repeat-scope.md) is a separate
+successful build/ordinary observation, not an assertion locking the defect
+into the language contract.
+
 The [source-blind reader](blua-programs-reader.md) reconstructed all six files,
 tree, exact manifest, entry/module naming, fresh-boot assumption, build/check
 and ordinary observation commands and all five output lines using public
@@ -64,13 +87,25 @@ There is no remaining actionable reader blocker for this supplied-checkout
 route. This is not execution, owner verification, fresh-OS/whole-SDK/native,
 whole-console or PDF acceptance.
 
+The fresh [control-flow public reader](blua-programs-control-reader.md)
+reconstructed both new projects, manifests, all source files and nine output
+lines without implementation access. It identified missing generic-loop
+contracts and a stale singular introductory route; the full sourced protocol
+and three separate companion links close both findings on public recheck.
+Its literal numeric concatenation preserves the two inter-chunk blank lines;
+the earlier whitespace-normalized reconstruction was semantically identical.
+The final subsequent source delta only groups the old module-entry lead and
+listing with existing print markup; it changes no technical sentence.
+
 ## Figures and print
 
 There are no generated figures, screenshots or register bit diagrams in this
 source-language chapter. Its literal/operator/import/global/observation tables
 and code are part of the source-review scope; no synthetic output image is
 presented as captured hardware output. The independent [actual-PDF review](blua-programs-print.md)
-covers all22 final DRAFT pages. Existing keep-together markup repairs observed
+covers all27 final DRAFT pages. Every initial page was actually viewed; all
+three changed final pages were independently viewed again and the other24
+full rasters match exactly. Existing keep-together markup repairs observed
 stranded leads; no renderer/stylesheet/new publication gate was introduced.
 The new canonical CPU paragraph has its own bounded changed-page print check
 in [the CPU print record](cpu-print.md).
@@ -79,7 +114,7 @@ in [the CPU print record](cpu-print.md).
 
 `npm run test:manual` passes19 tests. The shared publisher preview passes
 mechanical layout checks for the source chapter and changed CPU reference.
-`manual:check` for the new chapter intentionally exits1 for the two recorded
-coverage items, not pending source/print review: `<init>` lifecycle and the
-remaining source-form legality/loop cases. No release is claimed by the DRAFT
+`manual:check` intentionally exits1 for the recorded LS01 source-owner
+conflict, not pending finite source/print review. Current software is recorded
+separately; it does not reconcile intended repeat-local visibility. No release is claimed by the DRAFT
 PDF. Both working and staged diff checks pass for the committed slice.

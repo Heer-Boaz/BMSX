@@ -1,5 +1,83 @@
 # Current BLua source-program PDF layout acceptance
 
+**PASS for the current 27-page DRAFT.** The independent full-page and
+changed-page evidence below identifies the exact artifact. LS01 and whole-book
+coverage remain open; layout approval is not publication acceptance.
+
+# Independent actual-PDF print-layout review
+
+## Artifact and scope
+
+- Artifact: `/home/boaz/BMSX/build/manual/blua-programs.preview.pdf`
+- Final PDF SHA256: `f3dee3942895008b7e793916ffebd87badf79a4e1acb071775a6d1579a908f9b`
+- Page count: 27.
+- Final supplied source SHA256: `6823cbd1ecc504b03f2d5c17908617c9688a634b8410bbae65b263effd2e741e` (provided by parent; source was not opened for this review).
+- Read `AGENTS.md`. Inspected only this PDF and its actual page rasters; no owner files, semantic evidence, architecture documents, reference PDFs, or other reviews were consulted.
+- Rendered every page with `/tmp/bmsx-manual-inspection-venv/bin/python`, `pypdfium2.PdfDocument`, and `page.render(scale=1.5).to_pil()`. All 27 full pages are retained individually at 893 x 1263 in `/tmp/bmsx-language-control-print-review-80de01a3/page-01.png` through `page-27.png`.
+- Actually viewed each of those 27 full-page images individually with `tools.view_image`; multiple independent full-page image calls were batched only for transport. No contact sheet or text extraction substituted for visual page inspection.
+
+## Finite verdict
+
+**PASS for the finite actual-PDF print-layout scope below. No outstanding print-layout repairs.**
+
+The initial artifact (`80de01a3dee5c1531fbef59a5842d091f98844bb1062c56e5157643aa98d0a7b`) had one lead/listing pagination issue: page 21 ended with **“Entry module: entry.lua”** and two explanatory paragraphs while its entire listing began alone on page 22. The parent applied only the existing keep-together markup around this heading, both paragraphs and its listing; no new renderer/CSS/helper was introduced by the reviewer.
+
+For the final PDF, independently rendered all 27 full pages at scale 1.5 into `/tmp/bmsx-language-control-print-review-f3dee394/`. Compared every full RGB raster against its preserved original with `PIL.ImageChops.difference(...).getbbox()`. Exactly pages **1, 21 and 22 changed**; the other **24 pages are pixel-identical** to the individually viewed original pages. Changed bounds (893 x 1263 coordinates) were p1 `(76,369,817,1179)`, p21 `(76,872,817,1021)`, and p22 `(76,81,817,1040)`.
+
+**Actually viewed all three changed full pages individually with `tools.view_image`.** Page 1's revised opening remains readable with no rule/table/code/footer collision. Page 21 now finishes after the complete nil-export listing; its ordinary bottom whitespace is not a defect. Page 22 now contains the Entry module heading, both lead paragraphs and the full unbroken entry listing together, with safe footer clearance. The original pagination issue is closed and no new print-layout defect was found. The unchanged 24 full rasters retain the complete initial visual coverage.
+
+No clipping, overlap, unreadable table/rule/code, paragraph widow, stranded short lead, or footer collision was found in the final artifact. Ordinary whitespace was not counted as a defect. Numeric-loop entry parts 1, 2, and 3 are explicitly named consecutive parts and are not arbitrary broken listings.
+
+## Running identification and draft status
+
+The running top identification is correctly **“BOOK II · BLUA32 AND BIOS REFERENCE”**, with BMSX at upper left. The DRAFT / NOT FOR PUBLICATION footer is present throughout, and page 1 also carries the boxed DRAFT notice.
+
+A preliminary apparent missing-header observation in batched image output was retracted after isolated verification: page 2 was independently re-rendered to `/tmp/bmsx-language-control-print-review-80de01a3/page-02-isolated.png` and viewed alone, showing the correct header. Original and isolated page-02 PNG SHA256 are both `9a6a984fa3ce718e62d24ebe30684fff63e07926b8578685b86629aa8d0080df`. The actual top 65 raster rows are pixel-identical on all 27 pages (SHA256 of raw cropped pixels: `4bde9f6e7be0d53a5d9e421e1bcd7cce2568b1cda779dafa46ed6e389f9c3afe`); a page-03 header crop was additionally viewed. There is **no missing-header artifact defect**.
+
+## Per-page actual visual coverage
+
+All rows below refer to full-page rasters actually viewed, not text-derived checks. Pages 1, 21 and 22 were independently re-viewed after regeneration; all other final pages are pixel-identical to the originals viewed in full. Header and DRAFT-footer identification above apply to every page.
+
+| PDF page | Full-page visual result |
+| --- | --- |
+| 1 | Original full page viewed, then final changed full page independently viewed: revised opening, boxed draft notice, chapter title, rules, identifier table and both keyword/name boxes readable; no collision or clipping. |
+| 2 | Comments and statement-boundary code boxes readable; literal-expression and number-spelling headings retained with their material; number table intact. |
+| 3 | Short-String example, complete escape table and final short example readable; bottom paragraph clears footer. |
+| 4 | Long-String example and declarations/local-binding examples intact; no stranded lead or rule overlap. |
+| 5 | Recursion bullets, assignment heading/example and augmented-assignment table readable; full paragraphs retained. |
+| 6 | Function/method/anonymous-function listings readable; startup heading has substantive prose; bottom prose clears footer. |
+| 7 | Call table and vararg prose readable; both Return-statement leads remain with their respective short listings. |
+| 8 | Both return-rule examples remain with their explanatory leads; access table and constructor listing intact. |
+| 9 | Operator table readable; control-flow/conditional headings and conditional listing remain together; bottom prose clears footer. |
+| 10 | While/repeat/numeric-for listings and selector table intact; paragraphs and footer separated. |
+| 11 | Generic-for heading, form, iterator-call box and bullets readable; final complete one-line paragraph not clipped. |
+| 12 | Blocks/break and goto examples readable; label/goto lead remains with listing; prose and footer separated. |
+| 13 | Interrupt box, module-header table, entry-header box and path table intact; no collision. |
+| 14 | Import and initialization sections readable; all four short code boxes stay with their leads; footer clear. |
+| 15 | Ordinary-export code and result table intact; exported-object example remains with its lead. |
+| 16 | Const-module examples and declaration-comparison table readable; no stranded headings or bottom collision. |
+| 17 | Static-function import example, named-BIOS table and import listing readable, including long lines. |
+| 18 | Installed-environment sections, getglobal/setglobal table and installed-name bullets readable and well separated. |
+| 19 | Installed-library table, captured-dependency bullets and fresh-boot paragraphs readable; footer clear. |
+| 20 | Runtime-compilation and complete-program introductions readable; results.lua heading retained with full result-storage listing. |
+| 21 | Original full page viewed, then final changed full page independently viewed: four module headings/listings readable; page now ends after complete nil-export listing. Ordinary bottom whitespace is not a defect. |
+| 22 | Original full page viewed, then final changed full page independently viewed: Entry module heading, both lead paragraphs and entire unbroken listing now together; no clipping or footer collision. Original issue closed. |
+| 23 | Observation output box and explanatory table intact; numeric-loop program introduction readable. Ordinary bottom whitespace is not a defect. |
+| 24 | Result-storage listing intact; three-part assembly instruction readable; named Entry part 1 is complete and unbroken. |
+| 25 | Named Entry parts 2 and 3 each complete with their own headings; no arbitrary split or clipping. |
+| 26 | Numeric-loop output/table readable; generic-iteration introduction and full result-storage listing intact, clear of footer. |
+| 27 | Iterator-entry listing, observations heading/output and final table readable; bottom table clears draft footer and page number. |
+
+## Approval boundary
+
+This is only an actual-PDF print-layout review of the identified artifact. It is not source/semantic approval, newcomer usability approval, or approval of the whole publication. The final 27-page PDF identified above has passed this finite visual check. Any later regenerated artifact requires its own delta check. Original full-page rasters and the original review are retained for comparison.
+
+---
+
+## Earlier 22-page baseline evidence
+
+# Current BLua source-program PDF layout acceptance
+
 **PASS for the current DRAFT**, SHA-256
 `eb7657707a6a9e2c0c228cd7168bda32a2b9a8f4355d15630fdb1009b938a310`;
 public source `e8f25c7b05be1f97da18694c9a73c4c8017af41cba6b3bc41a6c8c902066c289`.
