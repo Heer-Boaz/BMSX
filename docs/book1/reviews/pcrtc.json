@@ -13,7 +13,7 @@
 			"open": []
 		},
 		"visibility": {
-			"resolution": "Section 2.6 separates immediate programmed-word readback, the 22-word latch on VBlank entry before the system VBlank IRQ request, immediate beam restart on changed timing writes, and reset visibility. Separate writes can straddle the latch.",
+			"resolution": "Section 2.6 separates immediate programmed-word readback, the 22-word latch on VBlank entry before the system VBlank IRQ request, immediate beam restart on changed timing writes, and reset visibility. Separate writes can straddle the latch. The complete source/window program distinguishes programmed-word snapshots, fresh-after-write VBlank callback changes and separately captured output; no atomic multiword or universal timing guarantee is inferred.",
 			"open": []
 		},
 		"timing": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Section 3 supplies ordered raw-word source/window and mask/acknowledge/unmask examples with explicit starting assumptions, derived values, latch visibility, output alpha, and the HSINT race. Hardware cautions are bounded by the sourced contracts.",
+			"resolution": "Section 3 supplies ordered raw-word source/window and mask/acknowledge/unmask examples with explicit starting assumptions, derived values, latch visibility, output alpha, and the HSINT race. Hardware cautions are bounded by the sourced contracts. Section5 now supplies a complete154-line BLua/BIOS cartridge, exact raw stage words and source probes, and three actual output plates isolating source-origin versus output-window movement. Ordinary guest, independent source/image and byte-exact fresh-reader checks pass within the controlled ownership scope.",
 			"open": []
 		}
 	},

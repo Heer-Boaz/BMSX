@@ -80,14 +80,15 @@ The concrete writing/observation assignments are:
   useful but do not demonstrate these effects. Current public cue/projection
   paragraphs and paired arithmetic owners supply the facts; captures still
   require a controlled program and independent image checks.
-- **PCRTC source versus destination:** capture a fixed 256×192 circuit-2 canvas
-  and a 128×96 circuit-1 cutout in three states: source(0,0)/destination(64,48),
-  source(32,16)/same destination, then same source/destination(96,48). This keeps
-  source cropping distinct from output-window movement and avoids a single
-  circuit's origin being cropped back to output(0,0). Existing geometry and
-  VBlank visibility rules apply; raw words remain unexecuted recipe inputs,
-  not accepted screenshots. A controlled PMODE coefficient/alpha contrast is
-  a distinct subsequent plate, with the parallel backend work left alone.
+- **PCRTC source versus destination — completed finite lesson:** the
+  [complete154-line cartridge and three actual output plates](../book1/pcrtc.md#pcrtc-source-and-window)
+  now show a fixed256×192 circuit-2 canvas and128×96 circuit-1 cutout: source(0,0)/
+  destination(64,48), source(32,16)/same destination, then same source/destination
+  (96,48). Fresh paired-owner/source/image checks, ordinary guest/captures, all
+  RGB pixels against the authored scene, byte-exact fresh-reader reconstruction
+  and final actual-print inspection pass. This closes that isolation lesson,
+  not every display/PMODE scenario. A controlled coefficient/alpha contrast
+  remains a distinct next plate; parallel backend work was left alone.
 - **PCRTC unequal magnification:** extract the consuming software sampler and
   its mirror before adding an exact nonzero-phase sample-progression formula.
   The current PCRTC owner exposes phase/step/magnification fields, but that
@@ -117,7 +118,7 @@ Already recognizable rather than merely implicit:
 - Formats/addressing: `145–273` gives sample packing, zero-format results and the complete page/block/linear layout families. Sharing: `22–25` says both circuits share one local memory. `81–85` expressly does not invent an electrical arbitration/fetch/bandwidth contract.
 - Frozen basis: `facts/pcrtc.md:148–252,308–365,952–1028`.
 
-Concrete next paragraph/figure task: **observed display effect**, not another register table. Add a captured before/after for a sourced window/source-origin or PMODE change alongside the existing source and output coordinate explanation (`89–127`, `275–329`). State the settings and VBlank visibility condition. The frozen sheet has programming inputs (`540–669`) but does not supply an existing finished cart/capture for that contrast. A new bounded source/execution task is needed before claiming an observed result. No missing electrical number was established by this inventory.
+The originally missing window/source-origin output contrast is completed by the later full cartridge and three actual plates recorded above; its original frozen inputs are no longer mistaken for execution evidence. The next distinct figure task is a controlled **PMODE coefficient/alpha** contrast. Source-coordinate progression at unequal magnification also remains a separate sourced paragraph. No missing electrical number was established by the bounded inventory.
 
 **Bounded continuation:** the Memory chapter now supplies a complete ordinary
 two-surface cartridge, changing only framebuffer base for its two switches.

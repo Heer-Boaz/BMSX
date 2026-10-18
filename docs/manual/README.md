@@ -354,6 +354,10 @@ a source-accurate register reference as a complete technical specification.
   generated “expected” pictures must not stand in for observed result images.
   The bounded GEO docking scene now has five accepted actual plates and a
   complete executable teaching route; other contrasts remain on the inventory.
+  The [PCRTC source/window contrast](../book1/pcrtc.md#pcrtc-source-and-window)
+  now has three real controlled output plates and complete executed BLua code,
+  with source/reader/image and actual-print checks. This closes one lesson,
+  not the remaining PMODE, unequal-sampling or GTE contrasts.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.

@@ -259,7 +259,7 @@ test('reviewed PCRTC uses the shared publisher with its hardware coverage closed
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-pcrtc-preview-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const output = await renderChapter(chapter, 'preview', directory);
-	assert.deepEqual(output.layout, { figures: 3, registerEntries: 13, errors: [] });
+	assert.deepEqual(output.layout, { figures: 6, registerEntries: 13, errors: [] });
 
 	// Inspect the browser's actual font use, not merely computed CSS family names.
 	const browser = await chromium.launch();

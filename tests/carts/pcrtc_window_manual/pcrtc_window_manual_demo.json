@@ -1,0 +1,5 @@
+[
+	{ "frame": 1, "capture": true, "description": "A: source(0,0), destination(64,48)" },
+	{ "frame": 4, "capture": true, "description": "B: source(32,16), destination(64,48)" },
+	{ "frame": 7, "capture": true, "description": "C: source(32,16), destination(96,48)" }
+]

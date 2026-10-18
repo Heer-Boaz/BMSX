@@ -129,3 +129,15 @@ no source mismatch or unsupported claim. Evidence:
 Section 3.1 also links the complete shared-storage cartridge and actual output
 in the Memory chapter; it adds no register or behavior claim. Publication still
 requires the current changed-page print check, not the earlier page-9 proof.
+
+## Actual source-origin versus window-position program — 2026-10-18
+
+The [bounded source, actual-output, execution and fresh-reader review](pcrtc-window-source.md)
+accepts the new154-line BLua cartridge and three unchanged256×192 output
+plates. Separate live paired-owner checks cover the program and entire new
+public section. Ordinary guest assertions, independently inspected captures,
+full RGB scene comparison and byte-exact public reconstruction supply distinct
+evidence. Source pixels, signal placement, output coordinates, programmed
+readback and VBlank-latched publication remain separate. No native/accelerated
+backend parity or sample-alpha inference from the opaque PNG is claimed.
+The final actual-PDF review is separately recorded in pcrtc-print.md.

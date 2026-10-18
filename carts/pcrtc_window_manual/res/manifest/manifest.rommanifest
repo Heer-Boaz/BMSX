@@ -1,0 +1,3 @@
+title: PCRTC Source and Window Manual Example
+hardware:
+    - type: rom

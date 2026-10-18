@@ -1030,3 +1030,10 @@ change the previously sourced beam, sampling, event or register contracts.
   This is per actual instruction, not an automatic block copy or a single
   contiguous22-word PCRTC update across the intervening device address gap.
   These charges do not establish electrical bus timing or sustained bandwidth.
+
+## Actual source-origin versus window-position contrast
+
+The separate [window programming fact sheet](pcrtc-window.md) supplies the
+paired geometry/latch facts, raw A/B/C settings and actual ordinary cartridge
+and RGB-output observations for the new complete example. It does not alter
+the register/reset, local-memory packing or timing facts above.
