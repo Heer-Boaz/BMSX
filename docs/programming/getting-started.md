@@ -1065,3 +1065,42 @@ second elsewhere in local memory. Displayed GX16 RGB differs from retained GTE
 eight-bit results; compare the calculation and display tables rather than
 replacing one with the other. This route was checked in the working checkout,
 not on every OS or a fresh SDK installation.
+
+## Build and inspect GTE near-plane clipping
+
+Use the complete [near-plane image program](../book1/gte.md#gte-near-plane-output).
+Put its two modules in `carts/gte_clip_manual/cart.lua` and
+`carts/gte_clip_manual/results.lua`, and its manifest in
+`carts/gte_clip_manual/res/manifest/manifest.rommanifest`. Keep the supplied
+assertion and timeline in `tests/carts/gte_clip_manual/` before the debug build.
+No earlier example cartridge is needed. With the [checkout prerequisites](#prerequisites),
+run from the repository root:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- gte_clip_manual --debug
+npm run headless:test -- gte_clip_manual tests/carts/gte_clip_manual/gte_clip_manual_assert.lua
+npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/gte_clip_manual/gte_clip_manual_demo.json gte_clip_manual
+```
+
+The build exports `dist/gte_clip_manual.debug.rom` and its matching
+`dist/system/bmsx-bios.debug.rom`. The supplied case reports:
+
+```text
+[test] near_plane_geometry_and_display: passed
+```
+
+It checks the constructed raw D/B/C/E records, every retained SXY/SZ/FLAG/IR0
+row, nominal RTPT CYCLES, separately saved NCLIP areas/flags, raw image probes,
+firmware exclusion and both fresh VBlank observations. The last command
+separately runs the ordinary ROM and saves two native 256×192 captures under
+`tests/carts/gte_clip_manual/screenshots/`: `frame_00001.png` shows the unchanged
+ABC triangle; `frame_00004.png` shows the constructed DBC/DCE trapezoid.
+
+One setup supplies both pictures. The first remains selected while the second
+is drawn into a separate raw surface, and neither is subsequently reused.
+Projection FLAG does not automatically remove geometry; the example deliberately
+submits ABC as well as the clipped triangles. The selected frame numbers are
+observation checkpoints, not fixed hardware latency. Source numeric coordinates,
+raw typed transfer records and displayed GX16 color are distinct. This route
+was checked in the working checkout, not on every OS or a fresh SDK installation.

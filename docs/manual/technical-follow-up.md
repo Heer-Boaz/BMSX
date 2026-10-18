@@ -73,7 +73,7 @@ The concrete writing/observation assignments are:
   guest, independent reader and actual-print evidence are recorded in the GPU
   reviews. This closes that finite route, not every GPU transport scenario,
   physical bandwidth or graphics-illustration task.
-- **GTE depth cue and material — completed finite lessons:** the
+- **GTE depth cue, material and near plane — completed finite lessons:** the
   [two-stage program](../book1/gte.md#gte-depth-cue-output) now supplies 250
   complete BLua source lines, actual RTPS/NCDS and NCS/NCCS result/flag tables
   and two ordinary 256×192 output plates. Equal screen-space shapes isolate
@@ -84,8 +84,11 @@ The concrete writing/observation assignments are:
   distinct. Independent paired-owner/source and all-pixel image checks, fresh
   public reconstruction, executed supplied-checkout build route and actual-PDF
   evidence are retained in the cue/material reviews. Supplied near-plane
-  intersections remain a separate next contrast; these lessons do not close
-  the broader graphics-output inventory.
+  intersections are now also demonstrated by the separate
+  [206-line near-plane program](../book1/gte.md#gte-near-plane-output): actual ABC
+  versus DBC/DCE images, explicit numeric intersection construction and raw GTE
+  transfer records, retained RTPT/NCLIP state and independent all-pixel checks.
+  These close finite lessons, not the broader graphics-output inventory.
 - **PCRTC source versus destination — completed finite lesson:** the
   [complete154-line cartridge and three actual output plates](../book1/pcrtc.md#pcrtc-source-and-window)
   now show a fixed256×192 circuit-2 canvas and128×96 circuit-1 cutout: source(0,0)/

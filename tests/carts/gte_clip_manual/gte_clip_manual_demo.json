@@ -1,0 +1,4 @@
+[
+	{ "frame": 1, "capture": true, "description": "Original ABC projection; no automatic near-plane rejection" },
+	{ "frame": 4, "capture": true, "description": "Cartridge-constructed DBC and DCE retain Z >= 256" }
+]

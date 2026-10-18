@@ -363,7 +363,11 @@ a source-accurate register reference as a complete technical specification.
   executed program. The same cartridge now adds an actual
   [NCS reference and NCCS material comparison](../book1/gte.md#gte-material-output),
   with one shared setup, separate non-reused surfaces, full result/display tables
-  and independently checked output; near-plane cases remain. The separate
+  and independently checked output. A separate
+  [near-plane lesson](../book1/gte.md#gte-near-plane-output) now provides an actual
+  uncut triangle and constructed clipped trapezoid, complete genuine BLua source
+  and the signed-numeric/raw-transfer distinction; these close finite lessons,
+  not the full graphics inventory. The separate
   [horizontal-sampling lesson](../book1/pcrtc.md#pcrtc-horizontal-sampling)
   explains unequal step/magnification and first-pixel phase with a complete
   91-line BLua program, exact eight-sample table and actual output strip;

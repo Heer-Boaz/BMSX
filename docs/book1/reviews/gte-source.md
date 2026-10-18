@@ -227,3 +227,16 @@ public build route pass. Both actual pictures are copied unmodified.
 This is a finite source/image/reader acceptance, not whole-manual, portable
 PDF navigation, physical timing or backend-matrix approval. Print evidence is
 separate in [gte-print.md](gte-print.md); near-plane imagery remains open.
+
+## Cartridge-defined near-plane images — 2026-10-18
+
+The [bounded near-plane review](gte-clip-source.md) supplies actual uncut ABC
+and cartridge-constructed DBC/DCE images beside one complete206-line BLua
+program. Exact integer intersections isolate the topology change without a
+fractional rounding decision; the earlier rounded construction remains useful
+and unchanged. The new source explicitly distinguishes signed numeric geometry
+from raw `i16` transfer fields, retained projection FLAG from NCLIP's new FLAG,
+and calculated area from automatic rejection. Paired owners, actual mapped
+readback, ordinary guest/capture and both all-pixel image checks agree.
+Independent source/public-reader/print evidence and remaining scope limits are
+recorded separately; this finite illustration is not whole-console acceptance.

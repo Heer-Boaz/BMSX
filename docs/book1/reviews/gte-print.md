@@ -284,3 +284,50 @@ Evidence: `/tmp/bmsx-gte-material-published-identity.json`.
 The19 manual tests pass; their unchanged PCRTC republication also matches all32
 accepted sampling-proof rasters exactly. No stale preview replaces this current
 publication. `git diff --check` passes.
+
+## Near-plane output: current 139-page proof — 2026-10-18
+
+This section supersedes earlier current artifact/count statements. The ordinary
+publication-mode proof `/tmp/bmsx-gte-clip-proof/gte.pdf` has139 pages, ten
+figures,13 register groups and no mechanical layout errors. SHA-256:
+`70612494c2c94a46c216c7353d38ed9aa05e2a2abf8d83f507f5b30a94e8cf6a`.
+Engine remains Chromium153.0.8010.12, Nodev22.23.1, Linuxx64.
+
+Every actual page is accounted for in full decoded RGBA bytes and dimensions:
+
+- Pages1–130 exactly match the accepted132-page material publication,
+  SHA256 `fb9a3eca6675f463d95bf8abb128cca5539ae6bc3759650a927215149f41eca0`.
+- Root individually viewed full ORIGINAL-detail131–134: previous material
+  continuation/manifest and new heading, all near-plane vertex/FLAG/area tables
+  and explanation, both actual pictures with their geometry caption, full
+  results module, mapped ports and transform/projection declarations. Everything
+  is complete, legible, bounded and separated without clipping or overlap.
+- A fresh independent print-only reviewer individually viewed135–139: setup,
+  numeric construction, continued stage/project/submit/read/publish blocks,
+  full manifest and reciprocal appendix. No concrete print defect was found.
+  Its per-page report is `/tmp/bmsx-gte-clip-print-tail.md`.
+- Apparent viewer omissions of running labels and title letters are not raster
+  defects. Actual decoded header/footer bands are identical across135–139;
+  the independently examined136 title contains its complete initial letters.
+
+Raster identity evidence is `/tmp/bmsx-gte-clip-print/identity.json`. No source-
+identity shortcut, alpha-only bounding box, contact sheet or clean receipt
+substitutes for individual viewing of the changed pages. No font/CSS/publisher,
+smaller-type workaround, new helper or layout gate was needed. The existing
+reference fixture now expects10actual figures rather than8; all19 manual tests
+pass. Source/execution/image/reader evidence is separate in
+[gte-clip-source.md](gte-clip-source.md). NAV01 and whole-series acceptance remain.
+
+### Current canonical verification
+
+Ordinary `manual:check -- gte` and `manual:publish -- gte` pass. Every one of
+139 canonical pages equals the accepted proof in full decoded RGBA bytes and
+dimensions. Canonical SHA-256:
+`cd99150c94a8ff86e08f604d780784cfc6d7575458c1172e719e52401e45ca0e`.
+Public-source SHA-256:
+`ae00e42539c073e1c39e203451b6631dea657549d8b2b88d56f332379993e61d`.
+Evidence `/tmp/bmsx-gte-clip-published-identity.json` also verifies all32 current
+PCRTC pages against their accepted sampling proof after the19 manual tests
+republished that unchanged chapter. This does not refresh stale previews or
+close portable PDF/SDK delivery. Root additionally viewed136 independently:
+its full title and running labels are visibly present. `git diff --check` passes.
