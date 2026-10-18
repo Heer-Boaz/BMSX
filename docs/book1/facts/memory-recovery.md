@@ -61,3 +61,18 @@ Evidence: `/tmp/bmsx-memory-{frame-repair,fault-restart}-facts-current.md`;
 `/tmp/bmsx-memory-recovery-browser-{console.log,menu.png,fit.png,repair.png,cont.png}`.
 Scope excludes native/all-input/other-browser/fresh-installation proof, arbitrary
 scope availability and cross-device recovery. Named helper API BH01 is unrelated.
+
+## FSEL01: physical-frame and inline-scope selection
+
+| Fact | Owning source lines |
+|---|---|
+| `INDEX` selects a retained physical frame; `DEPTH` selects a source scope inside it. Depth zero is the physical function; positive depth follows the outer-to-inner inline callees. Lexical blocks do not add depths. | `toolchain/ts/rompack/blua32_diagnostic_scopes.ts:65-88,109-117,183-190`; `ide/runtime/stack_trace.ts:95-136` |
+| Source-scope availability depends on the selected PC and installed symbols; individual bindings must also be live and mutable for assignment. An ancestor may resolve at its pending child's call site rather than its saved PC. | `machine/bios/debug/frame.lua:17-34,55-64`; `machine/bios/debug/scopes.lua:35-100`; `machine/bios/compiler/semantic.lua:168-179,267-285` |
+| `FRAMES` takes no arguments, lists physical indices highest first and prints three eight-digit uppercase hexadecimal fields without prefixes. It does not enumerate inline source names or depths. Both `LUA --FRAME` selectors parse decimal by default or hexadecimal with `0x`/`0X`. | `machine/bios/shell/commands.lua:260-279,312-322,526-549,597-604,670-691` |
+| The visible command registry has no scope-enumeration command; `HELP LUA` prints usage and a description. Accepting a known pair does not provide arbitrary source-scope discovery. Frame identities are stop-specific. | `machine/bios/shell/commands.lua:68-78,795-809`; `ide/runtime/stack_trace.ts:69-73` |
+
+The unchanged normal recovery scenario passes ten assertions. A temporary copy
+with keyboard-entered `HELP LUA` before `FRAMES` passes twelve; it observes the
+quoted usage/header, physical index1/depth0 repair and the same recovered words.
+This does not exercise arbitrary inline-depth discovery or a real index10.
+Logs: `/tmp/bmsx-frame-selection-{help,original}-keyboard.log`.

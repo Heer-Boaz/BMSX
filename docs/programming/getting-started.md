@@ -1354,6 +1354,26 @@ The old monitor image can remain visible after `CONT`; use the diagnostic result
 
 `REBOOT` requests a fresh BIOS/system startup, not saved-EPC continuation. The unchanged cartridge starts with its bad initial pointer again; restarting is not repairing it.
 
+<a id="physical-frames-and-inline-scopes"></a>
+### Physical frames and inline scopes
+
+`LUA --FRAME INDEX DEPTH <SOURCE>` selects a physical frame and a source scope within it. They are independent selectors:
+
+| Selector | Meaning |
+| --- | --- |
+| `INDEX` | A retained physical frame from the current stop. |
+| `DEPTH` | `0` selects that physical function's own scope; positive depth `d` selects the `d`th callee in its outer-to-inner inline chain. |
+
+Inlining can preserve a source function's scope without creating another physical frame. A lexical block does not add a depth, and available scopes depend on the selected PC: not every depth is available.
+
+`FRAMES` takes no arguments and lists retained physical frames, highest index first; index `0` is the outer end. Its header is `INDEX    FUNCTION PC (HEX; DEPTH 0)`. Each row shows the index, function-record address and saved PC as eight uppercase hexadecimal digits without `0x`. The header is not an expanded source backtrace or a promise that every row resolves at depth `0`.
+
+Both selectors default to decimal and accept `0x` or `0X` for hexadecimal. For example, a displayed index `0000000A` would be entered as `0x0000000A` or decimal `10`; this illustrates formatting, not an actual row from the supplied cart.
+
+The saved PC is not always the scope-lookup point: an older ancestor can resolve at its child's call-site PC while that child is pending. Choose frame identities from the current stop; do not reuse them as the same identities after execution.
+
+Currently, `FRAMES` does not expose inline names or depth choices, and `HELP LUA` supplies usage, not scope discovery. The visible BIOS CLI accepts an already-known pair but cannot reveal arbitrary fault-source pairs. The recovery lesson's `0x1 0` pair remains valid for its supplied example, not universally. This is a current tooling limitation, not a permanent hardware constraint. Even the correct pair still requires the installed symbols and live, mutable binding discussed above for assignment.
+
 <a id="read-cp0-during-an-irq"></a>
 ## Read CP0 during an IRQ
 

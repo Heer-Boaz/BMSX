@@ -1659,10 +1659,16 @@ was already documented; Memory no longer carries a fictitious handler-install
 obligation. Remaining real hardware/recovery and whole-console gaps stay open.
 
 **FSEL01 — concrete debugging-companion gap:** the public-only route review
-found that another cartridge's physical frame and inline-depth selection is
-not yet taught. The supplied `0x00000001 0` example is not a general selector.
-Extract the actual producer/monitor scope semantics and available selection
-route before writing that subsection; do not invent a command, promise arbitrary
-optimized-local availability or turn a missing tool capability into a contract.
-Initial evidence: `/tmp/bmsx-memory-supervisor-public-gap-current.md`.
+found that the supplied `0x00000001 0` pair is not a general selector. The
+[companion clarification](../programming/getting-started.md#physical-frames-and-inline-scopes)
+now teaches physical index versus inline depth, PC-dependent scopes and numeric
+syntax. Independent actual-source and public-reader reviews pass; keyboard-only
+HELP/FRAMES/repair/CONT execution passes twelve assertions, with the unchanged
+maintained scenario separately passing ten. See [the source record](../book1/reviews/memory-source.md).
+
+**Still open:** the visible BIOS CLI accepts an already-known pair but cannot
+enumerate inline source names/depths or discover an arbitrary fault-source pair.
+This is a current tooling gap, not a hardware constraint or a documentation-only
+closure. No command, guessed depth, optimization workaround or arbitrary-local
+repair guarantee is invented. No runtime implementation is inferred here.
 BH01's numerical API hold and general-Lua deferral are unchanged.

@@ -706,3 +706,28 @@ longer requires an invented installation recipe. Multiple-owner graphics,
 coordinated recovery, other instruction-fault classes and broader development
 workflow remain open. Its concrete new frame/inline-depth selection question
 is retained as FSEL01, not silently closed by the supplied sample index.
+
+## Physical frames and inline scopes — companion clarification, 2026-10-18
+
+The companion now explains the independent selectors, PC-dependent inline
+scopes, hexadecimal display versus decimal-default input and stop-specific
+identity. A facts-only author used the source extraction retained in
+[the recovery facts](../facts/memory-recovery.md). An independent actual-owner
+review and a separate public-only reader both give bounded PASS:
+`/tmp/bmsx-frame-selection-final-source-review.md` and
+`/tmp/bmsx-frame-selection-public-reader-current.md`.
+
+Root rebuilt the unchanged recovery cartridge and executed keyboard-only
+`HELP LUA`, `FRAMES`, assignment and `CONT`: twelve assertions pass. The
+unchanged maintained recovery scenario separately passes ten. Its figure
+remains byte-identical. No hardware chapter, PDF, runtime, compiler, BIOS,
+publishing mechanism or maintained test changed. Companion source SHA256:
+`22d30f9d2b99e263a3f7f4322e714298c2c890274b6f76a26a47aef957f92bd3`.
+Production reference was LLDB's
+[physical and inline frame construction](https://github.com/llvm/llvm-project/blob/main/lldb/source/Target/StackFrameList.cpp),
+ownership distinction only; no foreign behavior was supplied as a BMSX fact.
+
+FSEL01's semantic explanation is complete; arbitrary source-scope discovery
+remains a concrete tooling gap. Neither a guessed depth, an optimization-level
+workaround nor a private helper is offered as a public route. This does not
+close the remaining hardware contracts or whole-console reader acceptance.
