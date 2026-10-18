@@ -774,3 +774,18 @@ This is editorial input, not chapter prose. Internal retained-command/render-ser
 The mirrored leaves/owners above define storage capacity, word packing, command/FIFO boundaries, request/ready predicates, installed CPU frequency, command-tick conversion, local-copy timing charge and upload/read command scheduling charge. They do **not** give an independent electrical VRAM-bus oscillator, pin width/protocol, sustained VRAM read/write bandwidth rating, or per-pixel fixed delivery deadline for GPU upload/readback. Do not invent one by dividing VRAM image bytes by the1-tick scheduling charge. DMA transport throughput and source-region setup/word charges must come from the DMA owner extraction, not from GPU local storage or renderer execution speed.
 
 No tests/runtime edits were needed or made for this factual slice. Numeric address constants were evaluated live; no throughput measurement is claimed.
+
+
+## Cartridge-selector onramp correction — 2026-10-18
+
+Selectors7/8 supply socket0 and9/10 socket1 independently for the endpoint
+using each field; service derives those strobes from captured CONTROL. Other
+selectors supply no override and cartridge access uses live SELECT. This is
+socket routing, not selection of the endpoint's byte address or card protocol.
+Sources: `machine/ts/machine/devices/dma/controller.ts:218–232,463–470,504–515`;
+`machine/cpp/machine/devices/dma/controller.cpp:148–162,387–394,429–440`;
+`machine/ts/machine/devices/cartridge/controller.ts:80–84,163–165,178–182,232–234`;
+`machine/cpp/machine/devices/cartridge/controller.h:29–34,52–54,64–69`.
+The public DMA paragraph's contrary socket-denial was removed; the existing
+Book III **DMA between sockets** section supplies exact routing/lifetime,
+card-RAM/mailbox pricing and a complete program without duplicating it here.

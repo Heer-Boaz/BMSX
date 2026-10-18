@@ -230,3 +230,20 @@ pass. No runtime, BIOS, cartlib, compiler, cart, runner, publisher or stylesheet
 was changed. These checks do not turn scheduled charge rates into electrical
 or destination-completion ratings, and do not close the handbook-wide audit or
 actual graphics-illustration backlog.
+
+
+## Cartridge-selector wording correction — 2026-10-18
+
+The current paired-owner technical inventory found one false local sentence:
+cartridge request names were said not to specify a socket. The controller
+actually derives independent socket strobes from the captured endpoint request
+fields. The existing Book III contract already documents this and the live
+SELECT alternative; no new protocol or transfer-rate lesson is missing.
+Root removed the denial and supplied the exact printed title/subsection and
+public link. Independent actual-source and fresh public-only reader checks
+accept the final correction. Reports: `/tmp/bmsx-dma-technical-coverage-current.md`,
+`/tmp/bmsx-dma-socket-onramp-facts-current.md`,
+`/tmp/bmsx-dma-selector-public-reader.md`. All24 existing TS DMA tests and the
+current native DMA suite pass; native build needs no changes. No new code,
+test/harness/publisher or duplicate card-program example was added, and no fresh
+full-cartridge execution or whole-machine acceptance follows from these tests.

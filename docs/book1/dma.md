@@ -153,8 +153,8 @@ independently; their meanings are not reversed when used on the other side.
 </div>
 
 FORCE is always asserted and DISABLED is never asserted. Do not equate the
-unnamed encodings with either one. Cartridge request names do not specify a
-socket or card protocol; those devices belong to Book III.
+unnamed encodings with either one. For cartridge socket selection and card
+protocols, see [Book III: Cartridge sockets and mapped card devices — DMA between sockets](../book3/cartridge.md#dma-between-sockets).
 
 ### STATUS and TRIGGER
 

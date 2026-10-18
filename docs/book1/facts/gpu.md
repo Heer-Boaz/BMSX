@@ -826,3 +826,11 @@ The separate [GPU image DMA fact sheet](gpu-dma.md) records the bounded
 RAM→GP0→local-memory→GPUREAD→RAM route, paired owner references, exact
 control/count/tail arithmetic and real ordinary cartridge observations. It does
 not replace the full opcode/pixel/ingress facts above.
+
+
+## Startup image and firmware-owned VRAM
+
+[The bounded startup/reset supplement](gpu-startup.md) separates the patterned
+full-device reset store, GP1/PCRTC stream-reset effects and subsequent BIOS use.
+It also identifies the finite firmware-reservation query and public destination;
+it does not declare every other VRAM coordinate free or define a new command.

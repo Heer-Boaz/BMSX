@@ -156,3 +156,17 @@ No runtime, BIOS, compiler, cartlib, runner or publisher was changed to produce
 this chapter. The broad technical inventory, real graphical-output plates and
 other installed-unit chapters remain scheduled; GEO acceptance does not finish
 Book I or the handbook.
+
+
+## Separate full-domain counter finding — 2026-10-18
+
+The fresh technical inventory confirms existing capacities, formats, opcode
+buffers/limits,640/1323 timing, latch/IRQ/fault/reset teaching and both complete
+BLua programs/real hull-and-sprite plates; it did not rerun those cartridges.
+It also exposes [a source-level pair-counter discrepancy](../facts/geo-counter-arithmetic.md)
+for a source-admissible extremely large zero-stride full pass. Reachability and
+terminal low words are derived, not a completed runtime measurement. Existing
+U32 buffer layout and ordinary reviewed examples remain distinct from a
+universal full-count arithmetic/parity claim, which this review does not approve.
+No smaller count limit, protective fallback, normalization or runtime repair
+was invented to hide it. Keep the owner correction as separate engineering work.

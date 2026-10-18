@@ -613,6 +613,8 @@ above except that it preserves GPUREAD and the VRAM Y-extension latch. It does
 not initialize local memory or reset PCRTC. Writing a zero GP1 word is therefore
 not a promise to erase every retained result.
 
+Full-device reset initializes VRAM with a deterministic pattern, not an all-zero clear. GP1(00h) and PCRTC CSR RESET do not perform that initialization; accepted work or an already-consumed partial upload may still affect pixels, without guaranteeing completion of all queued work. Firmware has uploaded its system texture and used the terminal before cartridge entry, so cartridges do not receive untouched reset pixels. Initialize cartridge-owned storage and preserve the finite firmware footprint described in [Memory and program storage — Firmware reservation in VRAM](memory.md#firmware-reservation-in-vram).
+
 Accepted GP1 changes appear immediately in programmed GPU state after due
 command completions have synchronized. Presented display/status/start/range
 and Y-extension values are copied at VBlank presentation instead of on every

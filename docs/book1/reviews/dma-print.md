@@ -79,3 +79,28 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+
+## Cartridge-selector onramp correction — 2026-10-18
+
+Final publish-mode proof: `/tmp/bmsx-dma-selector-proof/dma.pdf`,17pages,
+SHA256 `d1b0e196c61765e95a6b7327e1d64fa03502de1aaab2bc1b4658f8d83a876319`.
+Source SHA256: `eca43deb48ee79ad6fabb991f54a3d02189b3a5088ffb806117532575d20a093`.
+Pages1–3 and7–17 match the previously individually accepted17-page baseline
+9348b608… in complete decoded RGBA bytes and dimensions, including running
+matter. Root individually viewed original final4/5/6: selector/control tables,
+corrected printed Book III title/subsection, paragraphs/continuations, overlap
+example, headings, borders and full running matter fit without clipping,
+collision or isolated table lead. Normal two-line prose continuation5→6 remains
+readable. Record `/tmp/bmsx-dma-selector-print/identity.json`.
+No source/print framework, helper, font, CSS or publisher changed. Source and
+fresh public-reader acceptance are separate in dma-source.md; no new whole-
+program or hardware-rate guarantee is inferred from layout acceptance.
+
+Ordinary DMA check/publication pass. All17 canonical pages equal the accepted
+proof in full decoded RGBA and dimensions, record
+`/tmp/bmsx-dma-selector-published-identity.json`. Canonical SHA256:
+`1b0091883999293fa247b97e2168e320bb1428ee41b6640909af0bd39284d46d`.
+Logs `/tmp/bmsx-dma-selector-manual-{check,publish}.log`; existing manual19test
+regression log `/tmp/bmsx-gpu-startup-manual-tests.log`. No whole-book/SDK or
+portable-navigation approval is implied. `git diff --check` passes.

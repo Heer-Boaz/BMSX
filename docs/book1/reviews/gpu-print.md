@@ -196,3 +196,39 @@ Proof: `/tmp/bmsx-gpu-dma-published-identity.json`. Final source SHA256:
 `7df226ce58166ba1bf799dc0e883b9531a854040f22597b0121a86c1f84ddfad`.
 All19 existing manual-tool tests pass again after publication. `git diff --check`
 is clean. This is the accepted canonical output, not the older preview PDF.
+
+
+## Compact startup and firmware-reservation supplement — 2026-10-18
+
+Final publish-mode proof: `/tmp/bmsx-gpu-startup-proof/gpu.pdf`,80pages,
+SHA256 `e982d48f8368c072921bb70f4a4386747d77e32b202fb8bdbedd86277a54da49`.
+Source SHA256: `e4ffa3bcd6f29b46814093169cf72699324ae96b1b0d4b40d8f38f9039d56117`.
+This accepts the bounded paragraph layout, not all hardware/SDK completeness.
+
+All78 pages1–12 and15–80 equal the previously individually accepted canonical
+baselinecc788b2d… in **complete decoded RGBA bytes and dimensions**, including
+running matter. Root individually viewed original final13/14: reset table and
+new paragraph, printed Memory title/section, GP1 opcode/reset/stream-clear
+references, tables, prose, borders and full running matter fit and remain
+readable. Identity record: `/tmp/bmsx-gpu-startup-print/identity.json`.
+Independent final-page decision is recorded in `/tmp/bmsx-gpu-startup-print-review.md`.
+
+Tentative longer prose and table keep-groups were discarded, not published.
+The facts-only author's compact single paragraph retains all required facts
+without repeating BIOS context; all later pages retain their accepted layout.
+No final font, CSS, publisher, framework, gate, figure or keep-group change.
+Source and public-reader checks are separate in gpu-source.md; actual fresh
+cartridge capture remains byte-identical to the existing public output plate.
+
+Independent final print acceptance explicitly approves original13/14 and carries
+all78 others by exact baseline identity; all discarded-proof findings are
+superseded. The19 existing manual tests, ordinary GPU check and publication pass.
+All80 canonical pages equal the accepted proof in full RGBA and dimensions,
+record `/tmp/bmsx-gpu-startup-published-identity.json`. Canonical SHA256:
+`d45d7702e32fcf87af526026ec56bc6775ccaeafdfa85e17527f7a80b637cd17`.
+The publishing fixture also rewrites PCRTC; all37 complete rasters equal its
+accepted baseline, record `/tmp/bmsx-gpu-startup-pcrtc-identity.json`.
+Current PCRTC SHA256:
+`58c78f6a1d5324ba403478fa6f483a6cabd80b72590bd6c336eceab6c85815b9`.
+APU/GTE/cartridge canonical outputs remain unchanged. Whole-book, SDK and
+portable PDF navigation remain open. `git diff --check` passes.

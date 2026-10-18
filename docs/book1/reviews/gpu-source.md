@@ -249,3 +249,36 @@ execution and fresh public-only byte-exact reconstruction all pass. The 47/44
 cycle values are admitted DMA charges, not whole-program or READY latencies.
 The actual final print acceptance is separately recorded in gpu-print.md.
 No baseline opcode reference, image, runtime or publisher was rewritten.
+
+
+## Full-device startup, stream resets and firmware ownership — 2026-10-18
+
+The bounded [startup facts](../facts/gpu-startup.md) were refreshed from paired
+live GPU/PCRTC/VRAM and shared BIOS owners, then given alone to a separate prose
+author. The independent actual-source reviewer found no unsupported sentence in
+the final compact startup paragraph: patterned full-device reset, GP1/CSR distinction,
+conditional accepted/partial-upload effects, BIOS-before-entry and finite VRAM
+reservation onramp. This is not another whole-GPU/BIOS/backend approval.
+Source review: `/tmp/bmsx-gpu-startup-source-review.md`.
+
+All78 existing TS GPU tests and the current native GPU suite pass, including
+power-on digest/repeatable reset and GP1-preserved work cases. No tests, runtime,
+BIOS, compiler, helper, harness or publisher changed; native build reports no
+work needed. The unchanged complete `gpu_manual` cartridge passes quality
+packing/compilation/linting and the ordinary guest case with counted readback,
+material/mask probes and a fresh capture. That PNG equals the existing public
+plate byte-for-byte (SHA256 `e1b4eed78b1b06fe737ac0e1ab69f6acfd66e3bd015d0e68ce3ee4be2bd124c4`).
+The guest does not trigger a full machine reset or prove physical/native output;
+existing paired owner tests cover the reset distinction separately. Logs:
+`/tmp/bmsx-gpu-startup-{ts-tests,cpp-build,cpp-tests,cart,guest}.log`.
+
+Production-reference study before the edit used PSn00bSDK's GPU common.c
+ResetGraph/DrawSync separation of reset, DMA ownership and completion; none of
+its numbers, APIs or console behavior supplied BMSX facts. Actual print and
+public-reader decisions remain separate from tests and source agreement.
+
+The final public-only check also passes after consolidating both additions into
+that one paragraph at **Reset and display visibility**. It retains every reset,
+conditional-work, prior-firmware and finite-reservation distinction and the
+correctly titled actionable Memory query. Public-reader report:
+`/tmp/bmsx-gpu-startup-public-reader.md`. This is not whole-book/SDK acceptance.

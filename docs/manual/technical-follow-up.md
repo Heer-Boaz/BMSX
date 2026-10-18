@@ -28,6 +28,33 @@ attachment and output-precision questions remain recorded below. The bounded
 GEO docking scene and five real output plates are now accepted; complete
 memory/CPU/system foundations remain open.
 
+## Current technical-inventory routing — 2026-10-18
+
+This is a work index of bounded checks, not twelve whole-unit approvals or a
+new publication gate. Installed numbers already documented are not missing
+merely because a fresh inventory is pending. Physical ratings absent from the
+owners remain specification decisions, not numbers to invent.
+
+| Unit | Latest bounded evidence and next action |
+|---|---|
+| CPU | Fresh full technical inventory still required; retain CPU7 and existing ISA/exception limitations separately. |
+| Memory | Fresh full technical inventory still required; existing reservation/access/lifetime chapters are not absent. |
+| SYSTEM | Fresh full technical inventory still required; existing supervisor banking is already public. |
+| GTE | Existing sourced specification/cost/output lessons remain; the last broad-check attempt did not deliver a final artifact, so do not count it as a fresh inventory approval. |
+| PCRTC | Recent paired capacity/clock/timing/latch check found no new missing numeric paragraph; shared Table-length decisions remain separate. |
+| IRQ | Recent bounded controller check found no new missing quantitative paragraph; it was not a fresh CPU-exception audit. |
+| GPU | Startup pattern versus stream resets and firmware-owned storage are now clarified in one compact paragraph; [bounded source/reader evidence](../book1/reviews/gpu-source.md) is distinct from print. |
+| DMA | Current paired inventory confirms rates/routes/tails/contention; the false socket-selection denial is removed and the existing Book III route is linked. [Correction evidence](../book1/reviews/dma-source.md). |
+| APU | Recent paired quantitative/source-domain check closed actual-ROM extent and selection-lifetime teaching with the unchanged complete program; [bounded review](../book1/reviews/apu-source-binding.md). |
+| GEO | Current paired inventory confirms operations/buffers/formats/rates and existing sprite/hull plates; [large-count counter arithmetic](../book1/facts/geo-counter-arithmetic.md) remains a separate unresolved owner issue, not an invented batch cap. |
+| IMGDEC | Current bounded numeric/stream/batch/DREQ/reset check found no newly missing required paragraph. It did not rerun the full cartridge or approve central CPU/memory access behavior. |
+| INPUT | Current raw resource/Q16/latch/normal-output check found no newly missing capacity/clock paragraph. Full-word output precision and attachment conventions below remain unresolved. |
+
+Current finite audit packets: `/tmp/bmsx-{dma,geo,imgdec,input}-technical-coverage-current.md`.
+These distinguish already-public teaching, actual missing/corrected sentences,
+undefined physical guarantees and unproved execution. Whole-console newcomer,
+remaining foundation inventories, BIOS/SDK/debugging and delivery work stay open.
+
 ## System overview opening — bounded addition, 2026-10-18
 
 The [System overview](../book1/console.md) now precedes the existing Book I
@@ -1513,13 +1540,14 @@ The existing full four-route BLua cartridge is retained, not replaced by another
 small harness or a fictional BIOS API. General Lua exposition remains deferred;
 all BLua extensions, including non-hardware extensions, remain in scope.
 
-The separate GPU check found a still-open startup-state paragraph: full device
-reset initializes a reproducible patterned VRAM store, unlike GP1 reset or the
-PCRTC reset strobe. This is **not** a cartridge-entry pixel guarantee; BIOS
-initialization subsequently uses VRAM. Use [the frozen paired-owner facts](../book1/facts/gpu-startup.md)
-for the next bounded writing assignment. An optional GPU-local link to Memory's
-existing firmware-VRAM reservation contract is an onramp improvement, not a
-newly missing whole-manual reservation. No GPU public prose or runtime changed
-in this source-binding supplement. Do not invent physical MHz or sustained
-rates to fill unsourced electrical specifications. The fresh technical inventory
-of **every** installed unit and whole-console newcomer acceptance remain open.
+The separate GPU check identified a startup-state paragraph, now supplied by
+the [bounded startup supplement](../book1/gpu.md#reset-and-display-visibility):
+full-device patterned VRAM, distinct GP1/CSR effects and prior BIOS use. It does
+not promise untouched pixels at cartridge entry. The same compact paragraph
+links Memory's existing finite firmware reservation/query, rather than adding
+another partial storage contract. [Refreshed paired-owner facts](../book1/facts/gpu-startup.md)
+and independent source/public-reader checks remain separate from actual print.
+The earlier source-binding slice itself changed no GPU prose or runtime.
+Do not invent physical MHz or sustained rates to fill unsourced electrical
+specifications. The remaining foundation inventories and whole-console newcomer
+acceptance remain open; the routing table above identifies the finite next work.

@@ -338,3 +338,12 @@ The separate [scene fact sheet](geo-scene.md) freezes the actual authored drone,
 Q16/F32 job chain, GPU/PCRTC boundary, ordinary execution and unmodified image
 provenance. Its extraction, authorship, independent source/reader/image checks
 and limits are recorded in [the scene review](../reviews/geo-scene-source.md).
+
+
+## Large-count summary arithmetic: separate paired-owner issue
+
+[The bounded counter evidence](geo-counter-arithmetic.md) identifies a reachable
+source-level difference between raw native word counters and unrestricted TS
+increments beyond2^53 pair visits. The complete huge job was not executed.
+This does not change the summary word layout or finite examples; do not add a
+universal wrapping/huge-count parity guarantee until this owner issue is resolved.

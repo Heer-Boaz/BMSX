@@ -29,7 +29,7 @@
 			"open": []
 		},
 		"reset": {
-			"resolution": "Machine/PCRTC reset versus GP1 RESET/FIFO-clear, register defaults/preservations, accepted-versus-queued work, partial upload flush and phase-dependent readback aborts are covered and checked without VRAM-erasure or rollback promises.",
+			"resolution": "Full-device patterned VRAM initialization, GP1/CSR stream-reset effects and BIOS-used cartridge-entry storage remain distinct. Register defaults/preservations, conditional accepted work/partial upload and phase-dependent readback aborts are covered without all-zero-clear, universal queue-completion or rollback promises; the finite firmware reservation is linked.",
 			"open": []
 		},
 		"programming": {
