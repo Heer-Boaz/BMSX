@@ -164,7 +164,7 @@ test('current BIOS and coroutine chapters belong to software, not hardware', asy
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'II').map(([id]) => id),
 		['bios-base', 'bios-table', 'bios-string', 'coroutines']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'I').map(([id]) => id),
-		['cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
+		['console', 'cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
 });
 
 test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {

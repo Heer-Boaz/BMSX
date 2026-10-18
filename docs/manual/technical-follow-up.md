@@ -28,6 +28,29 @@ attachment and output-precision questions remain recorded below. The bounded
 GEO docking scene and five real output plates are now accepted; complete
 memory/CPU/system foundations remain open.
 
+## System overview opening — bounded addition, 2026-10-18
+
+The [System overview](../book1/console.md) now precedes the existing Book I
+chapters. It states installed main/GPU/sample memory versus address windows,
+I/O/GEO/firmware-VRAM reservations and image-dependent statics; system timing,
+qualified DMA/IMGDEC/GEO/APU service quantities; and the graphics/display,
+geometry and audio-source/transfer routes. It links canonical detailed contracts
+rather than inventing a second partial register catalog or a new driver API.
+
+Three facts-only section authors, independent actual paired-owner source audits,
+a source-blind full-overview reader and actual seven-page print inspection
+supply separate evidence in the [merged record](../book1/reviews/console-source.md).
+Two selected-route schematics have independent semantic source and actual-page
+checks; they are not live output captures or electrical wiring diagrams.
+
+The review corrected real span/concurrency/visibility/representation wording;
+no runtime, BIOS, compiler, publisher, harness or new approval machinery was
+added. Existing shared Table-length, CPU7 and BZ01 questions remain open.
+This closes the missing bounded opening orientation assignment, not full
+technical inventory, book navigation, software/environment, SDK/debugging,
+Book III or whole-console newcomer acceptance. Unspecified electrical clocks,
+CPU/fetch wait states and sustained physical rates were not fabricated.
+
 ## What is already explicit, versus what still needs a paragraph
 
 Line ranges describe the inspected baseline, not stable manuscript anchors.

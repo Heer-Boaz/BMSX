@@ -90,8 +90,10 @@ renumber the complete series consistently; do not mix the two schemes.
 | **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. This material is still unwritten; the old provisional Book II label must not silently erase it. |
 | **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
 
-The [current catalog](catalog.json) inventory is **16 entries: twelve in I and
-four in II**. The source-research baseline had all sixteen provisionally in I.
+The [current catalog](catalog.json) inventory is **17 entries: thirteen in I and
+four in II**. The added System overview is an opening orientation, not another
+device or a claim of complete whole-machine programming coverage. The
+source-research baseline had all sixteen provisionally in I.
 The content map is based on public chapter headings, not a fresh semantic audit:
 
 | Current material | Assignment |
@@ -100,7 +102,8 @@ The content map is based on public chapter headings, not a fresh semantic audit:
 | CPU and BLua32 instruction reference | Book I, including the canonical value, arithmetic, call and control foundations. Software readers follow the section-level links below; do not move or duplicate definitions based only on the filename. |
 | Memory and program storage | Book I, including the canonical typed-declaration, startup, address, reservation and ownership foundations. The software route links to these definitions rather than copying partial address/lifetime rules. |
 | BIOS base services, BIOS table library, BIOS String operations, Protected calls and coroutines: four software chapters | Software volume. Keep the factual chapter titles and protected-call material discoverable; do not classify the whole group as hardware. |
-| Global specification summary; complete language/environment coverage; cartridge/expansion reference; full SDK onboarding/debugging | Remaining authored work, not completed books produced by changing labels. Existing unit facts, examples and partial setup instructions do not close these reader routes. |
+| Global specification opening | The [System overview](../book1/console.md) now supplies independently extracted memory/transfer, control and graphics/audio orientation. Its bounded source, figure, print and public-reader checks pass and are recorded separately; its presence does not complete the volume. |
+| Complete language/environment coverage; cartridge/expansion reference; full SDK onboarding/debugging | Remaining authored work, not completed books produced by changing labels. Existing unit facts, examples and partial setup instructions do not close these reader routes. |
 
 CPU and Memory remain coherent canonical references, not pending whole-file
 moves. Their software-facing foundations are intentionally shared by cross-reference.
@@ -128,7 +131,8 @@ Retain that route. A complete Book II source-language guide is still unwritten.
 - [volumes.json](volumes.json) owns each book's title; [catalog.json](catalog.json)
   owns chapter membership. `loadChapter` resolves the title once and the shared
   renderer consumes it in the document and running titles. The four software
-  entries are II; the other twelve remain I. No per-chapter CSS, guessed labels
+  entries are II; the twelve existing machine chapters and new overview are I.
+  No per-chapter CSS, guessed labels
   or compatibility wrappers hide the classification.
 - Keep the existing publisher. Updating the central title/membership data does
   not call for another schema, validation framework, helper layer or review
@@ -137,7 +141,8 @@ Retain that route. A complete Book II source-language guide is still unwritten.
   chapters and inspect the affected pages; old PDF hashes do not approve new
   headers automatically. Classification approval and visual rendering are
   separate from factual accuracy and completeness.
-- The technical overview still needs sourced authorship. Do not introduce
+- The technical overview is authored from bounded current-owner facts.
+  Do not introduce
   physical/electrical claims because another component data sheet has them,
   or present conditional execution budgets as unspecified electrical ratings.
 

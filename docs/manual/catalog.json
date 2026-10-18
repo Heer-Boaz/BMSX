@@ -1,4 +1,11 @@
 {
+	"console": {
+		"book": "I",
+		"label": "CONSOLE",
+		"chapter": "docs/book1/console.md",
+		"facts": "docs/book1/facts/console.md",
+		"review": "docs/book1/reviews/console.json"
+	},
 	"cpu": {
 		"book": "I",
 		"label": "CPU",

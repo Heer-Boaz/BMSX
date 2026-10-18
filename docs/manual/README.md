@@ -7,12 +7,13 @@ baseline**, not a compulsory outline for every unit.
 The working series, adopted after the [reference-booklet review](booklet-structure.md),
 is **Book I — System and Hardware Reference**, **Book II — BLua32 and BIOS
 Reference**, and **Book III — Cartridge and Expansion Reference**. A sourced
-specification/orientation opening part is planned for the hardware volume but
-still needs authorship; an empty separate specifications book is not published.
-The current catalog assigns the four BIOS
-and protected-call/coroutine chapters to II, and the twelve machine/installed-unit
-chapters to I. III reserves the cartridge/socket/card scope; its chapters are not
-yet authored. These assignments do not claim any volume is complete.
+[system overview](../book1/console.md) now opens the hardware volume with
+installed resources, address reservations, data routes and qualified timing;
+an empty separate specifications book is not published.
+The current catalog assigns the four BIOS and protected-call/coroutine chapters
+to II, and the overview plus twelve machine/installed-unit chapters to I.
+III reserves the cartridge/socket/card scope; its chapters are not yet authored.
+These assignments do not claim any volume is complete.
 
 Work on one unit or bounded software interface at a time. Chapter order may
 follow a reference manual's progression from operation to programming and
@@ -292,8 +293,10 @@ a source-accurate register reference as a complete technical specification.
   membership and the shared publisher. CPU/Memory retain their canonical mixed
   machine foundations in I, with the software reader route documented in the
   map. New printed labels are re-reviewed separately; a metadata change does
-  not inherit old PDF approval. The NES-source gap and unfinished book-level
-  orientation/navigation keep this broader checklist item open.
+  not inherit old PDF approval. The new sourced System overview supplies the
+  bounded opening orientation;
+  the NES-source gap and unfinished book-level navigation keep this broader
+  checklist item open.
 
 - [ ] **Actual graphics-output illustrations.** Add real BMSX result images to
   the GTE and other graphics chapters, alongside the explanatory schematics.
