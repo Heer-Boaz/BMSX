@@ -1,5 +1,17 @@
 # SYSTEM actual-page acceptance
 
+## RDB01 hold: unchanged DRAFT layout, 2026-10-18
+
+The new fault-coverage hold changes no public chapter text. Current
+`build/manual/system.preview.pdf` is 13 pages, SHA256
+`2c05ac22b9dbd6ead7b13ae136f68e21a155a9d71efac3976100c50de404c12f`.
+All 13 pages' complete decoded RGBA bytes and dimensions equal the individually
+inspected `7f1ae42b…` preview below; running matter is included. Evidence:
+`/tmp/bmsx-rdb01-system-print/system-identity.json`. This carries layout evidence
+only. RDB01 blocks renewed publication; the older canonical non-DRAFT PDF and
+its successful gate decision are historical, not approval of the newly found
+fault/readback transition. No new print style or publishing rule was added.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/system.pdf`:

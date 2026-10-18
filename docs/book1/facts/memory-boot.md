@@ -118,3 +118,25 @@ frame timing** and **Device boundaries during supervisor service**. Links route
 the reader to those existing contracts; they do not duplicate or reapprove
 every operation in those chapters. GPU marker ordering alone is deliberately
 not promoted to all-queue-idle or rendered/presented-frame evidence here.
+
+## Normal reset-started boot: minimum outstanding work
+
+The following extends HB01 only for uninterrupted ordinary BIOS boot after
+system reset. It is not a complete entry-register image or arbitrary EXEC
+guarantee. The machine reset premise is paired in
+`machine/ts/machine/machine.ts:108-119` and
+`machine/cpp/machine/machine.cpp:51-62`; the reset-startup callers are
+`machine/ts/machine/runtime/runtime.ts:48-65` and
+`machine/cpp/machine/runtime/runtime.cpp:100-116`.
+
+| ID | Fact | Current source lines |
+|---|---|---|
+| HB06 | The final dirty terminal batch appends a GP0 IRQ marker. Its submit waits for DMA completion and that IRQ, then acknowledges GPU and central IRQ. Boot DMA/VBlank callbacks only advance their counters. | `machine/bios/main.lua:99-113`; `machine/bios/tty/terminal.lua:434-438,602-607`; `machine/bios/gpu/commandlist.lua:9-16`; `machine/bios/kernel/dma.lua:16-23`; `machine/bios/kernel/vblank.lua:8-10` |
+| HB07 | DMA0 has no remaining firmware transfer/admitted block after that wait; this boot never programs DMA1. Completion clears the admitted block before DONE/IRQ. Registers need not be reset. | `machine/bios/kernel/dma.lua:4-12,26-34`; `machine/ts/machine/devices/dma/controller.ts:203-208,229-253,355-370`; `machine/cpp/machine/devices/dma/controller.cpp:133-138,159-183,279-294`; reset registerfiles `machine/ts/machine/devices/dma/registers.ts:28-36`, `machine/cpp/machine/devices/dma/registers.cpp:7-9` |
+| HB08 | The final firmware GP0 producer has finished and its marker is a complete executed packet, not partial assembly. Previous command timing precedes that marker. Marker IRQ precedes its own one-tick completion; command retirement is separate. No empty GPU queue or rendered/presented boot-image guarantee follows. | `machine/ts/machine/devices/gx/gpu.ts:1153-1156,1177-1210,1521-1535`; `machine/cpp/machine/devices/gx/gpu.cpp:721-724,745-789,999-1013`; retirement `machine/ts/machine/devices/gx/gpu_command_buffer.ts:384-415`, `machine/cpp/machine/devices/gx/gpu_command_buffer.h:368-398` |
+| HB09 | This reset-started boot leaves no VRAM-to-CPU readback: reset clears it; boot state/terminal commands and the generated system texture upload never start C0. | `machine/ts/machine/devices/gx/gpu.ts:475-485`; `machine/ts/machine/devices/gx/gpu_command_buffer.ts:134-145,210-215`; `machine/cpp/machine/devices/gx/gpu.cpp:66-76`; `machine/cpp/machine/devices/gx/gpu_command_buffer.h:144-153,190-195`; `machine/bios/gpu/gpu.lua:59-107,160-209`; `machine/bios/tty/terminal.lua:494-607`; `scripts/rompacker/rombuilder.ts:819-827`; `toolchain/ts/rompack/gp0_encode.ts:6-12` |
+| HB10 | GEO reset cancels its job; IMGDEC reset clears active/scheduled work, FIFOs and requests. The ordinary boot/callback path starts neither unit, so no firmware jobs remain. | `machine/ts/machine/devices/geometry/controller.ts:237-246`, `machine/cpp/machine/devices/geometry/controller.cpp:125-134`; `machine/ts/machine/devices/imgdec/controller.ts:151-184`, `machine/cpp/machine/devices/imgdec/controller.cpp:56-89`; boot `machine/bios/main.lua:14-23,50-52,105-143` plus HB06 callback bodies |
+| HB11 | Reset empties APU commands/playback slots/sample-transfer work; this boot starts none. This is not an APU clock/output-stop or sample-RAM allocation guarantee. | `machine/ts/machine/devices/audio/controller.ts:124-134`, `machine/cpp/machine/devices/audio/controller.cpp:72-81`; `machine/ts/machine/devices/audio/command_fifo.ts:44-50`, `machine/cpp/machine/devices/audio/command_fifo.cpp:25-31`, `machine/ts/machine/devices/audio/slot_bank.ts:25-29`, `machine/cpp/machine/devices/audio/slot_bank.cpp:9-13`; sample reset via `machine/ts/machine/devices/audio/service_clock.ts:56-62`, `machine/cpp/machine/devices/audio/service_clock.cpp:93-99`, `machine/ts/machine/devices/audio/sample_transfer.ts:54-67,195-199,239-242`, `machine/cpp/machine/devices/audio/sample_transfer.cpp:23-36,173-177,238-241`; ordinary boot/HB06 |
+
+No exact eventual marker-timing word, renderer queue count or already-displayed
+image is inferred. Full extraction: `/tmp/bmsx-bios-handoff-live-work-facts-current.md`.

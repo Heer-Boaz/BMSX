@@ -231,6 +231,22 @@ The BIOS writes zero to the central interrupt mask before handoff. This masks de
 
 Execution handoff also does not release the [Firmware reservation in VRAM](#firmware-reservation-in-vram); see [Handoff is not release](#handoff-is-not-release). Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
 
+<a id="normal-boot-live-work"></a>
+
+#### Firmware work at normal boot handoff
+
+After an ordinary, uninterrupted BIOS boot started by system reset, the cartridge begins with the firmware work listed below complete or absent. The BIOS has finished supplying its final command batch and has reached that batch's GPU completion marker. Its DMA and vertical-blank callbacks do not start further drawing or device jobs. These guarantees describe this normal boot path, not arbitrary entry through `EXEC`.
+
+| Surface | Firmware work at cartridge entry |
+| --- | --- |
+| DMA0 and DMA1 | No outstanding firmware transfer or admitted transfer block. DMA0's final transfer has finished; this boot path never starts DMA1. |
+| GP0 input and readback | No active firmware writer, unfinished firmware packet, or outstanding firmware VRAM-to-CPU readback. |
+| GEO | No outstanding firmware geometry job. |
+| IMGDEC | No outstanding firmware decode, input, or output job. |
+| APU | No queued firmware command, active playback slot, or outstanding sample-transfer batch. This does not imply that the APU clock or output activity has stopped. |
+
+**Queued drawing is separate from an active producer.** The BIOS marker establishes command ordering; it does not guarantee that the GPU queue is empty, that every submitted drawing operation has finished, or that the final boot image has been displayed. Already submitted BIOS drawing can remain pending even though no firmware writer remains. These statements do not specify a universal register image: `EXEC` itself neither resets devices nor drains their work, so entry through another path does not inherit these normal-boot guarantees.
+
 ## Typed byte storage and address views
 
 BLua has typed static storage for data that must have a byte address and a defined layout. A static storage name denotes that storage's address. A typed local view describes how to access bytes at an existing address; it does not allocate another buffer.
@@ -361,8 +377,6 @@ local entry<const>: *monitor_command = &command_registry[command]
 Here `entry` receives the selected record's address, not a copied record. This typed-storage use of `&` does not establish that arbitrary language locals or value slots have exposed physical byte addresses.
 
 ### Element counts, byte sizes and field offsets
-
-These operations answer different questions:
 
 | Operation | Result |
 |---|---|

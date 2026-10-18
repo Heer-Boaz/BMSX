@@ -126,3 +126,17 @@ fault repair, every banked field or whole-console completeness. The separate
 direct-CPU yield/HALT source disagreement is recorded in the technical follow-up;
 its unproved common precedence is not taught or silently repaired here. CPU,
 complete on-console development and Book II remain whole-manual work.
+
+## RDB01: synchronous-fault/readback coverage reopened, 2026-10-18
+
+The previous bounded positive entry/round-trip evidence does not cover unread
+CPU-owned C0 data at synchronous-fault entry. Fresh paired-source inspection
+and an ordinary-ROM consumed/unread comparison identify a liveness defect;
+[the separate record](../facts/system-readback-entry.md) preserves source
+lines, exact observations, source extraction and execution methods.
+
+No public stall contract, cancellation/draining policy or runtime workaround
+is added. The existing phase predicates remain source-checked, but affected
+fault coverage is reopened until the owning completion policy is resolved.
+The old successful publication decision is historical, not current approval
+of that path. Native execution of the reproduction was not performed.

@@ -26,7 +26,9 @@
 		},
 		"faults": {
 			"resolution": "Raw captured cause/EPC/domain and retained BadAddress/LuaReason, delayed publication, common mapped access faults and CONT retry rather than repair.",
-			"open": []
+			"open": [
+				"RDB01: synchronous-fault entry with unread CPU-owned GPU readback has no completion route in the current owners; intended ownership/completion policy remains unresolved. Do not standardize the reproduced stall as hardware behavior."
+			]
 		},
 		"reset": {
 			"resolution": "System-wide reset request consumed at execution boundaries, no all-RAM-clearing promise, local/reset port words and diagnostic queue clearing distinct from ACK and flush.",

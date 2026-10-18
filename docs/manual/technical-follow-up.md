@@ -38,8 +38,8 @@ owners remain specification decisions, not numbers to invent.
 | Unit | Latest bounded evidence and next action |
 |---|---|
 | CPU | Fresh bounded paired inventory confirms existing capacity/value/ISA/cost/admission/exception teaching; all 64 opcode identities and three 64-entry encoding/cost tables agree. No new required paragraph was demonstrated; retain CPU7 and existing limitations separately. |
-| Memory | Fresh bounded inventory confirms existing reservation/access/lifetime teaching. The missing delegated ROM-header layout now has one [authoritative table](../book1/memory.md#rom-header-fields): byte offsets/word endianness, offset versus address and 72/60/96-byte distinctions; [bounded source evidence](../book1/reviews/memory-source.md). |
-| SYSTEM | Fresh bounded paired control/phase/banking/reset/timing/admission check found no new required paragraph. Known yield/HALT precedence remains separate; unchecked arbitrary-state combinations and diagnostic encoder internals are not approved. |
+| Memory | Reservation/access/lifetime and ROM-header teaching now include the [minimum normal-boot live-work handoff](../book1/memory.md#normal-boot-live-work). Fresh reader/source evidence narrows remaining work to the concrete RDB01 transition, FSEL01 discovery gap and final whole-console acceptance; no generic allocator/recovery framework is required. |
+| SYSTEM | The prior paired control/phase/banking/reset/timing check remains bounded. RDB01 now reopens unread CPU-owned readback at synchronous-fault entry; [source and ordinary-ROM evidence](../book1/facts/system-readback-entry.md). Known yield/HALT precedence remains separate; arbitrary-state combinations are not approved. |
 | GTE | Fresh bounded paired capacity/normal-and-PLUS interface/timing inventory found no new required quantitative paragraph; existing arithmetic/program/output lessons remain. No fresh exhaustive arithmetic or execution approval is implied. |
 | PCRTC | Recent paired capacity/clock/timing/latch check found no new missing numeric paragraph; shared Table-length decisions remain separate. |
 | IRQ | Recent bounded controller check found no new missing quantitative paragraph; it was not a fresh CPU-exception audit. |
@@ -462,7 +462,7 @@ restoration contract. PCRTC partial-upload wording now counts assembly-consumed
 retained payload, not merely FIFO-admitted words. See the source/print reports
 for the current acceptance scope; no runtime or publishing changes are included.
 
-**Still open:** complete call/permission/dynamic/string-byte contracts;
+**Open at that stage; superseded by the later bounded continuations:** complete call/permission/dynamic/string-byte contracts;
 global shared-VRAM allocation and supervisor/multiple-reader ownership;
 privileged supervisor/context,
 successful fault recovery and coordinated cancellation/terminal/reset policy;
@@ -1672,3 +1672,46 @@ This is a current tooling gap, not a hardware constraint or a documentation-only
 closure. No command, guessed depth, optimization workaround or arbitrary-local
 repair guarantee is invented. No runtime implementation is inferred here.
 BH01's numerical API hold and general-Lua deferral are unchanged.
+
+## RDB01 — GPU readback versus synchronous-fault entry, 2026-10-18
+
+The fresh Memory lifetime reader identified a concrete transition question,
+not a need for a generic coordinated-recovery framework. The paired owners
+hold the CPU during FAULT quiescence while the GPU fence requires readback
+IDLE; no owner consumes the unread CPU-owned pixels at that boundary.
+
+Actual ordinary BIOS cartridge execution reproduces the gap: a READY 1×1 C0
+readback followed by an unmapped word load remains CPU-held and unpublished
+through 120 runner-frame waits. Consuming GPUREAD before the identical load
+instead reaches ACTIVE and publishes the report by the first subsequent wait.
+The unread repeat agrees. This is TypeScript execution plus paired-source
+evidence, not native execution or an invented hardware timeout.
+
+See [the bounded defect record](../book1/facts/system-readback-entry.md).
+SYSTEM fault coverage is reopened. Resolve the owning completion/ownership
+policy separately; do not turn this software liveness defect into a permanent
+programming hazard or add a runtime workaround from a documentation task.
+
+## Memory lifetime scope after the fresh reader audit — 2026-10-18
+
+The [normal-boot handoff table](../book1/memory.md#normal-boot-live-work) now
+supplies the missing minimum live-work boundary. It states no active BIOS
+DMA/GP0 producer, unfinished firmware packet/readback or boot GEO/IMGDEC/APU
+job while keeping already submitted GPU drawing distinct. Independent actual
+paired-source and public-only reader reviews pass. The final DRAFT's changed
+pages were individually inspected; see [the source](../book1/reviews/memory-source.md)
+and [print records](../book1/reviews/memory-print.md).
+
+The same public-only audit found no named missing hardware operation behind
+the older blanket allocator, all-register-inheritance and coordinated-recovery
+obligations. Existing reservations, multiple live readers, shared VRAM versus
+banked state, nonrollback writes, reset and owning CPU/device references already
+teach those boundaries. Those broad labels are replaced, not silently certified
+by another example. A new hardware gap must identify its absent operation,
+producer and consumer; a general allocator/transaction framework is not inferred.
+
+RDB01 and FSEL01 remain concrete unresolved issues. Final whole-console
+newcomer acceptance is still unproved. BH01 belongs to the held Math interface,
+not an invented requirement to standardize raw helpers in Memory. Relevant
+development/source-loading coverage stays in its owning companion/Book II;
+general Lua-library expansion remains deferred.

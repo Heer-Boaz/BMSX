@@ -731,3 +731,43 @@ FSEL01's semantic explanation is complete; arbitrary source-scope discovery
 remains a concrete tooling gap. Neither a guessed depth, an optimization-level
 workaround nor a private helper is offered as a public route. This does not
 close the remaining hardware contracts or whole-console reader acceptance.
+
+## Minimum firmware live-work handoff — 2026-10-18
+
+A fresh public-only lifetime review identified the missing normal-boot
+live-work boundary, not a universal entry-register image or allocator. The
+new table was written by a separate author using only the frozen extraction,
+now retained as HB06–HB11 in [the boot facts](../facts/memory-boot.md).
+Independent actual-owner and public-only reader reviews accept the finite
+addition: `/tmp/bmsx-normal-boot-handoff-source-review-current.md` and
+`/tmp/bmsx-normal-boot-handoff-public-reader-current.md`.
+
+The completed firmware producer is distinguished from submitted drawing still
+awaiting retirement/presentation. No all-GPU-idle guarantee, reset register
+image, arbitrary EXEC handoff or new runtime behavior is supplied. Production
+reference before the edit was the existing PSn00bSDK GPU common routines,
+separating DMA, drawing and reset; no foreign behavior supplied a BMSX fact.
+
+The same fresh reader found no concrete missing general shared-VRAM allocator,
+all-owner cancellation framework or extra Memory instruction-fault catalogue:
+existing lifetime and owning CPU/device references already supply those
+boundaries. Coverage decisions now name the actual remaining transition and
+discovery gaps instead. This is scope allocation, not approval of every CPU
+fault, BIOS API or development workflow. BH01 remains in Math, general Lua
+expansion stays deferred, and whole-console newcomer acceptance stays open.
+Public-reader evidence: `/tmp/bmsx-memory-lifetime-completeness-current.md`.
+
+RDB01 is a reproduced software liveness defect, not a new public programming
+contract; see [the separate evidence](../facts/system-readback-entry.md).
+The retained recovery program cannot prove a fault path with unread C0 data.
+Memory and SYSTEM coverage therefore remain blocked at that concrete boundary.
+
+All 19 existing fenced listings and five image references remain unchanged.
+Source SHA256: `4779a81b775990e49e3aace1116ade588845df0a8e9e2344942202e6f4458f4e`.
+The final 39-page DRAFT and one resolved pagination finding are recorded in
+[the print review](memory-print.md). No runtime, BIOS, compiler, maintained
+example/test, publisher, stylesheet or helper implementation changed.
+All 19 existing manual tests pass; Memory and SYSTEM checks intentionally
+reject publication for the recorded coverage holds. The test-regenerated
+37-page canonical PCRTC PDF is full-page RGBA/dimensions-identical to its
+accepted baseline; the old 22-page PCRTC preview is a separate stale artifact.

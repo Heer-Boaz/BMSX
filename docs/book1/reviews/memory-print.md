@@ -1,5 +1,25 @@
 # Memory and program storage: DRAFT print inspection
 
+## Normal-boot live-work table — current 2026-10-18 proof
+
+Current `build/manual/memory.preview.pdf`: 39 pages, SHA256
+`6ca207a8eec5f88f4bf6bdee57893d7dd568dd36d36dabaa87c09e052764aefd`.
+Against the accepted `c408113d…` preview, complete decoded RGBA bytes and
+dimensions match on all 30 pages outside 7–15. Root individually viewed the
+new complete table/paragraphs on page7 at ORIGINAL detail. A separate reviewer
+individually viewed originals8–15, then every corrected final page10–15;
+final7–9 are pixel-identical to that first inspected candidate. Full running
+matter is included. Evidence: `/tmp/bmsx-normal-boot-handoff-print-review-current.md`
+and `/tmp/bmsx-normal-boot-handoff-final-baseline/memory-identity.json`.
+
+The first candidate stranded the element-count heading and its generic lead
+before its table on the next page. Removing only the redundant introductory
+sentence lets the existing heading rule keep the complete three-row table
+on page10. Root reopened final10; the separate reviewer accepts final10–15
+with no remaining local finding. No wrapper, CSS, publisher, smaller type or
+forced spacer was added. This is bounded DRAFT readability, not publication:
+RDB01, FSEL01 and final whole-console reader acceptance remain open.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current `build/manual/memory.preview.pdf`: 36 pages, SHA-256
