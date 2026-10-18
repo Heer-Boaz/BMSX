@@ -1,7 +1,7 @@
 # BLua source programs — bounded source and execution acceptance
 
 Current public chapter SHA-256:
-`6823cbd1ecc504b03f2d5c17908617c9688a634b8410bbae65b263effd2e741e`.
+`e4cc1350a40b7a4d5c491efd84cb4bf6c64702f37557ad91b45d1b0ab3b65d69`.
 Initial baseline `fce16b952`, continuation `e43ee94f1`, 2026-10-18.
 **Finite source/claim pass, not a complete
 language/SDK/BIOS or whole-manual publication decision.** The coverage record
@@ -94,8 +94,13 @@ contracts and a stale singular introductory route; the full sourced protocol
 and three separate companion links close both findings on public recheck.
 Its literal numeric concatenation preserves the two inter-chunk blank lines;
 the earlier whitespace-normalized reconstruction was semantically identical.
-The final subsequent source delta only groups the old module-entry lead and
-listing with existing print markup; it changes no technical sentence.
+The subsequent Math call-boundary addition distinguishes the known-call
+written-expression minimum from reached source-function parameter filling.
+The existing `setglobal` example now supplies an explicit second `nil`, rather
+than showing a direct call rejected by that minimum. The independent
+[bounded source audit and SetGlobal addendum](bios-math-elementary-source.md)
+checked the actual descriptor, diagnostic, compiler and paired reached-call
+owners. No compiler, runtime or cartridge-quality rule was changed or evaded.
 
 ## Figures and print
 
@@ -103,9 +108,10 @@ There are no generated figures, screenshots or register bit diagrams in this
 source-language chapter. Its literal/operator/import/global/observation tables
 and code are part of the source-review scope; no synthetic output image is
 presented as captured hardware output. The independent [actual-PDF review](blua-programs-print.md)
-covers all27 final DRAFT pages. Every initial page was actually viewed; all
-three changed final pages were independently viewed again and the other24
-full rasters match exactly. Existing keep-together markup repairs observed
+covers all28 final DRAFT pages. The call-boundary delta has its own independent
+full-page and changed-page evidence: all seven changed final pages were viewed
+again, and the other21 full rasters match the previously inspected candidate.
+Existing keep-together markup repairs observed
 stranded leads; no renderer/stylesheet/new publication gate was introduced.
 The new canonical CPU paragraph has its own bounded changed-page print check
 in [the CPU print record](cpu-print.md).

@@ -35,7 +35,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Original six-file modules/global program plus two separate complete numeric-loop and generic-iterator cartridges. Numeric continuation has sixteen retained assertions and six separate ordinary diagnostics; iterator continuation has ten retained assertions and three separate ordinary diagnostics. Actual-owner source audits and literal reconstruction checks, a source-blind public-reader reconstruction with both findings closed, and actual 27-page DRAFT visual review pass separately. Final three changed pages re-viewed; other24 full rasters identical. LS01 stays open, not waived by these finite passes.",
+			"resolution": "Original six-file modules/global program plus two separate complete numeric-loop and generic-iterator cartridges. Numeric continuation has sixteen retained assertions and six separate ordinary diagnostics; iterator continuation has ten retained assertions and three separate ordinary diagnostics. Actual-owner source audits and literal reconstruction checks, a source-blind public-reader reconstruction with both findings closed, and actual 28-page DRAFT visual review pass separately. The known-call minimum and explicit-nil SetGlobal delta has independent actual-source acceptance; seven changed final pages were individually re-viewed and the other21 full rasters match retained inspected evidence. LS01 stays open, not waived by these finite passes.",
 			"open": []
 		}
 	},

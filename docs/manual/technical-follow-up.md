@@ -873,8 +873,10 @@ NES manufacturer developer-manual structure remains explicitly unverified.
 
 The selected map is now applied: I System and Hardware Reference, II BLua32
 and BIOS Reference, III Cartridge and Expansion Reference, plus the existing
-development companion. Four software chapters are II; twelve machine chapters
-are I. CPU/Memory remain the canonical mixed foundations, with explicit
+development companion. At adoption, four software chapters were assigned to II
+and twelve machine chapters to I. The later source-program, Math draft and System
+overview additions bring the current catalog to nineteen: six in II and thirteen in I.
+CPU/Memory remain the canonical mixed foundations, with explicit
 software-reader section links rather than blind moves or duplicate definitions.
 Shared title metadata drives both document and running identification. Current
 IRQ/DMA cartridge references are corrected to III. Stable source paths and
@@ -884,7 +886,7 @@ inherited old hashes. Technical source reviews, owner questions, unwritten
 material and whole-console newcomer acceptance remain unchanged; classification
 is not completion.
 
-All sixteen current preview chapters were rebuilt and every actual page was
+All sixteen adoption-time preview chapters were rebuilt and every actual page was
 individually inspected at readable PDFium resolution. The new titles fit;
 three cartridge cross-references were corrected to III. Inspection also found
 stranded GPU/GTE table/formula leads and one paragraph tail; existing authored
@@ -1117,3 +1119,33 @@ SDK installation/debugging and diagnostics, Book III, remaining graphics
 contrasts, CPU7, common Table length, BZ01 and whole-console newcomer acceptance
 remain work. The separately adopted Book I/II/III scope and correct software
 running title do not imply these volumes are complete.
+
+## Installed Math: elementary/random reference and complete observation program
+
+2026-10-18, baseline `0fca01fd4`. The new Book II
+[Math draft](../book1/bios-math.md) has separately extracted, facts-only authored
+and independently actual-source-checked elementary and shared-generator
+sections. The generator audit's live-public-`error` qualification is corrected
+and rechecked. Eleven angle/transcendental reference entries remain pending;
+their successful example inputs do not establish their complete contracts.
+
+The complete ordinary cartridge has67-line typed storage and172-line entry
+modules, literally reproduced as six listings (five consecutive entry chunks).
+The full unchanged-quality build passes;84 retained assertions and24 separate
+ordinary diagnostic lines pass, including the finite sine/cosine lookup
+contrast and explicit-seed/rejected-bound generator sequence. Fresh tooling
+and the final print-width source reflow were both replayed. The
+[execution record](../book1/facts/bios-math-example.md) keeps exact artifacts,
+commands, source hashes and finite limits. No hidden floor call, local math
+replacement, formatter, ABI helper or source-policy suppression was added.
+
+The known-call written-expression minimum is now explicit in the canonical
+BLua source chapter; its SetGlobal example supplies a second explicit nil.
+This source-use distinction has actual-owner audit and a separate28-page
+actual-PDF print pass, not a runtime/compiler repair. LS01 remains open.
+
+The Math preview passes mechanical checks after an actual overlong comparison
+and two long diagnostic lines were laid out readably. Full Math source,
+public-only reader and actual-page visual acceptance are still pending in its
+existing coverage/review record. It is not a completed/published chapter,
+numerical accuracy/termination guarantee or whole-console acceptance.

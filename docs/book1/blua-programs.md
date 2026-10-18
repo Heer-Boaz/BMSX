@@ -306,6 +306,10 @@ The following table shows call forms. `callee`, `receiver` and the argument name
 
 Call, index and member suffixes may be chained. A colon member must be followed by call arguments; `receiver:advance` on its own is not a colon-property expression. Receiver handling and argument/result behavior are defined by the [CPU reference](cpu.md).
 
+### Known-call argument diagnostics
+
+The compiler can diagnose too few written arguments when it resolves a callee signature. This minimum check counts argument expressions as written: an explicit `nil` counts as one argument. Surplus expressions are not rejected by this check. The diagnostic concerns source use, not a runtime fault. If execution reaches a source-function call, missing fixed parameters are filled with `nil`; that runtime behavior does not make every source spelling acceptable to the compiler. This describes the known-call minimum check, not all callee analysis or cartridge quality rules. See [Calls, closures, globals and tables](cpu.md#calls-closures-globals-and-tables) for the reached-call contract.
+
 ### Variable arguments and result positions
 
 `...` reads the variable arguments available to the **current call**. A nested function does not inherit an enclosing call’s variable arguments.
@@ -314,6 +318,8 @@ The current software accepts `...` as an expression even when the function’s w
 
 Zero available arguments are not the same as one `nil` result. With zero available variable arguments, an open-result use of `...` supplies zero values. When a context requests a fixed number of result positions, unavailable positions are filled with `nil`; selecting one result therefore gives `nil` in this case. For argument and result transfer at the machine-call boundary, see [CPU calls](cpu.md#calls-closures-globals-and-tables).
 
+<div class="keep-together">
+
 ### Return statements
 
 A return expression list is written as:
@@ -321,6 +327,8 @@ A return expression list is written as:
 ```lua
 return position, velocity
 ```
+
+</div>
 
 A semicolon may follow that list:
 
@@ -477,6 +485,8 @@ refers to its enclosing binding. The loop binding is not visible after the
 loop. A distinct local declared inside the body can shadow it in the usual
 lexical way.
 
+<div class="keep-together">
+
 Before each body entry, let `i` denote the current loop variable, `limit` the
 retained limit, and `step` the retained step. The selector and exit tests are:
 
@@ -484,6 +494,8 @@ retained limit, and `step` the retained step. The selector and exit tests are:
 | --- | --- | --- |
 | `0 < step` is true | `limit < i` | The body is allowed while `i <= limit`. |
 | `0 < step` is false | `i < limit` | The body is allowed while `i >= limit`. |
+
+</div>
 
 The exit predicates are the strict comparisons shown, not universal
 `<=`/`>=` tests. The inclusive paraphrases apply to finite Numbers; they do not
@@ -535,11 +547,15 @@ Grouping parentheses do not force a call to supply only one result in BLua. In p
 
 The three retained values are cached, not recomputed on subsequent iterations. Rebinding a source variable does not replace its cached value. Caching a mutable value does not copy its contents: changes to shared contents remain visible.
 
+<div class="keep-together">
+
 Each attempted iteration calls exactly:
 
 ```text
 iterator(state, control)
 ```
+
+</div>
 
 The call requests as many results as there are loop names. Extra results are discarded and missing results become `nil`.
 
@@ -680,6 +696,8 @@ An import written inside a function still contributes a dependency. Moving an im
 
 Ordinary source modules perform their top-level work during program startup. Dependencies are initialized before the modules that depend on them, and the scheduled ordinary module initializers run before the cartridge entry begins. Section initialization precedes those module initializers.
 
+<div class="keep-together">
+
 This is an eager dependency-initialization contract, not a loader that waits for the first evaluated `require` call. For example, in the following fragment, the ordinary dependency has already performed its top-level initialization before entry execution reaches the written import:
 
 ```lua
@@ -687,6 +705,8 @@ module<entry>
 
 local settings = require('lib/runtime_settings')
 ```
+
+</div>
 
 The same applies when that import is written in a function body rather than directly in the entry's top-level statements. A `require` expression obtains the module's retained export; it does not execute the initializer anew at that line. A stand-alone import can be used when only the module's initialization is wanted:
 
@@ -781,6 +801,8 @@ Named fields and literal-string indexed fields select export paths. Namespace de
 
 Recognized constant leaves include `nil`, booleans, numbers, strings, and static-storage addresses. Numeric constant expressions and unary minus can be folded in these exports. Static functions may also occupy named export paths. A named leaf must be a supported compile-time constant or static function; an arbitrary runtime expression is not a constant export merely because it appears in a `module<const>` file. A scalar-only return is not a substitute for a named namespace or a root static function.
 
+<div class="keep-together">
+
 ### A const local is not a const module
 
 These two declarations apply to different parts of a program:
@@ -789,6 +811,8 @@ These two declarations apply to different parts of a program:
 | --- | --- |
 | `module<const>` | The exporting file and its compile-time export contract. |
 | `local settings<const> = require('lib/settings')` | The importing local binding; for a const namespace, this is the compile-time alias used to resolve exported paths. |
+
+</div>
 
 The local declaration does not turn an ordinary imported table into a compile-time namespace and does not freeze that table's fields. Conversely, import a compile-time namespace with the const-local form shown above, rather than assuming that a plain mutable local materializes a runtime namespace object.
 
@@ -809,6 +833,8 @@ Static function bodies operate within the static-code contract. They may perform
 
 Ordinary string constants in a static function body are not permitted. This restriction does not mean that no string value can occur: an already interned constant selected through immutable typed read-only data is a distinct permitted case. A namespace's ability to export a constant string does not make ordinary runtime string operations available to its static functions.
 
+<div class="keep-together">
+
 ## Named BIOS function imports
 
 The named BIOS function imports are:
@@ -818,6 +844,10 @@ The named BIOS function imports are:
 | `math/sin` | `sin_turn32(angle)` |
 | `string/float/decode` | `decode_float(high, low, byte_count)` |
 | `gpu/system_vram_region` | `system_vram_region()` |
+
+</div>
+
+<div class="keep-together">
 
 Each path names a root static function. Import and call them as follows:
 
@@ -830,6 +860,8 @@ local sine = sin_turn32(angle)
 local decoded = decode_float(high, low, byte_count)
 local origin<const>, size<const> = system_vram_region()
 ```
+
+</div>
 
 These examples establish the import names and argument ordering. The routines' numeric conventions, returned-value meanings, and complete contracts belong to their respective routine documentation.
 
@@ -849,6 +881,8 @@ A previously unseen ordinary name begins with `nil`. When another program image 
 
 The BIOS installers described here do not install `_G` or `_ENV` as global-environment Tables. The installed environment therefore does not supply `_G[name]` or replacement of `_ENV` as its name-based access interface. This is an installation statement, not an additional source-identifier or loader-environment rule.
 
+<div class="keep-together">
+
 ### Accessing a global by name
 
 Use the installed functions `getglobal` and `setglobal` to access the ordinary global bank by name.
@@ -856,11 +890,13 @@ Use the installed functions `getglobal` and `setglobal` to access the ordinary g
 | Call | Arguments | Results |
 | --- | --- | --- |
 | `getglobal(name)` | `name` must be a String. | One value: the current ordinary global value, or `nil` if the name is absent. |
-| `setglobal(name, value)` | `name` must be a String. The value may be omitted, in which case it is `nil`. | No result values. |
+| `setglobal(name, value)` | `name` must be a String. A reached call with an absent value writes `nil`; cartridge source supplies an explicit `nil` to meet the known-call minimum. | No result values. |
+
+</div>
 
 `setglobal` writes the named binding, creating it when necessary. Writing `nil` is a write of `nil`; it is not a request to clear the whole bank. Both functions address the ordinary global bank directly, rather than a caller-supplied environment Table.
 
-For example, `setglobal("score", 100)` makes `getglobal("score")` return `100`. A subsequent `setglobal("score")` writes `nil`, so `getglobal("score")` then returns `nil`.
+For example, `setglobal("score", 100)` makes `getglobal("score")` return `100`. A subsequent `setglobal("score", nil)` writes `nil`, so `getglobal("score")` then returns `nil`.
 
 ### Installed names and library Tables
 

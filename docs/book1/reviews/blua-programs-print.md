@@ -1,7 +1,9 @@
 # Current BLua source-program PDF layout acceptance
 
-**PASS for the current 27-page DRAFT.** The independent full-page and
-changed-page evidence below identifies the exact artifact. LS01 and whole-book
+**PASS for the current 28-page DRAFT**, PDF `d99b0523…` and source `e4cc1350…`.
+The appended known-call delta review supersedes the earlier 27-page artifact
+below. The independent full-page and changed-page evidence identifies the
+exact artifact. LS01 and whole-book
 coverage remain open; layout approval is not publication acceptance.
 
 # Independent actual-PDF print-layout review
@@ -228,3 +230,38 @@ e939a49f955061275c35a1f781ccb9a358aa274b4f00edebe4fd855db9125c6f  page-16.png  r
 66b4e7ba3c135105b630e0004b68f61453c594849d3d835bcb12fcac6b209d87  page-21.png  retained
 6f0fd0f0b3b88d0ae034862693441e81d5041a7b7c30fb8386776dd1c7ddd4c6  page-22.png  retained
 ```
+
+
+# Actual-PDF delta recheck: known-call argument diagnostics
+
+**Print-layout delta: PASS for the exact candidate below.**
+
+Current PDF: `build/manual/blua-programs.preview.pdf`.
+SHA-256: `d99b05233585d3f360b71e86af1eefbf4c18a5a6fb7f51d0707cf6a9f8a44fd0`.
+Page count: **28**, unchanged.
+Parent-supplied public-source SHA-256: `e4cc1350a40b7a4d5c491efd84cb4bf6c64702f37557ad91b45d1b0ab3b65d69`.
+Comparison PDF: `84d8c8654551beb17a5f8c647468d9b90930e8a97f0a7cb0a84a20392367c0f7`, 28 pages.
+
+## Finite evidence
+
+- Independently rendered all 28 current pages with PDFium at scale 1.5 into `/tmp/bmsx-language-arity-fixed-pages-d99b0523` (893 × 1263 each).
+- Compared every full-page raster with retained `/tmp/bmsx-language-arity-fixed-pages-84d8c865`.
+- Pages **1–10, 13–16, 22–28 are pixel-identical** and retain the previous individual-review evidence.
+- Actually viewed every changed full page individually: **11, 12, 17, 18, 19, 20, 21**. No contact-sheet or text substitution.
+- Checked paragraph breaks, table/code bounds and section leads on those seven pages. No new actual layout failure found. The revised page-19 row and inline example fit within their bounds without clipping or overlap.
+- All 28 running-header bands and DRAFT-footer left bands remain pixel-identical to retained evidence. The earlier independent enlarged header check confirms `BOOK II - BLUA32 AND BIOS REFERENCE`.
+
+## All eight earlier issues closed
+
+| Earlier detached group | Current closure |
+| --- | --- |
+| Return statements heading + intro + first listing | Together on page 8; pixel-identical retained page |
+| Numeric selector-table lead + two-row table | Together on page 11; individually re-viewed |
+| Initialization fragment lead + listing | Together on page 15; pixel-identical retained page |
+| Const-local comparison heading + intro + table | Together on page 17; individually re-viewed |
+| Named-BIOS call-example lead + listing | Together on page 18; individually re-viewed |
+| Iterator-call lead + one-line listing | Together on page 12; individually re-viewed |
+| Named-BIOS imports heading + intro + table | Together on page 18; individually re-viewed |
+| Global-access heading + intro + table | Together on page 19; individually re-viewed |
+
+No further layout remedy is requested. This is finite actual-PDF print-layout evidence only: no repository edits, source audit, semantic/public-reader approval or whole-publication approval.

@@ -55,11 +55,12 @@ complete on that basis. This does not invalidate the other primary evidence.
    calls, values, results and errors. A development guide explains making and
    inspecting a program. None replaces the others.
 2. **Do not create an empty specifications volume for the Roman numeral.** The
-   current manuscripts have per-device specifications but no complete global
-   specification/orientation chapter. Put that reader function first in the
-   hardware material; make it a separate physical volume only if its actual
-   sourced contents justify one. This is the adopted working choice, not a
-   rule established by a historical manual.
+   source-research baseline had per-device specifications but lacked a global
+   specification/orientation opening. The bounded [System overview](../book1/console.md)
+   now supplies that opening, not a complete whole-machine specification.
+   Retain it first in the hardware material; make specifications a separate
+   physical volume only if the actual sourced contents justify one. This is
+   the adopted working choice, not a rule established by a historical manual.
 3. **Use real navigation, not decorative retro styling.** State each volume's
    scope, prerequisites and companion references. Identify the actual volume,
    chapter/subject and page consistently. Provide book-level contents and
@@ -86,12 +87,12 @@ renumber the complete series consistently; do not mix the two schemes.
 | Volume/companion | Reader purpose and material |
 | --- | --- |
 | **Book I — System and Hardware Reference** | Begin with console orientation and a sourced whole-machine specification summary. Follow with CPU execution/ISA/control, memory/address/ownership and installed-unit operation/reference. Keep the per-device specifications and genuine programming examples. |
-| **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the four BIOS/coroutine chapters. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the still-incomplete BIOS runtime compiler or SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
+| **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the five BIOS/coroutine chapters, including the Math draft. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the still-incomplete BIOS runtime compiler or SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
 | **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. This material is still unwritten; the old provisional Book II label must not silently erase it. |
 | **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
 
-The [current catalog](catalog.json) inventory is **18 entries: thirteen in I and
-five in II**. The added System overview is an opening orientation, not another
+The [current catalog](catalog.json) inventory is **19 entries: thirteen in I and
+six in II**. The added System overview is an opening orientation, not another
 device or a claim of complete whole-machine programming coverage. The
 source-research baseline had all sixteen provisionally in I.
 The content map is based on public chapter headings, not a fresh semantic audit:
@@ -101,7 +102,7 @@ The content map is based on public chapter headings, not a fresh semantic audit:
 | PCRTC, GTE, GPU, IRQ, DMA, APU, GEO, IMGDEC, INPUT, SYSTEM: ten primarily hardware chapters | Hardware volume, with the overview/specification route before detailed devices. Presence of BLua examples is not grounds for moving the device reference to software. |
 | CPU and BLua32 instruction reference | Book I, including the canonical value, arithmetic, call and control foundations. Software readers follow the section-level links below; do not move or duplicate definitions based only on the filename. |
 | Memory and program storage | Book I, including the canonical typed-declaration, startup, address, reservation and ownership foundations. The software route links to these definitions rather than copying partial address/lifetime rules. |
-| BLua source programs, BIOS base services, BIOS table library, BIOS String operations, Protected calls and coroutines: five software chapters | Software volume. Keep the factual chapter titles and protected-call material discoverable; do not classify the whole group as hardware. |
+| BLua source programs, BIOS base services, BIOS math library, BIOS table library, BIOS String operations, Protected calls and coroutines: six software chapters | Software volume. Keep the factual chapter titles and protected-call material discoverable; do not classify the whole group as hardware. |
 | Global specification opening | The [System overview](../book1/console.md) now supplies independently extracted memory/transfer, control and graphics/audio orientation. Its bounded source, figure, print and public-reader checks pass and are recorded separately; its presence does not complete the volume. |
 | Complete BIOS runtime-compiler/lifecycle coverage; cartridge/expansion reference; full SDK onboarding/debugging | Remaining authored work, not completed books produced by changing labels. Existing unit facts, examples and partial setup instructions do not close these reader routes. |
 
@@ -132,7 +133,7 @@ not close the separate BIOS runtime-compiler/lifecycle or full SDK route.
 
 - [volumes.json](volumes.json) owns each book's title; [catalog.json](catalog.json)
   owns chapter membership. `loadChapter` resolves the title once and the shared
-  renderer consumes it in the document and running titles. The five software
+  renderer consumes it in the document and running titles. The six software
   entries are II; the twelve existing machine chapters and new overview are I.
   No per-chapter CSS, guessed labels
   or compatibility wrappers hide the classification.

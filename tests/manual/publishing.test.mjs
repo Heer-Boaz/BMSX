@@ -162,7 +162,7 @@ test('shared volume titles identify every book in document and running titles', 
 test('current source-language, BIOS and coroutine chapters belong to software, not hardware', async () => {
 	const catalog = JSON.parse(await readFile(resolve(repositoryRoot, 'docs/manual/catalog.json'), 'utf8'));
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'II').map(([id]) => id),
-		['blua-programs', 'bios-base', 'bios-table', 'bios-string', 'coroutines']);
+		['blua-programs', 'bios-base', 'bios-math', 'bios-table', 'bios-string', 'coroutines']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'I').map(([id]) => id),
 		['console', 'cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
 });

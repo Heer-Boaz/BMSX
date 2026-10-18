@@ -228,7 +228,7 @@ The expected case line is:
 [test] publication_and_two_surface_reuse: passed
 ```
 
-This checks the reported installed BIOS reservation, all four retained pixel words, the A/B/A programmed framebuffer words, phases 1–3, and a changed callback counter at each publication. The matching-BIOS, derived-cartridge, fresh-target and linked-address caveats given above apply here too. These are current-checkout observations, not a fresh-platform installation check.
+This checks the reported installed BIOS reservation, all four retained pixel words, the A/B/A programd framebuffer words, phases 1–3, and a changed callback counter at each publication. The matching-BIOS, derived-cartridge, fresh-target and linked-address caveats given above apply here too. These are current-checkout observations, not a fresh-platform installation check.
 
 The three pictures use a separate ordinary-playback route, not captures from that result check:
 
@@ -349,7 +349,7 @@ The cartridge build prepares its matching BIOS automatically. The successful cas
 [test] three_pose_geometry_and_visible_scene_sequence: passed
 ```
 
-This fresh-target, derived integration image checks all three transformed hulls and bounds, SAT results, F32 contact and summary values, nine successful pose jobs, the separated return job, separate GEO/VBlank counters, the firmware reservation and six programmed display publications. It also checks that the old contact remains in storage while the return's new result count is zero. It does **not** supply the published images or prove that a programmed framebuffer read is a displayed-picture acknowledgement.
+This fresh-target, derived integration image checks all three transformed hulls and bounds, SAT results, F32 contact and summary values, nine successful pose jobs, the separated return job, separate GEO/VBlank counters, the firmware reservation and six programd display publications. It also checks that the old contact remains in storage while the return's new result count is zero. It does **not** supply the published images or prove that a programd framebuffer read is a displayed-picture acknowledgement.
 
 Capture the ordinary cartridge separately:
 
@@ -780,3 +780,71 @@ startup/frame/cycle guarantee or an assertion. Retained checks and ordinary
 playback are separate TS executions, not native, all-input/iterator/optimizer,
 Table-length or separate BIOS runtime-parser acceptance. CPU7, Table length,
 BZ01 and the repeat-scope issue remain open.
+
+## Build and inspect Math operations
+
+The [complete Math program](../book1/bios-math.md#complete-program-math-operations)
+is a separate `bios_math_manual` cartridge. Its results listing and five entry
+parts supply two complete source files. Save `results.lua` and concatenate
+entry parts1–5, in order, as one `entry.lua` at these exact paths:
+
+```text
+carts/bios_math_manual/
+  entry.lua
+  results.lua
+  res/manifest/manifest.rommanifest
+```
+
+Use this complete manifest:
+
+```yaml
+title: BIOS Math Manual
+hardware:
+    - type: rom
+```
+
+No earlier example cartridge is a prerequisite. The program uses the
+installed library without replacing its fields, uses explicit seeds rather
+than the clock default, and uses `//1` instead of the cart-forbidden
+`math.floor` reference. See the source-program chapter's
+[known-call argument diagnostics](../book1/blua-programs.md#known-call-argument-diagnostics)
+for source minimums versus reached-call behavior.
+
+From the repository root with the shared prerequisites above:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_math_manual --debug
+npm run headless:test -- bios_math_manual tests/carts/bios_math_manual/bios_math_manual_assert.lua
+```
+
+Expect `[test] math_observations: passed`. The supplied suite waits for
+completion and checks84 retained observations; it is a fresh derived
+integration image, not byte-identical ordinary playback. The builder selects
+the matching BIOS, and absolute linked addresses may differ.
+
+For a separate ordinary run, create
+`tests/carts/bios_math_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BIOS math observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_math_manual/ordinary_timeline.json bios_math_manual
+```
+
+Compare all24 `Math ...` lines in **Ordinary observations**. Rounded Number
+text is not a substitute for the exact retained f64 checks. The timeline
+selects zero-based presentation offset4, not an output assertion or a
+startup/frame/cycle guarantee. Retained and ordinary results are separate TS
+executions, not native or all-input/optimizer/accuracy/statistical,
+reset/persistence, runtime-parser, whole-SDK or whole-console acceptance.
+CPU7, Table length, BZ01 and LS01 remain open.
