@@ -41,6 +41,13 @@
 		"facts": "docs/book1/facts/bios-math.md",
 		"review": "docs/book1/reviews/bios-math.json"
 	},
+	"bios-os": {
+		"book": "II",
+		"label": "BIOS TIME AND CALENDAR",
+		"chapter": "docs/book1/bios-os.md",
+		"facts": "docs/book1/facts/bios-os.md",
+		"review": "docs/book1/reviews/bios-os.json"
+	},
 	"bios-table": {
 		"book": "II",
 		"label": "BIOS TABLE",

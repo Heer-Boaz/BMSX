@@ -10,7 +10,7 @@ Reference**, and **Book III — Cartridge and Expansion Reference**. A sourced
 [system overview](../book1/console.md) now opens the hardware volume with
 installed resources, address reservations, data routes and qualified timing;
 an empty separate specifications book is not published.
-The current catalog assigns the source-program chapter and the five BIOS and
+The current catalog assigns the source-program chapter and the six BIOS and
 protected-call/coroutine chapters to II, and the overview plus twelve
 machine/installed-unit chapters to I.
 III reserves the cartridge/socket/card scope; its chapters are not yet authored.

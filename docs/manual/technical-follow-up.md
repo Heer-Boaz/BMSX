@@ -1187,3 +1187,56 @@ CPU7, common Table length, BZ01, remaining BIOS/runtime loading/lifecycle,
 full SDK guidance, Book III, outstanding graphics contrasts, delivered-series
 navigation or whole-console newcomer acceptance. Time and calendar services
 are the next independently sourced software chapter, not a completed volume.
+
+
+## Installed time and calendar services: independently sourced draft
+
+2026-10-18, baseline `b23de821f`. The next Book II chapter covers all4 actual
+`os` exports: clock, time, date and difftime. Separate actual-source packets
+and facts-only authors supply the sampled-counter/civil-date distinction,
+field/default/range/read/check/mutation order, every conversion/modifier,
+week/ISO rules, shared forward/inverse Number formulas, exact authored errors,
+retained/live dependencies and source-work limits. Independent reference and
+merged-delta source reviews pass; their two wording qualifications and the
+missing canonical D/C definition are corrected and independently closed.
+
+The complete ordinary cartridge has18-line numeric-BSS/guest-observations and
+110-line entry modules, literally reproduced as six listings. Unchanged-
+quality final artifact241d7999 passes74 retained assertions and separate
+ordinary playback with26 `OS` diagnostics plus the `%n` continuation. The first
+two lines are sampled readings, not pinned replay values. Dynamic text/date
+Tables remain guest values; no local encoder, compiler/runtime repair, source-
+policy suppression or shared harness was added. Actual print overflow required
+only two literal source-line reflows; the final source was rebuilt and both
+executions repeated. Earlier rejected constant-module authorship and the prior
+artifact remain historical evidence, not hidden implementation repairs.
+
+**The exact inherited Table-length question stays OPEN.** The independent
+String-dependency trace finds no Table-LEN consumption for no-prefix String
+formats or ordinary `*t`. Leading-`!` removal with at least two remaining
+codepoints does reach helper append/default-concat lengths; Table format
+inputs read their own length immediately. Those precise paths retain the
+existing common producer publication dependency. The fresh monotonic helper
+does not itself reproduce the separate fill/delete/refill fixture, and no
+new differing date output is claimed. Finite examples do not waive it.
+
+The chapter's [source acceptance index](../book1/reviews/bios-os-source.md)
+keeps program-source, context-isolated public-reader and actual-PDF decisions
+separate. The working catalog is now20 entries,13 in I and7 in II; classifying
+this software chapter does not complete Book II or any other volume. CPU7,
+BZ01, LS01, full SDK/runtime loading/lifecycle, Book III, remaining graphics
+contrasts, delivered-series navigation and whole-console newcomer acceptance
+remain separate work. No publisher, CSS, schema, validation layer or helper was
+introduced.
+
+
+The final scoped source/programme, fresh public-only reader and actual17-page
+DRAFT print checks now pass separately. Actual inspection found eight detached-
+lead/widow defects across successive previews; eight existing keep-together
+groups close them without changing the accepted technical text or128 literal
+source lines. The final actual-PDF hash is
+`e82eb422220c9998106009c099ad5e6eee08eb00339ae0234d5bbd5b04483bca`.
+All17 pages are covered by actual changed-page viewing and exact retained-page
+pixel identity. The19 manual-tool tests pass. The chapter publication check
+still fails for the exact inherited Table-length dependency only; this is a
+reviewed draft, not a waived contract or a completed/published book.

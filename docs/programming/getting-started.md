@@ -848,3 +848,76 @@ startup/frame/cycle guarantee. Retained and ordinary results are separate TS
 executions, not native or all-input/optimizer/accuracy/statistical,
 reset/persistence, runtime-parser, whole-SDK or whole-console acceptance.
 CPU7, Table length, BZ01 and LS01 remain open.
+
+
+## Build and inspect time and calendar operations
+
+The [complete time/calendar program](../book1/bios-os.md#complete-program-time-and-calendar-operations)
+is a separate `bios_os_manual` cartridge. Save the results listing as
+`results.lua` and concatenate entry parts 1–5, in order, as one `entry.lua`:
+
+```text
+carts/bios_os_manual/
+  entry.lua
+  results.lua
+  res/manifest/manifest.rommanifest
+```
+
+The complete manifest is:
+
+```yaml
+title: BIOS OS Manual
+hardware:
+    - type: rom
+```
+
+The ordinary results module exports typed numeric BSS and a mutable guest
+observations Table. Do not add `module<const>`: that Table is not a compile-
+time constant export. The entry has one `module<entry>`, calls the installed
+BIOS, records/prints its observations, sets `completed`, then parks.
+
+From the repository root after the prerequisites at the beginning of this
+companion, build the tooling and cartridge with the existing quality checks:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_os_manual --debug
+npm run headless:test -- bios_os_manual tests/carts/bios_os_manual/bios_os_manual_assert.lua
+```
+
+Expect `[test] time_and_calendar_observations: passed`. The supplied suite
+waits for completion and checks 74 retained observations. This is a fresh
+derived TS integration image, not byte-identical ordinary playback; linked
+addresses may differ, and the builder selects the matching BIOS.
+
+For separate ordinary playback, the supplied
+`tests/carts/bios_os_manual/ordinary_timeline.json` is exactly:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BIOS time and calendar observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_os_manual/ordinary_timeline.json bios_os_manual
+```
+
+Compare all 26 `OS ...` diagnostics in **Ordinary observations**. The first two
+lines are a recorded sample, not exact replay values: each default-time call
+samples independently. The other 24 diagnostics use explicit inputs; the
+`%n` example additionally prints the continuation line `C`. The exact retained
+normalized timestamp is 1709168523, although ordinary Number text rounds it to
+`1.70917e+09`. Printed text is not a substitute for the retained f64 checks.
+
+The timeline's zero-based presentation offset 4 is an endpoint, not an output
+assertion or startup/frame/cycle guarantee. Leading-`!` and Table-valued formats
+are not exercised; the common Table-length publication question remains open.
+These finite retained and ordinary TS executions are not native/all-input/
+optimizer/calendar-accuracy, performance, reset/persistence, runtime-parser,
+whole-SDK or whole-console acceptance. CPU7, BZ01 and LS01 are not resolved.
