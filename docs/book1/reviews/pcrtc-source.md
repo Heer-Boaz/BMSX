@@ -141,3 +141,15 @@ evidence. Source pixels, signal placement, output coordinates, programmed
 readback and VBlank-latched publication remain separate. No native/accelerated
 backend parity or sample-alpha inference from the opaque PNG is claimed.
 The final actual-PDF review is separately recorded in pcrtc-print.md.
+
+## Exact unequal horizontal sampling — 2026-10-18
+
+The [finite sampling review](pcrtc-sampling-source.md) accepts the new Section6,
+91 literal BLua lines and actual eight-pixel output strip. Paired producers and
+actual software consumers jointly ground first-pixel phase, integer source
+selection and independently converted output boundaries. All eight raw packed
+source words pass the ordinary guest case; separate captured RGB samples match
+all table entries. Independent source/image and public-only reader checks pass,
+including byte-exact reconstruction and the corrected explicit manifest path.
+No reciprocal register, physical rate or native/accelerated parity is invented.
+Actual PDF acceptance is separately recorded in pcrtc-print.md.

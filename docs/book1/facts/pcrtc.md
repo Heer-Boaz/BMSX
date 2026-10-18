@@ -1037,3 +1037,11 @@ The separate [window programming fact sheet](pcrtc-window.md) supplies the
 paired geometry/latch facts, raw A/B/C settings and actual ordinary cartridge
 and RGB-output observations for the new complete example. It does not alter
 the register/reset, local-memory packing or timing facts above.
+
+## Unequal horizontal source sampling
+
+The [finite sampling fact sheet](pcrtc-sampling.md) adds the exact integer-quotient
+source progression, nonzero first-pixel phase and an eight-pixel GX16 example.
+It records the actual paired software consumers as well as the PCRTC producer.
+Complete real cartridge and independent actual-output evidence are retained in
+[the sampling review](../reviews/pcrtc-sampling-source.md).

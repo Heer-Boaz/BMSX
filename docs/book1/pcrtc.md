@@ -1372,3 +1372,236 @@ The program owns GP0, both circuits, its direct VBlank handler, and the image re
 </section>
 
 The canvas white L stays at (8, 8) in all three pictures. The source origin (32, 16) excludes its cutout copy in B and C. These feature positions distinguish a source-origin change from a window-position change without adding a border or altering the image.
+
+<a id="pcrtc-horizontal-sampling"></a>
+
+## 6. HORIZONTAL SOURCE SAMPLING
+
+Let `s` be signal units per output pixel, `S` the horizontal signal origin, and `M` signal units per source pixel:
+
+```
+s = (SMODE1_LOW >> 21) & 15
+S = DISPLAY_LOW & 4095
+M = ((DISPLAY_LOW >> 23) & 15) + 1
+```
+
+For an enabled active horizontal window with nonzero `s`, `div` denotes the nonnegative integer quotient:
+
+```
+A = (S + s - 1) div s
+sourceX(n) = framebufferX + ((A*s - S + n*s) div M)
+```
+
+`framebufferX` is the source X field of `DISPFB_HIGH`. `n` is the local output-pixel index from the circuit's left display edge, not an absolute coordinate. `A*s - S` is the first-pixel phase in signal units. Each subsequent output pixel advances by `s` signal units, whereas each source pixel occupies `M` signal units. Unequal steps need not advance source coordinates by one.
+
+Window width is separate from source magnification. Convert the left and exclusive right signal boundaries independently upward to output-pixel boundaries, then subtract. Output width is not signal width divided by `M`.
+
+### Eight-pixel GX16 strip
+
+<section class="keep-together">
+
+Use reset timing with `SMODE1_LOW = 40806504H` (`s = 4`) and `SMODE2_LOW = 00000000H` (noninterlaced), with these display words:
+
+| Register | Word |
+|---|---|
+| PMODE_LOW | 0000FF21H |
+| DISPFB1_LOW | 000FA000H |
+| DISPFB1_HIGH | 00008020H |
+| DISPLAY1_LOW | 010252AAH |
+| DISPLAY1_HIGH | 0000001FH |
+
+</section>
+
+Circuit 1 selects raw GX16 RGBA from framebuffer base zero, stride 1024 source pixels, and source origin `(32,16)`. The signal origin is `(682,37)`, the signal width is 32, the height is one row, and `M = 3`.
+
+The horizontal signal interval is `[682,714)`. Its upward-converted boundaries are 171 and 179, yielding an **8 × 1** output. The first sample is at signal X 684, giving phase `684 − 682 = 2`. Upload the sixteen GX16 words `8000H` through `800FH` at source positions `(32,16)` through `(47,16)`.
+
+<section class="keep-together">
+
+In the table, `N = 2 + 4*n`; source offset is `N div 3`. Addresses are **16-bit word addresses**, not byte offsets.
+
+| n | Signal X | N | Source offset | Source X,Y | Word address | GX16 word |
+|---:|---:|---:|---:|---|---|---|
+| 0 | 684 | 2 | 0 | (32,16) | 4020H | 8000H |
+| 1 | 688 | 6 | 2 | (34,16) | 4022H | 8002H |
+| 2 | 692 | 10 | 3 | (35,16) | 4023H | 8003H |
+| 3 | 696 | 14 | 4 | (36,16) | 4024H | 8004H |
+| 4 | 700 | 18 | 6 | (38,16) | 4026H | 8006H |
+| 5 | 704 | 22 | 7 | (39,16) | 4027H | 8007H |
+| 6 | 708 | 26 | 8 | (40,16) | 4028H | 8008H |
+| 7 | 712 | 30 | 10 | (42,16) | 402AH | 800AH |
+
+</section>
+
+Observed RGB, left to right:
+
+```
+(0,0,0) (16,0,0) (24,0,0) (33,0,0)
+(49,0,0) (57,0,0) (66,0,0) (82,0,0)
+```
+
+These expanded RGB555 values are not raw GX16 words. Every sample has alpha `80H`.
+
+<section class="keep-together">
+
+![Eight PCRTC output pixels from unequal horizontal magnification](figures/pcrtc-sampling.png)
+
+*Eight-pixel output, enlarged without smoothing. From left to right, source offsets are 0, 2, 3, 4, 6, 7, 8 and 10. The source words are consecutive; the displayed selection is not.*
+
+</section>
+
+### Complete BLua program
+
+The program uploads the sixteen source pixels, recovers all eight packed words
+through GPUREAD, waits for GPU idle, and enables circuit 1. It owns GP0, circuit 1,
+the direct VBlank handler, and the raw source row X=32–47, Y=16; no other reader,
+writer or supervisor may take them over during the example. This fixed row is
+not a general local-memory allocation scheme.
+
+The display words use the normal VBlank-entry latch. After its last display
+write, the program acknowledges stale controller VBlank bit 2 and waits for a
+fresh callback sequence. The retained source words and immediate programmed-word
+reads do not by themselves verify the displayed selection; the separate output
+strip above shows that selection.
+
+<section class="keep-together">
+
+Create `results.lua` as the complete const module below. It retains the source
+readback, programmed words and before/after callback sequence.
+
+```lua
+module<const>
+
+struct pcrtc_sampling_result
+	completed: word
+	vblank_sequence: word
+	before_vblank: word
+	after_vblank: word
+	programmed_source: word
+	programmed_window: word
+	programmed_extent: word
+	source_words: word[8]
+end
+
+bss result: pcrtc_sampling_result
+
+return { result = result }
+```
+
+</section>
+
+<section class="keep-together">
+
+### Declare the source row and VBlank handler
+
+Create `cart.lua` by concatenating the following three blocks in order.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *pcrtc_sampling_result = state.result
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local window<const>: *word = 0x08010364
+local extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+
+-- Sixteen adjacent GX16 source pixels: red levels 0..15, stored bit 15 set.
+rodata pixels: u16[16] = {
+	0x8000, 0x8001, 0x8002, 0x8003, 0x8004, 0x8005, 0x8006, 0x8007,
+	0x8008, 0x8009, 0x800a, 0x800b, 0x800c, 0x800d, 0x800e, 0x800f,
+}
+
+function irq(flags)
+	if (flags & 0x00000004) ~= 0 then
+		result.vblank_sequence = result.vblank_sequence + 1
+	end
+	*irq_ack = flags & 0x00000004
+end
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Upload and recover the source pixels
+
+Continue in the same entry module; every GP0 access uses the same port address.
+
+```lua
+-- Own GP0, circuit 1, the VBlank handler and raw row16, X32..47.
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0x00008020
+*window = 0x010252aa
+*extent = 0x0000001f
+*gp1 = 0x09000000
+*gp0 = 0xe6000000
+
+-- GP0 packs Y at bit16; DISPFB above packs source Y at bit11.
+*gp0 = 0xa0000000
+*gp0 = 32 | (16 << 16)
+*gp0 = 16 | (1 << 16)
+local pixel_words<const>: *word = pixels
+for index = 0, sizeof(u16[16]) // 4 - 1 do
+	*gp0 = pixel_words[index]
+end
+*gp0 = 0xc0000000
+*gp0 = 32 | (16 << 16)
+*gp0 = 16 | (1 << 16)
+for index = 0, 7 do
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.source_words[index] = *gp0
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Enable the circuit and wait for its publication
+
+Finish the entry module with the display publication and retained observations.
+
+```lua
+-- Publish the single circuit: 32 signal units become eight output pixels.
+*pmode = 0x0000ff21
+*irq_ack = 0x00000004
+local before<const> = result.vblank_sequence
+result.before_vblank = before
+*irq_mask = 0x00000004
+while result.vblank_sequence == before do
+	halt_until_irq
+end
+result.after_vblank = result.vblank_sequence
+result.programmed_source = *source
+result.programmed_window = *window
+result.programmed_extent = *extent
+result.completed = 1
+while true do
+	halt_until_irq
+end
+```
+
+</section>
+
+Create `res/manifest/manifest.rommanifest` with the following contents:
+
+```yaml
+title: PCRTC Source Sampling Manual Example
+hardware:
+    - type: rom
+```

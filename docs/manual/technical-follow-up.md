@@ -89,11 +89,18 @@ The concrete writing/observation assignments are:
   and final actual-print inspection pass. This closes that isolation lesson,
   not every display/PMODE scenario. A controlled coefficient/alpha contrast
   remains a distinct next plate; parallel backend work was left alone.
-- **PCRTC unequal magnification:** extract the consuming software sampler and
-  its mirror before adding an exact nonzero-phase sample-progression formula.
-  The current PCRTC owner exposes phase/step/magnification fields, but that
-  alone is not evidence for a consumer's rounding rule. This remains an open
-  finite paragraph, not a missing electrical-clock assertion.
+- **PCRTC unequal magnification — completed finite lesson:** the
+  [horizontal-sampling section](../book1/pcrtc.md#pcrtc-horizontal-sampling)
+  now derives source selection from signal step, source magnification and
+  first-pixel phase, using both actual software consumers as well as paired
+  producers. A complete 91-line ordinary BLua cartridge programs step 4,
+  magnification 3 and phase 2; its actual 8×1 output reads offsets 0,2,3,4,6,7,8,10
+  from sixteen adjacent source pixels. All source readback words and fresh
+  VBlank observations pass; all eight captured RGB pixels match. Independent
+  source/image and public-only reader checks, byte-exact reconstruction and
+  final actual-PDF inspection are retained in the sampling review. This closes
+  that formula/rounding/example gap, not PMODE contrasts, native/accelerated
+  parity, electrical clocks or whole-manual acceptance.
 
 The underlying source boundaries are the current GTE normal/PLUS dispatch and
 projection/lighting/cue owners, GPU ingress/readback and DMA controller, and

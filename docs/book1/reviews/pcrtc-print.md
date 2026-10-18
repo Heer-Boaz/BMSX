@@ -208,3 +208,63 @@ Final chapter-source SHA256:
 `65ceb707a557697a8cdb1d288a2b291a47ce87f605060e4db5dff81ff3f32412`.
 Verification: `/tmp/bmsx-pcrtc-window-published-identity.json`; the old draft
 preview is not this accepted canonical PDF. `git diff --check` is clean.
+
+## Unequal horizontal sampling and complete example — 2026-10-18
+
+**PASS for the finite 32-page publication-layout proof**, produced by the
+unchanged shared renderer: `/tmp/bmsx-pcrtc-sampling-proof/pcrtc.pdf`, SHA256
+`3c0e49a7764abd116c04d8424cc5b904634e9448265d0b7bb1d899e84c7ae541`.
+Receipt: 7 figures, 13 register groups, no layout errors; Chromium153.0.8010.12,
+Nodev22.23.1, Linuxx64. Page count records inspection scope, not completeness.
+
+All pages1–28 have exact full decoded RGBA bytes and dimensions equal to the
+accepted29-page canonical baseline, SHA256
+`1b167e80d198508aef0f5f4acdfb29672fe239538cb3ab2c64465bec2b2a6eca`.
+Root individually viewed final29–30 at scale1.4/original detail. A separate
+reviewer individually viewed31–32; final32 was re-viewed after the manifest
+pathname was added. Final31–32 are exact full-RGBA/dimensions matches to that
+accepted proof, SHA256
+`308ad463b383b986281d03409ae55efb2c409c7365b108ac61b34af7b87da0b3`.
+Identity records: `/tmp/bmsx-pcrtc-sampling-print/{identity,clarity-identity}.json`.
+No acceptance is based on page count, extracted text or a clean receipt alone.
+
+The two native tables keep every field and row; the actual8×1 output strip is
+readable with sharp pixel boundaries and its full caption. All91 literal BLua
+lines, headings/leads and the complete manifest fit without clipping or overlap.
+Running matter and folios remain present. Initial inspection caught literal
+unsupported heading-anchor syntax, fixed to the already-used HTML anchor;
+the affected page was re-viewed. No shared CSS, publisher, font change, type
+shrinking, new layout helper or gate was needed. The existing reference fixture
+now expects the actual7 figures rather than6; no count validation was added.
+
+Source, output semantics, ordinary guest and public reconstruction evidence are
+separate in [pcrtc-sampling-source.md](pcrtc-sampling-source.md). Whole-volume,
+native/accelerated-backend and physical-hardware acceptance are not claimed.
+
+### Independent finite tail inspection
+
+# PCRTC sampling tail — print-only review
+
+PDF: `/tmp/bmsx-pcrtc-sampling-proof/pcrtc.pdf`
+SHA-256: `308ad463b383b986281d03409ae55efb2c409c7365b108ac61b34af7b87da0b3`
+
+Reviewed only PDF pages 31 and 32 via the individually rasterized `page-031.png` and `page-032.png`, each viewed separately with ORIGINAL detail. Final page 32 was individually re-viewed at ORIGINAL detail after the manifest-path lead changed. Page 31 review carries by identity: its final PNG SHA-256 remains `066224f8cd9ff7a546af45a7532fb99b02a8af0f4381c692e40c2552fc940f32`, identical to the individually reviewed prior raster (root also confirmed exact RGBA and dimensions). Final page 32 PNG SHA-256 is `7ee3ac699b1d67cb358a507569f02ced9dd4954e6dbec45f30c72003fca32000`. No source, semantic, runtime, other-page, or full-book acceptance is claimed.
+
+## Observations
+
+- Page 31: both headings and leads, the complete `results.lua` block, and the first `cart.lua` block are legible. No clipped code lines, overlapping text, broken box boundaries, or stranded heading/lead were observed. The first entry-module block ends inside its code box before the page footer.
+- Page 32: the upload/recovery block, final publication/wait block, manifest-path lead (`Create res/manifest/manifest.rommanifest with the following contents:`), and complete three-line manifest are legible and contained within their respective boundaries. No clipped code lines, overlap, or overflow was observed. The manifest is wholly above the footer; no content reaches beyond its box or page boundary.
+- Running matter: the top running band and bottom-left `PCRTC` band are present on both pages. Actual RGBA bands were compared to resolve a display artifact: the complete top band (x=0..832,y=20..59) is byte-identical between pages, SHA-256 `0db235556e1a06378a57a4fe09717f7fac86ce3fb423fb22dd937fd99e6c34b4`; bottom-left band (x=60..179,y=1120..1159) is also byte-identical, SHA-256 `8f066e9c8fbed7bc5794a307aac2a0bc6a7d851fa9539ab6345f289f627a733d`. Page numbers 31 and 32 are present.
+
+Observed print issues: **none** within these two pages.
+
+### Canonical publication verification
+
+Ordinary `manual:check -- pcrtc` and `manual:publish -- pcrtc` pass, along with
+all19 existing manual-tool tests. Every canonical PDF page matches the accepted
+final proof in full decoded RGBA bytes and dimensions. Canonical SHA256:
+`aaf13ae0863070a534b1cb6e28ac23b8c1fd0ce4fa4c14c08b11d17211d4f5b0`.
+Final public-source SHA256:
+`aeda58e18fdcf737ef9e47f509eaf13248deab8f8f0f4a3441b369a8e047028f`.
+Identity record: `/tmp/bmsx-pcrtc-sampling-published-identity.json`. This renews
+`build/manual/pcrtc.pdf`, not the older draft preview. `git diff --check` passes.
