@@ -35,10 +35,9 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete base37+95 and formatting27+69 listings retained. Added pattern47+122 and packet42+117 ordinary BLua modules build with existing lint/type checks; 40/33 retained assertions and separate13/8 actual ordinary diagnostics pass. Independent bounded added-contract/program audits and source-aware exact public reconstruction pass. Current44-page DRAFT is covered by individually viewed added pages20-44/current1 and exact retained-page2-19 pixel evidence; no new framework/runtime/compiler/BIOS/publisher implementation.",
+			"resolution": "Complete base37+95 and formatting27+69 listings retained. Added pattern47+122 and packet42+117 ordinary BLua modules build with existing lint/type checks; 40/33 retained assertions and separate13/8 actual ordinary diagnostics pass. Independent bounded added-contract/program audits and source-aware exact public reconstruction pass. Current44-page DRAFT is covered by individually viewed added pages20-44/current1 and exact retained-page2-19 pixel evidence; no new framework/runtime/compiler/BIOS/publisher implementation. A later fresh public-only reader independently found no missing supplied-checkout understanding/assembly/build/observation step in the added pattern/packet routes; this is not execution or fresh-OS/whole-SDK acceptance.",
 			"open": [
-				"Required common Table-dependent input and helper contracts remain open; examples and bounded source audits do not clear the length STOP or the existing CPU7/BZ01 questions.",
-				"A fresh source-blind public-reader pass of the added pattern/packet material remains pending. Current exact reconstruction checks are independent of the author but source-aware, not that missing reader review."
+				"Required common Table-dependent input and helper contracts remain open; examples and bounded source audits do not clear the length STOP or the existing CPU7/BZ01 questions."
 			]
 		}
 	},

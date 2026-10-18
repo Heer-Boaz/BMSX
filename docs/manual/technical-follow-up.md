@@ -983,3 +983,19 @@ orientation/specification opening; cartridge/expansion coverage and whole-consol
 newcomer acceptance. The global hardware overview/specification opening is a
 next substantial authoring priority, not another empty volume label. Do not
 keep polishing String examples as a substitute for those remaining routes.
+
+## Later fresh String reader closure
+
+2026-10-18, public snapshot unchanged from ce3ef5b8f. A newly available fresh
+public-only reader inspected the pattern/packet references, complete programs,
+shared prerequisites, build/observation routes and READMEs without source facts,
+owner code, other reviews or reference PDFs. It independently reconstructed
+the two literal module sets and manifests and found no new actionable public
+reader blocker in the supplied-checkout route. Full ranges, exact hashes and
+limits are in [the reader record](../book1/reviews/bios-string-reader.md).
+
+This closes only the previously pending source-blind reader item, not execution,
+script/suite implementation correctness, fresh-OS dependency installation,
+whole SDK acceptance, common Table length, CPU7 or BZ01. The publication check
+remains blocked by the original shared-contract coverage items. The chapter
+and accepted44-page PDF body did not change; no rerendered artifact is claimed.

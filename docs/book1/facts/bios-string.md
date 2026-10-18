@@ -85,8 +85,9 @@ ordinary String helper Tables are affected, not only accepted Table operands.
   pattern/packing owner review, separate from earlier format/base evidence.
 - [Complete-program audit](../reviews/bios-string-program.md): final literal
   modules, retained observations and separate ordinary output.
-- [Reader route](../reviews/bios-string-reader.md): current supplied-checkout
-  reconstruction scope and its independence limits, not whole SDK acceptance.
+- [Reader route](../reviews/bios-string-reader.md): later fresh public-only
+  understanding/reconstruction/build/observation audit, distinct from the earlier
+  source-aware comparisons; no whole SDK/fresh-OS acceptance.
 - [Actual draft PDF](../reviews/bios-string-print.md): current artifact identity
   and individually inspected/delta-retained pages. Old 12/19-page hashes are
   historical evidence, not acceptance of the current expanded manuscript.

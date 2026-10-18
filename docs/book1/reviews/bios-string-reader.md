@@ -1,5 +1,82 @@
 # BIOS String chapter: bounded newcomer reader review
 
+## Fresh public-only closure of the pattern/packet reader item
+
+Date: 2026-10-18. Checkout: `/home/boaz/BMSX`.
+Reader model: experienced programmer, new to BMSX.
+
+## Verdict and findings
+
+**No new actionable public-reader blocker was established in this bounded review.** Given the documented working Node/npm/native-canvas prerequisites, a reader can select each interface, reconstruct each of the two ordinary cartridges, follow the supplied checkout's build/test route, and compare ordinary diagnostic output without reading implementation owners.
+
+This is a documentary/reconstruction finding, **not a successful execution claim**. No build, test, cartridge execution, or native runtime was performed. The review does not verify whether package scripts implement the commands as described or whether the retained suites actually make the claimed 40/33 assertions. The named supplied test and timeline paths exist, but their contents were not opened.
+
+No missing code prelude, manifest setting, entry selector, import, packet buffer, or observation command was found. No style-only rewrite is proposed.
+
+## Public evidence
+
+### Understanding the interfaces and their options
+
+- `docs/book1/bios-string.md:963-1079` supplies the pattern units, ASCII classes, escaping, sets, anchor scope, repetition, captures/backreferences, balancing/frontiers, and reached-error limitations. The important departures from an experienced programmer's possible standard-Lua assumptions are explicit: `%w` includes underscore (985), `^` restricts the current search start (1011), special constructs are not repeatable groups (1030), and malformed-pattern outcomes are not all assigned a generic error (1073-1079).
+- `docs/book1/bios-string.md:1081-1173` gives all four signatures and the option/return differences: `find` plain mode and initial end bound, `match` capture results, the single `gmatch` iterator, and the three `gsub` replacement categories, limit/count and non-character-preserving empty advancement. Examples use the same rules rather than silently importing standard Lua behavior.
+- `docs/book1/bios-string.md:1450-1775` supplies packing signatures/results, codepoint rather than octet units, complete listed format/control options and defaults, alignment and `X` lookahead, integer/text/float handling, position continuation and explicit errors. In particular, the text explains why this is not a String-pointer or mapped-byte-buffer API (1482-1492), and does not sell the float fields as universally correct IEEE interchange (1615-1699).
+
+### Reconstructing the complete programs
+
+- Pattern assembly instructions are at `docs/book1/bios-string.md:1175-1193`, `docs/programming/getting-started.md:457-484`, and `carts/bios_pattern_manual/README.md:3-8`. The result listing plus all five entry listings are complete and identify the single entry and required `results` module. They reproduce the supplied files **exactly**, including final newline, by joining the entry code bodies with one blank line:
+  - Result body: `docs/book1/bios-string.md:1196-1242` -> 47 lines.
+  - Entry bodies: `1259-1288`, `1300-1327`, `1337-1347`, `1358-1376`, `1389-1418` -> 122 lines after the prescribed joining.
+  - Manifest: `docs/programming/getting-started.md:477-479` exactly matches the supplied three-line manifest.
+- Packing assembly instructions are at `docs/book1/bios-string.md:1777-1812`, `docs/programming/getting-started.md:525-549`, and `carts/bios_pack_manual/README.md:3-8`. The independently named result layout and separate entry are explicit. They likewise reproduce the supplied files **exactly**:
+  - Result body: `docs/book1/bios-string.md:1815-1856` -> 42 lines.
+  - Entry bodies: `1868-1896`, `1907-1934`, `1945-1963`, `1974-1984`, `1996-2021` -> 117 lines after joining.
+  - Manifest: `docs/programming/getting-started.md:544-546` exactly matches the supplied three-line manifest.
+
+Literal cartridge files were read only by the textual comparison; no gap was filled from them.
+
+### Running and observing using the supplied checkout
+
+- The shared setup states repository-root POSIX commands, Node.js 22+, npm/development dependencies, `npm install -D`, and the required working native `canvas` binding: `docs/programming/getting-started.md:5-13`. Module/entry roles are explained at `41-45`. The guide explicitly bounds its checked environment rather than promising a fresh dependency installation on every OS (13). A fresh OS/bootstrap acceptance is not established by this review.
+- The pattern route gives exact tooling build, validated cartridge build, and supplied test invocation plus the expected pass line at `docs/programming/getting-started.md:486-497`. It separately gives the complete timeline JSON and ordinary tooling invocation at `499-515`, then tells the reader which 13 lines to compare and what the timeline does not prove at `517-523`. Those lines are all printed in `docs/book1/bios-string.md:1421-1448`, including the final standalone payload. The derived test image is not misrepresented as ordinary playback.
+- The packing route similarly supplies all three commands and expected pass line at `docs/programming/getting-started.md:551-563`; complete ordinary timeline and command at `565-581`; and the eight-line comparison instruction and protected-error/timeline caveats at `583-588`. The expected eight lines are printed at `docs/book1/bios-string.md:2024-2043`.
+- The two READMEs agree with those reconstruction counts, observation counts, separate test/playback routes and the caveats: pattern `1-24`, packing `1-24`.
+
+## Unresolved boundaries retained
+
+- The common Table-length contract remains unresolved, including temporary Tables for ordinary String inputs. This review does not convert conditional procedural descriptions into universal capture/result counts or output-assembly guarantees. Relevant explicit limitations include `docs/book1/bios-string.md:1038`, `1083-1091`, `1183-1187`, `1464-1469`, `1736`, and `2040-2043`.
+- Existing **CPU7 and BZ01** uncertainties are **not audited or declared resolved**. The public routes' broader CPU/compiler caveats remain in force (`docs/programming/getting-started.md:522-523`, `587-588`; both READMEs' final paragraphs).
+- No conclusion about runtime/compiler/BIOS correctness, mirrored native parity, arbitrary inputs, malformed patterns without specified outcomes, resource ceilings, hot-path performance, mapped-byte transfer, float interchange or SDK/manual-wide completeness follows from this reader audit.
+- Earlier base/nine-function/format examples were not reaudited. An initial heading/keyword locator emitted some earlier public headings/snippets before the requested Pattern section; they were not used to establish findings. No runtime, BIOS or compiler owner, source-fact ledger, other review, architecture document, historical PDF or memory artifact was opened.
+
+## Exact reviewed public snapshot
+
+Hashes were checked again after the reading and reconstruction comparisons. Line numbers below are from this exact snapshot.
+
+| File | Substantive reviewed range | SHA-256 |
+| --- | --- | --- |
+| `docs/book1/bios-string.md` | 963-2043 (Pattern language through EOF) | `a7b97cbab88db05e0e2a65a871beec4872b705292e298262bf5947b8e7ea01b5` |
+| `docs/programming/getting-started.md` | 1-95 (shared setup/roles); 457-588 (pattern/packing routes through EOF) | `5ab3940502405d0328ad927a86bb6d63e54d5d05a71d2106af27b148654e6744` |
+| `carts/bios_pattern_manual/README.md` | 1-24 (whole file) | `3c447b7a4fd56575f038c0d16342040979b55487420f48ea5572f508da845ea4` |
+| `carts/bios_pack_manual/README.md` | 1-24 (whole file) | `5ff0bad7918abaf251efe38fd504128c149192de2e26653ec2dae9e6b247b9cd` |
+
+Literal reconstruction-comparison inputs, not implementation evidence:
+
+| File | Range | SHA-256 |
+| --- | --- | --- |
+| `carts/bios_pattern_manual/results.lua` | 1-47 | `b4af10e7290a76adef699f49db75431a4f8b0728cae755c9a1239ab69e5ec3f0` |
+| `carts/bios_pattern_manual/cart.lua` | 1-122 | `215f1e96904e11dfd8eca819ee95a4c314516824a05567cfe0acbbc9b8e05583` |
+| `carts/bios_pattern_manual/res/manifest/manifest.rommanifest` | 1-3 | `ad0c79b52d43a59e792a0cb531aea8175961a80bfb16712c67bc163c04d757a4` |
+| `carts/bios_pack_manual/results.lua` | 1-42 | `014393c2fa8c85a19d06df7a8bdde166eb49acfcae87f6958c4bdb738e678491` |
+| `carts/bios_pack_manual/cart.lua` | 1-117 | `c55e1f8b2541a858d798085625725fcb4db2070942ac774b5548567089bd76fa` |
+| `carts/bios_pack_manual/res/manifest/manifest.rommanifest` | 1-3 | `1429ba7a47f506fa5a285a500eea9242df7241f26dfaa613a238b07fc0465edf` |
+
+Only `/tmp/bmsx-string-fresh-reader-review.md` was written; no checkout file was changed by this audit.
+
+
+---
+
+## Earlier source-aware reconstruction stage
+
 ## Current pattern/packet reader route — bounded reconstruction
 
 2026-10-18, chapter SHA-256
