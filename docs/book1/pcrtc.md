@@ -549,6 +549,8 @@ CPU alignment rejection occurs before the bus access and does not enter a bus-fa
 latch record. A faulting load does not overwrite its destination. The access rules in
 Section 2.10 apply equally to absolute and displacement-form data accesses.
 
+<section class="keep-together">
+
 The system bus retains the first fault's code, address, and access description until
 acknowledged. Later faults still advance the fault sequence but do not replace those
 latched details. These system words are separate from PCRTC:
@@ -559,6 +561,8 @@ latched details. These system words are separate from PCRTC:
 | `0801020CH` | BUS_FAULT_ADDR | First fault address |
 | `08010210H` | BUS_FAULT_ACCESS | First fault access description |
 | `08010214H` | BUS_FAULT_ACK | A nonzero write clears code, address, and access |
+
+</section>
 
 The three detail words reset to zero. Fault codes are NONE = 0, UNMAPPED = 1,
 UNALIGNED_IO = 2, and READ_ONLY = 3. ACCESS combines READ bit 0 or WRITE bit 1 with the

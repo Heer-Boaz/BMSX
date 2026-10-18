@@ -1715,3 +1715,18 @@ newcomer acceptance is still unproved. BH01 belongs to the held Math interface,
 not an invented requirement to standardize raw helpers in Memory. Relevant
 development/source-loading coverage stays in its owning companion/Book II;
 general Lua-library expansion remains deferred.
+
+## APU listening and first-frame reader routes — 2026-10-18
+
+The companion now supplies an ordinary non-debug APU browser launch, explicit
+audio activation before runtime start and expected short four-phase sequence.
+Actual keyboard startup and passive output capture are separate from the old
+numerical assertions; [source/evidence scope](../book1/reviews/apu-source.md).
+No new audio API, example family or general Lua exposition was added.
+
+A separate public-only first-frame audit finds no additional missing contract
+for raw input, CPU GP0 drawing, fresh-VBlank publication and disjoint-surface
+repetition: `/tmp/bmsx-first-frame-public-audit-current.md`. Existing exact
+register/packet/IRQ/lifetime contracts can be combined without another graphics
+framework. This is bounded route acceptance, not closure of RDB01, FSEL01,
+BH01, physical specifications or final whole-console newcomer acceptance.

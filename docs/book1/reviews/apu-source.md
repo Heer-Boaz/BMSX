@@ -189,3 +189,30 @@ clarification. Paired owner checks, two added cases per implementation and a
 fresh public-only reader pass. The complete ordinary four-route program is
 unchanged and freshly executes successfully. Component selection tests are not
 an ordinary CPU scheduling-window guarantee; print acceptance remains separate.
+
+## Ordinary listening route — companion only, 2026-10-18
+
+A public-only newcomer review found the APU hardware contracts complete within
+its scope but the companion stopped at numerical assertions. The new listening
+subsection supplies non-debug player/ROM commands, exact URL, audio-start action
+and a short four-phase expectation table. A separate author used only the
+source packet now indexed in [the APU facts](../facts/apu.md). This adds no new
+cart, API, general Lua lesson or hardware-chapter/PDF text.
+
+Root executed the ordinary browser route with real keyboard input and passive
+host-output capture. The visible gate precedes runtime start; captured PCM is
+nonzero during the subsequent short sequence. The facts preserve artifacts
+and limits: not a physical-speaker listening claim, waveform-parity approval
+or replacement for numerical assertions. Production reference before the edit:
+[Emscripten WebAudio resume](https://github.com/emscripten-core/emscripten/blob/main/src/lib/libwebaudio.js),
+activation ownership only; all BMSX instructions came from actual owners.
+
+Independent actual-owner and public-only reviews both pass:
+`/tmp/bmsx-apu-listening-final-source-review-current.md` and
+`/tmp/bmsx-apu-listening-public-reader-current.md`. The source reviewer corrected
+the distinction between authored assertions and their derived test cartridge;
+the final debug wording also avoids assuming every browser starts suspended.
+Companion SHA256: `6306120631abff56918ffd43c68c1c5822c3dbc1ff94856857635db2014f031f`.
+The unchanged `pcm_transfer_generator_and_badp` numerical case separately
+passes; all 19 existing manual tests pass. Neither substitutes for the actual
+browser start/output observation or establishes physical-speaker playback.

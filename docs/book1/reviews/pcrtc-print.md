@@ -1,5 +1,35 @@
 # PCRTC print review
 
+## Current 37-page preview and fault-table lead — 2026-10-18
+
+The old 22-page `pcrtc.preview.pdf` has been replaced with the current complete
+37-page DRAFT. Two independent print-only readers individually viewed all
+original pages1–19 and20–37, including running matter, tables, listings and
+figures: `/tmp/bmsx-pcrtc-current-preview-print-{front,tail}-review.md`.
+The front review found the system-bus fault-record lead stranded on page10
+before its table on11. Its initial quotation was corrected against the actual
+image; the exact lead ends “These system words are separate from PCRTC:”.
+
+Only the existing paragraph and four-row table were grouped with the existing
+short `keep-together` section. No hardware wording, code, figure, CSS, publisher
+or font changed. Root individually viewed corrected DRAFT10/11 and separate
+release-proof10/11 at ORIGINAL detail; both are complete and the lead stays
+with the table. Every other page matches its accepted prior artifact in
+complete decoded RGBA bytes and dimensions, including running matter.
+
+Current preview SHA256:
+`c5694f07131bec9044997d15bde386efeb0c727c5a1f333852fcdcdaeead74ec`.
+Current canonical `build/manual/pcrtc.pdf` SHA256:
+`dd00bd8d712f0a4d4f1ef16319a6f61b85d8cf2e966abe623976dcfce7635931`.
+All37 canonical pages exactly match the inspected release proof in full
+RGBA/dimensions after ordinary publication and all19 manual tests pass.
+Records: `/tmp/bmsx-pcrtc-current-preview-grouped-print/pcrtc-identity.json`,
+`/tmp/bmsx-pcrtc-current-release-print/pcrtc-identity.json` and
+`/tmp/bmsx-pcrtc-current-published-print/pcrtc-identity.json`.
+Public source SHA256:
+`76a1e4591b99b27a99b8ed3ab67e14bc283419265052f1a7877cf036595b2f09`.
+This renews layout only, not whole-console or series acceptance.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/pcrtc.pdf`:

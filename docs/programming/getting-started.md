@@ -213,6 +213,36 @@ Expect:
 
 This checks 16 transfer words and private-RAM roundtrip, separate DMA/APU completion, paused voice state with advancing sample clock, four end events, ended-bank clearing and no faults. It does not establish audible output. These commands were checked in an existing checkout, not fresh-platform certification.
 
+#### Listen to the ordinary APU cartridge
+
+The numeric headless check above runs assertions in a derived test cartridge; it does not demonstrate audible output. For ordinary ROM playback, build the existing `apu_manual` cart and non-debug browser player from the repository root:
+
+```sh
+npm run build:product:browser-player
+npm run build:toolchain:cart -- apu_manual
+```
+
+Reuse the already-running `dist` server on port 8080; do not start a duplicate. Only when starting from scratch, run:
+
+```sh
+npm run serve:dist
+```
+
+Open **http://127.0.0.1:8080/index.html?rom=apu_manual.rom**. Keep `index.html` in the URL: the server's root redirect drops the query. Wait for “Press any key, button or touch screen to start...”, then **press and release a keyboard key**, or **finish a screen touch**. This non-debug startup awaits audio resume before creating the guest runtime.
+
+Expect this short sequence:
+
+| Phase | Expected sound |
+| --- | --- |
+| ROM PCM sine | Brief 440 Hz sine, brief silent pause, resumed sine, then fade-out. |
+| Private-RAM PCM | The same PCM waveform, briefly played and faded after its RAM transfer exercise. |
+| Square generator | Brief 440 Hz square-wave timbre, brighter than the sine, then fade-out. |
+| Packed asset | The authored `tone.wav` one-shot, then silence as the cart halts. |
+
+These are very short, once-per-boot events, not multi-second stages: the authored waits are 50 ms and fades 10 ms at the 44,100-frame/s machine output clock, not guaranteed wall-clock durations. Transfers and command processing can add gaps. Negative gain reverses polarity; it does not change pitch or promise an audible distinction.
+
+Debug playback can produce sound, but debug startup runs the guest automatically without waiting for the audio-unlock interaction. A late click, key release, or touch end can therefore miss the initial short sequence. Use the non-debug gate above when checking all four phases. This route is not proof of playback on every browser, device, or speaker.
+
 ## Check the display-surface program
 
 Use the memory chapter's complete `results` and cartridge entry modules. After the existing tooling build, build the ordinary cartridge and run its result check:

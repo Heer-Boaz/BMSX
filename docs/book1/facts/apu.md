@@ -689,3 +689,27 @@ actual installed-ROM bounds, complete nonzero extent, non-playback regions,
 capture/execution/retained-selection distinction and live-rebind behavior.
 It does not turn scalar ROM zero-tail reads into descriptor padding or supply
 a guaranteed CPU instruction window before command execution.
+
+## Ordinary browser listening route
+
+| Fact | Current source lines |
+|---|---|
+| Non-debug player/cart builds export `dist/index.html`, `dist/engine.js`, `dist/apu_manual.rom` and matching `dist/system/bmsx-bios.rom`. The exact selection URL is `http://127.0.0.1:8080/index.html?rom=apu_manual.rom`; the server's root redirect drops its query. | `scripts/products/product_builder.ts:79,99-111`; `scripts/products/browser_build.ts:217-231`; `scripts/rompacker/rombuilder.ts:1282-1283`; `scripts/rompacker/artifacts.ts:46-56`; `hosts/browser/boot.ts:51-59,197-199,300-305`; `scripts/serve-dist.mjs:239-243` |
+| The non-debug prompt waits for key release or touch end and awaits audio resume before creating the runtime. Debug autostarts and only arms subsequent audio-unlock listeners, so late interaction can miss the short sequence. | `hosts/browser/boot.ts:164-171,260-293`; `hosts/browser/boot_audio.ts:11-18`; `hosts/browser/player.ts:32-42` |
+| The existing cart plays ROM sine/pause/resume/fade, the same PCM in private RAM, fractional square/fade, then the packed one-shot. Its 2205-frame waits and 441-frame fades are 50/10 ms at the 44100-frame/s machine output clock, not wall-clock guarantees. Negative gain reverses polarity, not pitch. | `carts/apu_manual/cart.lua:30-56,77-179,181-233`; clock `machine/ts/spec/audio/apu.ts:1-4`; signed mix `machine/ts/machine/devices/audio/output.ts:390-392,440-448` |
+
+Full source extraction: `/tmp/bmsx-apu-listening-route-facts-current.md`.
+Root executed both non-debug build commands, reused the existing dist server,
+opened the exact URL in ordinary Chromium, waited for the visible prompt and
+used real Space press/release. No evaluator, runtime writes, audio monkeypatch
+or autoplay-policy bypass was used; the test browser's default mute flag was
+removed. Actual screenshots show the gate and subsequent BIOS display.
+
+Passive `RDPSink.monitor` capture contains nonzero stereo PCM after startup,
+with silence before/after the short sequence. Archive:
+`/tmp/bmsx-apu-listening/` (script, console, screenshots, original capture and
+excerpt). This is output-path evidence, not physical-speaker listening,
+sample-accurate waveform parity or every-browser proof. Pulse capture reported
+timestamp adjustments; its durations are not used as APU timing contracts.
+Ordinary ROM SHA256: `5b3f7036c65937d3506afbcb8e4823d88c3eb75125c4ef8385c0a4a5403682d9`;
+artifact `613e58e504bc82b71488c281724f8db6cb80e5f525a6fa8a8357901d539c1930`.
