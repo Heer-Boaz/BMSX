@@ -453,3 +453,136 @@ startup-time or cycle guarantee.
 The original common Table-length and CPU/compiler questions remain open; a
 passing example does not resolve the helper-Table paths or arbitrary resource
 limits.
+
+## Build and inspect pattern searches
+
+The [complete pattern program](../book1/bios-string.md#complete-program-patterns-and-substitutions)
+is a separate cartridge, not an addition to the base or formatting entries.
+Create:
+
+```text
+carts/bios_pattern_manual/
+  results.lua
+  cart.lua
+  res/manifest/manifest.rommanifest
+```
+
+Save **Pattern result storage** as `results.lua`. Join the five **Pattern entry**
+parts in order as `cart.lua`, with one blank line between adjacent parts. The
+complete result module has 47 lines; the complete entry has 122. Only that entry
+starts with `module<entry>`; `require('results')` resolves the result module.
+The complete manifest is:
+
+```yaml
+title: BIOS String Patterns Manual
+hardware:
+    - type: rom
+```
+
+These two modules and manifest supply the ordinary cartridge. They use the
+installed BIOS and need no external asset or local matcher. From the repository
+root, with the prerequisites above:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_pattern_manual --debug
+npm run headless:test -- bios_pattern_manual tests/carts/bios_pattern_manual/bios_pattern_manual_assert.lua
+```
+
+The validated cart build runs lint/type checking and prepares the matching BIOS.
+The supplied debug-only test waits for completion, then checks 40 assertions.
+Expect `[test] pattern_operations: passed`. The test suite is not another
+cartridge entry; do not append it to the printed program. Its fresh derived
+integration image is separate from ordinary playback and does not prove native
+execution or every pattern/capture/output path.
+
+For independent ordinary observations, create
+`tests/carts/bios_pattern_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BIOS String patterns retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_pattern_manual/ordinary_timeline.json bios_pattern_manual
+```
+
+The command selects the debug cartridge and BIOS. Compare all 13 diagnostic
+lines with **Pattern observations** in the chapter, including the final
+standalone replacement-error payload. The timeline only chooses an observation
+endpoint; it does not itself assert the printed values. Its `frame: 4` is a
+zero-based presentation offset, not an elapsed-frame, startup-time or cycle
+promise. The common Table-length and existing CPU/compiler questions remain
+open despite these successful examples.
+
+## Build and inspect packed records
+
+The [complete packing program](../book1/bios-string.md#complete-program-a-packed-record)
+is another separate cartridge. Do not combine its entry or its independently
+named result layout with the earlier examples. Create:
+
+```text
+carts/bios_pack_manual/
+  results.lua
+  cart.lua
+  res/manifest/manifest.rommanifest
+```
+
+Save **Packing result storage** as `results.lua`. Join the five **Packing entry**
+parts in order as `cart.lua`, placing one blank line between adjacent parts.
+These are the complete 42-line result module and 117-line entry, with no omitted
+library implementation or setup prelude. Use this complete manifest:
+
+```yaml
+title: BIOS Binary Packing Manual
+hardware:
+    - type: rom
+```
+
+From the repository root, with the same development prerequisites:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_pack_manual --debug
+npm run headless:test -- bios_pack_manual tests/carts/bios_pack_manual/bios_pack_manual_assert.lua
+```
+
+Expect `[test] binary_records: passed`. The supplied debug-only test waits for
+completion, then checks 33 assertions: the full packet comparison, decoded
+fields, absolute continuation positions, padding, embedded-zero/fixed text,
+codepoint-versus-octet distinction and three reached errors. The cartridge does
+not allocate a mapped packet buffer; the packet is a String. These tests do not
+establish a String-to-byte-storage ABI, exhaustive float interchange, native
+execution or arbitrary-size completion.
+
+For independent ordinary diagnostics, create
+`tests/carts/bios_pack_manual/ordinary_timeline.json`:
+
+```json
+[
+  {
+    "frame": 4,
+    "description": "BIOS binary packing retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_pack_manual/ordinary_timeline.json bios_pack_manual
+```
+
+Compare the eight `Pack ...` lines with **Packing observations**. The ordinary
+run is not the retained-result test, and the timeline does not assert those
+values. The final three lines deliberately report protected errors. Again,
+`frame: 4` is the selected zero-based presentation offset, not a hardware latency
+guarantee. The common Table-length and existing CPU/compiler questions remain
+open.

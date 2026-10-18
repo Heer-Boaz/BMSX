@@ -1,17 +1,17 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Nine installed String-base exports plus the separate string.format API, codepoint values versus mapped encoded bytes and actual String-index lookup; pattern and binary-pack interfaces remain separate authored work.",
+			"resolution": "All seventeen installed String exports: nine base operations, formatting, four pattern searches/substitutions and three packet interfaces; String codepoints remain distinct from mapped encoded bytes. Book II software scope.",
 			"open": []
 		},
 		"registers": {
-			"resolution": "Actual base and format signatures, arguments/defaults, word/codepoint conversion and returned values/counts; complete format grammar/flags/specifiers, not a mapped register bank or per-function reset words.",
+			"resolution": "Actual signatures, argument/default/result procedures; complete format conversions, pattern constructs and packet tokens/controls/widths/alignment. These ordinary BIOS calls are not a mapped register bank.",
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Codepoint selection/construction, ASCII mapping, exact substring and lead-driven UTF-8 reads; format field/sign/prefix/padding order, signed/U32 and fixed/scientific/general/quoted construction, default numeric-text dependency and actual installed two-result %c delivery.",
+			"resolution": "Codepoint selection/construction, ASCII mapping, exact substring and lead-driven UTF-8 reads; format field/sign/prefix/padding order, signed/U32 and fixed/scientific/general/quoted construction, default numeric-text dependency and actual installed two-result %c delivery. Pattern candidate/capture/backtracking/iterator and replacement branches; exact empty-match advancement; packet endian/alignment/X lookahead, integer-safe-range/read-order, fixed/terminated/prefixed text and explicit float equations.",
 			"open": [
-				"Accepted #Table branches and ordinary String formats using precision-substring, general zero stripping or uppercase helper Tables inherit the unresolved common SETT/rawset length producer. Neither conditional cached-length wording nor passing String examples closes the complete shared contract."
+				"Accepted #Table branches and ordinary String helpers, including format construction, pattern capture/tuple/replacement/output collections and pack/unpack pieces/results, inherit the unresolved common SETT/rawset length producer. Procedural actual-length wording and passing examples do not close it."
 			]
 		},
 		"visibility": {
@@ -19,7 +19,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Ordinary instruction/helper work, repeated codepoint scans, intermediate Tables/Strings, repeated doubling, 256-codepoint decoder staging and value-dependent format padding/scaling/normalization/base conversion; no fixed total-cycle, physical bandwidth or arbitrary-size resource guarantee.",
+			"resolution": "Ordinary instruction/helper work, repeated codepoint scans, intermediate Tables/Strings, repeated doubling, 256-codepoint decoder staging and value-dependent format padding/scaling/normalization/base conversion; no fixed total-cycle, physical bandwidth or arbitrary-size resource guarantee. Pattern candidate scans/backtracking and packet digit/float-normalization/Table work are explicit; substitution count and lazy iteration are not per-call work budgets.",
 			"open": []
 		},
 		"interrupts": {
@@ -27,7 +27,7 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Reached primitive argument/length and scalar-validity errors, mapped accesses, exact incomplete/unsupported format error Strings and ordered star consumption; no validating UTF-8 parser or universal wrapper/type validator.",
+			"resolution": "Reached primitive argument/length and scalar-validity errors, mapped accesses, exact incomplete/unsupported format error Strings and ordered star consumption; no validating UTF-8 parser or universal wrapper/type validator. Reached pattern errors and deferred validation, replacement-kind checks, packet parser/range/size/position/terminator errors are stated without importing stock Lua behavior.",
 			"open": []
 		},
 		"reset": {
@@ -35,9 +35,10 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete base37+95 and separate formatting27+69 ordinary BLua listings; base32 and formatting18 retained assertions, separate seven-assertion format-call unit case and9/8 actual ordinary diagnostic lines. Independent added-format contract/program audits pass within their scopes; public-only supplied-checkout reconstruction is clear, and all19 current draft pages are covered by actual individual-page inspection plus exact retained-pixel/delta evidence. Book II software classification is applied. No runtime/BIOS/compiler/publisher/shared-harness change.",
+			"resolution": "Complete base37+95 and formatting27+69 listings retained. Added pattern47+122 and packet42+117 ordinary BLua modules build with existing lint/type checks; 40/33 retained assertions and separate13/8 actual ordinary diagnostics pass. Independent bounded added-contract/program audits and source-aware exact public reconstruction pass. Current44-page DRAFT is covered by individually viewed added pages20-44/current1 and exact retained-page2-19 pixel evidence; no new framework/runtime/compiler/BIOS/publisher implementation.",
 			"open": [
-				"Required common Table-dependent input and helper contracts remain open; normal String recipes, bounded paired base comparisons and current formatting execution do not clear the existing length STOP."
+				"Required common Table-dependent input and helper contracts remain open; examples and bounded source audits do not clear the length STOP or the existing CPU7/BZ01 questions.",
+				"A fresh source-blind public-reader pass of the added pattern/packet material remains pending. Current exact reconstruction checks are independent of the author but source-aware, not that missing reader review."
 			]
 		}
 	},

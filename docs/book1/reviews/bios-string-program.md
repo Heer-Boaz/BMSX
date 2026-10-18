@@ -1,5 +1,64 @@
 # BIOS String complete-program source sub-audit
 
+## Current pattern and packet programs — exact final source
+
+2026-10-18; baseline b515e804e plus this documentation/example worktree.
+The chapter is SHA-256
+`a7b97cbab88db05e0e2a65a871beec4872b705292e298262bf5947b8e7ea01b5`.
+The two new cartridges are separate ordinary programs; neither extends another
+entry or introduces a local matcher/codec/ABI helper. Existing runtime, BIOS,
+compiler, test framework and publisher are unchanged.
+
+| Program | Complete result module | Entry parts and exact assembly | Retained check | Independent ordinary output |
+| --- | --- | --- | --- | --- |
+| Pattern searches/substitutions | 47 lines, SHA `b4af10e7290a76adef699f49db75431a4f8b0728cae755c9a1239ab69e5ec3f0` | 30+28+11+19+30 lines plus four blank separators =122; SHA `215f1e96904e11dfd8eca819ee95a4c314516824a05567cfe0acbbc9b8e05583` |40 explicit assertions after completion wait |13 exact diagnostic lines, including the standalone final replacement-error payload |
+| Packed record |42 lines, SHA `014393c2fa8c85a19d06df7a8bdde166eb49acfcae87f6958c4bdb738e678491` |29+28+19+11+26 plus four blank separators =117; SHA `c55e1f8b2541a858d798085625725fcb4db2070942ac774b5548567089bd76fa` |33 explicit assertions after completion wait |8 exact diagnostic lines |
+
+The independently reviewed final chapter blocks reconstruct the actual files
+byte-for-byte, with exactly one blank line between adjacent entry parts. The
+printed manifests/timelines likewise match the actual files. Comparison words
+are explicit Boolean observations; Strings are not invented raw addresses.
+`completed=1` only establishes reaching the marker. The tests separately
+check every non-completion result cell; the timelines themselves assert none.
+
+Root actually ran each existing validated cart build, the supplied fresh-target
+integration suite and separate ordinary playback. Final commands exited0;
+the two cases are `pattern_operations` and `binary_records`. Exact source,
+ROM/BIOS identities, command/log paths and literal outputs are in
+[pattern example evidence](../facts/bios-string-pattern-example.md) and
+[packing example evidence](../facts/bios-string-pack-example.md).
+Independent reviewers read those actual source/owner leaves and logs but did
+not themselves rebuild or rerun the cartridge. This is separate from ordinary
+playback identity and is not native execution.
+
+Pattern observations cover plain/pattern/codepoint positions, text/position
+captures, generic iteration and anchored searches, greedy/minimal spans,
+balance/frontier/backreference/complement matching, all three replacement
+kinds, empty advancement and reached/deferred errors. Packing checks all33
+packet codepoints, fixed header23/record33, continued positions24/34, both endian
+orders and padding, exact selected f/d values, truncation/zero-padding,
+embedded-zero/terminated text, larger-than-octet codepoints and three errors.
+These are bounded examples, not universal grammar/numeric/resource coverage.
+
+The independent compiled-call follow-up checked actual nested pack/char calls,
+two-result direct struct assignments, typed-word stores and final unpack
+forwarding at `toolchain/ts/lua/compiler.ts:3889-3939,4025-4079,4178-4231,5235-5245,5647-5690,5754-5764`
+and the actual BIOS return producers. No conclusion relies on parentheses
+forcing one result. Initial source proposals failed existing cached-call/export
+lint; the cart was simplified and rebuilt, not the linter relaxed.
+
+Raw final reports: `/tmp/bmsx-pattern-program-source-review.md` and
+`/tmp/bmsx-pack-program-proposal-source-review.md` (its final actual-source and
+combined public sections supersede the earlier proposal-only scope).
+The [reader record](bios-string-reader.md) explicitly distinguishes combined
+source-aware reconstruction from a fresh source-blind public-reader pass.
+The common Table-length STOP, CPU7/BZ01, every native/all-input/optimizer-wide
+claim and machine-resource/completion ceilings remain OPEN.
+
+---
+
+## Earlier formatting and base-program evidence
+
 ## Current formatting program/source-evidence review
 
 2026-10-18. Independent, finite read-only review of the current worktree and retained artifacts. **No remaining failure found in the reviewed program/public-literal/build-and-observation contract after the wording corrections described below.** This is not an unconditional formatter or publication sign-off.

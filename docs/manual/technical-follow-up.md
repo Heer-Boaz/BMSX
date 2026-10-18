@@ -930,3 +930,56 @@ questions, BZ01, resource limits, remaining BIOS/environment/language coverage,
 whole-machine overview/specifications, graphics contrasts, cartridge/expansion
 references and whole-console newcomer acceptance all remain open. No publisher
 framework, new gate, runtime or shared harness was added.
+
+## Installed String patterns and packets: current bounded draft
+
+2026-10-18; baseline b515e804e plus this documentation/example slice. The
+[String chapter](../book1/bios-string.md) now has authored coverage for all17
+installed exports: the nine base operations, formatter, four pattern functions
+and three packet interfaces. This is not a blanket contract/publication or
+whole-manual completion claim. The earlier formatting section above records
+its historical stage; pattern/packing drafts are now merged, not still merely
+queued author inputs.
+
+The pattern grammar and APIs describe codepoint classes/sets/anchors/suffixes,
+captures/backreferences/balance/frontiers, search normalization and result
+procedures, iterator advancement and repeated failure, all replacement kinds,
+empty-match skipping, reached/deferred errors and actual bindings/work limits.
+Source review caught two overstatements: Table-dependent enumeration needed a
+shared boundary, and Table lookup does not call Function-valued `__index`.
+The draft now follows actual Table-valued chaining and restricts the effects
+caution to replacement functions. The descriptor's missing fourth `find`
+argument remains a separate tooling note, not a guessed three-argument limit.
+
+The packet reference gives every token/control and fixed default, maximum
+alignment and X lookahead, integer safe-range and signed-read ordering, fixed/
+terminated/prefixed text, exact float equations, codepoint—not octet—packets,
+accepted category branches, errors and work boundaries. No local byte codec,
+String address, host ABI or presumed standard float correction was introduced.
+
+Real ordinary BLua cartridges provide complete47+122 and42+117-line modules,
+validated builds,40 and33 retained assertions, and separate13 and8 literal
+ordinary diagnostic lines. Chapter blocks reconstruct the actual sources,
+manifest and timeline byte-for-byte. Root simplified lint-rejected cached-call
+locals instead of relaxing lint. No BIOS/runtime/compiler/publisher/harness
+implementation changed. Independent source-aware reviews check the actual
+owners, final source, logs and public assembly, rather than only author facts.
+Production Lua [String-library source](https://github.com/lua/lua/blob/master/lstrlib.c)
+was inspected as implementation-review organization only; its C/Lua behavior
+supplies no BMSX fact, and was not sent to the facts-only authors.
+
+The current44-page DRAFT PDF has no recorded renderer overflow. Existing
+keep-together markup resolves observed split leads/tables/formulas without
+smaller type or publisher changes. Actual artifact/raster scope is in the
+[print record](../book1/reviews/bios-string-print.md), not certified by the
+number44. Earlier19-page artifact acceptance is historical except for the
+exact retained-pixel comparisons explicitly recorded there.
+
+**Still open:** common Table-length producer, CPU7 and BZ01; the new source-
+blind newcomer pass (current final assembly reviewers are source-aware); native
+or all-input/resource claims; remaining BIOS/math/os/loading/environment work;
+complete source-language/SDK guidance; graphics contrasts; whole-machine
+orientation/specification opening; cartridge/expansion coverage and whole-console
+newcomer acceptance. The global hardware overview/specification opening is a
+next substantial authoring priority, not another empty volume label. Do not
+keep polishing String examples as a substitute for those remaining routes.

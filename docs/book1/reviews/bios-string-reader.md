@@ -1,5 +1,39 @@
 # BIOS String chapter: bounded newcomer reader review
 
+## Current pattern/packet reader route — bounded reconstruction
+
+2026-10-18, chapter SHA-256
+`a7b97cbab88db05e0e2a65a871beec4872b705292e298262bf5947b8e7ea01b5`;
+getting-started SHA-256
+`5ab3940502405d0328ad927a86bb6d63e54d5d05a71d2106af27b148654e6744`.
+The chapter, separate build routes and two cartridge READMEs supply the complete
+modules, manifests, exact commands, debug-image selection and literal ordinary
+observations. No extra local matcher/codec or source lookup is required for the
+printed examples. The retained tests are explicitly supplied-checkout debug
+suites, not omitted cartridge modules or proofs from a timeline description.
+
+Independent source-aware reviewers verified the final public literal assembly,
+manifest/timeline equality, assertion counts and diagnostic lines. Root repeated
+these byte comparisons in `/tmp/bmsx-string-next-reconstruction-check.py`, log
+`/tmp/bmsx-string-next-reconstruction.log`. The resulting source identities and
+execution evidence are in [the program review](bios-string-program.md).
+
+**Independence limit:** unlike the earlier base/format public-only passes below,
+the current added reconstruction reviewers already knew the owners. They are
+not fresh source-blind newcomer reviewers. This is no known missing assembly
+step in the supplied-checkout route, not an independent whole-library newcomer
+acceptance or complete SDK installation/debugging review. A fresh source-blind
+pass of the new additions remains pending. Do not relabel this combined
+source/reconstruction work as that missing pass.
+
+The common Table-length STOP, CPU7/BZ01, remaining BIOS/environment material,
+hardware overview/specification opening and whole-console acceptance remain
+open. Changing volume labels or passing these recipes does not close them.
+
+---
+
+## Earlier public-only formatting and base evidence
+
 ## Public-only newcomer review — original current snapshot
 
 ### Scope and method

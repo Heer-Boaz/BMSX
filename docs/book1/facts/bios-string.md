@@ -1,10 +1,12 @@
 # BIOS String operations: source index
 
-2026-10-18, baseline ea4ba90ab. Current software is the authority. No
-architecture document or historical PDF supplies facts. This slice is exactly
-the nine base exports plus the separately indexed formatting interface, not a
-complete reference for patterns, binary packing, all BIOS libraries or cartridge/
-expansion devices. Book II now contains this software chapter.
+2026-10-18; base extraction baseline ea4ba90ab, later formatting and current
+pattern/packing slice at b515e804e plus this documentation/example worktree.
+Current software is the authority; no architecture document or historical PDF
+supplies BMSX facts. All seventeen installed String exports now have authored
+coverage and complete ordinary examples below. This does not close the common
+Table-length STOP, certify all-input/native behavior, or finish the BIOS/manual.
+Book II contains this software chapter.
 
 - [Base-operation facts](bios-string-reference.md): actual byte/char/len,
   ASCII case, substring/reversal/repetition and mapped-byte decoder contracts,
@@ -20,6 +22,19 @@ expansion devices. Book II now contains this software chapter.
   ordinary BLua program,18 retained assertions, separate call-result unit case
   and8 observed ordinary diagnostic lines. It does not supply native execution
   or resolve the common Table-length stop.
+- [Pattern source facts](bios-string-pattern.md): all four interfaces, full
+  grammar, reached errors, exact iterator/substitution advancement, current
+  Table-only metatable lookup and caller/result boundaries. The separate
+  [plain-argument card](bios-string-pattern-plain.md) records the descriptor
+  omission without inventing a three-argument runtime limit.
+- [Pattern example evidence](bios-string-pattern-example.md):47+122 actual
+  source lines,40 retained assertions,13 separate ordinary diagnostic lines.
+- [Packing source facts](bios-string-pack.md): all three interfaces and complete
+  token/control/alignment/X/int/text/float procedures, category branches,
+  explicit errors and actual compiled-call boundaries.
+- [Packing example evidence](bios-string-pack-example.md):42+117 actual source
+  lines,33 retained assertions,8 separate ordinary diagnostics; codepoint
+  packets are not silently recast as mapped-byte buffers.
 - [Earlier text/byte boundary](memory-strings.md) and the public Memory chapter
   own typed storage, mapped addresses, String reference versus bytes, literal
   encoding, initialization and reservations. CPU owns Number/word conversion,
@@ -60,24 +75,22 @@ The seven earlier runtime-owner questions, generic SETT/rawset common-length
 STOP and separate bios-base BZ01 compiler/source-zero question remain open.
 This chapter must not claim that passing String recipes closes accepted
 non-String branches that depend on the stopped common Table-length producer.
-Any such required claim retains open coverage. Pattern, formatted-text and
-binary-pack interfaces remain separate authoring/execution assignments.
+Any such required claim retains open coverage. The added pattern and binary-pack references retain these same open dependencies;
+ordinary String helper Tables are affected, not only accepted Table operands.
 
 
-## Independent review records
+## Current independent review records
 
-- [Nine-API contract audit](../reviews/bios-string-source.md): actual paired
-  owners and source forms, not factsheet agreement alone.
-- [Complete-program source audit](../reviews/bios-string-program.md): literal
-  modules, retained results, separate ordinary output and exact artifact identity.
-- [Public-only newcomer reconstruction](../reviews/bios-string-reader.md): no
-  additional local API/assembly/observation gap; shared Table contract stays open.
-- [Actual draft PDF inspection](../reviews/bios-string-print.md): all12 pages
-  individually inspected, final PDF SHA256
-  `75e2d3e8d8625c94bc242c26b971312639d7befa08c25137adc8bc9b4f1401a7`.
-  This is rendering acceptance, not publication or final book classification.
+- [Contract source audit](../reviews/bios-string-source.md): bounded actual
+  pattern/packing owner review, separate from earlier format/base evidence.
+- [Complete-program audit](../reviews/bios-string-program.md): final literal
+  modules, retained observations and separate ordinary output.
+- [Reader route](../reviews/bios-string-reader.md): current supplied-checkout
+  reconstruction scope and its independence limits, not whole SDK acceptance.
+- [Actual draft PDF](../reviews/bios-string-print.md): current artifact identity
+  and individually inspected/delta-retained pages. Old 12/19-page hashes are
+  historical evidence, not acceptance of the current expanded manuscript.
 
-The later user-requested reference-booklet structure/title comparison is a
-separate scheduled editorial task. Current Book I / hardware-reference labels
-are provisional, including for the software chapters; this slice does not
-renumber books or certify their eventual title assignments.
+The [organization review](../../manual/booklet-structure.md) and central
+volume/catalog data now apply Book II — BLua32 and BIOS Reference. Title
+classification is not whole-manual completion or factual publication approval.

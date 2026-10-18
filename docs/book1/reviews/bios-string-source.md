@@ -1,5 +1,79 @@
 # BIOS String operations: independent bounded contract-source review
 
+## Current pattern and packet contracts — bounded source review
+
+2026-10-18; baseline b515e804e plus the documentation/example worktree.
+Current public chapter SHA-256:
+`a7b97cbab88db05e0e2a65a871beec4872b705292e298262bf5947b8e7ea01b5`.
+This added scope starts at **Pattern language** and continues through the packet
+reference, excluding the separately audited complete programs. Earlier format
+and base evidence below retains its historical scope, not a new whole-library
+or whole-manual approval.
+
+Fresh facts-only authors supplied the atoms, four-API and packet drafts.
+Independent reviewers read the actual complete pattern and pack/float owners,
+not just those facts. The pattern review identified two failures: unqualified
+capture/result/replacement/output enumeration across actual Table lengths, and
+an unsupported effects claim for replacement Table lookup. The final public
+account has a shared Table dependency boundary, explicitly Table-valued
+`__index` chaining without Function callbacks, and a function-only effects
+caution. The final targeted disposition is recorded with the program review.
+The earlier frontier and terminal-percent parsing corrections are retained.
+
+The packet review found no contradicted sentence in its full bounded draft.
+It checked every token/control, exact alignment/X lookahead, safe-integer tests
+and signed-read order, text-copy branches, unusual accepted categories,
+float encoding/decoding equations, explicit errors, work and captured/current
+bindings. The final shared paragraph also qualifies normal String helper Tables,
+not only accepted Table operands. No universal octet ABI or repaired IEEE
+encoding is imported.
+
+Actual source scope:
+
+| Surface | Owners inspected directly by independent reviewers |
+| --- | --- |
+| Pattern implementation/install/bindings | `machine/bios/string/pattern.lua:1-567`; `machine/bios/string.lua:1-22`; `machine/bios/main.lua:4-9`; `machine/bios/string/base.lua:1-82`; `machine/bios/table.lua:41-98`; `machine/bios/base.lua:1-90,195-260` |
+| Packet and float implementation | `machine/bios/string/pack.lua:1-452`; `machine/bios/string/float/encode.lua:1-56`; `machine/bios/string/float/decode.lua:1-37`; same immediate String/Table/base dependencies |
+| Codepoints, LEN, numbers and comparisons | TS `machine/ts/machine/cpu/cpu.ts:2550-2848,4286-4368`; `value_slots.ts:124-160`; native `machine/cpp/machine/cpu/cpu_dispatch.inl:171-383`; `cpu.cpp:2152-2228`; `value.h:95-160,189-230`; paired `spec/blua32/numeric` leaves |
+| Ordinary replacement Table lookup | TS `machine/ts/machine/cpu/cpu.ts:619-653`; `table.ts:334-369`; native `machine/cpp/machine/cpu/cpu.cpp:3243-3249`; `table.h:67-81,225-239` |
+| Actual call/result adjustments, not parentheses assumptions | `toolchain/ts/lua/compiler.ts:3889-3939,4372-4409,5628-5699,5754-5764`; `toolchain/ts/lua/syntax/parser.ts:1345-1349`; paired TS `cpu.ts:3272-3297,3406-3439` and native `cpu.cpp:3017-3043,3127-3148` |
+
+The narrow pack `select` calls are nonfinal outer arguments or scalar locals;
+that is the one-result boundary, not grouping. Pattern callback assignment is
+scalar; final tuple forwarding and fixed gsub return are distinct. Inspection
+of these actual callsites does not prove every optimizer/source pipeline.
+The separate SF1 card keeps the descriptor omission visible; no tooling fix was
+silently made.
+
+Raw bounded reports: `/tmp/bmsx-patterns-current-source-review.md`,
+`/tmp/bmsx-pack-current-source-review.md`, and the final follow-up records cited
+in [the complete-program review](bios-string-program.md). Facts are indexed in
+[pattern](../facts/bios-string-pattern.md) and
+[packet](../facts/bios-string-pack.md) sheets. No architecture/reference PDF,
+runtime/BIOS/compiler/publisher repair, benchmark or universal runtime theorem
+is part of this contract audit. Common Table length, CPU7 and BZ01 remain OPEN.
+
+### Final targeted disposition
+
+The independent final pattern reviewer directly checked the corrected public
+boundary and paired lookup leaves: **F1/F2 addressed, no concrete remaining
+failure in that targeted scope**. It explicitly did not close the Table contract.
+The raw final report is `/tmp/bmsx-pattern-program-source-review.md`, SHA-256
+`199973062dbb745a528e2268c5287db6e0372a5244760d56812810328b20787c`.
+The packet reviewer likewise checked the final shared Table paragraph against
+actual `out`/`#out`/concat/unpack consumers, including ordinary String operands.
+
+The edited opening classification at lines3–9 received a separate editor
+owner check at `machine/bios/main.lua:4-6`, `machine/bios/string.lua:1-22`,
+`machine/bios/string/pattern.lua:420-449,516-565` and
+`machine/bios/string/pack.lua:277-384`. This is not falsely included in the
+independent pattern-program review's declared line963-onward scope. No further
+technical fact is introduced by the opening's interface grouping.
+
+---
+
+## Earlier formatting and base-operation evidence
+
 ## Current string.format contract — bounded actual-source review
 
 ### Snapshot and scope

@@ -1,0 +1,3 @@
+title: BIOS Binary Packing Manual
+hardware:
+    - type: rom

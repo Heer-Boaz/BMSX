@@ -1,0 +1,53 @@
+local state<const> = require('results')
+local result<const>: *bios_pattern_manual_result = state.result
+
+return {
+	kind = 'integration',
+	tests = {
+		pattern_operations = function(t)
+			t:wait_until('pattern observations complete', function()
+				return result.completed == 1
+			end, 8)
+			assert(result.plain_start == 2)
+			assert(result.plain_end == 2)
+			assert(result.pattern_start == 1)
+			assert(result.pattern_end == 1)
+			assert(result.capture_match == 1)
+			assert(result.coordinate_match == 1)
+			assert(result.position_capture == 5)
+			assert(result.position_text_match == 1)
+			assert(result.negative_start == 4)
+			assert(result.empty_find_nil == 1)
+			assert(result.empty_match_length == 0)
+			assert(result.word_count == 3)
+			assert(result.word_heads[0] == 99)
+			assert(result.word_heads[1] == 100)
+			assert(result.word_heads[2] == 115)
+			assert(result.anchored_count == 3)
+			assert(result.greedy_match == 1)
+			assert(result.minimal_match == 1)
+			assert(result.balanced_match == 1)
+			assert(result.frontier_match == 1)
+			assert(result.backreference_match == 1)
+			assert(result.complement_match == 1)
+			assert(result.string_replacement_match == 1)
+			assert(result.string_replacement_count == 2)
+			assert(result.table_replacement_match == 1)
+			assert(result.table_replacement_count == 2)
+			assert(result.callback_replacement_match == 1)
+			assert(result.callback_replacement_count == 2)
+			assert(result.callback_calls == 2)
+			assert(result.empty_substitution_match == 1)
+			assert(result.empty_substitution_count == 4)
+			assert(result.zero_limit_match == 1)
+			assert(result.zero_limit_count == 0)
+			assert(result.deferred_replacement_match == 1)
+			assert(result.deferred_replacement_count == 0)
+			assert(result.invalid_pattern_error == 1)
+			assert(result.invalid_capture_error == 1)
+			assert(result.invalid_replacement_error == 1)
+			assert(result.unicode_start == 3)
+			assert(result.unicode_end == 3)
+		end,
+	},
+}

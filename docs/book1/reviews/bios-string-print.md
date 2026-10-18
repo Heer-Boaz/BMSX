@@ -1,5 +1,72 @@
 # BIOS String draft preview — independent print review
 
+## Current expanded String draft — actual PDF evidence
+
+2026-10-18. Actual artifact: `build/manual/bios-string.preview.pdf`, SHA-256
+`52f50aec9f8ed1455601156d6b2911176eccad39ce47911767d04032c383678d`,
+799202 bytes,44 pages. Chapter SHA-256:
+`a7b97cbab88db05e0e2a65a871beec4872b705292e298262bf5947b8e7ea01b5`.
+The PDF remained hash-stable during both added-page reviews. This is a DRAFT,
+not publication approval or a page-count claim of completeness.
+
+Root rendered every actual page at PDFium scale1.4 into
+`/tmp/bmsx-string-expanded-final-pages/` using the existing inspection venv.
+Independent source reviewers then opened the supplied images individually:
+pattern pages20–31 and packet pages32–44. They reviewed these actual renders,
+not a contact sheet, receipt or stylesheet; they did not independently rerender.
+Root also inspected the added candidate pages and the final changed page1.
+
+Pages2–19 are exact full-page RGB matches against the previously individually
+accepted19-page formatting artifact at the same scale2. Root rendered those
+current pages at scale2 and compared every pixel; only page1 differs, within
+its edited opening paragraph, at bbox `[102,362,1085,436]`.
+Comparison evidence: `/tmp/bmsx-string-retained-pages/comparison.json`.
+Root viewed the whole current page1 at original image detail. The title,
+text/byte table and body margins remain clear. This is retained-page delta
+coverage, not a claim that a fresh reviewer reopened every unchanged page.
+
+The actual header is **BOOK II · BLUA32 AND BIOS REFERENCE**; DRAFT footer and
+sequential folios identify this software chapter. No new figure is present.
+The existing renderer records zero layout errors, not a substitute for visual
+inspection. Source and runtime correctness are separate reviews.
+
+Six observed local grouping defects in the first43-page candidate were fixed
+with existing authored `keep-together` markup: the split pattern part1 lead,
+packet option-table lead, decode-extraction lead/formula, accepted-category
+lead/list, error heading/lead/table, and packing result heading/lead/module.
+No stylesheet, smaller type, custom pagination engine or publisher change was
+introduced. The final44-page candidate was separately inspected.
+
+| Final pages | Visible scope and bounded verdict |
+| --- | --- |
+|20–23| Pattern classes/grammar, sets, anchors, repetition, captures, balance/frontier, reached errors and shared API boundary. All rows/paragraphs legible; frontier paragraph continues normally at22→23. |
+|24–26| All four API prototypes, arguments/results, bindings/limits and replacement/advancement branches fit. Corrected Table-only lookup and callback-only effects sentences are fully visible. |
+|27–31| Complete pattern result/entry parts, observations and start of packing. All47 result lines and13 diagnostics visible; complete part2/4 leads precede intact code at28→29 and29→30. |
+|32–35| Codepoint/format cautions; full option/control tables; alignment, integer and text fields. Legible complete rows, no clipped table or formula. |
+|36–37| Encoding table/equations, complete decode formulas, unpack bounds and continuation example. Formula leads remain attached; no cropped expressions. |
+|38–39| Accepted-category/dependency account; complete error table and work/resource cautions. No table-lead orphan or clipped cell. |
+|40–41| Complete actual record-layout table and full42-line result module. All rows/fields visible. |
+|42–44| Five packing entry parts, observations and8 diagnostics. Code boxes are intact; output is not truncated. |
+
+Complete entry headings and explanatory paragraphs may finish the preceding
+page while an intact code box moves to the next one: in the packet example,
+parts1/3/5 at41→42,42→43,43→44. These were explicitly reported, not silently
+called fixed. The editor retains them under the same bounded policy as the
+existing formatting example: no isolated heading, dangling colon/table/formula
+lead or split/clipped code block. Some whitespace is the consequence of keeping
+whole tables/modules together, not missing content.
+
+Raw added-page reports are `/tmp/bmsx-pattern-program-source-review.md` and
+`/tmp/bmsx-pack-program-proposal-source-review.md`, including their per-page
+findings and unchanged artifact checks. This inspection does not approve
+physical print/trim, all volume pages, technical/source correctness or final
+publication. The fresh source-blind reader pass and common Table/CPU/compiler
+questions remain separate and open.
+
+---
+
+## Earlier formatting and base-artifact evidence
+
 ## Actual PDF print review — original current snapshot
 
 ### Artifact and method
