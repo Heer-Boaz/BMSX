@@ -972,6 +972,8 @@ FAULT 00000001 -> 00000000
 
 `REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [System control and timing — Reset requests](system.md#reset-requests).
 
+For a complete example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#cp0-in-cartridge-irq). The callback returns normally, allowing its generated IRQ vector to perform RFE and resume the interrupted cartridge code.
+
 ## Worked example: prepare and copy two records
 
 This complete, memory-only program starts with two initialized input records,

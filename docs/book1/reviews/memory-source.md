@@ -689,3 +689,20 @@ Production reference before this slice: MAME's
 ownership distinction only; no foreign behavior was supplied as a BMSX fact.
 Privileged handlers, other fault classes, coordinated cross-unit recovery and
 whole-console reader acceptance remain open. BH01 remains a separate API audit.
+
+## Supported IRQ privilege route — bounded navigation, 2026-10-18
+
+Memory now links the complete CPU IRQ/CP0 observation; CPU reciprocally links
+Memory's installed synchronous-fault route. Independent actual-source review
+and a fresh public-only reader accept the final additions:
+`/tmp/bmsx-cpu-irq-final-source-review.md` and
+`/tmp/bmsx-cpu-irq-public-reader-current.md`. All 19 old Memory fences and image
+references remain unchanged. New source SHA256:
+`08931a69c41a15918632cabd350e60be7bb791ff1391eac2748565ae1cc2201a`.
+
+The initial public-only audit found no missing cartridge supervisor/fault-handler
+installation primitive: the installed route was already explicit. Coverage no
+longer requires an invented installation recipe. Multiple-owner graphics,
+coordinated recovery, other instruction-fault classes and broader development
+workflow remain open. Its concrete new frame/inline-depth selection question
+is retained as FSEL01, not silently closed by the supplied sample index.

@@ -216,3 +216,33 @@ source-review refinement qualifies skipped faults as **runtime** faults;
 compile-time diagnostics are not hidden by source short circuit. This is a
 missing shared contract, not a runtime repair, new execution claim or closure
 of any of the seven stopped CPU questions, Table length or BZ01.
+
+## CP0 in an ordinary cartridge IRQ — bounded demonstration, 2026-10-18
+
+The [frozen example facts](../facts/cpu-irq-example.md) separate CPU privilege,
+SYSTEM context and synchronous fault routing. A facts-only author supplied the
+lesson and a second author the companion. Root kept the complete 15/40-line
+modules literal, wrapped their two print calls and clarified current CPU enable.
+The earlier ten fenced listings remain unchanged; there is no new handler API,
+BIOS/runtime/compiler change or general Lua expansion.
+
+Independent actual paired-source review passes every added claim and literal:
+`/tmp/bmsx-cpu-irq-final-source-review.md`. A fresh public-only reader accepts
+the project/module/manifest/build/result route and all new links:
+`/tmp/bmsx-cpu-irq-public-reader-current.md`. The initial reader correctly found
+that IRQ installation and return were already documented; this adds a complete
+CP0 observation, not a missing cartridge synchronous-fault installation service.
+
+The forced validation build passes. The exact minimal tooling/cart/integration
+commands pass the named `cp0_in_irq_callback_and_normal_return` case. Separate
+ordinary-ROM playback prints STATUS0c/CAUSE400 and SYSTEM context0, services1,
+resumed1; no host state edits or fabricated display image supplies those values.
+Final artifact `e1f27dd96f400607fa7fea15d77d1b1732106535ef5f6be1bd4bcb3fc115ea84`.
+Logs: `/tmp/bmsx-cpu-irq-final-{build,integration,ordinary}.log`.
+No native, all-input, arbitrary takeover or general recovery claim follows.
+
+All 19 existing manual tests pass. Root inspected all changed actual PDF pages;
+see [the print record](cpu-print.md). Before implementation, MAME's
+[MIPS exception/control owner](https://github.com/mamedev/mame/blob/master/src/devices/cpu/mips/mips1.cpp)
+was studied for mode/return ownership only; no foreign facts went to the author.
+All unrelated CPU-owner stops and whole-console acceptance remain open.

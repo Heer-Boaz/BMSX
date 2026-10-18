@@ -1392,7 +1392,7 @@ The generated IRQ vector calls its bound callback only when its FLAGS read is
 nonzero, then performs `RFE`; a zero FLAGS read skips the callback but still
 reaches `RFE`. The exception vector calls its bound callback and performs `RFE`
 after that callback returns. Return normally from a callback: its normal nested
-call frame is not the exception frame required by raw `RFE`.
+call frame is not the exception frame required by raw `RFE`. For the installed response to a synchronous cartridge memory exception, see [Memory — Installed response to a memory exception](memory.md#installed-response-to-a-memory-exception).
 
 ### Control instruction reference
 
@@ -1407,6 +1407,100 @@ call frame is not the exception frame required by raw `RFE`.
 
 
 `RFE` and `HALT` do not use `A`, `B`, or `C`.
+
+<a id="cp0-in-cartridge-irq"></a>
+
+### Read CP0 in a cartridge IRQ
+
+This example reads CP0 legally inside a cartridge IRQ callback, then demonstrates that ordinary cartridge execution resumes. Use it from a fresh ordinary BIOS cartridge entry, with this callback as the sole direct VBlank IRQ callback and sole IRQ-mask owner. There must be no external supervisor request, context takeover, or competing writer. Keep the existing running beam; do not reset or reconfigure PCRTC.
+
+Ordinary entry begins in CPU user mode with current interrupt enable set. Delivery additionally requires an enabled, pending central IRQ source. An admitted IRQ selects the cartridge IRQ vector, saves the interrupted PC in EPC, and enters non-user mode with current interrupt enable clear. The `cop0` reads emit MFC0: their source syntax does not confer privilege. Executing those reads in user mode raises coprocessor-unusable; here they execute in the IRQ callback instead. Main never reads CP0.
+
+Supply the results module under the name `results`, then use the entry module below. The program defines `irq` before enabling delivery, masks delivery, acknowledges any pending VBlank, and enables VBlank. The callback selects VBlank from the supplied flags, masks further delivery, records CP0 and SYSTEM status, acknowledges VBlank, and increments the service count. It returns normally through its ordinary call frame. The generated IRQ vector performs RFE, restoring the saved CPU mode and returning to EPC; do not issue raw RFE from the callback. This example does not nest maskable IRQs or write STATUS or EPC.
+
+CPU privilege and SYSTEM device context are distinct. Accepting this IRQ does not activate or bank a SYSTEM supervisor device context. Under the stated conditions, SYSTEM status remains zero while the callback executes with CPU user mode clear.
+
+The retained flags are the full IRQ flags, not mask-filtered flags: they include VBlank and may include other masked pending sources. Masking delivery neither clears pending state nor changes CPU interrupt enable. Later VBlanks can become pending again, so no final zero-flags state is promised. EPC varies with the interrupted PC; it is not a function-record address or a literal to copy.
+
+After the callback returns, main records resumption, prints the two diagnostics shown below, and halts.
+
+```lua
+module<const>
+
+struct cpu_irq_manual_result
+	status: word
+	cause: word
+	epc: word
+	system_status: word
+	flags: word
+	services: word
+	resumed: word
+end
+
+bss result: cpu_irq_manual_result
+
+return { result = result }
+```
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *cpu_irq_manual_result = state.result
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local system_status<const>: *word = 0x08010350
+
+function irq(flags)
+	if (flags & 0x00000004) ~= 0 then
+		*irq_mask = 0
+		result.status = cop0.status
+		result.cause = cop0.cause
+		result.epc = cop0.epc
+		result.system_status = *system_status
+		result.flags = flags
+		*irq_ack = 0x00000004
+		result.services = result.services + 1
+	end
+end
+
+-- Fresh BIOS cartridge entry; keep the running beam and own this IRQ route.
+*irq_mask = 0
+*irq_ack = 0x00000004
+*irq_mask = 0x00000004
+while result.services == 0 do
+	halt_until_irq
+end
+
+-- The callback returns normally; its generated vector performs RFE.
+result.resumed = 1
+print(string.format(
+	'IRQ CP0 STATUS=%08X CAUSE=%08X', result.status, result.cause))
+print(string.format(
+	'SYSTEM CONTEXT=%08X SERVICES=%u RESUMED=%u',
+	result.system_status, result.services, result.resumed))
+
+while true do
+	halt_until_irq
+end
+```
+
+| Retained field | Result |
+| --- | --- |
+| `status` | `0x0000000c` |
+| `cause` | `0x00000400` |
+| `epc` | Interrupted PC; variable |
+| `system_status` | `0` |
+| `flags` | Contains `0x00000004`; may contain other pending bits |
+| `services` | `1` |
+| `resumed` | `1` |
+
+```text
+IRQ CP0 STATUS=0000000C CAUSE=00000400
+SYSTEM CONTEXT=00000000 SERVICES=1 RESUMED=1
+```
+
+[Development companion — Read CP0 during an IRQ](../programming/getting-started.md#read-cp0-during-an-irq)
 
 ## Memory faults and saved PC
 

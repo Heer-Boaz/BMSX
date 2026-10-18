@@ -1646,3 +1646,23 @@ This closes one supported successful-recovery route, not privileged handlers,
 remaining fault classes, coordinated cancellation/restart, full takeover,
 SDK/live-inspection or whole-console acceptance. BH01 is not standardized by
 this unrelated hardware lesson.
+
+## Cartridge IRQ privilege demonstration — 2026-10-18
+
+The [complete CPU example](../book1/cpu.md#cp0-in-cartridge-irq) now makes CPU
+non-user IRQ execution versus inactive SYSTEM context tangible. Both complete
+BLua modules, an exact build/result companion route and separate integration
+and ordinary-ROM executions are supplied. Paired-source/public-reader reviews
+and actual changed-page inspection pass; all19 manual tests pass. This adds no
+cartridge synchronous-fault hook or supervisor-entry callable. Existing routing
+was already documented; Memory no longer carries a fictitious handler-install
+obligation. Remaining real hardware/recovery and whole-console gaps stay open.
+
+**FSEL01 — concrete debugging-companion gap:** the public-only route review
+found that another cartridge's physical frame and inline-depth selection is
+not yet taught. The supplied `0x00000001 0` example is not a general selector.
+Extract the actual producer/monitor scope semantics and available selection
+route before writing that subsection; do not invent a command, promise arbitrary
+optimized-local availability or turn a missing tool capability into a contract.
+Initial evidence: `/tmp/bmsx-memory-supervisor-public-gap-current.md`.
+BH01's numerical API hold and general-Lua deferral are unchanged.

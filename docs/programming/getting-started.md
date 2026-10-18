@@ -1353,3 +1353,50 @@ FAULT 00000001 -> 00000000
 The old monitor image can remain visible after `CONT`; use the diagnostic result rather than expecting a new on-screen success message.
 
 `REBOOT` requests a fresh BIOS/system startup, not saved-EPC continuation. The unchanged cartridge starts with its bad initial pointer again; restarting is not repairing it.
+
+<a id="read-cp0-during-an-irq"></a>
+## Read CP0 during an IRQ
+
+Use this example to read CP0 inside a cartridge IRQ callback and confirm normal return to main code. Follow the common [prerequisites](#prerequisites) and [tooling/debug BIOS build](#build-and-check-the-storage-result). No additional asset or library module is required.
+
+The [complete CPU program](../book1/cpu.md#cp0-in-cartridge-irq) supplies the results module, `carts/cpu_irq_manual/results.lua`, and entry module, `carts/cpu_irq_manual/cart.lua`. Its manifest, `carts/cpu_irq_manual/res/manifest/manifest.rommanifest`, is:
+
+```yaml
+title: CPU IRQ Privilege Manual
+hardware:
+  - type: rom
+```
+
+Build and run the maintained derived integration case:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- cpu_irq_manual --debug
+npm run headless:test -- cpu_irq_manual tests/carts/cpu_irq_manual/cpu_irq_manual_assert.lua
+```
+
+It reports:
+
+```text
+[test] cp0_in_irq_callback_and_normal_return: passed
+```
+
+On a fresh target, that case checks the 28-byte result structure: STATUS `0000000C`, CAUSE `00000400`, aligned nonzero EPC, SYSTEM STATUS zero, flags containing `4`, one service, and final mask zero. It waits for `resumed=1`. This is an integration check, not ordinary ROM playback, native coverage, or all-input coverage.
+
+For the separate ordinary ROM route, run:
+
+```sh
+npm run build:product:node-headless-player -- --debug
+npm run headless:game -- cpu_irq_manual --ttl 2
+```
+
+This uses `dist/cpu_irq_manual.debug.rom` and `dist/system/bmsx-bios.debug.rom`. TTL `2` means 2000 ms of virtual headless host clock, not wall-clock time or hardware latency. Compare the actual post-boot diagnostics:
+
+```text
+IRQ CP0 STATUS=0000000C CAUSE=00000400
+SYSTEM CONTEXT=00000000 SERVICES=1 RESUMED=1
+```
+
+Successful player exit alone does not check those values. These are diagnostics, not new framebuffer text or a capture; no exact EPC is printed.
+
+With fresh ordinary BIOS entry, sole callback/mask ownership, and no external context request, the callback reads CP0 with current-user clear without activating SYSTEM supervisor context. Normal return and generated RFE resume main, which never reads CP0. This is not a cartridge memory-exception installation or recovery API.

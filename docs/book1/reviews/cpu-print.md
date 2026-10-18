@@ -1,4 +1,29 @@
-# Current CPU actual-PDF layout acceptance: logical-expression addition
+# Current CPU DRAFT print acceptance: IRQ/CP0 demonstration
+
+2026-10-18. The final 36-page preview SHA256 is
+`3d099f187b5e9e255e8603fbccdbf377c8806835f493eca1a30a33dd9e884b3a`;
+source `ad469954ed19cc4248b3af393dc66a061d1ee14fb94177ab1b14ca787d6d476b`.
+Against the accepted 34-page `6cea99ca…` predecessor, pages1–32 are identical
+in complete decoded RGBA bytes and dimensions, including running matter.
+Root individually viewed every changed ORIGINAL page33–36: control tables and
+routing link, example conditions/results module, complete entry/results table/
+diagnostics, and the closing fault section. No clipping, stranded lead,
+caption issue or new layout blocker was found. No CSS/publisher change needed.
+
+The final review-metadata refresh preserves all36 complete inspected page
+images and dimensions. Evidence:
+`/tmp/bmsx-cpu-irq-{print,final-print}/cpu-identity.json`.
+This is bounded DRAFT layout acceptance, not resolution of the pre-existing
+CPU-owner stops or whole-console publication approval.
+
+All19 manual tests pass. Regenerated PCRTC has37pages, SHA256
+`3ef97a381c9bfb124e6b0833d198cd4e8e9c9c19b827bdc215a8d0ee767cfc13`;
+all37 complete RGBA images/dimensions match the accepted predecessor:
+`/tmp/bmsx-cpu-irq-pcrtc-print/pcrtc-identity.json`. Print carry only.
+
+---
+
+# Previously accepted logical-expression addition
 
 2026-10-18. Current `build/manual/cpu.preview.pdf` has **34 pages**, SHA-256
 `6cea99cafe3ea1963925d650227d6ec01a463c9098146f0fc5d5d600fd403524`;

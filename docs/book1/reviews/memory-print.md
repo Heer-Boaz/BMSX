@@ -265,3 +265,15 @@ The final review-metadata refresh produces SHA256
 `bd8c567700b440c6927c3109f74f3a2dbc0946aa3f2ecac8718652d5e65a92e8`;
 all 39 complete page images and dimensions equal the inspected candidate:
 `/tmp/bmsx-memory-recovery-final-print/memory-identity.json`.
+
+## CPU privilege cross-reference — bounded DRAFT, 2026-10-18
+
+Current 39-page preview SHA256:
+`c408113db647770a9881ac152a77d4e88784cd127d3328196ad50911d31ebdc1`.
+Only page26 changes from accepted `bd8c5677…`; root individually viewed its
+ORIGINAL raster, including the full closing paragraph and running matter.
+The caption/program and new bridge remain readable; no layout correction was
+needed. Other38 pages retain complete decoded RGBA/dimensions identity.
+The final metadata refresh preserves all39 complete page images. Evidence:
+`/tmp/bmsx-memory-cpu-irq-{print,final-print}/memory-identity.json`.
+This is DRAFT readability only; broader coverage/public print approval stays open.
