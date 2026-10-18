@@ -1240,3 +1240,60 @@ All17 pages are covered by actual changed-page viewing and exact retained-page
 pixel identity. The19 manual-tool tests pass. The chapter publication check
 still fails for the exact inherited Table-length dependency only; this is a
 reviewed draft, not a waived contract or a completed/published book.
+
+
+## BIOS runtime compilation: sourced draft and ordinary programming route
+
+2026-10-18, baseline `5b264d38a`. The next Book II chapter now covers the actual
+five-argument `load`, four-argument `compile_syntax`, runtime source grammar,
+all 27 syntax factories/21 tags/4 unary/15 binary constants, exact consumed
+shapes and result counts, environments and self-owned external bindings,
+in-place syntax ownership, 256 KiB declared code arena, emitted storage costs,
+16,384-slot generated-function ceiling, closure ownership/reclamation and
+bounded system-startup/reset/cartridge-entry distinctions. Separate facts-only
+authors and actual-source audits are indexed in
+[the source acceptance record](../book1/reviews/bios-loader-source.md).
+
+The complete ordinary program is 23+137 literal BLua lines, not instruction
+words or a generic-Lua replacement. Final artifact `1d94a471` passed unchanged
+quality checks, 38 retained assertions and separate ordinary execution with 13
+diagnostics. Fifth-argument descriptor callbacks are self-owned, not fabricated
+frame locations. A fresh public-only reader reconstructs both modules, full
+manifest and timeline byte-for-byte and passes the reference/route, including
+a separately sourced reset-subsection delta. No runtime/compiler/BIOS repair,
+policy suppression, publisher/CSS/schema/framework or shared helper was added.
+
+The final 24-page DRAFT PDF has source and independent actual-page acceptance;
+eight observed pagination defects were closed with eight existing keep groups.
+Its SHA-256 is `0b55f4e5025aa3f50d3e262516b3419cd748cd67ce7732d6d2a26ffe98d6ee42`.
+All 24 pages are covered by changed-page viewing or exact retained-page RGBA
+identity, not merely a clean build receipt.
+
+**Two publication dependencies remain open:** common maintained Table length
+and RL01, the parser/semantic/dynamic-opcode boundary for general unary `&expr`.
+Literal String-ID folding is separately sourced as an unchanged String, not a
+numeric pointer. No general successful lowering or guaranteed rejection text
+is invented. Source-signature metadata also omits external_scope, but actual
+five-/four-argument runtime signatures and the finite working fifth-argument
+route are documented rather than silently trimmed.
+
+The working catalog is 21 entries: 13 in I and 8 in II. This is another bounded
+software chapter, not completion of the BIOS, SDK, three volumes or console.
+CPU7, BZ01, LS01, remaining firmware/debugging, Book III, graphics contrasts,
+broader technical-detail audit, NES source comparison and delivered-series
+navigation remain separate work. Unmeasured cache/GC stress, all-input/native,
+interrupted-startup and all-caller replacement guarantees are not claimed.
+
+
+## Next priority: explain BLua itself, not another Lua-library catalogue
+
+2026-10-18 user request. The supplied `blua-programs.preview.pdf` does not make
+BLua's extensions/differences sufficiently discoverable. The current source
+mentions some forms and delegates typed storage/intrinsics to CPU/Memory;
+that scattered presence is not acceptance of a complete BLua-specific guide.
+The [priority work item](README.md#next-writing-priority-blua-specific-programming)
+requires a coherent, source-derived extension/difference reference and genuine
+programming examples before another general BIOS-library chapter. Distinguish
+linked-cartridge BLua from the narrower runtime compiler and establish the Lua
+baseline before claiming a difference. Preserve all authored BIOS/library
+chapters; their usefulness is not a reason to defer the distinctive language.

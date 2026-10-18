@@ -48,6 +48,13 @@
 		"facts": "docs/book1/facts/bios-os.md",
 		"review": "docs/book1/reviews/bios-os.json"
 	},
+	"bios-loader": {
+		"book": "II",
+		"label": "BIOS RUNTIME COMPILATION",
+		"chapter": "docs/book1/bios-loader.md",
+		"facts": "docs/book1/facts/bios-loader.md",
+		"review": "docs/book1/reviews/bios-loader.json"
+	},
 	"bios-table": {
 		"book": "II",
 		"label": "BIOS TABLE",

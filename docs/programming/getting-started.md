@@ -921,3 +921,70 @@ are not exercised; the common Table-length publication question remains open.
 These finite retained and ordinary TS executions are not native/all-input/
 optimizer/calendar-accuracy, performance, reset/persistence, runtime-parser,
 whole-SDK or whole-console acceptance. CPU7, BZ01 and LS01 are not resolved.
+
+
+## Build and inspect runtime compilation
+
+The [complete runtime-compilation program](../book1/bios-loader.md#complete-program-runtime-compilation)
+is a separate `bios_loader_manual` cartridge. Save its results listing as
+`results.lua` and concatenate entry parts 1–4 as one `entry.lua`:
+
+```text
+carts/bios_loader_manual/
+  entry.lua
+  results.lua
+  res/manifest/manifest.rommanifest
+```
+
+The complete manifest is:
+
+```yaml
+title: BIOS Loader Manual
+hardware:
+    - type: rom
+```
+
+The results module is ordinary, not `module<const>`: it exports numeric typed
+BSS and a mutable observations Table. The entry has one `module<entry>`;
+closures, environments, binding descriptors and error values remain guest
+values. It prints observations, sets `completed`, then parks.
+
+From the repository root after this companion's development prerequisites:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run validate:toolchain:cart -- bios_loader_manual --debug
+npm run headless:test -- bios_loader_manual tests/carts/bios_loader_manual/bios_loader_manual_assert.lua
+```
+
+Expect `[test] runtime_compilation: passed`. The supplied integration suite
+waits for completion and checks 38 retained assertions. Its fresh derived TS
+image is not byte-identical ordinary playback; linked addresses may differ.
+The normal quality checks remain enabled and the builder selects the BIOS.
+
+For separate ordinary playback, the supplied
+`tests/carts/bios_loader_manual/ordinary_timeline.json` is exactly:
+
+```json
+[
+  {
+    "frame": 8,
+    "description": "BIOS runtime compiler observations retained"
+  }
+]
+```
+
+Run:
+
+```sh
+npm run headless:tooling -- --debug --input-timeline tests/carts/bios_loader_manual/ordinary_timeline.json bios_loader_manual
+```
+
+Compare all 13 `Load ...` diagnostics in **Observed results**, then timeline
+completion. Raw `print` separators are tabs; the public chapter renders each
+as one space. Offset 8 is a zero-based presentation endpoint, not an assertion
+or a compilation/startup/frame/cycle guarantee. The self-owned external scope
+is not a fabricated selected-frame descriptor. No forced collection, code
+reuse/exhaustion, reset/snapshot, native/all-input/optimizer, fresh installation,
+SDK or whole-console acceptance follows from these finite executions. The
+common Table-length dependency and dynamic unary-& lowering hole remain open.

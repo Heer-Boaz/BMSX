@@ -10,7 +10,7 @@ Reference**, and **Book III — Cartridge and Expansion Reference**. A sourced
 [system overview](../book1/console.md) now opens the hardware volume with
 installed resources, address reservations, data routes and qualified timing;
 an empty separate specifications book is not published.
-The current catalog assigns the source-program chapter and the six BIOS and
+The current catalog assigns the source-program chapter and the seven BIOS and
 protected-call/coroutine chapters to II, and the overview plus twelve
 machine/installed-unit chapters to I.
 III reserves the cartridge/socket/card scope; its chapters are not yet authored.
@@ -239,6 +239,33 @@ the low and high words have different divisions:
 These are field-group tables, not drawings to a physical bit-width scale.
 
 ## Scheduled follow-up work
+
+### Next writing priority: BLua-specific programming
+
+- [ ] **BLua extensions and differences from Lua (requested 2026-10-18).**
+  The reader reports that `build/manual/blua-programs.preview.pdf` does not
+  provide an identifiable account of what makes BLua different from Lua.
+  Make that a first-class software-reader route, not scattered references to
+  CPU/Memory definitions or another general library catalogue. Inventory the
+  actual linked-cartridge compiler forms and semantics: typed storage/views,
+  structs/layout/address operations, module/static imports and initialization,
+  machine intrinsics/mapped access and interrupt-wait syntax. Check changed
+  value, operator, indexing and call/result behavior as well as extra syntax.
+  Establish the Lua reference version before classifying a feature as an
+  extension; for example, an attribute's spelling alone does not prove that.
+  Distinguish shared Lua forms, BLua additions, changed semantics and unsupported
+  forms, and keep linked BLua separate from the BIOS runtime compiler's subset.
+  Supply precise source forms, representations, effects, limits/hazards and
+  complete genuine BLua/BIOS examples with observable results. Retain canonical
+  CPU/Memory definitions, but teach how to use the extensions in the software
+  route rather than requiring the newcomer to discover them by cross-reference.
+  **Keep all existing BIOS/library documentation.** It remains useful reference;
+  expanding the standard-Lua library catalogue is not the next writing priority.
+  Finish the active runtime-compilation slice, then address this route before
+  starting another general BIOS-library chapter. Fresh owner facts and separate
+  source/reader/actual-PDF checks remain required; no inferred compiler repair.
+
+### Broader technical and presentation follow-up
 
 Requested 2026-10-17. Keep the current unit-by-unit writing plan; carry out this
 broader completeness pass after the active chapter rather than silently treating
