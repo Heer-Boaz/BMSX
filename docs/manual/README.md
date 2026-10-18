@@ -245,24 +245,30 @@ These are field-group tables, not drawings to a physical bit-width scale.
 - [ ] **BLua extensions and differences from Lua (requested 2026-10-18).**
   The reader reports that `build/manual/blua-programs.preview.pdf` does not
   provide an identifiable account of what makes BLua different from Lua.
-  Make that a first-class software-reader route, not scattered references to
-  CPU/Memory definitions or another general library catalogue. Inventory the
-  actual linked-cartridge compiler forms and semantics: typed storage/views,
+  Make that a first-class hardware-programming route, not scattered references
+  to CPU/Memory definitions or another general library catalogue. Inventory the
+  actual linked-cartridge forms needed to program the machine: typed storage/views,
   structs/layout/address operations, module/static imports and initialization,
-  machine intrinsics/mapped access and interrupt-wait syntax. Check changed
-  value, operator, indexing and call/result behavior as well as extra syntax.
-  Establish the Lua reference version before classifying a feature as an
-  extension; for example, an attribute's spelling alone does not prove that.
-  Distinguish shared Lua forms, BLua additions, changed semantics and unsupported
-  forms, and keep linked BLua separate from the BIOS runtime compiler's subset.
+  machine intrinsics/mapped access and interrupt-wait syntax. Explain differing
+  value, indexing or call behavior where it affects those programming routes;
+  do not turn the work into a general Lua tutorial or exhaustive porting guide.
+  Link the [official Lua documentation](https://www.lua.org/docs.html) for
+  general language explanation. A
+  comparison must name its Lua reference version, not freeze BLua's future
+  evolution or call shared syntax a BLua invention. Keep linked BLua separate
+  from the BIOS runtime compiler's subset.
   Supply precise source forms, representations, effects, limits/hazards and
   complete genuine BLua/BIOS examples with observable results. Retain canonical
   CPU/Memory definitions, but teach how to use the extensions in the software
   route rather than requiring the newcomer to discover them by cross-reference.
   **Keep all existing BIOS/library documentation.** It remains useful reference;
   expanding the standard-Lua library catalogue is not the next writing priority.
-  Finish the active runtime-compilation slice, then address this route before
-  starting another general BIOS-library chapter. Fresh owner facts and separate
+  **Priority clarification, 2026-10-18:** stop expanding general Lua explanation.
+  Hardware operation and the BIOS interfaces relevant to it take precedence.
+  Existing general-language material is retained as secondary reference, not a
+  prerequisite to the next hardware chapter.
+  The runtime-compilation slice is committed; address this hardware-oriented
+  route before starting another general BIOS-library chapter. Fresh owner facts and separate
   source/reader/actual-PDF checks remain required; no inferred compiler repair.
 
 ### Broader technical and presentation follow-up

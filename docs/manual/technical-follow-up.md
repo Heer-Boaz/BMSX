@@ -1292,8 +1292,12 @@ BLua's extensions/differences sufficiently discoverable. The current source
 mentions some forms and delegates typed storage/intrinsics to CPU/Memory;
 that scattered presence is not acceptance of a complete BLua-specific guide.
 The [priority work item](README.md#next-writing-priority-blua-specific-programming)
-requires a coherent, source-derived extension/difference reference and genuine
-programming examples before another general BIOS-library chapter. Distinguish
-linked-cartridge BLua from the narrower runtime compiler and establish the Lua
-baseline before claiming a difference. Preserve all authored BIOS/library
-chapters; their usefulness is not a reason to defer the distinctive language.
+requires a coherent, source-derived hardware-programming route through BLua's
+extensions and genuine examples before another general BIOS-library chapter.
+The user's follow-up explicitly defers general Lua explanation: link the official
+Lua documentation instead of expanding a language tutorial or exhaustive
+comparison. Cover distinctions where they matter to hardware and relevant BIOS
+use, without promising that BLua or Lua will remain at today's language version.
+Keep linked-cartridge BLua distinct from the narrower runtime compiler. Preserve
+all authored BIOS/library and general-language material as secondary reference;
+hardware operation and relevant BIOS interfaces now take precedence.
