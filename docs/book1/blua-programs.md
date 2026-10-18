@@ -1,4 +1,894 @@
-# BLua source programs
+# BLua source programs and extensions
+
+## BLua extensions
+
+BLua provides explicit source forms for program linkage, static storage, typed
+address access, processor control, instrumentation, and augmented assignment.
+Hardware programming is a principal use, but not the limit of these extensions.
+
+This reference explains those forms rather than reteaching general Lua.
+For general Lua learning material, see the [official Lua documentation](https://www.lua.org/docs.html).
+Shared syntax does not by itself imply identical semantics in every operation.
+The local `<const>` attribute also exists in [Lua 5.4](https://www.lua.org/manual/5.4/manual.html#3.3.7);
+BLua's `module<const>` namespace and static-call rules are a separate distinction.
+
+| Extension family | Source forms | Detailed reference |
+| --- | --- | --- |
+| Module roles and static linkage | `module<entry>`, `module<const>`, literal `require`, static exports, `<init>` | Module modes, static imports, and `<init>` below |
+| Static storage and layouts | `struct`, `bss`, `data`, `rodata`, typed arrays | [Memory: typed byte storage and address views](memory.md#typed-byte-storage-and-address-views) |
+| Typed address selection | `local p: *type`, `*p`, fields, indices, unary `&`, `sizeof`, `offsetof`, static-array `#` | [Memory](memory.md) |
+| Six raw mapped-access forms | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [Memory](memory.md) and mapped access below |
+| Six control fields | `cop0.bad_address`, `cop0.lua_fault_reason`, `cop0.status`, `cop0.cause`, `cop0.epc`, `cop0.exec` | [CPU](cpu.md) and control access below |
+| Three intrinsic operations | `blua32.closure`, `blua32.trace`, `blua32.trace_sink` | Intrinsic operations below |
+| Interrupt wait statement | `halt_until_irq` | [CPU](cpu.md) and interrupt wait below |
+| Six augmented assignments | `+=`, `-=`, `*=`, `/=`, `%=`, `^=` | Augmented assignment below |
+
+Memory-map names, `cop0`, and `blua32` are special source forms, not ordinary
+first-class tables. Typed views do not allocate storage, and unary `*` requires
+a typed view or declared storage. Use the detailed access contracts when choosing a form.
+
+
+## Typed storage, layouts, and address views
+
+BLua storage declarations describe byte ranges with fixed layouts.
+Use them for scalar state, compact buffers, lookup tables, structured records, and typed access to an existing address.
+They are distinct from ordinary local values and tables: a storage name denotes an address, and a typed view describes how to access bytes at an address.
+
+### Declaration and expression reference
+
+The following forms use lowercase placeholder names; source identifiers cannot contain uppercase letters.
+
+| Form | Meaning |
+|---|---|
+| `struct record ... end` | Define a layout with fields written as `name: type_name`. |
+| `bss buffer: type_name` | Reserve zero-initialized writable storage; no initializer is accepted. |
+| `data buffer: type_name = initializer` | Define writable storage with a compile-time initializer. |
+| `rodata buffer: type_name = initializer` | Define image-resident storage with a compile-time initializer. |
+| `type_name[n][m]` | Array type with explicit dimensions. |
+| `type_name[]` | Infer the outer dimension of initialized `data` or `rodata`. |
+| `local view: *type_name = address` | Associate a local address value with an access layout. |
+| `local view<const>: *type_name = address` | The same view with an immutable local binding. |
+| `*view` / `*view = value` | Read or write a selected scalar through a typed address. |
+| `view.field` / `view[index]` | Select a field or element using its layout. |
+| `&view.field` / `&view[index]` | Obtain a selected address without loading its value. |
+| `sizeof(type_name)` | Obtain a type's size in bytes; array dimensions are allowed. |
+| `offsetof(record.field)` | Obtain a field's byte offset; nested field paths are allowed. |
+| `#buffer` | Obtain the outer element count of a declared static array. |
+
+Struct fields may be separated by commas or semicolons; a separator is not required between successive field declarations.
+Storage declarations accept an optional trailing semicolon.
+The declaration spellings are contextual forms, not additions to the lexical reserved-keyword list.
+
+<div class="keep-together">
+
+### Primitive storage types
+
+Every size and alignment below is in **bytes**.
+An alignment of four means that the address must be divisible by four.
+
+| Type names | Size | Alignment | Stored representation and access |
+|---|---:|---:|---|
+| `u8`, `i8` | 1 | 1 | Unsigned byte read; stores keep the low 8 bits. |
+| `u16`, `i16` | 2 | 2 | Unsigned little-endian read; stores keep the low 16 bits. |
+| `u32`, `i32` | 4 | 4 | Unsigned little-endian read; stores keep the low 32 bits. |
+| `f32` | 4 | 4 | IEEE float32; stores round the numeric value to float32. |
+| `f64` | 8 | 4 | IEEE float64 accessed as two little-endian 32-bit words. |
+| `addr` | 4 | 4 | Raw unsigned 32-bit address value, accessed like `u32`. |
+| `word` | 4 | 4 | Raw unsigned 32-bit word exposed as a numeric value. |
+| `string` | 4 | 4 | Image constant-pool reference; reads the selected constant value. |
+
+</div>
+
+The names `i8`, `i16`, and `i32` do **not** select signed loads.
+They have the same unsigned reads as the corresponding `u` names; do not rely on them to sign-extend a stored negative value.
+`word` does not serialize an arbitrary BLua value, and `addr` does not supply a pointed-to type.
+A `string` field contains neither inline characters nor a pointer to UTF-8 bytes.
+A RODATA String initializer supplies a String constant reference. A typed read
+returns the selected image constant; the view does not convert that value into
+a String merely because its storage type is named `string`.
+
+### Choosing a storage section
+
+`bss` reserves writable RAM that is cleared to zero during section initialization.
+`data` reserves writable RAM whose initial bytes are copied from the cartridge image.
+`rodata` places initialized bytes in the image itself.
+
+```lua
+bss scratch: u8[16]
+bss total: word
+data counter: word = 3
+rodata levels: u16[] = { 10, 20, 30 }
+rodata title: string = "ready"
+
+*total = *counter
+local previous = *counter
+*counter = previous + 1
+```
+
+A bare storage name, including `counter` or `total`, evaluates to its linked numeric address.
+Use `*counter` to load its scalar contents and `*counter = value` to store them.
+Assigning a new value directly to a `bss` or `data` name is rejected; the name is not a rebindable scalar variable.
+
+Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
+It precedes static module initializers and the entry routine.
+Cartridge static RAM placement is supplied by the BIOS; BSS follows the cartridge's data byte span.
+Use the linked storage addresses rather than assuming a numeric placement.
+
+Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
+Two separate `u8` declarations therefore need not occupy adjacent bytes.
+Use one array or struct when the relative spacing of bytes matters.
+
+<div class="keep-together">
+
+### Initializer rules
+
+Initializer table syntax describes bytes to encode at compile time, not a table allocated for later use.
+Integer storage initializers must evaluate to compile-time integers.
+A static initializer is not an arbitrary runtime expression.
+
+```lua
+struct settings
+    enabled: u8
+    period: u16
+end
+
+data presets: settings[2] = {
+    { enabled = 1, period = 60 },
+    { enabled = 0, period = 120 },
+}
+data matrix: u8[2][3] = {
+    { 1, 2, 3 },
+    { 4, 5, 6 },
+}
+```
+
+</div>
+
+- Arrays require positional elements and exactly the declared outer element count.
+  Each further array dimension requires another nested initializer.
+- Struct initializers require identifier-named fields.
+  Missing, duplicate, or unknown fields are compilation errors.
+- Padding bytes in encoded initializers start at zero.
+- An explicit dimension must be a positive compile-time integer.
+- Only the outer dimension of initialized `data` or `rodata` may be inferred from the initializer's field count, and that count must be nonzero.
+  There is no inference source for `bss`, struct-field, inner-dimension, or local-view `[]`.
+- Static `string` initializers must be compile-time strings and are supported only in `rodata`, including string fields inside aggregates.
+  A `string` initializer in `data` is rejected.
+- `f32` and `f64` support typed access, but their `data` and `rodata` initializers are unsupported, even when the initializer is integer-valued.
+  Use BSS and later scalar stores when writable floating-point storage is needed.
+
+### Computing struct and array layouts
+
+Fields are placed in declaration order.
+Before placing each field, its offset is rounded up to that field's alignment.
+The struct's alignment is the greatest field alignment; its final size is rounded up to that alignment.
+Nested structs use their own resolved sizes and alignments.
+An array retains its element type's alignment and multiplies its size by every declared dimension.
+There is no packed-layout declaration form.
+
+<div class="keep-together">
+
+This illustrative single-module layout uses a floating-point field without a static floating-point initializer:
+
+```lua
+struct sample
+    tag: u8
+    value: u32
+    weight: f64
+end
+
+bss samples: sample[2]
+local current<const>: *sample = samples
+current[0].tag = 3
+current[0].value = 7
+current[0].weight = 1.5
+local value = current[0].value
+local second_weight = &current[1].weight
+local sample_bytes = sizeof(sample)       -- 16
+local array_bytes = sizeof(sample[2])     -- 32
+local weight_offset = offsetof(sample.weight) -- 8
+local count = #samples                    -- 2
+```
+
+| Part | Byte offset | Size | Alignment |
+|---|---:|---:|---:|
+| `tag` | 0 | 1 | 1 |
+| Padding | 1 | 3 | — |
+| `value` | 4 | 4 | 4 |
+| `weight` | 8 | 8 | 4 |
+| Complete `sample` | 0 | 16 | 4 |
+
+</div>
+
+The second record starts 16 bytes after `samples`.
+Its `weight` address is therefore `samples + 24`, not `samples + 8` or `samples + 2`.
+The `f64` field requires four-byte, not eight-byte, alignment.
+
+Unknown types, unknown fields, duplicate field declarations, and recursive layouts are compilation errors.
+Type declarations have block-wide forward visibility, with lookup through enclosing scopes and then globals.
+Storage value references remain ordered; forward visibility of a type does not make every storage value available early.
+
+### Views, selection, and byte addresses
+
+A typed local view carries an address value and supplies a layout for selection.
+It does not allocate storage, construct a table, copy a record, or acquire ownership of the addressed bytes.
+The annotation is specifically `: *type_name`; it is not a general scalar-local type annotation.
+Both declared storage and typed views support field and element selection.
+
+Indexing is **zero-based**.
+For a view of `u16`, `view[1]` selects the address two bytes after `view`.
+For a view of `sample`, `view[1]` selects the address `sizeof(sample)` bytes after it.
+For a multidimensional array, each index removes one dimension and uses the size of the remaining array as the stride.
+Thus `matrix[1][2]` selects byte offset five in the `u8[2][3]` example.
+
+Numeric address addition is different: `view + 1` adds **one byte**, regardless of the view's type.
+Selection offsets, `sizeof`, and `offsetof` all use bytes.
+A device register's explicitly specified word count is a device unit, not an automatic consequence of pointer typing.
+
+Storage names and typed local roots permit pointer-style indexing even when their declared type is a scalar or struct.
+After indexing, field selection, or dereference, that permission does not continue unless the selected type is an array.
+Dereference retains the selected type: it neither removes an array dimension nor automatically follows an address stored in a field.
+Whole arrays and structs are address ranges, not scalar values that can be loaded or assigned as complete aggregates.
+Select a scalar field or element, or use `&` to obtain the selected address.
+
+An `addr` field loads a numeric address only.
+Create an explicitly annotated local view before selecting the target layout.
+The same rule applies to scalar address storage:
+
+```lua
+bss target_address: addr
+bss payload: u8[4]
+*target_address = payload
+local target: *u8 = *target_address
+target[0] = 65
+```
+
+Unary `&` on typed storage or a typed selection computes its address without reading its contents.
+A bare storage name already provides its base address.
+This is not general address-of for arbitrary ordinary locals, and unary `*` requires resolved typed storage or a typed view rather than an arbitrary numeric expression.
+
+### Sizes, offsets, and counts
+
+`sizeof` takes a **type**, not a storage value: use `sizeof(sample[2])`, not `sizeof(samples)`.
+`offsetof` takes a struct type followed by named fields, such as `offsetof(outer.inner.field)`.
+It adds the selected byte offsets; intermediate fields must be non-array structs.
+An indexed path such as `offsetof(outer.items[1].field)` is not accepted.
+
+`#samples` is the declared array's **outer element count**, not its byte size.
+For `matrix: u8[2][3]`, the count is two, not six.
+This static-array form also recognizes resolved static storage exports, but does not provide capacity for arbitrary typed locals or selected fields.
+Do not use `#view` as a pointer-capacity query.
+
+### Access hazards
+
+Typed indexing emits no array bounds check or runtime integer-index check.
+A statically known noninteger index is rejected, but a declared length does not prevent a computed address from leaving the range.
+Keep indices and byte-address arithmetic within the intended storage.
+
+Effective access addresses are converted to unsigned 32-bit addresses.
+Misaligned accesses cause a synchronous address exception before the mapped access: two-byte alignment for `u16`/`i16`, four-byte alignment for `u32`/`i32`, `word`, `addr`, `f32`, and `f64`.
+Byte accesses have no additional alignment requirement.
+A bus fault causes a synchronous data-bus exception; a failed load leaves its destination register unchanged.
+A store can wait for the mapped destination to become ready before writing.
+
+Direct writes through `rodata` selections are rejected, as are static string-reference assignments and whole-array or whole-struct assignments.
+A local typed view does not retain `rodata` provenance or provide const-pointer protection.
+`<const>` prevents rebinding that local; it does **not** prevent stores through it.
+Do not treat a view annotation as a guarantee of writable memory or a way to make image storage writable.
+
+Typed accesses to memory-mapped I/O invoke the mapped device rather than behaving like inert RAM.
+Word accesses are not interchangeable with narrow accesses: an aligned I/O byte read reads the slot and keeps its low byte, other byte positions fault, byte writes fault, and 16-bit reads and writes fault.
+Use the device's specified access width; writes to read-only slots fault.
+
+An `f64` access performs its low-word access before its high-word access at byte offset four.
+If the first access faults, the second is skipped.
+The pair is not atomic: the first write may already have occurred when the second faults.
+
+<div class="keep-together">
+
+## Operator spellings and source conventions
+
+### Augmented assignment
+
+BLua accepts six augmented assignments:
+
+| Assignment | Arithmetic operator |
+|---|---|
+| `+=` | `+` |
+| `-=` | `-` |
+| `*=` | `*` |
+| `/=` | `/` |
+| `%=` | `%` |
+| `^=` | `^` |
+
+</div>
+
+Each requires exactly one target and one right-hand expression. There is no
+`//=`, bitwise or shift assignment, concatenation assignment, or increment or
+decrement form. In particular, `--` begins a comment, not a decrement.
+
+The target is prepared first and the right-hand expression is evaluated next;
+then the target's value is read, the arithmetic is performed, and the result
+is written back. Do not treat this as a textual replacement that repeats the
+target expression, or as a promise of an atomic operation.
+
+### Unary `&`: storage address or String
+
+For a typed storage selection, unary `&` obtains the selected storage address
+without reading its contents. A record field or indexed element therefore
+selects an address using its declared layout.
+
+The String use is different: unary `&` retains the String value. It does not
+expose a numeric string identifier or a pointer to character bytes. Do not use
+this spelling to infer a byte-buffer interface or a general address conversion.
+The String form and the typed-storage form must not be conflated.
+
+### Named members with `->`
+
+`base->member` is another named-member spelling alongside `base.member`.
+It is not C's automatic extra pointer dereference.
+
+For a typed field selection, the field's address is the base's typed address
+plus the declared field offset. The arrow does not first read an address-valued
+field and turn its contents into a new typed pointer. Choose the intended
+address view explicitly rather than expecting C pointer-member behavior.
+
+### Names and a line-leading `*`
+
+Identifiers begin with lowercase ASCII `a`–`z`, `_`, or `$`; following
+characters may also include decimal digits. Uppercase ASCII letters in
+identifiers are rejected, and non-ASCII letters are not identifier characters.
+Uppercase hexadecimal digits inside numeric literals are a separate matter.
+
+Statements generally need no semicolon, but newlines are not universally
+insignificant. When `*` begins a new line, it does not continue the preceding
+expression as multiplication: it can begin a dereference statement instead.
+Keep a continuation multiplication operator on the existing expression line.
+Parentheses do not remove this particular newline rule; do not generalize it
+to every operator.
+
+These are the relevant BLua spellings and source conventions, not a claim that
+every familiar construct is a new extension. In particular, local `<const>`
+is also present in Lua 5.4.
+
+## Module modes, static imports, and `<init>`
+
+The important distinction is between a runtime export, a compile-time namespace,
+and a static function call target. They are not interchangeable.
+
+### Choose the module mode
+
+Put an optional module marker before the chunk's statements.
+The spellings are case-sensitive; an optional semicolon may follow the marker.
+
+| Beginning of chunk | Meaning |
+| --- | --- |
+| No marker | An ordinary module; a final export declaration supplies its runtime export. |
+| `module<entry>` | The program's entry chunk, entered after its ordinary dependencies are initialized. |
+| `module<const>` | A compile-time export namespace or root static function, not an allocated module table. |
+
+A cartridge program has exactly one `module<entry>` among its supplied modules.
+The marker selects a role, not a name. Duplicate paths are compile errors.
+
+### Import a literal module path
+
+Use the built-in `require` with exactly one literal string argument:
+
+```lua
+local state = require("lib/state")
+local settings <const> = require("lib/settings")
+```
+
+The first form is suitable for an ordinary runtime export; the second can bind a
+compile-time namespace. `require "lib/state"` is also accepted.
+A computed path, an extra argument, or a method-style built-in import is a compile
+error. A lexical declaration named `require` shadows the built-in.
+
+Imports name supplied modules or installed named function imports.
+An unavailable module is a compile error, not a missing-file error during play.
+Module names use `/`; dots are not converted to `/`. An import variable's name
+does not change the imported module's path.
+
+Literal imports select dependencies for the program, including imports written
+inside functions. They are not deferred file-loading instructions.
+Ordinary dependencies initialize before their importers; a dependency cycle is a
+compile error. Do not rely on filename ordering between unrelated dependencies.
+
+### Ordinary exports stay runtime values
+
+An ordinary module declares its export with a final top-level `return` containing
+exactly one expression. Its result may be a table, function, scalar, `false`, or
+`nil`. For `return make_value()`, only the call's first result is exported.
+An earlier or nested return, bare return, or final multiple-expression return
+does not declare that export contract.
+
+The module's top-level code is initialized before entry; an ordinary `require`
+expression reads its retained export rather than rerunning that code at the
+written import line. Successful initialization is recorded separately from the
+export, so exporting `nil` or `false` does not cause another initialization.
+This is not a promise about initialization across resets or replaced programs.
+
+Imports of an ordinary exported table read the same published root.
+Its fields remain runtime fields: replacing a function field changes what a later
+ordinary `module.field()` lookup calls. A const local naming that table does not
+turn the table into a compile-time namespace or freeze its fields.
+
+### A const namespace is not a const local
+
+`local name <const>` makes a local binding immutable.
+`module<const>` instead declares compile-time exports: named constant leaves and
+static function targets, or a root static function. These are different features.
+A recognized const module has no ordinary runtime initializer.
+
+For example, a const module named `lib/settings` can declare:
+
+```lua
+module<const>
+return {
+    step = 8,
+    scale = function(value)
+        return value * 8
+    end,
+}
+```
+
+Its named exports can be selected without producing a runtime module table:
+
+```lua
+local settings <const> = require("lib/settings")
+local step = settings.step
+local scaled = settings.scale(step)
+```
+
+Named fields and literal string keys form export paths; nested fields form nested
+namespaces. `settings["scale"](step)` is also a static selection.
+Computed indices and positional array entries are not named namespace export paths.
+
+Constant leaves may be `nil`, booleans, numbers, strings, or static storage
+addresses. Numeric negation and supported numeric constant expressions can be
+folded; arbitrary runtime expressions are not thereby constant expressions.
+A named leaf that is neither a compile-time constant nor a static function target is a compile error.
+
+### Static functions are call targets, not function values
+
+Const modules may export function literals, top-level local function declarations,
+or top-level const locals initialized with function literals.
+A root export can be written as `return function(value) return value * 8 end`.
+Bind such a root with `local operation <const> = require("lib/operation")`, then
+call `operation(value)`. A named target can have an alias such as
+`local scale <const> = settings.scale`.
+
+A compile-time namespace cannot be used as a runtime table. Select its exports instead.
+A static function target cannot be stored in a runtime table, passed as an ordinary
+callback, or returned as a runtime function value. A constant value export cannot
+be called. These are compile errors, not runtime conversions.
+Installed named function imports use the same call-target distinction.
+Exported static functions cannot capture runtime outer locals or use dynamic call
+targets. Their operations are restricted to scalar/static work: numeric and
+boolean constants, scalar locals, branches, static calls, and scalar memory access.
+Runtime global access, table allocation or dispatch, object length, runtime closure
+creation, vararg dispatch, and dynamic string concatenation are excluded.
+Ordinary string literals in such function bodies are also excluded; already
+interned constants read through immutable typed rodata are permitted.
+
+<div class="keep-together">
+
+### `<init>` registers a participant; it does not call it at startup
+
+The declaration form is a top-level local function with no parameters or varargs:
+
+```lua
+module<entry>
+local count = 0
+local function prepare <init>()
+    count = 0
+end
+prepare()
+```
+
+</div>
+
+The final line is an explicit call. The attribute alone does not call the body.
+The participant is an ordinary local closure; unlike a const export, it may capture runtime locals.
+Declarations inside `if`, loops, `do`, or other functions are not top-level
+participants. `<init>` is forbidden in a const module and is not an attribute on
+global or method declarations. A non-entry participant module must be statically required.
+
+Normal startup initializes data storage, zeros BSS storage, initializes ordinary
+dependencies, then enters the entry chunk. It does not invoke the participant
+sequence. Use an explicit call when the body is needed during ordinary startup.
+
+When the separate participant sequence is invoked, it first completes any pending
+ordinary-module initialization, then calls participants with zero arguments.
+Dependency-module participants precede importer-module participants; entry
+participants are last, with declaration order retained within each module.
+This sequence does not rerun section initialization or entry, and it has no
+per-participant completion latch. `<init>` is therefore not a once-only constructor
+or a promise that each reset or program replacement will call the function.
+
+For explicit participant invocation during development, see the
+[development companion](../programming/getting-started.md#development-invocation-of-init).
+This does not change the normal-startup rule.
+
+## Compiler-owned access forms and intrinsics
+
+BLua provides direct memory access, control-register access, closure construction, selectable
+tracing, and an interrupt-wait statement. These are compiler-owned source forms, not a library of
+replaceable tables and functions.
+
+The six memory roots are `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, and `memf64le`. The two
+intrinsic roots are `cop0` and `blua32`. None of these eight names may be declared as a local or
+parameter. They are not first-class values: do not assign a root to another variable, pass it as an
+argument, or replace it by assignment. Their supported forms use the root name directly, as
+described below.
+
+<div class="keep-together">
+
+### Byte-addressed memory maps
+
+Each memory map uses `map[byte_address]` for a read or an assignment target. The index is a byte
+address, regardless of the access width. For example, adjacent 32-bit words are four address units
+apart, not one. Addresses are consumed as unsigned 32-bit addresses.
+
+| Map | Value transferred | Size in bytes | Required byte alignment |
+|---|---|---:|---:|
+| `mem[address]` | Raw unsigned 32-bit word, little-endian | 4 | 4 |
+| `mem8[address]` | Unsigned byte | 1 | 1 |
+| `mem16le[address]` | Unsigned 16-bit integer, little-endian | 2 | 2 |
+| `mem32le[address]` | Unsigned 32-bit integer, little-endian | 4 | 4 |
+| `memf32le[address]` | Numeric IEEE float32, little-endian | 4 | 4 |
+| `memf64le[address]` | Numeric IEEE float64, little-endian | 8 | 4 |
+
+</div>
+
+<div class="keep-together">
+
+`mem` and `mem32le` both transfer a little-endian unsigned 32-bit value. They remain distinct access
+kinds, including their fault-access identity; `mem32le` is not a source alias for `mem`. The
+floating-point maps convert between numeric values and their stored floating representation. They do
+not return the integer bit pattern of that representation. Use an integer map when the required
+result is raw bits.
+
+</div>
+
+The following fragments show access shapes. Their address variables must already refer to suitable
+memory locations; the fragments are not complete programs.
+
+```lua
+local raw_word = mem[word_address]
+mem[word_address] = 0x00000001
+mem8[byte_address] = 0x7f
+local halfword = mem16le[halfword_address]
+local bits = mem32le[word_address]
+memf32le[float_address] = 1.5
+local wide = memf64le[double_address]
+```
+
+Misalignment raises an address-error-load or address-error-store exception before the access. In
+particular, `memf64le` requires four-byte, not eight-byte, alignment. It transfers the low word
+first and the high word at the address plus four. A fault stops the sequence; the two-word transfer
+is not an atomic transaction. A fault on the second word of a write does not undo the first word.
+
+A mapped device retains its own access rules. An access width is not permission to slice a device
+register as though it were ordinary byte storage. For example, a `mem8` I/O read must address an I/O
+slot and returns that slot's low eight bits; a byte address between slots faults. `mem16le` I/O
+accesses fault even when their two-byte alignment is correct. Word and unsigned 32-bit I/O accesses
+use the addressed device slot. Mapped bus faults raise synchronous data-bus-error exceptions. A
+device may also stall a store until it is ready; this is device readiness, not a source-level
+transaction or a request to add a retry loop.
+
+### Typed dereference is a separate form
+
+Unary `*` reads a resolved typed pointer, and `*pointer = value` writes its resolved scalar storage.
+The pointer's scalar type selects the access kind; the resolved byte offset and read-only status
+remain part of the access. Whole-structure scalar reads and assignments are not supported by this
+form, and directly resolved RODATA selections cannot be assigned through it. A local typed view
+does not retain that RODATA protection; the storage section above distinguishes these cases.
+
+An untyped numeric address is not a dereferenceable pointer. Do not replace `mem[address]` with
+`*address` when `address` has no compiled pointer type, and do not use `*0x08000000` as a raw memory
+access. Typed-pointer declarations, storage layout, and address views are specified in the [Memory
+reference](memory.md).
+
+### Compound assignment performs a read and a write
+
+The compound spellings are `+=`, `-=`, `*=`, `/=`, `%=`, and `^=`. Each requires exactly one target
+and one right-hand expression. There are no bitwise compound-assignment spellings such as `|=` or
+`&=`.
+
+For a mapped-memory target, evaluation proceeds in this order:
+
+1. Evaluate and retain the target address.
+2. Evaluate the right-hand expression.
+3. Read the target through the selected memory map.
+4. Apply the arithmetic operation and write through that map.
+
+Thus `mem[address] += amount` performs an actual mapped read followed by an actual mapped write. It
+is not a device-atomic operation. Read-side effects, write readiness, and access faults still apply
+separately. For device registers, use the device-defined write value rather than assuming that
+reading and rewriting its previous value is harmless.
+
+### Control registers: `cop0`
+
+Use a direct field read or assignment, such as `cop0.status` or `cop0.epc = resume_address`. The
+complete source-visible field set is:
+
+| Field | Register number | Permitted source access |
+|---|---:|---|
+| `cop0.bad_address` | 8 | Read only |
+| `cop0.lua_fault_reason` | 9 | Read only |
+| `cop0.status` | 12 | Read and write; compound assignment permitted |
+| `cop0.cause` | 13 | Read only |
+| `cop0.epc` | 14 | Read and write; compound assignment permitted |
+| `cop0.exec` | 15 | Write only; compound assignment rejected |
+
+Other field names are rejected. Reading `cop0.exec` or assigning a read-only field is also rejected,
+rather than providing another control-register operation. Every permitted read and write still
+requires supervisor mode. In user mode it raises a coprocessor-unusable synchronous exception;
+ordinary cartridge code does not gain privileged access by using this syntax.
+
+`cop0.status` and `cop0.epc` writes supply raw unsigned 32-bit words. In `status`, bit 0 is current
+interrupt enable and bit 1 is current user mode. Writing `cop0.exec` requests execution of the
+supplied function-record address; it is not an ordinary field update or a substitute for a normal
+function call. The execution-transfer and exception contracts belong to the [CPU reference](cpu.md).
+
+A supervisor-only source fragment can read exception state and set a resume address:
+
+```lua
+local status = cop0.status
+local cause = cop0.cause
+cop0.epc = resume_address
+cop0.status = status | 1
+```
+
+Compound assignment to `status` or `epc` evaluates the right-hand expression, then reads the control
+register, applies the operation, and writes the result. These are separate control-register
+operations, not an atomic update.
+
+### Intrinsic calls: `blua32`
+
+The complete intrinsic operation set is `closure`, `trace`, and `trace_sink`. Use a direct dotted
+call on `blua32`; alias calls and colon-method calls do not provide intrinsic access. Unknown
+operation names are rejected.
+
+#### `blua32.closure(function_address)`
+
+`closure` requires exactly one source argument and produces a closure value. It may appear in an
+expression or as a call statement. The argument expression supplies one result; additional requested
+result positions are filled with nil rather than additional closures.
+
+The address is consumed as an unsigned 32-bit function-record address in the active execution image.
+The function record is read before closure construction; an unsuccessful record read hard-halts
+execution. This operation does not make arbitrary integers valid function addresses. Function-record
+acquisition, capture context, and closure execution must follow the [CPU reference](cpu.md); this
+syntax defines no separate address-supply ABI.
+
+```lua
+local callback = blua32.closure(function_record_address)
+```
+
+`blua32.closure` requires a supplied valid function-record address and the appropriate capture context;
+it does not produce or reveal record addresses. For a supported route from
+compiled code to a callable root closure, use the BIOS `load` or `lua_compiler.compile_syntax`
+facilities described in [BIOS loading and compilation](bios-loader.md). Their
+compilation route supplies the linked record and constant-pool capture context.
+Ordinary function expressions need no programmer-supplied record address.
+
+#### `blua32.trace(subject, channel, ...)`
+
+`trace` is a statement-only form with at least two source arguments. The channel must be a String
+literal, not a variable or computed String. Each payload expression after the channel supplies one
+result. `trace` cannot be used as a value-producing expression.
+
+Instrumentation selection is a compilation choice: erase all trace statements, select all channels,
+or select a named set of channels. Erasure is the default. Argument-count and literal-channel
+requirements still apply to erased statements. An erased statement evaluates neither its subject nor
+its payload expressions. Do not put required program effects in those expressions.
+For the supplied build routes and their selection limits, see the
+[development companion](../programming/getting-started.md#trace-selection-in-the-supplied-build-routes).
+
+For a selected channel, `trace` evaluates the subject and reads its channel sink. If that sink is
+falsey, no payload expression is evaluated and no record is made. Otherwise it evaluates the payload
+and calls the sink's `record` method with the sink as receiver, followed by the payload values. A
+trace is therefore a call to a bound sink, not automatic output to a log.
+
+#### `blua32.trace_sink(subject, channel, sink)`
+
+`trace_sink` is also statement-only and requires exactly three source arguments. Its channel must be
+a String literal. It obeys the same compilation selection: an erased binding evaluates neither the
+subject nor the sink expression. When selected, it evaluates the subject, then the sink, and binds
+that sink to the subject's channel. Passing nil clears the binding. Use the intrinsic rather than
+accessing its channel-storage field directly.
+
+<div class="keep-together">
+
+This fragment shows a receiver-aware sink and matching channel literals:
+
+```lua
+local subject = {}
+local sink = {}
+function sink:record(value)
+    self.last = value
+end
+blua32.trace_sink(subject, 'movement.step', sink)
+blua32.trace(subject, 'movement.step', 4)
+blua32.trace_sink(subject, 'movement.step', nil)
+```
+
+</div>
+
+### Interrupt waiting: `halt_until_irq`
+
+`halt_until_irq` is a keyword statement, not a function or replaceable name. It takes no parentheses
+or arguments; a following semicolon is optional. Unlike `cop0` access, it has no supervisor-mode
+requirement.
+
+If an interrupt-event-pending latch is already set, the statement consumes it without establishing a
+new halt. Otherwise it halts the active thread at its current physical frame depth. An occurrence
+need not wait for a future event. Accepted interrupts, not arbitrary device activity, define the
+interrupt boundary. Maskable interrupt acceptance requires current interrupt enable and an asserted
+maskable interrupt line. Full interrupt-entry, return, and scheduling rules are specified in the
+[CPU reference](cpu.md).
+
+Wait for the required condition in a predicate loop, for example by comparing an
+interrupt-handler-maintained completion sequence with its previous value:
+
+```lua
+while completion_sequence == previous_sequence do
+    halt_until_irq
+end
+```
+
+The interrupt handler and sequence belong to the operation being awaited. An interrupt alone does
+not establish that the desired transfer or frame completed.
+
+## Complete example: static records and typed address views
+
+This complete two-module program copies two records from RODATA into BSS,
+records the initial storage contents, and advances a DATA counter. It produces
+no visible image and does not configure or submit a hardware job.
+For project setup, see [Getting started](../programming/getting-started.md).
+
+<div class="keep-together">
+
+### `storage.lua`
+
+The constant module declares the layouts and static storage. Its exports supply
+storage addresses and the record count, not newly allocated copies of the data.
+
+```lua
+module<const>
+
+local input_count<const> = 2
+
+struct memory_sample
+	tag: u8
+	value: word
+	samples: u16[2]
+end
+
+struct memory_status
+	initial_counter: word
+	initial_output_or: word
+	completed: word
+end
+
+rodata inputs: memory_sample[input_count] = {
+	{ tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
+	{ tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
+}
+
+data counter: word = 0x12345678
+bss output: memory_sample[input_count]
+bss status: memory_status
+
+return {
+	inputs = inputs,
+	input_count = input_count,
+	counter = counter,
+	output = output,
+	status = status,
+}
+```
+
+</div>
+
+<div class="keep-together">
+
+### `cart.lua`
+
+The entry module requires `storage` and gives its exported addresses typed
+views. DATA initialization and BSS clearing precede entry. The two views of
+`storage.output` address the same bytes: one selects records, the other words.
+
+```lua
+module<entry>
+
+local storage<const> = require('storage')
+local inputs<const>: *memory_sample = storage.inputs
+local output<const>: *memory_sample = storage.output
+local counter<const>: *word = storage.counter
+local status<const>: *memory_status = storage.status
+local output_words<const>: *word = storage.output
+
+-- Observe startup contents before writing the output records.
+status.initial_counter = *counter
+local initial_output_or = 0
+for index = 0, storage.input_count * sizeof(memory_sample) // sizeof(word) - 1 do
+	initial_output_or = initial_output_or | output_words[index]
+end
+status.initial_output_or = initial_output_or
+
+-- Typed arrays start at zero. Copy scalar fields, not whole records.
+for index = 0, storage.input_count - 1 do
+	output[index].tag = inputs[index].tag
+	output[index].value = inputs[index].value
+	output[index].samples[0] = inputs[index].samples[0]
+	output[index].samples[1] = inputs[index].samples[1]
+end
+*counter = *counter + storage.input_count
+status.completed = 1
+
+while true do
+	halt_until_irq
+end
+```
+
+</div>
+
+### Layout, addresses, and count units
+
+`input_count` is a count of records, not bytes or an address. Its single value,
+2, supplies both array dimensions and the exported count. The named constant
+also fits this constant-module export form; substituting `#inputs` directly
+in the export table is not accepted.
+
+| Part of `memory_sample` | Byte offset | Bytes |
+|---|---:|---:|
+| `tag` | 0 | 1 |
+| Alignment padding | 1 | 3 |
+| `value` | 4 | 4 |
+| `samples` | 8 | 4 |
+
+A record has alignment 4 and size 12 bytes; either two-record array occupies
+24 bytes. The status record occupies 12 bytes, with word fields at offsets
+0, 4, and 8. The declarations provide linked storage rather than chosen RAM
+base numbers.
+
+Typed arrays start at index zero. Relative to the input base, `&inputs[1]`
+is at byte offset 12, `&inputs[0].value` at 4,
+`&inputs[0].samples[0]` at 8, and `&inputs[1].samples[1]` at 22.
+The corresponding output selections have the same offsets. A byte view advanced
+by one addresses the next byte, not the next record: here that byte is padding.
+
+<div class="keep-together">
+
+### Completed contents
+
+Before copying, the program saves the initial counter, `0x12345678`, and ORs
+all six output words. The initial OR is zero. The copy writes four scalar
+fields per record; it is not a whole-record assignment. The three padding
+bytes in each output record remain zero.
+
+The output's six words, in increasing address order, are:
+
+```text
+00000011 12345678 33441122 00000022 9ABCDEF0 77885566
+```
+
+</div>
+
+These hexadecimal data words equal the input's six words. The final counter
+is `0x1234567a`; the status fields are `initial_counter = 0x12345678`,
+`initial_output_or = 0`, and `completed = 1`.
+
+Entry then loops on `halt_until_irq`. This does not create a completion
+interrupt. The example demonstrates memory contents, not rendering, device
+completion, asynchronous buffer reuse, or persistence. A hardware-facing
+buffer still needs its device's address, layout, count-unit, admission, and
+completion/lifetime contract.
+
+## Existing source forms and linked programs
 
 This chapter describes source programs built into a cartridge: spelling and
 statements, file-to-module names, literal imports, startup exports and the
@@ -12,7 +902,7 @@ execution. [Memory](memory.md#typed-byte-storage-and-address-views) defines
 static storage, typed declarations, address views and initialization. These
 remain the companion definitions for the source forms below.
 
-Each of the three complete programs supplies every source file. Follow its
+Each complete program supplies every source file. Follow its
 separate development-companion route for the project tree, manifest, build
 commands and output observation:
 [modules and globals](../programming/getting-started.md#build-and-inspect-modules-and-globals),
@@ -33,12 +923,16 @@ An identifier begins with a lowercase ASCII letter, `_` or `$`. Following charac
 | --- | --- |
 | `position`, `frame2`, `_scratch`, `$state` | Names beginning with a digit, containing an uppercase letter, or using non-ASCII letters |
 
+<div class="keep-together">
+
 The reserved keywords are:
 
 ```text
 and break do else elseif end false for function goto halt_until_irq
 if in local nil not or repeat return then true until while
 ```
+
+</div>
 
 Other source features have context-sensitive spellings. For example, `const`, `entry`, `init`, `struct`, `bss`, `data`, `rodata`, `sizeof` and `offsetof` are not members of this lexical keyword list. Their use is defined by the relevant declaration, module or memory form.
 
@@ -114,6 +1008,8 @@ local message = 'press "start"'
 local lines = "ready\nlaunch"
 ```
 
+<div class="keep-together">
+
 A literal line feed before the closing quote is rejected, as is an unterminated short String. The supported escapes are:
 
 | Escape | Decoded character or action |
@@ -131,6 +1027,8 @@ A literal line feed before the closing quote is rejected, as is an unterminated 
 | `\xHH` | Character selected by exactly two hexadecimal digits |
 | `\ddd` | Character selected by one to three decimal digits, with a value no greater than 255 |
 | `\z` | No character; discard the following contiguous whitespace |
+
+</div>
 
 Here `HH` and `ddd` are notation for digits, not literal suffixes. `\z` consumes spaces, horizontal tabs, carriage returns, line feeds, vertical tabs and form feeds until the next non-whitespace character.
 
@@ -260,6 +1158,8 @@ end
 
 Further dotted path components are permitted. The declaration stores the function in that target; it does not create missing namespace tables. The local-function form does not accept a dotted or colon target.
 
+<div class="keep-together">
+
 A colon declaration adds an implicit first parameter named `self`:
 
 ```lua
@@ -271,6 +1171,8 @@ end
 
 counter:add(3)
 ```
+
+</div>
 
 An anonymous function is an expression:
 

@@ -10,6 +10,26 @@ behavior use paired CPU owners. There is no invented mirrored C++ source compile
 
 ## Finite author inputs
 
+- [Storage and address extensions](blua-extensions-storage.md): complete primitive
+  layout inventory, DATA/BSS/RODATA, structs/arrays, typed views, address selection
+  and size/count operations. Independent source review narrows `string` reads
+  to generic selected-constant lookup; String production belongs to its initializer.
+- [Compiler-owned access and intrinsics](blua-extensions-intrinsics.md): six
+  maps, six CP0 fields, three `blua32` operations including tracing, HALT and
+  compound side effects. Direct RODATA protection is distinct from alias views.
+- [Module extension inventory](blua-extensions-modules.md): const namespaces,
+  static targets, literal imports and the exact ordinary-startup/`<init>` split.
+- [Additional extension spellings and current build routes](blua-extensions-operators.md):
+  six augmented assignments, String/address `&`, arrow access, source conventions
+  and trace-selection boundaries. This is not a general Lua tutorial or a
+  permanent Lua-version compatibility promise.
+- [Concrete closure producer and development participant trigger](blua-extensions-development.md):
+  the actual BIOS record/capture-context construction and the explicitly staged
+  development invocation, not a new cartridge boot hook or guessed raw-address API.
+- [Existing complete static-record program](memory-example.md): both literal
+  modules are reused rather than creating another cartridge/helper. Their
+  unchanged source was revalidated and its retained-result case rerun for this
+  extension-first route; the new supplemental facts record exact current evidence.
 - [Source spelling and forms](blua-programs-source-forms.md): lexer literals,
   names and comments; declarations, binding, expression grouping and statement
   forms. This is the actual cartridge frontend, not stock Lua or a promise of

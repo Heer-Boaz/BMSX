@@ -123,15 +123,20 @@ its source/publication dependencies and the full SDK route remain open.
 
 **Next software-writing priority (2026-10-18):** the
 [BLua-specific extension/difference route](README.md#next-writing-priority-blua-specific-programming)
-needs coherent hardware-programming treatment. Mentioning some source forms
-and linking to CPU/Memory is not proof that a newcomer can prepare hardware
-buffers, use mapped registers and call the relevant BIOS interfaces. The user's
-follow-up defers general Lua explanation: refer readers to the official Lua
+needs coherent BLua-specific treatment, not limited to hardware-related
+extensions. Mentioning source forms and linking to CPU/Memory is not sufficient
+teaching. The user's follow-up defers general Lua explanation: refer readers to the official Lua
 documentation rather than expanding a tutorial or exhaustive comparison.
 Retain the existing general-language and BIOS references; hardware operation
 and the BIOS interfaces needed for it take precedence over further library
-coverage. This is a writing priority, not a fixed promise about future BLua/Lua
-language evolution.
+coverage across the series; this does not exclude non-hardware BLua extensions
+from the language reference. This is a writing priority, not a fixed promise
+about future BLua/Lua language evolution.
+
+The [extension-first route](../book1/blua-programs.md#blua-extensions) is now a
+reviewed DRAFT with complete source forms, a real storage program and separate
+source/reader/print evidence. It does not remove existing reference material or
+make the series complete.
 
 | Canonical Book I material | Book II reader route |
 | --- | --- |

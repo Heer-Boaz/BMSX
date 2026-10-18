@@ -1,19 +1,19 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Linked cartridge-source forms, module linkage and installed ordinary-name environment; separate BIOS runtime compiler and shell are boundaries, not equivalent language/load contracts.",
+			"resolution": "Linked cartridge-source forms, module linkage and installed ordinary-name environment; separate BIOS runtime compiler and shell are boundaries, not equivalent language/load contracts. Extension-first source reference includes non-hardware BLua forms; official Lua documentation is the general-language reference, not an asserted future-version compatibility contract.",
 			"open": []
 		},
 		"registers": {
-			"resolution": "No new mapped registerfile. Literal headers/imports/exports, source forms and installed-name inventory are specified; CPU/Memory own canonical instruction and address interfaces.",
+			"resolution": "No new mapped registerfile. Literal headers/imports/exports, source forms and installed-name inventory are specified; CPU/Memory own canonical instruction and address interfaces. All six raw maps and six source-visible CP0 fields have local source-form/access tables, with canonical hardware definitions retained in CPU/Memory.",
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Lexical forms and binding, static dependency inclusion and eager startup, retained ordinary exports versus compile-time namespaces/static targets, ordinary global bank versus runtime library Tables. Numeric headers are cached once and the body-visible counter is tested/updated; generic headers adjust to a cached three-value tuple, call with two arguments, request visible-variable-count results and stop only on nil.",
+			"resolution": "Lexical forms and binding, static dependency inclusion and eager startup, retained ordinary exports versus compile-time namespaces/static targets, ordinary global bank versus runtime library Tables. Numeric headers are cached once and the body-visible counter is tested/updated; generic headers adjust to a cached three-value tuple, call with two arguments, request visible-variable-count results and stop only on nil. Typed storage primitive layouts, section initialization, address/count/stride operations and alias restrictions are taught locally. String storage reads a selected image constant; its RODATA initializer supplies the String reference. All six augmented assignments, String/address &, arrow and all three blua32 intrinsics are covered, including trace erasure/selection and sink dispatch.",
 			"open": []
 		},
 		"visibility": {
-			"resolution": "Dependency initialization before dependents and entry, export completion distinct from nil/false, shared ordinary export mutation and current-global lookup versus lexical caller locals; static namespaces are not allocated runtime Tables. The top-level local-function <init> marker creates a closure but is not an automatic normal-startup call; non-entry participants must be scheduled modules. Generic control is copied before the body independently of subsequent visible-local rebinding; shared cached references are not deep snapshots.",
+			"resolution": "Dependency initialization before dependents and entry, export completion distinct from nil/false, shared ordinary export mutation and current-global lookup versus lexical caller locals; static namespaces are not allocated runtime Tables. The top-level local-function <init> marker creates a closure but is not an automatic normal-startup call; non-entry participants must be scheduled modules. Generic control is copied before the body independently of subsequent visible-local rebinding; shared cached references are not deep snapshots. Mapped compound target preparation, RHS evaluation, read/operate/write order and two-word f64 partial-write behavior are explicit. The companion identifies the bounded development trigger for participant sequences without generalizing every replacement/reset.",
 			"open": []
 		},
 		"timing": {
@@ -21,11 +21,11 @@
 			"open": []
 		},
 		"interrupts": {
-			"resolution": "halt_until_irq is a dedicated source statement; CPU/IRQ own masks, pending state, acceptance and wake behavior. No invented BIOS-call or module IRQ contract.",
+			"resolution": "halt_until_irq is a dedicated source statement; CPU/IRQ own masks, pending state, acceptance and wake behavior. No invented BIOS-call or module IRQ contract. The local extension route distinguishes a consumed pending interrupt event from establishing a HALT and waits on the operation predicate, not arbitrary device activity.",
 			"open": []
 		},
 		"faults": {
-			"resolution": "Finite lexer/parser/compiler rejections for source spellings, binding, imports, export/static restrictions and duplicate/cyclic modules. Runtime argument/access/fault contracts stay canonical; load wrapper protection is not generalized to compile_syntax. Independently checked current-call/out-of-context varargs, function-wide labels and jump-only scope crossing, numeric-loop cached values/body mutation/explicit zero step. Conflicting repeat-local owners are not reconciled into a language guarantee.",
+			"resolution": "Finite lexer/parser/compiler rejections for source spellings, binding, imports, export/static restrictions and duplicate/cyclic modules. Runtime argument/access/fault contracts stay canonical; load wrapper protection is not generalized to compile_syntax. Independently checked current-call/out-of-context varargs, function-wide labels and jump-only scope crossing, numeric-loop cached values/body mutation/explicit zero step. Conflicting repeat-local owners are not reconciled into a language guarantee. The extension delta specifies raw/typed access alignments, narrow I/O restrictions, address/bus exceptions, CP0 privilege, unsupported untyped dereference, direct RODATA versus alias provenance and closure-record prerequisites; no runtime/compiler repair is inferred.",
 			"open": [
 				"LS01: the binder keeps repeat-body locals visible through until, but the compiler removes their bindings before lowering the condition. An ordinary owned-global probe prints one pass rather than the lexical three-pass contrast. Current software is recorded separately; intended repeat-local visibility remains unresolved."
 			]
@@ -35,7 +35,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Original six-file modules/global program plus two separate complete numeric-loop and generic-iterator cartridges. Numeric continuation has sixteen retained assertions and six separate ordinary diagnostics; iterator continuation has ten retained assertions and three separate ordinary diagnostics. Actual-owner source audits and literal reconstruction checks, a source-blind public-reader reconstruction with both findings closed, and actual 28-page DRAFT visual review pass separately. The known-call minimum and explicit-nil SetGlobal delta has independent actual-source acceptance; seven changed final pages were individually re-viewed and the other21 full rasters match retained inspected evidence. LS01 stays open, not waived by these finite passes.",
+			"resolution": "Original six-file modules/global program plus complete numeric-loop and generic-iterator programs are retained. The new extension-first route adds the unchanged complete32+30line static-record program, revalidated through ordinary quality checks and its retained-result integration case. Ten focused trace cases, eight init-function cases and19manual-tool tests pass separately. A fresh public-only reader reconstructs both sourcefiles byte-for-byte; closure producer/context and participant-trigger navigation findings are closed. Current44page DRAFT has source, reader and every-page visual acceptance. Ordinary-ROM trace selection is explicitly unavailable through the current CLI (BE01), not invented from derived integration emission. LS01 remains open; no wholeSDK/native/ordinarytracing/wholeconsole completeness claim.",
 			"open": []
 		}
 	},

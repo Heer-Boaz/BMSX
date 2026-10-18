@@ -242,19 +242,20 @@ These are field-group tables, not drawings to a physical bit-width scale.
 
 ### Next writing priority: BLua-specific programming
 
-- [ ] **BLua extensions and differences from Lua (requested 2026-10-18).**
+- [x] **BLua extension reference (requested 2026-10-18; bounded DRAFT delivered).**
   The reader reports that `build/manual/blua-programs.preview.pdf` does not
   provide an identifiable account of what makes BLua different from Lua.
-  Make that a first-class hardware-programming route, not scattered references
+  Make that a first-class BLua-programming route, not scattered references
   to CPU/Memory definitions or another general library catalogue. Inventory the
-  actual linked-cartridge forms needed to program the machine: typed storage/views,
+  actual linked-cartridge extensions, including typed storage/views,
   structs/layout/address operations, module/static imports and initialization,
-  machine intrinsics/mapped access and interrupt-wait syntax. Explain differing
-  value, indexing or call behavior where it affects those programming routes;
+  machine intrinsics/mapped access, tracing and interrupt-wait syntax. This
+  scope is not limited to hardware-facing features. Explain differing value,
+  indexing or call behavior where it affects those programming routes;
   do not turn the work into a general Lua tutorial or exhaustive porting guide.
   Link the [official Lua documentation](https://www.lua.org/docs.html) for
-  general language explanation. A
-  comparison must name its Lua reference version, not freeze BLua's future
+  general language explanation. A comparison must name its Lua reference
+  version, not freeze BLua's future
   evolution or call shared syntax a BLua invention. Keep linked BLua separate
   from the BIOS runtime compiler's subset.
   Supply precise source forms, representations, effects, limits/hazards and
@@ -264,12 +265,21 @@ These are field-group tables, not drawings to a physical bit-width scale.
   **Keep all existing BIOS/library documentation.** It remains useful reference;
   expanding the standard-Lua library catalogue is not the next writing priority.
   **Priority clarification, 2026-10-18:** stop expanding general Lua explanation.
-  Hardware operation and the BIOS interfaces relevant to it take precedence.
+  Hardware operation and relevant BIOS remain the series-wide priority, not a
+  restriction on which BLua extensions are documented.
   Existing general-language material is retained as secondary reference, not a
   prerequisite to the next hardware chapter.
-  The runtime-compilation slice is committed; address this hardware-oriented
-  route before starting another general BIOS-library chapter. Fresh owner facts and separate
+  The runtime-compilation slice is committed; address this BLua-specific route
+  before starting another general BIOS-library chapter. Fresh owner facts and separate
   source/reader/actual-PDF checks remain required; no inferred compiler repair.
+  The extension-first section is now present in `blua-programs.preview.pdf`,
+  including non-hardware modules/static functions, `<init>`, tracing, String/address
+  `&`, arrow selection and augmented assignment. Separate source and public-reader
+  checks pass; the reused complete storage example executes and every current PDF
+  page has print evidence. General Lua exposition and all BIOS chapters are retained,
+  not expanded or discarded. LS01 keeps the chapter a DRAFT; BE01 records the
+  current ordinary-ROM trace-selection limitation. Resume the wider hardware and
+  relevant-BIOS work below rather than extending the general Lua tutorial.
 
 ### Broader technical and presentation follow-up
 

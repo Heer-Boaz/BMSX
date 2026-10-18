@@ -923,6 +923,45 @@ optimizer/calendar-accuracy, performance, reset/persistence, runtime-parser,
 whole-SDK or whole-console acceptance. CPU7, BZ01 and LS01 are not resolved.
 
 
+## Development invocation of `<init>`
+
+IDE Hot Resume explicitly prepares calls to selected cartridge or system
+`initFunctionAddress` vectors, omitting zero addresses. When media was rebuilt,
+it installs the revision before beginning the prepared completion calls in their
+selected execution domains. Initial selection includes the active cartridge when
+source-edited or when resuming without rebuilt media, and the system for a system
+source edit. This is a specific development route, not automatic invocation on
+every image replacement. Normal startup still omits the participant vector;
+`<init>` declarations register closures without calling their bodies.
+
+See the [BLua participant reference](../book1/blua-programs.md#init-registers-a-participant-it-does-not-call-it-at-startup)
+for the declaration restrictions and explicit ordinary-startup call. This bounded
+route description is not a guarantee about every source edit, replacement,
+reset or IDE scheduling state.
+
+## Trace selection in the supplied build routes
+
+The [BLua extension reference](../book1/blua-programs.md#intrinsic-calls-blua32)
+describes `blua32.trace` and `blua32.trace_sink`. Their selection is a compilation
+choice, not a switch that a running cartridge can use to restore erased code.
+
+The ordinary cartridge builder defaults to erasing these statements. Its
+current command-line options do not expose a trace-channel selection switch;
+`--debug` does not supply one. Do not expect the tracing fragment to record
+anything merely because it appears in a debug cartridge's source.
+
+The compilation interface supports `traceStatements` set to `'erase'`, `'emit'`,
+or an array of exact channel names. That interface setting is not an additional
+BLua statement or an advertised cartridge-builder command-line option.
+The existing derived integration-image producer selects `'emit'`. A tracing
+observation on that route therefore does not establish tracing in the ordinary
+ROM. Keep those build routes distinct when comparing results.
+
+Ordinary-ROM selection is an outstanding tool-interface item, recorded in the
+[technical follow-up](../manual/technical-follow-up.md#blua-extension-reference-and-current-tool-boundaries).
+The source forms remain documented, including their erasure and evaluation
+rules; no undocumented flag or replacement build wrapper is required here.
+
 ## Build and inspect runtime compilation
 
 The [complete runtime-compilation program](../book1/bios-loader.md#complete-program-runtime-compilation)

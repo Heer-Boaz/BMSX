@@ -1292,12 +1292,49 @@ BLua's extensions/differences sufficiently discoverable. The current source
 mentions some forms and delegates typed storage/intrinsics to CPU/Memory;
 that scattered presence is not acceptance of a complete BLua-specific guide.
 The [priority work item](README.md#next-writing-priority-blua-specific-programming)
-requires a coherent, source-derived hardware-programming route through BLua's
+requires a coherent, source-derived programming route through BLua's
 extensions and genuine examples before another general BIOS-library chapter.
 The user's follow-up explicitly defers general Lua explanation: link the official
 Lua documentation instead of expanding a language tutorial or exhaustive
-comparison. Cover distinctions where they matter to hardware and relevant BIOS
-use, without promising that BLua or Lua will remain at today's language version.
+comparison. The subsequent clarification explicitly includes non-hardware BLua
+extensions: hardware and relevant BIOS are the priority for the series as a
+whole, not a limit on this extension reference. Do not promise that BLua or Lua
+will remain at today's language version.
 Keep linked-cartridge BLua distinct from the narrower runtime compiler. Preserve
 all authored BIOS/library and general-language material as secondary reference;
 hardware operation and relevant BIOS interfaces now take precedence.
+
+## BLua extension reference and current tool boundaries
+
+The extension reference includes non-hardware features such as static modules,
+static call targets, `<init>`, augmented assignment, String/address `&`, arrow
+selection and selected tracing, as well as mapped access, CP0 and HALT. General
+Lua teaching remains deferred; this language scope is not hardware-only.
+
+**BE01 — ordinary-ROM trace selection.** The actual compilation interface
+accepts erase, emit or exact channel names. The ordinary ROM-builder CLI does
+not expose that selection and defaults to erase, including debug builds. The
+existing derived integration-image producer selects emit. The development
+companion now names this difference; no ordinary-ROM trace-output or flag is
+invented from an integration observation. Tool-interface work can be addressed
+separately; this documentation slice does not add a wrapper, change the default,
+or infer a runtime/compiler repair.
+
+### Delivered extension-first DRAFT
+
+The existing `blua-programs` chapter now starts with the distinctive BLua forms,
+including non-hardware static linkage, participant registration, tracing and
+operator extensions. The original general source reference and all BIOS chapters
+remain. Four facts-only authors and separate owner audits supply the new text;
+the reused62line storage example passes quality validation and retained execution,
+ten tracing and eight init tests pass, and the public reader reconstructs both
+files exactly. Its low-level closure/context and participant-trigger navigation
+findings are closed by actual BIOS/development routes, not fake address producers.
+
+The current44page DRAFT is visually reviewed page-by-page or by exact full-page
+pixel identity to viewed pages. Existing markup closes14observed split groups;
+no runtime/compiler/BIOS/publisher/CSS/schema/framework/helper code changed.
+LS01 still blocks publication; BE01 remains the disclosed ordinary-ROM trace
+selection tool-interface limitation. This bounded language reference does not
+close the broader hardware detail, relevant BIOS, SDK, BookIII or graphics-output
+work. General Lua expansion stays deferred; return to those series priorities.

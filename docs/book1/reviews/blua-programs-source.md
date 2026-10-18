@@ -1,3 +1,16 @@
+# Current extension-first source acceptance
+
+The current addition is reviewed in [the BLua-extension source record](blua-extensions-source.md),
+with separate actual-owner storage/intrinsic checks, root module/operator checks,
+a reused real62line program, a fresh public-only reader and explicit current
+build/development boundaries. The complete original reference and BIOS material
+are retained; no new general Lua tutorial or hardware-only restriction is added.
+The reader's two navigation gaps are closed; ordinary-ROM trace selection remains
+BE01, explicitly disclosed rather than supplied by an invented flag.
+
+LS01 still blocks publication. This acceptance does not close old source questions,
+full SDK, future language versions or the full manual. Earlier scoped evidence follows.
+
 # BLua source programs — bounded source and execution acceptance
 
 Current public chapter SHA-256:

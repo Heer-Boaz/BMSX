@@ -1,3 +1,14 @@
+# Current extension-first PDF acceptance
+
+**PASS for the current44page DRAFT**, PDF `a6f0b07f…` and source `412a344a…`.
+The [complete current print record](blua-extensions-print.md) supersedes the
+28-page artifact below. Every final page is individually viewed or fully
+pixel-identical to retained individually viewed evidence. Fourteen observed
+lead/table/listing splits were closed using existing markup only.
+LS01 stays open; a DRAFT layout pass is not publication or whole-manual approval.
+
+## Earlier scoped evidence
+
 # Current BLua source-program PDF layout acceptance
 
 **PASS for the current 28-page DRAFT**, PDF `d99b0523…` and source `e4cc1350…`.
