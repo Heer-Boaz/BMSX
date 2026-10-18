@@ -1763,3 +1763,29 @@ repetition: `/tmp/bmsx-first-frame-public-audit-current.md`. Existing exact
 register/packet/IRQ/lifetime contracts can be combined without another graphics
 framework. This is bounded route acceptance, not closure of RDB01, FSEL01,
 BH01, physical specifications or final whole-console newcomer acceptance.
+
+## Reader-first hardware openings
+
+Requested 2026-10-19 after reading `build/manual/dma.pdf`. The opening must
+explain what hardware the BMSX provides before presenting its specification
+inventory. This is an editorial task across the hardware chapters, not a new
+publisher/template/gate or an instruction to change device behavior.
+
+Start with DMA: its current opening already names two programmable channels
+and one shared block path, but the immediate generic **Installed resources**
+section does not give enough conversational orientation. Write a coherent
+hardware overview explaining the channels' capabilities, sharing and relationship
+to APU transfer machinery; connect the meaningful RAM/ROM/device-port route
+costs to that overview. Keep detailed capacities, fields and qualified rate
+calculations available afterward. Do not just rename the heading or narrate
+all of the table rows.
+
+Verify concurrency/equivalence/APU-boundary claims against paired owners before
+writing. Two active channels do not establish two simultaneously serviced
+blocks, and a route to GP0 is not a direct VRAM aperture or a completed rendered
+image. Preserve the existing admitted-budget assumptions rather than converting
+them into unconditional speeds. Apply the same reader-first check to each
+remaining hardware chapter using its own facts; no stock opening paragraph.
+
+This item is queued after the active IMGDEC output lesson. It does not reopen
+the general Lua-library expansion or defer the manual's technical details.

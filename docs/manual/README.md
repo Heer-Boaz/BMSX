@@ -81,6 +81,12 @@ requirements apply; this is not another publication format or gate.
 
 Use an outline/function explanation, an appropriate programming sequence, and a
 local register reference. Adapt their length, order, and subsections to the unit.
+Open hardware chapters with a readable account of the hardware the console
+provides: what units or channels exist, what they do, how they share work, and
+which adjacent units matter. Explain important route/performance distinctions
+in that account before the detailed specification table. A generic
+"Installed resources" heading and table are not a substitute for this orientation;
+do not merely rename the heading or turn each table row into a sentence.
 A FIFO unit may need a command protocol; a timer may need an edge diagram; a
 controller port may need a transaction sequence. Do not invent a display-like
 datapath, timing equation, or example merely to imitate PCRTC's headings. Do not
@@ -300,6 +306,16 @@ Requested 2026-10-17. Keep the current unit-by-unit writing plan; carry out this
 broader completeness pass after the active chapter rather than silently treating
 a source-accurate register reference as a complete technical specification.
 
+- [ ] **Reader-first hardware openings (2026-10-19).** Review every hardware
+  chapter's opening, starting with DMA. Introduce the actual hardware in prose
+  before the specification inventory: its units/channels, purpose, relationship
+  to adjacent units, concurrency/sharing and meaningful route-dependent speeds.
+  For DMA, explicitly distinguish the two channels' shared transfer path from
+  APU transfer machinery, active channels from simultaneous block service, and
+  memory-to-port transport from completed VRAM work. Use the sourced route costs
+  and their assumptions, not an unqualified bandwidth claim. Preserve useful
+  specification tables after this orientation; changing a generic heading alone
+  does not complete the task. See the [assigned revision](technical-follow-up.md#reader-first-hardware-openings).
 - [x] **DMA rates by route.** Audit RAM, system-ROM, cartridge-ROM and GPU/VRAM
   transfer routes separately. The DMA chapter already lists region cycle costs;
   check that usable word/byte rates, setup and block-size effects, request waits,
