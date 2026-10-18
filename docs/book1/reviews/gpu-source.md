@@ -1,7 +1,8 @@
 # GPU source and reader review
 
-**Source and whole-reader review pass.** The separate final
-[print review](gpu-print.md) also passes. The [reader-task work list](../gpu-outline.md) separates paragraph
+**Previously accepted chapter; new dither lesson source checks pass.** The
+new lesson's final [print review](gpu-print.md) is pending; prior print acceptance
+does not approve the changed layout. The [reader-task work list](../gpu-outline.md) separates paragraph
 writing, independent checks, actual guest execution and final PDF acceptance.
 No architecture document or hardware-reference PDF supplies chapter facts.
 
@@ -282,3 +283,38 @@ that one paragraph at **Reset and display visibility**. It retains every reset,
 conditional-work, prior-firmware and finite-reservation distinction and the
 correctly titled actionable Memory query. Public-reader report:
 `/tmp/bmsx-gpu-startup-public-reader.md`. This is not whole-book/SDK acceptance.
+
+## Polygon dither and rectangle controls — 2026-10-19
+
+**Bounded source and figure PASS.** The new `gpu-dither-output` lesson compares
+the same material and modulation on two quads and two rectangle controls.
+Only the dither-enabled quad changes. Independent review checked the actual
+mirrored spec, packet/raster/VRAM, display and IRQ owners, not just the fact
+sheet. It independently reproduces all sixteen printed RGB555 words and confirms
+the source patch covers the rectangles' advancing UV coordinates. The repeated
+2×2 result is operand-specific, not a replacement for the 4×4 dither matrix.
+
+The two printed source parts concatenate byte-for-byte to the executed
+73-line `carts/gpu_dither_manual/cart.lua`, SHA256
+`e9b76ebe526f888e77eb0ee2f4ea0d57acc8dc97d44e7e8ae7490c4a28c8b60f`.
+Its 35 readonly words, six setup words and marker total 42 GP0 stores.
+Fresh debug-ROM build and actual guest case
+`polygon_dither_and_rectangle_controls` pass: five 4×4 readbacks compare forty
+packed words and check READY clears. The full, unmodified 256×192 capture is
+byte-identical to the public plate, SHA256
+`481d2b9874161be2d9ad0e7156a2a2efac01da1af375b5aeb42785d699bad40f`.
+Independent original-image inspection confirms the three flat controls and
+patterned upper-right quad. Raw words and displayed RGB remain separate evidence.
+
+The public companion supplies the complete manifest/build/check/ordinary-playback
+route. Separate ordinary-ROM execution reaches the virtual 2000-ms TTL; that
+exit alone does not validate the picture. No native/accelerated parity,
+arbitrary-geometry coverage or physical throughput is claimed. Production study
+used DuckStation's software rasterizer for methodology only, not BMSX facts.
+
+Independent reports: `/tmp/bmsx-gpu-dither-sentence-source-review-current.md`,
+`/tmp/bmsx-gpu-dither-program-image-review-current.md` and
+`/tmp/bmsx-gpu-dither-public-reader-current.md`. Actual run logs use the
+`/tmp/bmsx-gpu-dither-` prefix. All24 existing manual tests and `git diff --check`
+pass. No runtime, BIOS, compiler, publisher or harness implementation changed.
+The DRAFT preview is not final print acceptance or completion of Book I.

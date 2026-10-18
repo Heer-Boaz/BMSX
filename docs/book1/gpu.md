@@ -1492,6 +1492,136 @@ Neutral gain 128 does not cancel these offsets. At the lower limit, a nonzero fe
 
 Finally, the draw-mode dither setting is not universal. It applies to modulated textured polygons, untextured Gouraud polygons, and both flat and Gouraud lines. Flat untextured polygons, raw-textured polygons, and all rectangles do not dither. Without texturing, eligible dithering adds d to each RGB byte, clamps to 0…255, then discards three bits to obtain RGB555. Thus a modulated textured rectangle can use the same gain calculation, but not the polygon's dither variation.
 
+<a id="gpu-dither-output"></a>
+
+### Compare polygon dither with a rectangle control
+
+Use the four panels below to separate polygon dithering from texture sampling. Every panel uses texture material `3527H`, whose RGB5 channels are `(7, 9, 13)`, modulated by RGB bytes `(124, 100, 160)`. The two columns differ in the dither control: OFF on the left, ON on the right. Dither is draw-mode bit 9 (`0200H`).
+
+<div class="keep-together">
+
+![Four panels comparing textured quads and textured rectangles with dither off and on.](figures/gpu-dither-controls.png)
+
+| Position | Primitive | Dither control | Destination start |
+|---|---|---|---|
+| Upper left | Modulated textured quad | OFF | `(16, 24)` |
+| Upper right | Modulated textured quad | ON | `(144, 24)` |
+| Lower left | Modulated textured rectangle | OFF | `(16, 112)` |
+| Lower right | Modulated textured rectangle | ON | `(144, 112)` |
+
+</div>
+
+In the displayed picture, only the upper-right panel has grain; the other three panels are uniform. Both quads give every vertex UV `(0, 0)`, so they repeatedly sample the single texture word at `(640, 0)`. Each rectangle instead advances one texel per destination pixel and row, traversing the entire initialized `96 × 64` texture patch. That patch contains `3527H` throughout, so advancing UV does not introduce a texture pattern.
+
+The distinction is the primitive's dither behavior. A modulated textured polygon honors the enabled dither bit. A textured rectangle does not apply dither, even with that bit enabled. Dither is therefore not a universal effect on all drawing commands.
+
+<div class="keep-together">
+
+Without dither, modulation produces RGB5 `(6, 7, 16)`, stored as `40E6H`. The upper-right panel instead stores the following raw VRAM words at its top-left:
+
+| Y / X | 144 | 145 | 146 | 147 |
+|---|---|---|---|---|
+| 24 | `3CC6H` | `40E6H` | `3CC6H` | `40E6H` |
+| 25 | `40E7H` | `40C6H` | `40E7H` | `40C6H` |
+| 26 | `3CC6H` | `40E6H` | `3CC6H` | `40E6H` |
+| 27 | `40E7H` | `40C6H` | `40E7H` | `40C6H` |
+
+</div>
+
+These are stored RGB555 words, not displayed-picture RGB bytes. The dither offsets come from a `4 × 4` matrix indexed by destination coordinates. For these particular texture and color operands, quantization maps those offsets into the repeated `2 × 2` word pattern shown here. It does **not** make the GPU's dither matrix universally `2 × 2`.
+
+The following two listings form one complete cartridge program; concatenate them in the printed order. This is a separate cartridge, not an addition to the earlier GPU program. Use normal BIOS entry with this callback and interrupt mask as the sole owners. The [Development companion — GPU dithering](../programming/getting-started.md#build-and-inspect-gpu-dithering) supplies the build and observation procedure.
+
+<div class="keep-together">
+
+**Declarations and packets.**
+
+```lua
+module<entry>
+
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local display_extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+
+rodata drawing_commands: word[] = {
+	-- Background, then a uniform 96 x 64 direct-color texture at (640,0).
+	0x02181008, 0, 256 | (192 << 16),
+	0x02684838, 640, 96 | (64 << 16),
+	-- Modulated quad, dither off. All four UVs select the same texel.
+	0x2ca0647c,
+	16 | (24 << 16), 0,
+	112 | (24 << 16), 0x010a << 16,
+	16 | (88 << 16), 0,
+	112 | (88 << 16), 0,
+	-- Same material and dimensions, with draw-mode bit 9 set.
+	0xe100070a,
+	0x2ca0647c,
+	144 | (24 << 16), 0,
+	240 | (24 << 16), 0x010a << 16,
+	144 | (88 << 16), 0,
+	240 | (88 << 16), 0,
+	-- Rectangle controls. UV advances across the uniform source patch.
+	0xe100050a,
+	0x64a0647c, 16 | (112 << 16), 0, 96 | (64 << 16),
+	0xe100070a,
+	0x64a0647c, 144 | (112 << 16), 0, 96 | (64 << 16),
+}
+```
+
+</div>
+
+<div class="keep-together">
+
+**IRQ callback and entry.**
+
+```lua
+function irq(flags)
+	*irq_ack = flags
+end
+
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0
+*display_extent = 0x000bf3ff
+*gp1 = 0x09000000
+
+-- Explicit drawing state; allow both field parities and clear mask controls.
+*gp0 = 0xe1000400
+*gp0 = 0xe2000000
+*gp0 = 0xe3000000
+*gp0 = 0xe40000ff | (191 << 10)
+*gp0 = 0xe5000000
+*gp0 = 0xe6000000
+for index = 0, #drawing_commands - 1 do
+	*gp0 = drawing_commands[index]
+end
+
+-- Complete the command stream before enabling the display.
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
+while (*gp1 & 0x04000000) == 0 do
+end
+*pmode = 0x0000ff21
+*irq_ack = 0xffffffff
+*irq_mask = 0x00000004
+while true do
+	halt_until_irq
+end
+```
+
+</div>
+
 <a id="gpu-blending-mask"></a>
 ## Separate texture transparency, blending and destination protection
 

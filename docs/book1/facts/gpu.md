@@ -834,3 +834,11 @@ not replace the full opcode/pixel/ingress facts above.
 full-device reset store, GP1/PCRTC stream-reset effects and subsequent BIOS use.
 It also identifies the finite firmware-reservation query and public destination;
 it does not declare every other VRAM coordinate free or define a new command.
+
+## Dither output comparison
+
+[The bounded dither-output supplement](gpu-dither.md) freezes the same-material
+polygon OFF/ON and rectangle-control packets, source fill, absolute-phase
+RGB555 arithmetic and actual image/readback observations. It extends the
+existing Q02–Q04 teaching; it does not claim universal dither eligibility,
+new display behavior or backend parity.

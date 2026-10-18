@@ -396,6 +396,11 @@ a source-accurate register reference as a complete technical specification.
   alpha with one complete125-line BLua cartridge, three real RGB plates and
   separate actual raw-RGBA corroboration. Opaque images are not alpha evidence;
   its bounded checks likewise do not close this broader inventory.
+  The [GPU dither/control lesson](../book1/gpu.md#gpu-dither-output) now compares
+  identical material on polygons and rectangles with the dither bit off/on,
+  joining a complete executable BLua program, a real output plate and separate
+  raw-word checks. It does not close the remaining coverage contrasts or the
+  whole-console target; final print approval remains separate.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.

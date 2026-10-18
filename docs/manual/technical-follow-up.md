@@ -215,7 +215,13 @@ Concrete next paragraph tasks:
    textures, palette indices, bit-15 black versus exact-zero transparency and
    blending/protection to the executable packet choices. Fresh guest execution,
    independent source/image checks and final actual-print review pass. Further
-   before/after dither/coverage comparisons remain distinct capture tasks.
+   coverage comparisons remain a distinct capture task. The separate
+   [dither/control lesson](../book1/gpu.md#gpu-dither-output) now adds the
+   same-material polygon OFF/ON comparison and two rectangle controls, a complete
+   73-line BLua cartridge, the actual full output plate and forty checked packed
+   GPUREAD words. It separates destination-phase quantization from texture
+   traversal and display RGB; native/accelerated parity and the broader graphics
+   inventory are not established by this lesson. Final print approval is separate.
 
 ### IRQ
 

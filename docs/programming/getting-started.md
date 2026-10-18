@@ -1135,6 +1135,45 @@ observation checkpoints, not fixed hardware latency. Source numeric coordinates,
 raw typed transfer records and displayed GX16 color are distinct. This route
 was checked in the working checkout, not on every OS or a fresh SDK installation.
 
+## Build and inspect GPU dithering
+
+The [complete dither comparison](../book1/gpu.md#gpu-dither-output) is a separate
+cartridge at `carts/gpu_dither_manual/cart.lua`, not an addition to the earlier
+GPU program. Its manifest at
+`carts/gpu_dither_manual/res/manifest/manifest.rommanifest` is:
+
+```yaml
+title: GPU Dither Manual Example
+hardware:
+    - type: rom
+```
+
+From the repository root, build the tooling, build the cartridge and run its check:
+
+```sh
+npm run build:product:node-headless-tooling -- --debug
+npm run build:toolchain:cart -- gpu_dither_manual --debug
+npm run headless:test -- gpu_dither_manual tests/carts/gpu_dither_manual/gpu_dither_manual_assert.lua
+```
+
+Expect `[test] polygon_dither_and_rectangle_controls: passed`. The check captures
+the full 256 × 192 output at
+`tests/carts/gpu_dither_manual/screenshots/frame_00001.png`: only the upper-right
+quad has a dither pattern; the other three regions have the same uniform colour.
+It then compares forty packed GPUREAD words from five 4 × 4 blocks: each panel's
+origin and the texture source. The displayed image and raw words are separate checks.
+
+This is a derived integration image containing the ordinary entry and fixture,
+not byte-identical playback of the ordinary ROM. For separate ordinary playback:
+
+```sh
+npm run build:product:node-headless-player -- --debug
+npm run headless:game -- gpu_dither_manual --ttl 2
+```
+
+TTL 2 means 2000 ms of virtual host time. Reaching it alone does not validate
+the picture. Neither route establishes native or accelerated-backend parity.
+
 ## Build and inspect PCRTC composition
 
 Use the complete [composition program](../book1/pcrtc.md#pcrtc-composition-output).
