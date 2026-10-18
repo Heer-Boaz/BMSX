@@ -833,19 +833,20 @@ bounded library reference and its execution evidence do not constitute that
 whole-manual acceptance.
 
 
-## Booklet structure and naming: separate reference audit
+## Booklet structure and naming: reference review and working map
 
-Requested2026-10-18. The existing volume numbers and `HARDWARE REFERENCE` running
-label are provisional, not an accepted classification for the protected-call/
-coroutine and BIOS software chapters. After the active chapter, inspect the five
-MSX-related booklets supplied under `docs/examples/` and actual NES/SNES/N64/PSX
-manuals for their specifications, hardware-programming and software-reference
-organization. The detailed task and exact local filenames are in the
-[scheduled work](README.md#scheduled-follow-up-work).
+Requested2026-10-18. The [bounded reference review](booklet-structure.md) now
+compares all five supplied MSX-related PDFs, original SNES Books I/II, the N64
+programming/function-reference collection and separate Sony hardware/library
+manuals. It distinguishes originals from the reworked V9938 edition, consumer
+instructions from service/developer literature, and parts from physical books.
+NES manufacturer developer-manual structure remains explicitly unverified.
 
-The outcome is a source-referenced book/chapter/title proposal and a consistent
-label assignment, not an automatic extra volume, a publisher redesign or a
-reason to import another machine's facts. Current chapter-level source, reader
-and rendering passes do not close this editorial structure task. Preserve the
-separation between installed hardware, language/BIOS software and cartridge/
-expansion content while reconsidering their eventual volume numbers.
+The review proposes a hardware volume with an opening specification/orientation
+part, a BLua32/BIOS software volume and a separately scoped cartridge/expansion
+volume, plus the existing development companion. It does not claim those books
+have been authored or assign every mixed CPU/Memory section automatically.
+The current catalog and running labels have not been changed. Applying the
+chosen map, checking companion links and inspecting newly rendered labels are
+still separate work. Technical source reviews, owner questions and whole-console
+newcomer acceptance remain unchanged; a title proposal is not completion.

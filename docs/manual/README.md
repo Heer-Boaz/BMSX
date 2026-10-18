@@ -1,17 +1,21 @@
-# Hardware-manual chapter standard
+# Developer-manual chapter standard
 
-This is the editorial and publication standard for the architecture booklet.
+This is the editorial and publication standard for the BMSX developer references.
 [The PCRTC chapter](../book1/pcrtc.md) is the first reviewed chapter and **style
 baseline**, not a compulsory outline for every unit.
 
 The current working layout places the installed machine in Book I and
-cartridge/socket/card material in Book II. Work on one unit at a time. Chapter order may follow the reference
-manual's progression from hardware operation to programming and registers; do not
-copy its devices, addresses, diagrams, or behavior. **The current volume numbers,
+cartridge/socket/card material in Book II. Work on one unit at a time.
+Chapter order may follow the reference manual's progression from hardware
+operation to programming and registers; do not copy its devices, addresses,
+diagrams, or behavior. **The current volume numbers,
 volume titles and running labels are provisional.** The 2026-10-18 booklet
 organization task below must establish where technical specifications, hardware
 programming, BLua/BIOS and cartridge/expansion reference belong; software chapters
 must not receive a final hardware-reference label merely from the current catalog.
+The [reference-booklet review and working proposal](booklet-structure.md)
+distinguish document genres and map the current chapters; its proposed numbers
+have not been applied to the catalog or printed artifacts.
 `docs/book1_text.pdf` is only a style/order reference. Do not attach it to
 chapter-writing prompts. Do not use `docs/architecture.md` as chapter input.
 
@@ -19,8 +23,9 @@ chapter-writing prompts. Do not use `docs/architecture.md` as chapter input.
 
 The complete manual must let an experienced programmer who is **new to BMSX**
 program the whole console without reverse-engineering its source or examples.
-Book I covers the installed machine; Book II completes the cartridge/socket/card
-hardware. Familiarity with another console is not familiarity with this one.
+The series must cover the installed machine, software/programming interfaces
+and cartridge/socket/card hardware. Familiarity with another console is not
+familiarity with this one; provisional volume numbers do not change this scope.
 
 The reader must be able to establish startup and memory ownership, find usable
 and reserved addresses, prepare each unit's actual data representation, program
@@ -55,6 +60,13 @@ decisions, not invented numbers.
 15. Stop on a missing fact; record the gap in editorial material, not invented prose.
 
 ## Flexible chapter shape
+
+The hardware brief above applies to device/programming references. A language
+or BIOS chapter instead needs actual source forms/call signatures, arguments,
+values, returned results/counts, errors, work and binding/lifetime boundaries.
+Do not manufacture a register bank or per-function reset words for an API.
+The same fact extraction, independent review and real programming-route
+requirements apply; this is not another publication format or gate.
 
 Use an outline/function explanation, an appropriate programming sequence, and a
 local register reference. Adapt their length, order, and subsections to the unit.
@@ -267,6 +279,11 @@ a source-accurate register reference as a complete technical specification.
   framework. These booklets supply organization/presentation evidence only;
   none supplies a BMSX address, format, timing or behavior. Do not attach them
   to facts-only chapter-authoring prompts.
+  The [bounded evidence review and working series map](booklet-structure.md)
+  now cover the supplied MSX-related documents and original SNES/N64/PSX
+  examples. NES manufacturer developer-manual structure is still unverified.
+  Applying final section assignments, volume data and inspected new running
+  labels remains work; this checklist item is not closed by the proposal.
 
 - [ ] **Actual graphics-output illustrations.** Add real BMSX result images to
   the GTE and other graphics chapters, alongside the explanatory schematics.
