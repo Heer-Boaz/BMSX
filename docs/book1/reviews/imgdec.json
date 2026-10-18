@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Actual53+213line two-module typed BLua cartridge executes RAM,GP0,CPU fault and fresh-START recovery with sequence predicates. Full cart validation/ordinary execution and separate12+8word raw GPUREAD checks pass; six printed blocks reproduce both files. Independent whole-reader five findings are resolved; optional readback is clearly outside the listing.",
+			"resolution": "Actual53+258line two-module typed BLua cartridge retains RAM, GP0, CPU fault and fresh-START recovery, then draws the successful indexed upload through GPU/PCRTC. One const and seven ordered entry parts reproduce both executed files exactly. Actual ordinary build/playback and derived guest case preserve all26 RAM results, phase/IRQ/fault/recovery observations and20 source/CLUT GPUREAD words, adding360 picture-row words, one outside-background word and a real full output plate. Independent actual-source/program/image and public-reader checks pass; optional readback remains outside the printed cartridge. Final print is pending.",
 			"open": []
 		}
 	},
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/imgdec-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/imgdec-print.md"
 		}
 	}

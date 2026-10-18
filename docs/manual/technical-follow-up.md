@@ -282,6 +282,22 @@ or the broad technical inventory.
 
 ## Installed-unit chapter assignments and follow-ups
 
+### IMGDEC visible indexed patch — finite lesson completed 2026-10-19
+
+The [actual output plate](../book1/imgdec.md#imgdec-indexed-output) now uses the
+existing 19-word stream and uploaded CLUT, rather than a replacement decoder
+example. The unchanged four jobs retain their RAM/GP0/fault/recovery results;
+the added GPU/PCRTC continuation displays the palette4 patch against a distinct
+destination colour. Six source rows connect literal, repeat, back-reference
+and zero tokens to visible colour and fetched-zero transparency.
+
+The complete53+258-line two-module BLua program, exact eight printed source
+parts, actual full256×192 capture, preserved26 RAM comparisons and381 raw
+GPUREAD comparisons pass bounded actual-source/image and public-reader checks.
+Storage4×6 halfwords,16×6 texels and the120×40 draw remain distinct. No runtime,
+BIOS, compiler, publisher or harness changed; final print and broader hardware
+and graphics completeness remain open. Evidence: [IMGDEC source review](../book1/reviews/imgdec-source.md).
+
 ### IMGDEC software-authority follow-up: repeated DONE on empty DATA read
 
 The IMGDEC extraction found a shared, representable edge, not a mirror

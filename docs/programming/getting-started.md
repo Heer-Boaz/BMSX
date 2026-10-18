@@ -194,7 +194,28 @@ Expect:
 [test] ram_gp0_fault_and_recovery: passed
 ```
 
-This checks 26 retained RAM words, phase/progress/DMA/status/IRQ observations, the retained fault header and fresh-START result. Its additional 12 texture and eight CLUT GPUREAD words are separate test observations, not program-retained results or a displayed picture.
+This checks 26 retained RAM words, phase/progress/DMA/status/IRQ observations,
+the retained fault header and fresh-START result. It captures the actual
+[decoded indexed patch](../book1/imgdec.md#imgdec-indexed-output) at
+`tests/carts/imgdec_manual/screenshots/frame_00001.png`, full 256 × 192.
+The six source rows form red/transparent/blue/green and gray/white patterns,
+followed by two transparent rows retaining the purple destination.
+
+All twelve texture and eight CLUT GPUREAD words are still checked. Six complete
+120-pixel picture rows add 360 packed words; one outside-background word makes
+381 raw GPUREAD comparisons in total. These are separate test observations,
+not program-retained results or complete raw readback of the entire display.
+Capture precedes the readback probes.
+
+The captured run uses a derived integration image. For separate ordinary-ROM playback:
+
+```sh
+npm run build:product:node-headless-player -- --debug
+npm run headless:game -- imgdec_manual --ttl 2
+```
+
+TTL 2 is 2000 ms of virtual host time, not picture verification. No native or
+accelerated-backend parity, physical throughput or fixed IRQ latency follows.
 
 ### APU
 

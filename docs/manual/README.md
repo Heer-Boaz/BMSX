@@ -420,6 +420,11 @@ a source-accurate register reference as a complete technical specification.
   polyline endpoints with actual output and a reproducible complete cartridge.
   These finite lessons do not close the whole-console target; final print
   approval remains separate.
+  The [IMGDEC indexed-patch lesson](../book1/imgdec.md#imgdec-indexed-output)
+  now connects its existing compressed stream and CLUT to an actual picture,
+  preserving the four decoder jobs and distinguishing storage words, indexed
+  texels, GPU drawing and PCRTC scanout. Its source/image/reader and executed
+  row checks pass; final print is still separate.
 
 This is pending editorial work, not a new publisher, schema or approval gate.
 Previously passed scoped reviews do not close this broader audit in advance.

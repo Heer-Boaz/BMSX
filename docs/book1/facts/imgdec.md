@@ -436,3 +436,11 @@ retained values agree between owners. This edition documents the live behavior,
 not an invented one-shot IRQ. A different terminal-edge policy remains a
 separate hardware/implementation decision. Independent source review is still
 required for this new public caution.
+
+## Visible indexed-patch continuation
+
+[The bounded displayed-output supplement](imgdec-indexed-output.md) freezes the
+existing decoder stream's palette4 interpretation, disjoint display window,
+exact raw quad/underlay packets, finite UV sample runs and real output evidence.
+The original four decoder jobs, retained results and source/CLUT readback remain;
+IMGDEC is not redefined as a renderer or direct VRAM writer.

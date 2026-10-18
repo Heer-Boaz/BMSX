@@ -1,7 +1,10 @@
 # IMGDEC source, programming and figure review
 
-The independent source/numeric and complete-reader passes have no remaining
-findings. Print acceptance is separate in imgdec-print.md. This chapter does
+The earlier source/numeric and complete-reader passes accepted the four-job
+program. The added displayed-output continuation now passes bounded source,
+image and public-reader checks; prior print acceptance does not approve the
+changed chapter. Print remains separate in
+imgdec-print.md. This chapter does
 not finish Book I or the handbook's broader technical/output-illustration work.
 
 ## Authority and extraction boundary
@@ -9,7 +12,7 @@ not finish Book I or the handbook's broader technical/output-illustration work.
 This edition documents the live software contract. Its output-word charge is
 not an independent electrical oscillator or an end-to-end transfer guarantee.
 Neither the architecture document nor a historical reference PDF was opened.
-Cartridge socket/card protocols remain Book II.
+Cartridge socket/card protocols belong to Book III.
 
 Before implementation, DuckStation's
 [MDEC source](https://github.com/stenzek/duckstation/blob/master/src/core/mdec.cpp)
@@ -160,3 +163,51 @@ format validation, general malformed-stream DMA recovery or screenshot is
 invented. This known-valid demonstration intentionally uses CPU access for its
 fault job. Other installed-unit chapters, broader rate/technical inventory,
 raw GPU image-transport teaching and real graphical-output plates remain open.
+
+## Actual indexed-patch output — 2026-10-19
+
+**Bounded source, figure and public-reader PASS.** The existing four jobs and
+19-word stream now feed an actual displayed palette4 patch. Separate extraction
+checked the decoder/upload route and paired GPU/PCRTC packet, sampling and source
+mapping. A fresh facts-only author supplied the two new code-part introductions
+and six-row visible-output explanation. An independent actual-owner reviewer
+checked the merged program, prose, table and original image; another reader used
+only public material. No architecture prose or reference-console data supplied facts.
+
+The unchanged53-line const module and seven printed entry parts reconstruct the
+executed258-line cartridge exactly. Source SHA256:
+`c197385806b271d82034ceb8b946330b262fb7bc8247ec6106cab6f9c1bb3225`.
+All original26 RAM output comparisons, four phase snapshots, fault/recovery,
+IRQ totals3/3/4 and20 source/CLUT GPUREAD words still pass. Six complete picture
+rows add360 packed words and the outside background adds one:381 GPUREAD
+comparisons, not every displayed pixel. The actual capture precedes all probes.
+The separate ordinary-ROM run reaches its virtual2000ms TTL; exit alone does
+not check its picture. Logs: `/tmp/bmsx-imgdec-plate-{cart-build,guest,ordinary}.log`.
+
+The unmodified full256×192 public PNG equals the test capture byte-for-byte,
+SHA256 `c4b069af22a2c0ec85ad08ce1f89eb027bb560a096ed8f1f544601629414666d`.
+Independent ORIGINAL-image inspection and full-region pixel counts agree with
+source arithmetic: red336, green336, blue384, white960, gray960, purple1824,
+outer dark blue44352. The explanation separates4×6 storage halfwords,16×6
+indexed texels and the120×40 GPU draw. Both zero-fetching indices retain the
+purple destination. Endpoint sample widths/heights are4, interiors8; no uniform
+8× enlargement or direct decoder rendering is invented.
+
+Two review findings were resolved without changing hardware behavior:
+- The termination sentence now names callback-owned181 and separately ACKed
+  GPU-marker40. Only pending bits outside both sets are preserved.
+- An extractor inferred a need for initial Y-extension0 because CSR reset
+  preserves that latch. Actual paired address paths use masks511/1023, identical
+  for every authored Y0…191; GX16 scanout has its own linear source. The inferred
+  precondition is unnecessary. No GP1 reset write or BIOS dependency was added.
+
+Independent reports: `/tmp/bmsx-imgdec-plate-program-image-review-current.md`
+(combined actual-source/program/image) and
+`/tmp/bmsx-imgdec-plate-public-reader-current.md` (including final IRQ recheck).
+Frozen downstream facts are in `../facts/imgdec-indexed-output.md`.
+Production study used PSn00bSDK GPU common.c for distinct transport, command
+and display completion methodology only, not foreign BMSX facts or code.
+All24 manual tests and `git diff --check` pass. No runtime, BIOS, compiler,
+publisher or harness implementation changed. Native/accelerated parity,
+physical throughput, fixed IRQ latency, final print and whole-book completion
+remain outside this acceptance.

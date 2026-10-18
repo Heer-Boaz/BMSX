@@ -1,5 +1,12 @@
 # IMGDEC print acceptance
 
+## Displayed-output continuation: review pending — 2026-10-19
+
+The extended program and new actual output plate are not covered by the older
+page acceptance below. The current print flag is false. Content, executable
+program and source/image checks are handled separately; PDF navigation/viewer
+work remains deferred while content takes priority.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/imgdec.pdf`:

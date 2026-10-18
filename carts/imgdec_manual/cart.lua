@@ -10,6 +10,11 @@ local dma1<const>: *imgdec_manual_dma_registers = 0x080103e4
 local decoder<const>: *imgdec_manual_registers = 0x080103fc
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local display_extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
 
 -- Header: twelve texture words and eight CLUT words. Tokens: literal two,
 -- repeat two, back-reference four at distance four, zero four, literal eight.
@@ -24,6 +29,17 @@ rodata stream: word[19] = {
 rodata fault_stream: word[4] = { 0x31444d49, 3, 0, 0x80000000 }
 rodata recovery_stream: word[3] = { 0x31444d49, 0, 0 }
 
+-- A purple destination makes fetched-zero transparency visible. The raw
+-- palette4 quad samples only the texture and CLUT uploaded by phase 2.
+rodata picture_commands: word[12] = {
+	0x60602040, 320 | (72 << 16), 120 | (40 << 16),
+	0x2d000000,
+	320 | (72 << 16), 0x20044000,
+	440 | (72 << 16), 0x0001400f,
+	320 | (112 << 16), 0x00004500,
+	440 | (112 << 16), 0x0000450f,
+}
+
 function irq(flags)
 	if (flags & 0x00000001) ~= 0 then
 		result.dma0_sequence = result.dma0_sequence + 1
@@ -37,8 +53,23 @@ function irq(flags)
 	*irq_ack = flags & 0x00000181
 end
 
--- Exclusive ownership: DMA0, DMA1 and IMGDEC; no cartlib IRQ handler.
+-- Keep the display off while preparing a separate framebuffer window.
+-- CSR RESET supplies zero texture window and drawing offset.
 *irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0x00000100
+*display_extent = 0x000bf3ff
+*gp0 = 0xe1000400
+*gp0 = 0xe3000100
+*gp0 = 0xe402fdff
+*gp0 = 0x02181008
+*gp0 = 256
+*gp0 = 256 | (192 << 16)
+
+-- Exclusive ownership: DMA0, DMA1 and IMGDEC; no cartlib IRQ handler.
+-- The existing idle wait before phase 2 also orders this background fill.
 *irq_ack = 0x00000181
 *irq_mask = 0x00000181
 
@@ -206,6 +237,20 @@ result.phases[3].sequences[0] = result.dma0_sequence
 result.phases[3].sequences[1] = result.dma1_sequence
 result.phases[3].sequences[2] = result.decoder_sequence
 *irq_mask = 0
+
+-- All four jobs are complete. The successful GP0 upload is still in VRAM;
+-- the later fault and recovery jobs did not submit their headers to GP0.
+for index = 0, #picture_commands - 1 do
+	*gp0 = picture_commands[index]
+end
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
+while (*gp1 & 0x04000000) == 0 do
+end
+*pmode = 0x0000ff21
 result.final_irq_flags = *irq_flags
 result.completed_phase = 4
 while true do

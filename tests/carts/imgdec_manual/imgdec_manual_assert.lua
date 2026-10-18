@@ -15,6 +15,18 @@ rodata expected_output: word[26] = {
 	0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
 }
 
+-- Source rows 64..69, using the independently derived affine UV runs.
+rodata picture_probe_rows: word[6][2] = {
+	{ 72, 0 }, { 76, 1 }, { 84, 0 },
+	{ 92, 1 }, { 100, 2 }, { 108, 2 },
+}
+-- Four horizontal runs: 28, 32, 32 and 28 pixels, all even lengths.
+rodata expected_picture: word[3][4] = {
+	{ 0x001f001f, 0x30883088, 0x7c007c00, 0x03e003e0 },
+	{ 0x42104210, 0x7fff7fff, 0x42104210, 0x7fff7fff },
+	{ 0x30883088, 0x30883088, 0x30883088, 0x30883088 },
+}
+
 return {
 	kind = 'integration',
 	tests = {
@@ -72,6 +84,12 @@ return {
 			assert((result.final_irq_flags & 0x00000181) == 0)
 			assert((*irq_flags & 0x00000181) == 0)
 			assert(*irq_mask == 0)
+			assert((result.final_irq_flags & 0x00000040) == 0)
+			assert((*irq_flags & 0x00000040) == 0)
+			assert((*gp1 & 0x0d000000) == 0x04000000)
+			-- Allow presentation latching; this is a fixture wait, not a latency.
+			t:wait_ticks(2)
+			t:capture('imgdec-manual-decoded-indexed-patch')
 
 			-- Completion is not pixel proof. Read all twelve texture words and
 			-- all eight CLUT words through actual C0/GPUREAD transactions.
@@ -95,7 +113,36 @@ return {
 				assert(*gp0 == expected_output[index + 18])
 			end
 			assert((*gp1 & 0x08000000) == 0)
-			t:log('26 RAM output words; 12 texture and 8 CLUT words read back; DMA0/DMA1/IMGDEC IRQ sequences 3/3/4; fault 10H received4 decoded0; retained header and START recovery; final decoder DONE')
+			-- Probe one complete displayed row for each of the six source rows.
+			for row = 0, #picture_probe_rows - 1 do
+				*gp0 = 0xc0000000
+				*gp0 = 320 | (picture_probe_rows[row][0] << 16)
+				*gp0 = 120 | (1 << 16)
+				t:wait_until('displayed patch row ready', function()
+					return (*gp1 & 0x08000000) ~= 0
+				end, 3)
+				for pair = 0, 59 do
+					local band = 0
+					if pair >= 46 then
+						band = 3
+					elseif pair >= 30 then
+						band = 2
+					elseif pair >= 14 then
+						band = 1
+					end
+					assert(*gp0 == expected_picture[picture_probe_rows[row][1]][band])
+				end
+				assert((*gp1 & 0x08000000) == 0)
+			end
+			*gp0 = 0xc0000000
+			*gp0 = 256
+			*gp0 = 2 | (1 << 16)
+			t:wait_until('outside background ready', function()
+				return (*gp1 & 0x08000000) ~= 0
+			end, 3)
+			assert(*gp0 == 0x0c410c41)
+			assert((*gp1 & 0x08000000) == 0)
+			t:log('26 RAM output words; 12 texture and 8 CLUT words read back; DMA0/DMA1/IMGDEC IRQ sequences 3/3/4; fault 10H received4 decoded0; retained header and START recovery; 360 displayed-row words plus outside background matched')
 		end,
 	},
 }
