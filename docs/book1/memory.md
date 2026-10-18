@@ -152,6 +152,39 @@ CPU reset selects the system executable image, clears the active call stack and 
 
 The generated system startup initializes its own static storage before running static module initialization and the system entry function. Reset and startup are separate steps: selecting an executable image does not itself copy DATA or clear BSS.
 
+<a id="rom-header-fields"></a>
+
+### ROM header fields
+
+The current ROM package header is **72 bytes**, containing 18 unsigned 32-bit little-endian words. The table gives hexadecimal byte offsets from the beginning of the ROM, not word indices. Field values described as ROM-relative offsets are likewise measured in bytes from the beginning of the ROM.
+
+| Byte offset | Field | Meaning |
+| --- | --- | --- |
+| `0x00` | Magic | `0x58534d42`; bytes `42 4d 53 58` spell `BMSX`. |
+| `0x04` | Header size | Current header size: 72 bytes. |
+| `0x08` | Manifest offset | ROM-relative manifest offset. |
+| `0x0c` | Manifest length | Manifest byte count; zero when absent. |
+| `0x10` | TOC offset | ROM-relative table-of-contents offset. |
+| `0x14` | TOC length | Table-of-contents byte count. |
+| `0x18` | DATA offset | ROM-relative physical-payload offset. |
+| `0x1c` | DATA length | Physical-payload byte count. |
+| `0x20` | BLua32 image offset | ROM-relative executable-image offset; zero means no image. |
+| `0x24` | BLua32 image length | Linked executable-image byte count. |
+| `0x28` | Startup function | Absolute function-record address. |
+| `0x2c` | IRQ function | Absolute function-record address. |
+| `0x30` | Exception function | Absolute function-record address. |
+| `0x34` | Static-layout token, low | Opaque low token word; neither address nor byte count. |
+| `0x38` | Static-layout token, high | Opaque high token word; neither address nor byte count. |
+| `0x3c` | Diagnostic directory offset | ROM-relative offset; initialized to zero without emitted diagnostics. |
+| `0x40` | Metadata offset | ROM-relative metadata offset. |
+| `0x44` | Metadata length | Metadata byte count; zero when absent. |
+
+The **60-byte boot prefix** occupies `0x00` through `0x3b`. It is distinct from the full current header: boot resolution requires this prefix to be backed by installed ROM bytes, not the entire 72-byte header. BIOS selection is described below.
+
+Function-record addresses are absolute machine addresses, not image offsets or instruction PCs. The exception-address field alone does not specify cartridge fault routing. Package DATA is the physical payload, not writable program DATA; its length is not the program DATA section size.
+
+The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the EXEC subsection for the startup sequence.
+
 ### BIOS cartridge selection
 
 The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:

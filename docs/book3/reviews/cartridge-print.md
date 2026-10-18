@@ -72,3 +72,15 @@ The existing publishing suite reprints PCRTC as a fixture. Its current37pages
 were separately checked exact fullRGBA+dimensions against the already accepted
 composition proof; GTE/APU canonical hashes remain unchanged. That is acceptance
 carry, not a new device/source/backend review.
+
+## Memory-header source-target delta — 2026-10-18
+
+The boot reference now targets Memory's explicit ROM-header anchor; its visible
+text, all other prose, figures and listings remain unchanged. After the existing
+check/publish commands pass, `build/manual/cartridge.pdf` remains 12 pages,
+SHA256 `f364c22714c22470756f069f7946f3f5095e909f1ee195d3d087c78e143c6c9b`.
+All 12 pages exactly match the previously individually accepted `fdfd07c4…`
+canonical artifact in complete decoded RGBA bytes and dimensions, including
+running matter. Record: `/tmp/bmsx-rom-header-other-pdf-identity.json`.
+This carries actual-page print evidence, not a new runtime or clickable-PDF-link
+approval; the separate unresolved portable-navigation issue remains open.

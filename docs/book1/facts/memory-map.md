@@ -5,6 +5,10 @@ Internal authoring input only. Source acceptance and withheld claims are recorde
 These bounded extracts do not constitute a published chapter or a complete
 cartridge-memory/boot contract.
 
+The separate [ROM-header packet](memory-rom-header.md) supplies the current
+package layout and boot-prefix distinction; it does not extend the scalar
+memory-access facts below into a malformed-image contract.
+
 
 Scope: guest **u32 byte addresses**, not arbitrary host numbers. This is an internal source extract, not public prose or a CPU/BIOS ABI. Read only mirrored `spec/bmsx/memory_map`, the memory-capacity portions of `spec/bmsx/model`, the `machine/memory/memory` owners, and—after narrow permission—the `IO_SLOT_COUNT` producer/dependency constants in mirrored `spec/bmsx/io`. No architecture/reference material, CPU, BIOS, DMA, cartridge-controller or device callback implementation was consulted. No repo/runtime edits or tests were added.
 

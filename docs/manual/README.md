@@ -309,6 +309,11 @@ a source-accurate register reference as a complete technical specification.
   throughput, route-dependent timing, sharing and visibility limits. Check for
   missing technical details beyond the DMA example, not just incorrect existing
   claims. Assign concrete missing paragraphs and examples to the owning chapter.
+  Fresh bounded CPU/Memory/SYSTEM/GTE inventories now complement the other unit
+  checks in the [routing index](technical-follow-up.md). They identified the
+  missing [ROM-header layout](../book1/memory.md#rom-header-fields), now supplied
+  with separate source, reader and actual-page checks; they do not close this
+  whole-console target or turn absent electrical ratings into invented values.
 - [ ] **Evidence and limits.** Extract each number from the paired spec/owners,
   state the operating assumptions and replay representative cycle/rate examples.
   Distinguish scheduled budgets from end-to-end rates and electrical ratings.

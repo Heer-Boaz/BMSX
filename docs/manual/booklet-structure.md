@@ -193,3 +193,21 @@ found no remaining unsupported organization or inventory claim. Their scope is
 the inspected source pages and current chapter categories above, not every
 page of the exemplars, BMSX technical correctness, printed-artifact approval or
 whole-manual completion. The NES limitation remains explicit.
+
+### Navigation revalidation — 2026-10-18
+
+The current Memory DRAFT (`fadeebc6…`,37 pages / 84 outline entries) and Cartridge
+publication (`f364c227…`,12 pages / 22 outlines) each have zero annotations, links
+and named destinations on every actual page. The current Math control has
+22 pages / 37 outlines and the same absence. This confirms the earlier navigation
+issue on current artifacts; outlines are not cross-reference link evidence.
+
+All 23 Memory/Cartridge source links resolve to existing Markdown, but the
+shared generated HTML retains source-relative `.md` paths that are wrong from
+`build/manual`. Heading IDs are also absent except authored anchors.
+A bounded Chromium control shows that real same-document anchors and absolute
+HTTPS links print, while unresolved relative paths and missing anchors do not.
+Fixing only `about:blank` would leave artifact mapping and cross-file target
+export unresolved. Evidence: `/tmp/bmsx-manual-navigation-current-audit.md` and
+`/tmp/bmsx-manual-navigation-pdf-evidence.json`. No publisher/dependency or
+workstation-URL patch was made; portable book-level delivery remains open.

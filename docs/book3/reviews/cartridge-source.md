@@ -126,3 +126,13 @@ Root separately compared all four reconstructed artifacts with actual source
 bytes: every comparison passed. The reader's document-only assessment and
 root's execution/equality checks remain different evidence, not one inferred
 from the other. No essential hidden programming step was found in this route.
+
+## Memory-header link — bounded delta, 2026-10-18
+
+The existing boot paragraph's visible text and all cartridge facts/programs
+are unchanged. Its Memory link now targets the explicit `rom-header-fields`
+anchor, whose new authoritative layout has a separate
+[Memory source review](../../book1/reviews/memory-source.md). An independent
+actual-source reviewer checked the new subsection and this target; no unsupported
+sentence or dead source target was found. This is not a new cartridge runtime,
+whole-boot, malformed-header or portable-PDF-navigation approval.

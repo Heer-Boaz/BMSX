@@ -562,3 +562,52 @@ check deliberately exits 1 only for the named remaining coverage and public
 print approval, not a pending factual/figure correction. Actual-page evidence
 is in [the print review](memory-print.md); neither check closes whole-book
 acceptance.
+
+## ROM-header layout — bounded continuation, 2026-10-18
+
+The fresh Memory inventory and a source-blind reader independently identified
+one actual baseline gap: Book III delegated its header to Memory, but Memory
+only gave the four BIOS readiness checks, not the field locations. The new
+**ROM header fields** subsection supplies one authoritative layout, not a
+second startup procedure. Book III now targets its explicit anchor.
+
+A fresh author used only the [frozen header packet](../facts/memory-rom-header.md).
+Root integration removed guest terminology and unnecessary token-generation
+exposition; it added no technical claim. A different reviewer checked every
+new sentence and all 18 table rows against actual sources, not the packet:
+paired `spec/bmsx/{rom_header,rom_package}` leaves; TS
+`toolchain/ts/rompack/header_encode.ts:27-46` and
+`machine/ts/rompack/format.ts:53-99`; native
+`machine/cpp/rompack/format.cpp:20-111`; the ROM builder/prefix producers;
+paired `machine/execution_address_space` boot resolution; BIOS readiness;
+paired 96-byte image-header leaves and CPU system-exception entry.
+No unsupported or mismatched fact remains in this finite subsection.
+The independent detailed report is `/tmp/bmsx-rom-header-source-review.md`.
+
+The checks distinguish full current package format from the smaller boot-read
+prefix, ROM-relative offsets from absolute function-record addresses, and
+package physical DATA from writable program DATA. They establish neither a
+60-byte fully valid package nor a universal malformed-offset overflow rule.
+A raw overflowing addition's differing intermediate representation is withheld;
+no downstream guest divergence or runtime repair is claimed from it.
+
+All three existing TS ROM-header tests pass; the existing native
+`bmsx_rompack_format_tests` suite passes (ninja required no rebuild).
+The current Memory example ROM also parses through the owning header reader,
+with header size 72 and distinct image offset/function-address words. These
+are format/test observations, not a new complete boot replay, public-program
+execution, arbitrary-image guarantee or closure of the remaining chapter gaps.
+Production GitHub reference before the edit: z88dk's
+[MSX ROM startup](https://github.com/z88dk/z88dk/blob/master/lib/target/msx/classic/rom.asm),
+header declaration versus startup code only; no foreign hardware fact was
+provided to the author or copied into the BMSX layout. No runtime, compiler,
+BIOS, publisher, CSS, schema, helper or new test implementation was changed.
+
+A separate source-blind reader now accepts the new section and Book III route:
+all earlier offset/width/endian/address gaps are resolved within this finite
+assignment. The 60-byte prefix is not read as a complete-validity promise.
+Report: `/tmp/bmsx-rom-header-public-reader.md`. All 16 existing fenced listings
+remain exactly equal to the accepted baseline; no example code was rewritten
+or rerun as supposed evidence for this table. All 19 existing manual tests pass;
+they are publishing regressions, not a substitute for actual-page inspection.
+The chapter remains a DRAFT with its pre-existing open coverage/print flags.

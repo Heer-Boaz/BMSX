@@ -41,7 +41,7 @@
 			]
 		},
 		"reset": {
-			"resolution": "System reset/startup, BIOS selection/handoff, arbitrary EXEC and repeated own DATA/BSS initialization are source-checked; no blanket RAM-zero or persistence promise is made.",
+			"resolution": "System reset/startup, BIOS selection/handoff, arbitrary EXEC and repeated own DATA/BSS initialization are source-checked; no blanket RAM-zero or persistence promise is made. The current 72-byte ROM-header table distinguishes little-endian words and byte offsets from absolute function-record addresses, the 60-byte boot prefix and the separate 96-byte executable header; no malformed-offset overflow contract is inferred.",
 			"open": [
 				"Establish the required inherited device/register/buffer state and corresponding cartridge initialization/ownership rules."
 			]

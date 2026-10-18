@@ -21,7 +21,7 @@ RAM capacity comes from the supplied card definition. Do not derive installed ca
 
 The installed BIOS examines present sockets in order, socket 0 before socket 1, using SELECT while inspecting them. It chooses the first card that satisfies its ROM boot-readiness checks. A card can therefore occupy a socket without becoming a boot candidate, and the first occupied socket need not be the socket from which startup proceeds. These checks describe the installed BIOS boot policy, not a cartridge-discovery BIOS interface available to software.
 
-For the ROM header, startup requirements, and boot routes, see [Book I: Memory — Cartridge startup](../book1/memory.md#reset-and-cartridge-startup). Those definitions remain authoritative; card composition alone does not replace their requirements.
+For the ROM header, startup requirements, and boot routes, see [Book I: Memory — Cartridge startup](../book1/memory.md#rom-header-fields). Those definitions remain authoritative; card composition alone does not replace their requirements.
 
 ## Selection and execution
 

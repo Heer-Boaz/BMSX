@@ -175,3 +175,30 @@ pixel-identical to that inspected candidate. No new print correction, CSS,
 grouping rule, figure or publishing machinery was required. Bounded current
 DRAFT readability: **PASS**. Remaining coverage and whole-reader/publication
 approval still keep `reviews.print.passed` false.
+
+## ROM-header continuation — actual final DRAFT, 2026-10-18
+
+Current `build/manual/memory.preview.pdf`: 37 pages, SHA256
+`fadeebc60a9785c48979b52e493a23fca643f84a703ad432c73c56c7c41aa069`.
+Source SHA256
+`e72ae3aeab7ef43cc38fda402df74b1a69f039a2370d34ec02ef5bebead8f4ca`.
+The new 18-row ROM-header table fits completely on5, with its heading and
+introduction; its size/address cautions and unchanged startup sequence fit 6.
+
+Root individually viewed every changed full 833×1179 PDFium1.4× ORIGINAL page 5–37,
+including all reflowed listings/tables, the BIOS image/caption, output plates and
+running headers/DRAFT footers/folios. An independent reader also individually
+viewed 8–17. No clipping, table/caption loss or new layout blocker remains.
+The independent review's initial absent-margin impression was directly rechecked
+and withdrawn; root's full views show the actual running labels on all named
+pages. No renderer/CSS/source workaround was added for that false impression.
+Pages1–4 match the accepted 36-page `c68939b9…` baseline by complete decoded
+RGBA bytes and dimensions, including running matter, and carry that evidence.
+Detailed records: `/tmp/bmsx-rom-header-print-{root,reader}.md` and
+`/tmp/bmsx-rom-header-print/identity.json`. The public print flag remains false:
+this is bounded DRAFT readability, not completion or final publication approval.
+
+The 19 existing manual tests regenerated PCRTC; all 37 resulting pages match its
+accepted predecessor in complete decoded RGBA bytes and dimensions. Its current
+PDF SHA256 is `26afd66ac808b1e7a8a1cc1869183230c2648e82cd4a0da55f2f08a8692ea22f`.
+This is identity carry, not a new PCRTC technical/behavior review.
