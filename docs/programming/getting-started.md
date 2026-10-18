@@ -1030,7 +1030,7 @@ common Table-length dependency and dynamic unary-& lowering hole remain open.
 
 ## Build and inspect GTE depth cue
 
-Use the complete [four-swatch GTE program](../book1/gte.md#gte-depth-cue-output).
+Use the complete [two-stage GTE color program](../book1/gte.md#gte-depth-cue-output).
 Put its two modules in `carts/gte_cue_manual/cart.lua` and
 `carts/gte_cue_manual/results.lua`, and its manifest in
 `carts/gte_cue_manual/res/manifest/manifest.rommanifest`. The supplied assertion
@@ -1053,11 +1053,15 @@ The cartridge build exports `dist/gte_cue_manual.debug.rom` and its matching
 [test] depth_cue_and_display_words: passed
 ```
 
-That case checks all four retained IR0/RGB2/FLAG results, raw stored-pixel probes,
-firmware exclusion and a fresh VBlank observation. The final command separately
-runs the ordinary ROM and captures the native 256×192 four-swatch image in
-`tests/carts/gte_cue_manual/screenshots/frame_00001.png`. The observed frame is
-not a fixed hardware-latency guarantee. Displayed GX16 RGB values differ from
-GTE's retained eight-bit calculation results; compare the two tables in the
-hardware chapter rather than replacing one with the other. This route was
-checked in the working checkout, not on every OS or a fresh SDK installation.
+That case checks all four depth IR0/RGB2/FLAG rows, all three NCS/NCCS
+lighting/material rows, raw probes of both surfaces, retained first-image
+probes, firmware exclusion and both fresh VBlank observations. The final command
+separately runs the ordinary ROM and captures two native 256×192 images in
+`tests/carts/gte_cue_manual/screenshots/`: `frame_00001.png` is the four-depth
+comparison; `frame_00004.png` is unmodulated lighting, material A and material B.
+Those selected frames are not fixed hardware-latency guarantees. One shared
+setup produces both images, with the first still selected while drawing the
+second elsewhere in local memory. Displayed GX16 RGB differs from retained GTE
+eight-bit results; compare the calculation and display tables rather than
+replacing one with the other. This route was checked in the working checkout,
+not on every OS or a fresh SDK installation.

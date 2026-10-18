@@ -51,6 +51,8 @@ rodata positions: gte_vector[4] = {
 	{ x = 0, y = 0, z = 768, pad = 0 },
 }
 rodata swatch_x: word[4] = { 16, 76, 136, 196 }
+rodata material_x: word[3] = { 20, 100, 180 }
+rodata materials: word[3] = { 0x34c060a0, 0x34c060a0, 0x34a0c040 }
 
 function irq(flags)
 	if (flags & 0x00000004) ~= 0 then
@@ -59,7 +61,7 @@ function irq(flags)
 	*irq_ack = flags & 0x00000004
 end
 
--- Own the GTE, GPU ports, display, handler and raw (0,0)..(255,191).
+-- Own GTE, ports, display, handler and both raw 256x192 surfaces.
 result.system_origin, result.system_size = system_vram_region()
 *irq_mask = 0
 *pcrtc_csr = 0x00000200
@@ -148,6 +150,72 @@ while result.vblank_sequence == before do
 end
 result.after_vblank = result.vblank_sequence
 result.completed = 1
+local hold<const> = result.vblank_sequence
+while result.vblank_sequence - hold < 2 do
+	halt_until_irq
+end
+
+-- Keep the first surface selected while drawing only into rows 256..447.
+*irq_mask = 0
+*gp0 = 0xe3000000 | (256 << 10)
+*gp0 = 0xe40000ff | (447 << 10)
+*gp0 = 0xe5000000 | (256 << 11)
+*gp0 = 0x60000000
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+
+-- NCS and NCCS do not use the IR0 left by the depth-cue comparison.
+data[gte.data_vxy0] = normal_words[0]
+data[gte.data_vz0] = normal_words[1]
+for index = 0, 2 do
+	data[gte.data_rgb] = materials[index]
+	if index == 0 then
+		*command = (gte.opcode_ncs
+			| gte.command_sf_shift_12 | gte.command_lm_positive)
+	else
+		*command = (gte.opcode_nccs
+			| gte.command_sf_shift_12 | gte.command_lm_positive)
+	end
+	local rgb<const> = data[gte.data_rgb2]
+	result.material_rgb2[index] = rgb
+	result.material_flags[index] = control[gte.control_flag]
+	*gp0 = 0x60000000 | (rgb & 0x00ffffff)
+	*gp0 = material_x[index] | (48 << 16)
+	*gp0 = 56 | (96 << 16)
+end
+result.material_ir0 = data[gte.data_ir0]
+
+-- Drawing offset affects rectangles, not C0 transfer coordinates.
+for index = 0, 2 do
+	*gp0 = 0xc0000000
+	*gp0 = (material_x[index] + 28) | (352 << 16)
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.material_words[index] = *gp0
+end
+for index = 0, 3 do
+	*gp0 = 0xc0000000
+	*gp0 = (swatch_x[index] + 22) | (96 << 16)
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.preserved_depth_words[index] = *gp0
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+
+-- Only change the framebuffer after the second image is complete.
+*framebuffer = 0x000fa040
+*irq_ack = 0x00000004
+local material_before<const> = result.vblank_sequence
+result.material_before_vblank = material_before
+*irq_mask = 0x00000004
+while result.vblank_sequence == material_before do
+	halt_until_irq
+end
+result.material_after_vblank = result.vblank_sequence
+result.completed = 2
 while true do
 	halt_until_irq
 end

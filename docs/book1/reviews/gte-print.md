@@ -233,3 +233,54 @@ CLI check also republishes its unchanged chapter: all32 current canonical PCRTC
 rasters remain exact matches to its accepted sampling proof, independently
 verified in `/tmp/bmsx-gte-cue-pcrtc-identity.json`. This does not refresh older
 DRAFT previews. `git diff --check` passes.
+
+## Material extension: current 132-page proof — 2026-10-18
+
+This section supersedes earlier artifact/count statements for the current
+publication. Proof `/tmp/bmsx-gte-material-proof/gte.pdf` has 132 pages,
+eight figures, 13 register groups and no mechanical layout errors. SHA-256:
+`55b00a2fd28195baafa09006ada9888aab3195d55f559aa831ddfcdf731c9e0c`.
+Engine remains Chromium153.0.8010.12, Nodev22.23.1, Linuxx64.
+
+Every page is accounted for by full decoded RGBA bytes and dimensions, not
+source identity, an alpha bounding box, contact sheets or a clean receipt:
+
+- Pages1–123 and127 exactly match the accepted129-page cue baseline
+  `6fa8a1fa7b12602ceee178b271842f55a799b747838e4ce39d60da178ee6547d`.
+- Root individually viewed original-detail pages124–126: unchanged full depth
+  plate with updated two-surface ownership, complete enlarged results BSS and
+  mapped ports, fixed ROM operands and display setup; all remain readable,
+  bounded and unsplit. Root separately viewed129 and its actual material plate.
+- A fresh independent print-only reader individually viewed128–132. The first
+  image publication, NCS/NCCS input/result table, three-swatch table and actual
+  picture/caption, both final BLua blocks, full manifest and reciprocal appendix
+  are complete, readable and free of clipping, overlap or bad heading splits.
+  Report `/tmp/bmsx-gte-material-print-tail.md` records each actual page.
+- Apparent running-label omissions in the image viewer are not PDF defects:
+  all128–132 full header and bottom-left footer bands are byte-identical to
+  the visibly present128 bands. Root also visibly confirmed129. Evidence:
+  `/tmp/bmsx-gte-material-print/running-bands-identity.json`.
+
+Page identity evidence is `/tmp/bmsx-gte-material-print/identity.json`.
+An initial proof correctly rejected two overflowing command expressions.
+Parenthesized two-line BLua expressions fix their actual source width; the
+ordinary rebuilt cartridge still passes and reproduces both identical PNGs.
+No font/CSS, publisher, helper, framework or new layout gate changed. The
+existing figure-count fixture now expects8 rather than7 actual GTE figures.
+
+This accepts print layout only. Source, actual execution/image and public
+reader decisions are in [gte-material-source.md](gte-material-source.md).
+NAV01 portable PDF navigation and full SDK/series delivery remain open.
+
+### Current canonical verification
+
+Ordinary `manual:check -- gte` and `manual:publish -- gte` pass. Every one of
+132 canonical pages equals the accepted proof in full decoded RGBA bytes and
+dimensions. Canonical SHA-256:
+`fb9a3eca6675f463d95bf8abb128cca5539ae6bc3759650a927215149f41eca0`.
+Public-source SHA-256:
+`88de1a0961393f0d8cbde84b62eb135d7a725c64ed1893d2588189691c748b7c`.
+Evidence: `/tmp/bmsx-gte-material-published-identity.json`.
+The19 manual tests pass; their unchanged PCRTC republication also matches all32
+accepted sampling-proof rasters exactly. No stale preview replaces this current
+publication. `git diff --check` passes.

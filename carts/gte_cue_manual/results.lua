@@ -15,6 +15,13 @@ struct gte_cue_result
 	projection_flags: word[4]
 	color_flags: word[4]
 	swatch_words: word[4]
+	material_rgb2: word[3]
+	material_flags: word[3]
+	material_words: word[3]
+	preserved_depth_words: word[4]
+	material_before_vblank: word
+	material_after_vblank: word
+	material_ir0: word
 end
 
 bss result: gte_cue_result

@@ -1268,3 +1268,13 @@ retained IR0 from a per-vertex FIFO, calculation RGB2 bytes from displayed RGB,
 per-command flags from later commands, and equal screen-space shapes from
 projected geometry. Source/actual-output/public-reader and print decisions are
 retained in the separate cue review, not inferred from this fact packet alone.
+
+## Material reference and second-surface extension
+
+The [material extension fact sheet](gte-material.md) supplies the current
+NCS/NCCS consumed-input distinctions and mapped-owner results, paired drawing/
+framebuffer/transfer/IRQ facts, and actual two-stage cartridge observations.
+The existing complete source is extended in place, not duplicated. The original
+cue packet records the accepted first-stage baseline; the extension reexecutes
+that stage unchanged before the material image. Fresh review covers the current
+250 literal BLua lines, both outputs and the shared build route.

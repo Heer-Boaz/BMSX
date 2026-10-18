@@ -6216,7 +6216,7 @@ Consequently, the GTE result bytes and the visible output bytes differ. Keep the
 
 </section>
 
-This example exclusively owns the GTE, GPU ports, display configuration, VBlank handler and chosen image region. Its queried firmware reservation lies outside that region; this does not make other coordinates generally available. Do not run concurrent users of these resources. After the final display-enable write, acknowledge stale controller VBlank bit 2 and wait for a fresh callback sequence. Register readback alone does not establish displayed output or a fixed presentation latency.
+This two-stage example exclusively owns the GTE, GPU ports, display configuration, VBlank handler and both chosen image regions: raw (0,0)–(255,191) and (0,256)–(255,447). Its queried firmware reservation lies outside both regions; this does not make other coordinates generally available. Do not run concurrent users of these resources. After the final display-enable write, acknowledge stale controller VBlank bit 2 and wait for a fresh callback sequence. Register readback alone does not establish displayed output or a fixed presentation latency.
 
 <section class="keep-together">
 
@@ -6253,6 +6253,13 @@ struct gte_cue_result
 	projection_flags: word[4]
 	color_flags: word[4]
 	swatch_words: word[4]
+	material_rgb2: word[3]
+	material_flags: word[3]
+	material_words: word[3]
+	preserved_depth_words: word[4]
+	material_before_vblank: word
+	material_after_vblank: word
+	material_ir0: word
 end
 
 bss result: gte_cue_result
@@ -6268,7 +6275,7 @@ return { result = result }
 
 ### Declare the mapped ports
 
-Create `cart.lua` by concatenating the following six blocks in order.
+Create `cart.lua` by concatenating the following eight blocks in order, including the final material-comparison blocks.
 
 ```lua
 module<entry>
@@ -6335,6 +6342,8 @@ rodata positions: gte_vector[4] = {
 	{ x = 0, y = 0, z = 768, pad = 0 },
 }
 rodata swatch_x: word[4] = { 16, 76, 136, 196 }
+rodata material_x: word[3] = { 20, 100, 180 }
+rodata materials: word[3] = { 0x34c060a0, 0x34c060a0, 0x34a0c040 }
 ```
 
 </section>
@@ -6354,7 +6363,7 @@ function irq(flags)
 	*irq_ack = flags & 0x00000004
 end
 
--- Own the GTE, GPU ports, display, handler and raw (0,0)..(255,191).
+-- Own GTE, ports, display, handler and both raw 256x192 surfaces.
 result.system_origin, result.system_size = system_vram_region()
 *irq_mask = 0
 *pcrtc_csr = 0x00000200
@@ -6450,9 +6459,9 @@ end
 
 <section class="keep-together">
 
-### Read the stored pixels and publish the image
+### Read the stored pixels and publish the first image
 
-Raw GPUREAD probes and immediate register reads are separate from the fresh VBlank observation.
+Raw GPUREAD probes and immediate register reads are separate from the fresh VBlank observation. The following two callback increments hold this first image for viewing; they are not a minimum display-latency guarantee.
 
 ```lua
 for index = 0, 3 do
@@ -6476,6 +6485,142 @@ while result.vblank_sequence == before do
 end
 result.after_vblank = result.vblank_sequence
 result.completed = 1
+local hold<const> = result.vblank_sequence
+while result.vblank_sequence - hold < 2 do
+	halt_until_irq
+end
+
+```
+
+</section>
+
+<section class="keep-together">
+
+<a id="gte-material-output"></a>
+
+### Lighting reference and material tints
+
+Use the same supplied normal `(2458, 0, 3277)`, light matrix L, color matrix K, and ambient vector for all three commands:
+
+- L rows: `(3072, 0, 2048)`, `(-2048, 0, 3072)`, `(0, 0, -4096)`.
+- K rows: `(4096, 1024, 0)`, `(2048, 4096, 0)`, `(1024, 2048, 4096)`.
+- Ambient: `(256, 512, 128)`.
+
+</section>
+
+With SF=1 and LM=1, NCS applies the light transform, then the color matrix and ambient contribution. Its output is the unmodulated lighting reference: the RGB bytes of RGBC do not participate, but CODE is retained in RGB2.
+
+NCCS performs those same stages, then modulates the result with the RGB bytes of RGBC. Material A supplies RGB `(160, 96, 192)`; material B supplies `(64, 192, 160)`. Both retain CODE `34H`.
+
+| Command | Material word (RGBC) | Raw RGB2 | RGB8 (R, G, B) |
+|---|---|---|---|
+| NCS `0008041EH` | `34C060A0H` (RGB ignored) | `3464D9FCH` | `(252, 217, 100)` |
+| NCCS `0008041BH` | `34C060A0H` (A) | `344B519EH` | `(158, 81, 75)` |
+| NCCS `0008041BH` | `34A0C040H` (B) | `343EA33FH` | `(63, 163, 62)` |
+
+IR0 remains `4096` from the preceding depth stage. Neither command consumes IR0, so that retained value does not tint these results.
+
+Each command starts with FLAG cleared and finishes with `00400000H`. The third light component is `-3277`; LM=1 limits it to zero, recording IR3 saturation. This flag is neither material-byte clipping nor summary ERROR. Retain RGB2 and FLAG immediately after each command, before issuing the next.
+
+The second 256×192 picture contains three equal 56×96 swatches at X=20, 100 and 180, Y=48: reference, material A and material B, from left to right. Stage A remains selected and untouched while drawing Stage B is confined to raw rows 256–447. Use opaque, untextured 60H rectangles for both the black clear and the swatches; a 02H fill does not follow the drawing offset or stored-mask setting.
+
+At a pitch of 1024 words, framebuffer row 256 means base word 00040000H, FBP=64 and DISPFB1_LOW=000FA040H, with source X/Y still zero. This framebuffer base is separate from the relative drawing offset Y=256: swatch Y=48 becomes raw Y=304. C0 transfers ignore that offset; read the centers at absolute (48,352), (128,352) and (208,352). The next table distinguishes stored GX16 words, the complete C0 register word and displayed RGB; the preceding table retains the original GTE bytes.
+
+After draining probe readback, wait for GPU idle. With interrupt delivery masked, write the new framebuffer selection, acknowledge stale controller VBlank pending state, record the callback sequence, unmask VBlank and wait for a fresh callback. Neither surface is subsequently reused. This sequence promises no general surface release, atomic update or display latency. Both chosen surfaces lie outside the queried firmware region; the query is not an allocator.
+
+| Swatch | Stored GX16 | C0 word | Display R,G,B |
+|---|---|---|---|
+| Reference | `0xb37f` | `0x0000b37f` | 255,222,99 |
+| Material A | `0xa553` | `0x0000a553` | 156,82,74 |
+| Material B | `0x9e87` | `0x00009e87` | 57,165,57 |
+
+<section class="keep-together">
+
+![GTE unmodulated lighting reference and two material tints](figures/gte-material.png)
+
+*Second picture: the unmodified 256×192 capture shows reference, material A and material B on black. Display RGB reflects RGB555 truncation and expansion, not the original GTE bytes.*
+
+</section>
+
+<section class="keep-together">
+
+### Prepare the lighting reference and materials in the second surface
+
+Continue the same entry module. The existing light, color and ambient controls remain unchanged; the first framebuffer stays selected while this block draws the second.
+
+```lua
+-- Keep the first surface selected while drawing only into rows 256..447.
+*irq_mask = 0
+*gp0 = 0xe3000000 | (256 << 10)
+*gp0 = 0xe40000ff | (447 << 10)
+*gp0 = 0xe5000000 | (256 << 11)
+*gp0 = 0x60000000
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+
+-- NCS and NCCS do not use the IR0 left by the depth-cue comparison.
+data[gte.data_vxy0] = normal_words[0]
+data[gte.data_vz0] = normal_words[1]
+for index = 0, 2 do
+	data[gte.data_rgb] = materials[index]
+	if index == 0 then
+		*command = (gte.opcode_ncs
+			| gte.command_sf_shift_12 | gte.command_lm_positive)
+	else
+		*command = (gte.opcode_nccs
+			| gte.command_sf_shift_12 | gte.command_lm_positive)
+	end
+	local rgb<const> = data[gte.data_rgb2]
+	result.material_rgb2[index] = rgb
+	result.material_flags[index] = control[gte.control_flag]
+	*gp0 = 0x60000000 | (rgb & 0x00ffffff)
+	*gp0 = material_x[index] | (48 << 16)
+	*gp0 = 56 | (96 << 16)
+end
+result.material_ir0 = data[gte.data_ir0]
+
+```
+
+</section>
+
+<section class="keep-together">
+
+### Check both surfaces and select the second image
+
+Continue with absolute raw probes, a separate GPU-idle wait and the final framebuffer publication. Neither surface is overwritten afterwards.
+
+```lua
+-- Drawing offset affects rectangles, not C0 transfer coordinates.
+for index = 0, 2 do
+	*gp0 = 0xc0000000
+	*gp0 = (material_x[index] + 28) | (352 << 16)
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.material_words[index] = *gp0
+end
+for index = 0, 3 do
+	*gp0 = 0xc0000000
+	*gp0 = (swatch_x[index] + 22) | (96 << 16)
+	*gp0 = 0x00010001
+	while (*gp1 & 0x08000000) == 0 do
+	end
+	result.preserved_depth_words[index] = *gp0
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+
+-- Only change the framebuffer after the second image is complete.
+*framebuffer = 0x000fa040
+*irq_ack = 0x00000004
+local material_before<const> = result.vblank_sequence
+result.material_before_vblank = material_before
+*irq_mask = 0x00000004
+while result.vblank_sequence == material_before do
+	halt_until_irq
+end
+result.material_after_vblank = result.vblank_sequence
+result.completed = 2
 while true do
 	halt_until_irq
 end

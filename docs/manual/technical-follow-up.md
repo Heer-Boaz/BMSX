@@ -73,16 +73,19 @@ The concrete writing/observation assignments are:
   guest, independent reader and actual-print evidence are recorded in the GPU
   reviews. This closes that finite route, not every GPU transport scenario,
   physical bandwidth or graphics-illustration task.
-- **GTE depth cue — completed finite lesson:** the
-  [four-swatch program](../book1/gte.md#gte-depth-cue-output) now supplies 175
-  complete BLua source lines, actual RTPS/NCDS result/flag tables and an ordinary
-  256×192 output plate. Equal 44×96 screen-space shapes isolate depth-cued color;
-  all four coefficients/raw RGB2 and lossy GX16 values are independently checked,
-  and all 49,152 image pixels match the controlled scene. Separate source/image,
-  public-reader/reconstruction, supplied-checkout build route and actual-PDF
-  evidence are retained in the cue review. Material-versus-lighting and supplied
-  near-plane-intersection contrasts remain separate later plates; this does not
-  close the broader graphics-output inventory.
+- **GTE depth cue and material — completed finite lessons:** the
+  [two-stage program](../book1/gte.md#gte-depth-cue-output) now supplies 250
+  complete BLua source lines, actual RTPS/NCDS and NCS/NCCS result/flag tables
+  and two ordinary 256×192 output plates. Equal screen-space shapes isolate
+  color; the second lesson contrasts unmodulated lighting with two materials
+  without changing normal/L/K/ambient. One shared setup feeds separate raw
+  surfaces; the first remains selected while the second is drawn, and neither
+  is subsequently reused. Calculation RGB2, stored GX16 and displayed RGB remain
+  distinct. Independent paired-owner/source and all-pixel image checks, fresh
+  public reconstruction, executed supplied-checkout build route and actual-PDF
+  evidence are retained in the cue/material reviews. Supplied near-plane
+  intersections remain a separate next contrast; these lessons do not close
+  the broader graphics-output inventory.
 - **PCRTC source versus destination — completed finite lesson:** the
   [complete154-line cartridge and three actual output plates](../book1/pcrtc.md#pcrtc-source-and-window)
   now show a fixed256×192 circuit-2 canvas and128×96 circuit-1 cutout: source(0,0)/

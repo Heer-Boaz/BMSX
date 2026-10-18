@@ -1,3 +1,4 @@
 [
-	{ "frame": 1, "capture": true, "description": "Equal-shape GTE cue swatches at depths 256,384,512,768" }
+	{ "frame": 1, "capture": true, "description": "Equal-shape GTE cue swatches at depths 256,384,512,768" },
+	{ "frame": 4, "capture": true, "description": "Same light: unmodulated reference, material A, material B" }
 ]

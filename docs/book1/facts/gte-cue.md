@@ -1,5 +1,10 @@
 # GTE depth-cue output: frozen facts and observed program
 
+Baseline accepted at `e1d9c4f8a`. The current complete cartridge adds a second
+material stage; see [gte-material.md](gte-material.md) for the current source
+and reexecuted two-image observations. Earlier producer line counts and artifact
+hashes below identify that accepted baseline, not a second current program.
+
 # Finite current GTE cue facts — owner-verified and TS MMIO-replayed
 
 Checkout: `/home/boaz/BMSX`, HEAD `816899c12`, 2026-10-18. Scope is only the four already-selected samples Z=256,384,512,768. No repo edits, architecture document, reference PDFs, compiler audit, native execution, or rendering/backend matrix. The old `/tmp/bmsx-gte-depth-cue-facts-current.md` was a hypothesis, not authority. The input constants below remain the frozen experiment inputs; their register decoding, arithmetic use, and the four results are now checked against live owners and a bounded execution. Chapter prose is not the authority for any result below.

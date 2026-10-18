@@ -360,7 +360,10 @@ a source-accurate register reference as a complete technical specification.
   not the remaining PMODE or GTE contrasts. The
   [GTE depth-cue plate](../book1/gte.md#gte-depth-cue-output) now adds four actual
   constant-shape swatches, raw calculation/display distinction and a complete
-  executed program; material-versus-lighting and near-plane cases remain. The separate
+  executed program. The same cartridge now adds an actual
+  [NCS reference and NCCS material comparison](../book1/gte.md#gte-material-output),
+  with one shared setup, separate non-reused surfaces, full result/display tables
+  and independently checked output; near-plane cases remain. The separate
   [horizontal-sampling lesson](../book1/pcrtc.md#pcrtc-horizontal-sampling)
   explains unequal step/magnification and first-pixel phase with a complete
   91-line BLua program, exact eight-sample table and actual output strip;

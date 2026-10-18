@@ -211,4 +211,19 @@ A fresh public-only reader reconstructs both modules and manifest byte-exact;
 the missing build-route pointer was supplied through the existing development
 companion and the exact minimal commands execute. Source, image, reader and
 print evidence remain distinct; no full hardware/SDK/series acceptance follows.
-Material-versus-lighting, near-plane and PDF-delivery navigation work remain.
+The subsequent material extension below closes that finite contrast; near-plane
+and PDF-delivery navigation work remain.
+
+## Lighting reference and material comparison — 2026-10-18
+
+The [material review](gte-material-source.md) extends the existing complete
+cartridge in place: NCS unmodulated reference, NCCS material A/B, unchanged
+normal/L/K/ambient, retained RGB2/FLAG, and the separate GX16/display path.
+Its 250 literal BLua lines share one setup and draw the second image into a
+separate surface while the first remains selected; neither surface is reused.
+Fresh ordinary build/assert/capture, independent paired-owner/source and
+all-pixel image checks, byte-exact public reconstruction and the refreshed
+public build route pass. Both actual pictures are copied unmodified.
+This is a finite source/image/reader acceptance, not whole-manual, portable
+PDF navigation, physical timing or backend-matrix approval. Print evidence is
+separate in [gte-print.md](gte-print.md); near-plane imagery remains open.
