@@ -116,3 +116,30 @@ hash byte-for-byte. All239 public source lines still reconstruct the actual
 two files byte-for-byte; no formula, output, operation, command or assertion
 changed. This is a root identity check, not a new independent source audit or
 visual approval. No CSS, renderer, publisher or new review gate was introduced.
+
+## BH01: source accuracy is not numerical API acceptance — 2026-10-18
+
+The existing manuscript, examples and source/print evidence are retained.
+Publication is reopened only for ordinary trig precision and special-value
+policy; the old source PASS does not approve every observed output as a
+permanent API guarantee. Math's coverage record now carries that decision.
+
+Two independent source readers distinguish the ordinary radians conversion
+(`machine/bios/math.lua:100-120`) from the raw phase-word/Q16 primitive
+(`machine/bios/math/sin.lua:43-63`). Actual in-memory central compiler/CPU
+execution at O0/O3, independently repeated by root, returns `sin(1e-6)=0`,
+`sin(1)=0.841461181640625`, `sin(+inf)=0`, `sin(NaN)=0`, and `sin(-0)=+0`.
+These are current software observations, not whole-cartridge/native proof,
+an accuracy specification or a decision to preserve those edge results.
+Existing assertions of quantized/nonnumeric results likewise do not settle
+the owning API's intended contract.
+
+The separate decoder's selected exact 4/8-byte vectors preserve signed zero,
+normal/subnormal values and the largest significand below two; no defect in
+that used raw-word domain was established. Neither export/use nor a non-4
+else branch approves arbitrary byte-count aliases. No BIOS/runtime/compiler,
+cartlib, program, test or public prose changed; no guard, wrapper or fix was
+inferred. Evidence: `/tmp/bmsx-bios-helper-design-audit-current.md`,
+`/tmp/bmsx-bios-helper-api-root-recheck.log` and independent source review.
+All 19 existing manual tests pass; `manual:check bios-math` now correctly
+withholds publication for the two BH01 coverage items, not a print defect.

@@ -1,4 +1,9 @@
-# Current Math publication print acceptance
+# Math print evidence — numerical API approval withheld
+
+**2026-10-18:** BH01 reopens numerical API acceptance in the
+[coverage record](bios-math.json). The print PASS below is retained as surface
+evidence only; it does not authorize publication of the disputed numerical
+contract. The manuscript and existing examples are preserved unchanged.
 
 **Bounded PASS for the22-page canonical non-DRAFT PDF**,
 `e8d40b6248edffc63a2410c6fe012c078f6dc13708fc053e1b3a3dd4ed55a569`,
@@ -6,6 +11,13 @@ source `55f4f3d4b16b7af1278f76d6c216e3744ec94af97cdca90bcdecb7231982e890`.
 The canonical review at the end freshly inspects all22 actual publication
 pages and supersedes earlier candidate findings, not their chronological
 evidence. This is finite print-surface acceptance, not whole-manual completion.
+
+The refreshed DRAFT preview has 22 pages, SHA256
+`7a301f5e0026f7a75568fe4b78981b53d2f3177b6296083a7b2c694eca2f4ef0`.
+All complete decoded RGBA page bytes and dimensions equal the independently
+accepted `198b5159…` preview, including running matter. No visual change is
+inferred from the metadata hold. Evidence:
+`/tmp/bmsx-bios-math-api-hold-print/bios-math-identity.json`.
 
 # BIOS math preview: independent actual-PDF print review
 

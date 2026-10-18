@@ -127,6 +127,10 @@ approval to work in parallel. This is an editorial division of work, not another
    A real cross-reference to an existing, complete owner chapter can resolve a
    shared contract. A promised future chapter cannot. Absence from the current
    source scope does not prove "not applicable" or "no faults".
+   An accurate account of an existing software-library branch is not approval
+   of its API. Keep suspected defects and unresolved public/private interface
+   decisions in engineering follow-up, rather than making observed outputs
+   permanent guarantees.
 5. **Audit figures semantically.** Trace every producer, consumer, arrow, merge,
    control input, dimension endpoint, and timing landmark. Two independent inputs
    must not acquire a shared bus from drawing convenience. A schematic timeline

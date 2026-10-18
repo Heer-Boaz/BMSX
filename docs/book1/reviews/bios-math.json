@@ -2,7 +2,9 @@
 	"coverage": {
 		"boundary": {
 			"resolution": "Installed BIOS math table:29 fields,25 callables and4 constants; ordinary Number operations, not a registerfile, integer subtype or replacement cartridge ABI.",
-			"open": []
+			"open": [
+				"BH01: decide the intended public numerical precision of ordinary trigonometric calls versus the separate phase-word/Q16 primitive. Source accuracy and current tests are not API design approval."
+			]
 		},
 		"registers": {
 			"resolution": "All25 callable interfaces and4 constant fields have sourced reference coverage, including fixed formals, nil/default distinctions and exact result counts; this ordinary BIOS Table introduces no mapped registerfile or per-API reset words.",
@@ -26,7 +28,9 @@
 		},
 		"faults": {
 			"resolution": "Exact elementary/RNG raised Strings are scoped to initialized live dependencies; angle/transcendental numerical branches and nonnumber/NaN behavior are specified without invented type/domain validators. Static known-call minimum and cartridge-floor source policy are distinct from reached faults. Canonical CPU/Memory/protected-call contracts own connected execution/access boundaries.",
-			"open": []
+			"open": [
+				"BH01: decide ordinary trig special-value behavior before ratifying observed NaN/infinity-to-zero and negative-zero sign loss; repair any demonstrated owning-API defect before publication. No blanket strict-Lua compatibility decision is inferred."
+			]
 		},
 		"reset": {
 			"resolution": "BIOS installation and declared shared RNG initializer are stated without inventing independent per-thread/cart streams, universal reset/persistence or save-state claims. Canonical Memory/CPU/SYSTEM chapters remain the startup/reset authorities.",

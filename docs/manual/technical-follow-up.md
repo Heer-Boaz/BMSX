@@ -1588,6 +1588,26 @@ do not add validation, compatibility aliases or cosmetic wrappers to preserve
 it. No BIOS/runtime/compiler change is inferred from this documentation audit.
 This does not block unrelated hardware teaching or reopen general Lua lessons.
 
+**Further bounded check, 2026-10-18:** the hold also applies to ordinary
+trigonometric API acceptance in the retained Math manuscript, not only the
+withdrawn helper draft. Actual O0/O3 execution of the owning BIOS modules
+returns zero for `math.sin(0 / 0)` and `math.sin(1 / 0)`, and changes sine's
+negative zero to positive zero. The conversion is in
+`machine/bios/math.lua:100-120`; the separate phase-word/Q16 algorithm is in
+`machine/bios/math/sin.lua:43-63`. Existing tests of quantized results and
+nonnumeric zero results (`tests/carts/bios_math_manual/bios_math_manual_assert.lua:51-52,73-75`)
+are observations, not evidence that these are desirable permanent guarantees.
+
+Math's numerical-boundary and special-value acceptance are reopened in its
+[coverage record](../book1/reviews/bios-math.json). Keep the manuscript and
+examples; withhold publication until the owning API's intended precision and
+special-value behavior are decided and any demonstrated defect is repaired.
+This does not establish a strict-Lua compatibility mandate, invalidate all
+Math operations or show a defect in the decoder's used 4/8-byte domain. No
+runtime fix or additional edge-case tests are inferred. General Lua exposition
+remains deferred. Independent source review and root's repeated execution are
+recorded in [the Math source review](../book1/reviews/bios-math-source.md).
+
 ## BIOS-to-cartridge ownership bridge — bounded continuation, 2026-10-18
 
 Memory now connects its existing EXEC/startup account to
