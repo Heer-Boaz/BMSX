@@ -206,6 +206,374 @@ A caller retaining only one result does not erase the preceding suffix work. See
 
 Budget charges do not measure all of that work. The initialized `type` and `select` calls have base budget charge 1, and `error` has base charge 2; their per-argument and per-result increments are zero. Those are not total costs for a `math` call, and the suffix walk remains work despite the zero per-result increment. No fixed total instruction count, cycle count, or execution-time guarantee is supplied here. See [cycle accounting and execution boundaries](cpu.md#cycle-accounting-and-execution-boundaries).
 
+## Angles and transcendental operations
+
+Use `math.rad` and `math.deg` to change angular units, `math.sin`, `math.cos`
+and `math.tan` for periodic quantities, and the inverse functions to recover
+angles. `math.sqrt`, `math.exp` and `math.log` provide roots, exponentials and
+logarithms. All eleven interfaces return exactly one Number.
+
+| Interface | Meaning |
+| --- | --- |
+| `math.deg(value)` | Radian-scale value to degrees. |
+| `math.rad(value)` | Degree-scale value to radians. |
+| `math.sin(radians)` | Approximate sine. |
+| `math.cos(radians)` | Approximate cosine. |
+| `math.tan(radians)` | Ratio of the sine and cosine lookup results. |
+| `math.atan(y, x)` | Approximate angle in radians; `x == nil` selects the one-value form. |
+| `math.asin(value)` | Approximate inverse sine in radians. |
+| `math.acos(value)` | Approximate inverse cosine in radians. |
+| `math.sqrt(value)` | Approximate square root. |
+| `math.exp(value)` | Approximate natural exponential. |
+| `math.log(value, base)` | Approximate logarithm; `base == nil` selects the natural logarithm. |
+
+These are fixed-parameter interfaces, not varargs. Missing fixed parameters
+have value `nil`; surplus parameters are not retained. The signatures show all
+fixed parameters, rather than promising acceptance of every shortened call
+spelling. An explicit `nil` selects the alternate forms `math.atan(y, nil)` and
+`math.log(value, nil)`; the complete program also demonstrates accepted
+one-argument calls. No other parameter has a default.
+
+The formulas below use the Number arithmetic and `D` and `T` notation defined
+earlier. For word conversion, bit masks and signed right shifts, see
+[Bitwise operations and shifts](cpu.md#bitwise-operations-and-shifts).
+The formulas describe the actual approximations, not correctly rounded real
+functions. Nonnumeric arguments follow those
+arithmetic and comparison rules; numeric-looking Strings are not parsed.
+These interfaces do not issue their own argument-type or domain errors.
+
+In these formulas, `pi` is the retained BIOS Number constant, and
+`h = pi * 0.5`. The constants and private operations are retained bindings:
+changing public entries such as `math.pi`, `math.abs`, `math.floor`,
+`math.sqrt` or `math.atan` does not redirect these internal calculations.
+Names introduced below for private approximations are explanatory notation,
+not additional callable interfaces.
+
+The text blocks in this reference section are explanatory formulas and
+pseudocode, not BLua source listings. The complete program below is literal
+BLua source.
+
+### Converting angular units
+
+The conversion functions perform one multiplication:
+
+```text
+math.deg(value): value * (180 / pi)
+math.rad(value): value * (pi / 180)
+```
+
+There is no magnitude reduction or fixed-point conversion. Either zero sign
+is preserved, infinities retain their sign, and NaN or a nonnumeric argument
+produces NaN.
+
+### Sine, cosine and tangent
+
+These functions use a 32-bit phase for one turn. A quarter-turn is
+`Q = 0x40000000`. For each call, first calculate:
+
+```text
+s = radians * (4294967296 / (pi * 2))
+```
+
+Let `S(a)` denote the private integer sine lookup described below. The public
+results are calculated as follows:
+
+```text
+math.sin(radians): S(T(s) & 0xffffffff) * (1 / 65536)
+math.cos(radians): S((T(s) + Q) & 0xffffffff) * (1 / 65536)
+```
+
+For tangent, the phase is converted to a word before adding the quarter-turn:
+
+```text
+a = T(s) & 0xffffffff
+u = S(a)
+v = S((a + Q) & 0xffffffff)
+```
+
+If `v == 0`, `math.tan` returns negative infinity when `u < 0`, and positive
+infinity otherwise. Otherwise it returns `u / v`, without first converting
+both lookup results to normalized sine and cosine Numbers. A nonzero integer
+denominator gives a finite result in `[-65536, 65536]`. Infinity is selected
+by a zero **quantized denominator**, not by a test for an exact-real pole.
+
+`T` discards fractional phase before wrapping. The mask retains the 32 phase
+bits; it does not guarantee an unsigned Number result. In particular, cosine
+adds `Q` **before** word conversion, whereas tangent adds it **after** its
+first word conversion. This difference matters for nonfinite arithmetic:
+
+| `radians` | `math.sin` | `math.cos` | `math.tan` |
+| --- | --- | --- | --- |
+| NaN, either infinity, or a nonnumber, including `nil` | `0` | `0` | `0` |
+
+For sine and cosine, the nonfinite phase converts to word zero. For cosine,
+the earlier addition of `Q` does not make that phase finite. Tangent instead
+forms word zero first, so its denominator lookup receives a quarter-turn.
+Do not substitute `math.cos(0)` for the nonnumeric cosine case.
+
+<div class="keep-together">
+
+The lookup uses a fixed quarter-wave table `L` with 257 word entries,
+`L[0] = 0` and `L[256] = 65536`. It reflects the phase into that quarter-wave,
+interpolates between adjacent entries, and applies the sign:
+
+```text
+quadrant = (a >> 30) & 3
+phase = a & 0x3fffffff
+```
+
+</div>
+
+For an odd quadrant, replace `phase` by `Q - phase`. Start with
+`value = 65536`; if `phase != Q`, calculate:
+
+```text
+index = (phase >> 22) & 255
+fraction = phase & 0x3fffff
+base = L[index]
+delta = L[index + 1] - base
+value = base + ((delta * fraction) >> 22)
+```
+
+Return `0 - value` for quadrants 2 and 3, and `value` otherwise. Sine and cosine
+results lie in `[-1, 1]` and are multiples of `1 / 65536`. This is table-based
+linear interpolation with word arithmetic, not ideal sine or cosine. These
+range and quantization bounds are not approximation-error bounds or a promise
+that every value in an interval is reachable.
+
+There is no input-magnitude reduction loop. Each lookup uses arithmetic,
+branches and at most two table-word reads. Sine and cosine invoke it once;
+tangent invokes it twice.
+
+### Inverse angles
+
+The private approximation used by `math.atan` is:
+
+```text
+P(v) = (pi * 0.25 * v) + (0.273 * v * (1 - abs(v)))
+```
+
+Here `abs` is the retained private absolute-value operation. Define `A(v)` by
+these ordered cases:
+
+| Condition | Result |
+| --- | --- |
+| `v > 1` | `h - P(1 / v)` |
+| `v < -1` | `-h - P(1 / v)` |
+| Otherwise | `P(v)` |
+
+<div class="keep-together">
+
+`math.atan(y, x)` selects its result using the following order. The `x < 0`
+rows are considered before either remaining `y`-axis row.
+
+| Condition | Result |
+| --- | --- |
+| `x == nil` | `A(y)` |
+| `y ~= y` or `x ~= x` | NaN |
+| `x > 0` | `A(y / x)` |
+| `x < 0` and `y >= 0` | `A(y / x) + pi` |
+| `x < 0`, otherwise | `A(y / x) - pi` |
+| `y > 0` | `h` |
+| `y < 0` | `-h` |
+| Otherwise | Literal positive zero. |
+
+</div>
+
+The result uses radian scale. A supplied `false` is not the nil form:
+`math.atan(1, false)` reaches the axis branch and returns `h`. A nonnumeric
+`y` in the nil form produces NaN through `P`. Numeric NaN in the two-value
+form is handled by the self-inequality checks. With numerical zero axes,
+the last row returns positive zero regardless of either zero sign. These
+polynomial and branch rules are not an all-infinity or correctly rounded
+`atan2` guarantee.
+
+The other inverse functions use retained private operations:
+
+```text
+math.asin(value): atan(value, sqrt(1 - (value * value)))
+math.acos(value): h - asin(value)
+```
+
+Their results are in radians. Numerical inputs outside `[-1, 1]` produce NaN
+through the square root and angle calculation, rather than an explicit domain
+error. Missing or nonnumeric inputs likewise reach NaN through the arithmetic.
+The inverse-sine calculation includes the square root's normalization and
+refinements; inverse-angle work is therefore not uniformly fixed. No uniform
+inverse-trigonometric accuracy or result-range guarantee is specified here.
+
+### Square root
+
+`math.sqrt(value)` first returns NaN for `value < 0`, then returns `value`
+unchanged if it equals zero or positive infinity. Consequently negative
+infinity produces NaN, positive infinity is preserved, and either zero sign
+is preserved.
+
+For other inputs, initialize `normalized = value` and `scale = 1`, then
+perform these loops in order:
+
+```text
+while normalized >= 4: normalized *= 0.25; scale *= 2
+while normalized < 1:  normalized *= 4;    scale *= 0.5
+```
+
+Set `estimate = normalized`, perform exactly eight refinements,
+
+```text
+estimate = (estimate + normalized / estimate) * 0.5
+```
+
+<div class="keep-together">
+
+and return `estimate * scale`. Positive finite values are normalized using
+powers of four and a power-of-two scale. The normalization work depends on
+magnitude. NaN and nonnumeric inputs skip both loops and produce NaN during
+refinement arithmetic. The eight-refinement algorithm defines the
+approximation; no all-input relative-error, ULP or total-cycle bound is
+specified here.
+
+</div>
+
+### Natural exponential
+
+`math.exp(value)` approximates the natural exponential. Its initial tests are
+ordered:
+
+| Condition | Result |
+| --- | --- |
+| `value ~= value` | NaN |
+| `value > 709.782712893384` | Positive infinity. |
+| `value < -745.133219101941` | Literal zero. |
+
+The two numerical cutoffs are **strict**: equality proceeds to the
+approximation. Both infinities take their corresponding cutoff branch.
+After these tests, a negative value returns the reciprocal of the positive
+approximation at `-value`; other values use the positive approximation
+directly.
+
+<div class="keep-together">
+
+The retained constants are:
+
+```text
+ln2 = 0.69314718055994530942
+inv_ln2 = 1.44269504088896340736
+```
+
+</div>
+
+For the positive approximation at `v`, reduce the argument as follows:
+
+```text
+power = D(v * inv_ln2 + 0.5, 1)
+reduced = v - power * ln2
+```
+
+Start `term = 1` and `sum = 1`. For each integer divisor from 1 through 16,
+in order, perform:
+
+```text
+term = (term * reduced) / divisor
+sum = sum + term
+```
+
+Set `result = sum`, then scale in this order:
+
+```text
+while power >= 16: result *= 65536; power -= 16
+while power > 0:   result *= 2;     power -= 1
+```
+
+The resulting Number is the positive approximation. There are exactly 16
+series updates, but the scaling work varies. Nonnumeric input passes the
+initial comparisons, produces NaN in reduction and the series, and skips the
+scaling loops.
+
+For negative inputs, the positive intermediate can overflow **before** the
+reciprocal is taken. A zero result therefore need not have come from the
+explicit underflow cutoff. Do not rely on accurate subnormal outputs or a
+uniform approximation-error or correct-rounding guarantee.
+
+<div class="keep-together">
+
+### Logarithms
+
+Use `math.log(value, nil)` for the natural logarithm, or supply a base. The
+natural logarithm approximation `N(v)` first tests, in order:
+
+| Condition | Result |
+| --- | --- |
+| `v < 0` | NaN |
+| `v == 0` | Negative infinity. |
+| `v == positive infinity` | Positive infinity. |
+
+</div>
+
+Thus negative infinity produces NaN and either zero sign produces negative
+infinity. Otherwise initialize `exponent = 0` and `mantissa = v`. The retained
+normalization constants are:
+
+```text
+sqrt_two = 1.41421356237309504880
+sqrt_half = 0.70710678118654752440
+```
+
+Perform these loops in order:
+
+```text
+while mantissa >= sqrt_two: mantissa *= 0.5; exponent += 1
+while mantissa < sqrt_half: mantissa *= 2;   exponent -= 1
+```
+
+<div class="keep-together">
+
+Then calculate:
+
+```text
+z = (mantissa - 1) / (mantissa + 1)
+z2 = z * z
+term = z
+sum = term
+```
+
+</div>
+
+For denominators 3, 5, 7, ..., 31, in order, perform 15 updates:
+
+```text
+term = term * z2
+sum = sum + term / denominator
+```
+
+The natural result is `(2 * sum) + (exponent * ln2)`, using the same retained
+`ln2` as the exponential. NaN and nonnumeric inputs skip normalization and
+produce NaN through the arithmetic.
+
+`math.log(value, base)` calculates `natural = N(value)` **first**, before
+selecting the base branch:
+
+| Condition | Result |
+| --- | --- |
+| `base == nil` | `natural` |
+| `base == 10` | `natural / ln10` |
+| `base == 2` | `natural / ln2` |
+| Otherwise | `natural / N(base)` |
+
+Here `ln10 = 2.30258509299404568402` is another retained Number constant.
+The general-base branch does not validate bases: one, zero, negative values,
+infinities and NaN all follow the displayed calculation. In particular,
+`N(1)` is zero, so division for base one is by zero, and `math.log(1, 1)`
+produces NaN. A supplied `false` is not the natural-log default; like other
+nonnumeric bases, it produces NaN through `N(base)`.
+
+The divisions can produce infinities, signed zeros or NaN. Natural
+normalization depends on input magnitude, followed by 15 series updates;
+the general-base branch may perform normalization again for the base. There
+is no fixed service time or uniform accuracy bound specified here.
+
+All decimal constants above denote their stored Number values, not a promise
+that every printed decimal digit is represented exactly.
+
 ## Random numbers
 
 ### `math.random([lower [, upper]])` → Number
@@ -215,6 +583,8 @@ Returns exactly one Number on success. The function has two fixed parameters and
 Both bound-rejection branches call the current public `error` binding. The raised String behavior below assumes its installed BIOS definition.
 
 Every call advances the shared generator **before inspecting either bound**. Consequently, an explicit bound error consumes an update, as does a call whose result is NaN.
+
+<div class="keep-together">
 
 The branches are selected in this order:
 
@@ -242,6 +612,8 @@ The branches are selected in this order:
    ```text
    lower_int + trunc(value * ((upper_int - lower_int) + 1))
    ```
+
+</div>
 
 Here `value` is the unit sample already generated. In these formulas, `trunc` denotes the private truncation operation, not an additional public function. For finite Numbers it truncates toward zero.
 
@@ -571,6 +943,8 @@ while true do
 end
 ```
 
+<div class="keep-together">
+
 ### Ordinary observations
 
 After normal startup, compare these twenty-four lines. Tabs separate distinct
@@ -598,6 +972,8 @@ Math nonnumeric angles	0	0	0	1.5708
 Math random modes	1	0.236456	3	0	8
 Math random replay	1	0.236456	true
 ```
+
+</div>
 
 The next two lines are shown by `print` argument so that the full error text
 remains readable. Each row is one output line; a tab separates adjacent

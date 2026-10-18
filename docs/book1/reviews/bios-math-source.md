@@ -1,7 +1,8 @@
 # BIOS Math: bounded source and execution review
 
 2026-10-18, baseline `0fca01fd4` plus the working documentation/example slice.
-**DRAFT: full chapter source, public-reader and print acceptance are pending.**
+**Finite source/claim, fresh public-reader and canonical actual-PDF print
+passes; this is not whole-manual completion.**
 The current software is the authority; this work changes no runtime, compiler,
 BIOS, source-policy rule, publisher or shared harness. CPU7, common Table
 length, BZ01 and LS01 remain separate open questions.
@@ -18,9 +19,13 @@ length, BZ01 and LS01 remain separate open questions.
   unqualified public `error` dependency; its independent narrow recheck closes
   the corrected qualification. Default clock seeding, reset/persistence and
   statistical guarantees were not inferred from the supplied-seed observations.
-- The eleven transcendental/angle interfaces still need their frozen packet,
-  facts-only prose and independent actual-source audit. Executing their chosen
-  example inputs is not a substitute for this reference coverage.
+- The eleven angle/transcendental interfaces have a separately frozen actual
+  BIOS/paired-datapath sheet and a fresh facts-only author. The independent
+  [actual-source audit](bios-math-transcendental-source.md) checks every formula,
+  branch, signature, dependency and work/range statement. It found a mistaken
+  local word-definition reference; the explicit canonical CPU link closes it
+  on independent recheck. The one-argument forms and formula-versus-literal-
+  BLua clarification also have finite independent source acceptance.
 
 Source extractors read the actual BIOS and necessary paired numeric, word,
 call and result owners. No architecture manuscript or historical manual was
@@ -49,6 +54,13 @@ that does not execute or conceal the forbidden closure. The missing-parameter
 observation uses `pcall(math.abs)`, not the statically rejected direct spelling.
 No source policy was disabled, suppressed or repaired.
 
+All twenty-five function entries and four numeric constants now have authored
+reference coverage, separately from the finite program's observations. The
+actual 257-word lookup proves the stated range/quantum and finite tangent-ratio
+bounds, not an analytic approximation-error guarantee. The chapter does not
+claim standalone reproduction of all private lookup words or uniform numerical
+accuracy, correct rounding, native/optimizer-wide parity or total service time.
+
 The finite trigonometry contrast retains32766/65536 and32767/65536, rather
 than an ideal one-half. Explicit-seed RNG replay distinguishes the already
 consumed update at each bound rejection; false and nil take different actual
@@ -56,20 +68,51 @@ branches. None of these finite observations establishes a general numerical
 error bound, termination bound, statistical quality, clock-seed entropy,
 reset/persistence or fixed whole-call cycle budget.
 
-Independent complete-program source comparison and public-only project/
-observation reconstruction are separate pending passes. The exact manifest,
-build/test/playback commands and endpoint live in the development companion
-and cartridge README. Those setup instructions are not a complete SDK guide.
+The independent [complete-program source comparison](bios-math-program-source.md)
+passes for the final artifact:239 literal source lines, all24 ordered ordinary
+diagnostics,84 assertions and separate captured execution evidence. Its final
+addendum supersedes the historical171-line entry snapshot; the current entry
+has172 lines. This is not an audit of all reference text or a new execution.
+The fresh [public-only reader](bios-math-reader.md), started without inherited
+owner/fact/review context, checked the whole chapter and linked public
+foundations. The direct CPU word-operation reference and the explicit-nil/
+pseudocode clarifications close its final editorial hazards on narrow reread.
+It finds no remaining concrete operation-contract, route or source-assembly
+blocker. This is public reconstructibility, not another source/execution or
+PDF pass. The exact manifest, build/test/playback commands and endpoint live in
+the development companion and cartridge README. Those setup instructions are
+not a complete SDK guide.
 
 ## Figures and print
 
 There is no Math registerfile or visual output plate to manufacture. The
 formula, source and observed-value tables still require source comparison and
-actual-page inspection. No Math PDF has yet received independent visual
-acceptance. Use the existing shared publisher and recorded review fields;
-no new schema, framework, gate or helper layer is needed.
+actual-page inspection. The independent [actual-PDF review](bios-math-print.md)
+first found eight concrete detached-lead/widow problems across successive
+previews. Eight uses of the existing keep-together markup close them without
+changing technical text, source code, formulas, commands or observed output.
+The final22-page preview passes; normal gated publication then produced the
+canonical non-DRAFT PDF, SHA-256
+`e8d40b6248edffc63a2410c6fe012c078f6dc13708fc053e1b3a3dd4ed55a569`.
+All22 canonical pages were independently rasterized and freshly viewed in
+full, with no retained-pixel or preview-pass shortcut. The correct Book II
+running title, continuous numbering, removed DRAFT markings and all eight
+fixes pass. This is visual print-surface evidence, not another semantic or
+physical-printer proof. The existing shared publisher and review fields were
+used; no schema, framework, gate, stylesheet or helper was added.
 
 The accompanying BLua source chapter's known-call/explicit-nil delta has
 separate actual-source and28-page DRAFT print evidence in its existing
 [source](blua-programs-source.md) and [print](blua-programs-print.md) records.
 Its LS01 publication stop remains open; Math work does not waive it.
+
+## Current layout-only source identity
+
+The corrected source reviewed independently is `e826c3084ad73f4a6bdea8462ddca5368dd66dfae15d146744a350b36dfeaac7`.
+Current source `55f4f3d4b16b7af1278f76d6c216e3744ec94af97cdca90bcdecb7231982e890`
+adds only eight existing keep-together groups for observed PDF splits. Removing
+exactly those opening/closing markup strings reproduces the corrected-source
+hash byte-for-byte. All239 public source lines still reconstruct the actual
+two files byte-for-byte; no formula, output, operation, command or assertion
+changed. This is a root identity check, not a new independent source audit or
+visual approval. No CSS, renderer, publisher or new review gate was introduced.

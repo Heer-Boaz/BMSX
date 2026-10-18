@@ -87,7 +87,7 @@ renumber the complete series consistently; do not mix the two schemes.
 | Volume/companion | Reader purpose and material |
 | --- | --- |
 | **Book I — System and Hardware Reference** | Begin with console orientation and a sourced whole-machine specification summary. Follow with CPU execution/ISA/control, memory/address/ownership and installed-unit operation/reference. Keep the per-device specifications and genuine programming examples. |
-| **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the five BIOS/coroutine chapters, including the Math draft. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the still-incomplete BIOS runtime compiler or SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
+| **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the five BIOS/coroutine chapters, including the Math chapter. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the still-incomplete BIOS runtime compiler or SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. Remaining BIOS and exported firmware interfaces still need authored coverage. |
 | **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. This material is still unwritten; the old provisional Book II label must not silently erase it. |
 | **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
 
@@ -157,6 +157,16 @@ the separate BZ01 compiler question, remaining BIOS/environment and graphics
 work, cartridge/expansion coverage and whole-console newcomer acceptance stay
 open. Book I/II/III are adopted scopes, not newly completed or published volumes.
 The NES primary-source comparison also remains unverified.
+
+**Concrete navigation follow-up, 2026-10-18:** the merged Math DRAFT PDF
+(`decdaf811aa69249a1114a0f8e36ac72d0651f640b121be12bb615395275b7d0`,
+21 pages) has 37 outline entries but zero page annotations on every page,
+independently enumerated with PDFium. Its visible companion/CPU/Memory
+references are therefore not clickable PDF links in this inspected artifact.
+Book-level navigation acceptance must check actual cross-reference destinations
+in the delivered series, not just Markdown links, outline presence or corrected
+running titles. This bounded observation is not an audit of every PDF or a
+publisher implementation change; retain it with the unfinished navigation work.
 
 
 Independent bounded exemplar-source and current-content/reader-map reviews

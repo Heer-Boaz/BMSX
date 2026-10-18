@@ -1149,3 +1149,41 @@ and two long diagnostic lines were laid out readably. Full Math source,
 public-only reader and actual-page visual acceptance are still pending in its
 existing coverage/review record. It is not a completed/published chapter,
 numerical accuracy/termination guarantee or whole-console acceptance.
+
+
+## Installed Math: completed bounded chapter acceptance
+
+2026-10-18, continuation of the draft stage above at baseline `fd0895c39`.
+The remaining eleven angle/transcendental interfaces now have frozen actual
+BIOS/paired-datapath facts, fresh facts-only authorship and an independent
+actual-source audit. All25 callable entries and4 constants have reference
+coverage. The literal lookup establishes the stated range/quantum and finite
+tangent-ratio bounds, not an invented accuracy, ULP, termination or total-cycle
+guarantee. The mistaken local word-definition reference, explicit-nil wording
+and formula-versus-literal-BLua distinction were corrected and independently
+rechecked.
+
+The unchanged complete ordinary program still reconstructs byte-for-byte:
+67-line results and172-line entry modules,84 retained assertions and24
+separate ordinary diagnostics in the captured final artifact. Independent
+actual-program source comparison and a fresh context-isolated public-only
+reader pass, separately from these finite executions. The
+[Math acceptance index](../book1/reviews/bios-math-source.md) links the precise
+source, reader, execution and print limits.
+
+Independent actual-PDF inspection found eight concrete pagination defects
+across successive previews. Eight existing keep-together groups close them;
+removing only that markup reproduces the accepted technical text exactly.
+Normal gated publication produced the22-page canonical non-DRAFT Math PDF
+`e8d40b6248edffc63a2410c6fe012c078f6dc13708fc053e1b3a3dd4ed55a569`.
+All22 canonical pages were independently rasterized and freshly inspected,
+with correct Book II running titles and no remaining reported visual defect.
+The existing Math coverage/review record now passes; the19 manual-tool tests
+also pass. No runtime, compiler, BIOS, source-policy, publisher, CSS, schema,
+shared harness or helper changed in this completion slice.
+
+This supersedes the earlier Math-pending status only. It does not close LS01,
+CPU7, common Table length, BZ01, remaining BIOS/runtime loading/lifecycle,
+full SDK guidance, Book III, outstanding graphics contrasts, delivered-series
+navigation or whole-console newcomer acceptance. Time and calendar services
+are the next independently sourced software chapter, not a completed volume.

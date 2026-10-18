@@ -5,59 +5,49 @@
 			"open": []
 		},
 		"registers": {
-			"resolution": "Twelve elementary callables, two shared-state random interfaces and four constants have sourced reference text. No mapped registerfile is introduced. The eleven transcendental/angle reference entries remain pending.",
-			"open": [
-				"Finish the eleven transcendental/angle callable reference entries from their own source sheet and independent actual-source audit."
-			]
+			"resolution": "All25 callable interfaces and4 constant fields have sourced reference coverage, including fixed formals, nil/default distinctions and exact result counts; this ordinary BIOS Table introduces no mapped registerfile or per-API reset words.",
+			"open": []
 		},
 		"datapath": {
-			"resolution": "Sourced elementary branch/formula/Number behavior and shared RNG recurrence, word storage, nil/default distinctions, advance-before-bound-check ordering and one-nil seed result. The complete program has finite observations for all24 permitted callables plus four constants.",
-			"open": [
-				"Full transcendental/angle formulas, conversions, result contracts and special-value behavior remain pending reference acceptance."
-			]
+			"resolution": "Elementary Number formulas, selection and classification; exact32-bit phase lookup/interpolation and proven range/quantum bounds; inverse polynomial/quadrant branches; normalized root, exponential and logarithm approximations; shared RNG recurrence and word conversion. Range and finite observations are not uniform mathematical accuracy or reachability guarantees.",
+			"open": []
 		},
 		"visibility": {
 			"resolution": "Ordinary function call/results and current versus retained dependencies; shared RNG word advances before rejection and seed replaces it without a warm-up draw. Canonical CPU/Memory/base/protected-call references own the connected value and call boundaries.",
 			"open": []
 		},
 		"timing": {
-			"resolution": "Elementary bounded computation is distinguished from min/max repeated-tail quadratic data movement. Primitive base charges are not whole-call costs. Observation endpoint4 is not a latency or cycle guarantee.",
-			"open": [
-				"Transcendental normalization loops and finite iteration/work boundaries still need their sourced reference section."
-			]
+			"resolution": "Elementary bounded computation is distinct from min/max repeated-tail quadratic movement. Lookup has at most two word reads; square root has8 refinements, exponential16 series updates and natural log15, with explicit input-dependent normalization/scaling. Primitive charges and these work counts are not whole-call cycles; presentation offset4 is not latency.",
+			"open": []
 		},
 		"interrupts": {
 			"resolution": "This is an ordinary installed BIOS library, not an IRQ controller or separate wait/acknowledgement protocol. Canonical CPU/IRQ and protected-call chapters own ordinary delivery and exception boundaries; no additional IRQ or fixed interrupt-latency promise is made.",
 			"open": []
 		},
 		"faults": {
-			"resolution": "Exact elementary and RNG rejection Strings are scoped to initialized live public dependencies; arithmetic nonnumbers/NaN are distinct from explicit raised errors. Known-call source minimum and cartridge-floor policy are not runtime faults or altered rules.",
-			"open": [
-				"Complete the transcendental error/nontermination boundary audit; chosen successful inputs are not universal termination evidence."
-			]
+			"resolution": "Exact elementary/RNG raised Strings are scoped to initialized live dependencies; angle/transcendental numerical branches and nonnumber/NaN behavior are specified without invented type/domain validators. Static known-call minimum and cartridge-floor source policy are distinct from reached faults. Canonical CPU/Memory/protected-call contracts own connected execution/access boundaries.",
+			"open": []
 		},
 		"reset": {
 			"resolution": "BIOS installation and declared shared RNG initializer are stated without inventing independent per-thread/cart streams, universal reset/persistence or save-state claims. Canonical Memory/CPU/SYSTEM chapters remain the startup/reset authorities.",
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete67+172-line ordinary BLua program, final unchanged-quality artifact,84 retained assertions and24 separately observed ordinary diagnostic lines. Fresh tooling rebuild and both replays pass; no native/all-input/accuracy/statistical or whole-console guarantee.",
-			"open": [
-				"Independent complete-program source comparison, public-only newcomer reconstruction and actual-page PDF review remain pending."
-			]
+			"resolution": "Complete67+172-line ordinary BLua program with84 retained assertions and24 separately observed ordinary diagnostic lines; final artifact73cd790 passes unchanged-quality build and repeated executions. Independent actual-program source comparison and fresh context-isolated public-only whole-chapter/route reconstruction pass. No native/all-input/accuracy/statistical or whole-console guarantee; actual PDF acceptance is recorded separately.",
+			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/bios-math-source.md"
 		},
 		"figures": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/bios-math-source.md"
 		},
 		"print": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/bios-math-print.md"
 		}
 	}

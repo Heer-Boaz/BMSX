@@ -786,7 +786,7 @@ BZ01 and the repeat-scope issue remain open.
 The [complete Math program](../book1/bios-math.md#complete-program-math-operations)
 is a separate `bios_math_manual` cartridge. Its results listing and five entry
 parts supply two complete source files. Save `results.lua` and concatenate
-entry parts1–5, in order, as one `entry.lua` at these exact paths:
+entry parts 1–5, in order, as one `entry.lua` at these exact paths:
 
 ```text
 carts/bios_math_manual/
@@ -819,7 +819,7 @@ npm run headless:test -- bios_math_manual tests/carts/bios_math_manual/bios_math
 ```
 
 Expect `[test] math_observations: passed`. The supplied suite waits for
-completion and checks84 retained observations; it is a fresh derived
+completion and checks 84 retained observations; it is a fresh derived
 integration image, not byte-identical ordinary playback. The builder selects
 the matching BIOS, and absolute linked addresses may differ.
 
@@ -841,9 +841,9 @@ Run:
 npm run headless:tooling -- --debug --input-timeline tests/carts/bios_math_manual/ordinary_timeline.json bios_math_manual
 ```
 
-Compare all24 `Math ...` lines in **Ordinary observations**. Rounded Number
+Compare all 24 `Math ...` lines in **Ordinary observations**. Rounded Number
 text is not a substitute for the exact retained f64 checks. The timeline
-selects zero-based presentation offset4, not an output assertion or a
+selects zero-based presentation offset 4, not an output assertion or a
 startup/frame/cycle guarantee. Retained and ordinary results are separate TS
 executions, not native or all-input/optimizer/accuracy/statistical,
 reset/persistence, runtime-parser, whole-SDK or whole-console acceptance.
