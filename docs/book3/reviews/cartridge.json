@@ -35,7 +35,8 @@
 		"programming": {
 			"resolution": "Complete 133-line ordinary BLua route, both card manifests, exact fresh-machine socket placement/build/launch/expected results. Independent actual-source and public-only reader checks pass; root compares all4 reconstructed files exact, passed guest assertions and separate ordinary playback remain distinguished. Every final printed page is actually inspected or exactly full-RGBA carried.",
 			"open": [
-				"RID01: emitted resource tokens hash UTF-8 bytes, but cartlib/rom_dir hashes String codepoints. Names are not restricted to ASCII by their producer. Resolve the owning hash boundary before publishing an unrestricted ID-lookup contract; raw TOC spans and existing ASCII examples are unaffected."
+				"RID01: emitted resource tokens hash UTF-8 bytes, but cartlib/rom_dir hashes String codepoints. Names are not restricted to ASCII by their producer. Resolve the owning hash boundary before publishing an unrestricted ID-lookup contract; raw TOC spans and existing ASCII examples are unaffected.",
+				"CSF01: image polygon and bounding-box producers use different reflection origins, and compound parent bounds retain the supplied variant bounds. Resolve their coordinate convention before promising uniform image/geometry flip equivalence; the G2D2 layout and raw GEO descriptor contract are separate."
 			]
 		}
 	},

@@ -400,3 +400,63 @@ broader lookup-function reference; raw spans/record field meanings remain usable
   precedesupload `cartlib/gx/atlas.lua:52–55,160–188,278–280`. Existing IMGDEC
   completion/fault and GPU transport/render/publication references retain
   their independent boundaries; no new synchronous-upload promise inferred.
+
+### Packed collision data and GEO handoff
+
+- No dedicated mirrored collision-blob leaf exists. Format owner
+  `toolchain/ts/rompack/collision_shape_codec.ts:3–10,108–109,213–223` emits
+  G2D2 magic32443247H/version2/32byteheader, original/H/V/HV offsets8/12/16/20
+  relative to blobC, reserved24/28 zero. U32/geometryF32 are LE. Actual guest
+  header and address calculation `cartlib/collision/collision_shape.lua:3–22`.
+- Each selectedS descriptor is16bytes kind/count/dataOffset/boundsOffset;
+  offsets relativeS, including each compoundchild. Codec `:130–143`;
+  paired descriptor constants `machine/ts/machine/devices/geometry/contracts.ts:122–136`,
+  `machine/cpp/machine/devices/geometry/contracts.h:130–144`.
+- Emitted kinds: AABB1count4 data=bounds16byteF32LTRB; polygon3countvertices
+  data=count*8byteF32XY plus separate minima/maxima bounds; compound4countpieces
+  data=contiguous16bytechilddescriptors plus parentbounds. Children AABB/poly.
+  Codec `:38–51,111–127,145–209`; paired consumers
+  `machine/ts/machine/devices/geometry/overlap2d.ts:238–283,334–344,362–407,585–587`,
+  `machine/cpp/machine/devices/geometry/overlap2d.cpp:128–173,225–235,260–305,480–482`.
+- Blobstart aligns4 (`toolchain/ts/rompack/asset_layout.ts:20–21,37–43,74–77`);
+  internal sections append multiples4, no extra stride/normal/center/matrix or
+  bloblength fields (codec `:98–127,170–232`). TOC owns collisionextent;
+  `cartlib/rom_dir.lua:263–267` exposes only first result from entry_span,
+  notcollisionlength. Image main-data len is separate (`:233–255`).
+- Image coordinates pass unchanged, with centerpoint outsideblob inmetadata:
+  `scripts/rompacker/rombuilder.ts:313–377`. variant_addresses returns4raw
+  addresses withoutgeometrycopy; spritevariant selection caches those raw
+  addresses `cartlib/collision/sprite_shape.lua:4–37`. Actual firstinstanceword
+  receives descriptor address, notblobC: `cartlib/collision/collision_2d.lua:254–283`.
+- OVERLAPinstanceF32translations and20bytelayout are canonical in GEO:
+  mirrored `contracts.ts:94–100`/`contracts.h:102–108`; decode
+  `overlap2d.ts:208–216`/`overlap2d.cpp:98–106`. Translationonly, noinstance
+  scale/rotation/pivot. Hardware3–64polygonvertices from paired
+  `overlap2d.ts:386–395`/`overlap2d.cpp:284–293`; codec doesn't enforcecapacity.
+  XFORM/SAT signedQ16vertices and distinctSATdescriptor/SRC2-relativeoffset:
+  `xform2.ts:90–108`, `sat2.ts:87–119,125–137,198–204`, mirrored
+  `xform2.cpp:65–83`, `sat2.cpp:55–87,93–105`. Same kind1word is not sameformat.
+- GEOlaunch capturesregisters, notsourcebytes/slot:
+  `geometry/controller.ts:330–372`/`geometry/controller.cpp:225–265`.
+  Both overlap owners use ordinary Memory.readU32; currentselection routing
+  `machine/ts/machine/memory/memory.ts:486–498`,
+  `machine/cpp/machine/memory/memory.cpp:376–387`,
+  `machine/ts/machine/devices/cartridge/controller.ts:80–84,163–165`,
+  `machine/cpp/machine/devices/cartridge/controller.h:29–33,52–54`.
+  Preserve geometrybytes/mapping through job; directoryreload in
+  `cartlib/rom_dir.lua:307–319` replaces directory caches, not retained old
+  pointers or GEO work. No whole-ROM-replacement/cache-refresh guarantee.
+
+### CSF01: reflection-origin boundary remains unresolved
+
+Do not promise one uniform image/collision reflection formula. Polygon producer
+uses W-1-x/H-1-y while bounding-box variants use W-right/W-left and analogousY:
+`scripts/rompacker/rombuilder.ts:264–297`. Original pixelbounds use occupied
+coordinate extrema without +1: `scripts/rompacker/boundingbox_extractor.ts:37–64`.
+Polygon descriptorbounds are recomputed from vertices, but compound parentbounds
+use supplied variantbounds: `toolchain/ts/rompack/collision_shape_codec.ts:158–166,201–208`.
+This is an owning asset-coordinate question, not a TS/C++ GEO disagreement or
+a hardware reflection mode. No actual game-specific false contact/cull is
+claimed here without replay; no producer fix, fallback, artificial name/shape
+restriction or uniform flip-equivalence guarantee is inferred. Public text
+records variant locations and raw descriptor semantics, not a chosen formula.

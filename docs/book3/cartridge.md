@@ -476,6 +476,76 @@ rules](../book1/imgdec.md#interrupts-and-fault-recovery) and the [GPU stream
 handoff](../book1/gpu.md#hand-a-gp0-stream-between-cpu-and-dma) before reusing
 their resources or depending on the uploaded contents.
 
+### Packed collision data
+
+An image's `collision_addr` points to a `G2D2` collision blob, not to its image
+metadata or pixel data. The blob begins with a 32-byte variant directory.
+Let `C` be the blob's mapped byte address. Integer fields are unsigned
+32-bit little-endian words; `F32` denotes a little-endian IEEE 754 binary32
+geometry scalar, not a fixed-point word.
+
+| Byte offset from `C` | Field |
+|---|---|
+| `00H` | Magic `32443247H`; bytes spell `G2D2`. |
+| `04H` | Format version: 2. |
+| `08H` | Original descriptor offset. |
+| `0CH` | Horizontal-flip variant descriptor offset. |
+| `10H` | Vertical-flip variant descriptor offset. |
+| `14H` | Both-flips variant descriptor offset. |
+| `18H`, `1CH` | Reserved words, emitted as zero. |
+
+Each header offset is relative to **`C`**. A selected descriptor therefore
+begins at `S = C + variant_offset`. GEO does not consume this header as a shape
+descriptor. The blob has no length word: its complete extent comes from the
+directory's collision-data start and end. The image record's `len` describes
+its main-data span, not this collision extent.
+
+Each variant uses the 16-byte
+[OVERLAP2D shape descriptor](../book1/geo.md#shape-descriptors-and-bounds).
+Its data and bounds offsets are relative to **that descriptor**, not `C`.
+The packed forms are:
+
+| Kind | Emitted data count | Data and bounds |
+|---|---|---|
+| AABB, 1 | 4 | Four F32 values: left, top, right, bottom. Data and bounds point to the same 16-byte block. |
+| Convex polygon, 3 | Number of vertices | Consecutive F32 `(x,y)` pairs, eight bytes per vertex. A separate 16-byte bounds block contains coordinate minima and maxima. |
+| Compound, 4 | Number of pieces | Consecutive 16-byte child descriptors, each an AABB or polygon, plus a separate parent bounds block. Each child's offsets are relative to that child. |
+
+The header, descriptors and geometry blocks start on four-byte boundaries.
+There is no stored normal array, center, transform matrix or vertex-stride
+field. The image's `centerpoint` belongs to metadata, not an
+implicit subtraction from these coordinates.
+
+### Using packed geometry with GEO
+
+The `cartlib/collision/collision_shape` function `variant_addresses(C)` returns
+four absolute descriptor addresses in original, horizontal, vertical and
+both-flips order. It adds the header offsets to `C`; it does not copy geometry
+or turn the coordinates into ordinary tables.
+
+Write the selected address `S` to the shape-address word of an
+`OVERLAP2D_PASS` instance. Its F32 translations `tx` and `ty` position the
+image-local geometry; layer and mask are separate words. This instance format
+has no pivot, rotation or scale field. A GPU drawing flip does not modify the
+collision data: select the prebuilt geometry variant separately.
+
+`XFORM2_BATCH` and `SAT2_BATCH` instead use signed Q16.16 vertices and different
+records. SAT flag `1` means convex polygon, whereas OVERLAP kind `1` means
+AABB; SAT's vertex offset is relative to `SRC2`, not its descriptor. Casting an
+address does not convert either the coordinate representation or the record
+layout. A polygon supplied to OVERLAP must have 3–64 vertices; the packed
+representation does not change that hardware limit.
+
+Launch captures register words, not the source geometry or cartridge identity.
+GEO reads descriptors, bounds and vertices during execution. Cartridge-window
+reads follow the current SELECT, not a pinned socket. Preserve source bytes
+and the relevant mapping until the job completes. Rebuilding a ROM directory
+neither completes GEO nor retargets previously retained descriptor addresses.
+
+An IRQ wakeup alone does not establish success. Inspect the terminal status
+and fault words as specified in [GEO: OVERLAP2D_PASS](../book1/geo.md#overlap2d_pass-translated-shape-contacts),
+which also defines the complete instance, pair, result and register contracts.
+
 ## Two-card programming example
 
 This example gives the bootable card in **socket 0** ROM, 256 bytes of RAM and a

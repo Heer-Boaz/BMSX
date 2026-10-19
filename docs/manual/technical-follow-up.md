@@ -1804,3 +1804,12 @@ chapters where the orientation is missing. Preserve technical detail.
   Hold unrestricted lookup-API acceptance; do not turn this into a permanent
   hardware name restriction. Raw TOC spans and the existing ASCII examples are
   unaffected. No runtime fix is part of this documentation change.
+
+## CSF01: collision-asset reflection origin
+
+- [ ] Resolve the polygon versus bounding-box reflection conventions before
+  promising uniform image/geometry flip equivalence. Exact producer locations
+  and compound-bound implications are in the existing
+  [cartridge facts](../book3/facts/cartridge.md#csf01-reflection-origin-boundary-remains-unresolved).
+  The raw G2D2 layout and GEO descriptors are separate contracts. Do not turn
+  the producer question into a hardware quirk or fix it in this writing slice.
