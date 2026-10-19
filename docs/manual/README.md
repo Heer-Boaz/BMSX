@@ -110,8 +110,18 @@ writes in order, and the observable result. Distinguish a device-level sequence
 from CPU/global-interrupt setup. Show a genuine state change, not a sequence of
 reset-value writes presented as initialization. A limited example cannot close
 an incomplete register or datapath contract.
+Prefer short register sequences and worked calculations. Supply a complete
+program only where it teaches a necessary end-to-end programming route; do not
+build another cartridge for every register, option or timing detail. Retain
+existing useful examples without expanding general Lua instruction.
 
 ## Source and review workflow
+
+Finish the chapter's known content work before commissioning its detailed
+review. Source checking is part of writing, not a reason to repeat a whole
+chapter review after each paragraph. Keep layout and final PDF inspection until
+the content is ready; diagrams, captures and ordinary markup may be added while
+writing, but repeated pagination and screenshot rounds must not delay coverage.
 
 Divide substantial chapters into named sections and assign independent writers
 nonoverlapping sections, including their finished prose and source evidence. Merge
@@ -129,11 +139,14 @@ approval to work in parallel. This is an editorial division of work, not another
    spec or mirrors disagree, stop and name both locations. Do not infer a fix.
 2. **Author from the sheet only.** Supply the brief and sheet, not the owners,
    architecture document, or reference PDF. Missing facts go back to extraction.
-3. **Audit claims.** Compare every factual sentence, table cell, example result,
-   equation, and figure label/connection against the actual source lines. Report
+3. **Review the content-complete chapter.** Split a large change into precise
+   section assignments against the same finished text. Check changed claims and
+   affected contracts in detail; do not re-audit unchanged, reviewed sections
+   without a concrete reason. Compare sentences, table cells, example results,
+   equations and figure labels/connections against the actual source lines. Report
    failures as the quoted claim plus the conflicting line, or explicitly no
    supporting line. Do not rewrite the chapter during this pass. Fix findings,
-   then review the changed claims again.
+   then recheck the findings and affected contracts, not the whole chapter again.
 4. **Audit completeness separately.** A chapter can contain no false statements
    yet still omit the operation of a register. Record each required topic below
    as a sourced resolution, with any remaining questions in its `open` list.
@@ -148,10 +161,13 @@ approval to work in parallel. This is an editorial division of work, not another
    control input, dimension endpoint, and timing landmark. Two independent inputs
    must not acquire a shared bus from drawing convenience. A schematic timeline
    must say when it is not to scale; a landmark chart is not an electrical waveform.
-6. **Audit the generated PDF visually.** Inspect every page at readable size:
+6. **Review final presentation after content.** Inspect the final PDF at readable size:
    labels, arrowheads, dimensions, aligned bit columns, tables, page boundaries,
    stranded headings, whitespace, and headers/footers. Inspect the PDF, not only
-   the SVG source, browser DOM, or overflow-check result.
+   the SVG source, browser DOM, or overflow-check result. After a local correction,
+   inspect the affected pages and reflow rather than restarting the entire visual
+   review. Do not repeat accepted guest executions when no program or hardware
+   contract changed.
 
 Extraction, authorship, and review are separate passes. They need not use
 different model brands, but the authoring pass must not silently expand its

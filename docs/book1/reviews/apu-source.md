@@ -216,3 +216,10 @@ Companion SHA256: `6306120631abff56918ffd43c68c1c5822c3dbc1ff94856857635db2014f0
 The unchanged `pcm_transfer_generator_and_badp` numerical case separately
 passes; all 19 existing manual tests pass. Neither substitutes for the actual
 browser start/output observation or establishes physical-speaker playback.
+
+## Hardware orientation and programming sequence — 2026-10-19
+
+The opening, source-route table, programming sequence and shared transfer-budget
+explanation pass the source check against paired audio owners and current
+cartridge-library calls. Existing examples and figures are unchanged; print
+review is deferred.

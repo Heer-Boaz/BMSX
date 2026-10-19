@@ -1,18 +1,32 @@
 # Audio processing unit
 
-The APU reads sample sources, advances sixteen playback slots and produces a
-left and a right sample at each output edge. A source can be uncompressed PCM,
-a BADP stream, or the square generator. Each slot has its own source, cursor,
-rate, gain, filter and stop state. The output is the sum of the slots, with a
-single final saturation to the signed output range.
+The BMSX has sixteen independently programmed playback slots feeding one stereo
+mixer. Each slot holds one PCM voice, BADP compressed voice or square generator,
+with its own source, cursor, rate, gain, filter history and playback state.
+A stereo source still occupies one slot; PLAY on an occupied slot replaces its
+voice. All playing slots contribute at the common 44,100-frame-per-second output
+cadence, even when their source rates differ. The mixer sums their left and
+right contributions separately, then saturates each final output to signed
+sixteen-bit range.
 
-The unit is not a CPU memory window over its sample RAM, and a command write
-is not an immediate change to a playing slot. Command capture, command
-execution, sample-RAM transfer and output-sample generation are distinct edges.
-The cartridge must choose which one it needs to observe before reusing data or
-issuing dependent work.
+Sampled voices read installed system ROM, cartridge ROM or the shared 512 KiB
+sample RAM. Several slots can read the same bytes with independent playback
+positions. Main RAM is not a direct playback source, and the square generator
+needs no sample payload.
 
-### Installed resources
+A separate sample-transfer unit moves words between private sample RAM and one
+sixteen-word FIFO. The system DMA controller supplies or drains that FIFO through
+TRANSFER_DATA; the APU performs the RAM side of the transfer. CPU uploads in
+MANUAL_WRITE instead write RAM directly through this port. The private RAM is
+not an ordinary CPU memory window.
+
+Voice commands use a different FIFO containing configuration, not sample data.
+Recognized nonzero commands capture parameters; they do not immediately change
+a playing slot. Command capture, execution, sample-RAM commit and output generation have
+distinct edges. Observe the appropriate completion before reusing source bytes
+or issuing dependent work.
+
+### APU specifications
 
 | Resource | Specification |
 |---|---|
@@ -38,6 +52,54 @@ stores at that address do not access the private sample bytes.
 Command words carry configuration, not sample payload. The lower path reads
 source data during output processing. The sample-transfer FIFO is separate
 from the command FIFO; its timing and visibility are specified below.
+
+## Programming sequence
+
+Choose the source-storage route first. The library operations below are supplied
+by `cartlib/apu`; ROM directory lookup uses `cartlib/rom_dir`.
+
+| Starting material | Route to playback |
+|---|---|
+| Normally packed ROM audio | Obtain its record with `rom_dir.audio(audio_id)`, prepare the BADP source with `apu.source(record)`, then call `apu.play_plain(source, slot)`. `apu.play` accepts explicit rate, gain, start and filter words. |
+| Authored ROM PCM | Retain typed `rodata` samples and program their address, byte extent and PCM metadata. The APU does not parse a PCM container header. |
+| Samples produced in main RAM | Upload through the transfer port, then PLAY from `apu.sample_ram_base + byte_offset`, not from the main-RAM buffer. |
+| Square generator | Program generator kind one, rate, loop and duty. No sample upload or source-buffer binding is needed. |
+
+1. **Own the required resources.** Reserve a playback slot. Uploads and downloads
+   also need the shared transfer ports and, with the library, DMA0.
+   Finish earlier owned transfers before reprogramming the channel.
+   Requiring `cartlib/apu` installs the DMA/IRQ library route; retain its DMA
+   callbacks rather than defining a competing global `irq`. Library DMA waits
+   require CPU interrupt acceptance and the enabled DMA completion sources.
+2. **Prepare the source bytes.** `apu.upload` starts transport without waiting.
+   Keep its source unchanged until `dma.wait0_idle()` returns, then separately
+   wait for STATUS.TRANSFER_BUSY to clear before playback or a mode change.
+   DMA DONE is not the final sample-RAM commit. For download, DMA completion
+   instead marks receipt of the requested words; select transfer STOP afterward
+   to discard unwanted prefetch. See [Sample RAM transfer](#sample-ram-transfer).
+3. **Submit coherent configuration.** Write staging parameters first and CMD
+   last, or use the library playback functions. Serialize staging-bank users
+   and check CMD_FREE before a burst: a full FIFO replaces its oldest command.
+   Source extents and offsets are bytes; start positions and loop bounds are
+   source frames. Unity rate is `00010000H`, unity gain `00001000H`.
+4. **Separate staging from live control.** PLAY binds at execution, not capture;
+   keep the intended cartridge socket selected until then. Capture resets the
+   visible slot selector to zero, so reselect through staging SLOT before using
+   the live bank. A live gain store changes that voice; a staging gain store
+   only prepares a command. Do not use a live edit as an ordered follow-up to a
+   still-queued PLAY. Use PLAY for a coherent source replacement rather
+   than consecutive live source-field stores.
+5. **Retain storage until the voice is finished.** Pause retains the voice and
+   its source requirement. Natural ends and completed nonzero fades publish
+   SLOT_ENDED; `apu.stop_slot(slot, 0)` does not. Register end service through
+   `cartlib/irq` when needed. For one controlled outstanding end, snapshot a
+   retained service sequence before issuing PLAY or the faded stop, then wait
+   on that predicate: another IRQ can wake the CPU, and the hardware retains
+   only the latest end event. See [End events and interrupts](#end-events-and-interrupts).
+
+The [worked program](#worked-blua-program) supplies the complete imports, typed
+operands and interrupt setup for these routes. The sections below define the
+register operations and their hardware effects.
 
 ## Commands and slot ownership
 
@@ -610,6 +672,14 @@ The installed system clock is 33,868,800 Hz. The APU sample clock runs at 44,100
 | Sample-RAM service for 4 words | 4 × 32 = 128 cycles |
 
 These are scheduled internal transfer costs, not electrical bus ratings. They do not include CPU instruction execution, transfer-register programming or DMA source-bus time. MANUAL_WRITE stores take effect at their CPU port-write edge; they do not pass through the timed DMA transfer FIFO.
+
+This transfer budget belongs to the single RAM/FIFO path, not to each playback
+slot. Its twenty-four words per output-frame interval are not a source-fetch
+allowance to divide among the voices: PCM and BADP playback read their bound
+sources without passing through this FIFO. Playing slots advance on the common
+output clock while transfer batches follow their own deadlines. Adding voices
+does not divide the output rate, and changing transfer mode does not restart
+the output-frame clock.
 
 For a scheduled batch of N words:
 

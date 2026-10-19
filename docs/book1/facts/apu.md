@@ -15,7 +15,7 @@ external delivery latency are separate future specification decisions, not
 invented numbers. Public fields remain raw register words; undeclared metadata
 validation is not inferred from unused fault-code constants. Internal state
 appendices below are not additional cartridge-visible words or a host API.
-Cartridge socket/card programming remains Book II.
+Cartridge socket/card programming belongs to Book III.
 
 # APU register, command, slot, event and fault facts
 
@@ -637,6 +637,10 @@ local address encoder, runtime descriptor facade or undocumented loader API.
 |---|---|---|
 | APUB09 | An existing real BLua cartridge already performs APU upload, waits for its DMA0 service predicate, separately polls APU TRANSFER_BUSY, downloads, and compares the retained words. This is a usable precedent, not an invented API or host bridge. It overrides DMA0's registered callback, so its own sequence predicate is used instead of dma.wait0_idle. | `carts/cartridge_conformance/entry.lua:1–12,29–37,76–99`; hardware transfer semantics in APUT sheet. |
 | APUB10 | The current normal resource producer classifies wav/ogg/adpcm as audio and encodes audio payloads through the central BADP producer. The generated const bmsx/assets module exports a type-prefixed resource name with _addr/_len values; these are direct ROM symbols, not a runtime asset lookup facade. | `scripts/rompacker/rombuilder.ts:417–423,860–871`; `toolchain/ts/rompack/asset_symbols.ts:40–66,75–94`; actual const-module usage `carts/2025/globals.lua:5–9`. |
+
+The existing directory route returns an audio record through
+`cartlib/rom_dir.lua:364–370`; `cartlib/apu.lua:103–128` prepares its BADP source
+metadata. Playback and transfer calls are the existing APUB05–06 interfaces.
 
 The failed address-in-integer readonly initializer was reproduced independently
 while keeping sizeof(i16[4]) unchanged. The scalar initializer producer accepts
