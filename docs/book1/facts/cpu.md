@@ -82,8 +82,10 @@ installed interfaces with a complete ordinary example. The separate
 [BIOS base-services chapter](../bios-base.md) now covers the twelve remaining
 base globals. The [BIOS table-library draft](../bios-table.md) now documents
 all six shared source procedures and a complete ordinary program, but retains
-the seventh length-producer stop as a publication blocker. Other installed
-libraries and on-console environment references remain unfinished.
+the seventh length-producer stop as a publication blocker. Separate Math,
+time/calendar, runtime-compilation and BLua source references now cover their
+authored scopes; their specific engineering and SDK/reader holds remain in
+the owning records, not a generic unwritten CPU-library assignment.
 The current instruction manuscript remains a draft; no successful source,
 reader or PDF pass constitutes whole-manual completion.
 

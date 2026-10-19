@@ -7,184 +7,20 @@ to a device is an unsigned 32-bit numeric payload; it does not transfer an
 arbitrary CPU value. Device addresses and payloads are defined by their owning
 unit chapters.
 
-This chapter first gives a complete ordinary BLua program, then the instruction
-encoding and operation reference. **Memory and program storage** defines the
-installed address map, reservations, section initialization and instruction
+Instruction costs are charged in system cycles; the timebase below does not
+mean one instruction per cycle. A mapped store may wait for its destination
+to become ready. Completing that store or a counted word store does not establish
+completion of a graphics or audio command: the receiving unit defines its own
+work and completion conditions.
+
+The reference begins with execution resources, instruction encoding, cycle
+accounting and reset. Worked BLua programs accompany the operation reference.
+**Memory and program storage** defines the installed address map, reservations,
+section initialization and instruction
 addresses. **Interrupt controller** defines IRQ masks, acknowledgment and the
 installed exception route. **System control and timing** defines supervisor
 device contexts and the timing/diagnostic ports. CPU privilege, device context
 and function origin are not interchangeable.
-
-## A complete BLua computation program
-
-Start this cartridge through the installed BIOS. The program owns its result
-record in BSS; it does not guess an unused RAM address, change a device's
-configuration or create a raw CPU-register array. The **Memory and program
-storage** chapter supplies section initialization, typed-storage ownership and
-cartridge startup. Ordinary calls to the installed `print` global produce the
-three diagnostic lines shown below.
-
-### Result-storage module
-
-Name this module `results` and make it available to the entry module. The array
-of five operands and the calculated numeric fields use `f64` storage. The
-`word` fields hold transferred words or flags; the single `f32` field exposes
-single-precision rounding. These are byte-storage declarations, not CPU value
-registers.
-
-```lua
-module<const>
-
-struct cpu_manual_result
-	completed: word
-	operands: f64[5]
-	quotient: f64
-	floor_quotient: f64
-	mod_positive: f64
-	mod_negative: f64
-	number_sum: f64
-	word_sum: word
-	signed_word: f64
-	shift_right: f64
-	shift_32: f64
-	shift_negative: f64
-	truncated_word: f64
-	zero_is_true: word
-	comparison: word
-	read_u16: word[2]
-	read_u32: word
-	rounded: f32
-	rounded_readback: f64
-	call_sum: f64
-	counter: f64[2]
-end
-
-bss result: cpu_manual_result
-
-return { result = result }
-```
-
-### Entry module
-
-The first part writes operands to storage, reads them back, and calculates both
-ordinary Number results and word-based results. Division is not floor division,
-and arithmetic right shift is not a zero-fill shift.
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *cpu_manual_result = state.result
-rodata little_endian_bytes: u8[4] = { 0x78, 0x56, 0x34, 0x12 }
-
--- Read operands back from real numeric storage, not just constant expressions.
-result.operands[0] = -7
-result.operands[1] = 3
-result.operands[2] = -1.75
-result.operands[3] = 2147483647
-result.operands[4] = 2147483648
-local numerator<const> = result.operands[0]
-local divisor<const> = result.operands[1]
-result.quotient = numerator / divisor
-result.floor_quotient = numerator // divisor
-result.mod_positive = numerator % divisor
-result.mod_negative = -numerator % -divisor
-
--- Arithmetic retains a Number; a word transfer and a bitwise result differ.
-result.number_sum = result.operands[3] + 1
-result.word_sum = result.number_sum
-result.signed_word = result.number_sum | 0
-result.shift_right = result.operands[4] >> 1
-result.shift_32 = 1 << 32
-result.shift_negative = 1 << -1
-result.truncated_word = result.operands[2] | 0
-
-local zero<const> = result.operands[1] - 3
-if zero then
-	result.zero_is_true = 1
-end
-result.comparison = numerator < divisor and 1 or 0
-```
-
-Continue the same entry module. The four bytes are numeric payload storage.
-The views read two halfwords or one word without copying that storage; they do
-not turn a string reference into an address. The returned closure retains its
-counter after `make_counter` returns.
-
-```lua
-
--- These are typed views of byte storage, not a cast of a string reference.
-local halves<const>: *u16 = little_endian_bytes
-local whole<const>: *u32 = little_endian_bytes
-result.read_u16[0] = halves[0]
-result.read_u16[1] = halves[1]
-result.read_u32 = *whole
-result.rounded = result.operands[4] + 1
-result.rounded_readback = result.rounded
-
-local add<const> = function(first, second)
-	return first + second
-end
-local make_counter<const> = function(value)
-	return function(delta)
-		value = value + delta
-		return value
-	end
-end
-result.call_sum = add(numerator, divisor)
-local advance<const> = make_counter(10)
-result.counter[0] = advance(2)
-result.counter[1] = advance(3)
-
-print('CPU: quotient', result.quotient, 'floor', result.floor_quotient)
-print('CPU: Number', result.number_sum, 'signed word', result.signed_word)
-print('CPU: counter', result.counter[0], result.counter[1])
-result.completed = 1
-while true do
-	halt_until_irq
-end
-```
-
-### Retained results
-
-<section class="keep-together">
-
-When `completed` becomes 1, the record contains:
-
-| Field | Value | Meaning |
-|---|---:|---|
-| `quotient` | −7/3, approximately −2.3333333333333335 | Ordinary division retains a fraction. |
-| `floor_quotient` | −3 | Floor division rounds downward. |
-| `mod_positive`, `mod_negative` | 2, −2 | The nonzero remainder follows the divisor's sign. |
-| `number_sum` | 2147483648 | Addition does not wrap at the signed-word boundary. |
-| `word_sum` | `80000000H` | The stored raw word has the same low 32 bits. |
-| `signed_word` | −2147483648 | Bitwise output is the signed interpretation of those bits. |
-| `shift_right` | −1073741824 | `>>` preserves the sign bit. |
-| `shift_32`, `shift_negative` | 1, −2147483648 | Shift counts are masked to five bits. |
-| `truncated_word` | −1 | Word conversion truncates −1.75 toward zero. |
-| `zero_is_true`, `comparison` | 1, 1 | Zero is true; −7 is less than 3. |
-| `read_u16[0]`, `read_u16[1]` | `5678H`, `1234H` | Halfwords are little-endian. |
-| `read_u32` | `12345678H` | The four data bytes form one little-endian word. |
-| `rounded`, `rounded_readback` | 2147483648 | Storing 2147483649 through `f32` rounds it. |
-| `call_sum` | −4 | An ordinary two-argument call returns its result. |
-| `counter[0]`, `counter[1]` | 12, 15 | The same captured variable changes on successive calls. |
-
-</section>
-
-
-The diagnostic output is:
-
-```text
-CPU: quotient	-2.33333	floor	-3
-CPU: Number	2.14748e+09	signed word	-2.14748e+09
-CPU: counter	12	15
-```
-
-The lines report the quotient and floor, Number and signed-word result, then
-the two counter results. Finite numeric text is formatted; the
-printed `2.14748e+09` is not the precise stored Number. The final wait does not
-render a picture. For actual geometry-to-picture work, use the GTE and GPU
-programming chapters rather than treating a CPU value as a drawing command.
 
 <section class="keep-together">
 
@@ -192,9 +28,9 @@ programming chapters rather than treating a CPU value as a drawing command.
 
 | Resource | Specification |
 |---|---|
-| System-cycle basis | 33,868,800 cycles/s in the installed model configuration |
+| System-cycle timebase | 33,868,800 cycles/s |
 | Installed main RAM | 4 MiB; mapped windows, reservations and ownership are in the Memory chapter |
-| Language-allocation budget | 3.5 MiB of shared accounting capacity for this configuration, not an additional raw RAM region or wholly free register storage |
+| Language-allocation budget | 3.5 MiB of shared accounting capacity, not an additional raw RAM region or wholly free register storage |
 | Opcode field | 6 bits, 64 opcode identities including the WIDE prefix |
 | Instruction word | 32 bits, four bytes, big-endian code bytes |
 | Instruction length | One word; two words with one WIDE prefix |
@@ -419,6 +255,177 @@ according to that function's execution domain. Neither statement implies that
 all RAM has been erased. The Memory chapter supplies the actual reset vector,
 BIOS cartridge selection and section-initialization route; SYSTEM defines the
 separate software reset request and device-context transitions.
+
+## A complete BLua computation program
+
+Start this cartridge through the installed BIOS. The program owns its result
+record in BSS; it does not guess an unused RAM address, change a device's
+configuration or create a raw CPU-register array. The **Memory and program
+storage** chapter supplies section initialization, typed-storage ownership and
+cartridge startup. Ordinary calls to the installed `print` global produce the
+three diagnostic lines shown below.
+
+### Result-storage module
+
+Name this module `results` and make it available to the entry module. The array
+of five operands and the calculated numeric fields use `f64` storage. The
+`word` fields hold transferred words or flags; the single `f32` field exposes
+single-precision rounding. These are byte-storage declarations, not CPU value
+registers.
+
+```lua
+module<const>
+
+struct cpu_manual_result
+	completed: word
+	operands: f64[5]
+	quotient: f64
+	floor_quotient: f64
+	mod_positive: f64
+	mod_negative: f64
+	number_sum: f64
+	word_sum: word
+	signed_word: f64
+	shift_right: f64
+	shift_32: f64
+	shift_negative: f64
+	truncated_word: f64
+	zero_is_true: word
+	comparison: word
+	read_u16: word[2]
+	read_u32: word
+	rounded: f32
+	rounded_readback: f64
+	call_sum: f64
+	counter: f64[2]
+end
+
+bss result: cpu_manual_result
+
+return { result = result }
+```
+
+### Entry module
+
+The first part writes operands to storage, reads them back, and calculates both
+ordinary Number results and word-based results. Division is not floor division,
+and arithmetic right shift is not a zero-fill shift.
+
+```lua
+module<entry>
+
+local state<const> = require('results')
+local result<const>: *cpu_manual_result = state.result
+rodata little_endian_bytes: u8[4] = { 0x78, 0x56, 0x34, 0x12 }
+
+-- Read operands back from real numeric storage, not just constant expressions.
+result.operands[0] = -7
+result.operands[1] = 3
+result.operands[2] = -1.75
+result.operands[3] = 2147483647
+result.operands[4] = 2147483648
+local numerator<const> = result.operands[0]
+local divisor<const> = result.operands[1]
+result.quotient = numerator / divisor
+result.floor_quotient = numerator // divisor
+result.mod_positive = numerator % divisor
+result.mod_negative = -numerator % -divisor
+
+-- Arithmetic retains a Number; a word transfer and a bitwise result differ.
+result.number_sum = result.operands[3] + 1
+result.word_sum = result.number_sum
+result.signed_word = result.number_sum | 0
+result.shift_right = result.operands[4] >> 1
+result.shift_32 = 1 << 32
+result.shift_negative = 1 << -1
+result.truncated_word = result.operands[2] | 0
+
+local zero<const> = result.operands[1] - 3
+if zero then
+	result.zero_is_true = 1
+end
+result.comparison = numerator < divisor and 1 or 0
+```
+
+Continue the same entry module. The four bytes are numeric payload storage.
+The views read two halfwords or one word without copying that storage; they do
+not turn a string reference into an address. The returned closure retains its
+counter after `make_counter` returns.
+
+```lua
+
+-- These are typed views of byte storage, not a cast of a string reference.
+local halves<const>: *u16 = little_endian_bytes
+local whole<const>: *u32 = little_endian_bytes
+result.read_u16[0] = halves[0]
+result.read_u16[1] = halves[1]
+result.read_u32 = *whole
+result.rounded = result.operands[4] + 1
+result.rounded_readback = result.rounded
+
+local add<const> = function(first, second)
+	return first + second
+end
+local make_counter<const> = function(value)
+	return function(delta)
+		value = value + delta
+		return value
+	end
+end
+result.call_sum = add(numerator, divisor)
+local advance<const> = make_counter(10)
+result.counter[0] = advance(2)
+result.counter[1] = advance(3)
+
+print('CPU: quotient', result.quotient, 'floor', result.floor_quotient)
+print('CPU: Number', result.number_sum, 'signed word', result.signed_word)
+print('CPU: counter', result.counter[0], result.counter[1])
+result.completed = 1
+while true do
+	halt_until_irq
+end
+```
+
+### Retained results
+
+<section class="keep-together">
+
+When `completed` becomes 1, the record contains:
+
+| Field | Value | Meaning |
+|---|---:|---|
+| `quotient` | −7/3, approximately −2.3333333333333335 | Ordinary division retains a fraction. |
+| `floor_quotient` | −3 | Floor division rounds downward. |
+| `mod_positive`, `mod_negative` | 2, −2 | The nonzero remainder follows the divisor's sign. |
+| `number_sum` | 2147483648 | Addition does not wrap at the signed-word boundary. |
+| `word_sum` | `80000000H` | The stored raw word has the same low 32 bits. |
+| `signed_word` | −2147483648 | Bitwise output is the signed interpretation of those bits. |
+| `shift_right` | −1073741824 | `>>` preserves the sign bit. |
+| `shift_32`, `shift_negative` | 1, −2147483648 | Shift counts are masked to five bits. |
+| `truncated_word` | −1 | Word conversion truncates −1.75 toward zero. |
+| `zero_is_true`, `comparison` | 1, 1 | Zero is true; −7 is less than 3. |
+| `read_u16[0]`, `read_u16[1]` | `5678H`, `1234H` | Halfwords are little-endian. |
+| `read_u32` | `12345678H` | The four data bytes form one little-endian word. |
+| `rounded`, `rounded_readback` | 2147483648 | Storing 2147483649 through `f32` rounds it. |
+| `call_sum` | −4 | An ordinary two-argument call returns its result. |
+| `counter[0]`, `counter[1]` | 12, 15 | The same captured variable changes on successive calls. |
+
+</section>
+
+
+The diagnostic output is:
+
+```text
+CPU: quotient	-2.33333	floor	-3
+CPU: Number	2.14748e+09	signed word	-2.14748e+09
+CPU: counter	12	15
+```
+
+The lines report the quotient and floor, Number and signed-word result, then
+the two counter results. Finite numeric text is formatted; the
+printed `2.14748e+09` is not the precise stored Number. The final wait does not
+render a picture. For actual geometry-to-picture work, use the GTE and GPU
+programming chapters rather than treating a CPU value as a drawing command.
 
 ## BLua operators and instruction costs
 

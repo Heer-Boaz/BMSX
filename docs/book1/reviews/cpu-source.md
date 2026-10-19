@@ -246,3 +246,21 @@ see [the print record](cpu-print.md). Before implementation, MAME's
 [MIPS exception/control owner](https://github.com/mamedev/mame/blob/master/src/devices/cpu/mips/mips1.cpp)
 was studied for mode/return ownership only; no foreign facts went to the author.
 All unrelated CPU-owner stops and whole-console acceptance remain open.
+
+## Hardware-first opening — 2026-10-19
+
+The existing execution-resource table, encoding, cycle and reset sections now
+precede the complete computation program. All BLua listings are byte-identical
+and remain in their prior listing order; no execution result is renewed by the
+move. One short opening paragraph distinguishes instruction charges, readiness
+and receiving-unit completion. A nonauthor checked only the finished opening
+and table against live paired owners: opcode costs (`spec/blua32/opcode.ts:75–84`,
+`opcode.cpp:5–23`), store readiness/dispatch (`cpu.ts:3010–3028`,
+`cpu_dispatch.inl:579–618`), values (`value_slots.ts:25–40,128–138`,
+`value.h:29–40,95–148`), model (`spec/bmsx/model.ts:7,46–54`,
+`model.h:12,32–40,51–59`) and shared allocation (`cpu/lua_heap.ts:21–58`,
+`lua_heap.cpp:11–33`). Existing CPU fact sheets retain the full owner prefixes.
+No new capacity number or clock/bus guarantee was added. The bounded review
+passes; the two source-heading/self-contained-HTML regressions pass and the CPU
+DRAFT is regenerated. Known engineering stops and the false facts/print flags
+remain unchanged; no final pagination review or runtime change was made.

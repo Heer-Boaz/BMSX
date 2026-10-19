@@ -15,8 +15,9 @@ protected-call/coroutine chapters to II, and the overview plus twelve
 machine/installed-unit chapters to I.
 III now begins with [Cartridge sockets and mapped card devices](../book3/cartridge.md):
 controller selection, optional ROM/RAM/mailbox, IRQ rearming and independent
-DMA endpoints. Other expansion protocols and physical specification decisions
-remain uncompleted.
+DMA endpoints. The current device owners implement no additional expansion
+protocol. Undefined physical ratings remain separate specification decisions,
+not an assignment to invent another device chapter.
 These assignments do not claim any volume is complete.
 
 Work on one unit or bounded software interface at a time. Chapter order may

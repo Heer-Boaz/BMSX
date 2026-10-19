@@ -1546,10 +1546,20 @@ payload display. Ten focused TS owner tests and three native suites pass;
 neither is native execution of the full new cartridge. Separate source, public-reader
 and actual final-print decisions pass and are recorded in the chapter reviews,
 not inferred from those executions. All twelve canonical pages match the
-individually inspected proof by exact full decoded RGBA and dimensions. Book III expansion/third-party protocols,
-physical/electrical guarantees and whole-console newcomer acceptance remain
-incomplete. This does not reopen general Lua exposition; all BLua extensions,
+individually inspected proof by exact full decoded RGBA and dimensions. The
+current paired device inventory contains no additional implemented expansion
+protocol beyond these ROM/RAM/mailbox cards. Undefined physical/electrical
+guarantees and whole-console newcomer acceptance remain separate decisions/work.
+This does not reopen general Lua exposition; all BLua extensions,
 including non-hardware features, remain in scope as already recorded above.
+
+Current-scope check, 2026-10-19: media schemas contain ROM/RAM/mailbox only
+(`machine/ts/machine/devices/cartridge/contracts.ts:1–5`;
+`machine/cpp/machine/devices/cartridge/contracts.h:13–17`); card constructors
+instantiate those devices (`card.ts:41–50`, `card.cpp:16–24` in the same owner
+directories). The controller connects to existing Memory/IRQ/DMA, not another
+expansion owner. This closes the vague extra-chapter placeholder, not electrical
+specification or whole-console acceptance.
 
 ### Separate capture-storage topology issue
 
@@ -1633,6 +1643,14 @@ defect belongs at its owner before the corresponding manual promise is made;
 do not add validation, compatibility aliases or cosmetic wrappers to preserve
 it. No BIOS/runtime/compiler change is inferred from this documentation audit.
 This does not block unrelated hardware teaching or reopen general Lua lessons.
+
+Current hardware/startup inventory, 2026-10-19: the explicit named-export list
+contains exactly these two numeric helpers and `gpu/system_vram_region`
+(`toolchain/ts/rompack/system.ts:9–22`). Memory already teaches the VRAM query,
+its units and retained-region lifetime. Kernel DMA/IRQ/VBlank, GPU command and
+terminal helpers remain private firmware dependencies, not missing cartridge
+imports. The generic “remaining exported firmware” writing assignment is stale;
+BH01 is the specific unresolved interface decision.
 
 **Further bounded check, 2026-10-18:** the hold also applies to ordinary
 trigonometric API acceptance in the retained Math manuscript, not only the
