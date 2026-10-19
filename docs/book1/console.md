@@ -7,6 +7,17 @@ The unit chapters give the register definitions, commands and complete
 programming sequences; a capacity or service charge in this overview is not a
 replacement for those protocols.
 
+The CPU prepares operands and programs the units through mapped word ports.
+GTE calculations and GEO memory jobs produce arithmetic and geometry results,
+not drawing commands; the cartridge uses those results when constructing the GPU's GP0
+stream. The GPU draws into local memory, and PCRTC reads that same storage for
+display. DMA can supply or collect words through device ports without turning
+transport completion into drawing or display completion. Sound follows a
+separate path: APU voices read their bound sources and feed the stereo mixer;
+sample-RAM uploads use the APU transfer path instead of the drawing engine.
+The cartridge connects these operations and observes each unit's completion
+condition. They do not form one automatically chained picture-and-sound job.
+
 Book I describes the installed machine. Book II supplies the BLua32 and BIOS
 software reference; cartridge and expansion-device protocols belong to Book III.
 
@@ -32,7 +43,7 @@ A SYSTEM reset command latches a request and asks the CPU to yield. Reset is not
 
 ### Timing and input capture
 
-SYSTEM TIME_MS derives milliseconds from system cycles, not wall time. Its frame-timing words report the current PCRTC frame duration and next-VBlank cycle budget; they do not define a fixed refresh rate.
+SYSTEM TIME_MS derives milliseconds from system cycles, not wall time. Its frame-timing words report the programmed PCRTC frame duration and a whole VBlank-period cycle budget, not a countdown to the next edge. They do not define a fixed refresh rate.
 
 INPUT ARM requests one capture at the next accepted VBlank edge. Capture samples the raw states, increments the sequence, consumes the pending capture request and publishes the input latches and status. The separate supervisor-request wire is checked for a rising edge at each VBlank-begin edge whether or not capture is armed; it is not a designated application key. See the [INPUT](input.md) chapter for the capture protocol.
 

@@ -12,6 +12,22 @@ a renderer. Produced words enter its output FIFO. They must be transferred
 from DATA to the destination that consumes the upload packets; producing a
 packet does not itself write its payload into VRAM.
 
+Compressed words reach DATA through CPU writes or a programmed DMA transfer
+from ROM or RAM. Generated words leave DATA through CPU reads or DMA; software
+can retain them in RAM or forward them to GPU GP0. These are transfers through
+the mapped data port, not memory-fetch or VRAM-write operations performed by
+IMGDEC itself.
+
+Separate DMA channels can remain armed for input and output. DMA admits one
+block at a time, while IMGDEC's scheduled decoding can overlap those transfers.
+The FIFOs decouple their progress: a decode step can wait for required input
+that is still on its way;
+a full output FIFO prevents another output batch. If output remains blocked,
+input can also fill and hold off its producer. In the request-gated DATA-to-GP0
+route, an output block needs both IMGDEC's output request and the GPU write
+request. Decoder output readiness alone therefore does not guarantee transfer
+progress.
+
 The programming interface, compressed input, decoded payload, and output
 packets use 32-bit words. Input and output counts are word counts, not byte
 counts. Decoded payload words and generated packet-header words are distinct:
@@ -26,9 +42,11 @@ only the former contribute to DECODED_WORD_COUNT.
 | System-cycle timebase | 33,868,800 cycles per second |
 | Output-word charge | 2 system cycles per output word, including generated headers |
 
-The cycle timebase and per-word charge describe charged output work. They do
-not specify a separate IMGDEC oscillator or guarantee a complete-transfer
-rate. Waiting for input or output space remains part of transfer operation.
+The cycle timebase and per-word charge measure decoder output work, including
+generated headers. They do not specify a separate IMGDEC oscillator, a
+compressed-input rate, or guaranteed end-to-end upload bandwidth. Source
+transfer, output draining and downstream GPU processing remain distinct work;
+IMGDEC completion does not establish GPU storage or display completion.
 
 ![IMGDEC stream, header and payload-history paths](figures/imgdec-flow.svg)
 

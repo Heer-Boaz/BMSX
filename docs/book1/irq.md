@@ -2,7 +2,11 @@
 
 The interrupt controller records pending interrupt bits and combines them with an enable mask to produce one maskable interrupt indication. Its pending word is a set of latched bits, not an event counter or a queue. Masking a bit prevents that bit from asserting the output; it does not prevent the bit from becoming pending and does not acknowledge it.
 
-### Installed resources
+The controller receives requests from the two DMA channels, PCRTC, the geometry unit, the APU, the GPU command processor, the image decoder and the two cartridge slots. VBlank has its own source bit. Their assigned bits are listed in the register reference. Each producer defines its request conditions and any local acknowledgement or re-arming; the controller does not replace those source-specific rules.
+
+The controller's output feeds CPU interrupt acceptance. Acceptance also requires `STATUS.IEc` to be set and takes a shared IRQ exception entry rather than a separate entry for each source. Source selection and service remain software work. [CPU delivery and waiting](#cpu-delivery-and-waiting) describes that boundary in detail.
+
+### IRQ specifications
 
 | Resource | Specification |
 |---|---|

@@ -4,6 +4,12 @@
 
 The input controller presents keyboard, pointer and pad input as a sampled register file. A cartridge requests a sample, waits for its sequence number to change, and reads the resulting snapshot. Input reads do not consume events or request further samples.
 
+ARM requests one capture at the display controller's VBlank-begin edge; it does
+not immediately read the devices. An accepted capture publishes the new data
+and sequence, then consumes that request. Arm again for another sample. The
+display edge, not the CPU's register-read rate or entry into an interrupt
+handler, determines this publication point.
+
 The controller provides eight keyboard words, a pointer button word with three pointer data words, and four pad records. Each pad record contains a button word, two pairs of stick-axis words and two trigger words. A separate output port accepts vibration requests for a selected pad; its capability word is sampled with the input data.
 
 The register block occupies 47 consecutive 32-bit words, from byte address `08000064H` through `0800011CH`. Use aligned, whole-word accesses.

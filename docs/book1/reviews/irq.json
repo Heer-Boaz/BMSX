@@ -39,7 +39,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/irq-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/irq-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/irq-print.md"
 		}
 	}

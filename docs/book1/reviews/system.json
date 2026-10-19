@@ -41,7 +41,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/system-source.md"
 		},
 		"figures": {
@@ -49,7 +49,7 @@
 			"report": "docs/book1/reviews/system-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/system-print.md"
 		}
 	}

@@ -1,13 +1,19 @@
 # System control and timing
 
-SYSTEM controls reset requests, supervisor device-context transitions and a retained supervisor-fault report. Its timing and output ports are separate functions of the same unit. A supervisor device context is not a CPU privilege mode: SYSTEM can be entering or leaving that context while the CPU is between exception-entry and exception-return operations. In particular, `LEAVE` restores device context; it does not perform the CPU's exception return.
+SYSTEM supplies five hardware facilities: reset requests, staged supervisor device-context transitions, a retained fault report, timing readouts, and diagnostic text output. The fault report separates capturing CPU diagnostics from publishing a new sequence value; it is not a continuously updated view of CPU exception registers.
+
+For cartridge programs, timing means measuring elapsed console time and inspecting the programmed video period. `TIME_MS` supplies whole milliseconds derived from system cycles. `FRAME_MS_Q16` reports the programmed beam period in fractional milliseconds, while `CYCLES_PER_FRAME` reports a full VBlank-period cycle budget, not a countdown. These readouts do not provide a timer alarm or generate their own interrupt request. Interrupt delivery remains a separate facility.
+
+Output means a line-oriented diagnostic channel, not drawing on the screen. `PRINT_CHAR` appends a Unicode codepoint to the current line; `PRINT_FLUSH` completes and publishes that line when queue space permits. These accesses neither request an interrupt nor enter supervisor service.
+
+A supervisor device context is not a CPU privilege mode. SYSTEM can be entering or leaving that context while CPU exception handling is in progress. In particular, `LEAVE` begins device-context restoration; it does not perform CPU exception return. Conversely, CPU exception return does not restore the device context.
 
 USER, ENTRY_VECTOR and ACTIVE name stages in this description, not additional
 register fields. STATUS exposes only the flags listed below.
 
 Use aligned 32-bit accesses to the registers below. `CONTROL` is a command port, not a retained command mask. Each accepted write is processed and its readable word returns to zero, including writes containing ignored bits. `STATUS` reports the current supervisor-context flags.
 
-### Installed resources
+### SYSTEM specifications
 
 | Resource | Specification |
 |---|---|

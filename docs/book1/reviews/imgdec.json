@@ -39,7 +39,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/imgdec-source.md"
 		},
 		"figures": {
