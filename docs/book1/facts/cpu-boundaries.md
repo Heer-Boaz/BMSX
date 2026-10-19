@@ -26,6 +26,30 @@ AGREES below means the named bounded source leaves agree, not runtime replay, pe
 | BF06 | Decode consumes zero or one WIDE prefix: first WIDE supplies six high bits each from its A/B/C, followed by exactly one body word. There is no prefix loop. The prefix ext byte is not used to extend operands. If the body opcode is again WIDE and execution reaches its handler, it hard-halts. This is not an arbitrarily chainable prefix or a separately executed zero-cost operation. | T:1265–1298,2306–2308; C:832–868; D:1–4. AGREES. |
 | BF07 | Branch target is u32(instruction-start PC + complete width×4 + signedBX×4). Complete width is1 or2 words, including WIDE. Jump handlers assign this precomputed target. | T:1323–1326,1343–1348,2849–2863; C:909–912,931–936; D:424–440. AGREES. |
 
+### Consumer-only instruction-linkage supplement
+
+2026-10-19, baseline `589f5297c`. Bounded reread of the instruction-format
+specifications and the paired machine consumers; no compiler/ROM writer,
+architecture chapter, PDF, runtime change or guest replay. Editorial reference:
+[Pan Docs CPU instruction set](https://github.com/gbdev/pandocs/blob/master/src/CPU_Instruction_Set.md),
+using grouped field tables and explicit encoding exceptions, not foreign CPU
+facts. The older extraction above is unchanged.
+
+| ID | Additional linkage fact | Exact paired evidence |
+|---|---|---|
+| BL01 | The chapter's assembly table is the inverse of actual field decode: ABC uses body EXT splits 2/3/3 and prefix shifts 8/9/9; Bx uses EXT at bit12, prefix B at bit20, prefix A at bit6; displacement uses EXT unchanged and prefix shifts6/6/6. Word composition/byte order matches the paired format leaves. | T:1304–1333,1363 / C:874–921,951; FT:44–70 / FC:11–41. AGREES. |
+| BL02 | Signed Bx is sign-extended at20/26 bits and signed RK at9/15 bits according to complete decoded width. Negative patterns must therefore be formed at the chosen width before field splitting. | T:1323–1326,1355–1362 / C:909–912,943–950; FT:39–42 / FC:6–9. AGREES. |
+| BL03 | Direct CLOSURE consumes Bx×16 as the absolute function-record address (20/26-bit Bx gives maximum aligned targets00FFFFF0H/3FFFFFF0H); register form consumes the Number in R(Bx) as u32. Its flag is prefix C bit5, decoded C bit14. CALL consumes the constructed Closure or a BuiltinFunction, with no immediate target field. EXEC instead receives a full u32 address through CP0. | T:2865–2883,2918–2939,2761–2765 / D:443–459,490–503,410–414; FT:35–36 / FH:41–42; `machine/ts/spec/blua32/image_format.ts:30–31` / `machine/cpp/spec/blua32/image_format.h:36–37`. AGREES for established address operands; exceptional numeric inputs not re-audited. |
+| BL04 | LOADK uses its Bx as constant index; RK negative values select index−1−RK. GETGL/SETGL and GETSYS/SETSYS use their corresponding image name-table indices, which decode maps to runtime namespace slots. A Number constant payload is not that selecting index. | T:2312–2314,1334–1342,2476–2488 / D:11–14,137–149 / C:922–930; Number payload decode T:988–994 / C:537–540. AGREES. No compiler relocation-file convention inferred. |
+| BL05 | Branch displacement is relative to the complete instruction end, measured in4-byte words, unlike the absolute byte address of function metadata and unsigned8-bit `_D` displacement. The worked self-loop encodings are narrow U=0xfffff (−1), wide U=0x3fffffe (−2); the latter prefix B=63. | BF03–BF04, BF07 and BL01–BL02; function code PC consumption T:3261–3272 / C:3005–3028. AGREES. Does not reopen sequential/skip PC-overflow stop BX01. |
+
+The five new chapter byte rows were independently split and decoded with
+integer arithmetic against these formulas. This is encoding arithmetic evidence,
+not execution proof. Static record `0x10001230` selects Bx `0x01000123`, prefix
+B `0x10`; register form sets prefix C `0x20`. No inspected disagreement or new
+consumer boundary remained within this linkage slice. Known exceptional-state
+and other CPU stops remain untouched.
+
 ## Fetch, advancement and skip
 
 | ID | Paired fact | Exact evidence |

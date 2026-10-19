@@ -1,5 +1,17 @@
 # Memory and program storage
 
+The CPU addresses system ROM, main RAM, cartridge storage and device registers
+through one byte-addressed map. That common address notation does not make
+them interchangeable: RAM holds program data and transfer buffers, ROM stores
+read-only bytes, and a register access can issue a command or consume a result.
+Use the selected region's access and ownership rules, not RAM rules everywhere.
+
+GPU local memory and APU sample RAM are separate from CPU main RAM. Reach them
+through the units' image/readback and sample-transfer ports, not an assumed
+ordinary RAM pointer. Within main RAM, I/O reservations, GEO scratch and
+firmware static storage also have owners; an installed byte is not necessarily
+a byte the cartridge may allocate.
+
 ## Addresses and data sizes
 
 BMSX uses 32-bit unsigned byte addresses. Each address identifies one byte; the address space runs from `0x00000000` through `0xffffffff`, inclusive. A 32-bit word occupies four consecutive bytes. For 16-bit and 32-bit values in main RAM, byte order is little-endian: the least significant byte is at the lowest address.
@@ -28,6 +40,81 @@ remain separate from that decoded aperture.
 
 GPU VRAM is a separate **2 MiB** capacity and is not included in the 4 MiB main-RAM total.
 
+## I/O register-bank directory
+
+The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
+
+| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
+|---|---|---|---|
+| `0x08000000` | `0x0800000c` | 3 | [IRQ](irq.md#register-reference) — pending flags, acknowledgement and mask |
+| `0x0800000c` | `0x08000024` | 6 | [DMA](dma.md#register-reference) — channel 0 |
+| `0x08000024` | `0x08000064` | 16 | [GEO](geo.md#register-reference) — operands, command, control, progress and fault |
+| `0x08000064` | `0x08000120` | 47 | [Input](input.md#register-map) — sampling, keyboard, pointer, four pads and output port |
+| `0x08000120` | `0x08000174` | 21 | [APU](apu.md#register-reference) — command-staging parameters |
+| `0x08000174` | `0x0800017c` | 2 | [APU](apu.md#register-reference) — CMD and STATUS |
+| `0x0800017c` | `0x0800018c` | 4 | [APU](apu.md#register-reference) — retained end-event words |
+| `0x0800018c` | `0x08000194` | 2 | [APU](apu.md#register-reference) — selected source and active-slot mask |
+| `0x08000194` | `0x080001e8` | 21 | [APU](apu.md#register-reference) — live selected-slot parameter window |
+| `0x080001e8` | `0x080001f4` | 3 | [APU](apu.md#register-reference) — sample-transfer address, data and control |
+| `0x080001f4` | `0x08000200` | 3 | [APU](apu.md#register-reference) — command-queue occupancy, free space and capacity |
+| `0x08000200` | `0x08000204` | 1 | [APU](apu.md#register-reference) — sample sequence |
+| `0x08000204` | `0x08000208` | 1 | Reserved retained word |
+| `0x08000208` | `0x08010208` | 16384 | Reserved retained-slot range |
+| `0x08010208` | `0x08010218` | 4 | [Memory bus fault](#bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
+| `0x08010218` | `0x08010224` | 3 | [APU](apu.md#register-reference) — fault code, detail and acknowledgement |
+| `0x08010224` | `0x08010228` | 1 | [GEO](geo.md#register-reference) — fault acknowledgement |
+| `0x08010228` | `0x08010230` | 2 | [SYSTEM](system.md#system-time-and-frame-timing) — elapsed milliseconds and frame interval |
+| `0x08010230` | `0x08010238` | 2 | [SYSTEM](system.md#diagnostic-text-output) — diagnostic character and line flush |
+| `0x08010238` | `0x0801023c` | 1 | [SYSTEM](system.md#system-time-and-frame-timing) — cycles per frame |
+| `0x0801023c` | `0x08010244` | 2 | [GPU](gpu.md#gp0-gpuread-gp1-and-gpustat) — GP0/GPUREAD and GP1/GPUSTAT |
+| `0x08010244` | `0x080102c4` | 32 | [GTE](gte.md#register-reference) — data words D[0]–D[31] |
+| `0x080102c4` | `0x08010344` | 32 | [GTE](gte.md#register-reference) — control words C[0]–C[31] |
+| `0x08010344` | `0x0801034c` | 2 | [GTE](gte.md#normal-command-and-cycles) — normal COMMAND and CYCLES |
+| `0x0801034c` | `0x08010354` | 2 | [SYSTEM](system.md) — CONTROL and STATUS |
+| `0x08010354` | `0x08010384` | 12 | [PCRTC](pcrtc.md) — composition words, PMODE through BGCOLOR |
+| `0x08010384` | `0x080103ac` | 10 | [GTE PLUS](gte.md#register-reference) — operands, results, flags, command and cycles |
+| `0x080103ac` | `0x080103e4` | 14 | [PCRTC](pcrtc.md) — beam timing, CSR events and IMR masks |
+| `0x080103e4` | `0x080103fc` | 6 | [DMA](dma.md#register-reference) — channel 1 |
+| `0x080103fc` | `0x08010420` | 9 | [IMGDEC](imgdec.md#register-reference) — configuration, status, data and progress |
+| `0x08010420` | `0x08010428` | 2 | [Cartridge controller](../book3/cartridge.md#cartridge-controller) — socket selection and status |
+| `0x08010428` | `0x08010440` | 6 | [SYSTEM](system.md#supervisor-fault-registers) — retained supervisor fault report |
+
+These ranges partition all 16656 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
+
+### Reserved retained words and decoder boundary
+
+Of the 16656 positions, **16385 are reserved retained words** in
+`[0x08000204, 0x08010208)`. An aligned word read returns the stored raw word;
+an accepted aligned word write replaces it. These words reset to zero and have
+no command, FIFO, automatic address increment or transfer-completion behavior.
+They remain reserved: retention does not make them cartridge RAM or grant a
+scratch-buffer allocation. Do not apply this read/write description to other
+directory rows; their unit-specific permissions and side effects still apply.
+
+I/O decoding and the I/O reservation have different limits. Addresses in
+`[0x08010440, 0x08040000)` reach installed main-RAM bytes rather than register
+slots, but remain within the reserved 256 KiB. They are not additional
+registers or newly available cartridge storage.
+
+For byte, halfword and word bus transfers, the **complete transfer** must fit
+inside the decoded I/O aperture for its I/O width rules to apply. A transfer
+crossing that end uses main-RAM backing for its complete width; it is not split
+between a final register and RAM. These examples describe mapped-bus transfers,
+not permission to bypass ordinary CPU instruction alignment:
+
+| Mapped transfer | Selected path |
+|---|---|
+| U32 at `0x0801043c` | Last complete I/O slot: supervisor fault DOMAIN |
+| U32 at `0x0801043e` | Four main-RAM bytes spanning the decoder boundary |
+| U16 at `0x0801043f` | Two main-RAM bytes spanning the decoder boundary |
+| U32 at `0x08010440` | Main-RAM backing within the reservation |
+
+Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
+reaching the mapped bus. The [scalar-access rules](#scalar-memory-accesses)
+separate that CPU alignment check from I/O decoding. F64 instead consists of
+two word transfers: an aligned F64 access at `0x0801043c` reaches the last I/O
+slot first and RAM at `0x08010440` second, subject to the ordered fault rules.
+
 ## Reserved and cartridge storage in main RAM
 
 The installed main RAM occupies `0x08000000` through `0x083fffff`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge's linked static storage.
@@ -39,13 +126,24 @@ The following ranges use an exclusive end: the end address is the first byte out
 | Declared I/O reservation | `0x08000000` | `0x08040000` | 256 KiB |
 | GEO scratch reservation | `0x08040000` | `0x080c0000` | 512 KiB |
 | System static storage | `0x080c0000` | Actual end of system BSS | Depends on the linked system image |
-| Cartridge static storage | Actual end of system BSS | Actual end of cartridge BSS | Depends on the linked cartridge image |
+| Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Depends on the linked cartridge image |
 
 The implemented I/O register aperture ends at `0x08010440`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
 
-`0x080c0000` is the start of **system DATA**, not a universal cartridge RAM base. System BSS follows system DATA. The system image exports the actual end of its BSS, and the cartridge link uses that exported address for the beginning of cartridge DATA. Cartridge BSS follows cartridge DATA. A cartridge must therefore use the placement established for the system image against which it is linked, rather than assume a fixed numerical cartridge base.
+`0x080c0000` is the start of **system DATA**, not a universal cartridge RAM base.
+The installed firmware's BSS follows its DATA. Account for their actual occupied
+extent in the matching BIOS image, rather than assuming a fixed cartridge base.
+The image's declared BSS address and byte count identify that span; their sum
+is its exclusive end. These are linking information, not a request to allocate
+or clear memory when the image is selected.
 
-| Section in main RAM, in address order | Run address |
+The following compact layout places cartridge DATA at the system BSS end and
+cartridge BSS immediately after that DATA. This adjacency is a layout choice,
+**not a hardware requirement**. Another cartridge placement can use different
+unreserved RAM addresses; its records, code and startup initialization must all
+use that chosen placement without overwriting firmware storage.
+
+| Section in the compact layout, in address order | Run address |
 |---|---|
 | System DATA | `0x080c0000` |
 | System BSS | End of system DATA |
@@ -54,7 +152,11 @@ The implemented I/O register aperture ends at `0x08010440`, before the end of th
 
 Each end in this table is exclusive and includes the section's alignment padding. The compiler aligns static objects to their type alignment and rounds section sizes to multiples of four bytes.
 
-The linker checks that the linked static storage fits within the RAM byte count supplied for the build. This is a static-storage fit check, not an allocation service. Neither the installed RAM extent nor the end of cartridge BSS defines a free arena, stack reservation, or byte-addressed heap.
+Choosing a static layout is not a hardware allocation service. Neither the
+installed RAM extent nor the end of cartridge BSS defines a free arena, stack
+reservation, or byte-addressed heap. The development companion explains how to
+obtain the [matching BIOS link information](../programming/getting-started.md#bios-link-information-for-independent-tools);
+that build information is distinct from an installed BIOS query or register.
 
 <a id="firmware-reservation-in-vram"></a>
 

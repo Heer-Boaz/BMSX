@@ -53,7 +53,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/cpu-source.md"
 		},
 		"figures": {
@@ -61,7 +61,7 @@
 			"report": "docs/book1/reviews/cpu-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/cpu-print.md"
 		}
 	}

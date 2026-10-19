@@ -5,7 +5,7 @@
 			"open": []
 		},
 		"registers": {
-			"resolution": "All four Memory-owned fault registers have exact byte address, access, full-word contents, code/flag values and explicit construction/clear words. Selected CPU status/cause/EXEC facts are not presented as the full COP0 reference.",
+			"resolution": "The complete32-span IO directory indexes all16656 addressed word positions, including16385 reserved retained words and split banks; per-unit permissions/reset/side effects stay with their register references. The memory bus-fault bank retains its complete address/access/code description.",
 			"open": []
 		},
 		"datapath": {

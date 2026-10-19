@@ -1521,3 +1521,52 @@ SYSTEM CONTEXT=00000000 SERVICES=1 RESUMED=1
 Successful player exit alone does not check those values. These are diagnostics, not new framebuffer text or a capture; no exact EPC is printed.
 
 With fresh ordinary BIOS entry, sole callback/mask ownership, and no external context request, the callback reads CP0 with current-user clear without activating SYSTEM supervisor context. Normal return and generated RFE resume main, which never reads CP0. This is not a cartridge memory-exception installation or recovery API.
+## BIOS link information for independent tools
+
+A cartridge linker needs information about the **matching BIOS build**, not
+just the console's address windows. It must preserve firmware static RAM and,
+when using a named BIOS function import, bind that name to its actual
+function-record address. These addresses are not instruction PCs, image-relative
+offsets or cartridge resource IDs.
+
+The supplied build delivers a link-information file beside the BIOS ROM:
+`dist/system/bmsx-bios.debug.rom.blua32-imports` for the debug BIOS, or
+`dist/system/bmsx-bios.rom.blua32-imports` for the ordinary BIOS. Keep the ROM
+and link information from the same build together. The ordinary cartridge-build
+commands in this guide select the matching BIOS information automatically.
+
+This file is a **development-tool artifact**, not installed firmware, a
+cartridge payload required by the CPU, or a runtime BIOS name-lookup service.
+Its current binary serialization is not a console register or ROM-boot format.
+Use the existing decoder to obtain its fields rather than reproducing that
+serialization inside a cartridge program:
+
+```sh
+./node_modules/.bin/tsx --eval '
+import { readFileSync } from "node:fs";
+import { decodeBlua32BiosImports } from "./toolchain/ts/rompack/blua32_bios_imports.ts";
+console.log(JSON.stringify(decodeBlua32BiosImports(
+  readFileSync("dist/system/bmsx-bios.debug.rom.blua32-imports")
+), null, 2));
+'
+```
+
+| Decoded field | Meaning for an independent linker |
+|---|---|
+| `cartridgeStaticRamBase` | Matching firmware's BSS end. The supplied linker places cartridge DATA here; the CPU does not allocate that storage or enforce this adjacency. |
+| `functions[i].path` | Literal named BIOS import, such as `gpu/system_vram_region`. |
+| `functions[i].exportPathKey` | Export within that module; empty for the currently supplied module-root function imports. |
+| `functions[i].functionAddress` | Absolute function-record byte address in system ROM. |
+
+For an immediate CLOSURE relocation, encode that function-record address in
+sixteen-byte units, then call the constructed closure. The [CPU linkage
+reference](../book1/cpu.md#linkage-operands-and-encoding-examples) gives both
+closure forms and their exact bytes. Ordinary BIOS globals such as `print`
+instead use the image's global-name table and normal value calls; their names
+are not additional entries in this static-function import list.
+
+A custom layout must still preserve firmware reservations, initialize its own
+DATA and BSS through startup instructions, and place the actual addresses in
+its records and code. The [Memory reference](../book1/memory.md#rom-header-fields)
+defines the machine's boot and executable-image formats. A tool's choice to
+pack static sections consecutively is not an additional hardware requirement.

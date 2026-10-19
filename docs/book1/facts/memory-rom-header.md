@@ -131,3 +131,34 @@ are index. F/U use mapped-bus reads, not the ROM-only binding used by A/C/N/S.
 No runtime/BIOS/compiler behavior changed. Current packaging writers may be
 checked for conformance separately; their unused fields and section layout do
 not become machine requirements merely because current tools emit them.
+
+## BIOS link information and static placement boundary
+
+The current system producer places DATA at DYNAMIC_RAM_BASE and BSS after DATA;
+cartridge linking places DATA at imported cartridgeStaticRamBase and BSS after
+DATA: `toolchain/ts/rompack/blua32_linker.ts:1099–1154`. This is linker layout
+policy, not machine adjacency validation. A and the BIOS boot consumer above
+neither allocate cartridge RAM nor compare DATA/BSS extents.
+
+The BIOS header BSS-address/count fields are written from the same inputs used
+for the import metadata's exclusive BSS end:
+`toolchain/ts/rompack/blua32_linker.ts:874–880,1064–1078`. Thus they convey the
+current firmware's declared occupied span, despite being unread by activation.
+DATA copy/BSS clear remain emitted guest startup operations, not allocator
+commands: `toolchain/ts/lua/compiler.ts:1505–1558,1561–1584` and linker address
+relocation resolution `:353–369`.
+
+The map's semantic fields (cartridgeStaticRamBase, functions[].path,
+exportPathKey and absolute functionAddress) are owned by
+`toolchain/ts/rompack/blua32_bios_imports.ts:4–28`. Build consumers read/decode the
+matching sidecar: `scripts/rompacker/build.ts:60–76`, `compile.ts:98–104`.
+Sidecar/embedded tooling-asset production: `scripts/rompacker/rombuilder.ts:1084–1105,1432–1442`.
+Neither D nor BIOS scan implements a resident import-name lookup. Current
+function-record ordering does not itself establish invariant machine vectors.
+Imported calls resolve through CLOSURE relocations during linkage:
+`toolchain/ts/rompack/blua32_linker.ts:660–673,832–837`.
+
+The companion's direct shared-decoder command was executed against the current
+debug BIOS sidecar. Its cartridgeStaticRamBase135290052 equals that ROM's
+declared BSS address135004164 plus count285888. These are checked artifact
+observations, not fixed addresses promised to every cartridge or BIOS build.

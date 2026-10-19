@@ -252,6 +252,70 @@ With that bit clear, Bx times 16 supplies the function-record address; with it
 set, Bx selects the register supplying that address. This flag does not add
 bits to the Bx index. The closure section supplies capture and fault behavior.
 
+### Constructing instruction bytes
+
+To assemble a body word, put its six-bit fields `a`, `b`, `c` and extension byte
+`E` into:
+
+`word = (E << 24) | (opcode << 18) | (a << 12) | (b << 6) | c`
+
+Write that word most-significant byte first. The following table splits the
+complete operands into those fields and the six-bit prefix fields `pA`, `pB`,
+`pC`. `B` and `C` here mean raw fields, before any RK sign interpretation.
+
+| Format | Body fields | Body `E` | WIDE prefix fields |
+|---|---|---|---|
+| ABC | `a=A&63`, `b=B&63`, `c=C&63` | `(((A>>6)&3)<<6) \| (((B>>6)&7)<<3) \| ((C>>6)&7)` | `pA=A>>8`, `pB=B>>9`, `pC=C>>9` |
+| Bx | `a=A&63`, `b=(U>>6)&63`, `c=U&63` | `(U>>12)&255` | `pA=A>>6`, `pB=U>>20`, `pC=0`, except the CLOSURE register-address flag |
+| Displacement | `a=A&63`, `b=B&63`, `c=C&63` | `disp` | `pA=A>>6`, `pB=B>>6`, `pC=C>>6` |
+
+For an unsigned Bx operand, `U` is Bx itself. For a signed Bx operand, `U` is its
+two's-complement pattern in **20 bits without WIDE or 26 bits with WIDE**.
+Similarly, encode a negative RK operand in 9 or 15 bits before splitting its
+raw B/C field. Merely adding a zero-filled prefix to a narrow negative operand
+does not preserve its sign. A prefix word uses opcode zero, its `a/b/c` fields
+are `pA/pB/pC`, and its ignored extension byte can be zero.
+
+### Linkage operands and encoding examples
+
+A known function target still uses `CLOSURE` followed by `CALL`; `CALL` has no
+function-address immediate. The immediate CLOSURE relocation is the absolute
+**function-record byte address divided by 16**, not a code address, function
+ordinal, image-relative offset or constant index. In its register-address form,
+encode the register index as Bx and set prefix `pC=32`; the register supplies
+the full byte address without division by 16. Both forms produce a closure for
+the same `CALL` mechanism. CP0 `EXEC`, by contrast, consumes a full byte address
+and replaces execution, as specified below.
+
+The immediate form represents sixteen-byte-aligned targets: up to `00FFFFF0H`
+without WIDE, or `3FFFFFF0H` with WIDE. A cartridge-ROM target therefore needs
+WIDE even when its destination register is small. The register-address form
+does not discard the address's low four bits; record access and execution
+still follow their own mapped-memory rules.
+
+Constant operands and global-name operands retain their zero-based image-table
+indices when their table order is unchanged; they are not absolute addresses.
+An address stored **as a Number constant's payload** is still an address and
+must be distinguished from the instruction's index selecting that constant.
+The Memory chapter defines the referenced records and their address fields.
+
+All numbers in the following table are hexadecimal except register numbers
+and argument/result counts. Spaces separate actual code bytes:
+
+| Operation | Code bytes | Decoded operands |
+|---|---|---|
+| Construct the closure for the record at `10001230H` in R3 | `00 00 04 00 00 AC 31 23` | `pB=10H`, Bx=`01000123H`; Bx×16=`10001230H` |
+| Construct a closure in R3 from the byte address held in R5 | `00 00 00 20 00 AC 30 05` | Register-address flag set; Bx=5 |
+| Call the closure in R3 with no arguments and one requested result | `00 BC 30 41` | `CALL A=3, B=1, C=1` |
+| Jump back to the branch's own first byte, without WIDE | `FF A0 0F FF` | Signed Bx=−1; one word from instruction end to start |
+| Jump back to the prefix's own first byte, with WIDE | `00 00 0F C0 FF A0 0F FE` | Signed Bx=−2; two words from instruction end to prefix |
+
+For branch relocation, compute the signed word difference from the end of the
+**final-width** instruction to the target; the Branches section gives the exact
+PC formula and range. Inserting WIDE changes that origin by four bytes. This
+word-relative branch operand must not be confused with the byte address in a
+function record or with the unsigned word displacement of a `_D` memory access.
+
 ### Register and constant selection
 
 ABC RK consumers sign-extend their 9-bit unprefixed or 15-bit prefixed B/C field.

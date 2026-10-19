@@ -5,8 +5,8 @@ Internal authoring input only. Source acceptance and withheld claims are recorde
 These bounded extracts do not constitute a published chapter or a complete
 cartridge-memory/boot contract.
 
-The separate [ROM-header packet](memory-rom-header.md) supplies the current
-package layout and boot-prefix distinction; it does not extend the scalar
+The separate [ROM-header packet](memory-rom-header.md) supplies the consumer-owned
+boot/image layouts and boot-prefix distinction; it does not extend the scalar
 memory-access facts below into a malformed-image contract.
 
 
@@ -78,3 +78,55 @@ All numeric sizes below are **bytes**. `KiB = 1024 bytes`, `MiB = 1048576 bytes`
 ## Mirror disposition
 
 The paired constants, model capacities and bounded scalar behaviors above agree for guest u32 addresses. No host-number fuzzing was used. The **256 KiB declared I/O reservation versus 66624-byte implemented slot aperture** is an explicit distinction present in both mirrors, not an approved equivalence or a reason to label the whole reservation as live MMIO. No claim of whole-machine runtime parity is made. This artifact is frozen to the live source read during this extraction; there were no repo edits.
+
+## Installed I/O bank directory and reserved-word addendum
+
+Scope: directory positions and actual owners, not another per-register review.
+All32 spans derive from `machine/ts/spec/bmsx/io.ts:3–160` and
+`machine/cpp/spec/bmsx/io.h:15–173`, with byte conversion from the mirrored
+`memory_map` IO_BASE/IO_WORD_SIZE definitions. The spans partition
+[08000000H,08010440H), total16656 positions. Counts include source-latched
+status/snapshot/result words, not only callback registrations.
+
+Owner paths in the following table are relative to `machine/ts/machine/` and
+`machine/cpp/machine/`, respectively; `.ts` and `.cpp` denote the two mirrors.
+
+| Directory bank(s) | Actual footprint source pair |
+|---|---|
+| IRQ | `devices/irq/controller.ts:12–16`; `.cpp:6–11` |
+| DMA0/DMA1 | `devices/dma/controller.ts:92–98`, `registers.ts:58–67`; `.cpp:16–22`, `registers.cpp:11–20` |
+| GEO main/ACK | `devices/geometry/controller.ts:104–113,443–450`; `.cpp:49–58,352–359` |
+| INPUT | `devices/input/controller.ts:43–58`, `registers.ts:121–140`; `.cpp:13–28`, `registers.cpp:59–78` |
+| APU core/live/queue/fault | `devices/audio/controller.ts:39–51,106–115`; `.cpp:12–18,55–64` |
+| APU staging | `devices/audio/command_latch.ts:32–38,64–69`; `.cpp:13–15,42–47` |
+| APU events | `devices/audio/event_latch.ts:65–69`; `.cpp:47–51` |
+| APU selected source/active mask | `devices/audio/selected_slot_latch.ts:17–20`, `active_slots.ts:30–34`; `.cpp:16–19`, `active_slots.cpp:25–27` |
+| APU transfer/sequence | `devices/audio/service_clock.ts:42–48`; `.cpp:29–36` |
+| GPU ports/PCRTC split banks | `devices/gx/gpu.ts:462–471`; `.cpp:53–62`; paired `spec/gx/pcrtc.ts:100–103` / `.h:94–97` beneath the TS/C++ roots |
+| GTE data/control/command/PLUS | `devices/gx/gte.ts:205–222`; `.cpp:68–85` |
+| SYSTEM timing/control/fault | `devices/system/controller.ts:86–90,369–375`; `.cpp:48–52,311–317` |
+| SYSTEM diagnostic ports | `devices/system/debug_transmit.ts:26–28`; `.cpp:8–11` |
+| IMGDEC | `devices/imgdec/controller.ts:139–148,644–651`; `.cpp:45–53,547–554` |
+| Cartridge controller | `devices/cartridge/controller.ts:72–77`; `.cpp:44–49` |
+| Memory bus-fault words | `memory/memory.ts:175–177,829–833`; `.cpp:98–99,718–722` |
+
+The legacy spec names IO_PAYLOAD_WRITE_PTR_INDEX and IO_PAYLOAD_BUFFER_BASE_INDEX
+identify1+16384 positions at08000204H and[08000208H,08010208H), respectively:
+TS spec/bmsx/io.ts:99–105,163–164 / C++ spec/bmsx/io.h:111–118,176–177.
+No live protocol owner binds them. They are disjoint from every readonly range
+and case in Memory TS:852–894 / C++:729–771. An admitted aligned word write
+stores its value with no extra device action; read returns the raw word:
+TS:366–376,627–642 / C++:245–259,522–536. Public terminology is reserved
+retained words, not a pointer/FIFO/transfer ABI.
+
+Raw slots clear to0 at hardware reset before device reset publication:
+Memory TS:414–423 / C++:302–313; runtime TS:48–63,137–141 /
+C++:20–24,100–116. Named unit reset values are not all0. No save-state ABI
+or cartridge allocation permission is inferred.
+
+The earlier contained-range and RAM-fallthrough facts above establish the new
+boundary examples. U32 at0801043CH is the last complete slot, supervisor DOMAIN
+(spec io TS:153–160 / C++:166–173). U32 at0801043EH and U16 at0801043FH cross
+and select whole backing-RAM transfers, not a mixed slot/RAM read. Ordinary CPU
+alignment precedes mapped access (existing Memory execution/access facts);
+F64 instead has two ordered word transfers (existing Memory scalar facts).

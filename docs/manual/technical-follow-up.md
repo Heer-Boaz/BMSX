@@ -37,15 +37,15 @@ owners remain specification decisions, not numbers to invent.
 
 | Unit | Latest bounded evidence and next action |
 |---|---|
-| CPU | Fresh bounded paired inventory confirms existing capacity/value/ISA/cost/admission/exception teaching; all 64 opcode identities and three 64-entry encoding/cost tables agree. No new required paragraph was demonstrated; retain CPU7 and existing limitations separately. |
-| Memory | Reservation/access/lifetime and ROM-header teaching now include the [minimum normal-boot live-work handoff](../book1/memory.md#normal-boot-live-work). Fresh reader/source evidence narrows remaining work to the concrete RDB01 transition, FSEL01 discovery gap and final whole-console acceptance; no generic allocator/recovery framework is required. |
+| CPU | Capacity/value/ISA/cost teaching remains. Inverse field assembly, function-record relocation versus image indices, CLOSURE address ranges and five exact byte examples now support independent image construction; CPU7 and existing limitations remain separate. |
+| Memory | Consumed boot/image/table/record layouts, the full I/O-bank directory and retained-slot/decoder boundaries are explicit. Matching BIOS storage/link information is distinguished from compulsory placement. RDB01, FSEL01, image-text decoding and final whole-console acceptance remain open. |
 | SYSTEM | The prior paired control/phase/banking/reset/timing check remains bounded. RDB01 now reopens unread CPU-owned readback at synchronous-fault entry; [source and ordinary-ROM evidence](../book1/facts/system-readback-entry.md). Known yield/HALT precedence remains separate; arbitrary-state combinations are not approved. |
 | GTE | Fresh bounded paired capacity/normal-and-PLUS interface/timing inventory found no new required quantitative paragraph; existing arithmetic/program/output lessons remain. No fresh exhaustive arithmetic or execution approval is implied. |
 | PCRTC | Recent paired capacity/clock/timing/latch check found no new missing numeric paragraph; shared Table-length decisions remain separate. |
 | IRQ | Recent bounded controller check found no new missing quantitative paragraph; it was not a fresh CPU-exception audit. |
 | GPU | Startup pattern versus stream resets and firmware-owned storage are now clarified in one compact paragraph; [bounded source/reader evidence](../book1/reviews/gpu-source.md) is distinct from print. |
 | DMA | Current paired inventory confirms rates/routes/tails/contention; the false socket-selection denial is removed and the existing Book III route is linked. [Correction evidence](../book1/reviews/dma-source.md). |
-| APU | Recent paired quantitative/source-domain check closed actual-ROM extent and selection-lifetime teaching with the unchanged complete program; [bounded review](../book1/reviews/apu-source-binding.md). |
+| APU | Quantitative/source-domain and lifetime contracts remain, with independent raw-register PCM/square configurations and the standalone raw-port download example. The former library playback program is outside the BMSX series. |
 | GEO | Current paired inventory confirms operations/buffers/formats/rates and existing sprite/hull plates; [large-count counter arithmetic](../book1/facts/geo-counter-arithmetic.md) remains a separate unresolved owner issue, not an invented batch cap. |
 | IMGDEC | Current bounded numeric/stream/batch/DREQ/reset check found no newly missing required paragraph. It did not rerun the full cartridge or approve central CPU/memory access behavior. |
 | INPUT | Current raw resource/Q16/latch/normal-output check found no newly missing capacity/clock paragraph. Full-word output precision and attachment conventions below remain unresolved. |
@@ -1777,7 +1777,7 @@ then give specifications and qualified route costs. Do not just rename an
 “Installed resources” table. DMA's opening is updated; apply this to remaining
 chapters where the orientation is missing. Preserve technical detail.
 
-- [ ] **Hardware contract before library recipes — all hardware chapters.**
+- [x] **Hardware-first openings and independent-code boundary — all hardware chapters.**
   Check the opening explanations and programming sequences across Book I, not
   just APU. Explain source/storage choices, data representations, register and
   command operations, visibility and completion in hardware terms first.
@@ -1789,10 +1789,11 @@ chapters where the orientation is missing. Preserve technical detail.
 
 ## Independent machine-image specification
 
-- [ ] Complete the boot-header, executable-image, function-record, constant,
-  name-table and instruction-linkage descriptions from their CPU and BIOS
-  consumers. Distinguish unread producer fields from machine requirements.
-  This contract must suffice for an independent linker and ROM packer.
+- [x] Describe consumed boot/image/table/record byte layouts and instruction
+  assembly/linkage independently of the current ROM packer. The complete I/O
+  directory and reserved-word/decoder limits are explicit; matching BIOS link
+  information is a separate development artifact, not a resident lookup API.
+  Static-section adjacency is a layout choice, not a hardware requirement.
 - [ ] Image-string decoding differs between the owners: fatal UTF-8 decoding
   at `machine/ts/machine/cpu/cpu.ts:139,929–949` versus raw-byte interning at
   `machine/cpp/machine/cpu/cpu.cpp:484–504` and
