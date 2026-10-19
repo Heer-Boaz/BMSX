@@ -15,7 +15,8 @@ See `docs/architecture.md` for the machine/host boundary rules.
 ## Setup
 
 - Node.js 22 or later
-- `npm install -D`
+- `npm ci --include=dev`
+- Linux/WSL native requirements: see the [first-build prerequisites](docs/programming/getting-started.md#prerequisites).
 
 ## First cartridge and hardware reference
 

@@ -1824,3 +1824,22 @@ chapters where the orientation is missing. Preserve technical detail.
   `machine/cpp/machine/cpu/cpu.cpp:484–504` and
   `machine/cpp/machine/cpu/string_pool.cpp:55–56,139–143`. Do not standardize
   malformed-byte behavior or infer a fix from this documentation work.
+
+
+## Clean-checkout first-build prerequisites — 2026-10-19
+
+The existing companion now names the Linux server helper's C++17/systemd build
+requirements, uses the committed dependency lock and distinguishes canvas's
+prebuilt route from its source-build dependencies. Evidence: package scripts
+`package.json:111–112`, `scripts/products/process_scope_build.ts:39–40` and
+`hosts/node/process_scope/native/linux_unit.hpp:4`; locked canvas 3.2.3 upstream
+installation guide. No new build script, helper, example or hardware ABI.
+
+A detached clean checkout of `45ca245c0` installed 201 packages, built the debug
+browser player and GPU cart (including its BIOS), and automatically compiled
+the native host helper through `npm run serve:dist -- --help`. The unchanged
+server then delivered the player, engine, cartridge and BIOS with HTTP 200 on
+private loopback port 18085 and was stopped. Logs `/tmp/bmsx-manual-clean-start-*`.
+Node 22.23.1/npm 12.0.2 on the existing Linux/WSL host; no fresh-OS, all-platform,
+new browser-frame, UI-only or complete-SDK acceptance is inferred. Main checkout
+builds/dependencies and the user's browser were untouched.

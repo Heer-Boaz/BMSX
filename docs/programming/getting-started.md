@@ -15,16 +15,41 @@ the supplied checkout; it is not a complete SDK installation or debugging guide.
 
 ## Prerequisites
 
-Run the commands from the BMSX repository root in a POSIX shell, such as the Linux/WSL environment used for this route. Have Node.js 22 or later, npm and the repository's development dependencies installed. The repository setup command is:
+This route targets Ubuntu Linux on x86-64, including Ubuntu under WSL. Use
+Node.js 22.x with npm and a POSIX shell. In WSL, run the commands inside the
+Linux environment. The clean-checkout check used Node 22.23.1 and npm 12.0.2;
+these are tested versions, not a claim about the lowest supported versions.
+
+Install Git and the development server's native build requirements:
 
 ```sh
-npm install -D
+sudo apt-get update
+sudo apt-get install -y git build-essential libsystemd-dev
 ```
 
-A working native `canvas` binding is required by these builds, even though the
-memory example contains no images. These instructions assume a working
-checkout with its dependencies available; they are not a fresh-installation
-procedure for every operating system.
+For a new checkout, run the following from your projects directory. If you
+already have a checkout, change to its root and run only the install command.
+
+```sh
+git clone https://github.com/Heer-Boaz/BMSX.git
+cd BMSX
+npm ci --include=dev
+```
+
+`npm ci` installs the committed dependency versions. Allow dependency
+installation scripts: these builds need the native `canvas` binding, even for
+examples without image assets. Canvas supplies a prebuilt Linux x86-64/glibc
+binary; compiling it from source needs the additional dependencies in its
+[versioned installation guide](https://github.com/Automattic/node-canvas/blob/v3.2.3/Readme.md#installation).
+
+Run the remaining commands from the repository root. The cartridge build
+supplies its matching BIOS automatically. `serve:dist` also builds its native
+server helper automatically; that is why the C++ toolchain and systemd
+headers/library are needed. Do not add separate BIOS, Studio or headless-tooling
+builds to the first-picture route.
+
+This setup was checked in a clean source checkout on an existing Linux/WSL
+host. It is not a clean-OS installation test or a Windows/macOS setup procedure.
 
 ## First picture: build and run the GPU example
 
