@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { developmentGuide, loadChapter, loadDevelopmentGuide, publicationFailures, repositoryRoot } from './chapter.mjs';
+import { access, mkdir, writeFile } from 'node:fs/promises';
+import { developmentGuide, loadChapter, loadContents, loadDevelopmentGuide, publicationFailures, repositoryRoot } from './chapter.mjs';
 import { chapterHtml, renderChapter } from './render.mjs';
 
 const [mode, id, ...extra] = process.argv.slice(2);
@@ -9,7 +9,20 @@ if (!['check', 'preview', 'publish'].includes(mode) || !id || extra.length !== 0
 	process.exitCode = 1;
 } else {
 	try {
-		if (id === developmentGuide.id) {
+		if (id === 'contents') {
+			if (mode !== 'preview') {
+				throw new Error('Contents is available only as a draft preview; series publication is not approved.');
+			}
+			const contents = await loadContents(repositoryRoot);
+			const directory = resolve(repositoryRoot, 'build/manual');
+			for (const document of contents.documents.values()) {
+				await access(resolve(directory, `${document.id}.preview.html`));
+				if (document.format === 'pdf') await access(resolve(directory, `${document.id}.preview.pdf`));
+			}
+			const result = await renderChapter(contents, mode, directory);
+			console.log(`DRAFT contents: ${result.pdf}`);
+			console.log(`Build receipt: ${result.receipt}`);
+		} else if (id === developmentGuide.id) {
 			const guide = await loadDevelopmentGuide(repositoryRoot);
 			if (mode === 'check') {
 				console.log('Development companion source and assets loaded; no reference-chapter approval is implied.');

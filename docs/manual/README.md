@@ -117,6 +117,19 @@ together when distributing them. Render the companion with the existing command:
 node scripts/manual/build.mjs preview getting-started
 ```
 
+Once all chapter previews and the companion HTML exist, generate the shared
+draft entry point without rebuilding the chapters:
+
+```sh
+node scripts/manual/build.mjs preview contents
+```
+
+`build/manual/contents.preview.html` and `contents.preview.pdf` group the current
+catalog by book and list the development companion separately. Keep them beside
+the referenced preview files. This command checks that those files exist;
+it does not approve the drafts or publish a completed series. Contents currently
+supports preview mode only.
+
 Chromium owns print layout; the PDF-format pass adds destinations and portable
 URI actions without reflowing pages. Actual annotation/destination and delivered
 file checks remain distinct from print acceptance. Whole-volume assembly and

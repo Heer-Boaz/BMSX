@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile, appendFile, access } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile, appendFile, access, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from 'pdf-lib';
 import { chromium } from 'playwright';
-import { coverageTopics, loadChapter, loadDevelopmentGuide, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
+import { coverageTopics, loadChapter, loadContents, loadDevelopmentGuide, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
 import { chapterHtml, renderChapter } from '../../scripts/manual/render.mjs';
 
 const sampleFigure = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" role="img"><title>Fixture figure</title><text x="10" y="25">Fixture</text></svg>';
@@ -50,6 +50,7 @@ async function fixture(t, chapterSource = sampleChapter) {
 	}
 	const files = {
 		'docs/manual/catalog.json': JSON.stringify({ sample: entry }),
+		'docs/programming/getting-started.md': '# Fixture development guide\n',
 		[entry.chapter]: chapterSource,
 		[entry.facts]: '# Fixture facts\n\nThe factual review is separate from printing.\n',
 		[entry.review]: JSON.stringify(review),
@@ -268,6 +269,102 @@ test('current source-language, BIOS and coroutine chapters belong to software, n
 		['console', 'cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'III').map(([id]) => id),
 		['cartridge']);
+});
+
+test('draft contents derives volume groups and chapter titles without adding a catalog member or approval', async t => {
+	const root = await fixture(t);
+	const catalogPath = join(root, 'docs/manual/catalog.json');
+	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+	for (const [id, book, title] of [
+		['second', 'I', 'A hardware title'], ['third', 'I', 'Another hardware title'],
+		['fourth', 'III', 'An expansion title'],
+	]) {
+		catalog[id] = { book, label: 'Not the source title', chapter: `docs/book2/${id}.md` };
+		await writeFile(join(root, catalog[id].chapter), `# ${title}\n`);
+	}
+	await writeFile(catalogPath, JSON.stringify(catalog));
+	const contents = await loadContents(root);
+	assert.equal(contents.id, 'contents');
+	assert.equal(contents.runningTitle, 'Developer References');
+	assert.equal(Object.hasOwn(contents.entry, 'book'), false);
+	assert.equal(Object.hasOwn(contents, 'review'), false);
+	assert.deepEqual(JSON.parse(await readFile(catalogPath, 'utf8')), catalog);
+	assert.equal(Object.hasOwn(catalog, 'contents'), false);
+	const html = chapterHtml(contents, 'preview');
+	assert.match(html, /<h1 id="bmsx-developer-references">BMSX Developer References<\/h1>/);
+	assert.match(html, /DRAFT — NOT FOR PUBLICATION/);
+	assert.doesNotMatch(html, /cartlib|Not the source title/);
+	assert.deepEqual([...html.matchAll(/<h2 id="[^"]+">([^<]+)<\/h2>/g)].map(([, title]) => title), [
+		'Book I · System and Hardware Reference', 'Book II · BLua32 and BIOS Reference',
+		'Book III · Cartridge and Expansion Reference', 'Development companion',
+	]);
+	assert.deepEqual([...html.matchAll(/<a href="([^"]+)" data-manual-format="([^"]+)">([^<]+)<\/a>/g)]
+		.map(([, href, format, title]) => ({ href, format, title })), [
+		{ href: 'second.preview.html', format: 'pdf', title: 'A hardware title' },
+		{ href: 'third.preview.html', format: 'pdf', title: 'Another hardware title' },
+		{ href: 'sample.preview.html', format: 'pdf', title: 'Sample Unit' },
+		{ href: 'fourth.preview.html', format: 'pdf', title: 'An expansion title' },
+		{ href: 'getting-started.preview.html', format: 'html', title: 'Fixture development guide' },
+	]);
+	const current = await loadContents(repositoryRoot);
+	assert.equal(current.documents.size, 23, 'all 22 reference chapters plus the separate companion');
+	assert.equal([...current.documents.values()].filter(document => document.format === 'pdf').length, 22);
+	assert.doesNotMatch(chapterHtml(current, 'preview'), /\bcartlib\b/i);
+});
+
+test('contents CLI preflights preview targets, emits portable HTML/PDF, and cannot publish a partial series', async t => {
+	const root = await fixture(t);
+	await cp(resolve(repositoryRoot, 'scripts/manual'), join(root, 'scripts/manual'), { recursive: true });
+	await symlink(resolve(repositoryRoot, 'node_modules'), join(root, 'node_modules'), 'dir');
+	const script = join(root, 'scripts/manual/build.mjs');
+	const run = mode => spawnSync(process.execPath, [script, mode, 'contents'], { cwd: tmpdir(), encoding: 'utf8' });
+	const directory = join(root, 'build/manual');
+	let result = run('preview');
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /sample\.preview\.html/);
+	await assert.rejects(access(join(directory, 'contents.preview.html')), { code: 'ENOENT' });
+	await mkdir(directory, { recursive: true });
+	await writeFile(join(directory, 'sample.preview.html'), 'Existing fixture output.');
+	result = run('preview');
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /sample\.preview\.pdf/);
+	await assert.rejects(access(join(directory, 'contents.preview.html')), { code: 'ENOENT' });
+	await writeFile(join(directory, 'sample.preview.pdf'), 'Existing fixture output.');
+	result = run('preview');
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /getting-started\.preview\.html/);
+	await assert.rejects(access(join(directory, 'contents.preview.pdf')), { code: 'ENOENT' });
+	await writeFile(join(directory, 'getting-started.preview.html'), 'Existing fixture guide.');
+	result = run('preview');
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /DRAFT contents:/);
+	const html = await readFile(join(directory, 'contents.preview.html'), 'utf8');
+	assert.match(html, /href="sample\.preview\.html"/);
+	assert.match(html, /href="getting-started\.preview\.html"/);
+	const pdfBytes = await readFile(join(directory, 'contents.preview.pdf'));
+	const pdf = await PDFDocument.load(pdfBytes);
+	const uris = [];
+	for (const page of pdf.getPages()) {
+		const annotations = page.node.Annots();
+		if (!annotations) continue;
+		for (let index = 0; index < annotations.size(); index += 1) {
+			const action = annotations.lookup(index, PDFDict).lookup(PDFName.of('A'), PDFDict);
+			uris.push(action.lookup(PDFName.of('URI'), PDFString, PDFHexString).decodeText());
+		}
+	}
+	assert.deepEqual(uris, ['sample.preview.pdf', 'getting-started.preview.html']);
+	const receipt = JSON.parse(await readFile(join(directory, 'contents.preview.json'), 'utf8'));
+	assert.equal(receipt.chapter, 'contents');
+	assert.equal(receipt.mode, 'preview');
+	assert.deepEqual(receipt.layout, { figures: 0, registerEntries: 0, errors: [] });
+	for (const mode of ['check', 'publish']) {
+		result = run(mode);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /only as a draft preview/);
+	}
+	await assert.rejects(access(join(directory, 'contents.pdf')), { code: 'ENOENT' });
+	assert.deepEqual(await readFile(join(directory, 'contents.preview.pdf')), pdfBytes);
+	assert.equal(await readFile(join(directory, 'sample.preview.pdf'), 'utf8'), 'Existing fixture output.');
 });
 
 test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {

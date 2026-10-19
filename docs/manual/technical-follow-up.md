@@ -1545,11 +1545,17 @@ pre-navigation artifacts: 834 pages across 30 regenerated PDFs. Existing print
 acceptance is carried only at that unchanged-graphics boundary; pending factual
 or print decisions remain pending. Evidence: `/tmp/bmsx-manual-navigation/`.
 
-The complete admitted delivery set is currently the **preview** set. Eight
-gate-approved canonical chapters were regenerated; superseded gate-blocked
-Math/GPU/GEO canonical artifacts were withheld, not approved. **NAV01 remains
-open for final series assembly, release delivery and actual viewer-level bundle
-acceptance**, not for another per-chapter link workaround.
+The complete admitted delivery set remains the **preview** set; twelve chapters
+have canonical publication approval, not the full series. Generated
+`contents.preview.html` and `contents.preview.pdf` now provide book-level contents
+from the existing catalog and manuscript titles, with the development companion
+separate. All 23 relative PDF actions have delivered targets. A relocated
+47-file preview bundle opens all 23 HTML targets in headless Chromium, including
+the actual contents → companion → GPU program → Memory route, without failed
+requests. Evidence: `/tmp/bmsx-manual-contents-portable-browser.json`.
+This closes the missing draft contents/HTML entry point. **NAV01 remains open
+for final series assembly, release delivery and actual PDF-viewer bundle
+acceptance**; contents cannot promote unresolved chapter contracts.
 
 
 ## First Book III chapter: cartridge sockets and mapped cards

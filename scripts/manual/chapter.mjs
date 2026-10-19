@@ -35,9 +35,35 @@ export async function loadDevelopmentGuide(root) {
 	return { ...document, runningTitle: 'Development companion' };
 }
 
-async function loadDocument(root, id, entry, catalog) {
+export async function loadContents(root) {
+	const [catalog, volumes] = await Promise.all([
+		readFile(resolve(root, 'docs/manual/catalog.json'), 'utf8').then(JSON.parse),
+		readFile(resolve(root, 'docs/manual/volumes.json'), 'utf8').then(JSON.parse),
+	]);
+	const titles = new Map(await Promise.all([...Object.values(catalog), developmentGuide.entry].map(async entry => {
+		const tokens = marked.lexer(await readFile(resolve(root, entry.chapter), 'utf8'));
+		return [entry.chapter, tokens.find(token => token.type === 'heading' && token.depth === 1).text];
+	})));
+	let markdown = '# BMSX Developer References\n\n';
+	for (const [book, title] of Object.entries(volumes)) {
+		markdown += `## Book ${book} · ${title}\n\n`;
+		for (const entry of Object.values(catalog)) {
+			if (entry.book === book) {
+				markdown += `- [${titles.get(entry.chapter)}](${pathToFileURL(resolve(root, entry.chapter)).href})\n`;
+			}
+		}
+		markdown += '\n';
+	}
+	markdown += `## Development companion\n\n- [${titles.get(developmentGuide.entry.chapter)}](${pathToFileURL(resolve(root, developmentGuide.entry.chapter)).href})\n`;
+	const document = await loadDocument(root, 'contents', {
+		chapter: 'docs/manual/catalog.json', label: 'CONTENTS',
+	}, catalog, markdown);
+	return { ...document, runningTitle: 'Developer References' };
+}
+
+async function loadDocument(root, id, entry, catalog, source = readFile(resolve(root, entry.chapter), 'utf8')) {
 	const [markdown, stylesheet] = await Promise.all([
-		readFile(resolve(root, entry.chapter), 'utf8'),
+		source,
 		readFile(resolve(root, 'docs/manual/print.css'), 'utf8'),
 	]);
 	const tokens = marked.lexer(markdown);
