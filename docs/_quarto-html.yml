@@ -1,8 +1,22 @@
 project:
   output-dir: _html
+  resources:
+    - _book-i/*.pdf
+    - _book-ii/*.pdf
+    - _book-iii/*.pdf
 
 book:
   title: BMSX Developer Reference
+  navbar:
+    right:
+      - text: Download PDFs
+        menu:
+          - text: Book I — System and Hardware Reference
+            href: _book-i/bmsx-book-i.pdf
+          - text: Book II — BLua32 and BIOS Reference
+            href: _book-ii/bmsx-book-ii.pdf
+          - text: Book III — Cartridge and Expansion Reference
+            href: _book-iii/bmsx-book-iii.pdf
   chapters:
     - index.md
     - part: "Book I — System and Hardware Reference"

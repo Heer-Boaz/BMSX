@@ -36,6 +36,7 @@
 		"yaml": "^2.9.1"
 	},
 	"scripts": {
+		"manual:build": "npm run manual:pdf && npm run manual:html",
 		"manual:preview": "quarto preview docs --profile html",
 		"manual:html": "quarto render docs --profile html --to html",
 		"manual:book-i": "quarto render docs --profile book-i --to pdf",

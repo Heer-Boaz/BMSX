@@ -102,7 +102,9 @@ book index covers the chapters included in that volume.
 Install Quarto and its supported TinyTeX distribution; Linux also needs
 `librsvg2-bin`, `fonts-liberation` and `fonts-dejavu-core`. Commands and output locations are in the
 [root README](../../README.md#publishing-the-manuals). Run `quarto check` for the
-installed toolchain; use normal render diagnostics and inspect affected output
+installed toolchain. `npm run manual:build` renders all three PDFs before HTML,
+whose native resources include those PDF downloads; `manual:html` and previews
+remain independent for fast HTML authoring. Use normal render diagnostics and inspect affected output
 for content loss, unreadable tables or illustrations, and bad page breaks.
 There is no custom publication test suite or approval catalog. Hardware/BIOS
 regression tests remain with their actual owners.

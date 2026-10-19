@@ -46,10 +46,16 @@ later with LuaLaTeX. Install Quarto, then its supported TeX distribution with
 are supplied by `sudo apt-get install librsvg2-bin fonts-liberation fonts-dejavu-core`.
 
 ```sh
-npm run manual:preview  # searchable HTML with live reload
+npm run manual:build   # three PDFs + HTML with downloadable copies
+npm run manual:preview # searchable HTML with live reload
 npm run manual:html     # docs/_html/index.html
 npm run manual:pdf      # docs/_book-{i,ii,iii}/bmsx-book-*.pdf
 ```
+
+The full build produces a self-contained `docs/_html/` site, including the three
+PDF downloads. HTML-only builds and previews need no TeX run; downloads appear
+after the PDFs have been built and HTML has been rendered again. HTML uses
+native MathML and system fonts, without a font or formula CDN.
 
 Each volume can also be rendered with `npm run manual:book-i` (or `book-ii`,
 `book-iii`). Standard Quarto profiles define the three books and combined HTML;
