@@ -49,7 +49,9 @@ export async function finishManualPdf(bytes, headingTargets) {
 			if (action === undefined || action.lookup(PDFName.of('S'), PDFName) !== PDFName.of('URI')) continue;
 			const uri = action.lookup(PDFName.of('URI'), PDFString, PDFHexString).decodeText();
 			if (uri.startsWith(manualLinkBase)) {
-				action.set(PDFName.of('URI'), PDFString.of(uri.slice(manualLinkBase.length)));
+				// PDF viewers can treat a bare dotted filename as a hostname.
+				// Emit an explicit relative path, not an ambiguous scheme-less URL.
+				action.set(PDFName.of('URI'), PDFString.of(`./${uri.slice(manualLinkBase.length)}`));
 			}
 		}
 	}

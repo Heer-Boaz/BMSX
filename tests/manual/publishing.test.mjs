@@ -352,7 +352,7 @@ test('contents CLI preflights preview targets, emits portable HTML/PDF, and cann
 			uris.push(action.lookup(PDFName.of('URI'), PDFString, PDFHexString).decodeText());
 		}
 	}
-	assert.deepEqual(uris, ['sample.preview.pdf', 'getting-started.preview.html']);
+	assert.deepEqual(uris, ['./sample.preview.pdf', './getting-started.preview.html']);
 	const receipt = JSON.parse(await readFile(join(directory, 'contents.preview.json'), 'utf8'));
 	assert.equal(receipt.chapter, 'contents');
 	assert.equal(receipt.mode, 'preview');
@@ -609,7 +609,7 @@ test('catalog source URLs route cross-directory chapter and guide links to sibli
 	}
 });
 
-test('PDF navigation uses relative document URIs and exports every heading and heading alias', async t => {
+test('PDF navigation uses explicit relative paths and exports every heading and heading alias', async t => {
 	const root = await navigationFixture(t);
 	const chapter = await loadChapter(root, 'sample');
 	for (const mode of ['preview', 'publish']) {
@@ -638,9 +638,9 @@ test('PDF navigation uses relative document URIs and exports every heading and h
 			}
 		}
 		assert.deepEqual(uris.sort(), [
-			`other-unit${suffix}.pdf?view=full#nameddest=other-heading`,
-			`other-unit${suffix}.pdf`,
-			`getting-started${suffix}.html#first-build`,
+			`./other-unit${suffix}.pdf?view=full#nameddest=other-heading`,
+			`./other-unit${suffix}.pdf`,
+			`./getting-started${suffix}.html#first-build`,
 			'https://example.test/reference#external-heading',
 		].sort());
 		assert.deepEqual(localTargets, ['linked-target', 'één-日本語']);

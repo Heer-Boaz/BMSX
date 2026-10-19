@@ -219,3 +219,13 @@ by DMA `controller.ts:487–503` / `controller.cpp:412–426`. Source transport,
 decoder production and GPU completion remain distinct. Removing external
 metadata links and dispatcher wording changes no retained program operation.
 Current source approval does not supply final print acceptance.
+
+## Independent asset authoring and byte order — 2026-10-19
+
+A public-only reader reconstructed the complete ten-word texture/CLUT stream
+and all22 generated GP0 words, including overlapping history across the CLUT
+header. Its only missing local link was serialized byte order. IBE01 supplies
+that narrow ROM/RAM → DMA → DATA fact; a separate paired-owner source check
+accepts the new paragraph and49 4D 44 31 example. Existing programs, token
+recurrence, timing and output-image evidence are unchanged; no new execution
+or broader backend/whole-console approval is claimed.

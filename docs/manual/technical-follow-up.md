@@ -1553,9 +1553,36 @@ separate. All 23 relative PDF actions have delivered targets. A relocated
 47-file preview bundle opens all 23 HTML targets in headless Chromium, including
 the actual contents → companion → GPU program → Memory route, without failed
 requests. Evidence: `/tmp/bmsx-manual-contents-portable-browser.json`.
-This closes the missing draft contents/HTML entry point. **NAV01 remains open
-for final series assembly, release delivery and actual PDF-viewer bundle
-acceptance**; contents cannot promote unresolved chapter contracts.
+Actual full Chromium153 headless viewer clicks then exposed a defect the graph
+audit missed: bare `system.preview.pdf` and `input.preview.pdf` actions were
+guessed as HTTP hostnames. The central PDF producer now emits explicit `./`
+relative paths. The preserved failing route and corrected native annotation
+clicks are in `/tmp/bmsx-manual-viewer-proof/`: contents → SYSTEM, then SYSTEM
+page4 → INPUT's named destination on page6, and contents → companion HTML.
+The corrected routes make no HTTP request and have no failed navigation.
+The viewer's [scheme-guessing implementation](https://github.com/chromium/chromium/blob/main/chrome/browser/resources/pdf/navigator.ts)
+confirms why explicit paths are required. This is bounded Chromium evidence,
+not an all-viewer/platform claim.
+
+The 35 regenerated PDFs account for 1,127 pages without a repeat whole-book
+visual review: 33 same-source documents (1,073 pages) retain exact full-RGBA
+page images and dimensions; IMGDEC's 27 canonical pages match its approved
+byte-order proof, while only page1 of its 27-page DRAFT changed and was viewed.
+The complete preview graph resolves 243 relative PDF actions, 93 native local
+destinations, 1,174 headings and 72 aliases; contents adds 23 explicit relative
+actions. All29 manual tests pass. Pixel and graph evidence:
+`/tmp/bmsx-explicit-relative-pdf/`.
+
+This closes the missing draft contents entry and the tested local PDF-viewer
+routes. **NAV01 remains open for final series assembly and release delivery**;
+working navigation cannot promote unresolved chapter contracts.
+
+The assembled preview delivery is
+`build/manual/bmsx-developer-references.preview.zip`: 47 files containing all
+22 chapter HTML/PDF pairs, both contents formats and the separate companion
+HTML. Extracted bytes match the tested relocated set, including the native
+viewer proof identities; `/tmp/bmsx-explicit-relative-pdf/bundle.json`.
+No canonical files, internal evidence or third-party library notes are included.
 
 
 ## First Book III chapter: cartridge sockets and mapped cards

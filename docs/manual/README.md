@@ -107,9 +107,10 @@ generates document-local GitHub-style heading IDs, including duplicate suffixes.
 An explicit standalone `<a id="…"></a>` immediately before a heading supplies an
 alias for that heading; existing native local destinations are retained.
 
-HTML links target sibling chapter HTML files. PDF links target sibling PDFs and
-exported named destinations, without workstation paths; the separate development
-companion is self-contained HTML rather than a fictitious hardware chapter.
+HTML links target sibling chapter HTML files. PDF links use explicit relative
+paths (`./…`) to sibling PDFs and exported named destinations, without workstation
+paths; the separate development companion is self-contained HTML rather than a
+fictitious hardware chapter.
 Preview links stay in the `.preview` set. Keep the chapter files and companion
 together when distributing them. Render the companion with the existing command:
 
@@ -129,6 +130,10 @@ catalog by book and list the development companion separately. Keep them beside
 the referenced preview files. This command checks that those files exist;
 it does not approve the drafts or publish a completed series. Contents currently
 supports preview mode only.
+
+When distributing the preview set as an archive, extract all files before
+opening the contents. Opening a single PDF directly from an archive does not
+make its relative chapter and companion targets available beside it.
 
 Chromium owns print layout; the PDF-format pass adds destinations and portable
 URI actions without reflowing pages. Actual annotation/destination and delivered

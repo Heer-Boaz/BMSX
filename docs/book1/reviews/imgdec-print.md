@@ -1,5 +1,26 @@
 # IMGDEC print acceptance
 
+## Explicit serialized-word order — 2026-10-19
+
+Bounded **print PASS** for publication proof
+`/tmp/bmsx-independent-asset-formats/imgdec.pdf`, SHA-256
+`2f34904fcd947b013cedd3aa9c8a059416ef1f3c970bbd663ad6fb189bc6062d`;
+source SHA-256 `778025687b90faeb911f52e031aa8ca846ea3b710536727f392c6b170e06557f`.
+Only page 1 changed. A nonauthor viewed that complete page at original detail;
+the byte-order paragraph, table and following caution are intact. All other
+26 pages equal complete RGBA composites of accepted page bodies and same-number
+folios, with dimensions checked; `page-carry.json` in the same directory records
+each mapping. No program, figure, stylesheet or runtime change was needed.
+This supersedes the prior source/artifact identity, not its unchanged-page
+inspection or the separately recorded execution evidence.
+
+After the shared relative-URI metadata correction, all 27 canonical pages
+match that approved proof in complete RGBA bytes and dimensions. Current
+`build/manual/imgdec.pdf` SHA-256:
+`da5924ada069792601c7aed4c6dfaed5edfebeb8da0a4098def001d5bf4dc731`.
+The new DRAFT page 1 was also viewed intact; its other 26 pages match the prior
+preview exactly. Evidence: `/tmp/bmsx-explicit-relative-pdf/page-identity.json`.
+
 ## Current hardware-only edition — 2026-10-19
 
 **Print PASS:** all 27 actual publication-mode pages were independently viewed

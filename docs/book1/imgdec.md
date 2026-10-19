@@ -33,6 +33,12 @@ packets use 32-bit words. Input and output counts are word counts, not byte
 counts. Decoded payload words and generated packet-header words are distinct:
 only the former contribute to DECODED_WORD_COUNT.
 
+For DMA input from ROM or main RAM, serialize each compressed word in
+little-endian byte order: `31444D49H` occupies bytes `49 4D 44 31` at increasing
+addresses. This is data-word order, not
+[CPU instruction byte order](cpu.md#instruction-words-and-execution-resources);
+see [Memory — Addresses and data sizes](memory.md#addresses-and-data-sizes).
+
 | Resource | Capacity or basis |
 |---|---|
 | Register word | 32 bits |

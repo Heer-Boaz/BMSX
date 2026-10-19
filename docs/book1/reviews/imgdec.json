@@ -9,7 +9,7 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "All four token fields/ranges, literal/repeat/zero/overlapping back-reference behavior, shared texture/CLUT history, generated headers, raw GP0 words, modulo counters and exact worked output streams are independently audited.",
+			"resolution": "All four token fields/ranges, literal/repeat/zero/overlapping back-reference behavior, shared texture/CLUT history, generated headers, raw GP0 words, modulo counters and exact worked output streams are independently audited. Compressed ROM/RAM data-word serialization is explicitly little-endian, distinct from CPU instruction bytes.",
 			"open": []
 		},
 		"visibility": {

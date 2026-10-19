@@ -444,3 +444,27 @@ existing decoder stream's palette4 interpretation, disjoint display window,
 exact raw quad/underlay packets, finite UV sample runs and real output evidence.
 The original four decoder jobs, retained results and source/CLUT readback remain;
 IMGDEC is not redefined as a renderer or direct VRAM writer.
+
+## Serialized compressed words — IBE01
+
+Complete compressed data words stored for DMA in ROM or main RAM are
+little-endian. The common endian helper assigns increasing bytes to bits
+0–7,8–15,16–23,24–31: `machine/ts/common/endian.ts:10–16` /
+`machine/cpp/common/endian.h:18–23`. Main-RAM and system-ROM DMA reads use that
+route: `machine/ts/machine/memory/memory.ts:540–565,323–338` /
+`machine/cpp/machine/memory/memory.cpp:430–455,56–71`. Cartridge-ROM U32
+reads likewise select its byte storage and readLE32:
+`machine/ts/machine/devices/cartridge/card.ts:177–181,303–309` /
+`machine/cpp/machine/devices/cartridge/card.cpp:144–148,264–270`.
+DMA passes the read word unchanged to its destination:
+`machine/ts/machine/devices/dma/controller.ts:231–232` /
+`machine/cpp/machine/devices/dma/controller.cpp:161–162`.
+IMGDEC DATA enqueues the same word:
+`machine/ts/machine/devices/imgdec/controller.ts:608–618` /
+`machine/cpp/machine/devices/imgdec/controller.cpp:518–524`.
+Both stream specs define that magic word:
+`machine/ts/spec/imgdec/stream.ts:4–5` /
+`machine/cpp/spec/imgdec/stream.h:12–13`.
+Thus the stream magic word31444D49H serializes as49 4D 44 31. This is data-word
+serialization, not the separate big-endian CPU instruction-fetch encoding
+already established in the CPU/Memory facts. No ROM packer convention is used.
