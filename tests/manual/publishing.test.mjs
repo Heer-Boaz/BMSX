@@ -535,6 +535,10 @@ const navigationChapter = `# Navigation fixture
 
 [Local Unicode](#één-日本語)
 
+[Local reflow heading](#reflow-target)
+
+[Local reflow alias](#reflow-alias)
+
 [External reference](https://example.test/reference#external-heading)
 
 ## Linked target
@@ -556,6 +560,20 @@ This heading has no local link.
 ## Één 日本語
 
 The standalone authored heading alias has no local link either.
+
+<div style="height: 150mm"></div>
+
+<section class="keep-together">
+
+<a id="reflow-alias"></a>
+
+## Reflow target
+
+The heading and its authored alias move together to the next printed page.
+
+<div style="height: 60mm"></div>
+
+</section>
 `;
 
 async function navigationFixture(t) {
@@ -595,6 +613,8 @@ test('catalog source URLs route cross-directory chapter and guide links to sibli
 			{ label: 'Development guide', href: `getting-started${suffix}.html#first-build`, format: 'html' },
 			{ label: 'Local heading', href: '#linked-target', format: null },
 			{ label: 'Local Unicode', href: '#één-日本語', format: null },
+			{ label: 'Local reflow heading', href: '#reflow-target', format: null },
+			{ label: 'Local reflow alias', href: '#reflow-alias', format: null },
 			{ label: 'External reference', href: 'https://example.test/reference#external-heading', format: null },
 		]);
 	}
@@ -608,7 +628,7 @@ test('PDF navigation uses explicit relative paths and exports every heading and 
 		const output = await renderChapter(chapter, mode, join(root, 'build/manual'));
 		assert.equal(output.pdf, join(root, `build/manual/sample${suffix}.pdf`));
 		const pdf = await PDFDocument.load(await readFile(output.pdf));
-		assert.equal(pdf.getPageCount(), 2);
+		assert.equal(pdf.getPageCount(), 3);
 		const uris = [];
 		const localTargets = [];
 		for (const page of pdf.getPages()) {
@@ -634,7 +654,7 @@ test('PDF navigation uses explicit relative paths and exports every heading and 
 			`./getting-started${suffix}.html#first-build`,
 			'https://example.test/reference#external-heading',
 		].sort());
-		assert.deepEqual(localTargets, ['linked-target', 'één-日本語']);
+		assert.deepEqual(localTargets, ['linked-target', 'één-日本語', 'reflow-target', 'reflow-alias']);
 
 		const destinations = new Map();
 		const legacy = pdf.catalog.lookupMaybe(PDFName.of('Dests'), PDFDict);
@@ -657,19 +677,45 @@ test('PDF navigation uses explicit relative paths and exports every heading and 
 			}
 		}
 		if (tree) readNameTree(tree);
-		for (const [name, pageIndex] of [
-			['navigation-fixture', 0], ['linked-target', 0], ['unreferenced', 1],
-			['repeated', 1], ['repeated-1', 1], ['één-日本語', 1], ['authored-alias', 1],
+		const outlineDestinations = [];
+		function readOutlines(first) {
+			let item = first;
+			while (item !== undefined) {
+				outlineDestinations.push(item.lookup(PDFName.of('Dest'), PDFArray));
+				const child = item.lookupMaybe(PDFName.of('First'), PDFDict);
+				if (child !== undefined) readOutlines(child);
+				item = item.lookupMaybe(PDFName.of('Next'), PDFDict);
+			}
+		}
+		readOutlines(pdf.catalog.lookup(PDFName.of('Outlines'), PDFDict).lookup(PDFName.of('First'), PDFDict));
+		for (const [name, pageIndex, outlineIndex] of [
+			['navigation-fixture', 0, 0], ['linked-target', 0, 1], ['unreferenced', 1, 2],
+			['repeated', 1, 3], ['repeated-1', 1, 4], ['één-日本語', 1, 5], ['authored-alias', 1, 5],
+			['reflow-target', 2, 6], ['reflow-alias', 2, 6],
 		]) {
 			assert.ok(destinations.has(name), `${mode} exports ${name}`);
 			const destination = pdf.context.lookup(destinations.get(name), PDFArray);
 			assert.equal(destination.get(0).toString(), pdf.getPage(pageIndex).ref.toString(), `${name} selects its printed page`);
 			assert.equal(destination.lookup(1, PDFName), PDFName.of('XYZ'));
+			assert.equal(destination.toString(), outlineDestinations[outlineIndex].toString(),
+				`${name} uses the printed heading's exact outline coordinates`);
+			assert.ok(Math.abs(destination.get(2).asNumber() - 51) < 1,
+				`${name} selects the heading's horizontal position, not an empty anchor at zero`);
 		}
+		for (const [name, destination] of legacy.entries()) {
+			const id = decodeURIComponent(name.decodeText());
+			assert.equal(pdf.context.lookup(destination, PDFArray).toString(),
+				pdf.context.lookup(destinations.get(id), PDFArray).toString(),
+				`${id} has identical legacy and name-tree coordinates`);
+		}
+		const reflowY = pdf.context.lookup(destinations.get('reflow-target'), PDFArray).get(3).asNumber();
+		const pageHeight = pdf.getPage(2).getHeight();
+		assert.ok(reflowY > pageHeight - 100 && reflowY < pageHeight - 40,
+			'the reflowed heading is near the top of its printed page, not the page-bottom anchor');
 		assert.equal(
 			pdf.context.lookup(destinations.get('één-日本語'), PDFArray).toString(),
 			legacy.lookup(PDFName.of(encodeURIComponent('één-日本語')), PDFArray).toString(),
-			'the Unicode export preserves the exact Chromium local destination',
+			'the Unicode export and local destination use the same corrected heading position',
 		);
 		assert.equal(
 			pdf.context.lookup(destinations.get('authored-alias'), PDFArray).toString(),

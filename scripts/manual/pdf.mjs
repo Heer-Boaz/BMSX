@@ -5,19 +5,20 @@ export const manualLinkBase = 'https://bmsx-manual.invalid/';
 export async function finishManualPdf(bytes, headingTargets) {
 	const document = await PDFDocument.load(bytes, { updateMetadata: false });
 	const directDestinations = document.catalog.lookupMaybe(PDFName.of('Dests'), PDFDict);
-	const nativeDestinations = new Map(directDestinations === undefined ? [] :
-		directDestinations.entries().map(([name, destination]) => [decodeURIComponent(name.decodeText()), destination]));
+	const nativeDestinationNames = new Map(directDestinations === undefined ? [] :
+		directDestinations.keys().map(name => [decodeURIComponent(name.decodeText()), name]));
 	const destinations = new Map();
 	let headingIndex = 0;
 	function visitOutlines(first) {
 		let item = first;
 		while (item !== undefined) {
 			const targets = headingTargets[headingIndex];
-			const nativeHeading = nativeDestinations.get(targets[0]);
-			const destination = nativeHeading === undefined ? item.get(PDFName.of('Dest')) : nativeHeading;
+			// Outline positions follow paginated headings; empty native anchors do not.
+			const destination = item.get(PDFName.of('Dest'));
 			for (const id of targets) {
-				const nativeDestination = nativeDestinations.get(id);
-				destinations.set(id, nativeDestination === undefined ? destination : nativeDestination);
+				destinations.set(id, destination);
+				const nativeName = nativeDestinationNames.get(id);
+				if (nativeName !== undefined) directDestinations.set(nativeName, destination);
 			}
 			headingIndex += 1;
 			const child = item.lookupMaybe(PDFName.of('First'), PDFDict);
