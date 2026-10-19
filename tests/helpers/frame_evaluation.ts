@@ -38,6 +38,49 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	grouped_results: `
+local function pair() return 17, 23, nil end
+local function empty() return select(2, 7) end
+local function forward(...) return ... end
+local function scalar(...) return ((...)) end
+local a, b = (pair())
+assert(a == 17 and b == nil)
+a, b = pair()
+assert(a == 17 and b == 23)
+a, b = ((pair()))
+assert(a == 17 and b == nil)
+assert(select('#', forward(pair())) == 3)
+assert(select('#', forward((pair()))) == 1)
+assert(select('#', 1, (pair())) == 2)
+assert(select('#', empty()) == 0)
+assert(select('#', (empty())) == 1 and (empty()) == nil)
+assert(select('#', scalar(31, 37)) == 1 and scalar(31, 37) == 31)
+assert(select('#', scalar()) == 1 and scalar() == nil)
+local function table_tail(...) return { 9, (...) } end
+local values = { 7, (pair()) }
+assert(values[1] == 7 and values[2] == 17 and values[3] == nil)
+values = table_tail(31, 37)
+assert(values[1] == 9 and values[2] == 31 and values[3] == nil)
+local function factory() return pair, 99 end
+assert(select('#', (factory())()) == 3)
+local function iterator(state, control)
+ if control == nil or control == 0 then return 1, state end
+end
+local function iterators() return iterator, 41, 0 end
+local visited = 0
+for key, value in (iterators()) do
+ assert(key == 1 and value == nil)
+ visited = visited + 1
+end
+for key, value in iterators() do
+ assert(key == 1 and value == 41)
+ visited = visited + 1
+end
+assert(visited == 2)
+local loaded = assert(load('return (pair())'))
+setglobal('pair', pair)
+assert(select('#', loaded()) == 1 and loaded() == 17)
+return true`,
 	inline_scope_enumeration: `
 local exercise = function(value, ...)
  local inspect<const> = function(offset)

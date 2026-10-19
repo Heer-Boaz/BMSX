@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 
 const cases: { source: string; values: (number | boolean | null)[] }[] = [
 	{ source: 'return tuple()', values: [7, null, false, 9, null] },
@@ -27,6 +30,28 @@ const cases: { source: string; values: (number | boolean | null)[] }[] = [
 	{ source: 'local t = table.pack(mark(1), spread(mark(2), mark(3))); return trace, t.n, t[1], t[2], t[3], t[4]', values: [123, 4, 1, 2, 3, -3] },
 	{ source: 'return 999, wide()', values: [999, ...Array.from({ length: 260 }, (_, index) => index)] },
 ];
+
+for (const optLevel of [0, 3] as const) test(`firmware O${optLevel}: grouped modf makes format c emit one codepoint`, () => {
+	const modules = ['base', 'table', 'math', 'math/trig', 'string/base', 'string/utf8', 'string/format'].map(path => ({
+		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
+	}));
+	modules.push({ path: 'format_char_assert', source: readFileSync('tests/carts/bios_format_manual/format_char_assert.lua', 'utf8') });
+	modules.push({ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' });
+	const entrySource = `require('base')
+math = require('math')
+string = require('string/base')
+string.format = require('string/format').format
+require('format_char_assert').tests.format_char_call_results()
+return true
+`;
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'format_char'),
+		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })),
+		{ entrySource, optLevel, programDomain: 'system' });
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+});
 
 for (const optLevel of [0, 3] as const) for (const { source, values } of cases) {
 	test(`firmware O${optLevel} call results: ${source}`, () => {

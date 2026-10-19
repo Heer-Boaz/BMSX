@@ -7,6 +7,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	isMultiReturnExpression,
 	isRecursiveConstClosureDeclaration,
 	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
@@ -5768,6 +5769,7 @@ class FunctionBuilder {
 	}
 
 	private isMultiReturnExpression(expression: LuaExpression): boolean {
+		if (!isMultiReturnExpression(expression)) return false;
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
 		if (this.resolveRequireModuleBinding(expression)) return false;

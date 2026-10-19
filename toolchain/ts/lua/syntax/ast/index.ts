@@ -317,6 +317,7 @@ export type LuaNilLiteralExpression = LuaNode & {
 
 export type LuaVarargExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.VarargExpression;
+	readonly expandsResults: boolean;
 };
 
 export type LuaIdentifierExpression = LuaNode & {
@@ -418,6 +419,7 @@ export type LuaUnaryExpression = LuaNode & {
 
 export type LuaCallExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.CallExpression;
+	readonly expandsResults: boolean;
 	readonly callee: LuaExpression;
 	readonly arguments: ReadonlyArray<LuaExpression>;
 	readonly method: LuaIdentifierExpression | null;
@@ -464,7 +466,8 @@ export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpress
 
 /** Syntactic result expansion; compiler binding/prototype knowledge can refine calls. */
 export function isMultiReturnExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
+	return (expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression)
+		&& expression.expandsResults;
 }
 
 // A lone const closure is bound before its body is compiled so it can recurse

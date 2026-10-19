@@ -1307,6 +1307,7 @@ export class LuaParser {
 	): LuaCallExpression {
 		return {
 			kind: LuaSyntaxKind.CallExpression,
+			expandsResults: true,
 			span: this.createSpan(this.spanStart(callee.span), parsedArguments.end),
 			callee,
 			arguments: parsedArguments.arguments,
@@ -1346,6 +1347,10 @@ export class LuaParser {
 				this.advance();
 				const expression = this.parseExpression();
 				this.consume(LuaTokenType.RightParen, 'Expected ")" after expression.');
+				if ((expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression)
+					&& expression.expandsResults) {
+					return { ...expression, expandsResults: false };
+				}
 				return expression;
 			}
 			default:
@@ -1389,10 +1394,10 @@ export class LuaParser {
 		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression): LuaNilLiteralExpression;
 		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.VarargExpression): LuaVarargExpression;
 		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression | LuaSyntaxKind.VarargExpression): LuaNilLiteralExpression | LuaVarargExpression {
-			return {
-				kind,
-				span: this.spanFromTokenAndToken(token, token),
-			};
+			const span = this.spanFromTokenAndToken(token, token);
+			return kind === LuaSyntaxKind.VarargExpression
+				? { kind, span, expandsResults: true }
+				: { kind, span };
 		}
 
 	private parseBooleanLiteral(value: boolean): LuaBooleanLiteralExpression {

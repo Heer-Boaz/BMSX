@@ -52,6 +52,40 @@ return first, absent, ({ key = 'member' }).key`);
 	assert.equal(writtenSourceExpression(query.expression(file, member)), member);
 });
 
+for (const expression of ['pair()', '...']) test(`grouped ${expression} retains scalar IDE lanes across semantic generations`, () => {
+	const source = (value: string) => `local function pair() return 17, 23 end
+local function inspect(...)
+ local left, right = ${value}
+ left, right = ${value}
+ sink(1, ${value})
+end`;
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('grouped.lua', source(expression));
+	const open = workspace.getSnapshot();
+	workspace.updateFile('grouped.lua', source(`((${expression}))`));
+	const grouped = workspace.getSnapshot();
+	workspace.updateFile('grouped.lua', source(expression));
+	const reopened = workspace.getSnapshot();
+	for (const [snapshot, expands] of [[open, true], [grouped, false], [reopened, true]] as const) {
+		const file = snapshot.getFileData('grouped.lua')!;
+		const inspect = file.chunk.body.get(1)!;
+		assert.ok(inspect.kind === LuaSyntaxKind.LocalFunctionStatement);
+		const flow = file.functionValueFlows.find(flow => flow.expression === inspect.functionExpression)!;
+		const [local, assignment] = [inspect.functionExpression.body.body.get(0)!, inspect.functionExpression.body.body.get(1)!];
+		for (const syntax of [local, assignment]) {
+			const right = file.declarationValues.find(write => write.syntax === syntax && write.index === 1)!;
+			if (expands) assert.equal(right.source.root.kind, 'unknown');
+			else assert.equal(right.source, NIL_VALUE_SOURCE);
+		}
+		const call = flow.calls.find(value => value.expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+			&& value.expression.callee.name === 'sink')!;
+		const missing = snapshot.symbolResolver.writtenSources.argument(call, 2);
+		if (expands) assert.equal(missing.value.root.kind, 'unknown');
+		else assert.equal(missing.value, NIL_VALUE_SOURCE);
+		assert.equal(flow.calls.length, expression === 'pair()' ? 4 : 1, 'grouping keeps each call occurrence');
+	}
+});
+
 test('written storage mutations distinguish constructor initialization from later aliased writes', () => {
 	const { file, query } = sourceQuery(`local untouched = { field = 1, 2 }
 local changed = { nested = {} }

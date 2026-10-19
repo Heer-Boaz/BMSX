@@ -13,6 +13,18 @@ import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { wholeProgramSymbolAt } from './semantic_test_harness';
 
+for (const expression of ['pair()', '...']) test(`const initializer diagnostics respect grouped ${expression}`, () => {
+	for (const grouped of [false, true]) {
+		const source = `local function pair() return 17, 23 end
+local function inspect(...)
+ local left, right<const> = ${grouped ? `(${expression})` : expression}
+end`;
+		const diagnostics = buildLuaSemanticFrontend([{ path: 'grouped.lua', source }]).getFile('grouped.lua').diagnostics;
+		assert.deepEqual(diagnostics.map(diagnostic => diagnostic.message), grouped
+			? ["Constant local 'right' must have an initializer."] : []);
+	}
+});
+
 test('semantic revisions identify immutable binder facts independently of shared syntax and workspace version numbers', () => {
 	const source = 'return { answer = 42 }';
 	const parsed = parseLuaChunk(source, 'revision.lua');

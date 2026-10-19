@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunkWithRecovery, updateLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
-import { LuaSyntaxKind, type LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, isMultiReturnExpression, type LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { LuaSourceLayoutBuilder } from '../../toolchain/ts/lua/syntax/source_layout';
@@ -18,6 +18,24 @@ function edit(previous: LuaChunk, offset: number, deletedLength: number, text: s
 	assert.deepEqual(luaSyntaxSnapshot(updated), luaSyntaxSnapshot(cold));
 	return updated;
 }
+
+for (const expression of ['pair()', '...']) test(`grouping edits retain the old result adjustment: ${expression}`, () => {
+	const previous = parseLuaChunkWithRecovery(`return ${expression}`, 'grouping.lua').chunk;
+	const original = previous.body.get(0)!;
+	assert.ok(original.kind === LuaSyntaxKind.ReturnStatement);
+	const snapshot = luaSyntaxSnapshot(previous);
+	const grouped = edit(previous, 7, expression.length, `(${expression})`);
+	const next = grouped.body.get(0)!;
+	assert.ok(next.kind === LuaSyntaxKind.ReturnStatement);
+	assert.equal(isMultiReturnExpression(original.expressions[0]), true);
+	assert.equal(isMultiReturnExpression(next.expressions[0]), false);
+	const ungrouped = edit(grouped, 7, expression.length + 2, expression);
+	const restored = ungrouped.body.get(0)!;
+	assert.ok(restored.kind === LuaSyntaxKind.ReturnStatement);
+	assert.equal(isMultiReturnExpression(restored.expressions[0]), true);
+	assert.equal(isMultiReturnExpression(next.expressions[0]), false);
+	assert.deepEqual(luaSyntaxSnapshot(previous), snapshot);
+});
 
 const LINES = Array.from({ length: 200 }, (_, i) => `local value_${i} = ${i}`).join('\n');
 const SOURCES = [

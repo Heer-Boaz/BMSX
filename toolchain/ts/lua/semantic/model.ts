@@ -2024,7 +2024,8 @@ class SemanticBuilder {
 		statement: LuaForGenericStatement,
 	): { readonly name: string; readonly table: SemanticValueSource } | undefined {
 		const iterator = statement.iterators[0];
-		if (iterator.kind !== LuaSyntaxKind.CallExpression || iterator.method
+		if (statement.iterators.length !== 1 || !isMultiReturnExpression(iterator)
+			|| iterator.kind !== LuaSyntaxKind.CallExpression || iterator.method
 			|| iterator.callee.kind !== LuaSyntaxKind.IdentifierExpression) return undefined;
 		const call = this.referencesBySyntax.get(iterator.callee)!.call!;
 		if (call.callee.root.kind !== 'global' || call.callee.steps.length !== 0) return undefined;

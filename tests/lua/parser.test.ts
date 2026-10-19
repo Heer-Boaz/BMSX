@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator, isMultiReturnExpression } from '../../toolchain/ts/lua/syntax/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -34,6 +34,18 @@ function parseChunk(source: string): LuaChunk {
 	const parser = new LuaParser(tokens, 'path', source);
 	return parser.parseChunk();
 }
+
+test('grouping adjusts call and vararg occurrences without hiding their syntax kind', () => {
+	const chunk = parseChunk('return pair(), (pair()), ((pair())), ..., (...), (factory())()');
+	const statement = chunk.body.get(0)! as LuaReturnStatement;
+	assert.deepEqual(statement.expressions.map(isMultiReturnExpression), [true, false, false, true, false, true]);
+	assert.deepEqual(statement.expressions.map(expression => expression.kind), [
+		LuaSyntaxKind.CallExpression, LuaSyntaxKind.CallExpression, LuaSyntaxKind.CallExpression,
+		LuaSyntaxKind.VarargExpression, LuaSyntaxKind.VarargExpression, LuaSyntaxKind.CallExpression,
+	]);
+	const outer = statement.expressions[5] as LuaCallExpression;
+	assert.equal(isMultiReturnExpression(outer.callee), false);
+});
 
 test('parses local assignment with multiple values', () => {
 	const path = parseChunk('local a, b = 1, 2');

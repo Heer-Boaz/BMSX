@@ -302,6 +302,33 @@ test('iteration contributions keep their producer syntax, not fabricated initial
 	for (const index of [0, 1, 3]) assert.equal(file.declarationValues[index].source.root.kind, 'unknown');
 });
 
+for (const iterator of ['pairs', 'ipairs']) test(`${iterator} table projections require expanded iterator results and retain old generations`, () => {
+	const source = (iterators: string) => `local entries = { 17, 23 }
+for key, value in ${iterators} do end`;
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('iterators.lua', source(`${iterator}(entries)`));
+	const open = workspace.getSnapshot();
+	workspace.updateFile('iterators.lua', source(`(${iterator}(entries))`));
+	const grouped = workspace.getSnapshot();
+	workspace.updateFile('iterators.lua', source(`${iterator}(entries), other_entries, 0`));
+	const explicitState = workspace.getSnapshot();
+	workspace.updateFile('iterators.lua', source(`${iterator}(entries)`));
+	const reopened = workspace.getSnapshot();
+	for (const [snapshot, projects] of [[open, true], [grouped, false], [explicitState, false], [reopened, true]] as const) {
+		const file = snapshot.getFileData('iterators.lua')!;
+		const loop = file.chunk.body.get(1)!;
+		const value = file.declarationValues.find(write => write.syntax === loop && write.index === 1)!;
+		if (projects) {
+			assert.equal(value.relation, 'projection');
+			assert.equal(value.source.root.kind, 'declaration');
+			assert.equal(value.source.steps[0].kind, 'element');
+		} else {
+			assert.equal(value.source.root.kind, 'unknown');
+			assert.equal(value.source.steps.length, 0);
+		}
+	}
+});
+
 test('written origins belong to immutable file facts, not the current workspace text', () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('provider.lua', 'local value = 1; value = 1; return value');
