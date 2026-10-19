@@ -107,6 +107,7 @@ The following preservation rules apply to that activated context:
 | GEO | The current job reaches a terminal phase; new CMD admission remains held until leave. | There is no separate supervisor GEO job/register bank. Its ordinary result and fault words remain meaningful. |
 | IMGDEC | Stream state remains in place at a scheduled-batch boundary and can resume on leave. | Quiescence is not stream DONE, and there is no separate supervisor decoder bank. |
 | APU | The voice clock is held after synchronization to the entry cycle; queued output samples are discarded. | Voice state is not reset or separately banked. Already scheduled sample-transfer work can still complete. |
+| INPUT | One shared register file, pending ARM request and sample sequence remain in use, including the BIOS monitor's captures. | There is no cartridge INPUT bank to restore on leave. Obtain a new sample on resumption; see [BIOS handoff and supervisor sampling](input.md#bios-handoff-and-supervisor-sampling). |
 
 </section>
 

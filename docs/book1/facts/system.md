@@ -371,3 +371,9 @@ machine/ts/machine/cpu/cpu.ts:3080-3088,3110-3129,3150-3152;
 machine/cpp/machine/cpu/cpu_dispatch.inl:621-627,638-640,646-668; scoped ordinary
 LOAD_MEM/STORE_MEM CPU facts EX09 and independent chapter source audit. No
 universal precedence for every memory opcode is inferred.
+
+## Shared INPUT context
+
+INPUT is not part of the banked cartridge context. The paired context owner and
+BIOS monitor sources are recorded once in [INPUT timing facts, IT09](input-timing.md#bios-and-supervisor-ownership--2026-10-19).
+This does not resolve attachment calibration or output-receiver precision.

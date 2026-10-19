@@ -150,3 +150,7 @@ and runtime-operand modulo cases32/7fffffff/80000000/ffffffff. These arithmetic
 cases do not advance the hardware counter through a complete wrap or prove
 native execution. Printed source matches the retained program apart from blank
 separators. RDB01 fault coverage and final print acceptance remain open.
+
+The 2026-10-19 INPUT preservation-table row has a bounded independent source
+PASS recorded in [input-source.md](input-source.md#bios-handoff-and-supervisor-ownership--2026-10-19).
+RDB01 and final print remain open; no runtime or supervisor policy was changed.

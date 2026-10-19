@@ -411,6 +411,11 @@ The BIOS writes zero to the central interrupt mask before handoff. This masks de
 
 Execution handoff also does not release the [Firmware reservation in VRAM](#firmware-reservation-in-vram); see [Handoff is not release](#handoff-is-not-release). Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
 
+INPUT likewise carries BIOS sampling state into cartridge entry rather than
+starting from its reset words. Follow
+[BIOS handoff and supervisor sampling](input.md#bios-handoff-and-supervisor-sampling)
+to establish a fresh cartridge sample, including after supervisor return.
+
 <a id="normal-boot-live-work"></a>
 
 #### Firmware work at normal boot handoff

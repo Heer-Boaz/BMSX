@@ -96,3 +96,13 @@ pass the bounded paired-owner check. One finding removed an unsupported “then�
 request consumption precedes register publication in `input/controller.ts:97–100`
 and `input/controller.cpp:66–69`, not the reverse. No attachment or full-word
 output policy was inferred; those existing open questions and print remain.
+
+## BIOS handoff and supervisor ownership — 2026-10-19
+
+Bounded independent PASS for the new INPUT subsection, SYSTEM table row and
+Memory handoff link against IT08–IT09's named paired owners and BIOS leaves.
+Reset words are not cartridge-entry state; monitor captures use the same ARM,
+sequence and register file, without a cartridge bank restored on LEAVE.
+This closes the inherited/supervisor-sampling question, not attachment units,
+pad calibration/trigger updates or arbitrary output precision. No guest
+execution or unchanged-section/print approval is inferred.

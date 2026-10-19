@@ -148,6 +148,22 @@ The sequence change is the sample-completion indication. The retained value of `
 
 Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
 
+### BIOS handoff and supervisor sampling
+
+The BIOS samples this controller during boot and does not reset INPUT when
+handing control to the cartridge. The register table's reset words are not a
+cartridge-entry snapshot. Retain the **current** STATUS as the baseline for
+the sampling sequence above; do not require an initial sequence of zero.
+
+INPUT is not context-banked. Cartridge and supervisor share its pending ARM
+request, accepted-sample sequence and register file. The BIOS monitor arms
+captures while it runs: each accepted capture replaces the shared snapshot
+and advances the same sequence. LEAVE does not restore the cartridge's earlier
+snapshot or sequence. After resuming, request and observe a new capture before
+treating those words as a fresh cartridge sample. See
+[SYSTEM, Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service),
+for the other units' preservation rules.
+
 ## Register map
 
 All addresses below are byte addresses. `R` denotes a read-only word; `R/W` denotes a readable word with write behavior. Command words must be written in full, rather than treated as independently writable control bits. Every listed word has reset value `00000000H`.

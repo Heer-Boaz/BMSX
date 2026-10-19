@@ -10,4 +10,35 @@
 - **IT06 — Real cartridge handler route.** Shared source compiler's generated IRQ entry reads current complete FLAGS, calls global irq(flags) when nonzero and executes RFE. The argument is not filtered by MASK. A cartridge author may define function irq(flags); that ordinary source handler acknowledges only its owned bits in this example. Producer `toolchain/ts/lua/compiler.ts:1633-1649`. BIOS before ordinary cart EXEC sets central MASK0 (`machine/bios/main.lua:105-113`). CPU cart function entry sets cart-entry STATUS including IEc1 (`machine/ts/machine/cpu/cpu.ts:1523-1546` / `machine/cpp/machine/cpu/cpu.cpp:1095-1118`; paired cart status `machine/ts/spec/blua32/cop0.ts:8-14` / `machine/cpp/spec/blua32/cop0.h:14-20`). This does not grant user access to CP0 writes; no such write is required by the example. Arbitrary resumed/supervisor entry is not this assumption.
 - **IT07 — Wait condition is sample sequence, not a VBlank interrupt count.** Maskable acceptance needs current IEc and pending&mask. HALT permits time/device deadlines to proceed, but a merely masked pending bit does not guarantee wake. Thus ARM, then compare STATUS to its pre-ARM value in a loop; use HALT only after enabling an owned VBlank IRQ route, and recheck STATUS after wake. This sequence is a programming derivation of the explicit one-shot sample/sequence facts plus IRQ acceptance/HALT. Sources `machine/ts/machine/cpu/cpu.ts:1611-1619,1680-1683,1718-1728`; `machine/cpp/machine/cpu/cpu.cpp:1643-1651,2242-2245,2280-2287`; time paths `machine/ts/machine/runtime/cpu_executor.ts:39-88` / `machine/cpp/machine/runtime/cpu_executor.cpp:12-61`. Reading a retained nonzero CTRL is not reading the private arm latch, per register sheet.
 
-Open boundaries: precise device electrical/sample throughput not defined here; complete supervisor transition/context policy belongs its own unit. No safe fallback or runtime repair inferred.
+## BIOS and supervisor ownership — 2026-10-19
+
+- **IT08 — Ordinary BIOS handoff is not an INPUT reset.** Boot arms INPUT before
+  its VBlank loop and again after each boot-screen update. The handoff masks IRQ
+  delivery and executes the selected startup record; it does not reset INPUT.
+  Table reset words therefore do not describe a guaranteed cartridge-entry
+  snapshot or initial sequence. Sources `machine/bios/main.lua:105–113,136–142`;
+  CPU entry `machine/ts/machine/cpu/cpu.ts:1523–1546` /
+  `machine/cpp/machine/cpu/cpu.cpp:1095–1118`. IT07's current-STATUS baseline
+  remains the fresh-sample protocol; no particular inherited sequence is promised.
+- **IT09 — Shared, unbanked INPUT during supervisor service.** There is one
+  INPUT register file, pending ARM and sequence. SYSTEM activation banks IRQ,
+  DMA and GPU, not INPUT; leave restores those banks and releases the other
+  held units without an INPUT capture/restore. Sources INPUT
+  `machine/ts/machine/devices/input/controller.ts:29–35,78–106` /
+  `machine/cpp/machine/devices/input/controller.h:18–30` and
+  `machine/cpp/machine/devices/input/controller.cpp:48–74`; SYSTEM
+  `machine/ts/machine/devices/system/controller.ts:181–240` /
+  `machine/cpp/machine/devices/system/controller.cpp:133–192`.
+  The monitor explicitly arms before its first input sample and in its loop;
+  its exit issues SYSTEM LEAVE without restoring INPUT. Sources
+  `machine/bios/shell/monitor.lua:406–413,447–455,494–499`.
+  Accepted monitor samples therefore replace the same snapshot and increment
+  the same sequence; LEAVE does not reinstate the cartridge's prior sample or
+  sequence. Neither transition itself is claimed to cancel ARM. The separate
+  `cancelSampleArm` call belongs to runtime VBlank reset, not these context
+  transitions: `machine/ts/machine/runtime/vblank.ts:21–27` /
+  `machine/cpp/machine/runtime/vblank.cpp:9–14`.
+
+Open boundaries: attachment coordinates/units, pad calibration/trigger policy
+and arbitrary output intensity remain separate. Physical electrical/sample
+throughput is not defined here. No safe fallback or runtime repair is inferred.

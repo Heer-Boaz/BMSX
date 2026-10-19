@@ -130,3 +130,10 @@ boundary examples. U32 at0801043CH is the last complete slot, supervisor DOMAIN
 and select whole backing-RAM transfers, not a mixed slot/RAM read. Ordinary CPU
 alignment precedes mapped access (existing Memory execution/access facts);
 F64 instead has two ordered word transfers (existing Memory scalar facts).
+
+## INPUT state at handoff and resumption
+
+Normal BIOS handoff does not reset INPUT; supervisor return does not restore an
+earlier cartridge sample. [INPUT timing facts, IT08–IT09](input-timing.md#bios-and-supervisor-ownership--2026-10-19)
+retain the exact BIOS and paired owner sources. A fresh sample uses current
+STATUS as its baseline, not an assumed reset sequence.

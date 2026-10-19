@@ -771,3 +771,7 @@ All 19 existing manual tests pass; Memory and SYSTEM checks intentionally
 reject publication for the recorded coverage holds. The test-regenerated
 37-page canonical PCRTC PDF is full-page RGBA/dimensions-identical to its
 accepted baseline; the old 22-page PCRTC preview is a separate stale artifact.
+
+The 2026-10-19 BIOS INPUT handoff/resumption paragraph has a bounded independent
+source PASS in [input-source.md](input-source.md#bios-handoff-and-supervisor-ownership--2026-10-19).
+RDB01, FSEL01, image-text decoding and whole-console acceptance remain open.

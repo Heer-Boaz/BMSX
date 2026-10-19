@@ -1,9 +1,9 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "47 mapped words, 41 sampled words and separate immediate output path are extracted; raw sampling owner is distinct from cartlib action/evaluation ownership.",
+			"resolution": "47 mapped words, 41 sampled words and separate immediate output path are extracted; raw sampling owner is distinct from cartlib action/evaluation ownership. BIOS handoff and supervisor reuse the unbanked INPUT register file, ARM and sequence; reset words are not a startup or restored-snapshot guarantee.",
 			"open": [
-				"Establish common attachment pointer-coordinate/wheel-unit and pad calibration/trigger-update contracts; full supervisor/inherited sampling policy remains shared-system work."
+				"Establish common attachment pointer-coordinate/wheel-unit and pad calibration/trigger-update contracts."
 			]
 		},
 		"registers": {
