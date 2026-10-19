@@ -103,10 +103,24 @@ datapath, timing equation, or example merely to imitate PCRTC's headings. Do not
 add a chapter-local table of contents, migration note, or implementation survey.
 
 Use source chapter paths and heading fragments for cross-references. The renderer
-generates document-local GitHub-style heading IDs, including duplicate suffixes;
-existing explicit `<a id="…"></a>` targets remain unchanged. A heading ID is not
-proof of a cross-PDF destination or portable delivered-series navigation; that
-remaining work is tracked as [NAV01](technical-follow-up.md#nav01-pdf-navigation-is-not-yet-delivered-series-navigation).
+generates document-local GitHub-style heading IDs, including duplicate suffixes.
+An explicit standalone `<a id="…"></a>` immediately before a heading supplies an
+alias for that heading; existing native local destinations are retained.
+
+HTML links target sibling chapter HTML files. PDF links target sibling PDFs and
+exported named destinations, without workstation paths; the separate development
+companion is self-contained HTML rather than a fictitious hardware chapter.
+Preview links stay in the `.preview` set. Keep the chapter files and companion
+together when distributing them. Render the companion with the existing command:
+
+```sh
+node scripts/manual/build.mjs preview getting-started
+```
+
+Chromium owns print layout; the PDF-format pass adds destinations and portable
+URI actions without reflowing pages. Actual annotation/destination and delivered
+file checks remain distinct from print acceptance. Whole-volume assembly and
+remaining delivery work are tracked as [NAV01](technical-follow-up.md#nav01-pdf-navigation-is-not-yet-delivered-series-navigation).
 
 The register reference must be usable without hunting through narrative paragraphs:
 
@@ -224,6 +238,11 @@ Reopen `print` whenever the chapter's content or layout changes. Review freshnes
 is an editorial responsibility: there are no file hashes or approval signatures
 to copy, and no automatic claim that an unchanged flag proves a review is current.
 
+A navigation-only PDF metadata change can carry existing print acceptance when
+every complete decoded page and its dimensions exactly match the accepted
+artifact. This is not approval from a hash alone or a reason to repeat unchanged
+page screenshots. Test link actions and destinations separately.
+
 ## Shared print design and source markup
 
 [print.css](print.css) owns the common monochrome A4 layout: 19 mm top, 18 mm
@@ -338,6 +357,8 @@ Chromium printing, accessible PDF tagging, and outlines follow
 and [PDF API](https://playwright.dev/docs/api/class-page#page-pdf).
 Running labels/page counters use
 [Chromium's CSS page-margin support](https://developer.chrome.com/blog/print-margins).
+PDF destination/action updates use [pdf-lib’s document model](https://github.com/Hopding/pdf-lib/blob/v1.17.1/src/api/PDFDocument.ts);
+cross-document fragments follow the [PDF Association’s named-destination syntax](https://pdfa.org/pdf-fragment-identifiers/).
 These are tooling references, **not sources of BMSX hardware behavior**.
 Binary-image ownership and normal HTML image output were also checked against
 [Sphinx's HTML image translator](https://github.com/sphinx-doc/sphinx/blob/master/sphinx/writers/html5.py)

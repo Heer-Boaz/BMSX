@@ -74,3 +74,23 @@ A programmer new to BMSX can recover the requested distinctions:
 - **Rate meanings:** GPU capabilities are not primitive throughput; GEO's outer-record budget is not a vertex/pair rate; PCRTC's timing reference is not a universal display mode; and APU output cadence, sample-memory service budget and source rate are kept distinct.
 
 The original processor/control, memory, IRQ and DMA orientation conclusions remain valid after the reread. This result is **reader orientation only**, not source-level hardware truth verification, runtime/visual proof, or whole-manual acceptance.
+
+
+## Cross-unit public-reader routes — 2026-10-19
+
+Three independent readers used public manuscripts only; none inspected owners,
+fact sheets, test internals or PDFs. No missing contract was found for these
+finite routes:
+
+- Interactive textured 2D: startup/RAM and queried VRAM ownership, image upload,
+  drawing, alternating GPU/PCRTC publication and one-shot input sampling.
+- 3D flat/clipped triangles: camera/matrix packing, projection, flags/area/depth,
+  software near-plane clipping, GP0 packet construction and safe display reuse.
+- PCM playback: ROM/RAM transport into private sample RAM, separate DMA/RAM
+  commit, descriptor/loop staging, execution observation, end/stop and reuse.
+
+The readers identified no need for another complete example or library API.
+These routes connect the existing Memory, GPU/PCRTC, GTE, INPUT, DMA/APU, IRQ and
+Cartridge contracts; this is not every operation, source-truth approval, new
+execution evidence or whole-console completion. Known engineering and delivery
+questions remain separate.

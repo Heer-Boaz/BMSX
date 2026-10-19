@@ -4,6 +4,7 @@ import { decodeHTML, decodeHTMLAttribute, escapeAttribute, escapeText } from 'en
 import GithubSlugger from 'github-slugger';
 import { Marked } from 'marked';
 import { chromium } from 'playwright';
+import { finishManualPdf, manualLinkBase } from './pdf.mjs';
 
 function headingText(tokens, renderer) {
 	let text = '';
@@ -29,6 +30,7 @@ function headingText(tokens, renderer) {
 }
 
 export function chapterHtml(chapter, mode) {
+	const preview = mode === 'preview';
 	const slugger = new GithubSlugger();
 	const authoredTargets = new Set();
 	const parser = new Marked({
@@ -48,6 +50,23 @@ export function chapterHtml(chapter, mode) {
 				// lettering use the same bundled fonts, without external resources.
 				return `<span class="manual-figure">${chapter.figures.get(href).toString('utf8')}</span>`;
 			},
+			link({ href, title, tokens }) {
+				let documentFormat = '';
+				if (!href.startsWith('#')) {
+					const target = new URL(href, chapter.sourceURL);
+					if (target.protocol === 'file:') {
+						const fragment = target.hash;
+						const query = target.search;
+						target.hash = '';
+						target.search = '';
+						const document = chapter.documents.get(target.href);
+						href = `${document.id}${preview ? '.preview' : ''}.html${query}${fragment}`;
+						documentFormat = ` data-manual-format="${document.format}"`;
+					}
+				}
+				const titleAttribute = title === null ? '' : ` title="${escapeAttribute(title)}"`;
+				return `<a href="${escapeAttribute(href)}"${titleAttribute}${documentFormat}>${this.parser.parseInline(tokens)}</a>`;
+			},
 		},
 	});
 	parser.walkTokens(chapter.tokens, token => {
@@ -58,8 +77,7 @@ export function chapterHtml(chapter, mode) {
 	});
 	const stylesheet = chapter.stylesheet.replace(/url\("([^"]+)"\)/g, (_, href) =>
 		`url("data:font/ttf;base64,${chapter.fonts.get(href).toString('base64')}")`);
-	const preview = mode === 'preview';
-	const volume = `Book ${chapter.entry.book} · ${chapter.volumeTitle}`;
+	const volume = chapter.runningTitle;
 	const title = `BMSX ${volume} — ${chapter.entry.label}${preview ? ' — DRAFT' : ''}`;
 	const footer = chapter.entry.label + (preview ? ' — DRAFT / NOT FOR PUBLICATION' : '');
 	return `<!doctype html>
@@ -131,13 +149,33 @@ export async function renderChapter(chapter, mode, outputDirectory) {
 		if (layout.errors.length !== 0) {
 			throw new Error(`Manual layout failed:\n${layout.errors.join('\n')}`);
 		}
-		await page.pdf({
-			path: `${stem}.pdf`,
+		const headingTargets = await page.evaluate(base => {
+			const headings = new Map([...document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6')]
+				.map(heading => [heading, heading.id === '' ? [] : [heading.id]]));
+			for (const anchor of document.querySelectorAll('main a[id]')) {
+				const paragraph = anchor.parentElement;
+				const marker = paragraph.tagName === 'P' && paragraph.textContent.trim() === '' ? paragraph : anchor;
+				if (anchor.textContent === '' && headings.has(marker.nextElementSibling)) {
+					headings.get(marker.nextElementSibling).push(anchor.id);
+				}
+			}
+			for (const link of document.querySelectorAll('main a[data-manual-format]')) {
+				const target = new URL(link.getAttribute('href'), base);
+				if (link.dataset.manualFormat === 'pdf') {
+					target.pathname = target.pathname.replace(/\.html$/, '.pdf');
+					if (target.hash !== '') target.hash = `nameddest=${target.hash.slice(1)}`;
+				}
+				link.href = target.href;
+			}
+			return [...headings.values()];
+		}, manualLinkBase);
+		const pdf = await page.pdf({
 			preferCSSPageSize: true,
 			printBackground: true,
 			tagged: true,
 			outline: true,
 		});
+		await writeFile(`${stem}.pdf`, await finishManualPdf(pdf, headingTargets));
 		const receipt = {
 			chapter: chapter.id, mode, layout,
 			engine: { chromium: browser.version(), node: process.version, platform: process.platform, arch: process.arch },

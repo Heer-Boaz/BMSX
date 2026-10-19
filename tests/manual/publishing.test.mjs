@@ -4,8 +4,10 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile, appendFile, access } from 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from 'pdf-lib';
 import { chromium } from 'playwright';
-import { coverageTopics, loadChapter, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
+import { coverageTopics, loadChapter, loadDevelopmentGuide, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
 import { chapterHtml, renderChapter } from '../../scripts/manual/render.mjs';
 
 const sampleFigure = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" role="img"><title>Fixture figure</title><text x="10" y="25">Fixture</text></svg>';
@@ -275,12 +277,12 @@ test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine
 	const output = await renderChapter(chapter, 'publish', join(root, 'build/manual'));
 	const pdf = await readFile(output.pdf);
 	assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
-	const pdfText = pdf.toString('latin1');
-	assert.ok(pdfText.includes('/StructTreeRoot'), 'PDF has accessibility tags');
-	assert.ok(pdfText.includes('/Outlines'), 'PDF has a heading outline');
-	const [, width, height] = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(pdfText);
-	assert.ok(Math.abs(Number(width) - 210 * 72 / 25.4) < 1, 'A4 page width');
-	assert.ok(Math.abs(Number(height) - 297 * 72 / 25.4) < 1, 'A4 page height');
+	const document = await PDFDocument.load(pdf);
+	assert.ok(document.catalog.lookup(PDFName.of('StructTreeRoot'), PDFDict), 'PDF has accessibility tags');
+	assert.ok(document.catalog.lookup(PDFName.of('Outlines'), PDFDict), 'PDF has a heading outline');
+	const { width, height } = document.getPage(0).getSize();
+	assert.ok(Math.abs(width - 210 * 72 / 25.4) < 1, 'A4 page width');
+	assert.ok(Math.abs(height - 297 * 72 / 25.4) < 1, 'A4 page height');
 	assert.deepEqual(output.layout, { figures: 1, registerEntries: 1, errors: [] });
 	const receipt = JSON.parse(await readFile(output.receipt, 'utf8'));
 	assert.deepEqual(Object.keys(receipt), ['chapter', 'mode', 'layout', 'engine']);
@@ -302,9 +304,19 @@ test('Chromium retains a local PDF link and named destination for an implicit he
 Synthetic destination, not a hardware specification.
 `);
 	const output = await renderChapter(await loadChapter(root, 'sample'), 'preview', join(root, 'build/manual'));
-	const pdf = (await readFile(output.pdf)).toString('latin1');
-	assert.match(pdf, /\/Dest \/implicit-target\b/);
-	assert.match(pdf, /\/implicit-target \[\d+ 0 R \/XYZ /);
+	const pdf = await PDFDocument.load(await readFile(output.pdf));
+	assert.equal(pdf.getPageCount(), 2);
+	const annotations = pdf.getPage(0).node.Annots();
+	assert.ok(annotations);
+	assert.equal(annotations.size(), 1);
+	const link = annotations.lookup(0, PDFDict);
+	assert.equal(link.lookup(PDFName.of('Subtype'), PDFName), PDFName.of('Link'));
+	const target = link.lookup(PDFName.of('Dest'), PDFName);
+	assert.equal(target.decodeText(), 'implicit-target');
+	const destinations = pdf.catalog.lookup(PDFName.of('Dests'), PDFDict);
+	const destination = destinations.lookup(target, PDFArray);
+	assert.equal(destination.get(0).toString(), pdf.getPage(1).ref.toString());
+	assert.equal(destination.lookup(1, PDFName), PDFName.of('XYZ'));
 });
 
 test('PNG figures retain binary pixels, authored alt text, print sizing, and PDF embedding beside SVG', async t => {
@@ -420,4 +432,196 @@ test('GTE draft renders through the shared pipeline without chapter-specific too
 	const output = await renderChapter(chapter, 'preview', directory);
 	assert.equal(output.layout.figures, 10);
 	assert.match(await readFile(output.html, 'utf8'), /DRAFT/);
+});
+
+const navigationChapter = `# Navigation fixture
+
+[Other heading](../book1/nested/other-source.md?view=full#other-heading)
+
+[Other chapter](../book1/nested/other-source.md)
+
+[Development guide](../programming/getting-started.md#first-build)
+
+[Local heading](#linked-target)
+
+[Local Unicode](#één-日本語)
+
+[External reference](https://example.test/reference#external-heading)
+
+## Linked target
+
+The linked destination is on the first page.
+
+<div style="break-before: page"></div>
+
+## Unreferenced
+
+This heading has no local link.
+
+## Repeated
+
+## Repeated
+
+<a id="authored-alias"></a>
+
+## Één 日本語
+
+The standalone authored heading alias has no local link either.
+`;
+
+async function navigationFixture(t) {
+	const root = await fixture(t, navigationChapter);
+	const catalogPath = join(root, 'docs/manual/catalog.json');
+	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+	catalog['other-unit'] = {
+		book: 'I', label: 'OTHER', chapter: 'docs/book1/nested/other-source.md',
+		facts: 'docs/book1/facts/other.md', review: 'docs/book1/reviews/other.json',
+	};
+	await writeFile(catalogPath, JSON.stringify(catalog));
+	return root;
+}
+
+test('catalog source URLs route cross-directory chapter and guide links to sibling HTML outputs', async t => {
+	const root = await navigationFixture(t);
+	const chapter = await loadChapter(root, 'sample');
+	assert.equal(chapter.sourceURL.href, pathToFileURL(join(root, 'docs/book2/sample.md')).href);
+	assert.deepEqual(chapter.documents.get(chapter.sourceURL.href), { id: 'sample', format: 'pdf' });
+	assert.deepEqual(chapter.documents.get(pathToFileURL(join(root, 'docs/book1/nested/other-source.md')).href),
+		{ id: 'other-unit', format: 'pdf' });
+	assert.deepEqual(chapter.documents.get(pathToFileURL(join(root, 'docs/programming/getting-started.md')).href),
+		{ id: 'getting-started', format: 'html' });
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage({ javaScriptEnabled: false });
+	for (const mode of ['preview', 'publish']) {
+		const suffix = mode === 'preview' ? '.preview' : '';
+		await page.setContent(chapterHtml(chapter, mode), { waitUntil: 'load' });
+		const links = await page.locator('main a[href]').evaluateAll(elements => elements.map(element => ({
+			label: element.textContent,
+			href: element.getAttribute('href'),
+			format: element.getAttribute('data-manual-format'),
+		})));
+		assert.deepEqual(links, [
+			{ label: 'Other heading', href: `other-unit${suffix}.html?view=full#other-heading`, format: 'pdf' },
+			{ label: 'Other chapter', href: `other-unit${suffix}.html`, format: 'pdf' },
+			{ label: 'Development guide', href: `getting-started${suffix}.html#first-build`, format: 'html' },
+			{ label: 'Local heading', href: '#linked-target', format: null },
+			{ label: 'Local Unicode', href: '#één-日本語', format: null },
+			{ label: 'External reference', href: 'https://example.test/reference#external-heading', format: null },
+		]);
+	}
+});
+
+test('PDF navigation uses relative document URIs and exports every heading and heading alias', async t => {
+	const root = await navigationFixture(t);
+	const chapter = await loadChapter(root, 'sample');
+	for (const mode of ['preview', 'publish']) {
+		const suffix = mode === 'preview' ? '.preview' : '';
+		const output = await renderChapter(chapter, mode, join(root, 'build/manual'));
+		assert.equal(output.pdf, join(root, `build/manual/sample${suffix}.pdf`));
+		const pdf = await PDFDocument.load(await readFile(output.pdf));
+		assert.equal(pdf.getPageCount(), 2);
+		const uris = [];
+		const localTargets = [];
+		for (const page of pdf.getPages()) {
+			const annotations = page.node.Annots();
+			if (!annotations) continue;
+			for (let index = 0; index < annotations.size(); index += 1) {
+				const annotation = annotations.lookup(index, PDFDict);
+				if (annotation.lookup(PDFName.of('Subtype'), PDFName) !== PDFName.of('Link')) continue;
+				const action = annotation.lookupMaybe(PDFName.of('A'), PDFDict);
+				if (action) {
+					assert.equal(action.lookup(PDFName.of('S'), PDFName), PDFName.of('URI'));
+					uris.push(action.lookup(PDFName.of('URI'), PDFString, PDFHexString).decodeText());
+				} else {
+					const destination = pdf.context.lookup(annotation.get(PDFName.of('Dest')));
+					assert.ok(destination instanceof PDFName || destination instanceof PDFString || destination instanceof PDFHexString);
+					localTargets.push(decodeURIComponent(destination.decodeText()));
+				}
+			}
+		}
+		assert.deepEqual(uris.sort(), [
+			`other-unit${suffix}.pdf?view=full#nameddest=other-heading`,
+			`other-unit${suffix}.pdf`,
+			`getting-started${suffix}.html#first-build`,
+			'https://example.test/reference#external-heading',
+		].sort());
+		assert.deepEqual(localTargets, ['linked-target', 'één-日本語']);
+
+		const destinations = new Map();
+		const legacy = pdf.catalog.lookupMaybe(PDFName.of('Dests'), PDFDict);
+		if (legacy) {
+			for (const [name, destination] of legacy.entries()) destinations.set(name.decodeText(), destination);
+		}
+		const names = pdf.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
+		const tree = names?.lookupMaybe(PDFName.of('Dests'), PDFDict);
+		function readNameTree(node) {
+			const pairs = node.lookupMaybe(PDFName.of('Names'), PDFArray);
+			if (pairs) {
+				for (let index = 0; index < pairs.size(); index += 2) {
+					const name = pairs.lookup(index, PDFString, PDFHexString).decodeText();
+					destinations.set(name, pairs.get(index + 1));
+				}
+			}
+			const children = node.lookupMaybe(PDFName.of('Kids'), PDFArray);
+			if (children) {
+				for (let index = 0; index < children.size(); index += 1) readNameTree(children.lookup(index, PDFDict));
+			}
+		}
+		if (tree) readNameTree(tree);
+		for (const [name, pageIndex] of [
+			['navigation-fixture', 0], ['linked-target', 0], ['unreferenced', 1],
+			['repeated', 1], ['repeated-1', 1], ['één-日本語', 1], ['authored-alias', 1],
+		]) {
+			assert.ok(destinations.has(name), `${mode} exports ${name}`);
+			const destination = pdf.context.lookup(destinations.get(name), PDFArray);
+			assert.equal(destination.get(0).toString(), pdf.getPage(pageIndex).ref.toString(), `${name} selects its printed page`);
+			assert.equal(destination.lookup(1, PDFName), PDFName.of('XYZ'));
+		}
+		assert.equal(
+			pdf.context.lookup(destinations.get('één-日本語'), PDFArray).toString(),
+			legacy.lookup(PDFName.of(encodeURIComponent('één-日本語')), PDFArray).toString(),
+			'the Unicode export preserves the exact Chromium local destination',
+		);
+		assert.equal(
+			pdf.context.lookup(destinations.get('authored-alias'), PDFArray).toString(),
+			pdf.context.lookup(destinations.get('één-日本語'), PDFArray).toString(),
+			'the authored alias selects the exact destination of its adjacent heading',
+		);
+	}
+});
+
+test('the actual development companion renders self-contained HTML with admitted sibling chapter links', async t => {
+	const guide = await loadDevelopmentGuide(repositoryRoot);
+	assert.equal(guide.id, 'getting-started');
+	assert.equal(guide.runningTitle, 'Development companion');
+	assert.equal(Object.hasOwn(guide.entry, 'book'), false);
+	assert.equal(Object.hasOwn(guide, 'review'), false, 'the companion does not acquire reference-chapter approvals');
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage({ javaScriptEnabled: false });
+	for (const mode of ['preview', 'publish']) {
+		const suffix = mode === 'preview' ? '.preview' : '';
+		const html = chapterHtml(guide, mode);
+		assert.match(html, /data:font\/ttf;base64,/);
+		assert.match(html, /<img src="data:image\/png;base64,/);
+		assert.doesNotMatch(html, /<link\b|<script\b|file:\/\/|url\("fonts\//);
+		assert.ok(html.includes('content: "DEVELOPMENT COMPANION"'));
+		await page.setContent(html, { waitUntil: 'load' });
+		const title = await page.title();
+		assert.equal(title, `BMSX Development companion — GETTING STARTED${mode === 'preview' ? ' — DRAFT' : ''}`);
+		assert.doesNotMatch(title, /\bBook\s+[IVX]+\b/);
+		assert.doesNotMatch(await page.locator('main').textContent(), /\bcartlib\b/i);
+		const links = await page.locator('main a[data-manual-format="pdf"]').evaluateAll(elements =>
+			elements.map(element => element.getAttribute('href')));
+		for (const target of [
+			`gpu${suffix}.html#program-a-complete-picture-in-blua`,
+			`memory${suffix}.html#taking-ownership-after-the-bios`,
+			`gte${suffix}.html#constructing-and-packing-a-transform`,
+			`console${suffix}.html`,
+		]) assert.ok(links.includes(target), `${mode} includes ${target}`);
+		const admitted = new Set([...guide.documents.values()]
+			.filter(document => document.format === 'pdf').map(document => `${document.id}${suffix}.html`));
+		assert.ok(links.every(href => admitted.has(href.split('#')[0])), 'chapter links select admitted sibling outputs');
+	}
 });

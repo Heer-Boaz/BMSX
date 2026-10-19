@@ -1081,10 +1081,9 @@ The existing derived integration-image producer selects `'emit'`. A tracing
 observation on that route therefore does not establish tracing in the ordinary
 ROM. Keep those build routes distinct when comparing results.
 
-Ordinary-ROM selection is an outstanding tool-interface item, recorded in the
-[technical follow-up](../manual/technical-follow-up.md#blua-extension-reference-and-current-tool-boundaries).
-The source forms remain documented, including their erasure and evaluation
-rules; no undocumented flag or replacement build wrapper is required here.
+Ordinary-ROM trace selection is not exposed by the cartridge builder. The
+source forms remain documented, including their erasure and evaluation rules;
+no undocumented flag or replacement build wrapper is required here.
 
 ## Build and inspect runtime compilation
 

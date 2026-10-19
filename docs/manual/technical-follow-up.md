@@ -1526,6 +1526,29 @@ those build/observation links broken. Current publication-layout proofs for
 console, IRQ and cartridge still contain no cross-document URI actions; print
 acceptance does not close NAV01.
 
+**Portable loose-document output, 2026-10-19:** the shared renderer now resolves
+source chapter paths to sibling output filenames. HTML stays in its HTML set;
+PDF actions use relative PDF filenames and exported named destinations. Preview
+links stay in the preview set. The development companion is delivered as
+self-contained HTML, outside the reference catalog; its editorial-only tracing
+follow-up link was removed without changing the stated tool limitation.
+
+Independent current-code review and all 27 manual tests pass. Actual PDFium
+inspection of the complete preview set (22 PDFs plus companion HTML) resolves
+all 238 relative URI annotations, 93 local destination annotations, 1,173 heading
+targets and 72 heading aliases, with no missing file/target or workstation,
+Markdown-source or reserved transport URI. Both HTML-mode graphs resolve all
+354 local links. Every complete decoded page and its dimensions match the
+pre-navigation artifacts: 834 pages across 30 regenerated PDFs. Existing print
+acceptance is carried only at that unchanged-graphics boundary; pending factual
+or print decisions remain pending. Evidence: `/tmp/bmsx-manual-navigation/`.
+
+The complete admitted delivery set is currently the **preview** set. Eight
+gate-approved canonical chapters were regenerated; superseded gate-blocked
+Math/GPU/GEO canonical artifacts were withheld, not approved. **NAV01 remains
+open for final series assembly, release delivery and actual viewer-level bundle
+acceptance**, not for another per-chapter link workaround.
+
 
 ## First Book III chapter: cartridge sockets and mapped cards
 
