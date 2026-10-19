@@ -52,6 +52,43 @@ void inspectStoredSlots(bmsx::CPU& cpu) {
 	require(bmsx::asNumber(key) == 65536 && bmsx::asNumber(value) == 42, "physical inspection preserves the Lua array key");
 }
 
+void refillArrayHashPrefix(bmsx::CPU& cpu) {
+	for (int route = 0; route < 4; ++route) {
+		auto* table = cpu.createTable(4, 8);
+		for (int key = 1; key <= 7; ++key) {
+			table->set(bmsx::valueNumber(key), bmsx::valueNumber(key * 10));
+		}
+		const auto heapBytes = table->trackedHeapBytes();
+		require(table->length() == 7, "the numeric prefix includes values beyond array capacity");
+
+		for (const int key : {2, 4}) {
+			switch (route) {
+				case 0: table->set(bmsx::valueNumber(key), bmsx::valueNil()); break;
+				case 1: require(table->setNumberArrayKey(key, bmsx::valueNil()), "numeric fast deletion reaches an array slot"); break;
+				case 2: table->setInteger(key, bmsx::valueNil()); break;
+				case 3: require(table->setIntegerArrayKey(key, bmsx::valueNil()), "integer fast deletion reaches an array slot"); break;
+			}
+			require(table->length() == key - 1, "deletion shortens the prefix at the hole");
+			require(bmsx::asNumber(table->getInteger(7)) == 70, "deletion preserves the mapped hash tail");
+
+			switch (route) {
+				case 0: table->set(bmsx::valueNumber(key), bmsx::valueBool(false)); break;
+				case 1: require(table->setNumberArrayKey(key, bmsx::valueBool(false)), "numeric fast refill reaches an array slot"); break;
+				case 2: table->setInteger(key, bmsx::valueBool(false)); break;
+				case 3: require(table->setIntegerArrayKey(key, bmsx::valueBool(false)), "integer fast refill reaches an array slot"); break;
+			}
+			require(table->length() == 7, "all setters refill through the array/hash boundary");
+			require(table->getInteger(key) == bmsx::valueBool(false), "false is present in the prefix");
+			require(table->trackedHeapBytes() == heapBytes, "refilling an existing array slot does not allocate storage");
+		}
+
+		table->setInteger(9, bmsx::valueNumber(90));
+		require(table->length() == 7, "a later key does not bridge a missing numeric key");
+		table->setInteger(8, bmsx::valueNumber(80));
+		require(table->length() == 9, "filling a hash hole extends the same prefix");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -61,6 +98,7 @@ int main() {
 		bmsx::ExecutionAddressSpace addresses(memory);
 		bmsx::CPU cpu(memory, irq, addresses);
 		inspectStoredSlots(cpu);
+		refillArrayHashPrefix(cpu);
 		std::cout << "Table inspection tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

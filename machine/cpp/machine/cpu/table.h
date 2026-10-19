@@ -55,7 +55,7 @@ public:
 		if (slot >= m_array.size()) {
 			return false;
 		}
-		setIntegerArraySlot(slot, value);
+		setArraySlot(slot, value);
 		return true;
 	}
 	Value getInteger(int index) const;
@@ -170,20 +170,6 @@ private:
 	};
 
 	void setArraySlot(size_t slot, const Value& value) {
-		m_array[slot] = value;
-		if (isNil(value)) {
-			if (slot < m_arrayLength) {
-				m_arrayLength = slot;
-			}
-		} else if (slot == m_arrayLength) {
-			size_t newLength = m_arrayLength;
-			while (newLength < m_array.size() && !isNil(m_array[newLength])) {
-				++newLength;
-			}
-			m_arrayLength = newLength;
-		}
-	}
-	void setIntegerArraySlot(size_t slot, const Value& value) {
 		m_array[slot] = value;
 		if (isNil(value)) {
 			if (slot < m_arrayLength) {

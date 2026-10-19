@@ -458,7 +458,7 @@ Value Table::getInteger(int indexValue) const {
 void Table::setInteger(int indexValue, const Value& value) {
 	const int index = indexValue - 1;
 	if (index >= 0 && index < static_cast<int>(m_array.size())) {
-		setIntegerArraySlot(static_cast<size_t>(index), value);
+		setArraySlot(static_cast<size_t>(index), value);
 		return;
 	}
 	const Value key = valueNumber(static_cast<double>(indexValue));

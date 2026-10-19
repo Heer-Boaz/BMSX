@@ -62,6 +62,61 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 	assert.ok(table.getTrackedHeapBytes() < 4096);
 });
 
+for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const) {
+	test(`Table ${route} hole refill includes the numeric hash tail`, () => {
+		const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+		const table = cpu.createTable(4, 8);
+		for (let key = 1; key <= 7; key += 1) {
+			table.set(key, key * 10);
+		}
+		const heapBytes = table.getTrackedHeapBytes();
+		assert.equal(table.arrayLength, 7);
+
+		for (const key of [2, 4]) {
+			switch (route) {
+				case 'generic':
+					table.set(key, null);
+					break;
+				case 'encoded':
+					table.store(ValueTag.Number, key, null, ValueTag.Nil, NaN, null);
+					break;
+				case 'integer':
+					table.setInteger(key, null);
+					break;
+				case 'integer-array':
+					assert.equal(table.storeIntegerArrayKey(key, ValueTag.Nil, NaN, null), true);
+					break;
+			}
+			assert.equal(table.arrayLength, key - 1);
+			assert.equal(table.get(7), 70);
+
+			switch (route) {
+				case 'generic':
+					table.set(key, false);
+					break;
+				case 'encoded':
+					table.store(ValueTag.Number, key, null, ValueTag.False, NaN, null);
+					break;
+				case 'integer':
+					table.setInteger(key, false);
+					break;
+				case 'integer-array':
+					assert.equal(table.storeIntegerArrayKey(key, ValueTag.False, NaN, null), true);
+					break;
+			}
+			assert.equal(table.arrayLength, 7);
+			assert.equal(table.get(key), false);
+			assert.equal(table.getTrackedHeapBytes(), heapBytes);
+		}
+
+		table.set(9, 90);
+		assert.equal(table.arrayLength, 7);
+		table.set(8, 80);
+		assert.equal(table.arrayLength, 9);
+	});
+}
+
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
