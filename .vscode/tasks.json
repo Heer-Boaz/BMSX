@@ -805,6 +805,7 @@
 			"options": [
 				"bare_metal_cart",
 				"fade_probe",
+				"starcatch",
 				"pietious",
 				"nemesis_s",
 				"esther",
