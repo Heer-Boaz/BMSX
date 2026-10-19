@@ -1,4 +1,4 @@
-# System control and timing
+# System control and timing {#sec-system}
 
 The system controller maintains console-time readouts, accepts reset requests
 and coordinates BIOS supervisor service. Its fault-report words retain CPU
@@ -22,7 +22,7 @@ register fields. STATUS exposes only the flags listed below.
 
 Use aligned 32-bit accesses to the registers below. `CONTROL` is a command port, not a retained command mask. Each accepted write is processed and its readable word returns to zero, including writes containing ignored bits. `STATUS` reports the current supervisor-context flags.
 
-### SYSTEM specifications
+## SYSTEM specifications {#sec-system-system-specifications}
 
 | Resource | Specification |
 |---|---|
@@ -31,7 +31,7 @@ Use aligned 32-bit accesses to the registers below. `CONTROL` is a command port,
 | Supervisor fault report | Six raw words, 24 bytes including its publication sequence |
 | Diagnostic output queue | 8192 bytes, shared by completed unread text and the current partial line |
 
-## Measure elapsed console time
+## Measure elapsed console time {#sec-system-measure-elapsed-console-time}
 
 This polling example needs no interrupt source: TIME_MS advances with system
 cycles, not with timer interrupts. It leaves the inherited display and
@@ -55,16 +55,14 @@ supplies a civil clock. A HALT-based wait additionally needs an owned interrupt
 route and must recheck its time predicate after each wake-up; advancing
 TIME_MS alone cannot wake HALT.
 
-## Control register reference
+## Control register reference {#sec-system-control-register-reference}
 
 | Register | Address | Access | Reset value |
 |---|---|---|---|
 | `CONTROL` | `0x0801034c` | Command write; reads return `0` | `0x00000000` |
 | `STATUS` | `0x08010350` | Read-only | `0x00000000` |
 
-<section class="register-entry">
-
-### CONTROL
+### CONTROL {#sec-system-control}
 
 Each set command bit is considered independently. One write is processed in the order **RESET, ENTER, FAULT, FAULT_PUBLISH, LEAVE**; this is not a choice of one winning command. Later operations see state changes made by earlier operations in the same write. RESET is considered in either CPU mode. The other four operations are considered only when the CPU's **current** user-mode bit is clear; in user mode those bits are ignored, not converted into a supervisor request. Bits 5–31 have no effect.
 
@@ -77,13 +75,11 @@ Each set command bit is considered independently. One write is processed in the 
 | 2 | `0x00000004` | `SUPERVISOR_LEAVE` (`LEAVE`) | Begin return to the user device context only in ACTIVE with `RESUMABLE` set. Clear `EXIT_REQUESTED` and request a yield. Otherwise do nothing. |
 | `31:5` | `0xffffffe0` | Unused | Ignored. |
 
-</section>
+: {tbl-colwidths="[6,14,29,51]"}
 
 For example, `FAULT | FAULT_PUBLISH` captures the payload before advancing its publication sequence. `ENTER | FAULT` first attempts activation; if that succeeds, FAULT takes its ACTIVE behavior. Reading zero from `CONTROL` says neither that a requested reboot has completed nor that a supervisor transition has finished.
 
-<section class="register-entry">
-
-### STATUS
+### STATUS {#sec-system-status}
 
 | Bits | Mask | Flag | Meaning when set |
 |---|---|---|---|
@@ -92,11 +88,9 @@ For example, `FAULT | FAULT_PUBLISH` captures the payload before advancing its p
 | 2 | `0x00000004` | `RESUMABLE` | The supervisor-context resumability latch is set. LEAVE also requires the ACTIVE stage. |
 | `31:3` | `0xfffffff8` | Unused | Always zero. |
 
-</section>
-
 These flags are independent. Entry can set `SUPERVISOR_ACTIVE` before `RESUMABLE`; an admitted LEAVE keeps both set while restoration is in progress, then clears them when USER is restored. `SUPERVISOR_ACTIVE` does not identify CPU privilege, and `RESUMABLE` does not certify that an exception has been repaired or that CPU exception return has already occurred.
 
-## Privilege and supervisor entry
+## Privilege and supervisor entry {#sec-system-privilege-and-supervisor-entry}
 
 SYSTEM supervisor commands require current CPU supervisor mode. Normal
 cartridge entry runs in user mode; exception entry clears the current user-mode
@@ -122,7 +116,7 @@ for this wire.
 
 A synchronous fault takes a different route. The CPU enters the system exception function, and the firmware writes FAULT to capture its diagnostics. If this starts from USER, SYSTEM quiesces the devices and then activates the supervisor context directly, without issuing another NMI. A FAULT received during another non-ACTIVE stage redirects the target without restarting that stage; in ACTIVE it only captures the report. Activation sets `RESUMABLE` even on the fault route. The detailed device banks and quiescence rules are separate from these CPU-entry and command edges.
 
-## Device boundaries during supervisor service
+## Device boundaries during supervisor service {#sec-system-device-boundaries-during-supervisor-service}
 
 Entry waits for accepted producer work, then the admitted DMA block, then the
 GPU boundary. This ordering lets data already in flight reach its proper
@@ -141,8 +135,6 @@ Shared RAM and other device words remain accessible under their normal rules.
 The ordinary request path allows CPU execution during producer quiescence;
 software observing SUPERVISOR_ACTIVE can therefore still be running before NMI.
 
-<section class="keep-together">
-
 After these boundaries, the ordinary request path can take the NMI and complete
 ENTER. IRQ state is banked before the supervisor GPU context is initialized.
 The following preservation rules apply to that activated context:
@@ -156,9 +148,7 @@ The following preservation rules apply to that activated context:
 | GEO | The current job reaches a terminal phase; new CMD admission remains held until leave. | There is no separate supervisor GEO job/register bank. Its ordinary result and fault words remain meaningful. |
 | IMGDEC | Stream state remains in place at a scheduled-batch boundary and can resume on leave. | Quiescence is not stream DONE, and there is no separate supervisor decoder bank. |
 | APU | The voice clock is held after synchronization to the entry cycle; queued output samples are discarded. | Voice state is not reset or separately banked. Already scheduled sample-transfer work can still complete. |
-| INPUT | One shared register file, pending ARM request and sample sequence remain in use, including the BIOS monitor's captures. | There is no cartridge INPUT bank to restore on leave. Obtain a new sample on resumption; see [BIOS handoff and supervisor sampling](input.md#bios-handoff-and-supervisor-sampling). |
-
-</section>
+| INPUT | One shared register file, pending ARM request and sample sequence remain in use, including the BIOS monitor's captures. | There is no cartridge INPUT bank to restore on leave. Obtain a new sample on resumption; see [BIOS handoff and supervisor sampling](input.md#sec-input-bios-handoff-and-supervisor-sampling). |
 
 While the APU voice clock is held, voice playback position stays at the synchronized
 entry point. Leave reanchors voice timing and resumes playback from that
@@ -184,9 +174,7 @@ separate from the CPU's exception return. Neither LEAVE nor a restored register
 bank repairs the faulting cartridge instruction or grants safe reuse of shared
 memory by another owner.
 
-<section class="register-entry">
-
-## Supervisor fault registers
+## Supervisor fault registers {#sec-system-supervisor-fault-registers}
 
 The supervisor fault bank contains six raw 32-bit words. All are read-only to cartridge MMIO writes and reset to zero.
 The register names in the next table have the prefix `SUPERVISOR_FAULT_`;
@@ -200,8 +188,6 @@ all 32 bits of each word are retained.
 | `BAD_ADDRESS` | `0x08010434` | Read-only | `0x00000000` | Retained CPU BadAddress word at FAULT capture. |
 | `LUA_REASON` | `0x08010438` | Read-only | `0x00000000` | Retained CPU LuaReason word at FAULT capture; not the Lua error value. |
 | `DOMAIN` | `0x0801043c` | Read-only | `0x00000000` | Interrupted execution-image domain: cartridge `0` or `1`, or system `0xffffffff`. This is not CPU privilege or SYSTEM stage. |
-
-</section>
 
 FAULT copies the five CPU payload words. FAULT_PUBLISH advances SEQUENCE
 modulo 2^32 and leaves that payload unchanged. Software can capture first and
@@ -217,8 +203,6 @@ update BadAddress, while data-bus errors leave its previous value. Lua traps
 update LuaReason; unrelated exceptions retain that word. These retained fields
 must be read with the recorded cause.
 
-<section class="keep-together">
-
 The raw Cause word uses the following values. The exception-code mask is
 `0x0000007c`; IRQ and NMI indications are listed separately.
 
@@ -233,8 +217,6 @@ The raw Cause word uses the following values. The exception-code mask is
 | `0x00000028` | Reserved instruction |
 | `0x0000002c` | Coprocessor unusable |
 | `0x00000034` | Trap |
-
-</section>
 
 | LuaReason | Meaning |
 |---|---|
@@ -253,7 +235,7 @@ The raw Cause word uses the following values. The exception-code mask is
 Interpret LuaReason with Cause rather than treating every retained reason as a
 new Lua failure.
 
-## Faults, interrupts and continuation
+## Faults, interrupts and continuation {#sec-system-faults-interrupts-and-continuation}
 
 The SYSTEM NMI is distinct from a maskable IRQ. A pending NMI takes precedence and is not gated by CPU interrupt-enable or the IRQ mask; it enters the system exception function. Maskable interrupt acceptance and source acknowledgement follow the **IRQ** chapter. Neither the request edge nor these priority rules establishes a fixed request-to-vector latency.
 
@@ -273,7 +255,7 @@ Lua failures that are handled by protected-call or coroutine error handling do n
 
 Continuing the monitor is a retry, not a repair. For an invocation that owns the supervisor context, the firmware restores its saved EPC and CPU status and issues LEAVE before returning. CPU exception return is separate from device-context restoration and does not automatically advance a synchronous-fault EPC. The `CONT` command can therefore retry the same failing instruction and fault again; `RESUMABLE` does not promise successful program recovery.
 
-## Reset requests
+## Reset requests {#sec-system-reset-requests}
 
 RESET is available in either CPU mode. It latches one pending request and asks the CPU to yield; repeated RESET writes coalesce until the request is consumed. CONTROL still reads zero, and STATUS has no reset-pending flag. Reading either word neither consumes the request nor proves that reboot has occurred. Other admitted command bits in the same write are still processed in the defined order.
 
@@ -281,7 +263,7 @@ A pending request is serviced at a CPU execution boundary. Servicing it performs
 
 At SYSTEM reset, CONTROL, STATUS and all six fault words are zero; no supervisor transition, exit request or resumable context remains. These are the reset values of this unit, not a substitute for the reset and acknowledgement rules of other devices. Automatic zero readback after a CONTROL write is command-port behavior, not an acknowledgement of a bus fault or completion of a machine reboot.
 
-## System time and frame timing
+## System time and frame timing {#sec-system-system-time-and-frame-timing}
 
 The installed system-cycle frequency is 33,868,800 Hz. `TIME_MS` reports elapsed system-cycle time in whole milliseconds: fractional milliseconds are discarded, and the result wraps modulo 2^32. Consecutive reads can therefore return the same word. This is console time, not a civil date or a wall clock.
 
@@ -302,7 +284,7 @@ Use aligned word reads for these registers. Writes are read-only-access faults. 
 
 `CYCLES_PER_FRAME` is a whole-period budget, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive budgets differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
-### Software timing
+### Software timing {#sec-system-software-timing}
 
 For two raw `TIME_MS` samples, compute elapsed milliseconds modulo 2^32.
 In BLua, use `(current - start) % 0x100000000` for the nonnegative wrapping
@@ -315,7 +297,7 @@ period. A zero result is valid when both samples fall in the same millisecond.
 
 The BIOS `os.clock()` returns `TIME_MS / 1000`, in seconds with millisecond resolution. The no-argument `os.time()` returns `TIME_MS // 1000`, in whole seconds. Both inherit the hardware word's wrap and neither measures time spent exclusively executing cartridge instructions. `os.time(date_table)` instead calculates a civil timestamp from the supplied fields; it does not set the console clock. These functions do not establish a wall-clock or real-time-clock service.
 
-## Diagnostic text output
+## Diagnostic text output {#sec-system-diagnostic-text-output}
 
 | Address | Register | Access | Word interpretation | Reset |
 |---|---|---|---|---|
@@ -332,13 +314,13 @@ uses the separate BIOS console drawing path described below.
 
 Completed unread lines and the current partial line share one 8192-byte queue. Each character needs space for its complete one- to four-byte UTF-8 encoding. If a character cannot fit, the current partial line is discarded, completed unread lines are preserved, and further character writes are ignored until the next flush. That flush publishes nothing and clears the overflow condition. If the flush itself first encounters insufficient space for its added line-feed byte, it likewise discards the partial line, publishes nothing, and leaves overflow cleared. In particular, 8192 unflushed ASCII characters leave no room for the flush's line feed, so that entire partial line is lost. No readiness, free-space, or accepted-line counter is available through these ports. Reset empties the queue and clears both register words.
 
-### BIOS console integration
+### BIOS console integration {#sec-system-bios-console-integration}
 
 BIOS `print(...)` converts each argument with `tostring`, separates arguments with tabs, writes to the BIOS console, and ends the line. Console writes send the full codepoints to `PRINT_CHAR` and also append to a separate 8192-byte BIOS history; codepoints above `0xff` become `?` in that history. Ending the line appends a history line feed and writes `PRINT_FLUSH = 1`. Thus `print` sends text to both diagnostic output and BIOS history, but does not itself flush the console display.
 
 Direct writes to `PRINT_CHAR` and `PRINT_FLUSH` do not add BIOS-history entries or draw glyphs. The BIOS console display is updated separately from its retained history. Diagnostic publication, retained console text, and visible console drawing are distinct events.
 
-## Send a diagnostic line
+## Send a diagnostic line {#sec-system-send-a-diagnostic-line}
 
 Assume no other diagnostic writer and enough queue space for the line. These
 writes send four codepoints, then publish the line. A zero FLUSH word is still
@@ -378,7 +360,7 @@ SYSTEM samples complete
 Only the two BIOS `print` calls also add text to the BIOS console history.
 The direct codepoint line neither enters that history nor draws glyphs.
 
-![BIOS console after the timer experiment](figures/system-console.png)
+![BIOS console after the timer experiment](figures/system-console.png){#fig-system-console}
 
 The monitor displays the two BIOS print lines from retained console history.
 The raw diagnostic line does not appear in that history.

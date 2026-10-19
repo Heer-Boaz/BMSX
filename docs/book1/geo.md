@@ -1,4 +1,4 @@
-# Geometry batch unit
+# Geometry batch unit {#sec-geo}
 
 The geometry batch unit transforms two-dimensional vertex arrays and tests
 convex shapes for intersection. A game can use it to move collision hulls into
@@ -22,11 +22,11 @@ BUSY discards the running job and rejects the new submission.
 
 XFORM2 and SAT2 share signed Q16.16 coordinates. OVERLAP2D takes binary32
 geometry and adds instance translations; prepare that representation separately.
-The [GTE](gte.md) provides the console's register-based transformation and
+The [GTE](gte.md#sec-gte) provides the console's register-based transformation and
 projection arithmetic. To draw GEO vertices or diagnostics, convert the results
-into [GPU](gpu.md) packets as illustrated below.
+into [GPU](gpu.md#sec-gpu) packets as illustrated below.
 
-## GEO specifications
+## GEO specifications {#sec-geo-geo-specifications}
 
 | Resource | Specification |
 |---|---|
@@ -45,16 +45,14 @@ Program source and destination addresses explicitly. The assigned workspace
 is available in main RAM; commands use the addresses supplied by the program.
 Record sizes and operation-specific limits appear in the command reference.
 
-![GEO captured configuration and live operand paths](figures/geo-job.svg)
+![GEO captured configuration and live operand paths](figures/geo-job.svg){#fig-geo-job}
 
 A command latches addresses, counts, parameters and strides. Processing then
 reads the addressed records and writes their results. OVERLAP2D clears its
 summary when the command is accepted. A zero-count job completes at launch
 without processing a record.
 
-<section class="keep-together">
-
-## An authored sprite and its collision hull
+## An authored sprite and its collision hull {#sec-geo-an-authored-sprite-and-its-collision-hull}
 
 The following scene uses two copies of a 16 × 16 indexed drone sprite and a
 separately defined convex collision hull. The six direct16 RGB555 palette words
@@ -67,34 +65,24 @@ explicit octagon, in the stated vertex order:
 (12,16), (4,16), (0,12), (0,4)
 ```
 
-</section>
-
 The sprite and hull share local origin `(0,0)`; the white cross marks their
 center `(8,8)`. These poses use translation only. A remains at `(0,0)` while B
 moves to `(20,0)`, `(16,0)` and `(12,0)`. Add the instance translation to each
 local vertex to obtain its world coordinates.
 
-<section class="keep-together">
-
-![Local drone with cyan octagon, gray coordinate axes and white pivot cross.](figures/geo-scene-local.png)
+![Local drone with cyan octagon, gray coordinate axes and white pivot cross.](figures/geo-scene-local.png){#fig-geo-scene-local}
 
 **Local coordinates.** Gray axes start at the image origin. Cyan marks the
 collision hull and the white cross marks `(8,8)`. The view maps local coordinates
 to display pixels as `(96+4x,64+4y)`, placing the cross at `(128,96)`.
 
-</section>
-
-<section class="keep-together">
-
-![Two separated blue and red drones against a star and lane backdrop, without geometry overlays.](figures/geo-scene-plain.png)
+![Two separated blue and red drones against a star and lane backdrop, without geometry overlays.](figures/geo-scene-plain.png){#fig-geo-scene-plain}
 
 **Artwork alone.** The drones share one texture against a star and lane
 background. The world views use display coordinates `(32+4x,64+4y)`: positive X
 runs right and positive Y down, at four pixels per world unit.
 
-</section>
-
-### Transform first, then test the resulting vertices
+### Transform first, then test the resulting vertices {#sec-geo-transform-first-then-test-the-resulting-vertices}
 
 XFORM2 and SAT2 use signed Q16.16 coordinates: the signed value of each 32-bit word divided by 65536. The integer coordinates here are encoded exactly by multiplying by 65536. An affine matrix contains `m00, m01, tx, m10, m11, ty`; each matrix here is `[00010000H,0,tx,0,00010000H,0]`.
 
@@ -109,7 +97,7 @@ They share the local hull and write A's eight world vertices followed by B's: 12
 
 For XFORM2, set SRC0=records, SRC1=local vertices, SRC2=matrices, DST0=world vertices, DST1=bounds, COUNT=2 and strides `24,8,24`; submit CMD=`20H` after setup.
 
-SAT2 must consume **that completed world buffer**. Its descriptors contain `flags, vertex_count, vertex_offset_bytes, reserved`:
+SAT2 must consume **that completed world buffer**. Its descriptors contain `flags`, `vertex_count`, `vertex_offset_bytes`, `reserved`:
 
 ```
 A: [1, 8, 0, 0]
@@ -123,7 +111,7 @@ job, successful completion gives STATUS=2, FAULT=0 and PROCESSED=2. Then submit
 SAT2, retaining its pair, descriptors and world vertices until it completes with
 STATUS=2, FAULT=0 and PROCESSED=1. Read the results before reusing the buffers.
 
-### Three exact poses
+### Three exact poses {#sec-geo-three-exact-poses}
 
 A's world bounds remain `(0,0,16,16)`. SAT2 returns `hit, nx, ny, depth, meta`; normal and depth words are Q16.16.
 
@@ -131,13 +119,13 @@ A's world bounds remain `(0,0,16,16)`. SAT2 returns `hit, nx, ny, depth, meta`; 
 |---|---|---|---|
 | Separated | `00140000H` | `(20,0,36,16)` | `(0,0,0,0,0)` |
 | Touching | `00100000H` | `(16,0,32,16)` | `(1,00010000H,0,0,2)` |
-| Overlapping | `000C0000H` | `(12,0,28,16)` | `(1,00010000H,0,00040000H,2)` |
+| Overlapping | `000C0000H` | `(12,0,28,16)` | (`1`, `00010000H`, `0`, `00040000H`, `2`) |
 
 Touching occurs along `x=16`, from `y=4` to `y=12`. SAT2 counts it as a hit with zero depth. The overlapping pose has depth 4. Both normals are `(1,0)`, from A towards B.
 
 Metadata 2 selects A's edge 2, the directed segment `(16,4) → (16,12)`. SAT2 packs the shape selector into the high 16 bits and edge index into the low 16 bits; flipping the normal does not change that identity. SAT2 supplies no contact point.
 
-### A separate floating-point contact query
+### A separate floating-point contact query {#sec-geo-a-separate-floating-point-contact-query}
 
 For OVERLAP2D, prepare binary32 vertices and bounds separately from the Q16
 buffer. Convert the local coordinates to numeric values and store them as F32.
@@ -161,33 +149,21 @@ For this vertex order, the clipped intersection has six vertices. Their arithmet
 from an area-weighted centroid or a boundary contact. Supply the directed
 winding required by the clipping rule.
 
-<section class="keep-together">
-
-![Separated drones with cyan and amber hull outlines and no result diagnostics.](figures/geo-scene-separated.png)
+![Separated drones with cyan and amber hull outlines and no result diagnostics.](figures/geo-scene-separated.png){#fig-geo-scene-separated}
 
 **Separated.** Cyan identifies A's transformed hull; amber identifies B's. SAT2 reports no hit and OVERLAP2D reports no contact, so no arrow, contact cross or depth bracket is drawn.
 
-</section>
-
-<section class="keep-together">
-
-![Touching hulls with an amber shared edge and a green rightward direction arrow.](figures/geo-scene-touching.png)
+![Touching hulls with an amber shared edge and a green rightward direction arrow.](figures/geo-scene-touching.png){#fig-geo-scene-touching}
 
 **Touching.** B's amber outline is drawn after A's cyan outline, making the shared segment amber. The green arrow shows SAT2's A-to-B normal. Its deliberately chosen 24-pixel length is 6 world units, not penetration depth. SAT2's depth is zero: no yellow bracket is drawn, and OVERLAP2D supplies no contact arrow or point cross.
 
-</section>
-
-<section class="keep-together">
-
-![Overlapping hulls with green and magenta opposing arrows, yellow depth bracket and white contact cross.](figures/geo-scene-overlap.png)
+![Overlapping hulls with green and magenta opposing arrows, yellow depth bracket and white contact cross.](figures/geo-scene-overlap.png){#fig-geo-scene-overlap}
 
 **Overlapping.** The green SAT2 arrow points A-to-B from an illustrative anchor, not a reported point. The magenta OVERLAP2D arrow points B-to-A from the actual world contact point `(14,8)`, marked by the white cross at display pixel `(88,96)`. Both arrows are 24 pixels long for visibility, not depth measures. The yellow bracket below the hulls is the depth measure: its endpoints `(80,136)` and `(96,136)` are 16 pixels apart, representing 4 world units.
 
-</section>
-
 After reuse, trust the **current completed summary**, not retained contact bytes. The cartridge returns to separation using the same live contact buffer without clearing it. Its previous normal, depth, point and feature remain, but the new result count is zero, so no contact slot is valid and no old marker is submitted. The resulting picture is identical to the separated plate. SAT2 differs: separation overwrites all five result words with zero.
 
-### From geometry results to video packets
+### From geometry results to video packets {#sec-geo-from-geometry-results-to-video-packets}
 
 The image is enlarged before upload: each authored pixel becomes a 4 × 4 block in a 64 × 64 RGB555 texture. The 8192-byte texture is uploaded to VRAM origin `(640,0)` using image-upload command `A0H`, origin word `00000280H` and size `00400040H`. Its 2048 payload words each contain two adjacent 16-bit texels. These are repeated scalar writes to the fixed GP0 port. The 64 × 64 textured rectangles do not themselves scale a 16 × 16 image; they use the prepared texture, modulated blue for A and red for B.
 
@@ -214,7 +190,7 @@ hold each pose for eight further VBlank intervals for viewing.
 
 The scene therefore has three explicit hand-offs: XFORM2 output becomes SAT2 input, completed collision results select drawing packets, and a completed GPU picture becomes a PCRTC source. None of these hand-offs launches the next unit automatically.
 
-## Launching and observing a job
+## Launching and observing a job {#sec-geo-launching-and-observing-a-job}
 
 A write to `CMD` is the launch doorbell. Writing the source, destination, count, parameter, or stride registers only changes the programmed register words; it does not begin processing. Submit a job in this order:
 
@@ -234,7 +210,7 @@ There is one active job and no command queue. `DONE` does not require a local ac
 
 Every `CMD` write changes its raw readback, including a write ignored because a fault is still latched. Reading `CMD` therefore identifies the last word written, not necessarily the command that produced the current result. The supported complete words are `XFORM2_BATCH = 0x20`, `SAT2_BATCH = 0x21`, and `OVERLAP2D_PASS = 0x22`. These are whole-word encodings, not independent command bits. Extra set bits do not retain the meaning of a supported command.
 
-### Captured operands and live memory
+### Captured operands and live memory {#sec-geo-captured-operands-and-live-memory}
 
 At launch, GEO captures `CMD`, all three source words, both destination words, `COUNT`, both parameter words, and all three stride words. Subsequent writes to these registers change their readback and the configuration available to a later launch. They do not redirect or resize the active job. In particular, reading `COUNT` during processing returns the programmed word, which may differ from the count captured by that job; use `PROCESSED` for published progress.
 
@@ -244,7 +220,7 @@ Command acceptance checks the complete opcode, not the record pointers, strides,
 
 `OVERLAP2D_PASS` has a launch side effect: after command acceptance, GEO writes four zero summary words at `DST1 + 0`, `+4`, `+8`, and `+12`. This happens before testing `COUNT`, including for a zero-count job. No launch-time destination validation precedes those summary writes. Program `DST1` for this operation even when no outer records will run.
 
-### Transform two squares and pass them to SAT2
+### Transform two squares and pass them to SAT2 {#sec-geo-transform-two-squares-and-pass-them-to-sat2}
 
 This entry sequence starts with GEO idle and no sticky fault. It owns GEO and
 masks interrupt delivery while polling STATUS. The input square has side 4;
@@ -292,8 +268,8 @@ end
 
 Successful completion gives STATUS=2, PROCESSED=2 and FAULT=0. The world
 vertices describe squares `[0,4] × [0,4]` and `[1,5] × [1,5]`; their bounds are
-`(0,0,00040000H,00040000H)` and
-`(00010000H,00010000H,00050000H,00050000H)`. If ERROR or REJECTED is set,
+(`0`, `0`, `00040000H`, `00040000H`) and
+(`00010000H`, `00010000H`, `00050000H`, `00050000H`). If ERROR or REJECTED is set,
 use the fault/recovery reference rather than launching the dependent job.
 Continue after successful completion:
 
@@ -317,9 +293,7 @@ Successful completion gives STATUS=2, PROCESSED=1, FAULT=0 and result words
 `1,0,00010000H,00030000H,0`: hit, +Y unit normal, depth 3, A's edge 0.
 The interrupt acknowledgement does not acknowledge a sticky local fault.
 
-### Extend the sequence to a contact query or fault recovery
-
-<div class="keep-together">
+### Extend the sequence to a contact query or fault recovery {#sec-geo-extend-the-sequence-to-a-contact-query-or-fault-recovery}
 
 OVERLAP2D requires separately prepared binary32 shapes and instances; the Q16
 vertex array above is not its input format. For two axis-aligned squares of
@@ -336,8 +310,6 @@ Program the following words, then issue CMD=22H and wait until STATUS.BUSY clear
 | COUNT | 1 | 2 |
 | PARAM0 / PARAM1 | 1 / 1 | 2 / 1 |
 | STRIDE0 / STRIDE1 / STRIDE2 | 20 / 12 / 2 | 20 / 0 / 0 |
-
-</div>
 
 Both modes produce normal `(0,−1)`, depth 3 and world contact `(2.5,2.5)`;
 piece indices and feature are zero. The normal points **B to A**, unlike SAT2.
@@ -363,9 +335,7 @@ FAULT=0 without reading the still-programmed bad record. It raises GEO_DONE;
 acknowledge central bit 3 separately when that request is no longer needed.
 No recovery step erases the earlier RAM results.
 
-<section class="keep-together">
-
-## Register reference
+## Register reference {#sec-geo-register-reference}
 
 | Offset | Address | Register | Access | Reset | Word interpretation |
 |---|---|---|---|---|---|
@@ -387,8 +357,6 @@ No recovery step erases the earlier RAM results.
 | `+0x3c` | `0x08000060` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `0xffff`. |
 | Separate | `0x08010224` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
 
-</section>
-
 The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The offsets below are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
 
 Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
@@ -398,7 +366,7 @@ reserved for CPU I/O. Writing a GEO result there changes the underlying RAM
 rather than operating an I/O register. Apply each command's range rules when
 allocating buffers, and keep results out of memory reserved for other uses.
 
-## Work budget and timing
+## Work budget and timing {#sec-geo-work-budget-and-timing}
 
 GEO accrues work credit at 16,384,000 units/s against the 33,868,800-Hz system
 timebase. One unit permits one outer record to run, including a record that
@@ -434,7 +402,7 @@ COUNT accepts the full unsigned 32-bit range. Per-record limits still apply:
 64 vertices for an XFORM2 span or SAT2/OVERLAP polygon, and 128 clipping vertices
 in OVERLAP2D.
 
-## Completion, faults, and recovery
+## Completion, faults, and recovery {#sec-geo-completion-faults-and-recovery}
 
 Each successful outer record increments `PROCESSED` by one. Successful completion publishes `STATUS = 0x2` (`DONE` only), the completed count, and `FAULT = 0`, then raises `GEO_DONE`.
 
@@ -466,13 +434,13 @@ Local fault acknowledgement and central interrupt acknowledgement are separate. 
 
 GEO reset cancels service, discards the active job and its credit, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
 
-## XFORM2_BATCH: transform vertices and build bounds
+## XFORM2_BATCH: transform vertices and build bounds {#sec-geo-xform2_batch-transform-vertices-and-build-bounds}
 
 Command word: **0x20**.
 
 XFORM2_BATCH applies one affine matrix to each selected run of two-dimensional vertices. Each record selects its source run, matrix, destination run and, optionally, an axis-aligned bounding box (AABB).
 
-### Registers and address selection
+### Registers and address selection {#sec-geo-registers-and-address-selection}
 
 | Register | XFORM2_BATCH role |
 |---|---|
@@ -499,11 +467,9 @@ For record ordinal `n`, beginning at zero, the selected addresses are:
 
 Thus `dst_index` counts vertices, while `dst1_index` counts boxes. The source vertices within a run are consecutive 8-byte records. Neither a field in the record nor a destination index changes the batch record ordinal.
 
-### Record and data layouts
+### Record and data layouts {#sec-geo-record-and-data-layouts}
 
 All offsets and strides below are in **bytes**. Each word occupies four little-endian bytes. Index, count and flags words are unsigned. Signed Q16 words represent the signed 32-bit word divided by 65536; the same representation is used for coordinates, matrix coefficients, translations and bounds.
-
-<div class="keep-together">
 
 **Transformation record — 24 bytes**
 
@@ -516,8 +482,6 @@ All offsets and strides below are in **bytes**. Each word occupies four little-e
 | +16 | vertex_count | Number of consecutive vertices; 0–64 |
 | +20 | dst1_index | AABB index, scaled by 16; `0xffffffff` suppresses the box |
 
-</div>
-
 The `0xffffffff` value is special only in `dst1_index`: it suppresses both AABB address checking and writing. No equivalent sentinel applies to the other indices. A zero vertex count succeeds after the record and flags checks, without checking or accessing the source run, matrix, vertex output or AABB.
 
 | Data object | Size | Word offsets and contents |
@@ -526,7 +490,7 @@ The `0xffffffff` value is special only in `dst1_index`: it suppresses both AABB 
 | Matrix | 24 bytes | +0: m00; +4: m01; +8: tx; +12: m10; +16: m11; +20: ty, all signed Q16 |
 | AABB | 16 bytes | +0: min_x; +4: min_y; +8: max_x; +12: max_y, all signed Q16 |
 
-### Transformation arithmetic
+### Transformation arithmetic {#sec-geo-transformation-arithmetic}
 
 For each input vertex, the two matrix rows produce the output x and y independently. Using the signed **raw words**, a row `(a, b, t)` is evaluated as follows:
 
@@ -539,7 +503,7 @@ The first row is `(m00, m01, tx)` and the second is `(m10, m11, ty)`. Saturation
 
 The matrix is read before processing the vertices. Vertices are then read and written in ascending order, with each source vertex read immediately before its output x and y are written. Bounds are formed from the saturated output words, initialized from the first vertex, and written only after all vertices: min_x, min_y, max_x, max_y. Overlapping source and output storage is not prohibited or copied aside; an earlier output can change a later source read. The already-read matrix is unaffected.
 
-### Address and memory rules
+### Address and memory rules {#sec-geo-address-and-memory-rules}
 
 These rules also apply to SAT2_BATCH below. For a nonempty indexed span, the byte displacement, base-plus-displacement and span end must not overflow the 32-bit address space. A span end exactly `0x100000000` passes this arithmetic check. A zero stride is permitted and repeatedly selects the same address.
 
@@ -547,7 +511,7 @@ Every input span must lie wholly within one readable region: the system-ROM wind
 
 XFORM2_BATCH imposes no separate word-alignment check on these addresses or strides. In particular, the fault name BAD_RECORD_ALIGNMENT must not be read as an additional alignment requirement.
 
-### Fault priority and output preservation
+### Fault priority and output preservation {#sec-geo-fault-priority-and-output-preservation}
 
 The first applicable entry below determines the current record's fault. All checks precede output writes; a failed record writes neither vertices nor its AABB.
 
@@ -563,7 +527,7 @@ The first applicable entry below determines the current record's fault. All chec
 | 8 | Vertex-output span overflows or is outside installed main RAM | 5 — DST_RANGE |
 | 9 | Unsuppressed AABB span overflows or is outside installed main RAM | 5 — DST_RANGE |
 
-### Worked transformation
+### Worked transformation {#sec-geo-worked-transformation}
 
 Take four local vertices `(0,0), (4,0), (4,4), (0,4)`. Their raw words use `4 = 262144`. Matrix 0 is identity with zero translation; matrix 1 is identity with `tx = ty = 65536`, translating by `(1,1)`.
 
@@ -574,13 +538,13 @@ Take four local vertices `(0,0), (4,0), (4,4), (0,4)`. Their raw words use `4 = 
 
 The first output run is unchanged. The second starts 32 bytes after DST0 and contains `(1,1), (5,1), (5,5), (1,5)`. For example, its x coordinate for input `(4,0)` is raw `327680`, representing 5. The AABB words are `(0,0,262144,262144)` and `(65536,65536,327680,327680)` respectively. These eight consecutive output vertices can also supply the two SAT2 shapes below.
 
-## SAT2_BATCH: test convex-polygon pairs
+## SAT2_BATCH: test convex-polygon pairs {#sec-geo-sat2_batch-test-convex-polygon-pairs}
 
 Command word: **0x21**.
 
 SAT2_BATCH tests pairs of polygon descriptors using their edge normals as separating axes. It returns a hit flag, selected normal, interval-overlap depth and the edge that supplied that axis. Polygon coordinates are signed Q16 words in one common coordinate space; SAT2 does not transform them.
 
-### Registers and layouts
+### Registers and layouts {#sec-geo-registers-and-layouts}
 
 | Register | SAT2_BATCH role |
 |---|---|
@@ -610,8 +574,6 @@ A descriptor's vertex offset counts **bytes**, not vertices. Vertices are consec
 | +12 | shape_B_index | Descriptor index, scaled by STRIDE1 |
 | +16 | flags2 | Must be zero |
 
-<div class="keep-together">
-
 **Polygon descriptor — 16 bytes**
 
 | Offset | Word | Requirement or unit |
@@ -620,8 +582,6 @@ A descriptor's vertex offset counts **bytes**, not vertices. Vertices are consec
 | +4 | vertex_count | 3–64 |
 | +8 | vertex_offset_bytes | Byte offset from SRC2; divisible by 4 |
 | +12 | reserved | Must be zero, not ignored |
-
-</div>
 
 There is no separate alignment test for pair, descriptor or result addresses. The vertex-offset test checks the offset alone, not the final address or an 8-byte boundary. No winding, convexity, area, distinct-vertex or topology check is performed.
 
@@ -637,7 +597,7 @@ There is no separate alignment test for pair, descriptor or result addresses. Th
 
 The selector is 0 for A and 1 for B; edge indices are 0–63. There are no hit or normal-sign bits in meta.
 
-### Axis selection and arithmetic
+### Axis selection and arithmetic {#sec-geo-axis-selection-and-arithmetic}
 
 Axes are visited in A edge order, then B edge order, including each closing edge back to vertex 0. An edge from `(x0,y0)` to `(x1,y1)` supplies the perpendicular `(-(y1-y0), x1-x0)`, normalized by its Euclidean length. Zero-length edges are skipped. Axes are not deduplicated; up to 128 candidate edges may be visited.
 
@@ -649,7 +609,7 @@ For a hit, the normal is flipped only if its dot product with `meanB − meanA` 
 
 Duplicate vertices are allowed through the stated checks. If all edges of both shapes have zero length, the pair faults without a result write. One nonzero edge is sufficient for evaluation, even for collinear, zero-area or nonconvex lists. Identical collinear lists `(0,0), (1,0), (2,0)` consequently return a hit with normal `(0,1)` and zero depth.
 
-### Fault priority and writes
+### Fault priority and writes {#sec-geo-fault-priority-and-writes}
 
 | Priority | Condition | Fault word |
 |---|---|---|
@@ -669,7 +629,7 @@ Thus a misaligned vertex offset takes priority over a count above 64, but not ov
 
 Failures leave the current result untouched. Successful hits and misses overwrite all five words in layout order. Source data for the pair is read before its result is written. No alias restriction or automatic result clearing is imposed: a later pair can observe an earlier result write if their buffers overlap.
 
-### Worked pair and output interpretation
+### Worked pair and output interpretation {#sec-geo-worked-pair-and-output-interpretation}
 
 Use the two square runs from the worked transformation above. Descriptor 0 contains `(flags=1, count=4, offset=0, reserved=0)`; descriptor 1 uses offset 32. The pair words are `(0,0,0,1,0)`, selecting A=0, B=1 and result 0.
 
@@ -677,8 +637,7 @@ A edge 0 supplies axis `(0,+1)`. The projected intervals are raw `[0,262144]` an
 
 With B translated by `(4,0)` instead, the squares touch and return `(1,65536,0,0,1)`: depth zero, normal `(1,0)`, A edge 1. Translation by `(5,0)` returns five zero words. Identical squares retain A edge 0 and return `(1,0,65536,262144,0)`. For extreme coordinates, depth saturates: identical squares spanning raw `-2147483648` to `2147483647` on both axes return depth `2147483647`, not a wrapped value.
 
-## OVERLAP2D_PASS: translated-shape contacts
-
+## OVERLAP2D_PASS: translated-shape contacts {#sec-geo-overlap2d_pass-translated-shape-contacts}
 
 `OVERLAP2D_PASS` (`0x22`) finds strict two-dimensional overlaps between translated shapes. It accepts AABBs, convex polygons, and compounds of those primitives. For each overlapping instance pair it emits at most one contact: a normal, penetration depth, contact point, and identifiers for the selected pieces and feature. Non-overlapping pairs occupy no output slots.
 
@@ -686,7 +645,7 @@ Use **candidate mode** when the cartridge already has a pair list, needs a parti
 
 All addresses and offsets below are byte quantities unless explicitly identified as indices or counts. `U32` means an unsigned 32-bit register or memory word. `F32` means the IEEE 754 binary32 bit pattern stored in one word; geometry is not fixed-point. Source F32 values are decoded for double-precision calculation, and contact components are rounded back to F32 on output.
 
-### Pass configuration
+### Pass configuration {#sec-geo-pass-configuration}
 
 The pass uses the configuration captured at launch:
 
@@ -709,11 +668,9 @@ The remaining `PARAM0` bits have no effect on this pass. In particular, the name
 
 A launch clears the processed, result, exact-pair, and broadphase-pair counts and writes a zero summary, including when `COUNT=0`. There is no separate OVERLAP2D configuration-validation stage.
 
-<section class="keep-together">
+### Input records {#sec-geo-input-records}
 
-### Input records
-
-#### Instances and candidate pairs
+#### Instances and candidate pairs {#sec-geo-instances-and-candidate-pairs}
 
 An instance occupies five words, 20 bytes:
 
@@ -724,8 +681,6 @@ An instance occupies five words, 20 bytes:
 | `+8` | F32 | Translation `ty` |
 | `+12` | U32 | Layer bitmask |
 | `+16` | U32 | Collision mask |
-
-</section>
 
 Instance index `i` addresses `SRC0 + i × STRIDE0`. Several instances may reference the same descriptor with different translations. Translation is the only instance transform: there is no rotation or scale field.
 
@@ -741,7 +696,7 @@ These are instance indices, not byte offsets. Records are visited in array order
 
 Full pass visits `(0,1), (0,2), …, (1,2), …`, with A index increasing in the outer loop and B running from A+1 to `COUNT−1`. It generates no self-pairs or reversed pairs. Its pair metadata is `((A & 0xFFFF) << 16) | (B & 0xFFFF)`. Only metadata is truncated to 16-bit halves; instance addressing uses the complete indices, with no separate 65,535- or 65,536-instance limit.
 
-#### Shape descriptors and bounds
+#### Shape descriptors and bounds {#sec-geo-shape-descriptors-and-bounds}
 
 Every shape descriptor is 16 bytes:
 
@@ -766,13 +721,13 @@ Polygon data spans `dataCount × 8` bytes. Translation is added to every vertex 
 
 Compound piece `i` is the descriptor at `parent + dataOffset + i × 16`: the array contains descriptors, not pointers or indices. Each child's offsets are relative to that child descriptor. All children inherit the instance translation; there is no per-piece transform. There is no explicit upper piece-count limit. The zero-count check occurs only after the outer instance bounds overlap. Child descriptors, bounds, and exact data are checked as they are reached. Narrowphase accepts only AABB or polygon children, so a nested compound faults if exact loading reaches it; a child whose bounds miss need not reach that check.
 
-#### Address spans
+#### Address spans {#sec-geo-address-spans}
 
 Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `0x100000000`. There is no alignment predicate in this pass.
 
 Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. The four summary words are written separately, in order.
 
-### Filtering, order, and counts
+### Filtering, order, and counts {#sec-geo-filtering-order-and-counts}
 
 For each instance pair, the pass checks readability of both shape descriptors before applying masks. The pair proceeds only when both `(maskA & layerB) != 0` and `(maskB & layerA) != 0`. A rejected pair reads no bounds and changes none of the three summary counts.
 
@@ -782,7 +737,7 @@ After overlapping outer bounds, the pass checks top-level kinds and compound pie
 
 All overlapping piece pairs are tested. The selected contact has the smallest penetration depth; ties choose the smaller A piece index, then smaller B piece index, then smaller feature metadata. A later fault aborts the record even if an earlier piece pair had produced a provisional contact.
 
-### Exact overlap and contact
+### Exact overlap and contact {#sec-geo-exact-overlap-and-contact}
 
 AABB and polygon pieces use the same polygon operation; there is no separate AABB/AABB shortcut. Exact loading reads A before B. An AABB count other than four, or a polygon count outside 3–64, faults before its exact-data range check.
 
@@ -809,9 +764,7 @@ A nonempty clipped polygon produces the arithmetic mean of its output vertices�
 
 The clipping workspace holds 128 vertices in each of two buffers; there is no explicit clipping-capacity fault. Zero-length edges are skipped, and zero projected overlap rejects contact. Non-finite values receive the stated arithmetic and comparisons, not a separate value-classification check.
 
-<section class="keep-together">
-
-### Output records and summary
+### Output records and summary {#sec-geo-output-records-and-summary}
 
 Results are packed at `DST0 + resultCount × 36`, independent of input strides:
 
@@ -823,8 +776,6 @@ Results are packed at `DST0 + resultCount × 36`, independent of input strides:
 | `+20`, `+24` | U32 | Winning A, B piece indices |
 | `+28` | U32 | Winning edge index, without edge-owner bit |
 | `+32` | U32 | Candidate metadata or generated full-pass metadata |
-
-</section>
 
 Primitive shapes report piece index zero. There is no hit flag: misses emit nothing.
 
@@ -843,7 +794,7 @@ do not impose a smaller limit on COUNT or terminate a full pass at rollover.
 
 It contains neither capacity nor processed count. The processed count advances only after an entire input record succeeds: one candidate record in candidate mode, one outer instance in full pass. Full pass reads its final instance and publishes a summary even though that record has no later partner.
 
-### Capacity, partial progress, and faults
+### Capacity, partial progress, and faults {#sec-geo-capacity-partial-progress-and-faults}
 
 Capacity is checked only after the complete piece search selects a hit. If `resultCount >= PARAM1`, the pass publishes current counters with overflow bit 0 set, then faults with `RESULT_CAPACITY`; it writes no new result and does not increment `resultCount`. Capacity zero can succeed when there are no hits. This check precedes destination validation.
 
@@ -866,7 +817,7 @@ In candidate mode, fault checks begin with candidate-record span/readability, th
 
 For each reached pair, the order is descriptor readability, mask filtering, A bounds, B bounds, outer-bounds rejection, top-level kind/count checks, exact-count increment, A-piece descriptor/bounds, B-piece descriptor/bounds, piece-bounds rejection, exact A kind/count/data, exact B kind/count/data, contact selection, capacity, and result destination. The first encountered fault stops the record.
 
-### Small AABB example
+### Small AABB example {#sec-geo-small-aabb-example}
 
 Build one 32-byte shape from descriptor words `[1, 4, 16, 16]`, followed by F32 bounds/data `[0, 0, 4, 4]`. Two 20-byte instances share it: A has translation `(0,0)`, B `(1,1)`, and both have layer and mask `1`. Supply candidate `[0, 1, 0x12345678]`.
 

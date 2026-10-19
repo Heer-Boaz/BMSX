@@ -1,4 +1,4 @@
-# Direct memory access
+# Direct memory access {#sec-dma}
 
 The direct memory access controller moves 32-bit words between main RAM, ROM,
 cartridge storage and device ports. Its two channels have identical
@@ -14,12 +14,12 @@ ports or storage; the request selectors synchronize their use.
 Transfer time depends on the source and destination regions and the block size.
 With otherwise equal conditions, cartridge-ROM-to-RAM costs more system cycles
 than RAM-to-RAM, while system-ROM-to-RAM costs fewer. The
-[route-rate comparison](#transfer-rates-by-route) gives the numerical rates.
+[route-rate comparison](#sec-dma-transfer-rates-by-route) gives the numerical rates.
 For GPU uploads, DMA delivers words to GP0 and the GPU performs the VRAM work.
 For APU uploads, DMA fills the transfer FIFO and the APU subsequently commits a
 sample-RAM batch. Observe transport and device completion separately.
 
-## DMA specifications
+## DMA specifications {#sec-dma-dma-specifications}
 
 | Resource | Specification |
 |---|---|
@@ -38,13 +38,13 @@ edge. Its source words are read at that edge. Keep the source storage stable
 until its transfer completes. The receiving unit may continue processing after
 DMA has delivered the last word.
 
-![Two programmed channels share one admitted block; payload is read at service](figures/dma-transfer.svg)
+![Two programmed channels share one admitted block; payload is read at service](figures/dma-transfer.svg){#fig-dma-transfer}
 
 The upper path selects and captures configuration. The lower path moves data
 at the service edge. Address/count writeback belongs to the serviced channel;
 CONTROL is not rewritten by block completion.
 
-## Program a transfer
+## Program a transfer {#sec-dma-program-a-transfer}
 
 1. Reserve an idle channel for the transfer and prepare the source/destination
    storage or device protocol.
@@ -75,9 +75,7 @@ For a GP0 route, program GP0's address explicitly and select GX_WRITE on that
 side. FORCE is suitable for an ordinary memory endpoint; a device endpoint must
 also satisfy its own packet, readiness and block-size rules.
 
-<div class="keep-together">
-
-### Assemble CONTROL
+### Assemble CONTROL {#sec-dma-assemble-control}
 
 The following expression describes its defined fields. Each request is its
 four-bit encoding, and block length is 1–16:
@@ -90,8 +88,6 @@ CONTROL = read_increment
         | ((block_length - 1) << 10)
 ```
 
-</div>
-
 The following CONTROL words select the example routes:
 
 | CONTROL | Operation |
@@ -101,7 +97,7 @@ The following CONTROL words select the example routes:
 | `00003c41H` | Read increment, fixed destination, FORCE/GX_WRITE, 16-word blocks |
 | `00003c0aH` | Fixed source, write increment, GX_READ/FORCE, 16-word blocks |
 
-### START and zero count
+### START and zero count {#sec-dma-start-and-zero-count}
 
 TRIGGER bit 0 is START. Writing it while idle replaces STATUS with BUSY and
 starts the transfer protocol. A zero count instead reaches DONE and requests
@@ -112,9 +108,7 @@ START written while BUSY is ignored: it is not queued, does not restart the
 channel and does not cancel an admitted block. A write with START clear also
 does not start anything. TRIGGER reads zero after either kind of write.
 
-<a id="worked-blua-program"></a>
-
-## Copy words in BLua
+## Copy words in BLua {#sec-dma-copy-words-in-blua}
 
 The example first copies twenty ROM words into main RAM, then uses both
 channels to copy that RAM source into two separate destinations. It begins
@@ -172,12 +166,12 @@ addresses have advanced 80 bytes. Check the shared bus-fault report as well:
 DONE alone does not certify successful accesses.
 
 The ROM-to-RAM transfer costs 168 admitted DMA cycles. For the two RAM copies,
-the [round-robin trace](#worked-block-round-robin-trace) gives the 94-cycle
+the [round-robin trace](#sec-dma-worked-block-round-robin-trace) gives the 94-cycle
 schedule when channel 1 starts before channel 0's first block completes.
 Those costs exclude programming instructions, arbitration waits and interrupt
 service; sequential START stores are not an atomic simultaneous launch.
 
-### Send a command stream to GP0
+### Send a command stream to GP0 {#sec-dma-send-a-command-stream-to-gp0}
 
 Retain `dma0` and `irq_ack` from above. Own GP0 exclusively, with no partial
 packet or unread readback. This five-word stream sets mask mode, fills a red
@@ -213,9 +207,9 @@ block costs 44 cycles. The DMA wait releases the command-stream source; the
 following waits separately observe the GPU marker and GPU idle. The local
 fill's RGB555 result is `001fH`, but observing those status bits is not a pixel
 readback. The sequence neither programs a display mode nor publishes a new
-scanout source. Display latching remains a [PCRTC](pcrtc.md) operation.
+scanout source. Display latching remains a [PCRTC](pcrtc.md#sec-pcrtc) operation.
 
-## Register reference
+## Register reference {#sec-dma-register-reference}
 
 Use whole-word accesses at the addresses below. Each reset word is zero.
 READ_ADDR, WRITE_ADDR, TRANSFER_COUNT and CONTROL are ordinary read/write
@@ -235,7 +229,7 @@ Do not derive channel 1 by adding one channel-0 bank length. READ_ADDR and
 WRITE_ADDR retain complete byte-address words. TRANSFER_COUNT retains a
 complete unsigned word. Neither the address nor count writes clear STATUS.
 
-### CONTROL fields
+### CONTROL fields {#sec-dma-control-fields}
 
 | Bits | Field | Meaning | Reset |
 |---|---|---|---:|
@@ -250,9 +244,7 @@ The complete CONTROL word is retained, including bits 31:14. Those bits are
 not cleared by a write or admission. No transfer-control meaning is assigned
 to them here.
 
-<div class="keep-together">
-
-### Request-selector encodings
+### Request-selector encodings {#sec-dma-request-selector-encodings}
 
 Both selector fields use the same encodings. The fields gate admission
 independently; their meanings are not reversed when used on the other side.
@@ -273,13 +265,11 @@ independently; their meanings are not reversed when used on the other side.
 | 11–14 | Unnamed; test their corresponding request-line bits |
 | 15 | DISABLED |
 
-</div>
-
 FORCE is always asserted and DISABLED is never asserted. Do not equate the
 unnamed encodings with either one. For cartridge socket selection and card
-protocols, see [Book III: Cartridge sockets and mapped card devices — DMA between sockets](../book3/cartridge.md#dma-between-sockets).
+protocols, see [[Book III: Cartridge sockets and mapped card devices — DMA between sockets](../book3/cartridge.md#sec-cartridge-dma-between-sockets)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “DMA between sockets”]{.content-visible when-format="pdf"}.
 
-### STATUS and TRIGGER
+### STATUS and TRIGGER {#sec-dma-status-and-trigger}
 
 | Word | Bits | Name | Meaning |
 |---|---|---|---|
@@ -299,9 +289,9 @@ accepted writes. This is distinct from the admission edge and the service
 edge described next. A register read is not a peek into the current word slot
 of an admitted block.
 
-## Programmed state and an admitted block
+## Programmed state and an admitted block {#sec-dma-programmed-state-and-an-admitted-block}
 
-### Configuration is captured; source data is not
+### Configuration is captured; source data is not {#sec-dma-configuration-is-captured-source-data-is-not}
 
 A transfer proceeds one block at a time. At admission the channel captures
 READ_ADDR, WRITE_ADDR, the full remaining TRANSFER_COUNT and CONTROL, and sets
@@ -313,7 +303,7 @@ rewrites the programmed registers. Payload is read from the captured source
 address at service, so changing those bytes before service changes the words
 that will be delivered.
 
-### What happens at service
+### What happens at service {#sec-dma-what-happens-at-service}
 
 The complete admitted block is serviced at its service edge; there are no separate per-word service edges. Within that service, each word has this order:
 
@@ -329,7 +319,7 @@ Only after the entire block are the resulting read address, write address and re
 
 Keep source contents unchanged until completion if the transfer must reproduce their original values. Admission alone does not release that requirement. Likewise, admission does not make destination contents final. These are consequences of the ordered reads and writes, not a separate buffer-lifetime mechanism.
 
-### Worked example: three-word forward overlap
+### Worked example: three-word forward overlap {#sec-dma-worked-example-three-word-forward-overlap}
 
 Let `A` be four-byte aligned, with `A` through `A + 15` in one ordinary writable RAM span, outside I/O. All addresses below are relative to `A`. Initially:
 
@@ -347,7 +337,7 @@ Admit one three-word block with read address `A`, write address `A + 4`, count 3
 
 The three destination words all become `0x11111111`. The channel finishes with read address `A + 12`, write address `A + 16` and count zero. Forward overlap does not preserve the original source sequence: each write precedes the next read.
 
-### Programming while BUSY
+### Programming while BUSY {#sec-dma-programming-while-busy}
 
 BUSY does not reject address, count or CONTROL programming. It also does not turn those writes into edits of an admitted block.
 
@@ -357,7 +347,7 @@ The admitted block still transfers three words using the old configuration. Its 
 
 When a BUSY channel has no admitted block, newly programmed words instead supply subsequent admission; programming count zero can complete the channel even with closed request gates. START while BUSY is ignored and does not restart, recapture or cancel a block. Reasserting START therefore cannot rescue address/count words that the admitted block will overwrite.
 
-## Requests and device-port ownership
+## Requests and device-port ownership {#sec-dma-requests-and-device-port-ownership}
 
 A device transfer has four distinct conditions: both request gates permit
 admission; DMA owns the applicable port against conflicting CPU use; each port
@@ -365,9 +355,7 @@ accepts its mapped access; and the block completes. Request selectors provide
 the first condition. The device chapter supplies its port and payload protocol,
 including any work continuing after DMA completion.
 
-<div class="keep-together">
-
-### Request gates
+### Request gates {#sec-dma-request-gates}
 
 CONTROL selects a read request and a write request independently. Both must be asserted before a nonzero block is admitted. The selectors are not inferred from READ_ADDR or WRITE_ADDR. FORCE (0) is always asserted; DISABLED (15) is always deasserted. Unnamed selectors 11–14 test their respective request bits; they are not aliases for DISABLED and have no assigned device meaning here.
 
@@ -380,13 +368,11 @@ CONTROL selects a read request and a write request independently. Both must be a
 | 5 | IMGDEC_WRITE | IMGDEC is active, not quiescing, has nonzero input words remaining, and has at least `min(input words remaining, 16)` free input-FIFO words. |
 | 6 | IMGDEC_READ | IMGDEC is active, not quiescing, has nonzero output words remaining, and holds at least `min(output words remaining, 16)` output-FIFO words. |
 
-</div>
-
 In GPU FIFO direction, GX_WRITE requires ingress not stopped, empty DMA ingress, and room in the command FIFO. In CPU_TO_GP0 direction, packet acceptance requires readback IDLE, ingress not stopped, and empty DMA ingress. With image-load words outstanding, it tests command-FIFO space. During polyline payload it is false. Otherwise, no partial fixed packet and an empty FIFO permit acceptance; the remaining case requires an incomplete packet that is neither a polygon nor a line. This packet request is not the CPU's one-word write-ready condition.
 
 IMGDEC's remaining quantities belong to its stream, not to the DMA channel. APU requests describe transfer-FIFO batches, not completion of sample-memory filling or draining. Selectors 7–10 are cartridge-slot 0 write/read and slot 1 write/read respectively; their device protocols belong to Book III.
 
-### Admission is a block boundary
+### Admission is a block boundary {#sec-dma-admission-is-a-block-boundary}
 
 Once admitted, a block retains its captured endpoints, count and CONTROL. A request dropping during a port access does not stop the remaining words of that block. Requests are tested again for a later admission, not between the words of an admitted block. Choose the block length to suit the destination's transfer contract; reducing the count or selecting FORCE does not make an otherwise invalid payload valid.
 
@@ -394,7 +380,7 @@ The last read and last write of each admitted block carry BLOCK_END. GPU DMA ing
 
 Payload words are read at the block's service edge, not captured by START. Keep source contents available until their transfer has completed: changing a source buffer after START can change the transmitted words. A destination write can also affect a later source read when the ranges overlap. Capturing an address does not capture the data at that address.
 
-### CPU access while BUSY
+### CPU access while BUSY {#sec-dma-cpu-access-while-busy}
 
 DMA ownership compares an exact port address. An admitted channel owns its captured starting endpoint; another BUSY channel uses its programmed endpoint. This is not a range lock or a reservation of every register in the device. A channel waiting for a request can still own its configured port. Rewriting an admitted channel's address does not move that block's ownership to the new address.
 
@@ -402,7 +388,7 @@ CPU writes to GP0 require no DMA write owner, empty DMA ingress, command-FIFO ro
 
 A refused CPU store waits before writing and retries the instruction after release. DMA ownership release requires the same blocked address and no remaining read or write owner there; release itself does not deposit a word. Reads are different: GP0 and IMGDEC CPU reads while DMA read-owned return their retained data latches rather than consuming DMA's data. APU CPU reads return its data latch. Do not use these reads as evidence that the DMA source FIFO is empty or that a transfer has stopped.
 
-### Supervisor boundaries
+### Supervisor boundaries {#sec-dma-supervisor-boundaries}
 
 A supervisor request first closes new TRIGGER admission. Existing channels
 can continue until producer quiescence, after which a second gate prevents
@@ -411,9 +397,9 @@ a BUSY channel waiting indefinitely for a request does not prevent this
 boundary. The cartridge channel registers and arbitration turn are then
 retained while supervisor channels start clear. Leave restores them and
 resumes arbitration; it does not restore overwritten payload RAM. See
-[SYSTEM, Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
+[SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service).
 
-## Faults and recovery
+## Faults and recovery {#sec-dma-faults-and-recovery}
 
 DMA bus faults and DMA completion are separate reports. An unmapped source read records UNMAPPED and supplies zero; an unmapped destination write records UNMAPPED without writing. An unaligned I/O read records UNALIGNED_IO and supplies zero; an unaligned I/O write records it without writing. A write to read-only STATUS records READ_ONLY without changing that register. Program DMA registers with whole-word writes.
 
@@ -423,7 +409,7 @@ A DMA destination can also refuse a write through its DMA write-ready condition.
 
 DMA-unit reset cancels DMA service, discards the admitted block, clears all twelve mapped DMA words and request latches, and returns the next arbitration turn to channel 0. It preserves the installed timing configuration. These are reset effects, not a DMA CONTROL command or a device-port reset operation.
 
-## Completion and interrupts
+## Completion and interrupts {#sec-dma-completion-and-interrupts}
 
 At ordinary completion, the last block first publishes its final read address,
 write address and zero remaining count. Finish then replaces STATUS with DONE,
@@ -435,7 +421,7 @@ interrupt-enable bit in CONTROL.
 | 0 | DMA0_DONE | 0 | `00000001H` |
 | 1 | DMA1_DONE | 8 | `00000100H` |
 
-The [interrupt-controller chapter](irq.md) specifies FLAGS, MASK, ACK and CPU
+The [interrupt-controller chapter](irq.md#sec-irq) specifies FLAGS, MASK, ACK and CPU
 acceptance. Masking completion IRQs neither prevents DMA completion nor clears
 DONE. STATUS reads do not clear pending; controller ACK does not clear STATUS.
 Repeated unacknowledged completions coalesce in one pending bit, not a transfer
@@ -453,9 +439,9 @@ not certify that every bus access succeeded, nor that downstream work has
 finished. For a GP0 command stream, transfer completion, execution of an
 in-order GPU marker, GPU idle and publication of a displayed picture are
 different conditions. The programming example waits for DMA and GPU separately;
-the [PCRTC chapter](pcrtc.md) covers display latching.
+the [PCRTC chapter](pcrtc.md#sec-pcrtc) covers display latching.
 
-## Transfer timing and sharing the bus
+## Transfer timing and sharing the bus {#sec-dma-transfer-timing-and-sharing-the-bus}
 
 DMA transfer times use the **33,868,800 Hz system timebase**. A block charged C
 cycles has an admitted interval of C / 33,868,800 seconds. To calculate elapsed
@@ -463,7 +449,7 @@ time, add request waits and competing-channel service. CPU programming and IRQ
 service consume additional instructions. Device processing after word delivery
 is timed by the receiving unit.
 
-### Blocks are the unit of admission
+### Blocks are the unit of admission {#sec-dma-blocks-are-the-unit-of-admission}
 
 The two DMA channels share **one admitted block**. They do not have two independently progressing transfer buses. A channel programs a block size of 1–16 words using CONTROL bits 10–13, which contain the block size minus one. Each word is four bytes. The admitted length is
 
@@ -475,11 +461,9 @@ A short final block therefore uses its actual length, not the programmed maximum
 
 Admission captures the addresses, remaining count, complete control word, and actual block length, then establishes the block's completion deadline. An admitted block is nonpreemptible: another channel becoming ready, or a request dropping, does not interrupt it. Programming new values does not retime that block. At its deadline, the block performs its ordered word transfers and publishes the resulting addresses and remaining count. No intermediate per-word completion boundaries are provided.
 
-### Calculating a block's charge
+### Calculating a block's charge {#sec-dma-calculating-a-blocks-charge}
 
 Calculate source and destination costs over paired timing spans. A span ends at the first mapping boundary reached by either incrementing endpoint, or at the block end. A mapping crossing splits the timing calculation, **not** the admitted block.
-
-<div class="keep-together">
 
 The installed region costs for a span of n words are:
 
@@ -491,11 +475,7 @@ The installed region costs for a span of n words are:
 | I/O | 0 | 0 |
 | Other | 0 | 0 |
 
-</div>
-
 Both endpoints begin a new region span at every block admission. Thus each RAM or cartridge endpoint pays setup again in the next block. Within a block, splitting a span because the *opposite* endpoint crosses a boundary does not repeat setup for the continuing endpoint. An endpoint pays setup again when its own mapping span ends, including crossings between cartridge ROM, RAM, and MMIO subregions. A fixed endpoint has one region span for the entire block: repeated accesses to its address do not repeatedly incur setup.
-
-<div class="keep-together">
 
 For each paired span, let R and W include the applicable endpoint setup charges. Its contribution is
 
@@ -505,15 +485,13 @@ Span charge = R + W       if both endpoints are RAM or both are Cartridge
 Block charge = max(1, sum of all span charges)
 ```
 
-</div>
-
 “Both” refers to region kind, not matching addresses or cartridge slots. System-ROM-to-system-ROM uses the maximum rule, not addition. The one-cycle minimum applies once to the **whole block**, not to each word or each span. Consequently an all-I/O block costs one cycle regardless of its admitted word count. The cartridge charge applies throughout the cartridge aperture, including
 cartridge RAM and MMIO, not only ROM storage. Both sockets share the external
 transfer path: cartridge-to-cartridge costs add even when different socket
 request selectors choose its source and destination. Separate chip selects
 do not provide a second transfer bus.
 
-### Single-channel examples
+### Single-channel examples {#sec-dma-single-channel-examples}
 
 Assume uninterrupted request eligibility, no mapping crossings, and no programming changes during these transfers. All source addresses increment; destination addresses increment except for the fixed GP0 port.
 
@@ -526,7 +504,7 @@ Assume uninterrupted request eligibility, no mapping crossings, and no programmi
 
 For RAM copies, a block of n words costs 2n + 2: the two endpoints share the RAM charge additively, and each has one setup charge. Smaller blocks increase repeated setup. In the cartridge examples the source cost dominates the maximum. **System ROM is different:** the corresponding 20-word system-ROM-to-RAM transfer with block size 16 costs 17 + 5 = 22 cycles, not 168.
 
-### Transfer rates by route
+### Transfer rates by route {#sec-dma-transfer-rates-by-route}
 
 The following rates convert the admitted DMA charge into transferred words and
 payload bytes. They assume one eligible channel, complete 16-word blocks,
@@ -564,7 +542,7 @@ also requires both ports to supply and accept its complete block. Use the
 assigned device requests and count only successful accesses as useful payload;
 FORCE by itself supplies no device readiness.
 
-### Block size, tails and waiting time
+### Block size, tails and waiting time {#sec-dma-block-size-tails-and-waiting-time}
 
 For RAM → RAM, repeated setup changes the rate even without contention:
 
@@ -595,7 +573,7 @@ channel's elapsed interval. The following round-robin trace shows why equal
 channel count does not imply an equal split of bandwidth: the channels can
 have different block lengths, endpoint costs and remaining counts.
 
-### Worked block-round-robin trace
+### Worked block-round-robin trace {#sec-dma-worked-block-round-robin-trace}
 
 A channel is eligible only when BUSY, its count is nonzero, and **both** its read and write requests are asserted. FORCE is always asserted. Selection scans from the retained next-channel turn, skipping ineligible channels. Admission gives the next turn to the other channel; skips and completions do not themselves advance it. Thus round-robin is at block granularity, not word interleaving or a promise to wait for an unready channel.
 
@@ -613,7 +591,7 @@ Take two incrementing RAM-to-RAM copies, each with count 20 and FORCE on both re
 
 Each continuously eligible successor is anchored to the preceding block's deadline. Channel 0 completes at **A + 54**; channel 1 completes at **A + 94**. The complete sequence costs 34 + 6 × 10 = 94 cycles. After channel 0 completes, it is skipped: channel 1 continues without waiting, while the retained turn remains channel 0. Final addresses and count are published before DONE and the channel's completion IRQ; these completion boundaries do not specify when the CPU handles that IRQ.
 
-### Budgeting transfers to and from VRAM
+### Budgeting transfers to and from VRAM {#sec-dma-budgeting-transfers-to-and-from-vram}
 
 VRAM is GPU-local storage, not a separate mapped DMA endpoint. Uploads send a
 command and packed image words to **GP0 at 0801023cH**. Downloads read packed
@@ -658,6 +636,6 @@ substituted for a RAM-to-VRAM bus rate.
 
 For downloads, observe readback readiness and consume the full returned count.
 For other GPU work, use the command ordering and completion protocol in the
-[GPU chapter](gpu.md). Neither DMA DONE, GPU idle nor a GPU IRQ marker certifies
+[GPU chapter](gpu.md#sec-gpu). Neither DMA DONE, GPU idle nor a GPU IRQ marker certifies
 that new pixels have reached the display latch; display publication belongs to
-[PCRTC](pcrtc.md).
+[PCRTC](pcrtc.md#sec-pcrtc).

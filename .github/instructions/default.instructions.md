@@ -1,6 +1,6 @@
 # Product and internal-documentation ownership
 
-The technical manuals (`docs/manual/catalog.json`) specify the physical BMSX
+The technical manuals (`docs/index.md` and `docs/_quarto-book-*.yml`) specify the physical BMSX
 console, BLua32 and installed BIOS. `docs/architecture.md` is internal software
 architecture only; it is not an additional hardware reference. Verify facts
 against spec leaves and live owners/BIOS, and report conflicting evidence.
@@ -16,8 +16,10 @@ A cartridge is a physical card, not a linked or compiled program. Distinguish
 its ROM/RAM/devices from source programs, executable images and byte contents.
 Keep internal documents only for current, unique architectural/operational
 value; delete completed plans, handovers, review logs and duplicate fact sheets
-instead of archiving them elsewhere. Manual open questions and concise review
-evidence live in the existing chapter catalog; tests and commits retain proof.
+instead of archiving them elsewhere. Report unresolved product disagreements
+explicitly; hardware/BIOS tests and substantive commits retain proof. Publish
+through standard Quarto + LuaLaTeX, not custom renderers, PDF postprocessors,
+approval catalogs or tests of standard publishing behavior.
 
 Coding policies: *no defensive checks, trust the types, trust proper initialization and configuration (thus: no `ensure`), let the code just fail (thus: trust the code and just let runtime errors pop-up)!, and no legacy fallbacks permitted!*
 

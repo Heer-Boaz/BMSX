@@ -1,7 +1,7 @@
 # GPU shared-edge and joint example
 
 Standalone 256 × 192 cartridge for the
-[GPU coverage comparison](../../docs/book1/gpu.md#gpu-coverage-output).
+[GPU coverage comparison](../../docs/book1/gpu.md#sec-gpu-see-shared-edges-and-repeated-writes).
 The two upper cases use additive quads: a normal shared diagonal and an inward
 fourth vertex that causes overlapping writes. The lower band consists of 24
 separate polylines; both segments write their common endpoint.

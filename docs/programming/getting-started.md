@@ -50,7 +50,7 @@ builds to the first-picture route.
 ## First picture: build and run the GPU example
 
 The complete source is `carts/gpu_manual/cart.lua`, corresponding to
-[Program a complete picture in BLua](../book1/gpu.md#program-a-complete-picture-in-blua).
+[Program a complete picture in BLua](../book1/gpu.md#sec-gpu-program-a-complete-picture-in-blua).
 Its manifest is supplied at
 `carts/gpu_manual/res/manifest/manifest.rommanifest`. Texture pixels, palette
 colors, packed indices and command packets are declared in the source; no
@@ -90,7 +90,7 @@ game or a frame-loop template.
 
 ![GPU example reference picture, with textured quads, gradient triangle, rectangle overlaps and an indexed strip](../book1/figures/gpu-output-materials.png)
 
-This is the existing [GPU output plate](../book1/gpu.md#gpu-output-plate), whose
+This is the existing [GPU output plate](../book1/gpu.md#sec-gpu-gpu-output-plate), whose
 legend explains the regions. Running the ordinary ROM shows the picture;
 it does not run the retained-value assertion suite. The memory-result and
 other inspection routes below remain separate.
@@ -113,17 +113,17 @@ its chapter's register reference for individual fields.
 
 | What you want to do | Where to continue |
 |---|---|
-| Establish memory ownership and startup | Read [ROM contents, RAM sections, and startup](../book1/memory.md#rom-contents-ram-sections-and-startup), then [Taking ownership after the BIOS](../book1/memory.md#taking-ownership-after-the-bios) before assigning storage. |
-| Draw, upload pixels, or use textures | Extend [Program a complete picture in BLua](../book1/gpu.md#program-a-complete-picture-in-blua) through [Upload and issue the stream](../book1/gpu.md#upload-and-issue-the-stream-through-one-port) and [Locate texture texels and palette colors](../book1/gpu.md#locate-texture-texels-and-palette-colors). |
-| Control display timing and source windows | Read [Beam timing](../book1/pcrtc.md#27-beam-timing), then [Program the fixed canvas and initial cutout](../book1/pcrtc.md#program-the-fixed-canvas-and-initial-cutout) for the source-selection route. |
-| Transform and project 3D geometry | Begin with [Constructing and packing a transform](../book1/gte.md#constructing-and-packing-a-transform); continue through [Perspective and geometric decisions](../book1/gte.md#perspective-and-geometric-decisions) to [a visible image](../book1/gte.md#from-projected-vertices-to-a-visible-image). |
-| Transform 2D shapes and test contacts | Follow [An authored sprite and its collision hull](../book1/geo.md#an-authored-sprite-and-its-collision-hull), then [Launching and observing a job](../book1/geo.md#launching-and-observing-a-job). |
-| Transfer data and observe completion | Follow [Program a transfer](../book1/dma.md#program-a-transfer) together with [Completion and interrupts](../book1/dma.md#completion-and-interrupts). |
-| Play sound and manage sample storage | Start with the APU [Programming sequence](../book1/apu.md#programming-sequence), then [Voice sources and their lifetime](../book1/apu.md#voice-sources-and-their-lifetime) and [Sample RAM transfer](../book1/apu.md#sample-ram-transfer). |
-| Read input and service interrupts | Follow the [input sampling sequence](../book1/input.md#complete-input-sampling-program), [Choose one cartridge dispatch route](../book1/irq.md#choose-one-cartridge-dispatch-route), and [Acknowledge the source and the controller separately](../book1/irq.md#acknowledge-the-source-and-the-controller-separately). |
+| Establish memory ownership and startup | Read [ROM contents, RAM sections, and startup](../book1/memory.md#sec-memory-rom-contents-ram-sections-and-startup), then [Taking ownership after the BIOS](../book1/memory.md#sec-memory-taking-ownership-after-the-bios) before assigning storage. |
+| Draw, upload pixels, or use textures | Extend [Program a complete picture in BLua](../book1/gpu.md#sec-gpu-program-a-complete-picture-in-blua) through [Upload and issue the stream](../book1/gpu.md#sec-gpu-upload-and-issue-the-stream-through-one-port) and [Locate texture texels and palette colors](../book1/gpu.md#sec-gpu-locate-texture-texels-and-palette-colors). |
+| Control display timing and source windows | Read [Beam timing](../book1/pcrtc.md#sec-pcrtc-27-beam-timing), then [Program the fixed canvas and initial cutout](../book1/pcrtc.md#sec-pcrtc-program-the-fixed-canvas-and-initial-cutout) for the source-selection route. |
+| Transform and project 3D geometry | Begin with [Constructing and packing a transform](../book1/gte.md#sec-gte-constructing-and-packing-a-transform); continue through [Perspective and geometric decisions](../book1/gte.md#sec-gte-perspective-and-geometric-decisions) to [a visible image](../book1/gte.md#sec-gte-from-projected-vertices-to-a-visible-image). |
+| Transform 2D shapes and test contacts | Follow [An authored sprite and its collision hull](../book1/geo.md#sec-geo-an-authored-sprite-and-its-collision-hull), then [Launching and observing a job](../book1/geo.md#sec-geo-launching-and-observing-a-job). |
+| Transfer data and observe completion | Follow [Program a transfer](../book1/dma.md#sec-dma-program-a-transfer) together with [Completion and interrupts](../book1/dma.md#sec-dma-completion-and-interrupts). |
+| Play sound and manage sample storage | Start with the APU [Programming sequence](../book1/apu.md#sec-apu-programming-sequence), then [Voice sources and their lifetime](../book1/apu.md#sec-apu-voice-sources-and-their-lifetime) and [Sample RAM transfer](../book1/apu.md#sec-apu-sample-ram-transfer). |
+| Read input and service interrupts | Follow the [input sampling sequence](../book1/input.md#sec-input-sample-input-in-blua), [Choose one cartridge dispatch route](../book1/irq.md#sec-irq-install-the-cartridge-handler), and [Acknowledge the source and the controller separately](../book1/irq.md#sec-irq-acknowledge-the-source-and-the-controller-separately). |
 
 The [System overview](../book1/console.md) relates the units and storage. For
-source notation, read the [BLua extensions](../book1/blua-programs.md#blua-extensions)
+source notation, read the [BLua extensions](../book1/blua-programs.md#sec-blua-programs-blua-extensions)
 rather than treating the hardware examples as ordinary Lua.
 
 
@@ -215,7 +215,7 @@ npm run headless:test -- cartridge_manual tests/carts/cartridge_manual/cartridge
 
 `memory_fault_manual` deliberately enters the monitor on an unmapped load.
 `memory_recovery_manual` supplies a mutable pointer that can be repaired there.
-Use the [Memory chapter's monitor procedure](../book1/memory.md#repair-a-word-load-and-retry)
+Use the [Memory chapter's monitor procedure](../book1/memory.md#sec-memory-repair-a-word-load-and-retry)
 for inspection, assignment and retry. Do not treat clearing a report as repairing
 the faulting operand.
 
@@ -237,14 +237,14 @@ source edit. This is a specific development route, not automatic invocation on
 every image replacement. Normal startup still omits the participant vector;
 `<init>` declarations register closures without calling their bodies.
 
-See the [BLua participant reference](../book1/blua-programs.md#init-registers-a-participant-it-does-not-call-it-at-startup)
+See the [BLua participant reference](../book1/blua-programs.md#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup)
 for the declaration restrictions and explicit ordinary-startup call. This bounded
 route description is not a guarantee about every source edit, replacement,
 reset or IDE scheduling state.
 
 ## Trace selection in the supplied build routes
 
-The [BLua extension reference](../book1/blua-programs.md#intrinsic-calls-blua32)
+The [BLua extension reference](../book1/blua-programs.md#sec-blua-programs-intrinsic-calls-blua32)
 describes `blua32.trace` and `blua32.trace_sink`. Their selection is a compilation
 choice, not a switch that a running cartridge can use to restore erased code.
 
@@ -303,13 +303,13 @@ console.log(JSON.stringify(decodeBlua32BiosImports(
 
 For an immediate CLOSURE relocation, encode that function-record address in
 sixteen-byte units, then call the constructed closure. The [CPU linkage
-reference](../book1/cpu.md#linkage-operands-and-encoding-examples) gives both
+reference](../book1/cpu.md#sec-cpu-linkage-operands-and-encoding-examples) gives both
 closure forms and their exact bytes. Ordinary BIOS globals such as `print`
 instead use the image's global-name table and normal value calls; their names
 are not additional entries in this static-function import list.
 
 A custom layout must still preserve firmware reservations, initialize its own
 DATA and BSS through startup instructions, and place the actual addresses in
-its records and code. The [Memory reference](../book1/memory.md#rom-header-fields)
+its records and code. The [Memory reference](../book1/memory.md#sec-memory-rom-header-fields)
 defines the machine's boot and executable-image formats. A tool's choice to
 pack static sections consecutively is not an additional hardware requirement.

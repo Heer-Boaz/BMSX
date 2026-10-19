@@ -1,0 +1,17 @@
+project:
+  output-dir: _book-ii
+
+book:
+  title: "Book II — BLua32 and BIOS Reference"
+  output-file: bmsx-book-ii
+  chapters:
+    - index.md
+    - book1/cpu.md
+    - book1/blua-programs.md
+    - book1/coroutines.md
+    - book1/bios-base.md
+    - book1/bios-loader.md
+    - book1/bios-math.md
+    - book1/bios-os.md
+    - book1/bios-string.md
+    - book1/bios-table.md

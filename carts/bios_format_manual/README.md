@@ -1,7 +1,7 @@
 # BIOS String formatting: an ordinary cartridge
 
 This is the complete formatting example printed in
-[BIOS String operations](../../docs/book1/bios-string.md#complete-program-formatted-text).
+[BIOS String operations](../../docs/book1/bios-string.md#sec-bios-string-example-formatted-text).
 Save its result module as `results.lua` and concatenate its three formatting-entry
 parts as `cart.lua`, with one blank line between adjacent parts:27+69 lines. The entry uses the installed `string.format`;
 there is no local formatter, codec, allocator or ABI wrapper.

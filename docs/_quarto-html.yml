@@ -1,0 +1,35 @@
+project:
+  output-dir: _html
+
+book:
+  title: BMSX Developer Reference
+  chapters:
+    - index.md
+    - part: "Book I — System and Hardware Reference"
+      chapters:
+        - book1/console.md
+        - book1/memory.md
+        - book1/pcrtc.md
+        - book1/gte.md
+        - book1/gpu.md
+        - book1/irq.md
+        - book1/dma.md
+        - book1/apu.md
+        - book1/geo.md
+        - book1/imgdec.md
+        - book1/input.md
+        - book1/system.md
+    - part: "Book II — BLua32 and BIOS Reference"
+      chapters:
+        - book1/cpu.md
+        - book1/blua-programs.md
+        - book1/coroutines.md
+        - book1/bios-base.md
+        - book1/bios-loader.md
+        - book1/bios-math.md
+        - book1/bios-os.md
+        - book1/bios-string.md
+        - book1/bios-table.md
+    - part: "Book III — Cartridge and Expansion Reference"
+      chapters:
+        - book3/cartridge.md

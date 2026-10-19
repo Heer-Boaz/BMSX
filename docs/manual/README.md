@@ -1,195 +1,114 @@
-# BMSX developer-manual standard
+# BMSX manual authoring
 
-The technical manuals are the authoritative product specification of the
-physical BMSX console. They must let an experienced programmer new to BMSX
-write games, libraries and development tools without access to this repository.
-They are manufacturer documentation, not an edited account of the emulator.
+The technical manuals specify the physical BMSX console. They must let an
+experienced programmer new to BMSX write games, libraries and tools without
+access to this repository. They are manufacturer documentation, not an account
+of the emulator.
 
-## Products and volumes
+## Scope and authority
 
-- **Book I — System and Hardware Reference:** the installed machine, memory,
-  hardware units and their programming interfaces.
+- **Book I — System and Hardware Reference:** the installed machine, memory and
+  hardware units.
 - **Book II — BLua32 and BIOS Reference:** processor architecture, instruction
-  set, BLua language extensions and installed firmware interfaces.
-- **Book III — Cartridge and Expansion Reference:** cartridge connections,
-  mapped card devices and expansion interfaces.
+  set, BLua extensions and installed firmware interfaces.
+- **Book III — Cartridge and Expansion Reference:** cartridge connections and
+  mapped card devices.
 
-[volumes.json](volumes.json) owns the titles and [catalog.json](catalog.json)
-owns chapter membership. Existing `docs/book1/` paths are source locations, not
-book classification.
-A draft's presence or length does not establish completeness or publication.
+The standard `docs/_quarto-book-*.yml` profiles own volume titles and chapter
+order. `docs/_quarto-html.yml` combines them into the searchable HTML reference.
+Source-directory names do not determine book membership or product ownership.
 
-`docs/architecture.md` describes internal software architecture only. It must
-not contain a second hardware/BIOS specification. Use its old contents only to
-locate migration candidates; independently verify each fact before including
-it in a book. Internal documents link to the appropriate public chapter.
+`docs/architecture.md` describes internal software ownership only. It is not a
+hardware or BIOS source. Verify product facts against mirrored numeric leaves,
+actual TS/C++ owners, BIOS consumers and, for language/linkage, the BLua frontend.
+Tests check reached behavior and numerical examples. Report conflicting evidence
+rather than automatically choosing architecture prose or one implementation.
+Do not document suspected bugs as permanent hardware guarantees.
 
-`cartlib`, ROM packers, asset converters and project build tools have the
-position of a game studio's independent software. They are neither BMSX
-hardware nor BIOS nor a prescribed manufacturer SDK. Keep their APIs, schemas,
-asset conventions and packaging recipes out of all three books. Document the
-actual machine/BIOS-consumed formats instead, sufficiently to permit independent
-producers. Repository/tooling instructions belong in the separate
-[development companion](../programming/getting-started.md), not the books.
+`cartlib`, packers, asset converters and project builders are independent game
+studio software, not console hardware, BIOS or a manufacturer SDK. Their APIs,
+formats and workflows do not belong in the books. Document actual consumed
+hardware/BIOS representations so that independent producers can implement them.
+Repository workflows belong in the separate [development companion](../programming/getting-started.md).
 
-## Manufacturer voice
+## Writing and reviewing
 
-Write English for a professional cartridge programmer. Treat BMSX as the
-installed physical machine. Explain the unit and its use before its detailed
-reference. Use hardware terms, register words and physical/programming units.
-Do not mention emulator implementations, source paths, tests, repository
-history, proposed refactors or rejected designs in public prose.
+Write English for a professional cartridge programmer. Introduce the unit's
+purpose, resources and connections; explain data flow and programming; then give
+complete reference details. Distinguish explanation, instructions and lookup
+material. BIOS interfaces need signatures, arguments, units, results and errors,
+not artificial register descriptions.
 
-The cartridge is the physical card. Its ROM byte contents, an executable image,
-a source program and writable storage are different subjects. Do not call a
-program a “linked cartridge” or describe ROM data as installed storage. Explain
-instruction fetching, ROM records and initialization where programming requires
-them; omit elementary compiled-versus-interpreted lessons. Apply this distinction
-throughout the chapter, not only in its opening paragraph.
+Give register addresses, access, bit ranges, reset, encodings, write effects and
+visibility edges. Include capacities, timing, transfer-route differences,
+synchronization, faults and interrupts where defined. Do not invent electrical
+ratings or latency. Explain relevant hazards without repeated defensive
+negations, implementation comparisons or design rationale.
 
-A device chapter normally teaches:
+Treat a cartridge as a physical card. Distinguish its ROM byte contents, program
+formats and optional writable devices. Do not call a program a “linked
+cartridge”, describe bytes as installed storage or teach elementary
+compiled-versus-interpreted distinctions. No source paths, emulator internals,
+tests, development history or tool-specific requirements in public chapters.
 
-1. What the unit does, its resources and connections to other units.
-2. The data path, processing stages and visibility/completion edges.
-3. How to prepare data, submit work, synchronize and use the result.
-4. Complete registers, fields, commands, formats, capacities and timing.
-5. Relevant hardware hazards, faults and interrupt handling.
+Use compact real BLua register sequences, binary records and worked calculations
+with necessary assumptions and expected results. Code explains the interface;
+complete test programs and verification harnesses do not belong in the books.
+Prioritize BMSX-specific language extensions and relevant BIOS, not general Lua
+lessons. Use diagrams and actual output images when they clarify data paths,
+transforms, memory layout or synchronization; not as decoration or test proof.
 
-Adapt this structure to the subject. A BIOS reference needs signatures,
-arguments, units, results, errors and necessary usage, not artificial registers.
-Distinguish explanation, programming instructions and lookup material. Avoid
-chapter-local contents lists, repetitive limitation disclaimers and defensive
-comparisons with implementations that the reader cannot see.
+Complete known chapter work before its detailed review. Check factual accuracy,
+authenticity, independence, explanation, relevance, product boundaries and
+technical completeness. Recheck findings and affected interfaces, not every
+unchanged chapter after a local correction. A successful render is not a source
+review or a declaration that a manual is complete.
 
-A register reference states address, name, access, bit ranges and reset, then
-explains encodings, write effects and effective edges. Distinguish reserved bits
-from retained unused bits. State clock/rate/latency and transfer-route differences
-where defined; do not invent electrical ratings or fixed latency where none is
-specified. Fault descriptions must tell the programmer what causes the fault,
-what state/results survive and what action is available.
-
-## Examples and illustrations
-
-Code explains the hardware or BIOS; it is not a demonstration of the test suite.
-Prefer short real BLua sequences, concrete register words, binary records and
-worked calculations. State their starting assumptions and expected result.
-Keep only initialization essential to the mechanism. Do not reproduce complete
-result-buffer cartridges, harnesses, build files or assertion transcripts.
-A longer functional example is appropriate when the interface genuinely needs it.
-Existing useful general Lua reference may remain, but new coverage prioritizes
-BMSX hardware, BLua extensions and relevant BIOS. Refer to Lua documentation
-rather than expanding a general-language tutorial.
-
-Use diagrams for real relationships: producer/consumer data paths, FIFO and
-DMA flow, transform stages, memory layouts and synchronization edges. Do not
-invent shared buses or add a figure for every register. Use actual output
-images when they clarify graphics behavior; label input, settings and visible
-result without presenting captures as exhaustive proof. Preserve meaningful
-numerical inputs, intermediate results and output examples.
-
-Historical manuals inform exposition, not BMSX facts. Distinguish original
-manufacturer material from later editions and consumer manuals. Sony's
+Historical manufacturer manuals inform exposition, never BMSX facts. Sony's
 [Fall 1996 GTE seminar](https://psx.arthus.net/sdk/Psy-Q/DOCS/TRAINING/FALL96/gte.pdf)
-provides a period example of purpose, coordinate/data-flow explanation and
-worked mathematical stages preceding low-level use. Do not copy its addresses,
-instructions or limits. `docs/book1_text.pdf` is a style/order example only;
-do not attach it to chapter-authoring prompts.
+is one example of coordinate/data-flow explanation before register use.
+`docs/book1_text.pdf` is a style example only, not an authoring source or attachment.
 
-## Source discipline and substantial chapter work
+## Native document structure
 
-Read the relevant mirrored numeric leaves, actual device/CPU owners, BIOS
-consumers and the BLua frontend for language/linkage interfaces. Tests help
-check reached behavior and numerical examples. A packer's
-writer alone does not establish a machine format. `architecture.md` is neither
-fact sheet nor evidence. Record conflicts between spec, implementations and
-manuals rather than automatically selecting any one as correct. Suspected bugs
-and unresolved product decisions stay in engineering material, not as invented
-hardware restrictions or permanent guarantees of defective behavior.
+Use ordinary Markdown with Quarto/Pandoc semantics:
 
-Keep working fact sheets temporary. Put regression evidence in tests and
-substantive source decisions in the commit, not a second Markdown reference.
-Record unresolved product questions in the existing chapter catalog. Substantial chapters
-can be split into named sections with independent writers; each assignment
-owns finished prose and its supporting facts. Merge into the existing chapter.
-Complete the chapter's known content work before commissioning its detailed
-review. Check changed claims and affected interfaces precisely, then recheck
-findings rather than repeatedly reviewing unchanged material.
+- Headings have globally unique `{#sec-device-topic}` labels. Link to source
+  chapters and those labels; use `@sec-device-topic` for numbered references.
+- Tables are native pipe or grid tables, not raw HTML or space-aligned diagrams.
+  Escape literal pipes even inside code. Use native `tbl-colwidths` when needed.
+  Multiword bit layouts can use explicit Word/Bits/Field rows.
+- Figures use normal SVG/PNG image syntax, meaningful alternative text and
+  unique `{#fig-device-topic}` labels. Preserve numerical and visual accuracy.
+- Code uses fenced `lua` or `text` blocks. Break overlong prose code spans at
+  meaningful boundaries; do not shrink the entire book to fit one line.
+- Do not add HTML print wrappers, raw anchors, custom filters or renderer hooks.
+  Quarto and LuaLaTeX supply pagination, table continuation, contents, numbering,
+  PDF bookmarks and link destinations.
 
-Assess the completed chapter on all of these dimensions:
+Within a volume, native chapter/heading links work in HTML and PDF. Between
+volumes, print references name the book, chapter and section; the combined HTML
+can link directly. Use Quarto's standard conditional spans when both are needed:
 
-| Criterion | Required result |
-|---|---|
-| Authenticity | Reads as an original manufacturer reference, not implementation commentary |
-| Independence | Requires no repository, supplied library or specific toolchain |
-| Explanation | Teaches the hardware principles and inter-unit data flow |
-| Relevance | Code, calculations, cautions and figures clarify actual programming |
-| Product boundary | Describes only the console, BLua32, BIOS or the relevant official interface |
-| Completeness | Supplies every necessary representation, operation, synchronization and result contract |
-
-Factual accuracy is necessary but does not imply any of these by itself.
-The existing chapter catalog retains open questions and the three source,
-figure and print review decisions, with concise inline evidence. There are no
-mandatory fact-sheet, outline or report files. Reopen affected reviews when
-text changes; do not mark a rewritten draft approved because its predecessor
-passed.
-The publisher is not a source checker and a successful render is not acceptance.
-
-## Print and navigation
-
-Content comes first. Diagrams, output plates and normal markup may be authored
-with the text; final pagination and PDF inspection follow completed content.
-After a local print correction inspect affected pages and reflow, not every
-unchanged page or another complete guest execution.
-
-Use ordinary Markdown links to chapter sources and heading fragments. The
-renderer maps them to sibling HTML/PDF documents and named destinations.
-Retain useful heading anchors when shortening examples; update actual
-cross-references when a heading changes. Distributed chapters and companion
-files must remain together. Extract archives before following relative links.
-
-Use ordinary Markdown tables; escape literal pipes even inside inline code.
-Use real field tables rather than space-aligned bit diagrams. Existing
-`bit-fields` tables support different low/high-word divisions. Use
-`class="register-entry"` or `class="keep-together"` for a short indivisible
-object, with blank lines around HTML boundary tags. Split oversized objects
-editorially instead of shrinking or hiding them.
-
-SVG diagrams and unmodified PNG output captures use normal Markdown image
-syntax and authored alternative text. Keep labels readable and verify every
-arrow, merge, dimension and timing landmark. A schematic timeline must not
-pretend to be an electrical waveform. Store source/capture provenance in the
-existing editorial records, not the public caption.
-
-## Existing repository commands
-
-After `npm ci`:
-
-```sh
-npm run manual:preview -- pcrtc
-npm run manual:check -- pcrtc
-npm run manual:publish -- pcrtc
-npm run test:manual
+```markdown
+[[CPU programming model](../book1/cpu.md#sec-cpu-programming-model)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Programming model”]{.content-visible when-format="pdf"}
 ```
 
-Preview/publish use the existing Playwright/Chromium pipeline and write ignored
-HTML, PDF and receipt files in `build/manual`. Publication checks open questions and
-review decisions before rendering; preview may render an unapproved draft.
-Mechanical overflow/asset checks do not establish good exposition, correct
-hardware behavior or semantic diagram accuracy. Do not add another publisher,
-approval framework, status-file layer or chapter-specific build pipeline.
+Do not build a cross-PDF resolver or rewrite PDF objects afterward. The native
+book index covers the chapters included in that volume.
 
-The separate development companion is HTML. After chapter previews exist,
-`node scripts/manual/build.mjs preview contents` generates the current draft
-series entry point without rebuilding chapters. It does not publish a complete
-series. Add new chapters through the existing catalog, with the appropriate
-volume and its compact catalog review entry.
+## Publishing and retention
 
-## Internal-documentation retention
+Install Quarto and its supported TinyTeX distribution; Linux also needs
+`librsvg2-bin`, `fonts-liberation` and `fonts-dejavu-core`. Commands and output locations are in the
+[root README](../../README.md#publishing-the-manuals). Run `quarto check` for the
+installed toolchain; use normal render diagnostics and inspect affected output
+for content loss, unreadable tables or illustrations, and bad page breaks.
+There is no custom publication test suite or approval catalog. Hardware/BIOS
+regression tests remain with their actual owners.
 
-Retain internal documentation only for current, unique architectural or
-operational guidance that is costly to recover from the owners and tests.
-Keep one explanation with its responsible subsystem. Delete completed plans,
-handover notes, patch narratives, captured test logs, frozen extraction packets
-and duplicate specifications; Git retains their history. Do not move them into
-an archive directory or recreate them under another name. A chapter outline
-belongs in the chapter while drafting, not a permanent parallel document.
+Content comes before final print polish. Keep extraction notes and migration
+helpers temporary. Keep internal documents only for current, unique engineering
+or operational value; delete completed plans, reports, handovers, frozen fact
+sheets and duplicate specifications. Git and substantive commits retain history.
+Do not replace removed bureaucracy with an archive or another Markdown tree.

@@ -1,4 +1,4 @@
-# System overview
+# System overview {#sec-console}
 
 The BMSX is a cartridge-based game console with a BLua32 processor, 4 MiB of
 main RAM, 2 MiB of GPU local memory and 512 KiB of APU sample RAM. The CPU uses
@@ -24,7 +24,7 @@ unit's completion indication.
 Book I describes the installed machine. Book II supplies the BLua32 and BIOS
 software reference; cartridge and expansion-device protocols belong to Book III.
 
-## From cartridge data to a displayed picture
+## From cartridge data to a displayed picture {#sec-console-from-cartridge-data-to-a-displayed-picture}
 
 A picture passes through several independently programmed operations:
 
@@ -38,15 +38,15 @@ A picture passes through several independently programmed operations:
 GTE and GEO results do not automatically submit GP0 commands. Likewise, DMA
 finishing a command-stream transfer releases that stream's source storage but
 does not establish that drawing or display publication has completed. Use the
-[GPU](gpu.md), [DMA](dma.md) and [PCRTC](pcrtc.md) completion rules at those
-boundaries. Audio playback proceeds independently through the [APU](apu.md).
+[GPU](gpu.md#sec-gpu), [DMA](dma.md#sec-dma) and [PCRTC](pcrtc.md#sec-pcrtc) completion rules at those
+boundaries. Audio playback proceeds independently through the [APU](apu.md#sec-apu).
 
-## Processor and system control
+## Processor and system control {#sec-console-processor-and-system-control}
 
 The BLua32 CPU executes four-byte instruction words. A WIDE prefix extends an
 instruction to eight bytes. Instruction times are expressed in cycles of the
 **33,868,800 Hz** system timebase; individual instruction costs are specified
-in the [CPU reference](cpu.md).
+in the [[CPU reference](cpu.md#sec-cpu)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”]{.content-visible when-format="pdf"}.
 
 | Unit | Resources | Role |
 |---|---|---|
@@ -56,7 +56,7 @@ in the [CPU reference](cpu.md).
 | INPUT | 8 keyboard words covering 256 USB HID usage bits; pointer buttons, X, Y and wheel; 4 pad records, each with a buttons word and 6 axes | Publishes raw captured input states, not application action mappings. |
 | IMGDEC | 32-word input FIFO, 64-word output FIFO and 4096-word history; 16-word DMA request quantum | Decodes a compressed word-token stream into a GPU upload command stream. |
 
-### Interrupts, faults and reset
+### Interrupts, faults and reset {#sec-console-interrupts-faults-and-reset}
 
 DMA and device interrupt sources feed the shared IRQ controller; the CPU accepts its enabled interrupt line. Raising a source sets its pending bit regardless of MASK; repeated raises while the bit is pending coalesce. FLAGS reads do not clear pending bits. ACK clears the pending bits written as ones, while MASK replaces the enabled-source mask without clearing pending state. The maskable line is asserted when pending and enabled bits overlap; CPU acceptance also requires its current interrupt enable. Pending bits and the mask reset to zero.
 
@@ -65,22 +65,22 @@ Synchronous exceptions enter the system exception routine. SYSTEM retains the
 CPU cause, EPC, bad-address, Lua-reason and execution-domain words for BIOS
 diagnostics. Its supervisor controls require supervisor mode, and an external
 supervisor request passes through the device-quiescence sequence before NMI.
-The [IRQ](irq.md) and [SYSTEM](system.md) chapters specify these entry routes.
+The [IRQ](irq.md#sec-irq) and [SYSTEM](system.md#sec-system) chapters specify these entry routes.
 
 A SYSTEM reset command requests a reboot at a CPU execution boundary. Repeated
 requests before service coalesce. The RESET write completes before the reboot;
 software must allow for a variable request-to-reboot interval.
 
-### Timing and input capture
+### Timing and input capture {#sec-console-timing-and-input-capture}
 
 SYSTEM TIME_MS reports elapsed system cycles in milliseconds. Its frame-timing
 words report the programmed PCRTC period in fractional milliseconds and whole
 system cycles. Use these as period measurements; the next VBlank is observed
 through its interrupt source.
 
-INPUT ARM requests one capture at the next accepted VBlank edge. Capture samples the raw states, increments the sequence, consumes the pending capture request and publishes the input latches and status. The separate supervisor-request wire is checked for a rising edge at each VBlank-begin edge whether or not capture is armed; it is not a designated application key. See the [INPUT](input.md) chapter for the capture protocol.
+INPUT ARM requests one capture at the next accepted VBlank edge. Capture samples the raw states, increments the sequence, consumes the pending capture request and publishes the input latches and status. The separate supervisor-request wire is checked for a rising edge at each VBlank-begin edge whether or not capture is armed; it is not a designated application key. See the [INPUT](input.md#sec-input) chapter for the capture protocol.
 
-### Image decoding
+### Image decoding {#sec-console-image-decoding}
 
 IMGDEC expands a compressed word-token stream into GP0 CPU-to-VRAM upload
 headers and texture/CLUT payload. Use one DMA channel to supply compressed
@@ -91,10 +91,10 @@ Output work costs **2 system cycles per word**, including each three-word
 upload header. Payload batches contain at most 16 words; input availability,
 run/stage boundaries and output-FIFO space determine the actual batch. A
 header requires three free output words. Device requests pace both DMA sides.
-The [IMGDEC chapter](imgdec.md) defines tokens, FIFO reads and complete upload
+The [IMGDEC chapter](imgdec.md#sec-imgdec) defines tokens, FIFO reads and complete upload
 programming.
 
-## Storage and the address map
+## Storage and the address map {#sec-console-storage-and-the-address-map}
 
 BMSX uses a 32-bit, byte-addressed space. A mapped register or DMA transfer word is 32 bits, or four bytes. Address windows describe where storage or devices can be reached; they do not, by themselves, specify how much storage is installed.
 
@@ -105,16 +105,16 @@ installed capacities depend on the card. An address window specifies which
 addresses reach a region, while its capacity specifies how many bytes are
 installed there.
 
-The table uses half-open intervals: the start is included and the end is excluded. Indented entries describe reservations within the main-RAM window, not additional storage.
+The table uses half-open intervals: the start is included and the end is excluded. Main-RAM subentries describe reservations within that window, not additional storage.
 
 | Window or reservation | Byte-address interval | Size and interpretation |
 |---|---|---|
 | System ROM | `[0x00000000, 0x01000000)` | 16 MiB window; firmware image size is independent of the window size. |
 | Unmapped | `[0x01000000, 0x08000000)` | No mapped storage or device. |
 | Main RAM | `[0x08000000, 0x10000000)` | 128 MiB window; installed backing is only `[0x08000000, 0x08400000)`, before I/O interception. |
-| ↳ I/O reservation | `[0x08000000, 0x08040000)` | 256 KiB reserved. The implemented register aperture is `[0x08000000, 0x08010440)`. |
-| ↳ GEO scratch reservation | `[0x08040000, 0x080c0000)` | 512 KiB reserved. |
-| ↳ System and cartridge statics | Starting at `0x080c0000` | Image-dependent DATA and BSS within installed RAM. |
+| Main RAM: I/O reservation | `[0x08000000, 0x08040000)` | 256 KiB reserved. The implemented register aperture is `[0x08000000, 0x08010440)`. |
+| Main RAM: GEO scratch reservation | `[0x08040000, 0x080c0000)` | 512 KiB reserved. |
+| Main RAM: system and cartridge statics | Starting at `0x080c0000` | Image-dependent DATA and BSS within installed RAM. |
 | Cartridge ROM | `[0x10000000, 0x30000000)` | 512 MiB window for the selected card; actual ROM capacity is card-dependent. |
 | Cartridge RAM | `[0x30000000, 0x30f00000)` | 15 MiB window; actual optional RAM capacity is card-dependent. |
 | Cartridge MMIO | `[0x30f00000, 0x31000000)` | 1 MiB window for the selected card's mapped devices. |
@@ -145,10 +145,10 @@ the first available cartridge address.
 
 DATA has initializer bytes in ROM and working bytes in RAM; startup copies
 between these addresses. BSS occupies RAM and is cleared by startup. The
-[Memory chapter](memory.md) defines the section records, initialization sequence
+[Memory chapter](memory.md#sec-memory) defines the section records, initialization sequence
 and complete storage reservations.
 
-## Mapped access and DMA transfers
+## Mapped access and DMA transfers {#sec-console-mapped-access-and-dma-transfers}
 
 Byte addresses and hardware words must be kept distinct when programming mapped memory. A register word occupies four bytes, whereas addresses identify bytes. CPU load/store instructions apply the alignment of their access kind before mapped access; word operations use the mapped-word route.
 
@@ -180,11 +180,11 @@ DMA schedules service at the block's anchor cycle plus its admitted charge. Serv
 
 Use these charges to calculate the admitted DMA interval. Add request waits
 and competing-channel blocks when calculating elapsed transfer time, and wait
-separately for work performed by the receiving unit. The [DMA chapter](dma.md#transfer-rates-by-route)
+separately for work performed by the receiving unit. The [DMA chapter](dma.md#sec-dma-transfer-rates-by-route)
 gives complete route-rate calculations, region crossings and VRAM-port examples.
 CPU instruction timing is specified separately in the CPU reference.
 
-## Graphics storage and drawing
+## Graphics storage and drawing {#sec-console-graphics-storage-and-drawing}
 
 The GPU draws from commands into 2 MiB of GPU local memory. Raster destinations, texture and palette data, and PCRTC display reads share this storage; texture memory and display memory are not additional banks.
 
@@ -200,11 +200,11 @@ Rectangles may also be textured. Indexed textures use palette data in the same l
 
 The drawing address domain has raw-coordinate periods of 1024 words horizontally and 1024 rows vertically. These are storage-address periods, not a 1024 × 1024 screen mode. Drawing coordinates address sixteen-bit storage words; indexed texture coordinates select packed texels within those words. PCRTC has its own selectable storage interpretations. Sharing the bytes does not make these coordinate mappings interchangeable.
 
-Firmware uses the shared GPU memory for its terminal surface and system texture. Reserve the complete bounding rectangle returned by the named BIOS function `gpu/system_vram_region`; cartridge entry does not release that reservation. The query is not an allocation operation and does not establish that every other VRAM location is free. See [Memory, “Firmware reservation in VRAM”](memory.md#firmware-reservation-in-vram), for the call and coordinate units.
+Firmware uses the shared GPU memory for its terminal surface and system texture. Reserve the complete bounding rectangle returned by the named BIOS function `gpu/system_vram_region`; cartridge entry does not release that reservation. The query is not an allocation operation and does not establish that every other VRAM location is free. See [Memory, “Firmware reservation in VRAM”](memory.md#sec-memory-firmware-reservation-in-vram), for the call and coordinate units.
 
-These drawing capabilities describe supported commands, not a guaranteed primitive throughput. See the [GPU chapter](gpu.md) for command formats and drawing details.
+These drawing capabilities describe supported commands, not a guaranteed primitive throughput. See the [GPU chapter](gpu.md#sec-gpu) for command formats and drawing details.
 
-## GTE and GEO: two different arithmetic routes
+## GTE and GEO: two different arithmetic routes {#sec-console-gte-and-geo-two-different-arithmetic-routes}
 
 GTE provides register-fed transform and lighting arithmetic. Its registerfile contains 32 data words, 32 control words and 10 PLUS words, all stored as raw 32-bit words. In the CPU-fed programming route, software writes operands and controls, issues a command, and reads the resulting registers. The ordinary command invokes arithmetic directly. Operations include matrix/vector arithmetic, rotation and translation with perspective projection, and lighting/color calculations.
 
@@ -218,10 +218,10 @@ GEO accrues a work budget of **16,384,000 outer-record service units per second*
 
 Choose GTE for register-fed arithmetic and GEO for memory-record jobs. Their
 results become inputs to the cartridge's subsequent calculations and drawing
-commands. The [GTE](gte.md) and [GEO](geo.md) chapters specify the operand
+commands. The [GTE](gte.md#sec-gte) and [GEO](geo.md#sec-geo) chapters specify the operand
 formats, commands and result handling.
 
-## Programmable PCRTC output
+## Programmable PCRTC output {#sec-console-programmable-pcrtc-output}
 
 PCRTC reads GPU local memory through two programmable scanout circuits. Each circuit selects its framebuffer base, width, storage interpretation and source origin, together with a display window and magnification in signal space. The output can compose these circuits with background and blending controls. Two circuits do not add two framebuffer RAM banks.
 
@@ -230,12 +230,12 @@ Supported scanout interpretations are CT32, CT24, CT16, CT16S and GX16; GPU24 is
 Beam timing is programmed through the SMODE, SYNCH and SYNCV words. PCRTC timing calculations use a **13,500,000 Hz reference** to derive half-line and field periods and refresh from those words. Output extent follows the enabled display windows and signal step. Consequently, the hardware overview has no single universal screen resolution or fixed 50/60 Hz refresh specification.
 
 Programmed display configuration is retained for presentation at its publication
-boundary; beam timing has separate live effects. See [PCRTC](pcrtc.md) for
+boundary; beam timing has separate live effects. See [PCRTC](pcrtc.md#sec-pcrtc) for
 programming details.
 
-![GPU command supply, shared local memory and two-circuit PCRTC reading](figures/console-video.svg)
+![GPU command supply, shared local memory and two-circuit PCRTC reading](figures/console-video.svg){#fig-console-video}
 
-## APU sound and sample-memory route
+## APU sound and sample-memory route {#sec-console-apu-sound-and-sample-memory-route}
 
 The APU provides 16 independently programmed playback slots. Each supports
 PCM8, PCM16, 4-bit BADP or the square generator, with source-rate, loop and gain
@@ -265,7 +265,7 @@ To upload data from main RAM, program system DMA to deliver it through APU DATA 
 The sample-memory service rate governs FIFO-to-sample-RAM batches. Include the
 source bus and DMA request waits in an upload's elapsed time. In manual-write
 mode, each accepted CPU DATA write stores one 32-bit word immediately and
-advances the sample-RAM address by four bytes. The [APU chapter](apu.md) defines
+advances the sample-RAM address by four bytes. The [APU chapter](apu.md#sec-apu) defines
 playback and both transfer directions.
 
-![ROM and private sample-RAM playback sources, with separate CPU or DMA upload path](figures/console-audio.svg)
+![ROM and private sample-RAM playback sources, with separate CPU or DMA upload path](figures/console-audio.svg){#fig-console-audio}

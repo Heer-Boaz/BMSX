@@ -38,6 +38,24 @@ series separates three scopes:
 
 These are working drafts, not a complete or released console-reference series.
 
+### Publishing the manuals
+
+The Markdown books use [Quarto](https://quarto.org/docs/get-started/) 1.10.19 or
+later with LuaLaTeX. Install Quarto, then its supported TeX distribution with
+`quarto install tinytex`. On Ubuntu/WSL, SVG conversion and the publication fonts
+are supplied by `sudo apt-get install librsvg2-bin fonts-liberation fonts-dejavu-core`.
+
+```sh
+npm run manual:preview  # searchable HTML with live reload
+npm run manual:html     # docs/_html/index.html
+npm run manual:pdf      # docs/_book-{i,ii,iii}/bmsx-book-*.pdf
+```
+
+Each volume can also be rendered with `npm run manual:book-i` (or `book-ii`,
+`book-iii`). Standard Quarto profiles define the three books and combined HTML;
+there is no repository renderer or PDF postprocessing. See the
+[authoring guide](docs/manual/README.md) for source conventions.
+
 ## Project Layout
 
 - `machine/ts/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle

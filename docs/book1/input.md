@@ -1,6 +1,6 @@
-# Input controller
+# Input controller {#sec-input}
 
-## Function and resources
+## Function and resources {#sec-input-function-and-resources}
 
 The input controller samples a keyboard, a pointing device and four game pads.
 A program requests one sample with ARM. At the next VBlank-begin edge, the
@@ -26,28 +26,26 @@ The register block occupies 47 consecutive 32-bit words, from byte address `0800
 | Sample sequence | 32 bits, incrementing modulo 2³² |
 | Sample publication | A pending ARM request accepted at VBlank begin |
 
-The sampling interval follows the programmed [PCRTC](pcrtc.md) timing.
-[Interrupt controller](irq.md) describes the VBlank interrupt used to wait for
+The sampling interval follows the programmed [PCRTC](pcrtc.md#sec-pcrtc) timing.
+[Interrupt controller](irq.md#sec-irq) describes the VBlank interrupt used to wait for
 this edge.
 
-![Armed sample latch and independent output request](figures/input-flow.svg)
+![Armed sample latch and independent output request](figures/input-flow.svg){#fig-input-flow}
 
 The capture path transfers control states into the snapshot registers. The
 separate output path sends vibration parameters to the selected pad when APPLY
 is written. Solid arrows carry data; dashed arrows show the control sequence.
 The capability register belongs to the captured input data.
 
-## Raw input representations
+## Raw input representations {#sec-input-raw-input-representations}
 
-### Keyboard usage bitmap
+### Keyboard usage bitmap {#sec-input-keyboard-usage-bitmap}
 
 The keyboard occupies eight words: 256 bits indexed by USB HID keyboard/keypad usage on page `07H`. A set bit means that usage is pressed. The bitmap identifies key usages; this table does not define character or text-composition input.
 
 For usage `u`, select word `u >> 5` and bit `u & 31`. Its word is at the keyboard bitmap base plus `4 × (u >> 5)` bytes. The mask within that word is `1 << (u & 31)`.
 
 For example, `KeyA` is usage `04H`: word 0, bit 4, mask `00000010H`. This is not pad A. Pad A is bit 0 of a pad's buttons word, with mask `00000001H`.
-
-<div class="keep-together">
 
 The following table gives the keyboard usage assignments. Usage IDs are decimal.
 
@@ -72,9 +70,7 @@ The following table gives the keyboard usage assignments. Usage IDs are decimal.
 | `ControlLeft`, `ShiftLeft`, `AltLeft`, `MetaLeft` | 224, 225, 226, 227 |
 | `ControlRight`, `ShiftRight`, `AltRight`, `MetaRight` | 228, 229, 230, 231 |
 
-</div>
-
-### Pad records
+### Pad records {#sec-input-pad-records}
 
 There are four raw pad records, indexed 0 through 3. Each record occupies 28 bytes: one buttons word followed by six signed 16.16 axis words. Offsets below are bytes from that pad's base.
 
@@ -110,7 +106,7 @@ button bit, including movement while the button remains pressed. The button
 threshold belongs to the attachment, not the controller latch. Neutral words
 alone do not identify whether a pad is connected.
 
-### Pointer words
+### Pointer words {#sec-input-pointer-words}
 
 The pointer has a buttons word, X, Y and wheel, in that order. Its button positions are:
 
@@ -136,7 +132,7 @@ wheel position or an accumulation since ARM. A subsequent stationary update
 supplies zero. Reading the retained controller word does not consume or clear
 it, so skipped controller samples can miss movement.
 
-### Signed 16.16 values
+### Signed 16.16 values {#sec-input-signed-1616-values}
 
 Interpret a signed 16.16 word as a signed 32-bit integer divided by 65536.
 
@@ -151,7 +147,7 @@ The representation has a quantum of `1/65536` and a range of −32768 through
 positions use raster coordinates. The controller retains the attachment's words
 unchanged. Apply any additional calibration or dead zone in the program.
 
-### Retained levels and software edges
+### Retained levels and software edges {#sec-input-retained-levels-and-software-edges}
 
 Keyboard and button words describe sampled levels. They are not an event queue. A cartridge can compare a current mask with its own previous mask:
 
@@ -160,7 +156,7 @@ Keyboard and button words describe sampled levels. They are not an event queue. 
 
 These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
 
-## Sampling and snapshot reads
+## Sampling and snapshot reads {#sec-input-sampling-and-snapshot-reads}
 
 The sampling path is one-shot. Write the complete word `00000001H` (ARM) to `IO_INP_CTRL` to leave one sample request pending. At an accepted VBlank-begin edge, the controller latches the keyboard, pointer, all four pad records and output-capability word as one snapshot. It then increments `IO_INP_STATUS` modulo 2³². The accepted sample clears the pending request; it does not clear the retained ARM word in `IO_INP_CTRL`.
 
@@ -179,7 +175,7 @@ samples is lost.
 
 Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
 
-### BIOS handoff and supervisor sampling
+### BIOS handoff and supervisor sampling {#sec-input-bios-handoff-and-supervisor-sampling}
 
 The BIOS samples this controller during boot and does not reset INPUT when
 handing control to the cartridge. The register table's reset words are not a
@@ -192,12 +188,10 @@ captures while it runs: each accepted capture replaces the shared snapshot
 and advances the same sequence. LEAVE does not restore the cartridge's earlier
 snapshot or sequence. After resuming, request and observe a new capture before
 treating those words as a fresh cartridge sample. See
-[SYSTEM, Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service),
+[SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service),
 for the other units' preservation rules.
 
-<a id="complete-input-sampling-program"></a>
-
-## Sample input in BLua
+## Sample input in BLua {#sec-input-sample-input-in-blua}
 
 This sequence assumes ordinary BIOS cartridge entry, a running beam, and
 exclusive ownership of INPUT and the VBlank interrupt route. The handler
@@ -238,7 +232,7 @@ required keyboard, pointer and pad words before the next ARM. With exclusive
 use of INPUT, the snapshot remains stable throughout those reads. The register
 map below gives the four pad bases and individual snapshot words.
 
-### Worked KeyA transition sequence
+### Worked KeyA transition sequence {#sec-input-worked-keya-transition-sequence}
 
 The KeyA mask is `00000010H`, not pad A's `00000001H`. With
 `previous_key` initially zero, four completed samples give:
@@ -253,28 +247,32 @@ The KeyA mask is `00000010H`, not pad A's `00000001H`. With
 The cumulative columns show the counts a program obtains from the edge masks.
 An unchanged released sample has both masks zero.
 
-## Register map
+## Register map {#sec-input-register-map}
 
 All addresses below are byte addresses. `R` denotes a read-only word; `R/W` denotes a readable word with write behavior. Command words must be written in full, rather than treated as independently writable control bits. Every listed word has reset value `00000000H`.
 
-### Sampling control
+### Sampling control {#sec-input-sampling-control}
 
 | Address | Register | Access | Bits and use | Reset |
 |---|---|---|---|---|
 | `08000064H` | `IO_INP_CTRL` | R/W | 31:0: exact command word; ARM = `00000001H`, RESET = `00000002H` | `00000000H` |
 | `08000068H` | `IO_INP_STATUS` | R | 31:0: accepted-sample sequence, modulo 2³² | `00000000H` |
 
-### Keyboard and pointer snapshot
+: {tbl-colwidths="[16,34,7,27,16]"}
+
+### Keyboard and pointer snapshot {#sec-input-keyboard-and-pointer-snapshot}
 
 | Address | Register | Access | Bits and use | Reset |
 |---|---|---|---|---|
-| `0800006CH`–`08000088H`, stride 4 | `IO_INP_KEYS[0..7]` | R | 31:0 of each word: keyboard bitmap | All `00000000H` |
+| `0800006CH` to `08000088H`, stride 4 | `IO_INP_KEYS[0..7]` | R | 31:0 of each word: keyboard bitmap | All `00000000H` |
 | `0800008CH` | `IO_INP_POINTER_BUTTONS` | R | 31:0: pointer button word | `00000000H` |
 | `08000090H` | `IO_INP_POINTER_X` | R | 31:0: pointer X word | `00000000H` |
 | `08000094H` | `IO_INP_POINTER_Y` | R | 31:0: pointer Y word | `00000000H` |
 | `08000098H` | `IO_INP_POINTER_WHEEL` | R | 31:0: pointer wheel word | `00000000H` |
 
-### Pad snapshot records
+: {tbl-colwidths="[16,34,7,27,16]"}
+
+### Pad snapshot records {#sec-input-pad-snapshot-records}
 
 `IO_INP_PADS` contains four records. Each record occupies seven words, or `1CH` bytes.
 
@@ -297,7 +295,7 @@ The following offsets apply to each record base.
 | `+14H` | Left trigger | R | 31:0: left-trigger word | `00000000H` |
 | `+18H` | Right trigger | R | 31:0: right-trigger word | `00000000H` |
 
-### Pad output port
+### Pad output port {#sec-input-pad-output-port}
 
 | Address | Register | Access | Bits and use | Reset |
 |---|---|---|---|---|
@@ -307,7 +305,9 @@ The following offsets apply to each record base.
 | `08000118H` | `IO_INP_OUTPUT_STATUS` | R | 3:0: sampled vibration-capability bits for pads 3 through 0; 31:4 retain supplied bits | `00000000H` |
 | `0800011CH` | `IO_INP_OUTPUT_CTRL` | R/W | 31:0: exact command word; APPLY = `00000001H`; reads zero after a command write | `00000000H` |
 
-## Control words and reset
+: {tbl-colwidths="[16,34,7,27,16]"}
+
+## Control words and reset {#sec-input-control-words-and-reset}
 
 `IO_INP_CTRL` recognizes complete words, not combinable flags.
 
@@ -327,7 +327,7 @@ a new rising edge. A whole-unit reset initializes its edge history to low.
 
 An accepted sample does not replace the output parameter words. ARM itself does not sample immediately, increment the sequence or clear the existing snapshot. Unrecognized control words cause no input-specific fault.
 
-## VBlank ordering, interrupts and access faults
+## VBlank ordering, interrupts and access faults {#sec-input-vblank-ordering-interrupts-and-access-faults}
 
 At VBlank begin, the display controller presents the frame, INPUT captures any
 armed sample, and the central controller raises `IRQ_VBLANK` (`00000004H`), in
@@ -339,13 +339,13 @@ Independently of ARM, the controller also observes the dedicated supervisor-requ
 wire at each VBlank. A low-to-high transition is forwarded to SYSTEM; holding
 the wire high does not generate another transition. This wire is not a
 keyboard usage or a pad bit, and does not require a cartridge sample. See
-[SYSTEM, Privilege and supervisor entry](system.md#privilege-and-supervisor-entry).
+[SYSTEM, Privilege and supervisor entry](system.md#sec-system-privilege-and-supervisor-entry).
 
 There is no separate input-complete interrupt. VBlank pending state is coalesced, not a count of completed samples, so test the sample sequence even when using VBlank interrupts. A cartridge that waits with HALT must first enable an owned VBlank interrupt route, and must recheck `IO_INP_STATUS` after waking. An interrupt source that is merely pending but masked does not guarantee a wakeup.
 
 The snapshot words, `IO_INP_STATUS` and `IO_INP_OUTPUT_STATUS` are read-only. A mapped whole-word write to one of these words raises the shared bus fault `BUS_FAULT_READ_ONLY` (code 3), without changing the word. The controller defines no separate input fault register. General alignment and access-size rules are those of the memory interface.
 
-## Pad output commands
+## Pad output commands {#sec-input-pad-output-commands}
 
 The output port uses three retained parameter words and one command word. Write the selected pad to `IO_INP_OUTPUT_PORT`, the requested intensity to `IO_INP_OUTPUT_INTENSITY_Q16`, and the requested duration to `IO_INP_OUTPUT_DURATION_MS`. These parameter writes alone do not request output. Write the complete word `00000001H` (APPLY) to `IO_INP_OUTPUT_CTRL` after preparing the parameters.
 
@@ -355,7 +355,7 @@ The command is dispatched on the APPLY write, without waiting for ARM or a VBlan
 
 `IO_INP_OUTPUT_CTRL` tests the entire command word. A word such as `00000003H`, `00000101H` or `80000001H` is not APPLY, even though bit 0 is set. Other command words issue no request. After a command write completes, the control word reads zero; that zero is not an output-completion indication.
 
-### Intensity and duration
+### Intensity and duration {#sec-input-intensity-and-duration}
 
 The normal intensity interval is `00000000H` through `00010000H`, inclusive.
 Intensity is the raw word divided by 65536: zero at `00000000H`, one-half at
@@ -381,7 +381,7 @@ For example, the following ordered writes request pad 0 at half intensity for 10
 | 3 | `IO_INP_OUTPUT_DURATION_MS` | `00000064H` |
 | 4 | `IO_INP_OUTPUT_CTRL` | `00000001H` |
 
-### Capability and completion
+### Capability and completion {#sec-input-capability-and-completion}
 
 `IO_INP_OUTPUT_STATUS` contains sampled vibration-capability bits, one per pad in bits 0 through 3. It is refreshed with the other input words when an armed sample is accepted. Until then it retains the previous snapshot's value; after reset it is zero until a new sample is accepted. The complete supplied word is retained, including bits above bit 3.
 

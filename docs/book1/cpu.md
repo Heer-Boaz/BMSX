@@ -1,4 +1,4 @@
-# CPU and BLua32 instruction reference
+# CPU and BLua32 instruction reference {#sec-cpu}
 
 The BLua32 processor executes the cartridge program, performs arithmetic and
 controls the console's memory-mapped units. Its instruction set operates on
@@ -7,12 +7,12 @@ byte-addressed storage. Function calls, closures and language error handling
 are part of the processor's execution architecture.
 
 This chapter defines instruction encoding, operand values, execution timing
-and CP0 control. [Memory](memory.md) defines the address map and program records;
-[IRQ](irq.md) defines interrupt-source service; [SYSTEM](system.md) defines
+and CP0 control. [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} defines the address map and program records;
+[[IRQ](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} defines interrupt-source service; [[SYSTEM](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} defines
 supervisor device contexts. Device commands and their result formats are
 defined in the corresponding Book I chapters.
 
-## Programming model
+## Programming model {#sec-cpu-programming-model}
 
 Function-local registers hold values used by arithmetic, branches and calls.
 Byte-addressed storage holds instructions, static data, transfer buffers and
@@ -38,12 +38,11 @@ lifetime.
 To control a device, prepare its addressed payload and operands, then write its
 command port. The receiving unit supplies a status or interrupt condition for
 its subsequent completion. Wait for that condition before reusing live input or
-output storage. [Memory](memory.md#device-specific-buffer-lifetimes) describes
+output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Device-specific buffer lifetimes”]{.content-visible when-format="pdf"} describes
 these lifetimes across DMA, geometry, drawing and sound.
 
-<section class="keep-together">
 
-## Instruction words and execution resources
+## Instruction words and execution resources {#sec-cpu-instruction-words-and-execution-resources}
 
 | Resource | Specification |
 |---|---|
@@ -58,9 +57,8 @@ these lifetimes across DMA, geometry, drawing and sound.
 | Frame registers | Logical value slots relative to the current call frame; the function record supplies its parameter count and maximum stack allocation |
 | Register/count encoding | Format-dependent limits below, not a fixed physical register allocation or unlimited recursion guarantee |
 
-</section>
 
-### Language allocation and lifetime
+### Language allocation and lifetime {#sec-cpu-language-allocation-and-lifetime}
 
 The CPU provides a **3.5 MiB language-allocation budget** for system and
 cartridge execution together. Installed library values and active execution
@@ -78,7 +76,7 @@ Collection reclaims allocations that are no longer reachable from retained
 program values. Globals, active frames, reachable Tables and closures, and
 retained Threads can keep other objects alive; mutually referencing objects
 can be reclaimed when the whole group becomes unreachable. Weak Table behavior
-is defined in [Weak references and collection](#weak-references-and-collection).
+is defined in [Weak references and collection](#sec-cpu-weak-references-and-collection).
 Allocation may invoke collection before it succeeds. If the requested growth
 still exceeds capacity, it raises the Lua out-of-memory error. If language
 error handling does not handle it, the CPU takes a Trap exception with
@@ -86,12 +84,11 @@ LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
 Language allocations have value identity rather than cartridge-visible byte
 addresses. Plan DATA/BSS and hardware buffers using the separate byte-storage
-reservations in [Memory](memory.md#reserved-and-cartridge-storage-in-main-ram).
+reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
 Use addressed byte storage for exact device records and payloads.
 
-<section class="keep-together">
 
-### Word fields
+### Word fields {#sec-cpu-word-fields}
 
 Code bytes use the opposite byte order from multi-byte scalar data. Do not
 byte-swap one representation merely because the other is little-endian.
@@ -108,7 +105,6 @@ The opcode chooses how the remaining bits are interpreted:
 | Bx | A: 6 bits; Bx: 20 bits | A: 12 bits; Bx: 26 bits | EXT is Bx's bits 19:12; low B/C supply bits 11:0 |
 | Displacement | A/B/C: 6 bits each | A/B/C: 12 bits each | Unsigned 8-bit word displacement, unchanged by WIDE |
 
-</section>
 
 The Bx family comprises LOADK, KSMI, the three branches, CLOSURE and the four
 global-name instructions. Memory forms ending in `_D` use displacement fields;
@@ -116,7 +112,7 @@ other instruction bodies use ABC. Each instruction table identifies which
 operands are registers, counts, immediate values, constant indices or RK
 selectors. Apply that row's interpretation after decoding the fields.
 
-### WIDE — opcode 00H
+### WIDE — opcode 00H {#sec-cpu-wide-opcode-00h}
 
 A WIDE word contributes its six-bit A/B/C fields above the body fields. For ABC,
 its A bits begin at decoded A bit 8, and its B/C bits begin at decoded B/C bit 9.
@@ -135,7 +131,7 @@ With that bit clear, Bx times 16 supplies the function-record address; with it
 set, Bx selects the register supplying that address. This flag does not add
 bits to the Bx index. The closure section supplies capture and fault behavior.
 
-### Constructing instruction bytes
+### Constructing instruction bytes {#sec-cpu-constructing-instruction-bytes}
 
 To assemble a body word, put its six-bit fields `a`, `b`, `c` and extension byte
 `E` into:
@@ -159,7 +155,7 @@ raw B/C field. Merely adding a zero-filled prefix to a narrow negative operand
 does not preserve its sign. A prefix word uses opcode zero, its `a/b/c` fields
 are `pA/pB/pC`, and its ignored extension byte can be zero.
 
-### Linkage operands and encoding examples
+### Linkage operands and encoding examples {#sec-cpu-linkage-operands-and-encoding-examples}
 
 A known function target still uses `CLOSURE` followed by `CALL`; `CALL` has no
 function-address immediate. The immediate CLOSURE relocation is the absolute
@@ -199,7 +195,7 @@ PC formula and range. Inserting WIDE changes that origin by four bytes. This
 word-relative branch operand must not be confused with the byte address in a
 function record or with the unsigned word displacement of a `_D` memory access.
 
-### Register and constant selection
+### Register and constant selection {#sec-cpu-register-and-constant-selection}
 
 ABC RK consumers sign-extend their 9-bit unprefixed or 15-bit prefixed B/C field.
 A nonnegative result selects that frame register. A negative result selects
@@ -216,7 +212,7 @@ extend the active range, while result placement and open varargs have the
 specific top rules in the call reference. Do not treat the instruction's
 maximum field value as available scratch storage in every function.
 
-### Fetch and conditional skip
+### Fetch and conditional skip {#sec-cpu-fetch-and-conditional-skip}
 
 Instruction PC is an unsigned 32-bit byte address and must be four-byte aligned.
 Sequential advancement, WIDE-body addresses, branch targets and conditional
@@ -237,7 +233,7 @@ body's base cost. The skipped code can still cause a fetch exception while its
 width is determined. The branch section separately defines signed word
 relative targets; a branch instruction does not itself read its target.
 
-## Cycle accounting and execution boundaries
+## Cycle accounting and execution boundaries {#sec-cpu-cycle-accounting-and-execution-boundaries}
 
 The instruction tables give **base charges**, not whole-program transfer rates.
 Before an admitted instruction executes, PC advances over its complete width
@@ -259,9 +255,8 @@ Use device status and interrupt protocols for synchronization, rather than
 assuming that a device request interrupts a partially executed instruction.
 Instruction costs do not specify one universal request-to-handler delay.
 
-### Additional work and waiting
+### Additional work and waiting {#sec-cpu-additional-work-and-waiting}
 
-<section class="keep-together">
 
 A scalar memory instruction costs 2 base cycles, including either four-byte or
 eight-byte numeric formats. A counted store adds `(C+3)>>2` only after its
@@ -275,7 +270,6 @@ electrical memory-bus bandwidth specification.
 | 4 | 2 | 1 | 3 |
 | 5 | 2 | 2 | 4 |
 
-</section>
 
 The comparison skip, full-width branch and counted-store examples concern
 instruction charges, not a completed graphics or audio job. A builtin call has
@@ -289,7 +283,7 @@ also let due device work advance. A HALT therefore has neither a fixed elapsed
 length nor the meaning of stopping every console device. The IRQ chapter
 supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 
-## CPU reset and program replacement
+## CPU reset and program replacement {#sec-cpu-cpu-reset-and-program-replacement}
 
 At CPU reset, Status is `00000001H`; Cause, EPC, BadAddress, LuaFaultReason and
 the exception-domain word are zero. Retained pre-NMI report words are also
@@ -305,7 +299,7 @@ all RAM has been erased. The Memory chapter supplies the actual reset vector,
 BIOS cartridge selection and section-initialization route; SYSTEM defines the
 separate software reset request and device-context transitions.
 
-### Hard halt and instruction exceptions
+### Hard halt and instruction exceptions {#sec-cpu-hard-halt-and-instruction-exceptions}
 
 A reserved opcode, a WIDE body containing another WIDE, or an unreadable
 required function record causes a hard halt. EXEC also hard-halts when its
@@ -316,7 +310,7 @@ Misaligned instruction addresses and mapped instruction-read faults take the
 address-error or instruction-bus-error exception route. The scalar-memory
 reference separately defines ReservedInstruction for unsupported format fields.
 
-## Worked computation: Numbers, words and stored bytes
+## Worked computation: Numbers, words and stored bytes {#sec-cpu-worked-computation-numbers-words-and-stored-bytes}
 
 Start after normal BIOS entry, which has initialized the cartridge's DATA and
 BSS. The following operations require no device setup. The storage declarations
@@ -358,9 +352,8 @@ word, a signed bitwise result and an f32 value are different representations.
 Finite printed Numbers are rounded text, not an exact substitute for those
 stored values. See the Number-to-text rules below.
 
-## BLua operators and instruction costs
+## BLua operators and instruction costs {#sec-cpu-blua-operators-and-instruction-costs}
 
-<section class="keep-together">
 
 The table relates BLua operators to their principal instruction families.
 Include operand preparation, typed loads/stores and branches when calculating
@@ -379,7 +372,6 @@ element count; String and Table length use LEN.
 | `>`, `>=` | `LT`, `LE` with reversed operands and true expectation |
 | `..` | CONCAT or CONCATN, with operand preparation |
 
-</section>
 
 
 The arithmetic binary forms use RK operands. Unary forms use a source register.
@@ -389,7 +381,7 @@ can therefore require Boolean loads and a jump as well as the predicate. Use
 the instruction path, not the number of source operators, when calculating a
 cycle budget.
 
-### Logical expressions
+### Logical expressions {#sec-cpu-logical-expressions}
 
 Only `nil` and `false` are false-valued. Every other value is true-valued, including all numbers (zero and NaN included), the empty string, and object references.
 
@@ -403,9 +395,9 @@ Only `nil` and `false` are false-valued. Every other value is true-valued, inclu
 
 Thus `condition and 1 or 0` yields numeric `1` for a true-valued condition and numeric `0` otherwise: the intermediate `1` is true-valued. However, `condition and a or b` is not a general ternary expression: even when `condition` is true-valued, a selected `a` of `nil` or `false` causes `or` to select `b`.
 
-## Values and numeric instructions
+## Values and numeric instructions {#sec-cpu-values-and-numeric-instructions}
 
-### Values are not register words
+### Values are not register words {#sec-cpu-values-are-not-register-words}
 
 A CPU register holds a language value, not an unconditionally interpreted 32-bit word. The value kinds are nil, false, true, Number, String, Table, Closure, BuiltinFunction, and Thread. Copying a register or loading a constant preserves its value kind: copying false does not turn it into zero, and copying a Table preserves the reference to that Table.
 
@@ -415,11 +407,10 @@ Numeric operand reads are not general value conversions. A Number supplies its n
 
 This distinction matters when choosing operations in BLua. Use ordinary arithmetic when fractions and non-wrapping numeric results are wanted. Use bitwise operations when the calculation concerns flags, masks, or particular word bits. Use the truth rules for conditions rather than assuming that a numeric zero is false.
 
-### Reading the instruction tables
+### Reading the instruction tables {#sec-cpu-reading-the-instruction-tables}
 
 `R[x]` denotes register x, and `K[x]` denotes constant x in the execution image. An `RK(x)` operand selects either a register or a constant: a nonnegative decoded x selects `R[x]`; a negative decoded x selects `K[-1-x]`. Thus RK value −1 selects K0, −2 selects K1, and so on. Unless a row says otherwise, A selects the destination register. Comparison instructions instead use A as an expected boolean result.
 
-<section class="keep-together">
 
 The narrow and WIDE forms have the following encoding limits. These limits describe what the instruction can encode, not how many registers or constants are allocated for a particular function.
 
@@ -431,21 +422,19 @@ The narrow and WIDE forms have the following encoding limits. These limits descr
 | LOADK Bx | Unsigned 20 bits | Unsigned 26 bits |
 | KSMI sBx | −524288 through 524287 | −33554432 through 33554431 |
 
-</section>
 
 
 A single-result destination write raises the current frame's top to at least A+1 and never lowers it. The positive-count LOADNIL range is described separately below. Formulas in the tables describe instruction semantics; they are not source-language syntax.
 
 Opcode numbers are zero-based. Nominal cycles are the instruction-accounting charge, applied before the instruction executes, not an elapsed-time estimate. Each instruction below costs one nominal cycle except CONCATN, which costs two. LOADNIL has no additional per-register charge, and CONCATN has no additional per-input or per-byte charge in its operation. Readiness waits, counted-transfer surcharges and builtin call charges are separate from these base entries, as described below.
 
-### Constants and copies
+### Constants and copies {#sec-cpu-constants-and-copies}
 
-<section class="keep-together">
 
 The constant and copy instructions move complete values or create a specific value kind. K0, K1, KM1, and KSMI create Numbers, not a separate integer kind. LOADNIL's B operand is a count: for example, A=4 and B=3 write nil to R4, R5, and R6, not through R7.
 
 | Mnemonic | Opcode | Operands and specified domain | Result | Nominal cycles |
-|---|---:|---|---|---:|
+|-------------|-------:|----------------------------|--------------------------------------------|--------:|
 | MOV | `01H` | A destination; B source register; C unused | `R[A] = R[B]`, preserving the complete value | 1 |
 | LOADK | `02H` | A destination; Bx identifies an existing constant | `R[A] = K[Bx]`, preserving the constant's value kind | 1 |
 | LOADNIL | `03H` | A first register; B register count; C unused | For B>0, set exactly `R[A]` through `R[A+B−1]` to nil and raise frame top to at least A+B without lowering it. B=0 changes neither slots nor top. | 1 |
@@ -458,16 +447,14 @@ The constant and copy instructions move complete values or create a specific val
 | KSMI | `0BH` | A destination; signed immediate sBx within the encoding range above | Number equal to sBx in `R[A]` | 1 |
 | LOADKR | `35H` | A destination; B source register; C unused | Convert `R[B]` to unsigned 32-bit index i, then `R[A] = K[i]`, preserving the constant's value kind. An index outside the pool raises `INVALID_ARGUMENT` (10) before the destination is written. B is not an RK operand. | 1 |
 
-</section>
 
 
-### Arithmetic
+### Arithmetic {#sec-cpu-arithmetic}
 
 ADD, SUB, MUL, DIV, MOD, FLOORDIV, and POW read two numeric operands through RK B and RK C and write a Number to R[A]. They do not saturate or apply integer-word wrapping. A non-Number operand supplies NaN rather than causing an arithmetic type fault.
 
 DIV is ordinary floating-point division. FLOORDIV instead rounds the quotient downward, not toward zero: dividing −7 by 3 gives a floor quotient of −3, and dividing 7 by −3 also gives −3. The result is still a Number, not a different integer value kind. MOD adjusts a nonzero remainder to agree with the divisor's sign for finite inputs and a nonzero divisor: −7 modulo 3 is 2, whereas 7 modulo −3 is −2. A zero remainder keeps the sign of the initial remainder; it is not forced to the divisor's sign.
 
-<section class="keep-together">
 
 DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard. They use the arithmetic operations stated below, and their results remain Numbers. Do not assume a checked integer-divide trap, substitute a saturated result, or apply the finite-input quotient-and-remainder rules to every nonfinite case.
 
@@ -482,14 +469,13 @@ DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard.
 | POW | `17H` | Numeric reads of RK(B), RK(C) | left raised to the power right, with the special cases below | 1 |
 | UNM | `1FH` | Numeric read of R[B], not RK(B); C unused | Negation of the operand, including its zero sign | 1 |
 
-</section>
 
 
-### POW: exponentiation
+### POW: exponentiation {#sec-cpu-pow-exponentiation}
 
 POW computes a Number base `x` raised to a Number exponent `y`, written here as `x^y`. Its result is a Number, including when the result is a signed zero, an infinity, or NaN. In this section, `+0` and `-0` are distinct zeros; `+infinity` and `-infinity` have their usual signs. NaN means a not-a-number result, without a promise to preserve an operand's NaN payload.
 
-#### Order of special cases
+#### Order of special cases {#sec-cpu-order-of-special-cases}
 
 Apply these rules in order. The order matters when more than one description appears to fit.
 
@@ -505,11 +491,10 @@ Apply these rules in order. The order matters when more than one description app
 
 The base's sign does not change these infinite-exponent results. In particular, neither `1^(+infinity)` nor `(-1)^(-infinity)` is `1`. Every zero and infinity produced by this table is positive.
 
-#### Finite, nonzero exponents
+#### Finite, nonzero exponents {#sec-cpu-finite-nonzero-exponents}
 
 The next table covers all finite, nonzero exponents for the special bases. **Odd** and **even** mean integer exponents; **fractional** means nonintegral, not merely a decimal spelling. The exponent's sign selects a column group independently of its parity: `-3` is odd, while `-2` is even.
 
-<section class="keep-together">
 
 For a **positive finite exponent**:
 
@@ -522,9 +507,7 @@ For a **positive finite exponent**:
 | `+1` | `+1` | `+1` | `+1` |
 | `-1` | `-1` | `+1` | NaN |
 
-</section>
 
-<section class="keep-together">
 
 For a **negative finite exponent**:
 
@@ -537,7 +520,6 @@ For a **negative finite exponent**:
 | `+1` | `+1` | `+1` | `+1` |
 | `-1` | `-1` | `+1` | NaN |
 
-</section>
 
 Thus a fractional exponent does not itself make a negative-zero or negative-infinity base invalid. For example, `(-0)^0.5` is `+0`, `(-0)^(-0.5)` is `+infinity`, `(-infinity)^0.5` is `+infinity`, and `(-infinity)^(-0.5)` is `+0`.
 
@@ -547,9 +529,8 @@ For other finite, nonzero bases:
 - A negative base with a nonintegral exponent produces NaN. For example, `(-2)^0.5` is NaN.
 - A negative base with an odd integer exponent has a negative result; an even integer exponent has a positive result. This sign rule also applies when the magnitude becomes zero or infinity. A negative exponent takes a reciprocal magnitude; it does not reverse the result's sign.
 
-<section class="keep-together">
 
-#### Specific finite exponents
+#### Specific finite exponents {#sec-cpu-specific-finite-exponents}
 
 Several exponents have particularly direct meanings. The earlier zero-exponent and NaN rules still take precedence.
 
@@ -560,17 +541,16 @@ Several exponents have particularly direct meanings. The earlier zero-exponent a
 | `+2` | The Number product `x*x`. Either zero becomes `+0`; either infinity becomes `+infinity`. A finite product can overflow, become subnormal, or round to `+0`. |
 | `+0.5` | For a positive finite base, the positive square root. The special-base table gives `+0` for either zero and `+infinity` for either infinity; a negative finite, nonzero base produces NaN. |
 
-</section>
 
 In particular, `(-0)^0.5` does **not** preserve the base's negative-zero sign.
 
-#### Represented exponent parity
+#### Represented exponent parity {#sec-cpu-represented-exponent-parity}
 
 Oddness and evenness refer to the exponent Number actually supplied. Numbers use binary64 precision. From `2^52` upward, every representable finite exponent is integral. From magnitude `2^53` upward, every representable finite exponent is even: no odd exponent exists at that precision.
 
 The largest positive representable odd integer is `2^53 - 1`, or `9007199254740991`. Therefore `(-1)^(2^53 - 1)` is `-1`, whereas `(-1)^(2^53)` is `+1`. The same parity distinction applies to the corresponding negative exponents. Sign selection cannot recover an intended odd integer that the supplied Number cannot represent.
 
-#### Range limits and subnormal results
+#### Range limits and subnormal results {#sec-cpu-range-limits-and-subnormal-results}
 
 POW accepts nonzero subnormal bases and can produce subnormal results; it does not discard all such values as zero. Overflow produces infinity, while sufficiently small magnitudes round to zero. For negative bases with odd integer exponents, these results retain a negative sign.
 
@@ -586,13 +566,12 @@ The following are exact result examples, not decimal display approximations:
 
 These exact examples do not establish a universal correct-rounding or error guarantee for other finite powers.
 
-### Bitwise operations and shifts
+### Bitwise operations and shifts {#sec-cpu-bitwise-operations-and-shifts}
 
 Each bitwise input is converted to a 32-bit word by truncating its Number toward zero and reducing the integer modulo 2³². Positive zero, negative zero, NaN, infinities, and fractions of magnitude below one become the zero word. Large finite values wrap modulo 2³² rather than saturating. A non-Number numeric operand first supplies NaN and therefore becomes the zero word in these operations.
 
 The output word is interpreted as a signed 32-bit integer and written as a Number. For example, the word with all 32 bits set becomes Number −1. A left shift of 1 by 31 produces −2147483648. SHR is an arithmetic, sign-extending right shift: shifting −8 right by one produces −4, not a large positive value.
 
-<section class="keep-together">
 
 Shift counts undergo the same word conversion and then use only their low five bits. A count of 32 therefore acts as zero, and a count of −1 acts as 31. Negative counts do not reverse the shift direction, and large counts do not saturate.
 
@@ -605,16 +584,14 @@ Shift counts undergo the same word conversion and then use only their low five b
 | SHR | `1CH` | Left word from RK(B); count from the low five bits of the word converted from RK(C) | Sign-extending right shift of the signed 32-bit left operand, written as a Number | 1 |
 | BNOT | `22H` | Word conversion of the numeric read of R[B], not RK(B); C unused | Complement all 32 bits, then write the signed Number interpretation | 1 |
 
-</section>
 
 
-### Truth, length, and text
+### Truth, length, and text {#sec-cpu-truth-length-and-text}
 
 Only nil and false are falsey. Every other value is truthy, including Number 0, Number NaN, and an empty String. NOT writes a boolean, not a Number. In particular, negating the truth of zero produces false.
 
 LEN returns a Number. A String's length is its stored Unicode codepoint count, not its byte count. A Table's length is its maintained array length. LEN on any other value kind faults; it does not invoke a metatable length operation.
 
-<section class="keep-together">
 
 Concatenation uses language value-to-string conversion rather than accepting only strings and Numbers. CONCAT joins its two RK operands in B-then-C order. CONCATN joins exactly C consecutive registers starting at R[B], in increasing register order. All CONCATN sources are read before the result is written, so the destination may overlap the input range. A zero CONCATN count produces the empty String.
 
@@ -625,10 +602,8 @@ Concatenation uses language value-to-string conversion rather than accepting onl
 | NOT | `20H` | R[B], not RK(B); C unused | Boolean true for nil or false; boolean false for every other kind | 1 |
 | LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String codepoint count or Table array length; other kinds fault | 1 |
 
-</section>
 
 
-<section class="keep-together">
 
 | Value being concatenated | Resulting text |
 |---|---|
@@ -644,24 +619,23 @@ Concatenation uses language value-to-string conversion rather than accepting onl
 | Negative infinity | `-inf` |
 | Finite Number | Default six-significant-digit conversion below; +0 becomes `0`, and −0 becomes `-0` |
 
-</section>
 
 
 Concatenating a Table therefore does not serialize its entries, and concatenating a function does not print its contents or identity. Use concatenation to assemble readable text, but do not assume that its text distinguishes every language value. Finite Number formatting is shared numeric formatting, not a conversion to a 32-bit word.
 
-### Default Number-to-text conversion
+### Default Number-to-text conversion {#sec-cpu-default-number-to-text-conversion}
 
 Concatenating a Number with a String uses the default Number-to-text conversion. For example, `'' .. 1.234565` produces `1.23456`. Both `CONCAT` and `CONCATN` use this ordinary conversion; neither supplies a format string, precision, field width, padding, or notation choice. The rules below describe that default conversion, not a configurable formatting operation.
 
 The precision target is **six significant decimal digits**, not six decimal places and not a requirement to display six digits. Fractional trailing zeros disappear. Thus `0.0001` has fewer visible digits, while a small value can have several zeros after the decimal point before its significant digits begin. Integer trailing zeros remain part of the printed integer.
 
-#### Sign, zero, and the integer shortcut
+#### Sign, zero, and the integer shortcut {#sec-cpu-sign-zero-and-the-integer-shortcut}
 
 Positive zero becomes `0`; negative zero becomes `-0`. Neither goes through normalization. For every other finite value, conversion works on the positive magnitude and prefixes one `-` if the input was negative. Positive inputs have no leading `+`.
 
 An exact integer magnitude **strictly below 1000000** is printed directly as a decimal integer, without normalization or rounding. For example, `999999` becomes `999999`, and `-999999` becomes `-999999`. The strict limit matters: `1000000` takes the normalized path and becomes `1e+06`.
 
-#### Normalization and rounding
+#### Normalization and rounding {#sec-cpu-normalization-and-rounding}
 
 For all remaining finite inputs, let *n* initially be the positive magnitude and let the decimal exponent *e* initially be zero. Perform the following operations in the stated order, using ordinary Number arithmetic at each multiplication. The powers in the table steps are fixed Number constants, not exponentiation operations requested by the program.
 
@@ -680,7 +654,7 @@ For all remaining finite inputs, let *n* initially be the positive magnitude and
 
 Nearest-even applies to the **computed normalized and scaled Number**, not directly to the original input's mathematical decimal expansion. This distinction is observable: `123456.5` prints `123457`, not `123456`. In contrast, `1.234565` prints `1.23456`, and `1.234575` prints `1.23458`. Do not substitute an ideal six-significant-digit decimal-rounding rule for the ordered Number operations above.
 
-#### Choosing and spelling the notation
+#### Choosing and spelling the notation {#sec-cpu-choosing-and-spelling-the-notation}
 
 Use the exponent **after the carry**. Fixed notation is selected exactly when
 
@@ -692,9 +666,8 @@ All other exponents use scientific notation. Place the point after the first dig
 
 The notation boundary is therefore not merely a comparison of the original magnitude with `0.0001` or `1000000`. Rounding can move the exponent across a boundary: `0.00009999995` prints `0.0001`, while `999999.5` prints `1e+06`.
 
-<section class="keep-together">
 
-#### Number-to-text examples
+#### Number-to-text examples {#sec-cpu-number-to-text-examples}
 
 Each row gives a Number input and its resulting text. The same conversion is obtained by using that input in `'' .. input`.
 
@@ -713,15 +686,13 @@ Each row gives a Number input and its resulting text. The same conversion is obt
 | `5e-324` | `4.94066e-324` |
 | `1.7976931348623157e308` | `1.79769e+308` |
 
-</section>
 
 The output is not a lossless serialization: distinct inputs such as `999999.5` and `1000000` produce the same text. Nonfinite Numbers bypass the finite conversion described above: NaN becomes `nan`, positive infinity becomes `inf`, and negative infinity becomes `-inf`.
 
-### Comparisons and conditional execution
+### Comparisons and conditional execution {#sec-cpu-comparisons-and-conditional-execution}
 
 EQ, LT, and LE do not write a result register. They evaluate a predicate and compare it with the expectation encoded by A: zero expects false, and any nonzero A expects true. If the predicate differs from that expectation, execution skips exactly the next decoded instruction. A WIDE prefix and its instruction body form one instruction for this skip. If the predicate matches the expectation, the next instruction executes normally.
 
-<section class="keep-together">
 
 Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Numbers use numeric equality, so NaN is unequal even to itself, while +0 and −0 are equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
 
@@ -734,10 +705,8 @@ Equality respects value kinds. Different kinds are unequal; there is no numeric-
 | Table, Closure, or Thread | Same reference identity |
 | Different kinds | False |
 
-</section>
 
 
-<section class="keep-together">
 
 Ordering is defined for two Numbers or two Strings. Numbers use numeric less-than or less-than-or-equal comparison. Strings use lexical UTF-8 order. Mixed kinds and all other kind combinations produce a false predicate rather than a comparison type fault. Equality of Tables can therefore test whether two values refer to the same Table, but LT and LE do not provide an ordering of Tables.
 
@@ -747,16 +716,14 @@ Ordering is defined for two Numbers or two Strings. Numbers use numeric less-tha
 | LT | `24H` | RK(B), RK(C); A is expected truth, not a destination | Number less-than or String lexical less-than; false otherwise; skip the next decoded instruction if the predicate differs from `(A≠0)` | 1 |
 | LE | `25H` | RK(B), RK(C); A is expected truth, not a destination | Number less-than-or-equal or String lexical less-than-or-equal; false otherwise; skip the next decoded instruction if the predicate differs from `(A≠0)` | 1 |
 
-</section>
 
 
-## Calls, closures, globals, and tables
+## Calls, closures, globals, and tables {#sec-cpu-calls-closures-globals-and-tables}
 
-### Values and register notation
+### Values and register notation {#sec-cpu-values-and-register-notation}
 
 A frame register holds a language value: nil, a boolean, a number, a string, a table, a closure, a builtin function, or a thread. Register operands select logical value slots in the current call frame. They are not byte addresses, and a register slot is not a four-byte data word.
 
-<section class="keep-together">
 
 The instruction descriptions use the following notation:
 
@@ -768,18 +735,16 @@ The instruction descriptions use the following notation:
 | `top` | The exclusive upper limit of the frame's active register range. An open value range beginning at `A` contains `max(top-A, 0)` values. |
 | `index(base, key)` | A language-level indexed lookup or assignment, not a memory access at a byte offset. |
 
-</section>
 
 
 Unless a dedicated rule below says otherwise, writing a register raises `top` to at least one past that register and does not lower it. Writing a table element, global, or upvalue does not itself extend the register range.
 
-### Calling and returning values
+### Calling and returning values {#sec-cpu-calling-and-returning-values}
 
 `CALL A,B,C` takes its callee from `R(A)`. Arguments occupy consecutive registers starting at `R(A+1)`, and returned values replace consecutive registers starting at `R(A)`.
 
 Only closure and builtin-function values are callable. A number is not callable merely because its numeric value is a function-record address. Calling any other value category raises `CALL_NON_FUNCTION`.
 
-<section class="keep-together">
 
 The three count operands in the call/return family deliberately do not use one common encoding:
 
@@ -790,7 +755,6 @@ The three count operands in the call/return family deliberately do not use one c
 | `RET B`: produced results | Return `max(top-A, 0)` values. | Return exactly `B` values. |
 | `VARARG B`: copied arguments | Copy all saved varargs. | Copy exactly `B` values, filling any shortage with nil. |
 
-</section>
 
 
 For example, `CALL A,3,2` supplies two arguments, from `R(A+1)` and `R(A+2)`, and requests two results at `R(A)` and `R(A+1)`. If the function produces only one result, the second result is nil. If it produces more than two, the excess is discarded. After result placement, `top` is exactly `A+2`.
@@ -803,7 +767,7 @@ On entry to a closure, the function record supplies the code address and paramet
 
 `RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
 
-### Closures and captured variables
+### Closures and captured variables {#sec-cpu-closures-and-captured-variables}
 
 A closure is a callable language value associated with a function record and captured upvalues. `CLOSURE` constructs this value; it does not merely copy a numeric code address into a callable register.
 
@@ -814,7 +778,6 @@ The `CLOSURE` register-address flag chooses how to obtain the function-record ad
 
 The function record is read before the destination is written. It identifies the function's code and frame metadata, including the fixed-parameter count, maximum stack allocation, vararg and static flags, and upvalue information. A failed record read hard-halts without writing `R(A)`. A bus-read fault while reading the upvalue descriptors likewise hard-halts without writing `R(A)`.
 
-<section class="keep-together">
 
 Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTableAddress + 4i`:
 
@@ -823,7 +786,6 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 | High bit set | A register slot in the parent frame; the low 31 bits select the slot. |
 | High bit clear | An upvalue of the parent closure; the low 31 bits select that upvalue. |
 
-</section>
 
 
 An open upvalue accesses its captured parent-frame register directly. Captures can share an already-linked open upvalue for that slot, so updates through the captured variable remain shared. Closing an upvalue retains the current language value separately from the frame; subsequent reads and writes access that retained storage. `GETUP` and `SETUP` use the same upvalue operand regardless of whether the upvalue is open or closed.
@@ -833,13 +795,13 @@ return the same function value for that record address. An ordinary call uses
 that value; a numeric function-record address is supplied to CLOSURE or EXEC
 under their separate operand rules.
 
-### Two global namespaces
+### Two global namespaces {#sec-cpu-two-global-namespaces}
 
 Ordinary globals and system globals are separate namespaces. `GETGL` and `SETGL` access ordinary globals; `GETSYS` and `SETSYS` access system globals. A matching name in one namespace does not select the value stored under that name in the other.
 
 For these instructions, `Bx` is an index into the corresponding execution-image name table. It is not a register operand, a constant-pool string operand, or a table key. Each image's ordinary and system name tables are independently mapped to their namespace slots. Registering a new name initializes its value to nil; registering an existing name reuses the slot in that namespace. The namespace distinction alone does not specify a privilege boundary.
 
-### Tables, keys, and method receivers
+### Tables, keys, and method receivers {#sec-cpu-tables-keys-and-method-receivers}
 
 The table instruction families differ in where the key comes from:
 
@@ -855,11 +817,11 @@ Writes accept only table bases, including for integer and string-field forms. As
 
 `NEWT` creates an empty table with an array-capacity request and a hash-size request. These operands request storage; they neither supply initial elements nor state the number of elements already present.
 
-### Table entries and inherited reads
+### Table entries and inherited reads {#sec-cpu-table-entries-and-inherited-reads}
 
 A Table maps admissible keys to non-nil values. Numeric and nonnumeric keys may coexist in the same Table. Array storage and hash storage are internal placement choices, not separate kinds of Table. Moving an entry between them does not change its key category.
 
-#### Keys and presence
+#### Keys and presence {#sec-cpu-keys-and-presence}
 
 Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NIL` (4), even when the Table is empty or the value being written is nil. This is distinct from reading a missing admissible key, which returns nil.
 
@@ -877,7 +839,7 @@ Only positive integral numeric keys from 1 through `0x7fffffff` are eligible for
 
 A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.
 
-#### Stored length
+#### Stored length {#sec-cpu-stored-length}
 
 The Table length operation, `#t`, reads a stored length maintained by Table mutations. It does not count all mappings, find the largest numeric key, traverse a metatable, or search for a boundary when the length is read. Initial capacity allocates storage only: an empty Table has length zero regardless of its array or hash capacity.
 
@@ -887,7 +849,7 @@ An in-capacity non-nil write at key `L + 1`, or a newly inserted hash entry for 
 
 For example, with array capacity four and keys 1 through 5 populated, the initial length is 5. Deleting key 2 shortens it to 1 without removing key 5. Restoring key 2 advances the length to 5, including that hash-held entry.
 
-#### Metatables and indexed reads
+#### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
 
 A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. Only a Table-valued `__index` continues the lookup, using the original key on that next Table. Each subsequent Table is processed in the same way.
 
@@ -895,9 +857,8 @@ An absent or non-Table `__index` terminates the read with nil. Function-valued i
 
 Writes always modify the named target Table directly. They do not redirect through `__newindex` and do not invoke a function stored there. Deleting an own mapping may therefore expose an inherited mapping on a later ordinary read.
 
-<section class="keep-together">
 
-#### BIOS interface
+#### BIOS interface {#sec-cpu-bios-interface}
 
 All four functions below require a Table as their first argument; otherwise they raise `INVALID_ARGUMENT` (10). Ordinary BLua source must supply every listed argument. Pass explicit nil to delete a mapping or clear a metatable.
 
@@ -908,12 +869,11 @@ All four functions below require a Table as their first argument; otherwise they
 | `rawget(t, key)` | Returns only the own mapping, or nil when missing. Ignores the metatable. |
 | `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
 
-</section>
 
 For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` does not supply an alternative length contract.
 
 
-#### Weak references and collection
+#### Weak references and collection {#sec-cpu-weak-references-and-collection}
 
 The collector reads a Table's metatable member `__mode` directly. A String
 containing lowercase `k` selects weak keys; lowercase `v` selects weak values;
@@ -948,13 +908,12 @@ immediate collection or reclamation deadline. Collection removes mappings,
 not their inherited replacements, and can shorten a weak-value array's stored
 length when it clears an earlier element.
 
-### Instruction reference
+### Instruction reference {#sec-cpu-instruction-reference}
 
 The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name instruction fields, not additional language values. Opcode values use hexadecimal notation (`H`). All costs are base instruction cycles; see **Builtin call charges** below.
 
-<section class="keep-together">
 
-#### Calls and captured values
+#### Calls and captured values {#sec-cpu-calls-and-captured-values}
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
@@ -965,12 +924,10 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 1 |
 | `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 2 |
 
-</section>
 
 
-<section class="keep-together">
 
-#### Global namespaces
+#### Global namespaces {#sec-cpu-global-namespaces}
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
@@ -979,12 +936,10 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `GETSYS` | `36H` | `A, Bx` | Load into `R(A)` the system global selected by system-global image name index `Bx`. | 1 |
 | `SETSYS` | `37H` | `A, Bx` | Store `R(A)` into the system global selected by system-global image name index `Bx`. | 2 |
 
-</section>
 
 
-<section class="keep-together">
 
-#### Tables and field lookup
+#### Tables and field lookup {#sec-cpu-tables-and-field-lookup}
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
@@ -997,20 +952,19 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 1 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 1 |
 
-</section>
 
 
-### Builtin call charges
+### Builtin call charges {#sec-cpu-builtin-call-charges}
 
 CALL costs 2 base cycles. A primitive target adds its own base charge of 1, 2
 or 4 cycles; this surcharge has no per-argument or per-result term. Installed
 BIOS functions can execute ordinary instructions and call further primitives,
 so include the executed sequence when budgeting the whole service. The
-[BIOS base](bios-base.md), [String](bios-string.md) and
-[protected-call/coroutine](coroutines.md) references identify their primitive
+[BIOS base](bios-base.md#sec-bios-base), [String](bios-string.md#sec-bios-string) and
+[protected-call/coroutine](coroutines.md#sec-coroutines) references identify their primitive
 surcharges and error behavior.
 
-## Worked values: signed zero and inherited fields
+## Worked values: signed zero and inherited fields {#sec-cpu-worked-values-signed-zero-and-inherited-fields}
 
 Use runtime operands when the distinction between Number values matters:
 
@@ -1057,18 +1011,16 @@ parent again. `rawget(child, 'answer')` is then `nil`. A function-valued
 `__index` is not called by this indexed-read datapath; consult the table
 reference above rather than assuming another Lua version's metatable behavior.
 
-## Memory transfers
+## Memory transfers {#sec-cpu-memory-transfers}
 
 Memory instructions transfer numeric scalars between frame registers and
 byte-addressed storage. Word and U32LE loads produce unsigned 32-bit integer
 Numbers. Floating loads interpret the stored IEEE bit pattern. The format
 selector determines the byte width and conversion in the following table.
 
-</section>
 
-### Scalar formats
+### Scalar formats {#sec-cpu-scalar-formats}
 
-<section class="keep-together">
 
 The `C` operand of a scalar load or store selects one of six formats:
 
@@ -1081,7 +1033,6 @@ The `C` operand of a scalar load or store selects one of six formats:
 | 4 | `F32LE` | 4 | Number decoded from IEEE single precision | Round the numeric value to IEEE single precision and store its bits | 4 bytes |
 | 5 | `F64LE` | 8 | Number decoded from IEEE double precision | Store the numeric value's IEEE double-precision bits | **4 bytes** |
 
-</section>
 
 
 All multi-byte formats are little-endian: the least significant byte occupies the lowest address. `Word` and `U32LE` transfer the same numeric data, but identify the access differently in bus-fault metadata. Floating-point transfers decode or encode floating-point bits; they are not integer conversions of the floating-point number. No guarantee of preserving every NaN payload is made.
@@ -1097,7 +1048,7 @@ Address conversion and integer-store conversion truncate toward zero and retain 
 
 `F64LE` is two ordered 32-bit transfers, not one indivisible eight-byte transfer. The low half is accessed at the starting address, then the high half four bytes later. Four-byte alignment is sufficient; eight-byte alignment is not required.
 
-### Address operands
+### Address operands {#sec-cpu-address-operands}
 
 The ordinary forms, `LOAD_MEM`, `STORE_MEM`, and `STORE_MEM_WORDS`, obtain their starting byte address from `RK(B)`. A nonnegative `B` selects register `B`; a negative `B` selects constant `-1-B`. The selected value is converted to an unsigned 32-bit address.
 
@@ -1107,7 +1058,7 @@ The displacement forms, whose names end in `_D`, always use register `B` as the 
 
 Here `disp` is the instruction's **unsigned eight-bit word displacement**, from 0 through 255. It reaches byte offsets 0 through 1020. It is neither signed nor extended by `WIDE`. A negative displacement therefore cannot be expressed by setting the top displacement bit. `WIDE` can extend the other operand fields without extending this displacement.
 
-### Scalar access and IO
+### Scalar access and IO {#sec-cpu-scalar-access-and-io}
 
 Scalar loads check alignment before attempting a memory access. If a new bus fault occurs during the read, the destination register is not changed. This does not undo a read or a device side effect that has already occurred.
 
@@ -1117,7 +1068,6 @@ A readiness check is not a permission or fault preflight. An aligned but not-rea
 
 The two halves of an `F64LE` access are fault-ordered. A new fault on the low half prevents the high-half access. A high-half fault leaves the low-half access or store already performed. A load updates its destination only if both halves succeed. The high half of an `F64LE` store is not covered by a separate readiness preflight.
 
-<div class="keep-together">
 
 Memory instructions are available in user and supervisor modes. Each mapped
 target applies its own access rules. In I/O space, an aligned U8 load reads a
@@ -1125,9 +1075,8 @@ whole register and returns its low byte. U8 stores and U16LE accesses fault.
 Word, U32LE, F32LE and each half of F64LE use whole-word register operations,
 including that register's side effects.
 
-</div>
 
-### Counted word stores
+### Counted word stores {#sec-cpu-counted-word-stores}
 
 `STORE_MEM_WORDS` and `STORE_MEM_WORDS_D` use `C` as a **word count**, not a scalar-format selector. They write consecutive registers to consecutive words:
 
@@ -1144,9 +1093,8 @@ After writes begin, the first new bus fault terminates the sequence with its
 completed prefix retained. Arrange output and recovery around those ordered
 partial effects.
 
-### Memory instruction reference
+### Memory instruction reference {#sec-cpu-memory-instruction-reference}
 
-<section class="keep-together">
 
 `read_C(address)` below means a read in the scalar format selected by `C`. `u32` denotes the conversion described above, not serialization of a language value. The common alignment, readiness, fault, and partial-effect rules apply to every applicable row. Costs are nominal base charges plus the stated surcharge; execution-budget, prefix, and retry accounting follow the CPU execution rules.
 
@@ -1159,12 +1107,11 @@ partial effects.
 | `32H` | `STORE_MEM A, B, C` | Store `R[A]` in scalar format `C` at `u32(RK(B))` | 2 |
 | `33H` | `STORE_MEM_WORDS A, B, C` | Starting at `u32(RK(B))`, store `C` consecutive unsigned words from `R[A]` onward | `2 + ((C+3)>>2)` after successful readiness preflight |
 
-</section>
 
 
 `F64LE` uses the same listed scalar-memory cost as the other scalar formats; it adds no per-half transfer surcharge. Neither this cost nor the counted-store surcharge specifies a device's electrical bandwidth.
 
-## Branches
+## Branches {#sec-cpu-branches}
 
 Branch conditions use value truth. Only Nil and False are false. Numeric zero, numeric NaN, the empty string, and all other language values are true.
 
@@ -1174,7 +1121,6 @@ The signed `BX` displacement is measured in four-byte instruction words. A branc
 
 The full instruction width includes a `WIDE` prefix when present. Thus the displacement is relative to the byte immediately after the complete branch instruction, not its first word. `BX` is signed 20-bit without `WIDE` and signed 26-bit with it. A conditional branch that is not taken continues at the already selected sequential PC.
 
-<section class="keep-together">
 
 The branch itself performs no target-memory read or target-alignment check. Fetching at the resulting PC is a separate step governed by the instruction-fetch rules.
 
@@ -1184,18 +1130,16 @@ The branch itself performs no target-memory read or target-alignment check. Fetc
 | `29H` | `JMPIF A, BX` | Assign the target to PC if `R[A]` is true; otherwise continue sequentially | 1 |
 | `2AH` | `JMPIFNOT A, BX` | Assign the target to PC if `R[A]` is false; otherwise continue sequentially | 1 |
 
-</section>
 
 
-## CP0 and execution control
+## CP0 and execution control {#sec-cpu-cp0-and-execution-control}
 
 CP0 holds exception and privilege state. Current privilege comes from **Status bit 1**, not from the identity of the currently selected image. A clear bit means supervisor mode; a set bit means user mode. Status bit 0 is the current interrupt-enable bit. System entry initializes Status to 1; cartridge entry initializes it to 3.
 
 `MFC0`, `MTC0`, and `RFE` require supervisor mode. In user mode they raise coprocessor-unusable before selecting a CP0 field, converting a source value, or checking whether `RFE` has an exception frame. `HALT`, branches, and the memory instructions have no corresponding current-mode check.
 
-### CP0 fields
+### CP0 fields {#sec-cpu-cp0-fields}
 
-<section class="keep-together">
 
 For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field number, **not an RK operand**. Their handlers do not use `C`.
 
@@ -1208,18 +1152,17 @@ For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field
 | 14 | `EPC` | Raw unsigned word as a Number | Replace the complete word, without an alignment check |
 | 15 | `EXEC` | Zero | Replace execution with the addressed static function |
 
-</section>
 
 
 `MTC0` converts `R[A]` to an unsigned 32-bit word before applying the selected field's write behavior, including an ignored write. An unknown field number hard-halts in supervisor mode. This is not a coprocessor-unusable exception, and a rejected `MFC0` does not update its destination. A hard halt does not itself assign a new CP0 Cause.
 
-### EXEC
+### EXEC {#sec-cpu-exec}
 
 Writing `EXEC` supplies a **function-record address**, not an instruction-entry address. The record is read on the CPU bus and must identify a static function; otherwise execution hard-halts.
 
 A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write, hard-halt, and requested-yield state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
 
-### Exception return
+### Exception return {#sec-cpu-exception-return}
 
 In supervisor mode, `RFE` requires the current frame to be an exception frame; otherwise it hard-halts. It samples the active EPC, closes the exception frame's open upvalues, removes that frame, and restores the register-stack top to the removed frame's vararg base.
 
@@ -1227,13 +1170,12 @@ In supervisor mode, `RFE` requires the current frame to be an exception frame; o
 
 Returning from an NMI-marked exception frame also restores the retained pre-NMI Cause, EPC, BadAddress, LuaFaultReason, and exception-domain words. The return PC still comes from the active EPC sampled before that restoration. The retained pre-NMI Status word is not restored wholesale.
 
-### HALT
+### HALT {#sec-cpu-halt}
 
 `HALT` is available in user mode as well as supervisor mode. If an interrupt event is already retained, it consumes that event without creating a HALT condition. Otherwise it records the active thread and current frame depth; the HALT condition matches only while both still match. This is an IRQ-wait latch, not a program busy loop or a request for a fixed elapsed duration. Interrupt acceptance and wake scheduling follow the interrupt rules.
 
-<section class="keep-together">
 
-### BLua control syntax
+### BLua control syntax {#sec-cpu-blua-control-syntax}
 
 `halt_until_irq` is the BLua statement for `HALT`, as used in the complete
 program above. CP0 access instead uses reserved intrinsic member syntax:
@@ -1247,7 +1189,6 @@ program above. CP0 access instead uses reserved intrinsic member syntax:
 | `cop0.epc` | Read or assign | 14 |
 | `cop0.exec` | Assign only | 15 |
 
-</section>
 
 A read emits `MFC0`; an assignment emits `MTC0`. These forms do not grant
 supervisor mode. The source interface rejects writes to its read-only members
@@ -1272,9 +1213,9 @@ and executes RFE after the callback returns. Return normally from either
 callback so its entry routine can perform exception return. A custom entry
 routine must implement its own dispatch and issue RFE from its exception frame.
 For BIOS memory-fault service, see
-[Memory — Installed response to a memory exception](memory.md#installed-response-to-a-memory-exception).
+[[Memory — Installed response to a memory exception](memory.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Installed response to a memory exception”]{.content-visible when-format="pdf"}.
 
-### Control instruction reference
+### Control instruction reference {#sec-cpu-control-instruction-reference}
 
 | Opcode | Instruction and operands | Effect | Nominal cost |
 |---|---|---|---:|
@@ -1285,9 +1226,8 @@ For BIOS memory-fault service, see
 
 `RFE` and `HALT` do not use `A`, `B`, or `C`.
 
-<a id="cp0-in-cartridge-irq"></a>
 
-### Read CP0 in a cartridge IRQ
+### Read CP0 in a cartridge IRQ {#sec-cpu-read-cp0-in-a-cartridge-irq}
 
 Use this sequence after fresh BIOS cartridge entry, with the running beam
 unchanged and this program as the sole VBlank callback and IRQ-mask owner.
@@ -1326,7 +1266,6 @@ callback, saved Status is `0000000CH`, Cause is `00000400H`, and EPC is the
 variable interrupted **instruction address**, not a function-record address.
 Full supplied flags contain VBlank and may contain other masked pending bits.
 
-<div class="keep-together">
 
 The callback returns normally. The standard IRQ entry performs RFE and main
 continues after the wait. Do not issue RFE from the callback's ordinary call
@@ -1335,9 +1274,8 @@ SYSTEM supervisor device context; SYSTEM STATUS remains zero under these
 assumptions. Masking further delivery does not clear CPU interrupt enable or
 prevent later VBlank pending bits from being raised.
 
-</div>
 
-## Memory faults and saved PC
+## Memory faults and saved PC {#sec-cpu-memory-faults-and-saved-pc}
 
 A misaligned load raises `AddressErrorLoad`; a misaligned scalar or counted store raises `AddressErrorStore`. Both record the converted effective address in BadAddress before any mapped access. A newly raised bus fault produces `DataBusError`; that exception does not itself replace BadAddress.
 

@@ -1,11 +1,11 @@
-# BIOS String operations
+# BIOS String operations {#sec-bios-string}
 
 Use `string` for text construction, character access, slicing, formatting,
 pattern matching and formatted String records. Normal BIOS startup installs
 the Table and registers it for String method lookup. Call `string.sub(text,
 start, finish)` or the corresponding `text:sub(start, finish)` form.
 
-## Text values and encoded byte storage
+## Text values and encoded byte storage {#sec-bios-string-text-values-and-encoded-byte-storage}
 
 String positions begin at 1 and count Unicode codepoints. `string.byte`
 selects one complete codepoint; `string.char` constructs a String from numeric
@@ -14,10 +14,10 @@ in ROM or RAM.
 
 Use `string.from_utf8(address, byte_count)` to construct text from mapped
 UTF-8 bytes. The address selects actual byte storage and the count measures
-encoded bytes. [BLua storage declarations](blua-programs.md#typed-storage-layouts-and-address-views)
-define those ranges; [Memory](memory.md) gives their physical mapping and
-reservations. [CPU value rules](cpu.md) specify indexing and Number
-conversion, and [protected calls](coroutines.md) describe language-error
+encoded bytes. [BLua storage declarations](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)
+define those ranges; [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} gives their physical mapping and
+reservations. [CPU value rules](cpu.md#sec-cpu) specify indexing and Number
+conversion, and [protected calls](coroutines.md#sec-coroutines) describe language-error
 handling.
 
 The following example contains four codepoints. String positions start
@@ -40,7 +40,6 @@ the installed String-index Table after the global `string` name is rebound.
 For character selection, use `string.byte` or a substring operation rather
 than numeric Table-style indexing.
 
-<div class="keep-together">
 
 Choose the interface according to the input representation:
 
@@ -53,15 +52,13 @@ Choose the interface according to the input representation:
 | Build or read a formatted String record | `string.pack`, `string.unpack` | Codepoint-valued packet units; these calls do not transfer a record to mapped storage. |
 | Interpret existing floating-point words | Named import `string/float/decode` | One binary32 word or high/low binary64 words; one Number result. |
 
-</div>
 
 In particular, the size of a packed String is not a DMA transfer length.
 Define a byte layout in mapped storage when a device consumes bytes or words;
 use String operations for language text and String records.
 
-<a id="complete-program-codepoints-and-mapped-utf-8"></a>
 
-## Example: codepoints and mapped UTF-8
+## Example: codepoints and mapped UTF-8 {#sec-bios-string-example-codepoints-and-mapped-utf-8}
 
 Declare the encoded input as byte storage, then pass its address and byte count
 to the BIOS. The resulting String is an independent text value:
@@ -83,9 +80,8 @@ The same text can be constructed as
 `string.char(0x41, 0x7a, 0xe9, 0x1f680)`. Method syntax uses the installed
 String-index Table; it does not make String positions into memory addresses.
 
-<div class="keep-together">
 
-## Codepoint access, construction, length and UTF-8 input
+## Codepoint access, construction, length and UTF-8 input {#sec-bios-string-codepoint-access-construction-length-and-utf-8-input}
 
 These four interfaces operate on codepoints or bring encoded bytes into a
 String. Their names do not make a String a byte buffer.
@@ -97,9 +93,8 @@ String. Their names do not make a String a byte buffer.
 | `string.len(value)` | Required value supporting the length operation | Exactly one Number, if the operation completes |
 | `string.from_utf8(address, byte_count)` | Numeric mapped byte address and a byte count | Exactly one String, if decoding completes with the installed bindings |
 
-</div>
 
-### `string.byte(value, position)`
+### `string.byte(value, position)` {#sec-bios-string-stringbytevalue-position}
 
 Positions are one-based **codepoint positions**. Omitting `position`, or
 passing `nil`, selects position 1. An empty String has no valid position.
@@ -132,7 +127,7 @@ A missing or non-String first argument, or a nonnumeric non-`nil` position,
 raises `INVALID_ARGUMENT`. A numeric-looking String such as `"2"` is not
 accepted as a position.
 
-### `string.char(...)`
+### `string.char(...)` {#sec-bios-string-stringchar}
 
 Pass one Number for each Unicode scalar to put in the result. Values are not
 restricted to 0 through 255. Each Number is converted to an unsigned 32-bit
@@ -166,7 +161,7 @@ Each `byte` or `char` call has a builtin surcharge of two cycles, with no
 per-argument or per-result term in that surcharge. Scanning or constructing the String and the surrounding call instructions
 add their own work.
 
-### `string.len(value)`
+### `string.len(value)` {#sec-bios-string-stringlenvalue}
 
 `string.len(value)` performs the ordinary length operation, `#value`, and
 returns its result. On a String it counts codepoints, including zero
@@ -178,7 +173,7 @@ and its fault handling, follow the CPU chapter's length-operation procedure.
 Other value categories raise the ordinary length error,
 `"Attempted to get length of an unsupported value."`.
 
-### `string.from_utf8(address, byte_count)`
+### `string.from_utf8(address, byte_count)` {#sec-bios-string-stringfrom_utf8address-byte_count}
 
 Use this interface when the input already exists as mapped UTF-8 bytes.
 `address` is the numeric address of the first byte; `byte_count` is the number
@@ -192,7 +187,6 @@ them. The function does not allocate the input storage or grant access to it.
 An embedded byte `0x00` becomes codepoint zero and does not end the input.
 With the installed bindings, a zero byte count returns one empty String.
 
-<section class="keep-together">
 
 The byte count controls whether another lead byte is read. It is **not a
 hard read barrier** for the continuation bytes of a sequence already begun:
@@ -204,7 +198,6 @@ hard read barrier** for the continuation bytes of a sequence already begun:
 | `0xe0`–`0xef` | 3 |
 | `0xf0`–`0xff` | 4 |
 
-</section>
 
 These are the decoder's read shapes, not a validation table. The decoder does
 not check continuation prefixes or reject overlong encodings before
@@ -237,9 +230,9 @@ values. Replacing their public fields does not replace these calls. The
 captured `unpack` still uses the current global `select` for an empty range;
 the captured `concat` still uses the current global `tostring` for its joins.
 Changing those globals can therefore change the empty-span or chunk-join
-result. [BIOS table library](bios-table.md) describes the helper procedures.
+result. [BIOS table library](bios-table.md#sec-bios-table) describes the helper procedures.
 
-## Case conversion, slicing, reversal and repetition
+## Case conversion, slicing, reversal and repetition {#sec-bios-string-case-conversion-slicing-reversal-and-repetition}
 
 The contracts below describe the installed bindings. Each call returns exactly
 one result when it completes. These functions do not write into their input.
@@ -254,7 +247,7 @@ they do not count UTF-8 bytes.
 | `string.reverse(value)` | Reverse the codepoint order. |
 | `string.rep(value, count_arg, separator)` | Repeat the value; a non-nil separator is placed between copies. |
 
-### ASCII case conversion
+### ASCII case conversion {#sec-bios-string-ascii-case-conversion}
 
 `upper` subtracts 32 from codes 97 through 122. `lower` adds 32 to codes
 65 through 90. Neither operation performs locale-sensitive conversion or
@@ -272,7 +265,7 @@ at character access with `Invalid argument.`, while unsupported length kinds
 raise `Attempted to get length of an unsupported value.` A zero-length Table
 reaches no character read and produces an empty String.
 
-### Inclusive slices
+### Inclusive slices {#sec-bios-string-inclusive-slices}
 
 Pass an explicit `nil` for `start_arg` when requesting its default; do not use
 `string.sub(value)` as the direct-call form. A nil start means 1, and an omitted
@@ -317,7 +310,7 @@ empty-range branch can return an empty String and the full-span branch can
 return that original Table. A partial range that reaches a codepoint read
 raises `Invalid argument.` Other value kinds fail at `#value`.
 
-### Codepoint reversal
+### Codepoint reversal {#sec-bios-string-codepoint-reversal}
 
 `string.reverse` captures `L = #value`. If L is at most 1, it returns the original
 value. Otherwise, it reads positions L down to 1, constructs a String for each
@@ -335,7 +328,7 @@ is that Table, not a String. With a Table whose L is greater than 1, the first
 codepoint read raises `Invalid argument.` Other value kinds fail at the length
 operation.
 
-### Repetition and separators
+### Repetition and separators {#sec-bios-string-repetition-and-separators}
 
 A missing or nil count means 1. Otherwise, the count is `count_arg // 1`;
 non-Number counts become NaN rather than being parsed or rejected by a
@@ -380,7 +373,7 @@ repetition or output-size cap. Negative infinity takes the empty-result branch.
 Positive infinity does not decrease under halving, so it is not a terminating
 repetition request and may exhaust resources.
 
-### Captured calls and work performed
+### Captured calls and work performed {#sec-bios-string-captured-calls-and-work-performed}
 
 The codepoint-building paths above use captured `string.byte`, `string.char`
 and `table.concat` function values. Replacing those public fields later does
@@ -395,23 +388,22 @@ access. The mapping, slice and reversal paths also construct temporary Tables
 and Strings; they are not in-place transformations or single-pass byte-buffer
 operations.
 
-## `string.format`
+## `string.format` {#sec-bios-string-stringformat}
 
 ```lua
 string.format(format, ...)
 ```
 
-Number arithmetic and value categories follow [Values and numeric instructions](cpu.md#values-and-numeric-instructions). Hexadecimal limits below use the `H` suffix.
+Number arithmetic and value categories follow [Values and numeric instructions](cpu.md#sec-cpu-values-and-numeric-instructions). Hexadecimal limits below use the `H` suffix.
 
 Builds formatted text and, on normal completion, returns exactly one String. It does not return a character count or write into a caller-supplied buffer. Unused arguments are ignored.
 
 For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format. The main scan uses the initial format length; decimal width and precision parsing re-evaluate that length at each loop test.
 
-**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. General-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can also construct temporary Tables. These Tables use the [CPU's maintained-length rules](cpu.md#stored-length).
+**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. General-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can also construct temporary Tables. These Tables use the [CPU's maintained-length rules](cpu.md#sec-cpu-stored-length).
 
-<a id="complete-program-formatted-text"></a>
 
-### Example: formatted text
+### Example: formatted text {#sec-bios-string-example-formatted-text}
 
 Width includes the sign and base prefix. In a starred field, supply width,
 then precision, then the value:
@@ -432,7 +424,7 @@ local floating = string.format('%.2f/%.1e/%#.3g',
 piece uses ordinary Number-to-text conversion. The conversion rules below
 explain this output when choosing a numeric format.
 
-### Conversion syntax and argument order
+### Conversion syntax and argument order {#sec-bios-string-conversion-syntax-and-argument-order}
 
 An immediate `%%` emits one percent and consumes no argument. All other conversions have this order:
 
@@ -456,7 +448,7 @@ Arguments are selected sequentially: width `*` first, precision `*` second, then
 
 A star uses the first result of `math.modf`. For finite Numbers this truncates toward zero. A negative width enables left alignment and uses the negated width. A precision is retained only when its truncated value is nonnegative; a negative or NaN precision is absent. A non-Number star argument reaches this arithmetic as Number NaN, rather than being parsed as numeric text or rejected by a formatter-specific type check. For that width, the negative-width test and padding comparison are false; that precision is absent.
 
-### Flags, signs and padding
+### Flags, signs and padding {#sec-bios-string-flags-signs-and-padding}
 
 Width is a minimum, never a truncation limit. Padding measures the combined codepoint lengths of sign, base prefix and content. If padding is needed, `-` appends spaces and overrides `0`. Otherwise `0` inserts zeros after the sign and base prefix; ordinary padding inserts spaces before both.
 
@@ -470,7 +462,7 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 | All integers | Any present precision disables width zero-padding, including precision zero. |
 | Floating conversions | Width zero-padding remains active when precision is present. `#` retains a point at zero precision in fixed/scientific construction and disables general-format zero stripping. |
 
-### Text, codepoint and quoted conversions
+### Text, codepoint and quoted conversions {#sec-bios-string-text-codepoint-and-quoted-conversions}
 
 **`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the maintained-length rule above.
 
@@ -485,7 +477,6 @@ arguments also reach zero through the arithmetic conversion.
 `string.format('%3c', 65)` produces two spaces followed by `'A'`. Precision is
 ignored, although a precision star still consumes an argument.
 
-<section class="keep-together">
 
 **`%q` — quoted text.** Calls the current `tostring`, surrounds the resulting text with double quotes, and escapes its codepoints as follows:
 
@@ -498,11 +489,10 @@ ignored, although a precision star still consumes an argument.
 | 34, double quote | `\"` |
 | Other values below 32, and 127 | Backslash followed by the decimal code, zero-padded to three digits. |
 
-</section>
 
 Every other codepoint is copied unchanged. Width applies after quoting. Precision is ignored, including after consuming a precision star. Because conversion to text happens first, `%q` is not a promise of round-trip serialization of the original value.
 
-### Integer conversions
+### Integer conversions {#sec-bios-string-integer-conversions}
 
 `%d` and `%i` take the first `math.modf` result. Finite fractions truncate toward zero, and a negative integer is formatted using its positive magnitude and a separate minus sign. These conversions do not impose a 32-bit word limit.
 
@@ -514,7 +504,7 @@ For `#` octal, empty digits are restored to one `0`; otherwise a leading `0` is 
 
 A signed NaN magnitude produces no initial digits; sign flags, precision and width can still add text. Non-Number arguments reach signed integer formatting as Number NaN. Unsigned conversion maps both that result and Number NaN or either infinity to zero. Either infinity in signed integer conversion produces a positive-infinite magnitude; repeated base division then fails to make progress toward completion.
 
-### Floating conversions
+### Floating conversions {#sec-bios-string-floating-conversions}
 
 `f`/`F` select fixed construction, `e`/`E` scientific construction, and `g`/`G` general construction. They do not validate the original argument as a Number or parse numeric Strings.
 
@@ -522,7 +512,6 @@ A Number NaN is handled before construction as `nan` or `NAN`; either infinity i
 
 Non-Number arguments do not match the initial Number-special cases. Comparisons with the numeric constants are false, and subsequent arithmetic produces Number NaN. The selected construction below therefore proceeds with NaN arithmetic and text pieces; this is not the initial `nan`/`NAN` shortcut or a formatter-specific argument error.
 
-<section class="keep-together">
 
 **Fixed construction (`f`, `F`).** Precision defaults to six; explicit zero is retained. For magnitude `v` and precision `p`, construct `scale` by starting at one and multiplying by ten `p` times, then calculate:
 
@@ -532,7 +521,6 @@ whole    = rounded // scale
 fraction = rounded % scale
 ```
 
-</section>
 
 Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tostring(fraction)`, padding that fraction text on the left with zeros to at least `p` codepoints. At precision zero, append a dot only for `#`.
 
@@ -546,7 +534,7 @@ Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from th
 
 For finite Numbers, default text conversion writes positive zero as `0`, preserves a received negative zero as `-0`, and writes nonzero integral magnitudes below 1,000,000 exactly. Other finite-number text uses a six-significant-digit general algorithm: normalize, scale by 100,000, round with ties to even, adjust a six-digit carry, then choose fixed notation only for a post-rounding exponent from −4 through 5. Otherwise it uses lowercase `e`, an explicit sign and at least two exponent digits. Fractional trailing zeros are removed. This text algorithm is distinct from the formatter's multiply-plus-half rounding. Consequently, requested floating precision does not guarantee that all whole/fraction pieces are plain fixed decimal digits, or that every requested decimal digit is accurate.
 
-### Errors, completed work and limits
+### Errors, completed work and limits {#sec-bios-string-errors-completed-work-and-limits}
 
 With the installed `error`, an incomplete conversion raises the String:
 
@@ -556,13 +544,11 @@ string.format incomplete format specifier.
 
 This includes a final bare `%`, a final dot, and a conversion that ends after its flags, fields or ignored modifiers. An unsupported conversion raises `string.format unsupported format specifier '%C'.`, where `C` is replaced by that actual codepoint, not restricted to ASCII.
 
-<section class="keep-together">
 
 The formatter processes conversions in order. An error can occur after
 earlier argument selections or conversions; the call returns no partial
 String or count. Length and codepoint errors retain their ordinary texts.
 
-</section>
 
 The formatter keeps its original character, substring, repetition,
 concatenation and truncation functions. Its `tostring`, `select` and `error`
@@ -577,17 +563,15 @@ positive-infinite width can prevent repetition from completing. String
 codepoint access is sequential, so repeated selections at distant positions
 also repeat the intervening traversal.
 
-## Pattern language
+## Pattern language {#sec-bios-string-pattern-language}
 
 Patterns examine String codepoints, not UTF-8 bytes or grapheme clusters. Positions are codepoint positions. Character classes are ASCII classes; they do not expand to Unicode categories or locale-dependent character groups.
 
 A pattern is interpreted as matching reaches it. There is no separate whole-pattern validation pass. An empty remaining pattern succeeds without consuming input.
 
-<a id="complete-program-patterns-and-substitutions"></a>
 
-<div class="keep-together">
 
-### Example: patterns and substitutions
+### Example: patterns and substitutions {#sec-bios-string-example-patterns-and-substitutions}
 
 Capture a record's text fields, then convert the numeric fields explicitly:
 
@@ -605,7 +589,6 @@ local text, count = string.gsub('red blue', '(%a+)', '[%1]')
 -- text is '[red] [blue]'; count is 2.
 ```
 
-</div>
 
 The following worked values distinguish matching and replacement choices:
 
@@ -635,11 +618,10 @@ end)
 -- changed is 'red B'; count is 2. Only the first return value is used.
 ```
 
-### Single-codepoint atoms and escapes
+### Single-codepoint atoms and escapes {#sec-bios-string-single-codepoint-atoms-and-escapes}
 
 An ordinary character matches the same codepoint. A dot, `.`, matches any available codepoint, including a newline. An escaped punctuation character matches that punctuation literally: for example, `%.` denotes a literal dot.
 
-<div class="keep-together">
 
 The named classes are:
 
@@ -657,7 +639,6 @@ The named classes are:
 | `%x` | `0`–`9`, `A`–`F`, and `a`–`f` |
 | `%z` | Codepoint 0 |
 
-</div>
 
 Every uppercase ASCII letter following `%` complements the match for its lowercase letter. This rule is not restricted to the named classes: `%D` matches a non-digit, while `%Q` matches anything except lowercase `q`. An otherwise unrecognised nonuppercase escape matches its token literally; `%q` matches `q`, and `%0` matches `0`. Outside bracket sets, `%b`, `%f`, and `%1` through `%9` instead introduce the special constructs described below.
 
@@ -665,7 +646,7 @@ The character `|` does not introduce alternation. Braces do not introduce counte
 
 The ordinary single-character check rejects positions beyond the source length, but does not itself reject positions below 1. A search begun sufficiently far below the first codepoint therefore follows below-range codepoint reads and String substring indexing; it does not acquire an implied lower clamp or a guarantee of ordinary 1-based matching boundaries.
 
-### Bracket sets
+### Bracket sets {#sec-bios-string-bracket-sets}
 
 A bracket set, `[...]`, is an ordinary one-codepoint atom. A `^` immediately after `[` negates membership. The set scanner skips `%` and its following position, and the first other `]` closes the set. An unescaped `]` closes it even when it would be the first member. Write `%]` to include a literal closing bracket.
 
@@ -679,7 +660,7 @@ An unescaped `[` encountered while set membership is traversed is itself passed 
 
 An empty positive set matches nothing. An empty negated set matches any available source codepoint. A reached `[` without an unescaped closing `]` raises `invalid string pattern`.
 
-### Anchors and search order
+### Anchors and search order {#sec-bios-string-anchors-and-search-order}
 
 Only a `^` at the first pattern position is an anchor. It is removed before matching and restricts the search to its supplied starting position. It does not independently assert the absolute beginning of the String. In repeated matching or substitution, it restricts each search to that operation's current search position. A `^` elsewhere is literal, except for set negation immediately after `[`.
 
@@ -687,7 +668,7 @@ Only a `$` at the final pattern position is an end anchor. It succeeds exactly w
 
 Without a leading `^`, candidate starts are tried in increasing order, through the position one past the source end. The first successful candidate wins. Capture bookkeeping starts afresh for each candidate. The search does not silently switch to literal searching merely because a pattern looks literal.
 
-### Greedy and minimal repetition
+### Greedy and minimal repetition {#sec-bios-string-greedy-and-minimal-repetition}
 
 Repetition applies to ordinary single-codepoint atoms, including bracket sets and ordinary escaped classes.
 
@@ -702,13 +683,13 @@ These choices depend on whether the rest of the pattern succeeds. Greedy matchin
 
 Capture delimiters, balanced matching, frontier matching, and backreferences take their own matching branches before repetition suffixes are considered. They cannot be repeated as groups or special constructs. A following `*`, `+`, `?`, or `-` is processed separately as an ordinary atom, not as repetition of that preceding construct. There is no alternation or counted-repeat construct.
 
-### Captures and backreferences
+### Captures and backreferences {#sec-bios-string-captures-and-backreferences}
 
 An opening `(` records the current source position. A closing `)` searches backwards for the most recent capture entry whose finish is still unset and records its finish at the current position. A text capture is extracted from its recorded start through one codepoint before its finish. Capture entries are created in opening order.
 
 The form `()` is different: it records the numeric current position without consuming text. It is a position capture, not an empty text capture.
 
-**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's maintained Table lengths](cpu.md#stored-length). Returned sequences also follow the ordinary caller's result adjustment.
+**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length). Returned sequences also follow the ordinary caller's result adjustment.
 
 Outside sets, `%1` through `%9` refer to a previously recorded, finished text capture. A backreference compares that capture's codepoints at the current source position and, on success, advances by the captured length. A missing capture, an unfinished capture, or a position capture raises `invalid string pattern capture` when that reference is reached.
 
@@ -718,7 +699,7 @@ A reached `)` raises `invalid string pattern` if the backwards search finds no e
 
 Reaching the pattern end does not check for unfinished opening captures. If such a capture is later extracted, extraction computes its finish minus one even though the finish is unset. There is no dedicated unclosed-capture error at pattern end.
 
-### Balanced regions
+### Balanced regions {#sec-bios-string-balanced-regions}
 
 The form `%bxy` requires the current source codepoint to be `x`. It scans forwards with an iterative depth counter, increasing depth for nested `x` and decreasing it for `y`. When a closing `y` reduces depth to zero, matching continues just after that closing codepoint and after the four-codepoint `%bxy` construct in the pattern. A different starting codepoint, or failure to find a closing delimiter, makes this match fail.
 
@@ -726,15 +707,14 @@ The closing-delimiter comparison is performed before the opening-delimiter compa
 
 There is no dedicated preliminary check that both delimiter positions exist. An incomplete `%b` construct proceeds through two String delimiter reads and then the balance scan.
 
-### Frontiers
+### Frontiers {#sec-bios-string-frontiers}
 
 The form `%f[set]` is zero-width. It requires the preceding codepoint not to belong to the set and the current codepoint to belong to it. The preceding value is codepoint 0 when the current position is at most 1; otherwise it is read from the preceding String position. The current value is read from the String when the position is at most the source length; otherwise it is codepoint 0. The read applies the signed-32 position conversion of `string.byte`. A converted position below 1 returns `nil`, not codepoint 0. These values take part in the ordinary set-membership test.
 
 The `[` must immediately follow `%f`; otherwise a reached frontier construct raises `invalid string pattern`. Its set uses the same scanner, membership rules, and missing-closing-bracket error as an ordinary bracket set. A successful frontier consumes no source codepoint.
 
-### Reached errors and incomplete forms
+### Reached errors and incomplete forms {#sec-bios-string-reached-errors-and-incomplete-forms}
 
-<div class="keep-together">
 
 Pattern syntax has these explicit error conditions:
 
@@ -745,7 +725,6 @@ Pattern syntax has these explicit error conditions:
 | `)` finds no capture entry with an unset finish | `invalid string pattern` |
 | `%1`–`%9` names a missing, unfinished, or position capture | `invalid string pattern capture` |
 
-</div>
 
 These error Strings are passed to the current global `error` function. String, Table and arithmetic operations retain their own errors.
 
@@ -755,21 +734,21 @@ Some operations can avoid the matcher altogether: `find` can return at its initi
 
 A terminal `%` has no dedicated rejection. Special-escape dispatch first reads a missing token; the ordinary item scan then advances by two pattern positions. If single-codepoint matching is reached, a source position greater than the String length fails before class matching; otherwise class matching receives the missing escape token. Numeric comparisons reached with that missing token are false. Incomplete balanced constructs, unfinished captures and odd capture closures follow their respective operations above rather than a separate syntax-validation pass.
 
-## Pattern searches and substitutions
+## Pattern searches and substitutions {#sec-bios-string-pattern-searches-and-substitutions}
 
 Pattern calls return positions, captured substrings or replacement text as
 specified below. Capture and result sequences use ordinary Table lengths and
-ordinary call-result adjustment. The [CPU reference](cpu.md#stored-length)
+ordinary call-result adjustment. The [CPU reference](cpu.md#sec-cpu-stored-length)
 defines those rules. Matching and substitution also allocate temporary
 language objects; budget for them when processing large text.
 
-### `string.find`
+### `string.find` {#sec-bios-string-stringfind}
 
 ```text
 string.find(source, pattern [, start [, plain]])
 ```
 
-Searches `source` and constructs the start and inclusive end positions of the first match. Positions count String codepoints, beginning at 1; they are neither UTF-8 byte offsets nor grapheme-cluster positions. See [Pattern language](#pattern-language) for pattern syntax, capture ordering and position captures.
+Searches `source` and constructs the start and inclusive end positions of the first match. Positions count String codepoints, beginning at 1; they are neither UTF-8 byte offsets nor grapheme-cluster positions. See [Pattern language](#sec-bios-string-pattern-language) for pattern syntax, capture ordering and position captures.
 
 **Arguments and starting position.** Omitted or nil `start` means 1. Otherwise the function computes `start // 1`: a positive result is used directly, a negative result becomes `#source + result + 1`, and zero becomes 1. A result still below 1 is not clamped. Do not rely on such a start producing ordinary in-range match boundaries. This arithmetic does not parse numeric Strings; a nonnil non-Number makes both sign comparisons false and therefore normalizes to 1.
 
@@ -784,7 +763,7 @@ Missing fixed parameters are nil and surplus arguments are ignored. Any
 failure is reported by the length, character, substring or other operation
 reached; the pattern interface does not coerce supplied values into text.
 
-Patterns are interpreted as matching reaches them, not validated in a separate pass. Reached syntax errors explicitly raise `invalid string pattern` for an unterminated bracket set, `%f` without its immediately following `[`, or a closing capture with no unfinished capture to close. A reached backreference to a missing, unfinished or position capture raises `invalid string pattern capture`. A terminal `%`, incomplete `%b` delimiters and unfinished opening captures do not have dedicated validation errors; they follow the corresponding operations. See [Pattern language](#pattern-language) for the corresponding parsing rules.
+Patterns are interpreted as matching reaches them, not validated in a separate pass. Reached syntax errors explicitly raise `invalid string pattern` for an unterminated bracket set, `%f` without its immediately following `[`, or a closing capture with no unfinished capture to close. A reached backreference to a missing, unfinished or position capture raises `invalid string pattern capture`. A terminal `%`, incomplete `%b` delimiters and unfinished opening captures do not have dedicated validation errors; they follow the corresponding operations. See [Pattern language](#sec-bios-string-pattern-language) for the corresponding parsing rules.
 
 Pattern operations save their installation-time `byte`, `sub`, `concat`,
 `unpack`, `tonumber`, `tostring` and `type` functions. Their explicit errors
@@ -793,13 +772,13 @@ saved reference unchanged, while any globals used by that helper remain live.
 
 Pattern search can backtrack and try multiple candidate positions. Codepoint reads scan from the beginning rather than providing constant-time random access. Pattern size, nesting and input therefore affect work; there is no pattern-local work-step or recursion-depth limit.
 
-### `string.match`
+### `string.match` {#sec-bios-string-stringmatch}
 
 ```text
 string.match(source, pattern [, start])
 ```
 
-Searches for the first pattern match, using the codepoint positions, start normalization, binding dependencies and reached-error rules described under `string.find`. See [Pattern language](#pattern-language) for pattern syntax.
+Searches for the first pattern match, using the codepoint positions, start normalization, binding dependencies and reached-error rules described under `string.find`. See [Pattern language](#sec-bios-string-pattern-language) for pattern syntax.
 
 The default start is 1. A nonnil start is processed with `// 1`, negative positions are relative to the end, zero becomes 1, and an excessively negative result is not clamped. Unlike `find`, `match` does not first reject a start greater than `#source`; its search considers candidates from the supplied start through `#source + 1`. A leading `^` restricts it to the supplied start.
 
@@ -807,9 +786,8 @@ Failure returns one nil. On success, `match` builds a result sequence containing
 
 There is no plain-search argument. Surplus arguments are ignored, rather than selecting a different search mode.
 
-<div class="keep-together">
 
-### `string.gmatch`
+### `string.gmatch` {#sec-bios-string-stringgmatch}
 
 ```text
 string.gmatch(source, pattern)
@@ -817,23 +795,22 @@ string.gmatch(source, pattern)
 
 Returns one iterator function. The outer call captures `source` and `pattern` and initializes its search position to 1; it does not inspect either input or parse the pattern before returning. It does not return separate state and control values. Surplus outer-call arguments are ignored.
 
-</div>
 
 Call the returned function with no arguments; any supplied arguments are ignored. Each call searches from its current codepoint position. Success constructs and expands the same result sequence as `string.match`: the whole match when there are no captures, otherwise capture values in opening order. Failure returns one nil.
 
 After a nonempty match, the next search starts at the match's exclusive end. After an empty match, it starts one position beyond that exclusive end. The search position changes before capture extraction and return-value construction, so an error during those operations can occur after the iterator has advanced. A failed search leaves the position unchanged; there is no latched finished state, and another call repeats that failed search.
 
-A leading `^` applies at each current search position, not just at the absolute beginning of `source`. The iterator does not search for overlapping nonempty matches inside a span it has already consumed. See [Pattern language](#pattern-language) for the matching rules and `string.find` for shared bindings and reached errors; those errors are deferred until an iterator call reaches the relevant operation.
+A leading `^` applies at each current search position, not just at the absolute beginning of `source`. The iterator does not search for overlapping nonempty matches inside a span it has already consumed. See [Pattern language](#sec-bios-string-pattern-language) for the matching rules and `string.find` for shared bindings and reached errors; those errors are deferred until an iterator call reaches the relevant operation.
 
 One iterator call performs one complete search, which can examine all remaining candidate positions and backtrack.
 
-### `string.gsub`
+### `string.gsub` {#sec-bios-string-stringgsub}
 
 ```text
 string.gsub(source, pattern, replacement [, limit])
 ```
 
-Builds a substituted String and returns it together with the substitution count. Positions and substring boundaries are codepoint-based. See [Pattern language](#pattern-language) for pattern syntax and `string.find` for shared binding dependencies and reached pattern errors.
+Builds a substituted String and returns it together with the substitution count. Positions and substring boundaries are codepoint-based. See [Pattern language](#sec-bios-string-pattern-language) for pattern syntax and `string.find` for shared binding dependencies and reached pattern errors.
 
 **Limit and count.** Omitted or nil `limit` means `#source + 1`. Otherwise the function computes `limit // 1` and replaces a negative result with 0. A zero limit skips matching and replacement entirely, assembles the unchanged source tail, and returns that String with count 0. A nonnil non-Number limit does not parse as a numeric String or raise a `gsub`-specific integer error: its arithmetic result fails the loop comparison, so the replacement loop is likewise skipped.
 
@@ -855,7 +832,7 @@ After substitution stops, the remaining source tail is appended and the output p
 
 A replacement function can have observable effects before a later match or operation fails. Those effects are not rolled back. If a reached operation raises an error, `gsub` does not return a partial output or count. Its private count advances only after replacement evaluation returns. The substitution limit does not bound output size or matching work.
 
-## Floating-point word decoder
+## Floating-point word decoder {#sec-bios-string-floating-point-word-decoder}
 
 The named BIOS import `string/float/decode` binds a static call target,
 not a runtime library Table or a first-class function value:
@@ -878,12 +855,11 @@ Pass the raw unsigned words after reading them in the record's byte order:
 Exactly `byte_count == 4` selects the four-byte form; every other value selects
 the eight-byte calculation. There are no separate word-range or argument-type
 checks. Both forms use the field extraction and Number arithmetic under
-[Decoding](#decoding), without reading a String or mapped memory. Surplus
+[Decoding](#sec-bios-string-decoding), without reading a String or mapped memory. Surplus
 arguments are ignored. This import does not supply a separate public encoder.
 
-<div class="keep-together">
 
-## String packet packing
+## String packet packing {#sec-bios-string-string-packet-packing}
 
 `string.pack`, `string.packsize`, and `string.unpack` construct and read formatted packets held in a BLua String. The format determines field widths, signedness, byte order, and padding.
 
@@ -893,14 +869,13 @@ size = string.packsize(format)
 v1, v2, ..., next_pos = string.unpack(format, packet [, pos])
 ```
 
-</div>
 
 - `pack` returns one String. Each integer, floating-point, or text field consumes one argument, including a zero-width `c0` field. Controls and padding consume none. Extra arguments are ignored.
 - `packsize` returns one Number: the size of a fixed-size format, including its padding. A format containing `z` or `s` is variable-length and causes an error.
 - `unpack` returns one value for each integer, floating-point, or text field, followed by the next one-based source position. Controls and padding produce no values. An empty or control-only format normally returns only that position.
 
 **Shared Table dependency.** Temporary packet pieces and unpacked-result
-collections use the [CPU's maintained Table lengths](cpu.md#stored-length),
+collections use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length),
 including when every supplied format and operand is a String. Accepted Table
 operands are retained in the argument-category account below. Ordinary caller
 result adjustment still applies.
@@ -916,7 +891,7 @@ local kind, tag, next_pos = string.unpack(format, packet)
 
 The packet contains codepoints 1, 2, 66, 77, 83, 88. Its size is 6; unpacking returns 513, 'BMSX', then next position 7.
 
-### Packet units are String codepoints
+### Packet units are String codepoints {#sec-bios-string-packet-units-are-string-codepoints}
 
 BLua String lengths and positions count Unicode codepoints, not UTF-8 bytes. This also applies to packing formats and packets. In this section, a **packet unit** means one String codepoint.
 
@@ -928,11 +903,9 @@ For example, `string.pack("c1", string.char(256))` copies codepoint 256 into one
 
 The returned packet is a String value. Packing does not allocate mapped storage or copy packet units to a byte address.
 
-<a id="complete-program-a-packed-record"></a>
 
-<div class="keep-together">
 
-### Example: a packed record
+### Example: a packed record {#sec-bios-string-example-a-packed-record}
 
 The format below combines a fixed header, a length-prefixed payload and a
 zero-terminated status. Maximum alignment 4 places the eight-unit `d` field at
@@ -952,7 +925,6 @@ local decoded_payload, status, after_record =
     string.unpack('s1 z', record, next_pos)
 ```
 
-</div>
 
 The header returns `1`, `4660`, `-300`, `1.25`, `-2.5`, `'POS'`, then next
 position 24. The second call returns the three-codepoint payload, `'ready'`,
@@ -972,13 +944,12 @@ then position 34. These are one-based continuation positions, not lengths.
 | 24–26 | Payload | 65, 0, 66 |
 | 27–32 | `z` status | 114, 101, 97, 100, 121, 0: `ready` and terminator |
 
-### Formats
+### Formats {#sec-bios-string-formats}
 
 Each call begins in little-endian order with maximum alignment 8. `pack` and `packsize` start at zero-based offset 0. `unpack` begins at the source offset selected by `pos`.
 
 Only the following whitespace is ignored between format tokens: space and codepoints 9–13. A numeric suffix consists of consecutive ASCII decimal digits. There is no sign, decimal point, separator, or internal whitespace in a suffix. The suffix reader has no general digit-count or numeric upper bound; the individual options below impose their own restrictions.
 
-<section class="keep-together">
 
 In the tables, `A` is the current maximum alignment, and all widths and alignments count packet units. Defaults are fixed, not inferred from a machine word size.
 
@@ -1004,7 +975,6 @@ In the tables, `A` is the current maximum alignment, and all widths and alignmen
 | `x` | Padding | 1 | No additional alignment | 0 / 0 |
 | `X` | Align for a following field | Padding only; see below | Determined by lookahead | 0 / 0 |
 
-</section>
 
 `[N]` marks an optional suffix in this table; the square brackets are not format characters. The `f`, `d`, `n`, and `z` options do not read a width suffix. `cN` has no parser-imposed maximum width.
 
@@ -1017,7 +987,7 @@ In the tables, `A` is the current maximum alignment, and all widths and alignmen
 
 Controls consume neither packet units nor arguments and return no data values. Every other option is unsupported. Parsing and field processing are interleaved; there is no separate up-front format-validation pass.
 
-#### Alignment and padding
+#### Alignment and padding {#sec-bios-string-alignment-and-padding}
 
 Before an aligned field, padding is calculated from the current zero-based offset:
 
@@ -1040,7 +1010,7 @@ Offsets include all earlier fields and padding. In `unpack`, alignment uses the 
 
 For example, `string.packsize("!1bT")` is 8, and `string.packsize("bXc3")` is 6. A trailing `X` adds no padding.
 
-### Integer fields
+### Integer fields {#sec-bios-string-integer-fields}
 
 Integer fields use ordinary BLua Numbers, not a separate exact 64-bit integer type.
 
@@ -1067,11 +1037,11 @@ On reading, digits are accumulated as an unsigned Number in the selected order. 
 
 Thus an ordinary octet-valued seven- or eight-unit representation with its sign bit set is rejected before it can become a negative result: its unsigned value is at least `2^55` or `2^63`, respectively. For example, eight codepoints of value 255 read with `j` reach the safe-integer error rather than returning −1. Packing −1 with `j` is likewise not a promise of an exact all-255 representation: it first performs the Number addition `-1 + 2^64`.
 
-### Text fields
+### Text fields {#sec-bios-string-text-fields}
 
 Text widths and lengths are codepoint counts. Embedded zero codepoints are ordinary String content except where `z` explicitly forbids or terminates them.
 
-#### `cN`: fixed width
+#### `cN`: fixed width {#sec-bios-string-cn-fixed-width}
 
 `pack` copies the first `N` codepoints. It truncates longer input without error and pads shorter input with zero codepoints. There is no automatic field alignment.
 
@@ -1079,13 +1049,13 @@ Text widths and lengths are codepoint counts. Embedded zero codepoints are ordin
 
 `unpack` returns exactly the selected `N`-unit substring, including zero codepoints, then advances by `N`. On a String source, `c0` returns an empty String.
 
-#### `z`: zero terminated
+#### `z`: zero terminated {#sec-bios-string-z-zero-terminated}
 
 `pack` scans the complete input. A zero codepoint anywhere in it causes `string.pack z strings must not contain zero bytes.` Otherwise it copies the content and appends one zero terminator. The error says “bytes”; the scan itself compares codepoints to zero.
 
 `unpack` searches for the first zero codepoint, returns the preceding content, and advances past the terminator. If no terminator is found within the source, it reports the zero-terminated-string error.
 
-#### `s[N]`: length prefixed
+#### `s[N]`: length prefixed {#sec-bios-string-sn-length-prefixed}
 
 `pack` aligns the prefix, writes the content's codepoint count as an unsigned integer of the selected prefix width, then copies the entire content. The prefix uses the current endian order and the integer packing checks. Zero codepoints in the content are permitted.
 
@@ -1093,13 +1063,13 @@ Text widths and lengths are codepoint counts. Embedded zero codepoints are ordin
 
 `packsize` rejects both `z` and `s` immediately when it reaches them, regardless of any intended content.
 
-### Floating-point fields
+### Floating-point fields {#sec-bios-string-floating-point-fields}
 
 `f` uses a four-unit field; `d` and `n` use eight-unit fields. These are specific Number-to-field transformations. Use the transformations below, including their rounding and subnormal rules, when constructing an interchange record.
 
 The following equations specify the transformations, including their subnormal branch. `//` denotes BLua floor division.
 
-#### Encoding
+#### Encoding {#sec-bios-string-encoding}
 
 Pass a Number. `f` encodes IEEE 754 binary32; `d` and `n` encode IEEE 754
 binary64. Finite values are rounded to the nearest representable value, with
@@ -1140,11 +1110,10 @@ The encoding operation does not parse numeric Strings or perform the integer
 field's argument checks. Supply Number values rather than using packing as a
 general value conversion.
 
-#### Decoding
+#### Decoding {#sec-bios-string-decoding}
 
 `f` reads one four-unit word as `high` and supplies `low = 0`. `d` and `n` read the two four-unit words in the inverse order of encoding.
 
-<section class="keep-together">
 
 The sign multiplier is −1 when `high >= 2^31`, otherwise 1. Extract the fields as follows:
 
@@ -1158,9 +1127,7 @@ d, n:
     m = (high % 2^20) * 2^32 + low
 ```
 
-</section>
 
-<div class="keep-together">
 
 Using that field's `B`, `S`, and `emax`:
 
@@ -1171,11 +1138,10 @@ e == 0:               sign * (m / S) * 2^(1 - B)
 otherwise:            sign * (1 + m / S) * 2^(e - B)
 ```
 
-</div>
 
 Source digits are not validated as octets. NaN payloads are reduced to a Number NaN by the arithmetic above.
 
-### Unpack positions, bounds, and results
+### Unpack positions, bounds, and results {#sec-bios-string-unpack-positions-bounds-and-results}
 
 `pos` defaults to 1 when absent or nil. Otherwise `pos // 1` supplies the starting position; the zero-based offset is that result minus 1. Fractional finite Numbers therefore round down here. Negative positions are **not** relative to the source's end.
 
@@ -1194,9 +1160,8 @@ local first, next_pos = string.unpack("<I2", packet)
 local tag, after_tag = string.unpack("c4", packet, next_pos)
 ```
 
-<section class="keep-together">
 
-### Argument categories and library dependencies
+### Argument categories and library dependencies {#sec-bios-string-argument-categories-and-library-dependencies}
 
 Use Strings for formats, text fields and input records. Length and
 substring operations still obey their general language rules: `#` accepts
@@ -1209,7 +1174,6 @@ result, these edge cases follow the operations selected by the format:
 - A substring covering an operand's entire span can return the original Table. Later concatenation then uses the current global `tostring` for it rather than necessarily producing an early String-category error.
 - A Table source can pass through control/padding-only unpacking without byte access. A full-span `cN` substring can likewise return the Table itself.
 
-</section>
 
 These branches use the CPU's maintained-length rule.
 
@@ -1220,9 +1184,8 @@ continues to use any current globals required by that helper, including
 `tostring` during singleton concatenation. Successful unpacking always
 includes the next-position result, even for a format with no data fields.
 
-<section class="keep-together">
 
-### Errors
+### Errors {#sec-bios-string-errors}
 
 The packing module directly reports the following messages, with the capitalization and punctuation shown. The shared format parser also uses `string.pack`-prefixed messages during `packsize` and `unpack`.
 
@@ -1243,13 +1206,12 @@ The packing module directly reports the following messages, with the capitalizat
 | Required fixed or prefixed span does not fit | `string.unpack string is too short.` |
 | No zero terminator found for `z` | `string.unpack zero-terminated string not found.` |
 
-</section>
 
 Length, character and substring failures retain their ordinary errors.
 Formats are processed alongside their fields, including `X` lookahead, so a
 later error can follow earlier reads, conversions and argument selections.
 
-### Work and interface boundaries
+### Work and interface boundaries {#sec-bios-string-work-and-interface-boundaries}
 
 Packet size and field kind determine the processing and temporary
 language storage required. Character access scans from the String's

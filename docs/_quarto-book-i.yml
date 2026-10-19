@@ -1,0 +1,20 @@
+project:
+  output-dir: _book-i
+
+book:
+  title: "Book I — System and Hardware Reference"
+  output-file: bmsx-book-i
+  chapters:
+    - index.md
+    - book1/console.md
+    - book1/memory.md
+    - book1/pcrtc.md
+    - book1/gte.md
+    - book1/gpu.md
+    - book1/irq.md
+    - book1/dma.md
+    - book1/apu.md
+    - book1/geo.md
+    - book1/imgdec.md
+    - book1/input.md
+    - book1/system.md

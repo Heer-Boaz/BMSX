@@ -1,6 +1,6 @@
 # APU download: requested words and surplus prefetch
 
-The [manual lesson](../../docs/book1/apu.md#apu-download-budget) prints the
+The [manual lesson](../../docs/book1/apu.md#sec-apu-worked-download-requested-data-and-surplus-prefetch) prints the
 complete 74-line BLua source and manifest. One manual-write setup supplies40
 known raw words. DMA0 then receives20 words and four words from sample offset
 40H, preserving the overlapping source after STOP. No voice is started.

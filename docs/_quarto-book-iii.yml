@@ -1,0 +1,9 @@
+project:
+  output-dir: _book-iii
+
+book:
+  title: "Book III — Cartridge and Expansion Reference"
+  output-file: bmsx-book-iii
+  chapters:
+    - index.md
+    - book3/cartridge.md

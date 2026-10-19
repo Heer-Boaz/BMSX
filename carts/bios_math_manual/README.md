@@ -5,7 +5,7 @@ There is no cartridge math replacement, guessed address or local ABI helper.
 The program uses `//1` explicitly: cartridge policy forbids math.floor.
 It calls the other 24 Math routines and reads all four constant fields.
 
-The [complete manual program](../../docs/book1/bios-math.md#complete-program-math-operations)
+The [complete manual program](../../docs/book1/bios-math.md#sec-bios-math-programming-examples)
 prints every source line. Save the storage listing as `results.lua` and join
 entry parts 1–5 in order as `entry.lua`; do not create five entry modules.
 The [development companion](../../docs/programming/getting-started.md#build-and-inspect-math-operations)

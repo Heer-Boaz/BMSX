@@ -1,10 +1,10 @@
-# BIOS table library
+# BIOS table library {#sec-bios-table}
 
 Use the BIOS `table` functions to keep argument tuples, edit sequences,
 join values into text and sort a numeric-keyed range. The six functions operate
 on ordinary Tables. Their sequence positions begin at key 1.
 
-[Typed arrays](blua-programs.md#typed-storage-layouts-and-address-views) provide
+[Typed arrays](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views) provide
 the separate byte-addressed representation used for memory buffers and device
 transfers. Choose that representation when fixed element widths, contiguous
 bytes or a device address are required.
@@ -21,17 +21,17 @@ bytes or a device address are required.
 
 These result counts are part of the interface. An ordinary bare return or
 fallthrough produces one nil; that is not the zero-result tuple returned by an
-empty `unpack` interval. [BIOS base services](bios-base.md) explains `select` and result
-adjustment. [Protected calls and coroutines](coroutines.md) explains interception of an
+empty `unpack` interval. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
+adjustment. [Protected calls and coroutines](coroutines.md#sec-coroutines) explains interception of an
 error value, including nil, without undoing earlier writes.
 
 `table.pack` creates a Table containing the supplied values, not deep copies
 of them. A packed Table, closure or Thread remains the same referenced value.
 Tables and their retained values use the shared
-[language allocation budget](cpu.md#language-allocation-and-lifetime);
+[language allocation budget](cpu.md#sec-cpu-language-allocation-and-lifetime);
 they do not reserve a mapped byte buffer suitable for a device transfer.
 
-## Tables, lengths and visible effects
+## Tables, lengths and visible effects {#sec-bios-table-tables-lengths-and-visible-effects}
 
 Sequence keys start at one. Zero and negative numeric keys remain ordinary
 Table keys; the insertion and removal routines do not convert them into
@@ -41,7 +41,7 @@ positions counted from the end. The relative-endpoint rule belongs only to
 In the following procedures, **L** means the Table's maintained length,
 `#target`, captured by that call. It is not the number of all mappings, the
 greatest numeric key, a count of metatable-supplied entries, or a tuple's `n`
-field. [CPU — Stored length](cpu.md#stored-length) defines the maintained length
+field. [CPU — Stored length](cpu.md#sec-cpu-stored-length) defines the maintained length
 and Table operations. A count stored by the cartridge is a separate value;
 use the explicit `pack`/`unpack` recipe when nil positions must be preserved.
 
@@ -67,11 +67,11 @@ ordinary mutable bindings, not permanently reserved operations.
 
 The functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
-function call is not a single constant-cycle hardware operation. The [CPU reference](cpu.md) supplies instruction charges.
+function call is not a single constant-cycle hardware operation. The [CPU reference](cpu.md#sec-cpu) supplies instruction charges.
 
-## Packing and reading table ranges
+## Packing and reading table ranges {#sec-bios-table-packing-and-reading-table-ranges}
 
-### `table.pack`
+### `table.pack` {#sec-bios-table-tablepack}
 
 ```text
 table.pack(...) -> packed
@@ -90,7 +90,7 @@ The `n` field is an ordinary, mutable String-keyed field, not a special length p
 
 Packing uses the current global `select`, rather than a captured copy. The argument-count behavior described here assumes the installed `select`.
 
-### Selecting a range
+### Selecting a range {#sec-bios-table-selecting-a-range}
 
 `table.unpack` and `table.concat` read `#target` at the start of every call, even when both bounds are explicit. The resulting value is `L`. An omitted or explicitly `nil` start bound means 1; an omitted or explicitly `nil` end bound means `L`. Neither function discovers a packed Table's `n` field.
 
@@ -102,7 +102,6 @@ For each explicit, non-`nil` bound, first compute `q = bound // 1`. This is floo
 | Negative | `L + q + 1` | `L + q + 1` |
 | Zero or NaN | `1` | `L` |
 
-<section class="keep-together">
 
 For example, when `L` is 4:
 
@@ -112,13 +111,12 @@ For example, when `L` is 4:
 | `0, 0` | `1, 4` |
 | `1.9, 2.9` | `1, 2` |
 
-</section>
 
 A non-`nil`, nonnumber bound, including a numeric-looking String, produces NaN in the floor division; it is not parsed as a number. NaN is neither positive nor negative, so it normalizes like zero: to 1 for a start bound or `L` for an end bound. There is no table-library argument error for this case.
 
 Bounds are not clamped to the default interval. The selected interval is inclusive and is empty when the normalized end precedes the normalized start. No finite-value or range-size cap is applied. Very large or infinite endpoints have no termination or resource-use guarantee.
 
-### `table.unpack`
+### `table.unpack` {#sec-bios-table-tableunpack}
 
 ```text
 table.unpack(target [, start [, end]]) -> ...
@@ -140,9 +138,8 @@ The reads use ordinary indexing. An explicit positive interval can therefore rea
 
 Unpacking uses a recursive call chain whose depth grows linearly with the number of selected positions, returning successively wider result lists. It has no result-count or recursion cap of its own. Empty-range handling calls the current global `select` with argument 1; its zero-result behavior assumes the installed `select`.
 
-<div class="keep-together">
 
-### `table.concat`
+### `table.concat` {#sec-bios-table-tableconcat}
 
 ```text
 table.concat(target [, separator [, start [, end]]]) -> text
@@ -150,7 +147,6 @@ table.concat(target [, separator [, start [, end]]]) -> text
 
 `table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value is converted with the current global `tostring`. Separators remain between adjacent positions even when one or both positions read as `nil`.
 
-</div>
 
 An omitted or explicitly `nil` separator is the empty String. Any other separator is converted with `tostring`, so the installed `tostring` accepts values other than Strings here as well. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
 
@@ -168,7 +164,7 @@ Strings as well as the result. Keep explicit endpoints in an integer range
 where adding and bisecting the bounds remains exact; extreme Number bounds
 can prevent the recursive interval from shrinking.
 
-## `table.insert`
+## `table.insert` {#sec-bios-table-tableinsert}
 
 | Call | Effect | Successful return |
 | --- | --- | --- |
@@ -187,7 +183,6 @@ For a positional insertion with a finite numeric position:
 
 The position is not checked or clamped. Zero and negative positions name those actual keys; they do not count backward from the end. If `p > L`, no keys are shifted and the only assignment is at `p`. A fractional position is rounded downward by `// 1`, so `5.9` selects key `5`.
 
-<div class="keep-together">
 
 For example, starting with the plain table `{10, 20}` and no key `0`:
 
@@ -198,9 +193,7 @@ table.insert(values, 0, 7)
 -- values[2] is 10; values[3] is 20.
 ```
 
-</div>
 
-<section class="keep-together">
 
 An insertion beyond the selected prefix leaves a gap rather than filling it:
 
@@ -211,11 +204,10 @@ table.insert(values, 5.9, 99)
 -- Keys 3 and 4 are absent.
 ```
 
-</section>
 
 Use the keys actually written when reasoning about these examples; insertion does not promise a universal resulting-length formula. Assigning `nil`, either directly or while shifting, deletes the destination mapping. `table.insert` does not update a field named `n` and does not return a length or the modified table.
 
-## `table.remove`
+## `table.remove` {#sec-bios-table-tableremove}
 
 | Call | Selected position | Successful return |
 | --- | --- | --- |
@@ -243,7 +235,7 @@ The default position is also used when `L` is zero. For a table whose length sna
 
 Throughout these functions, element reads are ordinary table reads, including a table-valued `__index` where applicable. Assignments write directly to the target and do not call `__newindex`. Copying a `nil` deletes the destination mapping. Removal leaves a field named `n` unchanged. If a later operation fails, earlier assignments remain in effect; these functions do not undo them.
 
-## `table.sort`
+## `table.sort` {#sec-bios-table-tablesort}
 
 | Call | Ordering | Successful return |
 | --- | --- | --- |
@@ -257,7 +249,7 @@ The sort begins by scanning from index `2` through `L`. At each index it asks wh
 
 For each partition from `first` through `last`, the quicksort retains `target[(first + last) // 2]` as its pivot and scans inward. Each swap saves the left value, writes the right value into the left key, then writes the saved value into the right key; the two writes are sequential, not atomic. Do not depend on the order of equal elements: this sort has no stability guarantee. Apart from the ordered-input scan described above, neither a particular comparison schedule nor a particular callback count is promised.
 
-### Choosing an ordering
+### Choosing an ordering {#sec-bios-table-choosing-an-ordering}
 
 With no comparator, ordinary `<` compares numbers numerically with numbers and strings lexically with strings. For other combinations it yields `false`; it does not raise a comparison error or convert strings to numbers. Do not use the default ordering to establish an order between numbers and strings, or between other categories of values.
 
@@ -281,25 +273,23 @@ end)
 -- The priorities at keys 1, 2, 3 are now 1, 2, 3.
 ```
 
-<section class="keep-together">
 
 The comparator must supply a consistent strict ordering: `compare(x, x)` must be falsey; if `compare(a, b)` is truthy, `compare(b, a)` must be falsey; and the ordering must be transitive. The sort does not validate these rules. An inconsistent comparator can make its scans pass outside the selected prefix, read `nil`, or fail to terminate.
 
-</section>
 
 Keep the target's entries and ordering unchanged inside the comparator.
 The sort retains its initial length and each current pivot across callback
 calls. A comparator error can be received through `pcall`, but swaps already
-performed remain visible. The [interrupted-sort example](#handle-an-interrupted-sort)
+performed remain visible. The [interrupted-sort example](#sec-bios-table-handle-an-interrupted-sort)
 shows how to distinguish that failure from successful completion.
 
-### Work performed
+### Work performed {#sec-bios-table-work-performed}
 
 These functions run ordinary instruction sequences; they are not fixed-cost services. Appending performs one assignment. When the unit-step loop completes normally, positional insertion performs `L - p + 1` shift assignments when `p <= L`, otherwise none, followed by the final assignment at `p`. When its unit-step loop completes normally, removal performs `L - p` shift assignments when `p <= L - 1`, otherwise none, followed by its one unconditional clear at `L`.
 
 For a consistent strict ordering, the sort's initial scan performs at most `L - 1` comparisons. Further work depends on the input and comparator. Do not budget a fixed cycle count or assume a general callback-count bound from these examples.
 
-## Errors and resource limits
+## Errors and resource limits {#sec-bios-table-errors-and-resource-limits}
 
 Table functions report the errors of the operations they execute. Check
 sequence positions and comparator behavior at the application boundary;
@@ -317,8 +307,8 @@ error handling receives a failure but leaves earlier Table changes visible.
 These errors occur when the corresponding operation is reached.
 Mixed-category ordering and non-Number arithmetic follow the CPU rules given
 above. A comparator can also raise any language value of its own.
-[Protected calls and coroutines](coroutines.md) defines the protected-call boundary;
-[System control and timing](system.md) defines hardware fault publication. Do not treat
+[Protected calls and coroutines](coroutines.md#sec-coroutines) defines the protected-call boundary;
+[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} defines hardware fault publication. Do not treat
 error interception as restoration of a modified Table.
 
 Choose finite, usable endpoints and a consistent comparator. `unpack`
@@ -326,9 +316,9 @@ expands a recursive result chain, `concat` creates intermediate Strings, and
 `pack` forwards its argument tuple while selecting each value. Budget for
 those language objects and calls as well as for the final Table or String.
 
-## Programming examples
+## Programming examples {#sec-bios-table-programming-examples}
 
-### Preserve the tuple count
+### Preserve the tuple count {#sec-bios-table-preserve-the-tuple-count}
 
 Use the `n` field created by `table.pack` as the explicit end when unpacking a
 tuple that may contain nil. Table length is not a substitute for this count.
@@ -342,7 +332,7 @@ local text = table.concat(packed, '|', 1, packed.n)
 -- packed.n and count are 4; text is '10||30|'.
 ```
 
-### Edit and read a sequence
+### Edit and read a sequence {#sec-bios-table-edit-and-read-a-sequence}
 
 The following sequence has consecutive numeric keys starting at one. Append,
 sort and the omitted range endpoints use its maintained length.
@@ -372,7 +362,7 @@ table.sort(sequence, function(left, right) return left > right end)
 local last = table.remove(sequence) -- 5.5; sequence is now 9, 8, 7.
 ```
 
-### Handle an interrupted sort
+### Handle an interrupted sort {#sec-bios-table-handle-an-interrupted-sort}
 
 An error does not undo earlier swaps. This example preserves the error object's
 identity and shows the partial arrangement for one input and error point. Other

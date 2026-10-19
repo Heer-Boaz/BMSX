@@ -1,4 +1,4 @@
-# Interrupt controller
+# Interrupt controller {#sec-irq}
 
 Interrupts let a cartridge service device completion and video events while
 the CPU performs other work or waits in HALT. The controller records each
@@ -16,7 +16,7 @@ All enabled sources share an IRQ entry; software reads FLAGS, services the
 selected sources and acknowledges them. The controller and CPU entry protocol
 are specified below.
 
-### IRQ specifications
+## IRQ specifications {#sec-irq-irq-specifications}
 
 | Resource | Specification |
 |---|---|
@@ -28,14 +28,12 @@ are specified below.
 These register-address bytes are not a payload RAM capacity. The full
 address/access/reset and named-source tables appear in the register reference.
 
-![Pending latches and delivery mask](figures/irq-pending.svg)
+![Pending latches and delivery mask](figures/irq-pending.svg){#fig-irq-pending}
 
 FLAGS reads the full pending word. The diagram ends at the controller output;
 the CPU interrupt-enable gate is separate.
 
-<section class="keep-together">
-
-### Latching, masking and acknowledgement
+### Latching, masking and acknowledgement {#sec-irq-latching-masking-and-acknowledgement}
 
 Let **P** be the pending word, **M** the mask, **R** a raised-bit word and **A** an accepted ACK word. All bitwise operations below are 32-bit operations:
 
@@ -47,8 +45,6 @@ Write ACK A:   P ← P AND NOT A    M is unchanged
 Interrupt indication asserted ⇔ (P AND M) ≠ 0
 ```
 
-</section>
-
 Raising a bit latches it regardless of MASK. Raising it again while it remains pending leaves the same bit set; the controller does not record how many times it was raised. This is coalescing, not a backlog of events.
 
 MASK selects which pending bits can assert the output. Each MASK write replaces the previous mask rather than adding to it. Consequently, enabling an already-pending bit can assert the output without another raise, while disabling it leaves its pending state intact.
@@ -57,7 +53,7 @@ ACK clears exactly the pending bits selected by its written ones. Written zeros 
 
 An accepted ACK or MASK write changes the controller state before that write completes. This is the register-write visibility edge; it does not specify CPU interrupt delivery, a priority order, or a fixed interrupt-entry delay.
 
-### Worked operation trace
+### Worked operation trace {#sec-irq-worked-operation-trace}
 
 The following sequence uses `IRQ_GPU` (`00000040H`) and `IRQ_VBLANK` (`00000004H`) only as bit names. “Raise” means that the indicated word is presented to the controller; no device trigger is implied. Each row shows state after the operation.
 
@@ -76,9 +72,9 @@ The following sequence uses `IRQ_GPU` (`00000040H`) and `IRQ_VBLANK` (`00000004H
 
 The repeated GPU raise coalesces into one pending bit. The first ACK clears GPU but leaves VBlank pending and enabled. Replacing MASK with `00000040H` hides VBlank without clearing it; enabling VBlank again exposes that same pending bit. Only the final ACK clears it.
 
-## CPU delivery and waiting
+## CPU delivery and waiting {#sec-irq-cpu-delivery-and-waiting}
 
-### From pending requests to `irq(flags)`
+### From pending requests to `irq(flags)` {#sec-irq-from-pending-requests-to-irqflags}
 
 A maskable interrupt is accepted only when both conditions hold:
 
@@ -105,7 +101,7 @@ Neither exception entry nor ordinary interrupt return acknowledges a source. Sof
 
 > **Caution — delivery is not source selection.** Do not assume that every bit supplied to `irq(flags)` was enabled, or that the CPU has already acknowledged any of them.
 
-### CPU state on entry and return
+### CPU state on entry and return {#sec-irq-cpu-state-on-entry-and-return}
 
 The relevant CP0 registers are `STATUS` (register 12), `CAUSE` (13), and `EPC` (14). In `STATUS`, bit 0 is current interrupt enable and bit 1 selects current user mode. Cartridge entry begins with `STATUS = 00000003H`: user mode, interrupts enabled. System entry uses `00000001H`: non-user mode, interrupts enabled.
 
@@ -125,21 +121,17 @@ After IRQ entry:  STATUS = 0000000cH  non-user mode; IEc = 0
 After RFE:        STATUS = 00000003H  user mode; IEc = 1
 ```
 
-<div class="keep-together">
-
 `RFE` returns to the address in `EPC` and restores the low four status bits as follows:
 
 ```text
 STATUS := (STATUS & ~0000000fH) | ((STATUS >> 2) & 0000000fH)
 ```
 
-</div>
-
 `RFE` is an exception-return instruction, not a general procedure return. It requires non-user mode and an exception to return from. User-mode execution takes the coprocessor-unusable exception; execution without an exception to return from hard-halts.
 
 Privilege also matters for CP0 access. In user mode, `MFC0` and `MTC0` take the coprocessor-unusable exception. In non-user mode, `MFC0` can read these three registers; `MTC0` replaces `STATUS` or `EPC`, but does not change `CAUSE`. Writing `STATUS` replaces the whole word, not just `IEc`.
 
-### Wait for service, not merely for a wake-up
+### Wait for service, not merely for a wake-up {#sec-irq-wait-for-service-not-merely-for-a-wake-up}
 
 `halt_until_irq` is a statement that executes the CPU's `HALT` instruction. It is not a function call. HALT and controller acknowledgement are separate operations.
 
@@ -173,7 +165,7 @@ These are fragments of a source-specific protocol, not a replacement IRQ handler
 
 Device timers continue to progress during HALT; parked CPU instructions do not execute. No fixed request-to-handler latency or guaranteed acceptance boundary after every source instruction is specified here.
 
-## Timing and service cost
+## Timing and service cost {#sec-irq-timing-and-service-cost}
 
 Interrupt service instructions use the 33.8688 MHz system timebase:
 33,868,800 cycles per second, approximately 29.525699 ns per cycle. A service
@@ -203,7 +195,7 @@ Request-to-handler time therefore depends on those waits as well as on the
 instruction sequence. The example below accounts for the entry instructions
 separately from the handler.
 
-### Worked IRQ entry cost
+### Worked IRQ entry cost {#sec-irq-worked-irq-entry-cost}
 
 Consider an IRQ entry that reads FLAGS and compares it directly with an
 immediate zero constant. Its instruction-base charge is as follows:
@@ -226,7 +218,7 @@ each path: 10 and 7 cycles. The actual entry instructions determine this
 budget; it is not a fixed interrupt-entry charge or a request-to-service delay. In particular, it does
 not include time spent pending behind a closed MASK or disabled IEc.
 
-## Acknowledge the source and the controller separately
+## Acknowledge the source and the controller separately {#sec-irq-acknowledge-the-source-and-the-controller-separately}
 
 Controller ACK removes a pending bit. It is not a command to the unit that
 raised that bit. The GPU provides a concrete example of the distinction:
@@ -241,7 +233,7 @@ The marker's low 24 bits do not select an interrupt number. A marker while
 GPUSTAT24 remains set does not raise another GPU request. Nor does GPU idle
 alone raise an interrupt.
 
-### Controller clear alone does not re-arm the GPU
+### Controller clear alone does not re-arm the GPU {#sec-irq-controller-clear-alone-does-not-re-arm-the-gpu}
 
 Start with both GPU-local and controller pending bits clear. Keep delivery
 masked while following this sequence:
@@ -261,11 +253,11 @@ The programming example below demonstrates that coalescence before enabling
 delivery.
 
 Follow the local acknowledgement sequence of each source. The
-[GPU command reference](gpu.md) defines marker ordering and GPU completion;
-[PCRTC](pcrtc.md) defines display publication. A marker service establishes that
+[GPU command reference](gpu.md#sec-gpu) defines marker ordering and GPU completion;
+[PCRTC](pcrtc.md#sec-pcrtc) defines display publication. A marker service establishes that
 the marker was reached, while the display has its own publication edge.
 
-### A pending bit cannot count arrivals during service
+### A pending bit cannot count arrivals during service {#sec-irq-a-pending-bit-cannot-count-arrivals-during-service}
 
 For one selected source, let P be its pending bit. A raise sets P to 1; ACK
 sets P to 0. The order matters:
@@ -286,9 +278,7 @@ Keep a software service count distinct from a source-event count. Several
 requests can coalesce into one service; no software counter recovers arrivals
 already lost in the pending latch.
 
-<a id="choose-one-cartridge-dispatch-route"></a>
-
-### Install the cartridge handler
+### Install the cartridge handler {#sec-irq-install-the-cartridge-handler}
 
 For the standard BLua entry sequence, define `function irq(flags)` before
 enabling interrupt delivery. The handler selects the sources it supports,
@@ -300,9 +290,9 @@ Prepare each source's service state before enabling its MASK bit. The following
 example supplies the global callback and performs both GPU and controller
 acknowledgement.
 
-## Program and service a GPU marker
+## Program and service a GPU marker {#sec-irq-program-and-service-a-gpu-marker}
 
-### Starting conditions
+### Starting conditions {#sec-irq-starting-conditions}
 
 Use ordinary BIOS cartridge entry with the inherited beam running and CPU
 interrupt enable set. Own GP0, the GPU interrupt handler and MASK exclusively;
@@ -382,9 +372,7 @@ reads zero. The two service increments count these controlled services after
 re-arming; they do not count all possible source arrivals or establish an
 interrupt-latency bound.
 
-<div class="keep-together">
-
-## Register reference
+## Register reference {#sec-irq-register-reference}
 
 Use four-byte-aligned, 32-bit word accesses. The three addresses name separate
 operations: a pending-word read, a selective clear and an enable-word replacement.
@@ -395,9 +383,7 @@ operations: a pending-word read, a selective clear and an enable-word replacemen
 | `08000004H` | `IO_IRQ_ACK` | Read zero / write-one-to-clear | 31:0 pending-bit clear selection | `00000000H` |
 | `08000008H` | `IO_IRQ_MASK` | Read/write | 31:0 delivery enables | `00000000H` |
 
-</div>
-
-### IO_IRQ_FLAGS — pending requests
+### IO_IRQ_FLAGS — pending requests {#sec-irq-io_irq_flags-pending-requests}
 
 Each set bit records a pending request. Reading the word leaves every bit
 unchanged. A source request sets its pending bit even when the corresponding
@@ -409,7 +395,7 @@ MASK=`00000040H` means that both bit 2 and bit 6 are pending, but only bit 6 ena
 the controller output. Writing FLAGS does not acknowledge it; the write is
 rejected with READ_ONLY bus fault 3.
 
-### IO_IRQ_ACK — selective pending clear
+### IO_IRQ_ACK — selective pending clear {#sec-irq-io_irq_ack-selective-pending-clear}
 
 A written one clears the corresponding pending bit; a written zero preserves
 it. The operation is:
@@ -427,7 +413,7 @@ Writing ACK=`00000000H` changes nothing. Writing ACK=`ffffffffH` clears every
 pending bit, including disabled ones; it is not selective service of the source
 that caused an interrupt.
 
-### IO_IRQ_MASK — delivery enables
+### IO_IRQ_MASK — delivery enables {#sec-irq-io_irq_mask-delivery-enables}
 
 A set bit enables that pending bit to contribute to the output line. A clear
 bit excludes it from the output line without erasing it. Reading MASK returns
@@ -440,16 +426,14 @@ closes delivery from this controller; it neither clears pending requests nor
 acknowledges their producers. Enabling an already-pending bit can assert the
 output without waiting for another source request.
 
-### Controller reset
+### Controller reset {#sec-irq-controller-reset}
 
 Reset clears pending and MASK and returns ACK readback to zero. Writing MASK=0
 alone does not reproduce reset: pending requests remain. Writing ACK with all
 ones alone does not reproduce reset either: the enable word remains unchanged.
 Source-unit reset and re-arming remain that unit's separate operations.
 
-<div class="keep-together">
-
-### Named source bits
+### Named source bits {#sec-irq-named-source-bits}
 
 The same bit position is used in FLAGS, ACK and MASK. The names identify the
 source; they do not make all source units use the same request or re-arm rule.
@@ -468,18 +452,12 @@ source; they do not make all source units use the same request or re-arm rule.
 | 9 | `00000200H` | `IRQ_CARTRIDGE_SLOT0` |
 | 10 | `00000400H` | `IRQ_CARTRIDGE_SLOT1` |
 
-</div>
-
 Bits 31:11 are unnamed, not hardwired-zero fields. MASK retains their written
 values, and the controller's pending, clear and output equations operate on
 the complete 32-bit words. This does not assign a cartridge-programmable request
 source to an unnamed bit. Cartridge-source device programming belongs to Book III.
 
-<section class="keep-together">
-
-<a id="register-access-faults-and-reset"></a>
-
-## Register access and faults
+## Register access and faults {#sec-irq-register-access-and-faults}
 
 The following rules concern the three controller words. A word access still
 obeys the read-only rule for FLAGS.
@@ -493,10 +471,8 @@ obeys the read-only rule for FLAGS.
 | U16 read/write | Even controller address | UNALIGNED_IO bus fault 2; no register operation |
 | Word write to FLAGS | At `08000000H` | READ_ONLY bus fault 3; pending unchanged |
 
-</section>
-
 CPU alignment rejection precedes these mapped-access rules. See
-[Memory — Bus-fault status and CPU exceptions](memory.md#bus-fault-status-and-cpu-exceptions)
+[Memory — Bus-fault status and CPU exceptions](memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)
 for the shared report and exception behavior. Clear that report through its
 BUS_FAULT_ACK port; IRQ_ACK clears controller pending bits only.
 

@@ -1,6 +1,6 @@
 # BIOS String packing: an ordinary cartridge
 
-This is the complete [record program](../../docs/book1/bios-string.md#complete-program-a-packed-record).
+This is the complete [record program](../../docs/book1/bios-string.md#sec-bios-string-example-a-packed-record).
 Save its 42-line result module as `results.lua`; join its five entry parts,
 with one blank line between adjacent parts, as the 117-line `cart.lua`.
 The [build and observation route](../../docs/programming/getting-started.md#build-and-inspect-packed-records)

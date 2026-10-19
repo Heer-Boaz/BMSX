@@ -1,6 +1,6 @@
-# Image decompression unit
+# Image decompression unit {#sec-imgdec}
 
-## Function and resources
+## Function and resources {#sec-imgdec-function-and-resources}
 
 The image decompression unit expands compressed texture and palette data into
 GPU upload packets. A program supplies the compressed stream and VRAM
@@ -27,8 +27,8 @@ only the former contribute to DECODED_WORD_COUNT.
 For DMA input from ROM or main RAM, serialize each compressed word in
 little-endian byte order: `31444D49H` occupies bytes `49 4D 44 31` at increasing
 addresses. This is data-word order, not
-[CPU instruction byte order](cpu.md#instruction-words-and-execution-resources);
-see [Memory — Addresses and data sizes](memory.md#addresses-and-data-sizes).
+[[CPU instruction byte order](cpu.md#sec-cpu-instruction-words-and-execution-resources)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Instruction words and execution resources”]{.content-visible when-format="pdf"};
+see [Memory — Addresses and data sizes](memory.md#sec-memory-addresses-and-data-sizes).
 
 | Resource | Capacity or basis |
 |---|---|
@@ -44,13 +44,13 @@ Budget source transport, output DMA and GPU processing separately. IMGDEC DONE
 indicates that the complete output stream has been read; wait for GPU completion
 before using the uploaded image.
 
-![IMGDEC stream, header and payload-history paths](figures/imgdec-flow.svg)
+![IMGDEC stream, header and payload-history paths](figures/imgdec-flow.svg){#fig-imgdec-flow}
 
 Compressed words select literals, repeated values, zeros or copies from
 payload history. Generated GPU headers bypass that history. DATA reads drain
 the resulting packet stream for RAM storage or GPU processing.
 
-## Starting a transfer
+## Starting a transfer {#sec-imgdec-starting-a-transfer}
 
 1. Prepare the complete compressed word stream and determine both its input
    count and the generated output count. Output includes packet headers as
@@ -67,9 +67,9 @@ the resulting packet stream for RAM storage or GPU processing.
    the expected output count. Completion is not a reason to make speculative
    extra DATA reads.
 
-## Programming IMGDEC in BLua
+## Programming IMGDEC in BLua {#sec-imgdec-programming-imgdec-in-blua}
 
-### Decode the worked stream into RAM
+### Decode the worked stream into RAM {#sec-imgdec-decode-the-worked-stream-into-ram}
 
 The following nineteen-word stream produces twenty decoded payload words and
 six header words, for twenty-six output words. With IMGDEC and both DMA channels
@@ -119,7 +119,7 @@ end
 ```
 
 After successful bus accesses, `ram_output` contains the 26 packet words in
-[the worked expansion](#worked-stream-19-input-words-26-output-words).
+[the worked expansion](#sec-imgdec-worked-stream-19-input-words-26-output-words).
 IMGDEC STATUS is `02H`, INPUT_WORDS_RECEIVED is 19 and DECODED_WORD_COUNT is 20.
 Both DMA counts are zero and both DMA statuses are DONE. The three separate
 pending interrupt bits are raised even though delivery is masked.
@@ -128,12 +128,10 @@ For this valid stream, both DMA channels complete normally. For a general
 loader, also monitor IMGDEC STATUS while waiting: FORMAT_FAULT withdraws its
 requests and can leave a channel BUSY. Stop or recover that transfer before
 reusing its resources. Inspect bus faults as well as decoder status.
-[DMA, Completion and interrupts](dma.md#completion-and-interrupts) gives the
+[DMA, Completion and interrupts](dma.md#sec-dma-completion-and-interrupts) gives the
 interrupt-driven completion sequence.
 
-<div class="keep-together">
-
-## Register reference
+## Register reference {#sec-imgdec-register-reference}
 
 IMGDEC occupies nine consecutive 32-bit registers, beginning at
 `0x080103FC`. Adjacent registers are four bytes apart. All reset values in the
@@ -153,14 +151,12 @@ described below.
 | `0x08010418` | INPUT_WORDS_RECEIVED | R | 31:0 | `0x00000000` | Live count of submitted DATA writes, not words consumed by decompression. |
 | `0x0801041C` | DECODED_WORD_COUNT | R | 31:0 | `0x00000000` | Live count of decoded payload words produced; excludes generated headers. |
 
-</div>
+: {tbl-colwidths="[13,30,11,11,13,22]"}
 
 Writes to STATUS, INPUT_WORDS_RECEIVED, or DECODED_WORD_COUNT raise
 `BUS_FAULT_READ_ONLY`; they do not acknowledge or clear those registers.
 
-<a id="programming-words-and-write-admission"></a>
-
-### Configuration writes
+### Configuration writes {#sec-imgdec-configuration-writes}
 
 INPUT_WORD_COUNT, TEXTURE_DESTINATION, TEXTURE_SIZE, and CLUT_DESTINATION
 retain the complete words written to them. Reads return those retained words.
@@ -179,7 +175,7 @@ The programming words remain in their registers during the stream. The input
 count governs input submission and completion checks; destination and size
 words supply the headers as those headers are produced.
 
-### CONTROL — `0x0801040C`
+### CONTROL — `0x0801040C` {#sec-imgdec-control-0x0801040c}
 
 | Bits | Mask | Field | Write behavior and readback |
 |---|---|---|---|
@@ -197,7 +193,7 @@ words. Do not require BUSY to be observable after an invalid start: with
 INPUT_WORD_COUNT equal to zero, the new stream immediately reports FORMAT_FAULT
 because its required input header cannot be supplied.
 
-### STATUS — `0x08010410`
+### STATUS — `0x08010410` {#sec-imgdec-status-0x08010410}
 
 | Bit(s) | Mask | Field | Meaning when set |
 |---|---|---|---|
@@ -219,7 +215,7 @@ accumulated alongside the previous BUSY or request fields. STATUS is not a
 write-one-to-clear register. See Data transfer and completion for the precise
 request predicates, output-drain requirement, and interrupt handling.
 
-### Progress registers
+### Progress registers {#sec-imgdec-progress-registers}
 
 INPUT_WORDS_RECEIVED reports how many input DATA writes have been submitted.
 It is not an input-FIFO occupancy count and does not measure how much of the
@@ -231,8 +227,7 @@ DATA does not turn this value into a count of words remaining in the output
 FIFO. Both progress counts are 32-bit counts and begin again at zero for a new
 stream.
 
-
-## Data transfer and completion
+## Data transfer and completion {#sec-imgdec-data-transfer-and-completion}
 
 DATA is a bidirectional word port with one retained data latch.
 Writes supply compressed input; reads remove generated output.
@@ -271,7 +266,7 @@ It advances when a payload word enters the output FIFO and history, not when sof
 Generated output-header words do not contribute to this register.
 It is neither the number of DATA reads performed nor the total generated packet length.
 
-#### DMA requests and block boundaries
+### DMA requests and block boundaries {#sec-imgdec-dma-requests-and-block-boundaries}
 
 IMGDEC input uses DMA request selector 5; IMGDEC output uses selector 6.
 INPUT_REQUEST and OUTPUT_REQUEST report the corresponding request predicates.
@@ -303,7 +298,7 @@ The block-ending output read performs those operations after removing its word.
 CPU DATA accesses perform the corresponding scheduling and request-update work immediately,
 except for the read-port ownership case described above.
 
-#### Successful completion and stopped output
+#### Successful completion and stopped output {#sec-imgdec-successful-completion-and-stopped-output}
 
 Finishing payload generation alone does not set DONE.
 After each CPU DATA read, and after each block-ending DMA DATA read,
@@ -329,7 +324,7 @@ word and repeats the completion check. It can raise IRQ_IMGDEC again without
 producing or consuming a new word. Poll STATUS rather than making extra DATA reads for completion. After FORMAT_FAULT, an empty read does not
 by itself satisfy successful-completion conditions.
 
-### Interrupts and fault recovery
+### Interrupts and fault recovery {#sec-imgdec-interrupts-and-fault-recovery}
 
 IMGDEC raises central interrupt bit 7, `00000080H`, for both DONE and FORMAT_FAULT.
 The interrupt bit does not distinguish success from failure; inspect STATUS.
@@ -362,7 +357,7 @@ START discards the previous FIFOs, DATA word, progress, run state and available 
 before beginning the new stream; it clears only CONTROL bit 0 and replaces STATUS with BUSY.
 Handle any pending central IRQ separately.
 
-### Reset and system pause
+### Reset and system pause {#sec-imgdec-reset-and-system-pause}
 
 An IMGDEC unit reset cancels scheduled decoding and deasserts both IMGDEC DMA requests.
 It makes the unit inactive, empties both FIFOs, clears available history and resets all stream progress.
@@ -381,8 +376,7 @@ contain words, and STATUS can still indicate an active stream.
 On resume, decoding and request generation continue. A waiting configuration
 write still requires the stream to become inactive before it proceeds.
 
-
-## Work timing and transfer budget
+## Work timing and transfer budget {#sec-imgdec-work-timing-and-transfer-budget}
 
 All word counts in this section refer to 32-bit words.
 IMGDEC charges **two system cycles per output word**, including packet headers.
@@ -390,7 +384,7 @@ A three-word texture or CLUT header therefore costs six cycles.
 Stream-header and token parsing do not carry a separate per-input-word charge.
 Compressed input length alone does not determine the output-work budget.
 
-### Output batches
+### Output batches {#sec-imgdec-output-batches}
 
 IMGDEC processes one output batch at a time. A batch of `N` words starting
 at cycle `A` completes at:
@@ -415,7 +409,7 @@ slots are free. Draining the output can therefore be necessary for further work.
 Any next batch is timed from the preceding batch's completion edge. Input or
 output waiting does not create a backlog that later emits at a faster rate.
 
-### Installed output-work rate
+### Installed output-work rate {#sec-imgdec-installed-output-work-rate}
 
 The installed system timebase is **33,868,800 cycles/s**.
 At two cycles per word, uninterrupted IMGDEC output work corresponds to:
@@ -428,7 +422,7 @@ operation. Headers consume the same budget as payload. For a complete upload,
 add DMA transport and any waiting for input or GPU readiness, as in the following
 example.
 
-### Controlled ROM-to-RAM transfer
+### Controlled ROM-to-RAM transfer {#sec-imgdec-controlled-rom-to-ram-transfer}
 
 The following timeline starts with both DMA channels already armed for 16-word
 blocks before START at cycle 0. Input comes from cartridge ROM; output goes to
@@ -474,12 +468,11 @@ adding their individual budgets would count overlapping time more than once.
 The timeline ends with output in RAM. Add CPU setup and result handling; a
 direct GPU upload also requires GPU processing and PCRTC display timing.
 
-
-## Compressed word stream
+## Compressed word stream {#sec-imgdec-compressed-word-stream}
 
 IMGDEC consumes a stream of 32-bit words. The stream contains a three-word header followed by tokens and their input data. All lengths in this section count words, not bytes. A decoded payload word is one word produced by a token; it is not necessarily one pixel or one color entry.
 
-### Stream header
+### Stream header {#sec-imgdec-stream-header}
 
 | Input word | Meaning |
 |---|---|
@@ -491,7 +484,7 @@ The configured input-word count includes these three words, every token, every l
 
 Header words are consumed in order. The decoder can wait between header words for more input. A wrong magic word causes `FORMAT_FAULT` immediately. `T` and `C` are accepted as raw count words; they are not checked against the programmed texture size.
 
-### Token layouts
+### Token layouts {#sec-imgdec-token-layouts}
 
 Bits 31:30 select the token kind. The remaining bits have the following layouts; every bit shown is part of a field.
 
@@ -514,7 +507,7 @@ A literal token copies its next `L` input words into the decoded payload. A repe
 
 A token may span the texture/CLUT boundary. Do not insert a new token merely because texture payload ends: any remaining words of the current run continue as CLUT payload after the generated CLUT header.
 
-### History and overlapping back-references
+### History and overlapping back-references {#sec-imgdec-history-and-overlapping-back-references}
 
 The history holds the most recent 4096 decoded payload words. A fresh stream starts with zero valid history words; output from a preceding stream is unavailable. Every payload word, including a repeated, zero, or back-referenced word, is added to history. Generated GP0 header words are not added.
 
@@ -524,11 +517,11 @@ For each back-reference word, IMGDEC reads the word `D` positions behind the cur
 
 Texture and CLUT payload share this history. Neither the history nor a partially completed run is reset when IMGDEC inserts the CLUT header.
 
-## Generated GP0 output
+## Generated GP0 output {#sec-imgdec-generated-gp0-output}
 
 IMGDEC queues GP0 command and payload words in its output FIFO. Producing these words is not itself a direct VRAM write. The destination and texture-size settings are raw downstream GP0 words: IMGDEC forwards them unchanged. In particular, a destination setting is not an IMGDEC RAM address, and no byte or pixel coordinates are implied by the example destination words below.
 
-### Packet words
+### Packet words {#sec-imgdec-packet-words}
 
 | Packet | Word 0 | Word 1 | Word 2 | Following words |
 |---|---|---|---|---|
@@ -541,7 +534,7 @@ Each three-word header is queued together and requires at least three free outpu
 
 Even when `T` is zero, the texture header is generated. Thus `T = 0, C = 0` produces a three-word texture packet with no IMGDEC payload. If `T = 0, C != 0`, the texture header is followed by the CLUT header and CLUT payload.
 
-### Three different word counts
+### Three different word counts {#sec-imgdec-three-different-word-counts}
 
 | Quantity | What it counts |
 |---|---|
@@ -555,7 +548,7 @@ The expected output-word count is calculated as:
 
 The combined CLUT endpoint `T + C`, decoded count increments, and subtraction of decoded count from a stage endpoint also use modulo-`2^32` arithmetic. Count overflow is not saturated or rejected. Do not replace this arithmetic with an assumed nonwrapping image-size calculation.
 
-### Size words and count mismatches
+### Size words and count mismatches {#sec-imgdec-size-words-and-count-mismatches}
 
 The downstream GP0 size interpretation is distinct from IMGDEC's `T` and `C` counters:
 
@@ -568,7 +561,7 @@ For example, `0x00060004` describes GP0 dimensions 4 × 6, `0x00010010` describe
 
 `T` controls IMGDEC's texture payload endpoint, independently of the texture-size word. Likewise, `C` controls the CLUT payload endpoint while the emitted CLUT size word remains fixed. The value 16 in `0x00010010` is not a declaration of 16 compressed-stream payload words. An accepted stream can therefore have payload counts that do not agree with its downstream transfer description. IMGDEC acceptance is not a packet-size consistency check; cartridge software must supply a stream appropriate for the downstream GP0 transfer. No pixel packing, color-channel interpretation, or destination-coordinate interpretation is defined by this compressed-stream format.
 
-## Worked stream: 19 input words, 26 output words
+## Worked stream: 19 input words, 26 output words {#sec-imgdec-worked-stream-19-input-words-26-output-words}
 
 Use these programmed words:
 
@@ -638,7 +631,7 @@ The final literal supplies the eight CLUT payload words. The input has 3 header 
 | 24 | `0x7c007c00` | CLUT payload 6. |
 | 25 | `0x7fff7fff` | CLUT payload 7. |
 
-## Worked stream: overlapping history across the CLUT header
+## Worked stream: overlapping history across the CLUT header {#sec-imgdec-worked-stream-overlapping-history-across-the-clut-header}
 
 Program input count 10, texture destination `0x00200040`, texture size `0x00010010`, and CLUT destination `0x00300060`.
 
@@ -687,9 +680,9 @@ The generated output is 22 words:
 
 The inserted three-word header does not increase the back-reference distance: distance counts decoded payload history, not output FIFO positions.
 
-## Completion, malformed input, and partial output
+## Completion, malformed input, and partial output {#sec-imgdec-completion-malformed-input-and-partial-output}
 
-### Exact end of stream
+### Exact end of stream {#sec-imgdec-exact-end-of-stream}
 
 A stream is complete only when all four conditions hold:
 
@@ -702,13 +695,13 @@ Finishing the requested payload is therefore insufficient if input remains or th
 
 Stream completion is also distinct from `DONE`: queued output must be read. The DATA-read completion check requires the output-words-read count to equal the expected output-word count as well as the complete-stream conditions above. A DMA read before the end of its block does not perform that check. Merely producing the last output word does not invoke `DONE`.
 
-### Waiting versus exhaustion
+### Waiting versus exhaustion {#sec-imgdec-waiting-versus-exhaustion}
 
 An empty input FIFO alone is not an exhaustion fault. When the decoder requires more input, exhaustion is recognized by equality between received input words and the configured input-word count. If they are not equal, this check does not declare exhaustion. It is an equality test, not a greater-than-or-equal test; counters use modulo-`2^32` arithmetic.
 
 The decoder may wait for a missing header word, token, repeat value, or literal data. Once a repeat, zero, or back-reference run is prepared, its emission needs no further compressed input. A literal can emit an available prefix before it needs to wait or fault for more literal words.
 
-### Ordering and output backpressure
+### Ordering and output backpressure {#sec-imgdec-ordering-and-output-backpressure}
 
 After header parsing, IMGDEC advances any finished payload stage before selecting further work. It then observes output space in this order:
 
@@ -721,7 +714,7 @@ A payload group emits at most 16 words. Its length is also limited by the curren
 
 These rules have two important consequences. An invalid first payload token can fault after the texture header has already been queued. An overlong final run is not rejected before output: it emits up to the payload endpoint, then faults because the run is unfinished. Output backpressure can postpone the malformed-tail check.
 
-### Fault causes
+### Fault causes {#sec-imgdec-fault-causes}
 
 | Condition | Point of detection | Partial effect |
 |---|---|---|
@@ -736,7 +729,7 @@ These rules have two important consequences. An invalid first payload token can 
 
 A fault terminates decoding without rolling back the output. Queued output remains readable through DATA after stop, and decoded/input counters and the current run/history state are retained. Actual output pops still update the DATA latch and output-words-read count; an empty output FIFO leaves the latch unchanged. CPU reads while DMA owns the read port return the latch without popping output.
 
-### Compact fault and empty-stream examples
+### Compact fault and empty-stream examples {#sec-imgdec-compact-fault-and-empty-stream-examples}
 
 For each row, start a fresh stream, configure the input count to the exact listed length, supply all listed input, and allow normal decoding with adequate FIFO space. In the three malformed cases, wait for the fault before reading the retained output. In the valid empty-payload case, read the three known output words to obtain DONE; do not wait for a fault. `D` and `S` denote the programmed raw texture destination and size words.
 
@@ -747,10 +740,9 @@ For each row, start a fresh stream, configure the input count to the exact liste
 | `0x31444d49`, `0x00000002`, `0x00000000`, `0x00000001`, `0x12345678` | Literal length 2 has only one data word. That word is emitted before exhaustion faults. Decoded count 1; four output words remain: `0xa0000000`, `D`, `S`, `0x12345678`. |
 | `0x31444d49`, `0x00000000`, `0x00000000` | Valid empty-payload stream. Its only output is `0xa0000000`, `D`, `S`. No token is required; `DONE` still requires output-read completion. |
 
+## Use the output packets {#sec-imgdec-use-the-output-packets}
 
-## Use the output packets
-
-### Forward the same packets to GP0
+### Forward the same packets to GP0 {#sec-imgdec-forward-the-same-packets-to-gp0}
 
 Own GP0 as well as both DMA channels. There must be no partial packet or unread
 readback. Before starting, wait for GPUSTAT bit 26 (`04000000H`) at
@@ -772,7 +764,7 @@ request lines; decoder output readiness alone cannot make GP0 ready. After
 both DMA completions and IMGDEC DONE, wait separately for GPU idle. GPU processing continues after the transfer; PCRTC displays the completed
 source according to its own latch timing.
 
-### Inspect a fault, then start a fresh stream
+### Inspect a fault, then start a fresh stream {#sec-imgdec-inspect-a-fault-then-start-a-fresh-stream}
 
 Use CPU input with neither DMA channel armed. Leave the three destination/size
 words from the worked stream in place, and configure only the new input count.
@@ -810,7 +802,7 @@ Acknowledge bit `80H` separately. Keep this output in RAM: raw GP0 size zero
 means 1024 × 512, not an empty rectangle, so the header alone is not a complete
 GPU upload.
 
-### Display the uploaded indexed patch
+### Display the uploaded indexed patch {#sec-imgdec-display-the-uploaded-indexed-patch}
 
 For the pictured result, use the successful direct-to-GP0 upload, not either
 fault/recovery prefix. Before that upload, prepare this disjoint framebuffer
@@ -862,7 +854,7 @@ The marker, GPU idle and PCRTC display latch are separate boundaries. The
 PMODE write enables the prepared composition for display latching; it is not
 itself a displayed-frame acknowledgement.
 
-### Read back the uploaded words
+### Read back the uploaded words {#sec-imgdec-read-back-the-uploaded-words}
 
 With exclusive GP0 ownership and no DMA read owner, send each following header
 as three ordered GP0 writes. Wait for GPUSTAT bit 27 (`08000000H`) before reading
@@ -877,13 +869,11 @@ next header.
 Each returned word contains two raw storage halfwords, first in bits 15:0.
 The last read clears READY. Readback returns the stored halfwords independently of display selection.
 GPU idle alone reports no pixel values.
-See [GPU](gpu.md) for complete upload, drawing and readback rules.
+See [GPU](gpu.md#sec-gpu) for complete upload, drawing and readback rules.
 
-<a id="imgdec-indexed-output"></a>
+### From compressed words to a displayed patch {#sec-imgdec-from-compressed-words-to-a-displayed-patch}
 
-### From compressed words to a displayed patch
-
-![The decoded indexed patch over a purple underlay, surrounded by a dark-blue background.](figures/imgdec-indexed-output.png)
+![The decoded indexed patch over a purple underlay, surrounded by a dark-blue background.](figures/imgdec-indexed-output.png){#fig-imgdec-indexed-output}
 
 The six source rows make the token kinds visible:
 

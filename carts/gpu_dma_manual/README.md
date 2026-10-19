@@ -6,7 +6,7 @@ a separate 41-word BSS buffer. It owns DMA0 and the GPU ports, masks interrupts
 and polls. It does not program PCRTC or claim displayed-picture evidence.
 
 The complete program is printed in the GPU chapter under
-[Move a raw image through DMA](../../docs/book1/gpu.md#gpu-image-dma-program):
+[Move a raw image through DMA](../../docs/book1/gpu.md#sec-gpu-move-a-raw-image-through-dma):
 `storage.lua` is the const module; the following three code blocks concatenate
 in order into the single entry module `cart.lua`. The literal files here are
 those built and executed, not pseudocode or register values in Lua tables.

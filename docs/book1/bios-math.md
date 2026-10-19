@@ -1,8 +1,8 @@
-# BIOS math library
+# BIOS math library {#sec-bios-math}
 
 The BIOS math library supplies numeric operations, angular functions and a shared pseudorandom generator. Its `math` Table contains twenty-five callable entries and four numeric constants. Numbers use binary64 arithmetic; a function preserves the input scale unless its definition states a unit or representation conversion.
 
-## Calling the library
+## Calling the library {#sec-bios-math-calling-the-library}
 
 The standard BIOS environment supplies `math` as a Table of functions and
 constants. Call its functions directly. The separate named import `math/sin`
@@ -13,14 +13,14 @@ Numbers use binary64 arithmetic. Descriptions such as “integer component”
 and the result `"integer"` classify a Number's value; they do not select a
 second numeric type. A function preserves the input scale unless its entry
 specifies a unit conversion. Register-word conversion follows the
-[CPU rules](cpu.md#values-and-numeric-instructions).
+[CPU rules](cpu.md#sec-cpu-values-and-numeric-instructions).
 
 Missing fixed parameters arrive as nil and surplus arguments are discarded.
 `min` and `max` receive a variable argument tail, including its nil positions.
 The following entries state the returned count before caller result
 adjustment.
 
-## Numeric notation
+## Numeric notation {#sec-bios-math-numeric-notation}
 
 The formulas in this chapter use these explanatory operations:
 
@@ -36,16 +36,16 @@ The formulas in this chapter use these explanatory operations:
 Arithmetic on a non-Number yields NaN. Numeric Strings require an explicit
 `tonumber` conversion. Number/Number and String/String pairs support ordering;
 other kind pairs compare false. NaN is unordered and the two numeric zero
-signs compare equal. See [numeric instructions](cpu.md#values-and-numeric-instructions).
+signs compare equal. See [numeric instructions](cpu.md#sec-cpu-values-and-numeric-instructions).
 
 These rules apply to the written formulas, including overflow, division by
 zero and rounding of intermediate values. In particular, `fmod` uses its
 quotient formula while `ult` compares modulo results.
 
-## Constants
+## Constants {#sec-bios-math-constants}
 
 | Field | Numeric value | Meaning and limits |
-| --- | --- | --- |
+|------------------|-----------------------------------------------|-----------------------------------|
 | `math.huge` | Positive infinity, initialized by `1.0 / 0.0` | A numeric infinity, not a maximum finite number or an argument validator. |
 | `math.mininteger` | `-9007199254740991` | The exported lower integer constant. It does not bound all numbers or all values accepted by `tointeger`. |
 | `math.maxinteger` | `9007199254740991` | The exported upper integer constant. The pair is symmetric, not the asymmetric bounds of a signed 64-bit integer. |
@@ -53,26 +53,26 @@ quotient formula while `ult` compares modulo results.
 
 These are value fields, not callable functions. They are not fixed-point constants, register words, or precision metadata. There is no exported NaN constant among the fields covered here, although several operations can produce numeric NaN.
 
-## `math.abs(value)`
+## `math.abs(value)` {#sec-bios-math-mathabsvalue}
 
 Returns one value: `-value` when `value < 0`, otherwise the original value.
 For Numbers this gives the magnitude, preserving either zero sign. Negative
 infinity becomes positive infinity; NaN and non-Number values are returned
 unchanged. A missing argument therefore returns nil.
 
-## `math.floor(value)`
+## `math.floor(value)` {#sec-bios-math-mathfloorvalue}
 
 Returns one Number, `D(value, 1)`. For finite values it selects the lower whole
 value at unit spacing in the supplied scale. Infinities and signed zero retain
 their signs; NaN and non-Number input produce NaN.
 
-## `math.ceil(value)`
+## `math.ceil(value)` {#sec-bios-math-mathceilvalue}
 
 Returns one Number, `-D(-value, 1)`. For finite values it selects the upper
 whole value at unit spacing. Its infinity, signed-zero and non-Number cases
 are the same as `floor`.
 
-## `math.round(value)`
+## `math.round(value)` {#sec-bios-math-mathroundvalue}
 
 Returns one Number. For `value >= 0`, the result is `D(value + 0.5, 1)`;
 otherwise it is `-D((-value) + 0.5, 1)`. Exact halfway values within ordinary
@@ -83,7 +83,7 @@ Both zero signs produce positive zero. A negative value whose rounded
 magnitude becomes zero produces negative zero. Infinities retain their signs;
 NaN and non-Number inputs produce NaN.
 
-## `math.fmod(left, right)`
+## `math.fmod(left, right)` {#sec-bios-math-mathfmodleft-right}
 
 Returns one Number, calculated in this order:
 
@@ -96,7 +96,7 @@ including for finite operands. A zero divisor, an infinity operand, NaN or a
 non-Number operand produces NaN. A zero numerator and finite nonzero divisor
 produce positive zero, including for a negative-zero numerator.
 
-## `math.modf(value)`
+## `math.modf(value)` {#sec-bios-math-mathmodfvalue}
 
 Returns two Numbers: the integer component `T(value)`, then
 `value - T(value)`. The first result truncates toward zero; the residual
@@ -106,7 +106,7 @@ For either zero sign, the first result keeps that sign and the residual is
 positive zero. An infinity returns that infinity followed by NaN. NaN or
 non-Number input returns two NaNs. Both components use the original scale.
 
-## `math.min(first, ...)`
+## `math.min(first, ...)` {#sec-bios-math-mathminfirst}
 
 Returns one selected argument, unchanged. Selection starts with `first` and
 visits each subsequent argument in order, replacing the selection only when
@@ -124,7 +124,7 @@ selection. Explicit nil tail arguments count as arguments but do not replace
 a nonnil selection. A nonnil Boolean, Table, function or Thread initially
 selected remains selected.
 
-## `math.max(first, ...)`
+## `math.max(first, ...)` {#sec-bios-math-mathmaxfirst}
 
 Returns one selected argument, using the same scan and tie rules as `min`,
 but replacing the selection only when `candidate > selected`. Nil as the
@@ -136,7 +136,7 @@ max expects at least one argument.
 
 The mixed-kind, NaN and nil-tail behavior is the same as for `min`.
 
-## `math.tointeger(value)`
+## `math.tointeger(value)` {#sec-bios-math-mathtointegervalue}
 
 Returns one Number when `value` is a finite Number equal to `T(value)`;
 otherwise returns one nil. Thus finite whole values are accepted, fractions
@@ -144,14 +144,14 @@ are rejected, and either zero sign is preserved. Accepted whole values may
 lie outside the exported `mininteger` and `maxinteger` constants. This call
 classifies integrality; use explicit word conversion for a register encoding.
 
-## `math.type(value)`
+## `math.type(value)` {#sec-bios-math-mathtypevalue}
 
 Returns `"integer"` for a Number accepted by `tointeger`, `"float"` for other
 Numbers, and nil for other kinds. Infinities and NaN classify as `"float"`.
 Either zero sign classifies as `"integer"`. These labels describe values in
 the single Number representation.
 
-## `math.ult(left, right)`
+## `math.ult(left, right)` {#sec-bios-math-mathultleft-right}
 
 Returns one Boolean:
 
@@ -164,13 +164,13 @@ inputs participate directly in modulo without truncation. Equal zero residues
 compare false regardless of their signs. Infinity, NaN or non-Number input
 produces an unordered residue and therefore false.
 
-## `math.sign(value)`
+## `math.sign(value)` {#sec-bios-math-mathsignvalue}
 
 Returns one Number: `1` for `value > 0`, `-1` for `value < 0`, otherwise `0`.
 This includes the corresponding signs for infinities. Either zero sign, NaN
 and non-Number input produce positive zero. The result is dimensionless.
 
-## Execution cost and library bindings
+## Execution cost and library bindings {#sec-bios-math-execution-cost-and-library-bindings}
 
 Elementary operations execute their stated arithmetic and calls. `min` and
 `max` make one comparison per tail argument and repeatedly forward the tail
@@ -180,16 +180,16 @@ contain `n + (n - 1) + ... + 1` values in total.
 
 The primitive surcharges are one cycle for `type` or `select`, and two for
 `error`, in addition to executed BIOS instructions and ordinary calls. Use
-[CPU cycle accounting](cpu.md#cycle-accounting-and-execution-boundaries) when
+[CPU cycle accounting](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries) when
 budgeting a complete operation.
 
 Reassigning a Math field leaves the library's saved numeric operations and
 constants unchanged. `math.type` retains its integrality operation;
 `math.type` and `tointeger` read the current global `type`. `min` and `max`
 read current `select` and `error`. Their entries describe the installed
-[base functions](bios-base.md).
+[base functions](bios-base.md#sec-bios-base).
 
-## Angles and transcendental operations
+## Angles and transcendental operations {#sec-bios-math-angles-and-transcendental-operations}
 
 Use `math.rad` and `math.deg` to change angular units, `math.sin`, `math.cos`
 and `math.tan` for periodic quantities, and the inverse functions to recover
@@ -218,7 +218,7 @@ No other parameter has a default.
 
 The formulas below use the Number arithmetic and `D` and `T` notation defined
 earlier. For word conversion, bit masks and signed right shifts, see
-[Bitwise operations and shifts](cpu.md#bitwise-operations-and-shifts).
+[Bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
 The formulas specify the approximations and their operation order.
 Rounding follows Number arithmetic at each step. Nonnumeric arguments follow
 the same arithmetic rules and produce the results stated below; numeric text
@@ -233,7 +233,7 @@ The text blocks in this reference section are explanatory formulas and
 pseudocode, not BLua source listings. The programming examples below use
 BLua source.
 
-### Converting angular units
+### Converting angular units {#sec-bios-math-converting-angular-units}
 
 The conversion functions perform one multiplication:
 
@@ -246,7 +246,7 @@ There is no magnitude reduction or fixed-point conversion. Either zero sign
 is preserved, infinities retain their sign, and NaN or a nonnumeric argument
 produces NaN.
 
-### Sine, cosine and tangent
+### Sine, cosine and tangent {#sec-bios-math-sine-cosine-and-tangent}
 
 These functions accept radian-scale Numbers and return dimensionless binary64
 approximations. They do **not** convert their arguments to 32-bit phases or
@@ -270,7 +270,7 @@ rounded Number rather than an exact tangent pole, so its tangent can be large
 and finite. Argument reduction and cancellation affect the executed path and
 cycle count.
 
-### Turn-phase sine
+### Turn-phase sine {#sec-bios-math-turn-phase-sine}
 
 The named BIOS import `math/sin` takes one **32-bit turn-phase word** and
 returns one **signed integer Q16 sine**. Use it when an angle is already stored
@@ -303,7 +303,7 @@ the quadrant sign is applied. Results therefore retain integer Q16
 quantization. The radian functions `math.sin`, `math.cos` and `math.tan` do not
 use this interface.
 
-### Inverse angles
+### Inverse angles {#sec-bios-math-inverse-angles}
 
 The private approximation used by `math.atan` is:
 
@@ -311,7 +311,6 @@ The private approximation used by `math.atan` is:
 P(v) = (pi * 0.25 * v) + (0.273 * v * (1 - abs(v)))
 ```
 
-<div class="keep-together">
 
 Here `abs` is the retained private absolute-value operation. Define `A(v)` by
 these ordered cases:
@@ -322,9 +321,7 @@ these ordered cases:
 | `v < -1` | `-h - P(1 / v)` |
 | Otherwise | `P(v)` |
 
-</div>
 
-<div class="keep-together">
 
 `math.atan(y, x)` selects its result using the following order. The `x < 0`
 rows are considered before either remaining `y`-axis row.
@@ -340,7 +337,6 @@ rows are considered before either remaining `y`-axis row.
 | `y < 0` | `-h` |
 | Otherwise | Literal positive zero. |
 
-</div>
 
 The result uses radian scale. A supplied `false` is not the nil form:
 `math.atan(1, false)` reaches the axis branch and returns `h`. A nonnumeric
@@ -364,14 +360,13 @@ The inverse-sine calculation includes the square root's normalization and
 refinements; inverse-angle work is therefore not uniformly fixed. No uniform
 inverse-trigonometric accuracy or result-range guarantee is specified here.
 
-### Square root
+### Square root {#sec-bios-math-square-root}
 
 `math.sqrt(value)` first returns NaN for `value < 0`, then returns `value`
 unchanged if it equals zero or positive infinity. Consequently negative
 infinity produces NaN, positive infinity is preserved, and either zero sign
 is preserved.
 
-<div class="keep-together">
 
 For other inputs, initialize `normalized = value` and `scale = 1`, then
 perform these loops in order:
@@ -381,7 +376,6 @@ while normalized >= 4: normalized *= 0.25; scale *= 2
 while normalized < 1:  normalized *= 4;    scale *= 0.5
 ```
 
-</div>
 
 Set `estimate = normalized`, perform exactly eight refinements,
 
@@ -389,7 +383,6 @@ Set `estimate = normalized`, perform exactly eight refinements,
 estimate = (estimate + normalized / estimate) * 0.5
 ```
 
-<div class="keep-together">
 
 and return `estimate * scale`. Positive finite values are normalized using
 powers of four and a power-of-two scale. The normalization work depends on
@@ -398,9 +391,8 @@ refinement arithmetic. The eight refinements and the displayed scaling
 specify the approximation; the executed normalization path determines its
 variable part of the cycle count.
 
-</div>
 
-### Natural exponential
+### Natural exponential {#sec-bios-math-natural-exponential}
 
 `math.exp(value)` approximates the natural exponential. Its initial tests are
 ordered:
@@ -417,7 +409,6 @@ After these tests, a negative value returns the reciprocal of the positive
 approximation at `-value`; other values use the positive approximation
 directly.
 
-<div class="keep-together">
 
 The retained constants are:
 
@@ -426,7 +417,6 @@ ln2 = 0.69314718055994530942
 inv_ln2 = 1.44269504088896340736
 ```
 
-</div>
 
 For the positive approximation at `v`, reduce the argument as follows:
 
@@ -460,9 +450,8 @@ reciprocal is taken. The reciprocal then becomes zero even when the argument
 has not crossed the explicit underflow cutoff. Applications requiring very
 small exponential results must account for that limitation.
 
-<div class="keep-together">
 
-### Logarithms
+### Logarithms {#sec-bios-math-logarithms}
 
 Use `math.log(value, nil)` for the natural logarithm, or supply a base. The
 natural logarithm approximation `N(v)` first tests, in order:
@@ -473,7 +462,6 @@ natural logarithm approximation `N(v)` first tests, in order:
 | `v == 0` | Negative infinity. |
 | `v == positive infinity` | Positive infinity. |
 
-</div>
 
 Thus negative infinity produces NaN and either zero sign produces negative
 infinity. Otherwise initialize `exponent = 0` and `mantissa = v`. The retained
@@ -491,7 +479,6 @@ while mantissa >= sqrt_two: mantissa *= 0.5; exponent += 1
 while mantissa < sqrt_half: mantissa *= 2;   exponent -= 1
 ```
 
-<div class="keep-together">
 
 Then calculate:
 
@@ -502,7 +489,6 @@ term = z
 sum = term
 ```
 
-</div>
 
 For denominators 3, 5, 7, ..., 31, in order, perform 15 updates:
 
@@ -538,17 +524,16 @@ cycle count depends on the selected calculation.
 
 All decimal constants above are rounded to their stored Number values.
 
-## Random numbers
+## Random numbers {#sec-bios-math-random-numbers}
 
-### `math.random([lower [, upper]])` → Number
+### `math.random([lower [, upper]])` → Number {#sec-bios-math-mathrandomlower-upper-number}
 
-Returns exactly one Number on success. The function has two fixed parameters and no variable-argument parameter. An omitted fixed parameter arrives as nil. False is not nil and does not request an omitted-argument default. See [calls, closures, globals, and tables](cpu.md#calls-closures-globals-and-tables) for the call model.
+Returns exactly one Number on success. The function has two fixed parameters and no variable-argument parameter. An omitted fixed parameter arrives as nil. False is not nil and does not request an omitted-argument default. See [calls, closures, globals, and tables](cpu.md#sec-cpu-calls-closures-globals-and-tables) for the call model.
 
 Both bound-rejection branches call the current public `error` binding. The raised String behavior below assumes its installed BIOS definition.
 
 Every call advances the shared generator **before inspecting either bound**. Consequently, an explicit bound error consumes an update, as does a call whose result is NaN.
 
-<div class="keep-together">
 
 The branches are selected in this order:
 
@@ -577,7 +562,6 @@ The branches are selected in this order:
    lower_int + trunc(value * ((upper_int - lower_int) + 1))
    ```
 
-</div>
 
 Here `value` is the unit sample already generated. In these formulas, `trunc` denotes the private truncation operation, not an additional public function. For finite Numbers it truncates toward zero.
 
@@ -590,9 +574,9 @@ bounds propagate NaN through the result formula after consuming a generator
 update. With a positive-infinity upper bound, the result is positive infinity
 for a positive unit sample and NaN for zero. A negative-infinity upper bound
 raises the positive-bound error. These cases follow ordinary
-[Number arithmetic](cpu.md#values-and-numeric-instructions).
+[Number arithmetic](cpu.md#sec-cpu-values-and-numeric-instructions).
 
-### `math.randomseed([seed])` → nil
+### `math.randomseed([seed])` → nil {#sec-bios-math-mathrandomseedseed-nil}
 
 Returns **exactly one nil result**, not an empty result list. It has one fixed parameter and no variable-argument parameter.
 
@@ -602,7 +586,7 @@ If `seed` is nil, including an omitted parameter, the function calls the current
 trunc(((*time_ms / 1000) * 1000)) % 4294967296.0
 ```
 
-Here `time_ms` denotes the unsigned millisecond word sampled by the BIOS clock function. The divide-then-multiply expression is significant; it is not replaced here by a direct word value. The seed therefore depends on the sampled system counter, rather than a civil clock or an entropy source. See [system services](system.md).
+Here `time_ms` denotes the unsigned millisecond word sampled by the BIOS clock function. The divide-then-multiply expression is significant; it is not replaced here by a direct word value. The seed therefore depends on the sampled system counter, rather than a civil clock or an entropy source. See [[system services](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}.
 
 Otherwise, the function stores:
 
@@ -614,7 +598,7 @@ An explicit seed does not use the clock. Finite seeds are truncated toward zero,
 
 Seeding performs no generation step or warm-up loop and returns no seed value. After seeding zero, the next unit output is exactly `1013904223 / 4294967296`.
 
-### Generator state and update
+### Generator state and update {#sec-bios-math-generator-state-and-update}
 
 The public bindings are `math.random` and `math.randomseed`. They use the same private four-byte word, whose declared initializer is `0x12345678`. Neither that word nor the private unit generator is returned by the Math Table.
 
@@ -626,13 +610,11 @@ Each generation step reads the old word and computes:
 
 It stores the result in the word, reads the stored unsigned word back, and divides it by `4294967296.0` to obtain the unit sample. Seeding replaces that same word. All callers advance and seed this same stream. Its declared initializer is applied during normal BIOS DATA initialization.
 
-<a id="complete-program-math-operations"></a>
 
-## Programming examples
+## Programming examples {#sec-bios-math-programming-examples}
 
-<div class="keep-together">
 
-### Convert an angle and form an offset
+### Convert an angle and form an offset {#sec-bios-math-convert-an-angle-and-form-an-offset}
 
 The angular functions take radians. To place a point on a circle with radius
 64 position units, convert the authored degree angle once and scale its sine
@@ -652,9 +634,8 @@ Choose rounding or truncation deliberately when converting a calculated
 position to whole pixels. These functions do not produce GTE coefficients or
 GPU packet fields; use the destination unit's documented representation.
 
-</div>
 
-### Repeat a pseudorandom sequence
+### Repeat a pseudorandom sequence {#sec-bios-math-repeat-a-pseudorandom-sequence}
 
 Seed the shared generator when starting a sequence. Reusing the seed repeats
 its subsequent updates:

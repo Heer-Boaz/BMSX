@@ -1,0 +1,42 @@
+project:
+  type: book
+  resources:
+    - "!examples/**"
+
+quarto-required: ">=1.10.19"
+profile:
+  default: html
+  group:
+    - [html, book-i, book-ii, book-iii]
+
+book:
+  author: BMSX
+  search: true
+
+format:
+  html:
+    theme: cosmo
+    code-copy: true
+  pdf:
+    pdf-engine: lualatex
+    documentclass: scrbook
+    papersize: a4
+    mainfont: Liberation Serif
+    sansfont: Liberation Sans
+    monofont: Liberation Mono
+    monofontfallback:
+      - "DejaVu Sans:mode=harf"
+    fontsize: 10pt
+    geometry:
+      - top=19mm
+      - bottom=18mm
+      - inner=18mm
+      - outer=18mm
+    fig-pos: H
+    toc: true
+    toc-depth: 2
+    include-in-header: manual/typography.tex
+
+number-depth: 3
+execute:
+  enabled: false

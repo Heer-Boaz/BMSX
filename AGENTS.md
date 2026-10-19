@@ -5,7 +5,8 @@
 - The technical manuals are the authoritative product specification of the
   physical BMSX console: Book I covers system/hardware, Book II covers BLua32
   and BIOS, Book III covers cartridge/expansion interfaces. Start at
-  `docs/manual/catalog.json` and `docs/book1/console.md`.
+  `docs/index.md`, the `docs/_quarto-book-*.yml` chapter lists and
+  `docs/book1/console.md`.
 - `docs/architecture.md` describes internal software ownership and dependencies
   only. Never use it, remembered excerpts or historical handovers as hardware,
   instruction, ROM-format or public BIOS authority.
@@ -34,8 +35,12 @@
 - Purge non-manual documents without current, unique engineering or operational
   value. Completed plans, handovers, review logs, frozen fact sheets and
   duplicate specifications belong in Git history, not an archive or replacement
-  Markdown tree. Keep manual open questions/review evidence in the existing
-  catalog; regression evidence belongs in tests and substantive commit notes.
+  Markdown tree. Report unresolved product disagreements explicitly; regression
+  evidence belongs in hardware/BIOS tests and substantive commit notes.
+- Publish with standard Quarto and LuaLaTeX. Book profiles own chapter order;
+  native headings, tables, figures and references own document structure. Do not
+  add a renderer, PDF postprocessor, approval catalog or test suite for standard
+  publishing behavior. Keep hardware/BIOS fact checks separate from typesetting.
 
 ## Implementation rules
 

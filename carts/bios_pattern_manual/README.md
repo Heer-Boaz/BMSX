@@ -1,6 +1,6 @@
 # BIOS String patterns: an ordinary cartridge
 
-This is the complete [pattern program](../../docs/book1/bios-string.md#complete-program-patterns-and-substitutions).
+This is the complete [pattern program](../../docs/book1/bios-string.md#sec-bios-string-example-patterns-and-substitutions).
 Save its 47-line result module as `results.lua`; join its five entry parts,
 with one blank line between adjacent parts, as the 122-line `cart.lua`.
 The [build and observation route](../../docs/programming/getting-started.md#build-and-inspect-pattern-searches)

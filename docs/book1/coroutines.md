@@ -1,4 +1,4 @@
-# Protected calls and coroutines
+# Protected calls and coroutines {#sec-coroutines}
 
 Protected calls let a program receive a language error and continue at a
 chosen call boundary. Coroutines let one procedure suspend and later continue
@@ -7,10 +7,10 @@ and the `coroutine` Table before normal program entry.
 
 These interfaces carry language values and result tuples. Device status,
 interrupt acceptance and hardware exception return remain governed by the
-[CPU](cpu.md), [interrupt controller](irq.md) and
-[system-control](system.md) interfaces.
+[CPU](cpu.md#sec-cpu), [[interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} and
+[[system-control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} interfaces.
 
-## Control flow and hardware progress
+## Control flow and hardware progress {#sec-coroutines-control-flow-and-hardware-progress}
 
 Protected calls, coroutines and interrupt waits solve different problems:
 
@@ -19,7 +19,7 @@ Protected calls, coroutines and interrupt waits solve different problems:
 | `pcall` or `xpcall` | Adds a language-error boundary around a call. | The target returns or an eligible language error reaches that boundary. |
 | `coroutine.resume(thread, ...)` | Transfers language execution to the selected suspended thread. | That thread yields, returns or fails with an unhandled language error. |
 | `coroutine.yield(...)` | Suspends the current coroutine and returns values to its resumer. | A later accepted `resume` supplies the yield call's results. |
-| `halt_until_irq` | Waits at the current call depth unless an interrupt event is already pending. | An accepted interrupt event; the [CPU reference](cpu.md#halt) defines the latch and return rules. |
+| `halt_until_irq` | Waits at the current call depth unless an interrupt event is already pending. | An accepted interrupt event; the [CPU reference](cpu.md#sec-cpu-halt) defines the latch and return rules. |
 
 Coroutine execution is cooperative: the resumer waits while its selected
 thread runs. Device operations continue according to their own hardware
@@ -27,14 +27,14 @@ rules. Establish completion from the device's status or interrupt condition
 before consuming its result. A coroutine transfer or a protected error result
 is not a completion indication from a device.
 
-## Protected calls
+## Protected calls {#sec-coroutines-protected-calls}
 
 Call `pcall` to receive a function's success flag and results or its error
 value. Choose `xpcall` when a handler should transform that error before it
 returns to the caller. Test the success flag: an error value can be nil,
 false, a Number or an object as well as a String.
 
-### Signatures
+### Signatures {#sec-coroutines-signatures}
 
 | Function | Signature | Purpose |
 |---|---|---|
@@ -42,13 +42,11 @@ false, a Number or an object as well as a String.
 | `pcall` | `pcall(f, ...)` | Call `f` with protection. |
 | `xpcall` | `xpcall(f, msgh, ...)` | Call `f` with protection and transform its error through `msgh`. |
 
-<div class="keep-together">
 
 Brackets mark the optional `level` argument. The ellipses denote arguments forwarded to the target. Supply the leading arguments shown in each signature. If an indirect call omits a fixed argument, that argument arrives as nil: a missing first argument to `error` raises nil, and a missing protected target is nil. No maximum argument or result count is specified here.
 
-</div>
 
-### Raising a value
+### Raising a value {#sec-coroutines-raising-a-value}
 
 `error` raises its first value unchanged. Every language kind is permitted,
 including nil, false and a Table reference. A raised Table retains its identity.
@@ -57,7 +55,7 @@ automatically added source prefix or traceback.
 
 An error payload of `nil` is still an error. Inspect the success flag, not the payload's truth value, to distinguish failure from success.
 
-### Calling and receiving results
+### Calling and receiving results {#sec-coroutines-calling-and-receiving-results}
 
 `pcall` forwards the arguments after `f`. `xpcall` forwards the arguments after `f` and `msgh`; the handler is not one of the body's arguments. The target must be a function: either a BLua closure or a built-in function. A value of another kind is not accepted as a protected target.
 
@@ -74,7 +72,7 @@ Result count and `nil` positions matter. The arithmetic example below produces `
 
 A protected target can itself be `pcall` or `xpcall`. Its own success flag and remaining results are then ordinary results of the outer target; an outer success flag does not mean that every nested operation succeeded.
 
-### Transforming an error
+### Transforming an error {#sec-coroutines-transforming-an-error}
 
 `xpcall` requires `msgh` to be a function before it establishes its new protected call. An absent or non-function handler therefore raises an error outside that new boundary. An already active outer protected call can catch it.
 
@@ -86,9 +84,8 @@ For a directly called built-in handler, explicit raised values and language
 execution errors produce that handler-error result. Memory exhaustion in that
 handler follows its out-of-memory path instead.
 
-<section class="keep-together">
 
-### Which failures are protected?
+### Which failures are protected? {#sec-coroutines-which-failures-are-protected}
 
 The protected language-error path handles explicitly raised values, language execution errors, and classified out-of-memory errors. Explicit values remain unchanged; the latter two categories supply reason strings.
 
@@ -99,7 +96,6 @@ The protected language-error path handles explicitly raised values, language exe
 | Nil Table key | `Table index is nil.` |
 | Classified memory exhaustion | `Out of memory.` |
 
-</section>
 
 The target check occurs inside the new protected boundary. For `pcall`, a non-function target therefore gives `false` and its reason string. For `xpcall`, the valid handler receives that target error. The handler check, by contrast, occurs before the new boundary, as described above. For example, `pcall(rawget, {}, nil)` returns `false, 'Table index is nil.'`.
 
@@ -117,11 +113,11 @@ Protected unwinding closes captured locals of the removed calls and
 releases those calls. Writes already completed remain visible: the example
 below leaves the earlier assignment of `77` in place.
 
-### Incremental cycle charges
+### Incremental cycle charges {#sec-coroutines-incremental-cycle-charges}
 
 `error` adds 2 cycles; `pcall` and `xpcall` each add 4 cycles, with no additional per-argument or per-result charge. A protected built-in target or handler also incurs its own base charge. These are incremental charges, not total timings: target and handler execution, call and return instructions, and other machine work still contribute. Do not budget an entire protected operation as a fixed 4-cycle service.
 
-## Coroutines
+## Coroutines {#sec-coroutines-coroutines}
 
 The BIOS installs the `coroutine` table before cartridge execution. Its eight functions are available through that table; no cartridge import is needed.
 
@@ -131,7 +127,7 @@ thread leaves it suspended; an accepted `resume` starts or continues it.
 Yield, final return or an unhandled language error transfers control back to
 its resumer. At each point only one language thread is active.
 
-### Creating and identifying threads
+### Creating and identifying threads {#sec-coroutines-creating-and-identifying-threads}
 
 **`coroutine.create(fn) → thread`** returns exactly one thread value. The entry `fn` must be a language function closure. A built-in function value is not accepted merely because it is callable. Omitting `fn`, passing nil, or passing another value raises `Invalid argument.` Creation leaves the thread unstarted and publicly `"suspended"`.
 
@@ -148,7 +144,7 @@ its resumer. At each point only one language thread is active.
 
 A missing or non-thread argument raises `Invalid argument.` The public status does not distinguish an unstarted thread from a yielded thread, or a normally completed thread from a failed one.
 
-### Transferring execution and values
+### Transferring execution and values {#sec-coroutines-transferring-execution-and-values}
 
 **`coroutine.resume(thread, ...) → true, ...` or `false, error`** resumes an unstarted or yielded thread. Its first argument must be a thread. A missing or incorrectly typed first argument raises `Invalid argument.` in the caller; it is not converted into an ordinary `false, error` result.
 
@@ -164,7 +160,7 @@ The exchange carries a value tuple, not an automatically packed table. Its count
 
 Ordinary call-result adjustment still applies. A fixed number of receiving variables truncates excess results or supplies nil for missing results. An expanding result position carries the actual tuple count. Preserve that count when nil values matter; nil is not an end marker. An explicit bare `return`, and an ordinary BLua function that reaches its end without a return value, each return **one nil value**, not a zero-result tuple. Accepting all results of a successful resume of that function therefore gives `true, nil`.
 
-### Querying yieldability
+### Querying yieldability {#sec-coroutines-querying-yieldability}
 
 **`coroutine.isyieldable([thread]) → boolean`** returns one boolean. With no argument it examines the active thread. With an argument it examines that thread; explicit nil is invalid and raises `Invalid argument.` Extra arguments are unused.
 
@@ -172,7 +168,7 @@ The main thread is not yieldable. A selected thread carrying a hardware exceptio
 
 **Yieldability does not check status and is not permission to resume.** An unstarted thread can report true. A normally completed or closed thread can also report true, and a failed thread may report true. None of those answers changes resume's requirement that the target be unstarted or suspended. Ask status when deciding whether a target can be resumed; ask yieldability about the selected context's yield restrictions.
 
-### Failure and closing
+### Failure and closing {#sec-coroutines-failure-and-closing}
 
 Language errors are first offered to protected calls in the active thread. If none consumes an error and the coroutine has a resumer, ordinary coroutine error transfer returns `false, error` to that resumer. The error remains its original value, including nil or the identity of a table; it is not necessarily a string. Failed state retains the error and language frames until closing. A public dead status alone does not indicate whether this retained failure exists.
 
@@ -184,21 +180,19 @@ Closing releases the thread's language frames, pending protected-call state, ent
 
 An unstarted, suspended, or normally dead target returns exactly true when closed. A failed target returns exactly false and its retained original error, **but is still closed**. That close clears the retained failure; closing the same thread again returns true. The false prefix in this case reports the earlier failure, not a refusal to close.
 
-<section class="keep-together">
 
-### Wrapped coroutines
+### Wrapped coroutines {#sec-coroutines-wrapped-coroutines}
 
 **`coroutine.wrap(fn) → wrapped_function`** returns exactly one variadic function, backed by one newly created coroutine. The entry requirement is the same as for create. Each call to the returned function resumes that coroutine with the supplied arguments. Successful calls remove resume's true prefix and return the yielded or final tuple unchanged, including nil positions and result count.
 
-</section>
 
 On a false resume result, the wrapped function raises the first error value returned by that resume instead of returning a false prefix. If the retained coroutine is in failed state, the wrapper closes it before raising that value. A retained handle to that failed thread subsequently closes successfully because the wrapper has already cleared its retained failure. This failed-state cleanup also applies if resume rejected an already failed thread. In that case the wrapper raises the rejection string, not the earlier retained body error. Rejection in other non-suspended states does not trigger failed-thread cleanup. A finished wrapper cannot be used to restart its entry function. Replacing the public `coroutine.close` table entry does not replace the wrapper's captured closing operation.
 
-### Call arity
+### Call arity {#sec-coroutines-call-arity}
 
 Create, status, close, and wrap each declare one fixed parameter; omitted fixed parameters arrive as nil, and excess arguments are not forwarded. Running declares no parameters. Resume has one fixed parameter and a variadic tail; yield and the function returned by wrap are variadic. Isyieldable also preserves its argument list, which is why omission differs from explicit nil.
 
-### Hardware IRQ and exception boundaries
+### Hardware IRQ and exception boundaries {#sec-coroutines-hardware-irq-and-exception-boundaries}
 
 If the active caller has a hardware exception frame, `resume` returns
 `false, "cannot resume coroutine across a hardware exception"`. This check
@@ -207,16 +201,15 @@ precedes the target-status check and leaves the target unchanged.
 Yield is also forbidden across an entered exception boundary. A language
 error that cannot reach protection on its own side enters the Lua fault
 exception route. It does not unwind through an older hardware handler to
-return a coroutine result. See [System control](system.md) for device-context
-switching and the [CPU HALT interface](cpu.md#halt) for interrupt waits.
+return a coroutine result. See [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} for device-context
+switching and the [CPU HALT interface](cpu.md#sec-cpu-halt) for interrupt waits.
 
-### Cycle increments
+### Cycle increments {#sec-coroutines-cycle-increments}
 
 The underlying create, resume, yield, status, running, close, and isyieldable operations each add four cycles, with no additional per-argument or per-result charge. This is not their service time or the total cost of calling the installed function. Ordinary function instructions add work; wrap also creates and resumes a coroutine and may inspect, close, and raise an error. Resumed cartridge code contributes its own execution. No total per-call cycle bound is specified here.
 
-<section class="keep-together">
 
-## Language fault reasons
+## Language fault reasons {#sec-coroutines-language-fault-reasons}
 
 If a classified language error reaches the CPU fault-exception route, its Lua
 fault reason identifies the condition below. A protected failure result does
@@ -232,36 +225,33 @@ keep their own value and identity; their text does not select a reason code.
 | 9 | Classified out-of-memory condition |
 | 10 | Invalid argument |
 
-</section>
 
-[System control and timing](system.md) describes retained fault words and publication.
-[Interrupt controller](irq.md) describes interrupt handling. Protected language calls
+[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} describes retained fault words and publication.
+[[Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} describes interrupt handling. Protected language calls
 are not substitutes for those hardware interfaces.
 
-## Reset and startup boundary
+## Reset and startup boundary {#sec-coroutines-reset-and-startup-boundary}
 
 A newly created coroutine has not run its entry and is reported as `suspended`.
 CPU reset is not an ordinary `coroutine.close` call. It clears the active call
 and resumer chain, including protected-call ownership, and starts the selected
 system startup; it does not deliver a close-result tuple to the interrupted
-caller. [CPU reference](cpu.md) and [System control and timing](system.md)
+caller. [CPU reference](cpu.md#sec-cpu) and [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}
 describe CPU startup and the system-wide reset request separately.
 
-<section class="keep-together">
 
-## Argument and result transfer
+## Argument and result transfer {#sec-coroutines-argument-and-result-transfer}
 
 The figure shows the producer in the yield-and-resume example below. `resume` and
 `yield` abbreviate `coroutine.resume` and `coroutine.yield`. Arrows show language
 control and value transfers; vertical distance is not elapsed machine time.
 
-![The producer yields values to its parent, then receives the next resume arguments as yield results.](figures/coroutines-transfer.svg)
+![The producer yields values to its parent, then receives the next resume arguments as yield results.](figures/coroutines-transfer.svg){#fig-coroutines-transfer}
 
-</section>
 
-## Programming examples
+## Programming examples {#sec-coroutines-programming-examples}
 
-### Protected results and errors
+### Protected results and errors {#sec-coroutines-protected-results-and-errors}
 
 A protected call keeps the target's result count and nil positions. A caught
 error keeps the original value, even when that value is nil or a Table.
@@ -283,7 +273,6 @@ local index_ok, index_error = pcall(rawget, {}, nil)
 -- false, 'Table index is nil.'.
 ```
 
-<div class="keep-together">
 
 Only the handler's first result is retained. A language error in the handler
 instead produces the handler-error String.
@@ -298,9 +287,8 @@ local handled, message = xpcall(function() error('body') end,
 -- false, 'error in error handling'.
 ```
 
-</div>
 
-### Yield and resume
+### Yield and resume {#sec-coroutines-yield-and-resume}
 
 This producer follows the transfers in the figure. Its first arguments are
 entry arguments; the next resume supplies the results of its suspended yield.
@@ -324,7 +312,7 @@ While the producer runs, `coroutine.running()` returns its Thread with false
 as the second result. Its resumer has status `normal`; when the producer yields
 or returns, the resumer becomes `running` again.
 
-### Failure and explicit close
+### Failure and explicit close {#sec-coroutines-failure-and-explicit-close}
 
 Closing a failed coroutine reports its retained error but still completes the
 close. A second close therefore succeeds.
@@ -353,9 +341,8 @@ coroutine.close(abandoned)
 local retained = read() -- 19: the assignment of 20 never ran.
 ```
 
-<div class="keep-together">
 
-### Wrapped calls
+### Wrapped calls {#sec-coroutines-wrapped-calls}
 
 A wrapped coroutine exchanges the same tuples without resume's Boolean prefix.
 An error is raised in the caller; a failed coroutine is closed before that
@@ -378,5 +365,3 @@ end)
 local ok, caught = pcall(invoke) -- false, failure
 local closed = coroutine.close(failed_thread) -- true: already closed by wrap.
 ```
-
-</div>

@@ -1,7 +1,7 @@
 # GPU dither comparison
 
 A separate static-picture cartridge, not an addition to `gpu_manual`.
-See the [GPU dither comparison](../../docs/book1/gpu.md#gpu-dither-output)
+See the [GPU dither comparison](../../docs/book1/gpu.md#sec-gpu-compare-polygon-dither-with-a-rectangle-control)
 for the hardware explanation, complete listing and actual output plate.
 The upper pair uses one modulated textured quad with dithering off and one
 with it on. The lower pair uses textured rectangles as the unchanged control.

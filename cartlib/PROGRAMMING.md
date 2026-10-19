@@ -72,7 +72,7 @@ The **60-byte boot prefix** occupies `0x00` through `0x3b`. It is distinct from 
 
 Function-record addresses are absolute machine addresses, not image offsets or instruction PCs. The exception-address field alone does not specify cartridge fault routing. Package DATA is the physical payload, not writable program DATA; its length is not the program DATA section size.
 
-The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the separate [machine EXEC handoff](../docs/book1/memory.md#exec-and-cartridge-entry) for the startup sequence.
+The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the separate [machine EXEC handoff](../docs/book1/memory.md#sec-memory-exec-and-cartridge-entry) for the startup sequence.
 
 <a id="resource-integration"></a>
 
@@ -213,7 +213,7 @@ image position plus the tile's
 `x` and `y`. Source coordinates can exceed 255: the packet uses their low eight
 bits together with separate texture-page selection. Do not confuse the complete
 atlas coordinate with a page-local UV byte. See [GPU: Locate texture texels and
-palette colors](../docs/book1/gpu.md#locate-texture-texels-and-palette-colors).
+palette colors](../docs/book1/gpu.md#sec-gpu-locate-texture-texels-and-palette-colors).
 
 #### Texture metadata and transfer counts
 
@@ -255,11 +255,11 @@ compressed-input count is not a replacement for either count. The separate
 texture size word is `word_width | (height << 16)`, not the original image's
 pixel width or a 32-bit payload count. IMGDEC generates a 16 × 1-word CLUT
 upload when the CLUT payload is present. See [IMGDEC: Generated GP0
-output](../docs/book1/imgdec.md#generated-gp0-output) for the complete packet and
+output](../docs/book1/imgdec.md#sec-imgdec-generated-gp0-output) for the complete packet and
 count rules.
 
 VRAM placement is another operation. Reserve the texture rectangle and any
-CLUT without overlapping the [firmware reservation](../docs/book1/memory.md#firmware-reservation-in-vram)
+CLUT without overlapping the [firmware reservation](../docs/book1/memory.md#sec-memory-firmware-reservation-in-vram)
 or other live readers. The atlas helper reserves at least sixteen VRAM words
 of width and one additional row for Palette4, placing the CLUT just below the
 texture. Its horizontal alignment is 64 VRAM words for Palette4 and 256 for
@@ -293,8 +293,8 @@ texels have arrived. Keep source lifetime, both DMA completions, IMGDEC's
 terminal status and downstream GPU completion distinct. A decoder fault can
 leave an armed DMA channel waiting, while an upload's delivery does not itself
 acknowledge display publication. Follow the [IMGDEC completion and recovery
-rules](../docs/book1/imgdec.md#interrupts-and-fault-recovery) and the [GPU stream
-handoff](../docs/book1/gpu.md#hand-a-gp0-stream-between-cpu-and-dma) before reusing
+rules](../docs/book1/imgdec.md#sec-imgdec-interrupts-and-fault-recovery) and the [GPU stream
+handoff](../docs/book1/gpu.md#sec-gpu-hand-a-gp0-stream-between-cpu-and-dma) before reusing
 their resources or depending on the uploaded contents.
 
 #### Packed collision data
@@ -322,7 +322,7 @@ directory's collision-data start and end. The image record's `len` describes
 its main-data span, not this collision extent.
 
 Each variant uses the 16-byte
-[OVERLAP2D shape descriptor](../docs/book1/geo.md#shape-descriptors-and-bounds).
+[OVERLAP2D shape descriptor](../docs/book1/geo.md#sec-geo-shape-descriptors-and-bounds).
 Its data and bounds offsets are relative to **that descriptor**, not `C`.
 The packed forms are:
 
@@ -364,7 +364,7 @@ and the relevant mapping until the job completes. Rebuilding a ROM directory
 neither completes GEO nor retargets previously retained descriptor addresses.
 
 An IRQ wakeup alone does not establish success. Inspect the terminal status
-and fault words as specified in [GEO: OVERLAP2D_PASS](../docs/book1/geo.md#overlap2d_pass-translated-shape-contacts),
+and fault words as specified in [GEO: OVERLAP2D_PASS](../docs/book1/geo.md#sec-geo-overlap2d_pass-translated-shape-contacts),
 which also defines the complete instance, pair, result and register contracts.
 
 <a id="apu-playback"></a>
@@ -403,7 +403,7 @@ This step neither copies samples nor programs the APU. `apu.play` and
    wait for STATUS.TRANSFER_BUSY to clear before playback or a mode change.
    DMA DONE is not the final sample-RAM commit. For download, DMA completion
    instead marks receipt of the requested words; select transfer STOP afterward
-   to discard unwanted prefetch. See [Sample RAM transfer](../docs/book1/apu.md#sample-ram-transfer).
+   to discard unwanted prefetch. See [Sample RAM transfer](../docs/book1/apu.md#sec-apu-sample-ram-transfer).
 3. **Submit coherent configuration.** Write staging parameters first and CMD
    last, or use the library playback functions. Serialize staging-bank users
    and check CMD_FREE before a burst: a full FIFO replaces its oldest command.
@@ -422,7 +422,7 @@ This step neither copies samples nor programs the APU. `apu.play` and
    `cartlib/irq` when needed. For one controlled outstanding end, snapshot a
    retained service sequence before issuing PLAY or the faded stop, then wait
    on that predicate: another IRQ can wake the CPU, and the hardware retains
-   only the latest end event. See [End events and interrupts](../docs/book1/apu.md#end-events-and-interrupts).
+   only the latest end event. See [End events and interrupts](../docs/book1/apu.md#sec-apu-end-events-and-interrupts).
 
 The [worked program](#worked-blua-program) below supplies the complete imports,
 typed operands and interrupt setup for the library transfer and playback route.
