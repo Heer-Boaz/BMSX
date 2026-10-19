@@ -145,3 +145,8 @@ claims. This follows the explicit software-authority decision recorded in the
 fact sheet. Cartridge-source names do not import Book II device programming.
 
 No publication decision is based on page count or merely on a successful build.
+
+2026-10-19: The hardware-first source/IEc opening and independent direct-handler
+route pass the bounded paired IRQ/CPU and shared vector-producer check. Removing
+the external dispatcher adds no firmware route; unchanged delivery material was
+not re-audited. Source approval is current; print acceptance remains pending.

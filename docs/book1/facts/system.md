@@ -272,6 +272,15 @@ post-boot reset is inferred from direct Machine construction.
 
 ---
 
+ST09. For raw unsigned TIME_MS samples and an actual interval below2^32ms,
+`(current-start) % 0x100000000` gives a nonnegative wrapping distance. MOD uses
+the positive-divisor modulo rule; BAND instead returns a signed32-bit Number,
+so `& 0xffffffff` is not an unsigned-distance conversion for the upper half.
+TS `machine/ts/spec/blua32/numeric.ts:7–13`,
+`machine/ts/machine/cpu/cpu.ts:2581–2592`;
+C++ `machine/cpp/spec/blua32/numeric.h:13–20`,
+`machine/cpp/machine/cpu/cpu_dispatch.inl:199–205,222–228`.
+
 # SYSTEM diagnostic transmitter — frozen facts
 
 Live paired-owner extraction, 2026-10-17, baseline ec4c5b27e. Not chapter prose.

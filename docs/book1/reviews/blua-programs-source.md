@@ -137,3 +137,9 @@ mechanical layout checks for the source chapter and changed CPU reference.
 conflict, not pending finite source/print review. Current software is recorded
 separately; it does not reconcile intended repeat-local visibility. No release is claimed by the DRAFT
 PDF. Both working and staged diff checks pass for the committed slice.
+
+2026-10-19: The storage-section paragraph no longer describes static placement
+as a resident BIOS service. Its compact link-time layout and alternate-placement
+boundary pass the shared-linker, paired activation, BIOS boot and emitted-startup
+source check; [corrected facts](../facts/blua-extensions-storage.md).
+LS01 and final print acceptance remain separate.

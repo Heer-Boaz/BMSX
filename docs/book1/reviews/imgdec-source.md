@@ -211,3 +211,11 @@ All24 manual tests and `git diff --check` pass. No runtime, BIOS, compiler,
 publisher or harness implementation changed. Native/accelerated parity,
 physical throughput, fixed IRQ latency, final print and whole-book completion
 remain outside this acceptance.
+
+2026-10-19: The completed hardware-first port/FIFO/overlap opening passes the
+paired source check: IMGDEC `controller.ts:358–425,486–509,583–641` and
+`controller.cpp:258–330,391–414,491–544`; both endpoint requests are required
+by DMA `controller.ts:487–503` / `controller.cpp:412–426`. Source transport,
+decoder production and GPU completion remain distinct. Removing external
+metadata links and dispatcher wording changes no retained program operation.
+Current source approval does not supply final print acceptance.

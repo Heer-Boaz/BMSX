@@ -19,10 +19,20 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## First cartridge and hardware reference
 
-Start with [Build and inspect the memory example](docs/programming/getting-started.md)
-for the source layout, build commands and checked results. The corresponding
-[Memory and program storage chapter](docs/book1/memory.md) is a working hardware
-manual draft, not yet a complete console reference.
+Start with [Build and inspect example cartridges](docs/programming/getting-started.md)
+for a visible GPU picture, source layout and build commands. The working manual
+series separates three scopes:
+
+- **Book I — System and Hardware Reference:** begin with the
+  [System overview](docs/book1/console.md), then follow its links to the owning
+  hardware chapters and [Memory and program storage](docs/book1/memory.md).
+- **Book II — BLua32 and BIOS Reference:** begin with
+  [BLua source programs and extensions](docs/book1/blua-programs.md), not an
+  assumption that cartridge examples are ordinary Lua.
+- **Book III — Cartridge and Expansion Reference:**
+  [Cartridge sockets and mapped card devices](docs/book3/cartridge.md).
+
+These are working drafts, not a complete or released console-reference series.
 
 ## Project Layout
 
@@ -32,7 +42,7 @@ manual draft, not yet a complete console reference.
 - `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
 - `ide`: editor, terminal, workbench, and IDE runtime tooling
 - `machine/bios`: the guest system-ROM source, organized by BIOS responsibility
-- `cartlib`: the cart-side SDK, including direct device programming; bundled into cart ROMs when required
+- `cartlib`: independent cartridge software, not installed BIOS or firmware; linked into carts that choose to use it
 - `hosts/browser`: browser player/product owners
 - `hosts/node`: headless and CLI product owners
 - `machine/cpp`: C++ machine/runtime implementation

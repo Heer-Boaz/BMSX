@@ -140,3 +140,13 @@ is added. The existing phase predicates remain source-checked, but affected
 fault coverage is reopened until the owning completion policy is resolved.
 The old successful publication decision is historical, not current approval
 of that path. Native execution of the reproduction was not performed.
+
+2026-10-19: The hardware-first opening and independent raw-timer program pass
+the bounded paired-source check. One real finding corrected the signed
+`& 0xffffffff` distance to `% 0x100000000`; [ST09](../facts/system.md) retains
+the CPU/modulo sources. The rebuilt ordinary cartridge passes
+`time_words_privilege_and_transmit`, including four observations of at least100ms
+and runtime-operand modulo cases32/7fffffff/80000000/ffffffff. These arithmetic
+cases do not advance the hardware counter through a complete wrap or prove
+native execution. Printed source matches the retained program apart from blank
+separators. RDB01 fault coverage and final print acceptance remain open.

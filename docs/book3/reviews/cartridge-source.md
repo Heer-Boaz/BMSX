@@ -136,3 +136,9 @@ anchor, whose new authoritative layout has a separate
 actual-source reviewer checked the new subsection and this target; no unsupported
 sentence or dead source target was found. This is not a new cartridge runtime,
 whole-boot, malformed-header or portable-PDF-navigation approval.
+
+2026-10-19: Removing third-party resources and replacing manifest examples with
+the hardware card-composition table pass the paired card/controller check. ROM,
+RAM and mailbox presence/capacity remain card properties, distinct from socket
+occupancy. No retained source delta from the removed resource additions remains
+pending; this is source acceptance, not final print or whole-Book-III acceptance.

@@ -39,7 +39,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book3/reviews/cartridge-source.md"
 		},
 		"figures": {

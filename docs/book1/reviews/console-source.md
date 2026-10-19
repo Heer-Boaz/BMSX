@@ -51,3 +51,9 @@ numbers are not invented from another console or from scheduled DMA charges.
 The common Table-length STOP, CPU7, BZ01, remaining language/environment/BIOS,
 cartridge/expansion, SDK/debugging, book-level navigation and whole-console
 newcomer acceptance remain open in the existing manual inventory.
+
+2026-10-19: The hardware-first opening and whole-period timing correction pass
+the bounded paired-owner check. Static placement now labels linker adjacency
+as a choice, not BIOS allocation; the matching boot/activation/startup check
+agrees with corrected M10 in [the memory facts](../facts/console-memory.md).
+These close the changed source contracts, not final print acceptance.

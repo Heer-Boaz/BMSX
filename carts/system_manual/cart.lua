@@ -46,11 +46,11 @@ print('SYSTEM timer experiment')
 for index = 0, 3 do
 	local sample<const>: *system_manual_sample = &result.samples[index]
 	sample.before_ms = *time_ms
-	while ((*time_ms - sample.before_ms) & 0xffffffff) < 100 do
+	while ((*time_ms - sample.before_ms) % 0x100000000) < 100 do
 		halt_until_irq
 	end
 	sample.after_ms = *time_ms
-	sample.elapsed_ms = (sample.after_ms - sample.before_ms) & 0xffffffff
+	sample.elapsed_ms = (sample.after_ms - sample.before_ms) % 0x100000000
 	sample.frame_ms_q16 = *frame_ms_q16
 	sample.cycles_per_frame = *cycles_per_frame
 	sample.status = *status

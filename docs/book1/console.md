@@ -80,14 +80,22 @@ Main-window addresses beyond the installed RAM backing neither provide additiona
 
 The two reservations occupy 768 KiB before static storage begins. In the installed 4 MiB configuration, 3.25 MiB remains after that span, **before** subtracting system and cartridge statics. This is not a free-memory or usable-heap figure.
 
-Static storage has an image-dependent layout, in this order:
+The compact linked layout places static storage in this order:
 
 - System DATA begins at `0x080c0000`.
 - System BSS follows system DATA.
 - Cartridge DATA begins at the end of system BSS.
 - Cartridge BSS follows cartridge DATA.
 
-Consequently, there is no fixed cartridge-static base or fixed remaining application-memory quantity. Static storage must fit within the actual installed RAM extent. Linked images carry read-only data and DATA initialization payloads; a DATA payload's load address and its RAM run address are distinct, while BSS has its own RAM address. These image descriptions do not create extra memory windows.
+This adjacency is a layout choice, not a hardware requirement or a BIOS
+allocation service. Another cartridge layout must preserve the actual firmware
+footprint and the reserved regions, fit within installed RAM, and use its chosen
+addresses consistently in records, code and startup. There is no fixed
+cartridge-static base or fixed remaining application-memory quantity.
+
+Linked images carry read-only data and DATA initialization payloads; a DATA
+payload's load address and its RAM run address are distinct, while BSS has its
+own RAM address. These image descriptions do not create extra memory windows.
 
 The [Memory chapter](memory.md) provides the detailed access rules and image-layout procedures. Capacity planning should use the actual firmware and cartridge image footprints, not the sizes of their address windows.
 

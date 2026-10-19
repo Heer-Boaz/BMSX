@@ -90,3 +90,9 @@ preview has no layout errors; actual-page evidence is in
 [the print review](input-print.md). Publication check intentionally exits 1
 only for the named attachment/supervisor and full-word output contracts plus
 final public print approval, not pending source/figure or local route findings.
+
+2026-10-19: The new capture-edge opening and removal of third-party tick ownership
+pass the bounded paired-owner check. One finding removed an unsupported “then”:
+request consumption precedes register publication in `input/controller.ts:97–100`
+and `input/controller.cpp:66–69`, not the reverse. No attachment or full-word
+output policy was inferred; those existing open questions and print remain.

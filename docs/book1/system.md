@@ -241,9 +241,11 @@ Use aligned word reads for these registers. Writes are read-only-access faults. 
 
 ### Software timing
 
-For two raw `TIME_MS` samples, compute elapsed milliseconds as the low 32 bits
-of `current − start`. In BLua, `(current - start) & 0xffffffff` expresses this
-unsigned wrapping distance directly. The result measures the interval only
+For two raw `TIME_MS` samples, compute elapsed milliseconds modulo 2^32.
+In BLua, use `(current - start) % 0x100000000` for the nonnegative wrapping
+distance. A bitwise `& 0xffffffff` instead returns a signed 32-bit result and
+cannot represent distances from `80000000H` through `ffffffffH` as nonnegative
+Numbers. The modulo result measures the interval only
 when the actual elapsed time is shorter than one complete 2^32-millisecond
 period. A zero result is valid when both samples fall in the same millisecond.
 `os.difftime` is ordinary subtraction, not wrapping hardware-time arithmetic.
@@ -421,11 +423,11 @@ The four observations follow immediately:
 for index = 0, 3 do
 	local sample<const>: *system_manual_sample = &result.samples[index]
 	sample.before_ms = *time_ms
-	while ((*time_ms - sample.before_ms) & 0xffffffff) < 100 do
+	while ((*time_ms - sample.before_ms) % 0x100000000) < 100 do
 		halt_until_irq
 	end
 	sample.after_ms = *time_ms
-	sample.elapsed_ms = (sample.after_ms - sample.before_ms) & 0xffffffff
+	sample.elapsed_ms = (sample.after_ms - sample.before_ms) % 0x100000000
 	sample.frame_ms_q16 = *frame_ms_q16
 	sample.cycles_per_frame = *cycles_per_frame
 	sample.status = *status
@@ -435,11 +437,11 @@ end
 
 </section>
 
-`&result.samples[index]` takes the address of the selected typed sample. The program records a start word and repeatedly asks whether the unsigned elapsed distance is still less than 100 milliseconds. The inline mask retains the low 32 bits of the sample difference. This calculation requires the actual interval to be shorter than one full `TIME_MS` period; it does not extend the counter or count missed wraps.
+`&result.samples[index]` takes the address of the selected typed sample. The program records a start word and repeatedly asks whether the unsigned elapsed distance is still less than 100 milliseconds. The modulo operation reduces the sample difference to the range 0 through 2^32−1. This calculation requires the actual interval to be shorter than one full `TIME_MS` period; it does not extend the counter or count missed wraps.
 
 After each interrupt wake-up, the program checks the predicate again. The resulting `elapsed_ms` is **at least 100**, not necessarily exactly 100. VBlank delivery and the instructions between the reads can make it larger; this is not an exact 100-millisecond cadence or an instruction-active-only measurement. The start for each observation is taken anew.
 
-`after_ms`, `frame_ms_q16`, `cycles_per_frame`, and `status` are separate accesses, not an atomic multiword snapshot. The frame word remains raw Q16 milliseconds; `0x00010000` represents one millisecond. The cycles word is the current next-VBlank cycle budget, not the number of cycles spent in the wait. Their values belong to the running timing configuration; no fixed frame duration is assumed here.
+`after_ms`, `frame_ms_q16`, `cycles_per_frame`, and `status` are separate accesses, not an atomic multiword snapshot. The frame word remains raw Q16 milliseconds; `0x00010000` represents one millisecond. The cycles word is the current whole VBlank-period budget, not the number of cycles spent in the wait. Their values belong to the running timing configuration; no fixed frame duration is assumed here.
 
 `completed_samples` advances only after all fields of that sample have been written. On completion it is 4, each saved elapsed distance is the wrapping distance from its two saved time words and is at least 100, and each saved status is zero under the stated conditions. The VBlank count is at least 4 and continues to grow during the final idle loop.
 

@@ -250,6 +250,10 @@ The public-only reader found a delayed-pending-VBlank race in buffer reuse.
 The corrected mask/store/ACK/sample/unmask/wait order passes that finding's
 paired IRQ-owner and reader recheck; [source locations](../facts/gte.md#independent-frame-loop-publication).
 No further reader-contract gap was found in the bounded geometry/color/output
-routes. Full paired-source approval of the replacement raw setup tables and
-GPU/PCRTC sequences remains pending; earlier library-program executions do not
-validate a replacement listing. The facts and print flags remain false.
+routes. Three separate paired-source checks now accept the replacement GTE
+packing/commands/results, GPU packet/status/readback sequences and PCRTC
+word/latch/IRQ handoffs with no findings. They cover the hardware-frame,
+depth-cue, material and near-plane sections only, not another full opcode or
+backend audit. Earlier library-program executions do not validate a replacement
+listing; these are source-derived sequences. Facts approval is current; print
+acceptance remains pending.

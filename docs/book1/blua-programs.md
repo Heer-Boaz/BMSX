@@ -111,8 +111,13 @@ Assigning a new value directly to a `bss` or `data` name is rejected; the name i
 
 Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
 It precedes static module initializers and the entry routine.
-Cartridge static RAM placement is supplied by the BIOS; BSS follows the cartridge's data byte span.
-Use the linked storage addresses rather than assuming a numeric placement.
+The compact linked layout places cartridge DATA after the matching firmware's
+BSS and cartridge BSS after its DATA. This is a link-time placement choice, not
+a BIOS allocation service or a hardware adjacency requirement. Preserve the
+actual firmware footprint and reservations, and use the linked storage
+addresses rather than assuming a numeric placement. See
+[Memory: reserved and cartridge storage](memory.md#reserved-and-cartridge-storage-in-main-ram)
+for placement and matching-firmware information.
 
 Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
 Two separate `u8` declarations therefore need not occupy adjacent bytes.

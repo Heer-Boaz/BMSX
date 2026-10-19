@@ -39,7 +39,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/console-source.md"
 		},
 		"figures": {

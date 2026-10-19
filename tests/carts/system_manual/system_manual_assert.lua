@@ -20,7 +20,7 @@ return {
 			assert(result.time_seconds <= result.time_after_ms // 1000)
 			for index = 0, 3 do
 				local sample<const>: *system_manual_sample = &result.samples[index]
-				assert(sample.elapsed_ms == ((sample.after_ms - sample.before_ms) & 0xffffffff))
+				assert(sample.elapsed_ms == ((sample.after_ms - sample.before_ms) % 0x100000000))
 				assert(sample.elapsed_ms >= 100)
 				assert(sample.frame_ms_q16 ~= 0)
 				assert(sample.cycles_per_frame ~= 0)
@@ -29,6 +29,16 @@ return {
 			assert(result.vblanks >= 4)
 			assert(result.char_readback == 0xffffffff)
 			assert(result.flush_readback == 0)
+			-- Runtime operands exercise wrap and the signed-bit boundary without a long timer interval.
+			local start = 0xfffffff0 + result.ignored_status
+			local current = (start + 32) % 0x100000000
+			assert((current - start) % 0x100000000 == 32)
+			current = (start + 0x7fffffff) % 0x100000000
+			assert((current - start) % 0x100000000 == 0x7fffffff)
+			current = (start + 0x80000000) % 0x100000000
+			assert((current - start) % 0x100000000 == 0x80000000)
+			current = (start + 0xffffffff) % 0x100000000
+			assert((current - start) % 0x100000000 == 0xffffffff)
 			t:log('four >=100ms observations; user commands ignored; six fault words zero; BIOS time reads bracketed; raw CHAR/FLUSH readbacks correct')
 		end,
 	},

@@ -6,7 +6,7 @@ The input controller presents keyboard, pointer and pad input as a sampled regis
 
 ARM requests one capture at the display controller's VBlank-begin edge; it does
 not immediately read the devices. An accepted capture publishes the new data
-and sequence, then consumes that request. Arm again for another sample. The
+and sequence and consumes that request. Arm again for another sample. The
 display edge, not the CPU's register-read rate or entry into an interrupt
 handler, determines this publication point.
 
