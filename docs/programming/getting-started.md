@@ -1,6 +1,17 @@
 # Build and inspect example cartridges
 
-The first route uses the two listings in the [worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records): build the supplied `memory_manual` cartridge, check its storage result, then run ordinary headless playback separately. Later sections give the corresponding routes for the other named example cartridges, including [modules and globals](#build-and-inspect-modules-and-globals). Use the section matching the program you are building; earlier example cartridges are not prerequisites. This is a supplied-checkout first-build route, not a complete SDK or debugging guide.
+Begin with a visible result: build and run the supplied GPU cartridge below.
+It draws a static scene from ordinary BLua source; an assertion suite is not
+required to see it. Then use the hardware-operation links to choose what to
+program next.
+
+The later storage route uses the two listings in the
+[worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records):
+build `memory_manual`, check its storage result, then run ordinary headless
+playback separately. Other sections cover the named cartridges, including
+[modules and globals](#build-and-inspect-modules-and-globals). These examples
+are independent, not a sequence of prerequisite builds. This guide describes
+the supplied checkout; it is not a complete SDK installation or debugging guide.
 
 ## Prerequisites
 
@@ -10,11 +21,93 @@ Run the commands from the BMSX repository root in a POSIX shell, such as the Lin
 npm install -D
 ```
 
-A working native `canvas` binding is required by these builds, even though the memory example contains no images. The build and run sequence below was checked in an existing working checkout; a fresh dependency installation and every operating system were not tested by that check.
+A working native `canvas` binding is required by these builds, even though the
+memory example contains no images. These instructions assume a working
+checkout with its dependencies available; they are not a fresh-installation
+procedure for every operating system.
+
+## First picture: build and run the GPU example
+
+The complete source is `carts/gpu_manual/cart.lua`, corresponding to
+[Program a complete picture in BLua](../book1/gpu.md#program-a-complete-picture-in-blua).
+Its manifest is supplied at
+`carts/gpu_manual/res/manifest/manifest.rommanifest`. Texture pixels, palette
+colors, packed indices and command packets are declared in the source; no
+external image preparation is required for this example.
+
+From the repository root, run:
+
+```sh
+npm run build:product:browser-player -- --debug
+npm run build:toolchain:cart -- gpu_manual --debug
+npm run serve:dist
+```
+
+The player build supplies `dist/index.html` and `dist/engine.debug.js`.
+The cartridge build exports `dist/gpu_manual.debug.rom` and its matching
+`dist/system/bmsx-bios.debug.rom`; it resolves or builds that BIOS automatically.
+Do not add a separate BIOS or host-tools build to this route.
+
+Leave the server running and open this exact URL in a browser:
+
+```text
+http://127.0.0.1:8080/index.html?rom=gpu_manual.debug.rom
+```
+
+Keep the `index.html` path and `rom` parameter: the generic player does not
+select this cartridge by itself. The debug player starts automatically; the
+picture does not require the ordinary “Press any key” gate or an audio-unlock
+keypress.
+
+### Expected static scene
+
+After boot, look for two large textured quads and an RGB-gradient triangle
+above overlapping rectangles, with a colored indexed strip along the bottom.
+The small marks near the left are intentional readback and unscaled-texture
+witnesses. The cartridge finishes drawing and sleeps; it is not an animated
+game or a frame-loop template.
+
+![GPU example reference picture, with textured quads, gradient triangle, rectangle overlaps and an indexed strip](../book1/figures/gpu-output-materials.png)
+
+This is the existing [GPU output plate](../book1/gpu.md#gpu-output-plate), whose
+legend explains the regions. Running the ordinary ROM shows the picture;
+it does not run the retained-value assertion suite. The memory-result and
+other inspection routes below remain separate.
+
+### Show the whole frame
+
+The player defaults to overscan, which can crop the picture's edges. To compare
+the whole frame, click the page to focus it and select `PICTURE = FIT`.
+Tap **Right Ctrl + Right Alt** together and release in less than 500 ms to open
+the menu. Use **Up/Down** to select `PICTURE`, **Left/Right** to choose `FIT`,
+then **Escape** to close the menu. Holding the combination for 500 ms requests
+rewind instead. These are player controls, not cartridge input code.
+
+## Find the hardware operation
+
+With the first picture running, use the task below to choose your next
+programming route. These links lead to explanations and worked sequences,
+rather than register inventories. Start with the operation you need; follow
+its chapter's register reference for individual fields.
+
+| What you want to do | Where to continue |
+|---|---|
+| Establish memory ownership and startup | Read [ROM contents, RAM sections, and startup](../book1/memory.md#rom-contents-ram-sections-and-startup), then [Taking ownership after the BIOS](../book1/memory.md#taking-ownership-after-the-bios) before assigning storage. |
+| Draw, upload pixels, or use textures | Extend [Program a complete picture in BLua](../book1/gpu.md#program-a-complete-picture-in-blua) through [Upload and issue the stream](../book1/gpu.md#upload-and-issue-the-stream-through-one-port) and [Locate texture texels and palette colors](../book1/gpu.md#locate-texture-texels-and-palette-colors). |
+| Control display timing and source windows | Read [Beam timing](../book1/pcrtc.md#27-beam-timing), then [Program the fixed canvas and initial cutout](../book1/pcrtc.md#program-the-fixed-canvas-and-initial-cutout) for the source-selection route. |
+| Transform and project 3D geometry | Begin with [Constructing and packing a transform](../book1/gte.md#constructing-and-packing-a-transform); continue through [Perspective and geometric decisions](../book1/gte.md#perspective-and-geometric-decisions) to [a visible image](../book1/gte.md#from-projected-vertices-to-a-visible-image). |
+| Transform 2D shapes and test contacts | Follow [An authored sprite and its collision hull](../book1/geo.md#an-authored-sprite-and-its-collision-hull), then [Launching and observing a job](../book1/geo.md#launching-and-observing-a-job). |
+| Transfer data and observe completion | Follow [Program a transfer](../book1/dma.md#program-a-transfer) together with [Completion and interrupts](../book1/dma.md#completion-and-interrupts). |
+| Play sound and manage sample storage | Start with the APU [Programming sequence](../book1/apu.md#programming-sequence), then [Voice sources and their lifetime](../book1/apu.md#voice-sources-and-their-lifetime) and [Sample RAM transfer](../book1/apu.md#sample-ram-transfer). |
+| Read input and service interrupts | Follow the [Complete input sampling program](../book1/input.md#complete-input-sampling-program), [Choose one cartridge dispatch route](../book1/irq.md#choose-one-cartridge-dispatch-route), and [Acknowledge the source and the controller separately](../book1/irq.md#acknowledge-the-source-and-the-controller-separately). |
+
+The [System overview](../book1/console.md) relates the units and storage. For
+source notation, read the [BLua extensions](../book1/blua-programs.md#blua-extensions)
+rather than treating the hardware examples as ordinary Lua.
 
 ## Put the files in their roles
 
-The repository supplies these example files, including the assertion suite. If recreating the worked storage example's two program listings, put the storage listing in `storage.lua` and the entry listing in `cart.lua` at these exact locations:
+The following storage route uses the separate `memory_manual` project. The repository supplies these example files, including the assertion suite. If recreating the worked storage example's two program listings, put the storage listing in `storage.lua` and the entry listing in `cart.lua` at these exact locations:
 
 ```text
 carts/
@@ -120,7 +213,9 @@ http://127.0.0.1:8080/index.html?rom=memory_fault_manual.debug.rom
 
 Do not shorten it to `/?rom=...`: the root redirect drops the query. The debug page starts automatically, without a “press any key” gate.
 
-Click the page to focus it. The default overscan presentation can crop the monitor's edges, so first select `PICTURE = FIT`. With the current default physical key mappings, tap **Right Ctrl + Right Alt** together and release promptly, in less than 500 ms, to open the menu. Holding the combination for 500 ms enters rewind instead. Use **Up/Down** to select `PICTURE`, **Left/Right** to choose `FIT`, then **Escape** to close the menu.
+Click the page to focus it. The default overscan presentation can crop the
+monitor's edges, so [show the whole frame](#show-the-whole-frame) with
+`PICTURE = FIT` before inspecting the diagnostic text.
 
 At the BIOS monitor prompt, type this command with the keyboard and press **Enter**:
 

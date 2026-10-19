@@ -850,3 +850,44 @@ normal/moved-vertex quad and polyline packets, integer sample counts and
 brighter additive material. Actual image and selected complete-row readback
 observations are separate from the derivation. It extends the existing P03
 lesson without claiming arbitrary quad outlines have once-only coverage.
+
+## Ordinary first-picture development route
+
+Source/path check for the existing development companion, not a new browser
+execution, screenshot, fresh installation, native or backend-parity approval.
+The existing GPU program and accepted output plate are unchanged.
+
+- Commands `build:product:browser-player -- --debug`,
+  `build:toolchain:cart -- gpu_manual --debug`, `serve:dist` come from
+  `package.json:89–93,111–112`. serve:dist's automatic pre-script builds its
+  host tools; no extra manual host-tools command is required.
+- Generic browser loader at dist/index.html and engine.debug.js:
+  `scripts/products/product_builder.ts:99–111`,
+  `scripts/products/targets.ts:28–30,44`,
+  `scripts/products/browser_build.ts:106–119,217–231`.
+  Cart output defaults dist, filename gpu_manual.debug.rom:
+  `scripts/rompacker/rompacker.ts:19`, `scripts/rompacker/rombuilder.ts:1282–1283`.
+  Matching-debug system dependency resolves/builds/exports automatically:
+  `scripts/rompacker/build.ts:23–33,47–58,72–76`,
+  `scripts/rompacker/artifacts.ts:46–50`, `toolchain/ts/rompack/system.ts:3`.
+- Local server defaults address127.0.0.1/port8080 and dist:
+  `scripts/serve-dist.mjs:41–43,293–296`. Exact public path index.html plus
+  rom=gpu_manual.debug.rom is consumed by `hosts/browser/boot.ts:51–59,197–199`;
+  generic product supplies no defaultcartridge (`product_builder.ts:101–105`).
+  Debug flag skips startup animation/keygate:
+  `scripts/products/browser_build.ts:70–73`,
+  `hosts/browser/player.ts:30–36,130–132`, `hosts/browser/boot.ts:164–171,206–212`.
+- Self-contained ordinary source `carts/gpu_manual/cart.lua:1,13–29,135–148`
+  supplies entry/readonlytexture,palette,indices/packets, enables staticpicture
+  thenwaits. Supplied manifest `carts/gpu_manual/res/manifest/manifest.rommanifest`.
+  Expected unchanged output and legend are in public GPU outputplate section;
+  reuse existing `docs/book1/figures/gpu-output-materials.png`, no new capture.
+- Wholeframe player view uses PICTURE/FIT (`hosts/browser/player.ts:30–35,81–93`);
+  overscan cancrop (`hosts/browser/video_output.ts:7–9,118–125,135–144`).
+  CurrentdefaultRightCtrl/RightAlt =Select/Start
+  (`hosts/common/input/manager.ts:238–244`), chordthreshold500ms and release
+  short/holdlong dispatch (`hosts/common/input/shortcuts.ts:8–13,311–340`).
+  Menu toggleshort/rewindrequestlong and availability check:
+  `hosts/common/host_overlay_menu.ts:409–418,453–465`. Physical arrows/Escape
+  `hosts/common/input/ui.ts:10–21`; optionselect/value/close handling
+  `host_overlay_menu.ts:489–515,823–826`. No claim actual viewport cropped.
