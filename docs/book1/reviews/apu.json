@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete two-module BIOS-style BLua uses existing central records, named readonly PCM/presets, BSS, actual asset symbols and preserved cartlib DMA/IRQ ownership. Ordinary guest execution checks four sound routes, all 16 transfer words, separate completions, four ends and zero faults; exact printed modules match source. Independent complete-reader review passes after the resource-name/metadata-producer clarifications. A separate complete 74-line raw-port BLua cartridge checks20-word and4-word downloads, all 24 destination words, exact count/DONE/masked pending and APU status snapshots with unchanged source lifetime. Fresh public-only extraction matches all 3 files; snapshots are not used as exact STOP timing proof.",
+			"resolution": "Independent raw-register PCM and square configurations specify all21 staging words, authored readonly PCM, CMD-last capture, active/fault observations and queued zero-fade stop. The separate standalone raw-port download cartridge and complete source/decoder contracts remain. Prior external-library execution is not claimed as execution of a replacement program.",
 			"open": []
 		}
 	},

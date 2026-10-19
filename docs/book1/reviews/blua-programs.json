@@ -49,7 +49,7 @@
 			"report": "docs/book1/reviews/blua-programs-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/blua-programs-print.md"
 		}
 	}

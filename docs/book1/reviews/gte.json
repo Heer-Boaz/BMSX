@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Independent reader review closes the programming route: coordinate conventions, transform construction/composition, precision and clipping, meaningful supplied normals/light/material/cue choices, general arithmetic, PLUS lifetime, numeric diagnosis, packed/leading-sign ports, actual BIOS-style typed ROM/BSS code, GPU packet submission, two-buffer publication and qualified complete-work cycle budgets. The real guest suite and both displayed images pass. The combined250-line BLua program now supplies four depth-cue and three lighting/material result/flag rows with two actual256x192 constant-shape plates. One shared typed setup feeds disjoint, non-reused raw surfaces. Paired source/math, all-pixel image checks, byte-exact fresh public reconstruction and the executed supplied-checkout route are recorded separately. A separate206-line near-plane cartridge computes exact intersections in numeric locals, emits raw typed transfer records, retains all RTPT/NCLIP rows and supplies actual uncut/clipped output plates with the same independent execution/source/image/reader/print boundaries.",
+			"resolution": "Hardware register sequences retain geometry, matrix packing, lighting, cue/material comparison, near-plane construction, GPU handoff and two-surface publication. All actual output plates remain, with raw setup tables independent of external operand types. External-library listings and their build recipes are outside the BMSX series.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/gte-source.md"
 		},
 		"figures": {

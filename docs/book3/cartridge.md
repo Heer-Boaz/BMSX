@@ -2,20 +2,24 @@
 
 A cartridge socket identifies a place for a card, not a fixed collection of devices. BMSX provides two sockets, numbered 0 and 1. Each socket can be occupied independently. An occupied socket establishes that a card is present; it does not establish that the card supplies ROM, RAM, or a mailbox, and it does not establish that the card is bootable.
 
-## Installed resources
+## Card composition
 
-A card definition may supply ROM, RAM, and a mailbox independently, with at most one of each device. The following distinctions apply when describing a supplied card.
+A card may supply ROM, RAM, and a mailbox independently. Presence identifies
+the card as a whole; it does not enumerate those devices or report their
+capacities. Know the inserted card's composition before using its storage or
+mailbox. Selecting a socket does not create a missing device.
 
 | Installed resource | Composition | What its presence establishes |
 | --- | --- | --- |
 | Card | Occupies socket 0 or socket 1 | Socket occupancy, not device inventory or boot readiness |
-| ROM | Optional, independent of RAM and mailbox | The package bytes are available as a ROM device |
-| RAM | Optional; 1–15,728,640 bytes in the card definition | The card supplies that amount of RAM |
+| ROM | Optional, independent of RAM and mailbox | Read-only bytes are installed on the card |
+| RAM | Optional; capacity belongs to the particular card | The card supplies writable storage, not necessarily the complete RAM aperture |
 | Mailbox | Optional, independent of ROM and RAM | The card supplies a mailbox device |
 
-The package descriptor declares which devices the card supplies. It is a media definition, not runtime electrical enumeration. In particular, a package without a ROM declaration supplies no ROM device merely because package bytes exist. Likewise, neither socket occupancy nor the presence of another device implies that RAM or a mailbox is installed.
-
-RAM capacity comes from the supplied card definition. Do not derive installed capacity from the size of an address aperture. An aperture describes an access region; it is not the card's declaration of installed RAM.
+Do not derive installed capacity from the size of an address aperture. The
+address windows reserve bus locations; they do not promise that storage is
+installed at every offset. ROM, RAM and mailbox accesses to an absent device
+follow the rules in the corresponding sections below.
 
 ## Boot selection
 
@@ -257,300 +261,11 @@ The entire access must fit inside the cartridge aperture. The highest admitted a
 DMA uses these same mapped-access rules, but a fault does not abort its programmed read, write, and count progression. `DONE` therefore does not prove that endpoint addresses were valid. The first outstanding bus fault retains its code, address, and access; later faults do not replace it. See [Book I: Memory — Bus faults](../book1/memory.md#bus-fault-status-and-cpu-exceptions) for the fault registers and acknowledgement procedure.
 
 
-## ROM resources
-
-The ROM address window exposes package bytes. A resource directory describes
-where particular data and metadata reside within those bytes; it does not
-create another device, allocate a destination or configure a hardware unit.
-Keep the package base distinct from the embedded executable-image base and
-from the destination of a transfer.
-
-### Package offsets and source spans
-
-The [ROM package header](../book1/memory.md#rom-header-fields) gives the
-table-of-contents offset at byte `10H` and its byte count at `14H`.
-For cartridge ROM, let `B = 10000000H` and `T = B + toc_offset`.
-Directory words are unsigned, 32-bit and little-endian. All offsets below
-are **byte offsets**, not word indices.
-
-| Base | Byte offset | Field and unit |
-|---|---|---|
-| `T` | `00H` | Magic: `434F5442H` |
-| `T` | `04H` | Header size: 48 bytes |
-| `T` | `08H` | Entry size: 84 bytes |
-| `T` | `0CH` | Entry count |
-| `T` | `10H` | Entry-table offset from `T`; emitted as 48 |
-| `T` | `14H` | String-table offset from `T`; emitted as `48 + entry_count × 84` |
-| `T` | `18H` | String-table byte count |
-
-Entry `i`, counting from zero, begins at `E = T + 48 + i × 84`.
-The following fields locate its identity and source spans.
-
-| Base | Byte offset | Field and unit |
-|---|---|---|
-| `E` | `00H`, `04H` | Resource token, low and high words |
-| `E` | `08H` | Resource kind |
-| `E` | `10H`, `14H` | Resource-ID offset from the **string table**, and UTF-8 byte count |
-| `E` | `28H`, `2CH` | Main-data start and exclusive end, both from `B` |
-| `E` | `34H`, `38H` | Metadata start and exclusive end, both from `B` |
-| `E` | `44H`, `48H` | Collision-data start and exclusive end, both from `B` |
-
-For a present span, its source address is `B + start` and its byte count is
-`end − start`. Do not add the package DATA offset, TOC offset,
-metadata-section offset or executable-image offset again. An absent span has
-both endpoint words set to `FFFFFFFFH`; a present empty span instead has equal
-start and end offsets. Finding an entry does not establish that it has a
-nonempty main-data span.
-
-Primary and collision-data starts are four-byte aligned. Metadata records are
-packed without a separate alignment requirement for each record; do not assume
-that a metadata address is suitable for an ordinary word load.
-
-### Data format determines the next operation
-
-The resource kind does not make every payload a directly usable hardware
-source. The ordinary packed resource routes are:
-
-| Kind | Stored representation | Next hardware-related operation |
-|---|---|---|
-| Image, 1 | Image metadata and optional collision data; no primary pixel blob | The image entry is not a raw-pixel source or a GP0 upload packet. |
-| Texture, 11 | An IMGDEC stream and texture metadata | Decode the stream through [IMGDEC](../book1/imgdec.md); its output supplies the GPU upload words. |
-| Audio, 2 | A BADP container and audio metadata | Program the [APU source descriptor](../book1/apu.md#library-playback-routes) from the container header and byte extent. |
-
-Metadata is serialized descriptive data, not a device command packet.
-Resolving a ROM source, decoding or transporting its bytes, committing them to
-device storage, and using that storage are separate operations. The adjacent
-unit's completion and source-lifetime rules still apply.
-
-### Software resource records
-
-The `cartlib/rom_dir` library returns a table describing a located entry.
-Its source fields have these meanings:
-
-| Field | Meaning |
-|---|---|
-| `resid` | The ID used when this cached record was constructed |
-| `type` | The recognized resource-kind name; `image`, `texture` or `audio` for the routes above |
-| `addr` | Source ROM base plus `data_start` for a present main-data span; zero when absent |
-| `len` | Main-data byte count; zero when absent |
-| `meta` | Optional decoded metadata |
-| `imgmeta`, `texturemeta`, `audiometa` | Aliases for `meta` on image, texture and audio records, respectively |
-| `collision_addr` | Image collision-data source address, or zero when absent; no corresponding length field is returned |
-
-Metadata is decoded when the record is first constructed. Ordinary lookup does
-not decode the main payload. The table is neither a GPU destination nor an APU
-source binding, and obtaining it performs no upload.
-
-Repeated lookup returns the same cached record and metadata tables, not private
-copies. The directory indexes system ROM at `00000000H` and the currently
-mapped cartridge at `10000000H` when initialized. Each record uses its source
-ROM's base; not every record is a cartridge-ROM address.
-After changing that mapping, `reload_cartridge_directory()` rebuilds its
-cartridge indexes and decoded-record cache; it leaves the system directory
-unchanged and does not update previously returned tables. It neither reads nor
-writes SELECT and does not detect mapping changes automatically.
-
-A retained cartridge address is still a mapped address, not a socket-encoded
-handle. Ordinary CPU data accesses follow SELECT, not the active instruction
-socket. Rebuilding a directory does not pin a source or complete an outstanding
-hardware operation. Preserve the selection and source lifetime required by the
-[DMA](../book1/dma.md) or [APU](../book1/apu.md) operation that uses the bytes.
-
-### Image metadata and atlas coordinates
-
-Image metadata separates the original image's dimensions from its location
-within a packed texture atlas. Atlas coordinates locate source pixels; they do
-not specify where the atlas resides in VRAM.
-
-| `imgmeta` fields | Meaning |
-|---|---|
-| `width`, `height` | Original image dimensions in pixels, not atlas dimensions. |
-| `texture_u`, `texture_v` | Image top-left in atlas pixels, not normalized UVs or page-local eight-bit coordinates. |
-| `gx_atlas_id` | Resource ID of the cartridge texture atlas. Its texture record supplies the compressed stream; the ID is neither a VRAM address nor a texture-page index. |
-| `gx_source_x`, `gx_source_y` | Fixed system-image source position in Direct16 VRAM, supplied instead of `gx_atlas_id`. |
-| `gx_page_tiles` | Optional source rectangles for an image split at 256 × 256-pixel atlas-page boundaries. |
-
-For system images, the supplied source position already combines the system
-atlas origin with `texture_u` and `texture_v`. Its horizontal coordinate counts
-16-bit VRAM words, with one Direct16 pixel per word; its vertical coordinate
-counts rows. Use those supplied fields rather than hardcoding the system atlas
-origin. These fields describe the system-image route, not a substitute for
-missing cartridge-atlas metadata.
-
-Each `gx_page_tiles` entry describes a source rectangle and its position within
-the original image:
-
-| Tile fields | Units and meaning |
-|---|---|
-| `u`, `v` | Source top-left in atlas pixels. |
-| `x`, `y` | Pixel offset within the original image. |
-| `w`, `h` | Rectangle dimensions in pixels. |
-
-Tiles are ordered row-then-column. Each rectangle ends at the next page edge
-or original-image edge. For an untransformed image, place its output at the
-image position plus the tile's
-`x` and `y`. Source coordinates can exceed 255: the packet uses their low eight
-bits together with separate texture-page selection. Do not confuse the complete
-atlas coordinate with a page-local UV byte. See [GPU: Locate texture texels and
-palette colors](../book1/gpu.md#locate-texture-texels-and-palette-colors).
-
-### Texture metadata and transfer counts
-
-The packed-atlas route supplies Palette4 (`mode = 0`) or Direct16 (`mode = 2`).
-These are format codes, not literal bits-per-pixel values. The GPU's Palette8
-mode (`1`) remains available through its raw texture interface; it is not an
-additional packed-atlas format supplied by this route.
-
-| `texturemeta` field | Representation and unit |
-|---|---|
-| `mode` | Palette4 or Direct16 format code. |
-| `word_width` | Horizontal upload extent in **16-bit VRAM words**. Direct16 stores one pixel per word; Palette4 stores four indices per word. |
-| `height` | Atlas upload rows, not the original image's height within that atlas. |
-| `texture_word_count` | Decoded texture payload in **32-bit words**, excluding GP0 headers and CLUT payload. |
-| `clut_word_count` | Decoded CLUT payload in **32-bit words**: zero for Direct16; eight for Palette4, supplying sixteen 16-bit colors. |
-
-For atlas pixel dimensions `W × H`, Direct16 uses `word_width = W`; Palette4
-uses `(W + 3) >> 2`. Palette4 rounds each row to a complete 16-bit word and leaves
-its unused final nibbles zero. The texture payload then pairs consecutive
-16-bit words into 32-bit words, low half first. Pairing continues across row
-boundaries: an odd-width row does not acquire a separate 32-bit padding word.
-
-Consequently, `texture_word_count = (word_width × H + 1) >> 1`. If the complete
-texture has an odd number of 16-bit words, the final payload word has zero in
-its unused high half. The CLUT begins after that complete 32-bit texture
-payload, not in its spare half. GP0 writes only the declared texture extent;
-the unused high half does not add another VRAM word.
-
-Keep the three stream lengths separate:
-
-| Quantity | Count in 32-bit words |
-|---|---|
-| Compressed input | `record.len >> 2`, including the IMGDEC stream header and compressed data. The emitted stream's byte length is a multiple of four. |
-| Decoded payload | `texture_word_count + clut_word_count`; excludes generated packet headers. |
-| Generated GP0 output | Texture payload plus three header words; if CLUT count is nonzero, add its payload and another three header words. |
-
-The stream header also contains the decoded texture and CLUT counts. A
-compressed-input count is not a replacement for either count. The separate
-texture size word is `word_width | (height << 16)`, not the original image's
-pixel width or a 32-bit payload count. IMGDEC generates a 16 × 1-word CLUT
-upload when the CLUT payload is present. See [IMGDEC: Generated GP0
-output](../book1/imgdec.md#generated-gp0-output) for the complete packet and
-count rules.
-
-VRAM placement is another operation. Reserve the texture rectangle and any
-CLUT without overlapping the [firmware reservation](../book1/memory.md#firmware-reservation-in-vram)
-or other live readers. The atlas helper reserves at least sixteen VRAM words
-of width and one additional row for Palette4, placing the CLUT just below the
-texture. Its horizontal alignment is 64 VRAM words for Palette4 and 256 for
-Direct16; both use 256-row vertical alignment. These choices preserve the atlas
-page grid. With another placement, account for the actual source positions
-when selecting pages and splitting rectangles. The helper's alignments are not
-extra GPU alignment rules or image dimensions. The upload still uses
-`word_width × height`.
-
-### Library upload boundary
-
-The `cartlib/gx/imgdec` operation is
-`upload(source, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination_word)`.
-
-| Arguments | Meaning |
-|---|---|
-| `source`, `source_word_count` | Compressed stream's mapped byte address and 32-bit input-word count. |
-| `texture_word_count`, `clut_word_count` | Decoded payload counts from texture metadata. |
-| `destination` | Texture origin: horizontal 16-bit VRAM-word coordinate in the low half, row in the high half. |
-| `size` | `word_width \| (height << 16)`. |
-| `clut_destination_word` | CLUT origin in the same word/row coordinate representation. |
-
-The helper first waits for earlier DMA0 and DMA1 work, then programs IMGDEC,
-arms DMA1 from fixed IMGDEC DATA to fixed GPU GP0, arms DMA0 from the
-incrementing source to fixed IMGDEC DATA, and issues START. It returns without
-waiting for the new upload. Its idle waits depend on the DMA library's
-completion callbacks; retain that dispatch route.
-
-Published atlas placement and prepared draw words do not establish that new
-texels have arrived. Keep source lifetime, both DMA completions, IMGDEC's
-terminal status and downstream GPU completion distinct. A decoder fault can
-leave an armed DMA channel waiting, while an upload's delivery does not itself
-acknowledge display publication. Follow the [IMGDEC completion and recovery
-rules](../book1/imgdec.md#interrupts-and-fault-recovery) and the [GPU stream
-handoff](../book1/gpu.md#hand-a-gp0-stream-between-cpu-and-dma) before reusing
-their resources or depending on the uploaded contents.
-
-### Packed collision data
-
-An image's `collision_addr` points to a `G2D2` collision blob, not to its image
-metadata or pixel data. The blob begins with a 32-byte variant directory.
-Let `C` be the blob's mapped byte address. Integer fields are unsigned
-32-bit little-endian words; `F32` denotes a little-endian IEEE 754 binary32
-geometry scalar, not a fixed-point word.
-
-| Byte offset from `C` | Field |
-|---|---|
-| `00H` | Magic `32443247H`; bytes spell `G2D2`. |
-| `04H` | Format version: 2. |
-| `08H` | Original descriptor offset. |
-| `0CH` | Horizontal-flip variant descriptor offset. |
-| `10H` | Vertical-flip variant descriptor offset. |
-| `14H` | Both-flips variant descriptor offset. |
-| `18H`, `1CH` | Reserved words, emitted as zero. |
-
-Each header offset is relative to **`C`**. A selected descriptor therefore
-begins at `S = C + variant_offset`. GEO does not consume this header as a shape
-descriptor. The blob has no length word: its complete extent comes from the
-directory's collision-data start and end. The image record's `len` describes
-its main-data span, not this collision extent.
-
-Each variant uses the 16-byte
-[OVERLAP2D shape descriptor](../book1/geo.md#shape-descriptors-and-bounds).
-Its data and bounds offsets are relative to **that descriptor**, not `C`.
-The packed forms are:
-
-| Kind | Emitted data count | Data and bounds |
-|---|---|---|
-| AABB, 1 | 4 | Four F32 values: left, top, right, bottom. Data and bounds point to the same 16-byte block. |
-| Convex polygon, 3 | Number of vertices | Consecutive F32 `(x,y)` pairs, eight bytes per vertex. A separate 16-byte bounds block contains coordinate minima and maxima. |
-| Compound, 4 | Number of pieces | Consecutive 16-byte child descriptors, each an AABB or polygon, plus a separate parent bounds block. Each child's offsets are relative to that child. |
-
-The header, descriptors and geometry blocks start on four-byte boundaries.
-There is no stored normal array, center, transform matrix or vertex-stride
-field. The image's `centerpoint` belongs to metadata, not an
-implicit subtraction from these coordinates.
-
-### Using packed geometry with GEO
-
-The `cartlib/collision/collision_shape` function `variant_addresses(C)` returns
-four absolute descriptor addresses in original, horizontal, vertical and
-both-flips order. It adds the header offsets to `C`; it does not copy geometry
-or turn the coordinates into ordinary tables.
-
-Write the selected address `S` to the shape-address word of an
-`OVERLAP2D_PASS` instance. Its F32 translations `tx` and `ty` position the
-image-local geometry; layer and mask are separate words. This instance format
-has no pivot, rotation or scale field. A GPU drawing flip does not modify the
-collision data: select the prebuilt geometry variant separately.
-
-`XFORM2_BATCH` and `SAT2_BATCH` instead use signed Q16.16 vertices and different
-records. SAT flag `1` means convex polygon, whereas OVERLAP kind `1` means
-AABB; SAT's vertex offset is relative to `SRC2`, not its descriptor. Casting an
-address does not convert either the coordinate representation or the record
-layout. A polygon supplied to OVERLAP must have 3–64 vertices; the packed
-representation does not change that hardware limit.
-
-Launch captures register words, not the source geometry or cartridge identity.
-GEO reads descriptors, bounds and vertices during execution. Cartridge-window
-reads follow the current SELECT, not a pinned socket. Preserve source bytes
-and the relevant mapping until the job completes. Rebuilding a ROM directory
-neither completes GEO nor retargets previously retained descriptor addresses.
-
-An IRQ wakeup alone does not establish success. Inspect the terminal status
-and fault words as specified in [GEO: OVERLAP2D_PASS](../book1/geo.md#overlap2d_pass-translated-shape-contacts),
-which also defines the complete instance, pair, result and register contracts.
-
 ## Two-card programming example
 
 This example gives the bootable card in **socket 0** ROM, 256 bytes of RAM and a
 mailbox. A separate **socket 1** card supplies 256 bytes of RAM and a mailbox but
-no ROM. Both card definitions are printed below. This is not a card with two
+no ROM. Their required hardware is listed below. This is not a card with two
 banked RAM pages: each physical socket retains its own RAM and mailbox state.
 
 Start with fresh card RAM. The program owns DMA0, both mailboxes, central
@@ -573,36 +288,17 @@ example cartridges — Build and inspect two cartridge sockets**. That section i
 also available in the [public development guide](../programming/getting-started.md#build-and-inspect-two-cartridge-sockets).
 The earlier hardware examples are not prerequisites.
 
-### Card definitions
+### Required cards
 
-<div class="keep-together">
+| Socket | ROM | RAM | Mailbox |
+|---:|---|---|---|
+| 0 | Bootable program and readonly source words | 256 bytes | Present |
+| 1 | Absent | 256 bytes | Present |
 
-Socket 0 — bootable program card:
-
-```yaml
-title: Cartridge Sockets Manual Example
-hardware:
-    - type: rom
-    - type: ram
-      bytes: 256
-    - type: mailbox
-```
-
-</div>
-
-<div class="keep-together">
-
-Socket 1 — data card, with no program entry and no ROM device:
-
-```yaml
-title: Cartridge Sockets Manual Data Card
-hardware:
-    - type: ram
-      bytes: 256
-    - type: mailbox
-```
-
-</div>
+The second card supplies data storage and ports, not an executable image.
+These are two independent cards, not two banks within one card. The development
+companion gives the supplied tooling's media files; those files are not a bus
+protocol or an additional boot-header requirement.
 
 ### Result module
 

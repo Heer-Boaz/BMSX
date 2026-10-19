@@ -1492,12 +1492,6 @@ uploads, T0 CLUT selection and T1 palette-depth/page selection. Its result
 includes a nonzero entry 0, a transparent entry and a nonzero black entry, so
 palette-index interpretation can be distinguished from fetched-color rules.
 
-For packed cartridge images, [Book III: Image metadata and atlas
-coordinates](../book3/cartridge.md#image-metadata-and-atlas-coordinates)
-connects the image region to its atlas; [Texture metadata and transfer
-counts](../book3/cartridge.md#texture-metadata-and-transfer-counts) gives the
-source format and units used before upload.
-
 ### Replace coordinate bits with a texture window
 
 The E2 window fields are X mask bits 4:0, Y mask bits 9:5, X offset bits 14:10 and Y offset bits 19:15. Independently for U and V, the mathematical transformation is:

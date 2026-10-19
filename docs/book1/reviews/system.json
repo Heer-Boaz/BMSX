@@ -35,7 +35,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete31line results plus73line ordinary BLua entry,172byte BSS, existing clock helper, BIOS globals, four timed observations and raw Unicode/FLUSH0; retained integration and ordinary output pass. Independent nonauthor source and public-only reader acceptance pass; exact assembly and ordinary output/monitor observation steps are supplied.",
+			"resolution": "Complete31line result record and72line raw-port BLua entry use the TIME_MS word directly, inline modulo32 elapsed arithmetic and real BIOS globals; no external library is needed. The current system_manual headless case passes four >=100ms observations, BIOS clock brackets, user-command gates and raw CHAR/FLUSH checks. New print review remains deferred.",
 			"open": []
 		}
 	},

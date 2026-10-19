@@ -262,19 +262,8 @@ word read by the IRQ entry sequence, not FLAGS AND MASK. If only GPU service is
 owned, clearing `flags & 00000040H` preserves other pending sources; clearing the
 entire argument does not.
 
-The alternative `cartlib/irq` module installs that global IRQ function itself.
-`register(source, handler)` records the callback and enables its MASK bit;
-`unregister(source)` removes the callback and disables its MASK bit. Its
-installed handler filters the delivered word with the current MASK, selects
-one least-significant pending source at a time, acknowledges that controller
-bit **before** calling `handler(source)`, and repeats for its local selection.
-The callback still owns any source-local re-arming.
-
-This traversal order is a software-dispatch policy, not controller source
-priority. Because registration enables delivery, prepare the source's state
-before registering it. Do not also install a different global `irq` handler
-while using this module. The complete example below uses the direct route
-and does not require that dispatcher.
+Prepare each source's service state before enabling its MASK bit. The complete
+example below defines its own global handler and owns controller acknowledgement.
 
 ## Register reference
 

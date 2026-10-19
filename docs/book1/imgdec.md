@@ -497,10 +497,6 @@ The expected output-word count is calculated as:
 
 The combined CLUT endpoint `T + C`, decoded count increments, and subtraction of decoded count from a stage endpoint also use modulo-`2^32` arithmetic. Count overflow is not saturated or rejected. Do not replace this arithmetic with an assumed nonwrapping image-size calculation.
 
-For packed ROM atlases, [Book III: Texture metadata and transfer
-counts](../book3/cartridge.md#texture-metadata-and-transfer-counts) maps the
-resource's byte length and decoded-payload metadata to these three counts.
-
 ### Size words and count mismatches
 
 The downstream GP0 size interpretation is distinct from IMGDEC's `T` and `C` counters:
@@ -702,7 +698,7 @@ Supply the first listing as the const module named `results`, and the remaining 
 
 ### Ownership and storage
 
-Run the program from normal BIOS cartridge startup with DMA0, DMA1 and IMGDEC idle and exclusively owned by this program. It supplies its own `irq(flags)` handler; no cartlib IRQ handler shares these units. It also takes control of the central interrupt mask. The GP0 phase requires that no earlier packet or readback is in flight. The program replaces the interrupt mask and does not preserve an earlier DMA or GPU configuration.
+Run the program from normal BIOS cartridge startup with DMA0, DMA1 and IMGDEC idle and exclusively owned by this program. It supplies its own `irq(flags)` handler; no other interrupt dispatcher shares these units. It also takes control of the central interrupt mask. The GP0 phase requires that no earlier packet or readback is in flight. The program replaces the interrupt mask and does not preserve an earlier DMA or GPU configuration.
 
 The `word` fields in the two register structs describe consecutive hardware words. Typed pointers in the entry module address those register runs directly; no Lua register table is constructed. The four `rodata` declarations are typed ROM arrays: their braced initializers are compile-time words, not heap tables. DMA0 reads the address of one of these arrays, and `#stream` supplies its word count.
 
@@ -849,7 +845,7 @@ The 256 × 192 scanout window starts at VRAM X=256, disjoint from the texture an
 *gp0 = 256
 *gp0 = 256 | (192 << 16)
 
--- Exclusive ownership: DMA0, DMA1 and IMGDEC; no cartlib IRQ handler.
+-- Exclusive ownership: DMA0, DMA1 and IMGDEC; one interrupt handler.
 -- The existing idle wait before phase 2 also orders this background fill.
 *irq_ack = 0x00000181
 *irq_mask = 0x00000181

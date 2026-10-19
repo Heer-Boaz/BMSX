@@ -603,11 +603,6 @@ Polygon data spans `dataCount × 8` bytes. Translation is added to every vertex 
 
 Compound piece `i` is the descriptor at `parent + dataOffset + i × 16`: the array contains descriptors, not pointers or indices. Each child's offsets are relative to that child descriptor. All children inherit the instance translation; there is no per-piece transform. There is no explicit upper piece-count limit. The zero-count check occurs only after the outer instance bounds overlap. Child descriptors, bounds, and exact data are checked as they are reached. Narrowphase accepts only AABB or polygon children, so a nested compound faults if exact loading reaches it; a child whose bounds miss need not reach that check.
 
-For cooked image collision data, [Book III: Packed collision
-data](../book3/cartridge.md#packed-collision-data) describes the variant
-header and its connection to these descriptors. GEO's address and source
-lifetime rules still apply to the selected geometry.
-
 #### Address spans
 
 Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `0x100000000`. There is no alignment predicate in this pass.

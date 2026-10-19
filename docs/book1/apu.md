@@ -111,9 +111,77 @@ START_SAMPLE and loop bounds count source frames.
    DMA completion, and an interrupt wakeup alone does not identify which
    condition completed. See [End events and interrupts](#end-events-and-interrupts).
 
-The sections below define these register operations and hardware effects.
-[Library playback routes](#library-playback-routes), next to the worked program,
-show the corresponding convenience calls and software completion predicates.
+The sections below define these register operations and hardware effects. The
+[worked download](#apu-download-budget) gives a complete raw-port transfer
+sequence with separate DMA completion and sample-transfer control.
+
+### Start a PCM loop or square voice
+
+These two configurations show the complete staging bank. Start with the
+selected slot idle, no queued commands, no outstanding
+APU fault, and exclusive ownership of the staging bank and that slot. No DMA
+or transfer-port operation is needed: PCM is read from cartridge ROM, while the
+square generator has no sample buffer.
+
+For the PCM case, place the following mono PCM16 samples in cartridge ROM.
+Let **A** be their mapped byte address; the declaration occupies 64 bytes.
+Keep the cartridge containing these bytes selected until PLAY executes.
+
+```lua
+rodata pcm: i16[32] = {
+  0, 3135, 5793, 7568, 8192, 7568, 5793, 3135,
+  0, -3135, -5793, -7568, -8192, -7568, -5793, -3135,
+  0, 3135, 5793, 7568, 8192, 7568, 5793, 3135,
+  0, -3135, -5793, -7568, -8192, -7568, -5793, -3135,
+}
+```
+
+Choose one column and write **all 21 words** with aligned CPU stores. Do not
+interleave another producer's staging writes. Parameter order below follows
+increasing address; CMD is separate and must be written last.
+
+| Staging address | Parameter | PCM loop | Square |
+|---|---|---|---|
+| `08000120H` | SOURCE_ADDR | A | `00000000H` |
+| `08000124H` | SOURCE_BYTES | 64 | 0 |
+| `08000128H` | SOURCE_SAMPLE_RATE_HZ | 7040 | 440 |
+| `0800012CH` | SOURCE_CHANNELS | 1 | 1 |
+| `08000130H` | SOURCE_BITS_PER_SAMPLE | 16 | 16 |
+| `08000134H` | SOURCE_FRAME_COUNT | 32 | 1 |
+| `08000138H` | SOURCE_DATA_OFFSET | 0 | 0 |
+| `0800013CH` | SOURCE_DATA_BYTES | 64 | 0 |
+| `08000140H` | SOURCE_LOOP_START_SAMPLE | 0 | 0 |
+| `08000144H` | SOURCE_LOOP_END_SAMPLE | 16 | 1 |
+| `08000148H` | SLOT | 2 | 4 |
+| `0800014CH` | RATE_STEP_Q16 | `00010000H` | `00010000H` |
+| `08000150H` | GAIN_Q12 | `00000800H` | `00000400H` |
+| `08000154H` | START_SAMPLE | 0 | 0 |
+| `08000158H` | FILTER_CONTROL | 0 | 0 |
+| `0800015CH` | FILTER_B0_B1 | `00004000H` | `00004000H` |
+| `08000160H` | FILTER_B2_A1 | 0 | 0 |
+| `08000164H` | FILTER_A2 | 0 | 0 |
+| `08000168H` | FADE_SAMPLES | 0 | 0 |
+| `0800016CH` | GENERATOR_KIND | 0 | 1 |
+| `08000170H` | GENERATOR_DUTY_Q12 | `00000800H` | `00000800H` |
+
+Write `00000001H` to CMD at `08000174H` to submit PLAY. Capture restores
+staging defaults and the visible selector to zero; it does not mean that the
+voice has started. For these idle-slot starting conditions, ACTIVE_MASK at
+`08000190H` gains bit 2 (`00000004H`) for PCM or bit 4 (`00000010H`) for the
+square when PLAY executes. Check the fault words as well as the active bit.
+
+The PCM loop repeats sixteen source frames at 7040 frames/s, giving a 440 Hz
+waveform at one-half gain. The square uses 440 as its source rate, a one-frame
+loop and one-half duty; it is a continuous 440 Hz generator, not a sound lasting
+one output frame. Its quarter gain gives +8191 or −8192 per channel before
+mixing with other slots and output clipping. Leave the PCM ROM bytes intact
+for the voice's complete lifetime, including pauses.
+
+To stop either voice without a fade, write its slot number to `08000148H`,
+zero to FADE_SAMPLES at `08000168H`, then `00000002H` to CMD. These are new
+staging writes, not edits to the selected live bank. The slot's active bit
+clears when STOP_SLOT executes; submitting it does not release the source
+immediately. This zero-fade stop does not publish SLOT_ENDED.
 
 ## Commands and slot ownership
 
@@ -892,502 +960,6 @@ parameter defaults and clears all slot-bank words. No global-reset command is
 encoded among CMD zero through five. STOP_SLOT affects its target; transfer
 STOP changes transfer mode. Neither is a private-sample-RAM clear operation.
 
-## Library playback routes
-
-The following software routes use `cartlib/apu`; ROM directory lookup uses
-`cartlib/rom_dir`. The library owns DMA0 for its transfer operations, unlike the
-hardware interface, which admits either DMA channel.
-
-A [ROM resource record](../book3/cartridge.md#software-resource-records)
-supplies `addr` and `len`: the mapped source address and its byte extent.
-`apu.source(record)` reads the BADP header at that address, not `audiometa`,
-to construct the source descriptor. It selects four-bit BADP, takes the data
-offset from the header and sets the data byte count to `len − data_offset`.
-This step neither copies samples nor programs the APU. `apu.play` and
-`apu.play_plain` subsequently write the command staging bank and submit PLAY.
-
-| Starting material | Route to playback |
-|---|---|
-| Normally packed ROM audio | Obtain its record with `rom_dir.audio(audio_id)`, prepare the BADP source with `apu.source(record)`, then call `apu.play_plain(source, slot)`. `apu.play` accepts explicit rate, gain, start and filter words. |
-| Authored ROM PCM | Retain typed `rodata` samples and program their address, byte extent and PCM metadata. The APU does not parse a PCM container header. |
-| Samples produced in main RAM | Upload through the transfer port, then PLAY from `apu.sample_ram_base + byte_offset`, not from the main-RAM buffer. |
-| Square generator | Program generator kind one, rate, loop and duty. No sample upload or source-buffer binding is needed. |
-
-1. **Own the required resources.** Reserve a playback slot. Uploads and downloads
-   also need the shared transfer ports and, with the library, DMA0.
-   Finish earlier owned transfers before reprogramming the channel.
-   Requiring `cartlib/apu` installs the DMA/IRQ library route; retain its DMA
-   callbacks rather than defining a competing global `irq`. Library DMA waits
-   require CPU interrupt acceptance and the enabled DMA completion sources.
-2. **Prepare the source bytes.** `apu.upload` starts transport without waiting.
-   Keep its source unchanged until `dma.wait0_idle()` returns, then separately
-   wait for STATUS.TRANSFER_BUSY to clear before playback or a mode change.
-   DMA DONE is not the final sample-RAM commit. For download, DMA completion
-   instead marks receipt of the requested words; select transfer STOP afterward
-   to discard unwanted prefetch. See [Sample RAM transfer](#sample-ram-transfer).
-3. **Submit coherent configuration.** Write staging parameters first and CMD
-   last, or use the library playback functions. Serialize staging-bank users
-   and check CMD_FREE before a burst: a full FIFO replaces its oldest command.
-   Source extents and offsets are bytes; start positions and loop bounds are
-   source frames. Unity rate is `00010000H`, unity gain `00001000H`.
-4. **Separate staging from live control.** PLAY binds at execution, not capture;
-   keep the intended cartridge socket selected until then. Capture resets the
-   visible slot selector to zero, so reselect through staging SLOT before using
-   the live bank. A live gain store changes that voice; a staging gain store
-   only prepares a command. Do not use a live edit as an ordered follow-up to a
-   still-queued PLAY. Use PLAY for a coherent source replacement rather
-   than consecutive live source-field stores.
-5. **Retain storage until the voice is finished.** Pause retains the voice and
-   its source requirement. Natural ends and completed nonzero fades publish
-   SLOT_ENDED; `apu.stop_slot(slot, 0)` does not. Register end service through
-   `cartlib/irq` when needed. For one controlled outstanding end, snapshot a
-   retained service sequence before issuing PLAY or the faded stop, then wait
-   on that predicate: another IRQ can wake the CPU, and the hardware retains
-   only the latest end event. See [End events and interrupts](#end-events-and-interrupts).
-
-The [worked program](#worked-blua-program) below supplies the complete imports,
-typed operands and interrupt setup for the library transfer and playback route.
-
-## Worked BLua program
-
-This complete program uses four slots in succession: looping ROM PCM, the same
-PCM copied into private sample RAM, a square, and a one-shot BADP source. Run it
-from ordinary cartridge startup with zeroed BSS and CPU interrupt acceptance
-enabled. It owns slots 2–5, DMA channel 0, the first 64 sample-RAM bytes and the
-APU transfer port. Other slots are idle, neither DMA channel has outstanding
-work, no other IRQ sources are enabled, and no earlier APU fault, command
-or DMA/APU interrupt request is pending.
-
-Create a const module named `results`. Concatenate the following **Entry
-module** parts in order into one entry module. The program requires the existing
-`cartlib/apu`, `cartlib/dma` and `cartlib/irq` modules; do not add another global
-`irq` function. The library's DMA callbacks remain installed. The program
-registers only its APU callback, retaining one controlled end at a time in BSS.
-The fixed `rodata` records and PCM array are typed ROM operands. Retained
-observations and callback state live in explicit BSS.
-
-Supply the mono 44,100 Hz, 4,410-frame tone resource distributed with this
-example. Include it as an audio resource named `tone`. Its ordinary audio
-packing produces the BADP source exported as
-`audio_tone_addr` and `audio_tone_len` by `bmsx/assets`. The last part reads its
-existing `badp_header` record and explicitly programs the source fields.
-The APU does not parse that record to fill the staging bank for the cartridge.
-
-### Follow the four sources
-
-1. **ROM PCM16.** The 32 authored halfwords contain two copies of a 16-frame
-   waveform. The loop uses only frames [0,16); a source rate of 7,040 frames/s
-   and unity rate step therefore repeats it 440 times/s. Gain starts at one-half,
-   then a selected-window write changes it to minus one-half. Pause retains the
-   bank and active bit while the output sample clock continues. Resume retains
-   its source phase; a 441-output-frame fade then ends it.
-2. **Private-RAM PCM16.** Upload all 64 source bytes as sixteen words. Wait for
-   DMA separately from TRANSFER_BUSY. Download sixteen words into BSS, then
-   stop unwanted read prefetch. PLAY uses source address `40000000H`, not a CPU
-   pointer to the downloaded BSS copy. Source and loop settings otherwise match
-   the ROM voice; slot 3 is a different bank.
-3. **Square.** Slot 4 uses GENERATOR_KIND=1, source rate 440, unity rate step,
-   one-half duty and loop [0,1). The fractional cursor provides its period;
-   FRAME_COUNT=1 is not a one-output-frame sound while that loop is enabled.
-   The programmed quarter gain yields +8191 or −8192 per channel before the
-   subsequent fade, in the absence of other contributions.
-4. **BADP.** Slot 5 reads the packed tone directly from ROM at unity rate,
-   one-half gain and no loop. Its 4,410 source frames play at the 44,100 Hz output
-   cadence, then end naturally. The generated resource symbols supply its source
-   address and byte length; the header supplies its data offset. No compressed
-   bytes are expanded into BSS.
-
-Each 2,205-frame interval is a **minimum observed sample-clock distance**; the
-polling loop may observe a later frame. The 441-frame fades describe rendered
-output duration, not CPU issue-to-return latency. Neither count includes an
-invented fixed interrupt-delivery charge.
-
-Requiring the DMA library enables its two completion sources. Registering the
-APU callback adds bit 5, so the example's owned interrupt mask is `00000121H`.
-VBlank remains masked and is deliberately allowed to become pending. The
-shared dispatcher acknowledges only enabled serviced sources; a pending masked
-VBlank must survive the sound and DMA work. Final FLAGS need not be zero.
-
-### Const module: retained observations
-
-The callback and foreground code share this fixed BSS record.
-
-```lua
-module<const>
-
-struct apu_manual_event
-  kind: word
-  slot: word
-  source_address: word
-  hardware_sequence: word
-end
-
-struct apu_manual_result
-  completed_phase: word
-  service_sequence: word
-  initial_event_sequence: word
-  events: apu_manual_event[4]
-  pcm_address: word
-  pcm_selected_source: word
-  pcm_active_mask: word
-  pcm_status: word
-  pcm_gain: word
-  paused_sample_start: word
-  paused_sample_end: word
-  paused_active_mask: word
-  paused_source: word
-  paused_gain: word
-  upload_dma_status: word
-  upload_apu_status: word
-  upload_committed_status: word
-  transfer_address: word
-  download_dma_status: word
-  download_apu_status: word
-  download_stopped_status: word
-  transferred: word[16]
-  ram_selected_source: word
-  ram_active_mask: word
-  square_selected_source: word
-  square_active_mask: word
-  square_rate_hz: word
-  square_duty: word
-  badp_address: word
-  badp_bytes: word
-  badp_version: word
-  badp_channels: word
-  badp_sample_rate_hz: word
-  badp_frames: word
-  badp_data_offset: word
-  badp_seek_count: word
-  badp_seek_offset: word
-  badp_selected_source: word
-  badp_active_mask: word
-  final_active_mask: word
-  final_status: word
-  final_fault_code: word
-  final_fault_detail: word
-  initial_unrelated_pending: word
-  final_irq_flags: word
-end
-
-bss result: apu_manual_result
-
-return { result = result }
-```
-
-### Entry module: imports and word ports
-
-The imported APU module supplies the existing register-record and BADP header types. Only the first 21 parameter fields of `selected` are used; its address is the live slot window, not the staging bank.
-
-```lua
-module<entry>
-
-local apu<const> = require('cartlib/apu')
-local dma<const> = require('cartlib/dma')
-local irq<const> = require('cartlib/irq')
-local assets<const> = require('bmsx/assets')
-local state<const> = require('results')
-local result<const>: *apu_manual_result = state.result
-local commands<const>: *apu_command_registers = 0x08000120
-local command_words<const>: *word = commands
-local selected<const>: *apu_command_registers = 0x08000194
-local status<const>: *word = 0x08000178
-local selected_source<const>: *word = 0x0800018c
-local active_mask<const>: *word = 0x08000190
-local queued<const>: *word = 0x080001f4
-local transfer_address<const>: *word = 0x080001e8
-local transfer_control<const>: *word = 0x080001f0
-local sample_sequence<const>: *word = 0x08000200
-local event_kind<const>: *word = 0x0800017c
-local event_slot<const>: *word = 0x08000180
-local event_source<const>: *word = 0x08000184
-local event_sequence<const>: *word = 0x08000188
-local fault_code<const>: *word = 0x08010218
-local fault_detail<const>: *word = 0x0801021c
-local dma_status<const>: *word = 0x0800001c
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-```
-
-### Entry module: fixed source and presets
-
-The source address is supplied by a real word write when PLAY is staged. The preset contains the other literal operands. The copies below deliberately leave CMD until after all parameter writes.
-
-```lua
--- Two authored sine periods. Loop [0,16) at 7040 source frames/s gives 440 Hz.
-rodata pcm: i16[32] = {
-  0, 3135, 5793, 7568, 8192, 7568, 5793, 3135,
-  0, -3135, -5793, -7568, -8192, -7568, -5793, -3135,
-  0, 3135, 5793, 7568, 8192, 7568, 5793, 3135,
-  0, -3135, -5793, -7568, -8192, -7568, -5793, -3135,
-}
-
--- The existing APU register record names every operand; CMD is written last.
-rodata pcm_note: apu_command_registers = {
-  source_addr = 0, source_bytes = sizeof(i16[32]), sample_rate_hz = 7040,
-  channels = 1, bits_per_sample = 16, frame_count = 32,
-  data_offset = 0, data_bytes = sizeof(i16[32]),
-  loop_start_sample = 0, loop_end_sample = 16,
-  slot = 2, rate_step_q16 = 0x00010000, gain_q12 = 0x00000800,
-  start_sample = 0, filter_control = 0, filter_b0_b1 = 0x00004000,
-  filter_b2_a1 = 0, filter_a2 = 0, fade_samples = 0,
-  generator_kind = 0, generator_duty_q12 = 0x00000800, cmd = 1,
-}
-rodata square_note: apu_command_registers = {
-  source_addr = 0, source_bytes = 0, sample_rate_hz = 440,
-  channels = 1, bits_per_sample = 16, frame_count = 1,
-  data_offset = 0, data_bytes = 0, loop_start_sample = 0, loop_end_sample = 1,
-  slot = 4, rate_step_q16 = 0x00010000, gain_q12 = 0x00000400,
-  start_sample = 0, filter_control = 0, filter_b0_b1 = 0x00004000,
-  filter_b2_a1 = 0, filter_a2 = 0, fade_samples = 0,
-  generator_kind = 1, generator_duty_q12 = 0x00000800, cmd = 1,
-}
-local pcm_note_words<const>: *word = pcm_note
-local square_note_words<const>: *word = square_note
-```
-
-### Entry module: end service and masked pending
-
-The callback records the latest hardware event before advancing the BSS service sequence. No second slot can end during a controlled wait in this program. This does not turn the hardware event latch into a queue.
-
-```lua
--- cartlib/dma keeps its own DMA callbacks. Retain the single APU event latch.
-irq.register(0x00000020, function()
-  local index<const> = result.service_sequence
-  result.events[index].kind = *event_kind
-  result.events[index].slot = *event_slot
-  result.events[index].source_address = *event_source
-  result.events[index].hardware_sequence = *event_sequence
-  result.service_sequence = index + 1
-end)
-*irq_ack = 0x00000121
-result.initial_event_sequence = *event_sequence
--- Disabled VBlank is allowed to remain pending throughout every APU/DMA IRQ.
-while (*irq_flags & 0x00000004) == 0 do
-end
-result.initial_unrelated_pending = *irq_flags & 0x00000004
-```
-
-### Entry module: ROM voice, live gain and pause
-
-The end predicate is sampled before STOP. `halt_until_irq` may wake for a DMA source too; only the changed APU service sequence ends this wait.
-
-```lua
--- 1. ROM PCM16: capture parameters on CMD, then select the committed slot.
-result.pcm_address = pcm
-commands->source_addr = pcm
-for index = 1, 20 do
-  command_words[index] = pcm_note_words[index]
-end
-commands->cmd = 1
-while (*active_mask & 0x00000004) == 0 do
-end
-commands->slot = 2
-result.pcm_selected_source = *selected_source
-result.pcm_active_mask = *active_mask
-result.pcm_status = *status
-local playing_start<const> = *sample_sequence
-while ((*sample_sequence - playing_start) & 0xffffffff) < 2205 do
-end
-
--- A selected-window gain write is live, not a staged command. Negative is Q12.
-selected->gain_q12 = 0xfffff800
-result.pcm_gain = selected->gain_q12
-apu.pause_slot(2)
-while *queued ~= 0 do
-end
-commands->slot = 2
-result.paused_sample_start = *sample_sequence
-while ((*sample_sequence - result.paused_sample_start) & 0xffffffff) < 2205 do
-end
-result.paused_sample_end = *sample_sequence
-result.paused_active_mask = *active_mask
-result.paused_source = *selected_source
-result.paused_gain = selected->gain_q12
-apu.resume_slot(2)
-while *queued ~= 0 do
-end
-local resumed_start<const> = *sample_sequence
-while ((*sample_sequence - resumed_start) & 0xffffffff) < 2205 do
-end
-local pcm_end_sequence<const> = result.service_sequence
-apu.stop_slot(2, 441)
-while result.service_sequence == pcm_end_sequence do
-  halt_until_irq
-end
-result.completed_phase = 1
-```
-
-### Entry module: private-RAM round trip and voice
-
-The upload waits are deliberately separate. After download, STOP cancels extra prefetch; it does not erase the uploaded PCM. The returned BSS words retain the readback.
-
-```lua
--- 2. Upload goes through FIFO to private RAM: DMA DONE is not final commit.
-apu.upload(pcm, 0, sizeof(i16[32]) // 4)
-dma.wait0_idle()
-result.upload_dma_status = *dma_status
-result.upload_apu_status = *status
-while (*status & 0x00000400) ~= 0 do
-end
-result.upload_committed_status = *status
-result.transfer_address = *transfer_address
-apu.download(&result.transferred[0], 0, 16)
-dma.wait0_idle()
-result.download_dma_status = *dma_status
-result.download_apu_status = *status
-*transfer_control = 0
-result.download_stopped_status = *status
-
--- 40000000H is a source descriptor address, not a CPU sample-memory pointer.
-commands->source_addr = 0x40000000
-for index = 1, 20 do
-  command_words[index] = pcm_note_words[index]
-end
-commands->slot = 3
-commands->cmd = 1
-while (*active_mask & 0x00000008) == 0 do
-end
-commands->slot = 3
-result.ram_selected_source = *selected_source
-result.ram_active_mask = *active_mask
-local ram_start<const> = *sample_sequence
-while ((*sample_sequence - ram_start) & 0xffffffff) < 2205 do
-end
-local ram_end_sequence<const> = result.service_sequence
-apu.stop_slot(3, 441)
-while result.service_sequence == ram_end_sequence do
-  halt_until_irq
-end
-result.completed_phase = 2
-```
-
-### Entry module: square voice
-
-The square does not bind source bytes. Its active bit, rather than a nonzero selected source address, identifies the active slot.
-
-```lua
--- 3. A square uses fractional cursor phase: one-frame loop, source rate 440 Hz.
-for index = 0, 20 do
-  command_words[index] = square_note_words[index]
-end
-commands->cmd = 1
-while (*active_mask & 0x00000010) == 0 do
-end
-commands->slot = 4
-result.square_selected_source = *selected_source
-result.square_active_mask = *active_mask
-result.square_rate_hz = selected->sample_rate_hz
-result.square_duty = selected->generator_duty_q12
-local square_start<const> = *sample_sequence
-while ((*sample_sequence - square_start) & 0xffffffff) < 2205 do
-end
-local square_end_sequence<const> = result.service_sequence
-apu.stop_slot(4, 441)
-while result.service_sequence == square_end_sequence do
-  halt_until_irq
-end
-result.completed_phase = 3
-```
-
-### Entry module: BADP source fields
-
-The packed resource supplies the descriptor metadata. This authored source is a one-shot, so both loop words are explicitly zero.
-
-```lua
--- 4. tone.wav is normally packed as BADP. Read its central header type in ROM.
-local header<const>: *badp_header = assets.audio_tone_addr
-result.badp_address = assets.audio_tone_addr
-result.badp_bytes = assets.audio_tone_len
-result.badp_version = header->version
-result.badp_channels = header->channels
-result.badp_sample_rate_hz = header->sample_rate_hz
-result.badp_frames = header->frame_count
-result.badp_data_offset = header->data_offset
-result.badp_seek_count = header->seek_entry_count
-result.badp_seek_offset = header->seek_table_offset
-commands->source_addr = assets.audio_tone_addr
-commands->source_bytes = assets.audio_tone_len
-commands->sample_rate_hz = header->sample_rate_hz
-commands->channels = header->channels
-commands->bits_per_sample = 4
-commands->frame_count = header->frame_count
-commands->data_offset = header->data_offset
-commands->data_bytes = assets.audio_tone_len - header->data_offset
--- This authored one-shot has no loop; neither field is inferred by the APU.
-commands->loop_start_sample = 0
-commands->loop_end_sample = 0
-commands->slot = 5
-commands->rate_step_q16 = 0x00010000
-commands->gain_q12 = 0x00000800
-commands->start_sample = 0
-commands->filter_control = 0
-commands->filter_b0_b1 = 0x00004000
-commands->filter_b2_a1 = 0
-commands->filter_a2 = 0
-commands->fade_samples = 0
-commands->generator_kind = 0
-commands->generator_duty_q12 = 0x00000800
-```
-
-### Entry module: BADP command and final state
-
-The sequence is sampled before PLAY because this source can end naturally. The final state is retained before the program enters its permanent wait.
-
-```lua
-local badp_end_sequence<const> = result.service_sequence
-commands->cmd = 1
-while (*active_mask & 0x00000020) == 0 do
-end
-commands->slot = 5
-result.badp_selected_source = *selected_source
-result.badp_active_mask = *active_mask
-while result.service_sequence == badp_end_sequence do
-  halt_until_irq
-end
-result.final_active_mask = *active_mask
-result.final_status = *status
-result.final_fault_code = *fault_code
-result.final_fault_detail = *fault_detail
-*irq_mask = 0
-result.final_irq_flags = *irq_flags
-result.completed_phase = 4
-while true do
-  halt_until_irq
-end
-```
-
-### Interpret the retained observations
-
-The controlled program distinguishes the following states. Its transfer-status
-observations assume the inputs and exclusive ownership above, not arbitrary
-concurrent DMA or voice work.
-
-| Retained observation | Meaning |
-|---|---|
-| PCM ACTIVE_MASK=`00000004H`, source=`pcm` | Slot 2 is active and bound to the authored ROM data |
-| Live gain=`fffff800H` | Signed Q12 minus one-half; the selected bank changed without another PLAY |
-| Paused ACTIVE_MASK=`00000004H`; sample distance at least 2,205 | Pausing the slot does not pause the output clock or clear the bank |
-| Upload DMA STATUS=`00000002H`, APU STATUS=`00000420H` | Submission is DONE; the final RAM batch is still pending |
-| Upload committed STATUS=`000002a0H` | Empty command FIFO and empty-FIFO DMA_WRITE request; no pending RAM batch |
-| Download DMA STATUS=`00000002H`, APU STATUS=`00000420H` | Desired words were dequeued; extra RAM prefetch is pending |
-| Download stopped STATUS=`00000020H` | STOP canceled prefetch and cleared transfer requests |
-| `transferred[0..15]` | Exact sixteen-word copy of the authored PCM data |
-| RAM source=`40000000H`, ACTIVE_MASK=`00000008H` | Slot 3 binds private sample RAM, independently of the BSS readback |
-| Square source=0, ACTIVE_MASK=`00000010H` | A zero source address does not mean a generator is inactive |
-| BADP ACTIVE_MASK=`00000020H` | Slot 5 is the one-shot compressed source |
-| Four retained events | Slots 2, 3, 4, 5, in that order; successive hardware sequences and the corresponding programmed source addresses |
-| Final ACTIVE_MASK=0, STATUS=`00000020H` | No slots or commands remain active, and the transfer mode is STOP |
-| Final FAULT_CODE=0, FAULT_DETAIL=0 | No APU command/source fault was raised by these inputs |
-| Final MASK=0, FLAGS=`00000004H` | Delivery is disabled; unrelated masked VBlank remains pending |
-
-The event source for the square is zero; the other three are the actual ROM,
-private-RAM and packed-ROM source addresses. Natural and faded ends clear their
-banks. The four BSS records are observations from these controlled operations,
-not additional hardware event storage.
-
-
 <section class="keep-together">
 
 <a id="apu-download-budget"></a>
@@ -1471,7 +1043,7 @@ hardware:
 
 ### Entry module: preload, arm, receive and stop
 
-Create `cart.lua` with this complete entry module. It exclusively owns DMA0, the transfer ports and sample-RAM bytes 0–159. It polls with interrupts masked instead of sharing the cartlib DMA callback service used by the earlier four-source program.
+Create `cart.lua` with this complete entry module. It exclusively owns DMA0, the transfer ports and sample-RAM bytes 0–159. It polls DMA0 directly with interrupts masked; no interrupt callback owns the channel.
 
 ```lua
 module<entry>
@@ -1496,7 +1068,7 @@ rodata counts: word[2] = { 20, 4 }
 rodata offsets: word[2] = { 0, 0x40 }
 
 -- Own DMA0, the APU transfer ports and sample-RAM bytes0..159. No voices.
--- Poll DMA directly; no interrupt callback or cartlib DMA service owns it.
+-- Poll DMA directly; no interrupt callback owns this channel.
 *irq_mask = 0
 *transfer_control = 0
 *transfer_address = 0
@@ -1542,7 +1114,7 @@ All 24 retained destination words match the programmed raw source words. The sec
 
 In both phases, DMA0 is DONE and not BUSY, its remaining count is zero, and its pending bit is one despite IRQ_MASK being zero. The APU status snapshots distinguish DMA completion from the remaining transfer activity: 420H is retained at the status read after DMA completion, followed by 20H and mode 0 after STOP. They do not establish STOP's exact timing, strict cancellation before a refill deadline, or an ideal elapsed CPU-cycle count.
 
-This cartridge owns DMA0 and the transfer ports and polls DMA0 directly. That ownership route is separate from the earlier cartlib `apu.download`/`dma.wait0_idle` route with its interrupt service; the two routes must not be mixed.
+This cartridge owns DMA0 and the transfer ports and polls DMA0 directly. Do not allow another producer to reprogram either resource during the sequence.
 
 | Retained observation | Value |
 |---|---|

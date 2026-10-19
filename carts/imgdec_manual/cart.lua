@@ -68,7 +68,7 @@ end
 *gp0 = 256
 *gp0 = 256 | (192 << 16)
 
--- Exclusive ownership: DMA0, DMA1 and IMGDEC; no cartlib IRQ handler.
+-- Exclusive ownership: DMA0, DMA1 and IMGDEC; one interrupt handler.
 -- The existing idle wait before phase 2 also orders this background fill.
 *irq_ack = 0x00000181
 *irq_mask = 0x00000181

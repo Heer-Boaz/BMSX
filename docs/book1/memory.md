@@ -166,37 +166,101 @@ The generated system startup initializes its own static storage before running s
 
 ### ROM header fields
 
-The current ROM package header is **72 bytes**, containing 18 unsigned 32-bit little-endian words. The table gives hexadecimal byte offsets from the beginning of the ROM, not word indices. Field values described as ROM-relative offsets are likewise measured in bytes from the beginning of the ROM.
+The machine boot reader requires a **60-byte ROM-backed prefix**, occupying offsets `0x00` through `0x3b`. The table gives hexadecimal **byte offsets from the ROM base**, not word indices or offsets from the executable image. Interpreted words are unsigned 32-bit little-endian values. CPU boot resolution and BIOS cartridge selection consume different parts of this prefix:
 
-| Byte offset | Field | Meaning |
+| Byte offset | Field | CPU boot resolution | BIOS cartridge selection |
+| --- | --- | --- | --- |
+| `0x00` | Magic | Not read. | Requires `0x58534d42`; bytes `42 4d 53 58` spell `BMSX`. |
+| `0x04` | Header size | Not read. | Requires at least 60 bytes. |
+| `0x08`–`0x1f` | Other prefix words | Not read. | Not read. |
+| `0x20` | BLua32 image offset | Byte offset relative to the ROM base; zero means no executable image. | Requires a nonzero word. |
+| `0x24` | Declared image byte count | Not read. | Not read. |
+| `0x28` | Startup function | Absolute function-record address. | Requires a nonzero word; supplies the EXEC target unchanged. |
+| `0x2c` | IRQ function | Absolute function-record address. | Not read. |
+| `0x30` | Exception function | Absolute function-record address. | Not read. |
+| `0x34`, `0x38` | Declared static-layout token words | Not read. | Not read. |
+
+For system domain −1, the ROM base is `0x00000000`. For cartridge domains 0 and 1, it is `0x10000000`, with the domain selecting the cartridge socket. The executable-image address is that ROM base plus the image-offset word. The three function-record addresses are already absolute: do **not** add the ROM base or image address to them, and do not use the image offset as an instruction PC.
+
+Boot resolution first binds all 60 bytes to installed ROM storage. An unbacked prefix or a zero image offset means no executable image; failure to resolve the system image is an error. This binding does not inspect the magic or header-size word, require a larger tool-specific header, or validate the declared image byte count. The BIOS adds the cartridge checks below. The exception-address field alone does not specify cartridge fault routing.
+
+### BLua32 executable image
+
+The image has a separate **96-byte ROM-backed header**. Its offsets below are relative to the **image address**, unlike the boot-prefix offsets above. Activation reads these six unsigned 32-bit little-endian fields:
+
+| Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
-| `0x00` | Magic | `0x58534d42`; bytes `42 4d 53 58` spell `BMSX`. |
-| `0x04` | Header size | Current header size: 72 bytes. |
-| `0x08` | Manifest offset | ROM-relative manifest offset. |
-| `0x0c` | Manifest length | Manifest byte count; zero when absent. |
-| `0x10` | TOC offset | ROM-relative table-of-contents offset. |
-| `0x14` | TOC length | Table-of-contents byte count. |
-| `0x18` | DATA offset | ROM-relative physical-payload offset. |
-| `0x1c` | DATA length | Physical-payload byte count. |
-| `0x20` | BLua32 image offset | ROM-relative executable-image offset; zero means no image. |
-| `0x24` | BLua32 image length | Linked executable-image byte count. |
-| `0x28` | Startup function | Absolute function-record address. |
-| `0x2c` | IRQ function | Absolute function-record address. |
-| `0x30` | Exception function | Absolute function-record address. |
-| `0x34` | Static-layout token, low | Opaque low token word; neither address nor byte count. |
-| `0x38` | Static-layout token, high | Opaque high token word; neither address nor byte count. |
-| `0x3c` | Diagnostic directory offset | ROM-relative offset; initialized to zero without emitted diagnostics. |
-| `0x40` | Metadata offset | ROM-relative metadata offset. |
-| `0x44` | Metadata length | Metadata byte count; zero when absent. |
+| `0x18` | Constant-table address | Absolute machine byte address in installed ROM. |
+| `0x1c` | Constant count | Number of 16-byte constant records. |
+| `0x20` | Global-name-table address | Absolute machine byte address in installed ROM. |
+| `0x24` | Global-name count | Number of 8-byte name records. |
+| `0x28` | System-global-name-table address | Absolute machine byte address in installed ROM. |
+| `0x2c` | System-global-name count | Number of 8-byte name records. |
 
-The **60-byte boot prefix** occupies `0x00` through `0x3b`. It is distinct from the full current header: boot resolution requires this prefix to be backed by installed ROM bytes, not the entire 72-byte header. BIOS selection is described below.
+The remaining declared header slots are listed for layout identification, **not as activation requirements**. Each listed offset identifies a four-byte slot:
 
-Function-record addresses are absolute machine addresses, not image offsets or instruction PCs. The exception-address field alone does not specify cartridge fault routing. Package DATA is the physical payload, not writable program DATA; its length is not the program DATA section size.
+| Image byte offset | Declared field, not interpreted by activation |
+| --- | --- |
+| `0x00` | Magic; declared constant `0x32334c42`. |
+| `0x04` | Version; declared constant 1. |
+| `0x08`, `0x0c` | Image byte count; flags. |
+| `0x10`, `0x14` | Function-table address; function count. |
+| `0x30`, `0x34` | String address; string byte count. |
+| `0x38`, `0x3c` | RODATA address; RODATA byte count. |
+| `0x40`, `0x44`, `0x48` | DATA load address; DATA byte count; DATA run address. |
+| `0x4c`, `0x50` | BSS address; BSS byte count. |
+| `0x54`, `0x58` | TEXT address; TEXT byte count. |
+| `0x5c` | Reserved. |
 
-The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the EXEC subsection for the startup sequence.
+All 96 header bytes must be ROM-backed, including the uninterpreted slots. Activation does not check the declared magic/version, enumerate the function table, derive table locations from a section order, or use declared section extents to bound execution. It neither copies DATA nor clears BSS. Those operations require executed startup instructions, as described above.
 
-For resource-directory entries, payload offsets and byte extents, see
-[Book III: ROM resources](../book3/cartridge.md#rom-resources).
+The three table-address fields use **absolute machine addresses**, not header-relative or ROM-relative offsets. Table and string reads use the image's execution domain to select a cartridge socket; system-ROM addresses still select system ROM. The referenced spans must be backed by installed ROM, but activation does not constrain them to the declared image byte count. A table count of zero skips that table read, so its address is unused. No particular ordering or contiguity of the tables and referenced text is required by these reads.
+
+#### Constant and name records
+
+Constant record `i` begins at `constantTableAddress + 16i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `0x00`:
+
+| Tag | Value | Payload consumed |
+| --- | --- | --- |
+| 0 | Nil | None. |
+| 1 | False | None. |
+| 2 | True | None. |
+| 3 | Number | Eight-byte IEEE-754 binary64, little-endian, at `0x04`–`0x0b`. |
+| 4 | String | Absolute ROM text byte address at `0x04`; text byte count at `0x08`, both u32 little-endian. |
+
+Record bytes `0x0c`–`0x0f` are not read. Other tags cause activation to fail; tags 0–2 do not read a payload. Constant indices select records in table order.
+
+Both name tables use the same layout. Name record `i` begins at `tableAddress + 8i`:
+
+| Record byte offset | Field |
+| --- | --- |
+| `0x00` | Absolute ROM text byte address, u32 little-endian. |
+| `0x04` | Text byte count, u32 little-endian. |
+
+Text lengths count **bytes**, not codepoints. Reads consume the specified span, not a NUL-terminated sequence. A zero byte within the span is part of the text. A zero byte count produces empty text without reading the address.
+
+The ordinary-global and system-global tables register names in separate namespaces. Each table index maps to the corresponding runtime global slot. An already registered name reuses its slot and value; a newly registered name begins nil. The name record contains no initial value.
+
+#### Function and upvalue records
+
+A function address identifies a **32-byte function record**, not its first instruction. Record fields consumed below are unsigned 32-bit little-endian words:
+
+| Record byte offset | Field | Interpretation |
+| --- | --- | --- |
+| `0x00` | Code address | Absolute machine byte address of the initial instruction. |
+| `0x04` | Declared code byte count | Not read. |
+| `0x08` | Parameter count | Number of fixed parameter slots. |
+| `0x0c` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
+| `0x10` | Flags | Bit 0 VARARG; bit 1 STATIC. |
+| `0x14` | Upvalue-table address | Absolute machine byte address. |
+| `0x18` | Upvalue count | Number of four-byte descriptors. |
+| `0x1c` | Reserved | Not read. |
+
+VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
+
+Upvalue descriptor `i` is read as a four-byte unsigned little-endian word at `upvalueTableAddress + 4i`. Bit 31 set captures a register slot in the parent frame; bit 31 clear captures an upvalue of the parent closure. Bits 0–30 give the zero-based slot or upvalue index. Function and upvalue records are read through the mapped bus, rather than through the ROM-only table/string binding used during image activation.
+
+Function-record words are little-endian; [instruction words are big-endian](cpu.md#instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
 ### BIOS cartridge selection
 
@@ -1274,7 +1338,7 @@ Keep upload completion separate from playback lifetime. A DMA upload first deliv
 
 A paused voice retains a nonexclusive source reference. A looping voice continues reading; a voice STOP command is queued, not completed by its CMD write. A pending STOP fade does not immediately release the source. While fading, the normal post-frame source-boundary check is suppressed: keep the fade within the remaining nonlooping source data or provide a valid loop. An executed no-fade STOP clears that slot's resident voice without emitting SLOT_ENDED. SLOT_ENDED describes one ended slot, not every use of its bytes. Other voices, queued PLAY commands, and staged or planned uses can still require the same source. Account for all of them before overwriting shared samples; neither DMA DONE nor one SLOT_ENDED grants blanket reuse.
 
-Fault acknowledgment clears the fault report, not the voices or command and transfer queues. Reset is destructive: it clears playback, queues, and private sample RAM rather than completing or preserving their contents. See the [APU chapter](apu.md) and its [complete BLua program](apu.md#worked-blua-program) for the upload, commit, download, and playback sequence. Use the supplied [buffer-program result procedures](../programming/getting-started.md#check-hardware-buffer-program-results) to observe each example's results.
+Fault acknowledgment clears the fault report, not the voices or command and transfer queues. Reset is destructive: it clears playback, queues, and private sample RAM rather than completing or preserving their contents. See the [APU chapter](apu.md) for source binding and playback, and its [complete raw-port download](apu.md#apu-download-budget) for transfer completion and surplus-prefetch control. Use the supplied [buffer-program result procedures](../programming/getting-started.md#check-hardware-buffer-program-results) to observe each example's results.
 
 ## Shared GPU storage and display publication
 

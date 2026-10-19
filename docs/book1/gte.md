@@ -1910,53 +1910,50 @@ The framebuffer stride is 1024 words even though the visible width is 256 pixels
 
 <a id="complete-cartridge-program"></a>
 
-## Complete cartridge program
+## Hardware frame sequence
 
-The following BLua program joins the geometry, vertex-color, drawing and display
-steps into a repeated frame loop. It draws the triangle first at `(96,64)`,
+The following sequence joins geometry, vertex-color, drawing and display work
+into a repeated frame loop. It draws the triangle first at `(96,64)`,
 `(160,64)`, `(128,128)`, then alternates its X translation between 0 and 32 every
 32 completed loop iterations. At depth 512 and H=256, that translation moves its
 screen positions sixteen units horizontally. The display is 256×192.
 
-### Author operands as fixed data
+### Pack and transfer the operands
 
-Require the GTE utility module before using its operand types. Their layouts
-are chosen for direct whole-word transfer to the unit, not for allocation of
-objects when a frame begins:
+Use complete, aligned CPU word stores to the GTE register windows. Software may
+keep operands in ROM, but GTE does not fetch records or remember their source
+addresses. Each vector occupies two input words: signed X/Y in the low/high
+halves of the first, then signed Z in the low half of the second. The unused
+upper half of that second word is zero in this example. Matrix coefficients
+occupy successive signed halves in row order; the ninth coefficient occupies
+the low half of the fifth word.
 
-| Operand type | Bytes | Contents |
-|---|---:|---|
-| `gte_matrix` | 20 | Nine signed halfword coefficients in three rows, followed by one halfword of padding |
-| `gte_vector` | 8 | Signed halfword X, Y, Z, then a padding halfword |
-| `gte_transform` | 32 | One matrix, then three complete translation words |
-| `gte_projection` | 20 | Complete words for OFX, OFY, H, DQA and DQB, in register order |
+| Destination | Words in increasing register order |
+|---|---|
+| Rotation C[0]–C[4] | `0x00001000`, `0x00000000`, `0x00001000`, `0x00000000`, `0x00001000` |
+| Translation C[5]–C[7] | `0x00000000`, `0x00000000`, `0x00000000` |
+| Light matrix C[8]–C[12] | Same five identity words as C[0]–C[4] |
+| Ambient C[13]–C[15] | `0x00000000`, `0x00000000`, `0x00000000` |
+| Color matrix C[16]–C[20] | Same five identity words as C[0]–C[4] |
+| Projection C[24]–C[28] | `0x00800000`, `0x00600000`, `0x00000100`, `0x00000000`, `0x00000000` |
+| Positions D[0]–D[5] | `0xffc0ffc0`, `0x00000200`, `0xffc00040`, `0x00000200`, `0x00400000`, `0x00000200` |
+| Lighting directions, replacing D[0]–D[5] after projection | `0x00001000`, `0x00000000`, `0x10000000`, `0x00000000`, `0x00000000`, `0x00001000` |
+| Shared input color D[6] | `0x004080a0` |
 
-A `rodata` declaration places its initialized operands in cartridge ROM.
-Nested braces initialize that fixed data; they are not an instruction to build
-new tables inside the frame loop. The signed halfword initializers pack two
-coefficients or coordinates into each transferred word. For example, the first
-vertex `(-64,-64,512)` occupies `0xffc0ffc0` and `0x00000200`.
-The padding halfword is not another coordinate or coefficient.
-
-The program obtains a word view of each record and copies its words into the
-applicable register span. These are actual scalar word transfers, not an atomic
-matrix load or a new GTE command. No halfword write is sent to an IO register.
-Program the complete transform before issuing projection; the GTE neither
-fetches the ROM records itself nor remembers the address from which they came.
-Only the changing TRX word is rewritten independently in the frame loop.
-
-The three matrices are Q12 identities. Position and translation words use
+All three matrices are Q12 identities. Position and translation words use
 integer spatial counts. The three vertex-lighting directions are deliberately
 supplied orthogonal directions, not normals computed from this planar triangle.
 They expose independent red, green and blue contributions so the GPU's color
 interpolation is visible. This is a data-flow example, not a physically smooth
 lighting model for a flat face.
 
-`bss` supplies static writable words for the VBlank sequence, back-buffer index
-and iteration count. In particular, the interrupt handler and display loop
-address the same sequence word. After initialization only the system VBlank
-source is unmasked; the handler acknowledges the delivered source before
-advancing that sequence.
+Program the complete controls before issuing projection. Only the changing TRX
+word C[5] is rewritten independently in the loop. Keep the VBlank sequence,
+back-buffer index and completed-iteration count in software-owned writable
+storage; the interrupt handler and frame loop must use the same sequence word.
+After initialization, unmask only system VBlank bit 2 at `0x08000008`. The
+handler acknowledges that delivered source at `0x08000004` before advancing
+the sequence.
 
 ### Keep the drawing buffer separate from the displayed buffer
 
@@ -1972,16 +1969,16 @@ and both fit the installed video memory.
 | 1 | 256 | `0x000fa040` | 256×192 window starting at row 256 |
 
 The display source coordinates remain zero relative to the selected framebuffer
-base. The program retains the reset timing's horizontal signal step and sets
+base. The sequence retains the reset timing's horizontal signal step and sets
 DISPLAY1's extent for this 256×192 window. PMODE=`0x0000ff21` selects direct
 output from reading circuit 1.
 
-The program first requests PCRTC RESET, which resets the drawing/display state;
+The sequence first requests PCRTC RESET, which resets the drawing/display state;
 it does not use that as a GTE-reset operation. It explicitly initializes every
 GTE control consumed by its chosen calculations. The unused far-color and
 average-depth coefficients do not become inputs merely because their registers
 exist. Three screen and three color pushes replace the histories consumed by
-this program without a separate FIFO-clear sequence.
+this sequence without a separate FIFO-clear sequence.
 
 ### Observe the hand-offs in the loop
 
@@ -2002,201 +1999,63 @@ this program without a separate FIFO-clear sequence.
 6. Sample the VBlank sequence **after** those display writes, then wait for a
    different sequence value. The subsequent VBlank entry has latched the new
    source before the old front buffer is reused. If an edge occurs between the
-   display writes and the sequence read, the program can wait an extra refresh;
+   display writes and the sequence read, software can wait an extra refresh;
    it does not infer that the earlier edge latched writes that had not happened.
 7. Exchange the back-buffer index and start another iteration.
 
 Masking the system interrupt would not stop the PCRTC configuration-latch edge.
-This program instead waits for an observed later edge before reusing storage;
+This sequence instead waits for an observed later edge before reusing storage;
 it does not treat several display writes as an atomic transaction. It also does
 not infer GPU completion from GTE CYCLES, or display publication from GPU idle.
 These are separate ownership conditions.
 
-### Program listing
+### Frame register and packet order
 
-Read the following parts in order as one cartridge program. The last three
-parts continue the same frame loop; they are not separate entry functions.
+Before the loop, mask system interrupts, request PCRTC RESET with the word
+`0x00000200` at `0x080103d4`, set DISPFB1_HIGH to zero and DISPLAY1_HIGH to
+`0x000bf3ff`, then initialize the GTE controls above. Send GP0 words
+`0xe1000400` and `0xe6000000` for the chosen draw mode and mask behavior.
+Acknowledge stale interrupt sources with `0xffffffff` at `0x08000004`, then
+unmask VBlank with `0x00000004` at `0x08000008`.
 
-#### Register ports
+For each iteration, let `b` be the back-buffer index (0 or 1), and let
+`y = 256 × b`. Send these six words in order to GP0 at `0x0801023c`:
 
-```lua
-module<entry>
+| Order | GP0 word | Meaning |
+|---:|---|---|
+| 1 | `0xe3000000 \| (y << 10)` | Drawing-area top-left (0, y) |
+| 2 | `0xe40000ff \| ((y + 191) << 10)` | Drawing-area bottom-right (255, y+191) |
+| 3 | `0xe5000000 \| (y << 11)` | Drawing offset (0, y) |
+| 4 | `0x02000000` | Black fill command |
+| 5 | `y << 16` | Absolute destination (0, y) |
+| 6 | `0x00c00100` | Width 256, height 192 |
 
-local gte<const> = require('cartlib/gx/gte')
+Write TRX as `((iteration >> 5) & 1) << 5`, transfer the position words, then
+issue RTPT `0x00080030`. Retain D[12]–D[14] before replacing the input vectors.
+Issue NCLIP `0x00000006` and select a nonzero MAC0 word whose bit 31 is clear.
+For this accepted triangle, transfer the lighting directions and input color,
+then issue NCCT `0x0008043f`. Submit the following complete six-word GP0 packet:
 
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local data<const>: *word[32] = gte.data
-local control<const>: *word[32] = gte.control
-local command<const>: *word = gte.command
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-```
+| Order | GP0 word |
+|---:|---|
+| 1 | `0x30000000 \| (D[20] & 0x00ffffff)` |
+| 2 | Retained first screen word |
+| 3 | `D[21] & 0x00ffffff` |
+| 4 | Retained second screen word |
+| 5 | `D[22] & 0x00ffffff` |
+| 6 | Retained third screen word |
 
-#### Transform and projection operands
-
-```lua
--- Fixed ROM operands. Matrix coefficients use the Q12 convention.
-rodata model_to_view: gte_transform = {
-  rotation = {
-    rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
-    pad = 0,
-  },
-  translation = { 0, 0, 0 },
-}
-
-rodata projection: gte_projection = {
-  offset_x = 128 << 16,
-  offset_y = 96 << 16,
-  h = 256,
-  cue_gain = 0,
-  cue_offset = 0,
-}
-```
-
-#### Lighting operands
-
-```lua
-rodata light_directions: gte_matrix = {
-  rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
-  pad = 0,
-}
-rodata light_colors: gte_matrix = {
-  rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
-  pad = 0,
-}
-rodata ambient: word[3] = { 0, 0, 0 }
-```
-
-#### Vertices and interrupt-visible state
-
-```lua
-rodata triangle: gte_vector[3] = {
-  { x = -64, y = -64, z = 512, pad = 0 },
-  { x = 64, y = -64, z = 512, pad = 0 },
-  { x = 0, y = 64, z = 512, pad = 0 },
-}
--- Deliberately supplied vertex-lighting directions, not positions.
-rodata normals: gte_vector[3] = {
-  { x = 4096, y = 0, z = 0, pad = 0 },
-  { x = 0, y = 4096, z = 0, pad = 0 },
-  { x = 0, y = 0, z = 4096, pad = 0 },
-}
-
-bss vblank_sequence: word
-bss back_buffer: word
-bss frame_number: word
-
-function irq(flags)
-  *irq_ack = flags
-  *vblank_sequence = *vblank_sequence + 1
-end
-
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*source = 0x00000000
-*display_extent = 0x000bf3ff
-```
-
-#### Initialize the operand registers
-
-```lua
--- Copy raw words from the authored operands; MMIO never uses halfword stores.
-local transform_words<const>: *word = model_to_view
-for index = 0, sizeof(gte_transform) // 4 - 1 do
-  control[gte.control_r11r12 + index] = transform_words[index]
-end
-local projection_words<const>: *word = projection
-for index = 0, sizeof(gte_projection) // 4 - 1 do
-  control[gte.control_ofx + index] = projection_words[index]
-end
-local direction_words<const>: *word = light_directions
-local color_words<const>: *word = light_colors
-for index = 0, sizeof(gte_matrix) // 4 - 1 do
-  control[gte.control_l11l12 + index] = direction_words[index]
-  control[gte.control_lr1lr2 + index] = color_words[index]
-end
-for channel = 0, #ambient - 1 do
-  control[gte.control_rbk + channel] = ambient[channel]
-end
-local position_words<const>: *word = triangle
-local normal_words<const>: *word = normals
-
-*gp0 = 0xe1000400
-*gp0 = 0xe6000000
-*irq_ack = 0xffffffff
-*irq_mask = 0x00000004
-```
-
-#### Begin a frame and project its triangle
-
-```lua
-while true do
-  local base_y<const> = *back_buffer << 8
-  *gp0 = 0xe3000000 | (base_y << 10)
-  *gp0 = 0xe40000ff | ((base_y + 191) << 10)
-  *gp0 = 0xe5000000 | (base_y << 11)
-  *gp0 = 0x02000000
-  *gp0 = base_y << 16
-  *gp0 = 0x00c00100
-
-  control[gte.control_trx] = ((*frame_number >> 5) & 1) << 5
-  for index = 0, sizeof(gte_vector[3]) // 4 - 1 do
-    data[gte.data_vxy0 + index] = position_words[index]
-  end
-  *command = gte.opcode_rtpt | gte.command_sf_shift_12
-  local xy0<const> = data[gte.data_sxy0]
-  local xy1<const> = data[gte.data_sxy1]
-  local xy2<const> = data[gte.data_sxy2]
-  *command = gte.opcode_nclip
-  local doubled_area<const> = data[gte.data_mac0]
-```
-
-#### Calculate vertex colors and submit the primitive
-
-```lua
-  -- MAC0 is read as a raw word; select positive signed area, excluding zero.
-  if doubled_area ~= 0 and (doubled_area & 0x80000000) == 0 then
-    for index = 0, sizeof(gte_vector[3]) // 4 - 1 do
-      data[gte.data_vxy0 + index] = normal_words[index]
-    end
-    data[gte.data_rgb] = 0x004080a0
-    *command = gte.opcode_ncct | gte.command_sf_shift_12 | gte.command_lm_positive
-    *gp0 = 0x30000000 | (data[gte.data_rgb0] & 0x00ffffff)
-    *gp0 = xy0
-    *gp0 = data[gte.data_rgb1] & 0x00ffffff
-    *gp0 = xy1
-    *gp0 = data[gte.data_rgb2] & 0x00ffffff
-    *gp0 = xy2
-  end
-```
-
-#### Publish the completed buffer and wait
-
-```lua
-  while (*gp1 & 0x04000000) == 0 do
-  end
-  *framebuffer = 0x000fa000 | (*back_buffer << 6)
-  *pmode = 0x0000ff21
-  local before<const> = *vblank_sequence
-  while *vblank_sequence == before do
-    halt_until_irq
-  end
-  *back_buffer = 1 - *back_buffer
-  *frame_number = *frame_number + 1
-end
-```
+Wait until GP1/status at `0x08010240` has bit 26 set. Write
+`0x000fa000 | (b << 6)` to DISPFB1_LOW at `0x0801035c`, then `0x0000ff21`
+to PMODE_LOW at `0x08010354`. Sample the software VBlank sequence after those
+writes and wait for it to change. Only then exchange `b` with `1-b`, increment
+the completed-iteration count and reuse the old displayed buffer.
 
 <div class="keep-together">
 
 ### Output plate: NCCT vertex-colour triangle
 
-The example cartridge uses RTPT for projected coordinates, NCLIP for the winding result, and NCCT for three vertex colours. These plates show the complete 256 × 192 display images.
+This sequence uses RTPT for projected coordinates, NCLIP for the winding result, and NCCT for three vertex colours. These plates show the complete 256 × 192 display images.
 
 | Initial placement: `TRX = 0` | Translated placement: `TRX = 32` |
 | :---: | :---: |
@@ -2207,7 +2066,7 @@ The example cartridge uses RTPT for projected coordinates, NCLIP for the winding
 
 **Results.** At the initial placement, RGB0–RGB2 are `0x000000a0`, `0x00008000` and `0x00400000`. The visible triangle has red at upper left, green at upper right and blue at the bottom. Changing `TRX` from `0` to `32` moves all three projected vertices **16 pixels right**, with Y unchanged for these settings. The second image is the same visible gradient shifted exactly 16 pixels right.
 
-**GTE and display output.** The cartridge sends the GTE's three coordinate/colour pairs to GP0. The GTE supplies those vertex results, not the interior pixels. The plates show the subsequent display output, including the interior gradient; they do not specify the GPU's interpolation or edge-coverage rules.
+**GTE and display output.** Software sends the GTE's three coordinate/colour pairs to GP0. The GTE supplies those vertex results, not the interior pixels. The plates show the subsequent display output, including the interior gradient; they do not specify the GPU's interpolation or edge-coverage rules.
 
 </div>
 
@@ -2217,7 +2076,7 @@ The example cartridge uses RTPT for projected coordinates, NCLIP for the winding
 
 ### Translate before projection
 
-Run the earlier **Project a triangle, test its orientation, and form a depth value** register sequence, not the complete frame-loop cartridge above. Continue from that sequence's retained state without resetting. Keep its identity matrix, H=256, screen origin `(128,96)`, and zero DQA/DQB. Change the translation to `(32,−16,512)` and project the new V0 `(64,32,512)`:
+Run the earlier **Project a triangle, test its orientation, and form a depth value** register sequence, not the repeated hardware frame sequence above. Continue from that sequence's retained state without resetting. Keep its identity matrix, H=256, screen origin `(128,96)`, and zero DQA/DQB. Change the translation to `(32,−16,512)` and project the new V0 `(64,32,512)`:
 
 | Step | Address / register | Raw word | Meaning |
 |---|---|---|---|
@@ -5077,7 +4936,7 @@ a display edge.
 
 **This budget applies to the specified scalar instruction schedule, not to
 every BLua program that performs the same arithmetic.** Its operands match the
-cartridge example, but unrolled transfers and the stated register allocation
+hardware frame sequence, but unrolled transfers and the stated register allocation
 define this separate work interval. Address calculations, loops or spills emitted
 by another program must be included in that program's own budget.
 
@@ -6184,13 +6043,39 @@ Four equal-size, equal-shape screen-space swatches make the depth-cue color chan
 
 </section>
 
+### Fixed register operands
+
+Program these controls with complete word stores before the first sample. The
+light and color matrices use the Q12 convention. The table gives the actual
+input words, including the zero high half of each final matrix word; C[12]
+sign-extends its low half on write.
+
+| Destination | Programmed values | Raw words in increasing register order |
+|---|---|---|
+| Rotation C[0]–C[4] | Identity | `0x00001000`, `0x00000000`, `0x00001000`, `0x00000000`, `0x00001000` |
+| Translation C[5]–C[7] | (0, 0, 0) | `0x00000000`, `0x00000000`, `0x00000000` |
+| Light matrix L, C[8]–C[12] | Rows (3072, 0, 2048), (−2048, 0, 3072), (0, 0, −4096) | `0x00000c00`, `0xf8000800`, `0x0c000000`, `0x00000000`, `0x0000f000` |
+| Ambient C[13]–C[15] | (256, 512, 128) | `0x00000100`, `0x00000200`, `0x00000080` |
+| Color matrix K, C[16]–C[20] | Rows (4096, 1024, 0), (2048, 4096, 0), (1024, 2048, 4096) | `0x04001000`, `0x08000000`, `0x00001000`, `0x08000400`, `0x00001000` |
+| Far color C[21]–C[23] | (80×16, 96×16, 160×16) | `0x00000500`, `0x00000600`, `0x00000a00` |
+| Screen offsets C[24]–C[25] | (0, 0) | `0x00000000`, `0x00000000` |
+| H, DQA, DQB, C[26]–C[28] | 128, −768, 25166080 | `0x00000080`, `0xfffffd00`, `0x01800100` |
+| Material and CODE, D[6] | RGB (160, 96, 192), CODE 0x34 | `0x34c060a0` |
+| Normal, D[0]–D[1] when lighting | (2458, 0, 3277) | `0x0000099a`, `0x00000ccd` |
+| Position, D[0]–D[1] when projecting | (0, 0, Z), Z=256, 384, 512, 768 | First word zero; second word `0x00000100`, `0x00000180`, `0x00000200`, or `0x00000300` |
+
+The register address formulas are D[n]=`0x08010244 + 4n` and
+C[n]=`0x080102c4 + 4n`. The retained high byte of RGBC is the color CODE,
+not a GPU command. The four positions choose four coefficients under the same
+lighting and material setup.
+
 <section class="keep-together">
 
 For each row, use this sequence:
 
-1. Put the position in `V0` and issue `RTPS` with `SF=1, LM=0`. Retain `IR0` and the projection `FLAG` immediately.
+1. Put the position in `V0` and issue `RTPS` word `0x00080001` with `SF=1, LM=0`. Retain `IR0` and the projection `FLAG` immediately.
 2. Replace `V0` with the same fixed normal. Do not write `IR0`.
-3. Issue `NCDS` with `SF=1, LM=1`. Retain `RGB2` and the new `FLAG` immediately.
+3. Issue `NCDS` word `0x00080413` with `SF=1, LM=1`. Retain `RGB2` and the new `FLAG` immediately.
 
 </section>
 
@@ -6232,281 +6117,38 @@ Consequently, the GTE result bytes and the visible output bytes differ. Keep the
 
 This two-stage example exclusively owns the GTE, GPU ports, display configuration, VBlank handler and both chosen image regions: raw (0,0)–(255,191) and (0,256)–(255,447). Its queried firmware reservation lies outside both regions; this does not make other coordinates generally available. Do not run concurrent users of these resources. After the final display-enable write, acknowledge stale controller VBlank bit 2 and wait for a fresh callback sequence. Register readback alone does not establish displayed output or a fixed presentation latency.
 
-<section class="keep-together">
+### Display and readback sequence
 
-### Complete BLua cartridge
+With system interrupt delivery masked, request PCRTC RESET by writing
+`0x00000200` to `0x080103d4`. Keep PMODE_LOW zero while preparing the first
+image, and program these display words:
 
-For project layout, building and checking this cartridge, use the
-[Build and inspect example cartridges — “Build and inspect GTE depth cue”](../programming/getting-started.md#build-and-inspect-gte-depth-cue).
+| Register | Address | Word |
+|---|---|---|
+| DISPFB1_LOW | `0x0801035c` | `0x000fa000` |
+| DISPFB1_HIGH | `0x08010360` | `0x00000000` |
+| DISPLAY1_LOW | `0x08010364` | `0x018252a8` |
+| DISPLAY1_HIGH | `0x08010368` | `0x000bf3ff` |
 
-Use the existing `cartlib/gx/gte` operand layouts. These typed ROM records hold
-fixed matrices, vectors and projection settings; whole-word views transfer them
-to the named GTE register windows. The position and normal deliberately reuse
-V0, but the projection result and flags are retained before that reuse.
+Write GP1 word `0x09000000`. For the first surface, send GP0 draw-state words
+`0xe1000400`, `0xe2000000`, `0xe3000000`, `0xe402fcff`, `0xe5000000`,
+`0xe6000001` in that order. Clear with the opaque rectangle packet
+`0x60000000`, `0x00000000`, `0x00c00100`; unlike the fill command, this
+rectangle follows the selected drawing offset and stored-mask setting.
+For each swatch, send the color command described above, then its packed
+position `(X,48)`, then `0x0060002c` (44×96). Use X=16, 76, 136 and 196.
 
-<section class="keep-together">
+Probe the first surface at absolute centers (38,96), (98,96), (158,96) and
+(218,96). Each C0 packet is `0xc0000000`, the packed absolute coordinate,
+`0x00010001`. Wait for GP1/status bit 27 (READY), then drain its one GPUREAD
+word. After all readbacks, separately wait for GP1/status bit 26 (GPU idle).
 
-Create `results.lua` as this complete const module. Its explicit BSS keeps the
-calculation results separate from raw display probes and callback observations.
-
-```lua
-module<const>
-
-struct gte_cue_result
-	completed: word
-	vblank_sequence: word
-	before_vblank: word
-	after_vblank: word
-	system_origin: word
-	system_size: word
-	projected_xy: word[4]
-	projected_z: word[4]
-	ir0: word[4]
-	ir0_after_color: word[4]
-	rgb2: word[4]
-	projection_flags: word[4]
-	color_flags: word[4]
-	swatch_words: word[4]
-	material_rgb2: word[3]
-	material_flags: word[3]
-	material_words: word[3]
-	preserved_depth_words: word[4]
-	material_before_vblank: word
-	material_after_vblank: word
-	material_ir0: word
-end
-
-bss result: gte_cue_result
-
-return { result = result }
-```
-
-</section>
-
-</section>
-
-<section class="keep-together">
-
-### Declare the mapped ports
-
-Create `cart.lua` by concatenating the following eight blocks in order, including the final material-comparison blocks.
-
-```lua
-module<entry>
-
-local gte<const> = require('cartlib/gx/gte')
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *gte_cue_result = state.result
-local data<const>: *word[32] = gte.data
-local control<const>: *word[32] = gte.control
-local command<const>: *word = gte.command
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local window<const>: *word = 0x08010364
-local extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-```
-
-</section>
-
-<section class="keep-together">
-
-### Author the fixed operands
-
-Continue the entry module with typed ROM data, not runtime table construction.
-
-```lua
-
--- Fixed ROM operands, not heap tables or a mutable register image.
-rodata model_to_view: gte_transform = {
-	rotation = {
-		rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
-		pad = 0,
-	},
-	translation = { 0, 0, 0 },
-}
-rodata projection: gte_projection = {
-	offset_x = 0,
-	offset_y = 0,
-	h = 128,
-	cue_gain = -768,
-	cue_offset = 0x01800100,
-}
-rodata light_directions: gte_matrix = {
-	rows = { { 3072, 0, 2048 }, { -2048, 0, 3072 }, { 0, 0, -4096 } },
-	pad = 0,
-}
-rodata light_colors: gte_matrix = {
-	rows = { { 4096, 1024, 0 }, { 2048, 4096, 0 }, { 1024, 2048, 4096 } },
-	pad = 0,
-}
-rodata ambient: word[3] = { 256, 512, 128 }
-rodata far_color: word[3] = { 80 << 4, 96 << 4, 160 << 4 }
-rodata normal: gte_vector = { x = 2458, y = 0, z = 3277, pad = 0 }
-rodata positions: gte_vector[4] = {
-	{ x = 0, y = 0, z = 256, pad = 0 },
-	{ x = 0, y = 0, z = 384, pad = 0 },
-	{ x = 0, y = 0, z = 512, pad = 0 },
-	{ x = 0, y = 0, z = 768, pad = 0 },
-}
-rodata swatch_x: word[4] = { 16, 76, 136, 196 }
-rodata material_x: word[3] = { 20, 100, 180 }
-rodata materials: word[3] = { 0x34c060a0, 0x34c060a0, 0x34a0c040 }
-```
-
-</section>
-
-<section class="keep-together">
-
-### Take ownership and configure the display
-
-The BIOS query reports the firmware reservation; the chosen image is not a general allocation policy.
-
-```lua
-
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
-end
-
--- Own GTE, ports, display, handler and both raw 256x192 surfaces.
-result.system_origin, result.system_size = system_vram_region()
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*window = 0x018252a8
-*extent = 0x000bf3ff
-*gp1 = 0x09000000
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Transfer the fixed GTE controls
-
-Copy complete words from the fixed layouts. The loops do not issue halfword MMIO stores.
-
-```lua
-local transform_words<const>: *word = model_to_view
-for index = 0, sizeof(gte_transform) // 4 - 1 do
-	control[gte.control_r11r12 + index] = transform_words[index]
-end
-local projection_words<const>: *word = projection
-for index = 0, sizeof(gte_projection) // 4 - 1 do
-	control[gte.control_ofx + index] = projection_words[index]
-end
-local direction_words<const>: *word = light_directions
-local color_words<const>: *word = light_colors
-for index = 0, sizeof(gte_matrix) // 4 - 1 do
-	control[gte.control_l11l12 + index] = direction_words[index]
-	control[gte.control_lr1lr2 + index] = color_words[index]
-end
-for channel = 0, 2 do
-	control[gte.control_rbk + channel] = ambient[channel]
-	control[gte.control_rfc + channel] = far_color[channel]
-end
-data[gte.data_rgb] = 0x34c060a0
-local position_words<const>: *word = positions
-local normal_words<const>: *word = normal
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Compute each coefficient and draw its swatch
-
-Keep each coefficient with its own position, then restore the normal before the color command.
-
-```lua
--- Opaque, untextured rectangles, no dither, stored mask bit set.
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-*gp0 = 0xe6000001
-*gp0 = 0x60000000
-*gp0 = 0
-*gp0 = 256 | (192 << 16)
-
-for index = 0, 3 do
-	-- A position chooses this sample's cue; save it before reusing V0.
-	data[gte.data_vxy0] = position_words[index * 2]
-	data[gte.data_vz0] = position_words[index * 2 + 1]
-	*command = gte.opcode_rtps | gte.command_sf_shift_12
-	result.projected_xy[index] = data[gte.data_sxy2]
-	result.projected_z[index] = data[gte.data_sz3]
-	result.ir0[index] = data[gte.data_ir0]
-	result.projection_flags[index] = control[gte.control_flag]
-
-	-- Restore the same supplied normal, not the position; retain IR0.
-	data[gte.data_vxy0] = normal_words[0]
-	data[gte.data_vz0] = normal_words[1]
-	*command = gte.opcode_ncds | gte.command_sf_shift_12 | gte.command_lm_positive
-	local rgb<const> = data[gte.data_rgb2]
-	result.ir0_after_color[index] = data[gte.data_ir0]
-	result.rgb2[index] = rgb
-	result.color_flags[index] = control[gte.control_flag]
-
-	-- CODE is not a GP0 opcode. Draw equal 44x96 screen-space swatches.
-	*gp0 = 0x60000000 | (rgb & 0x00ffffff)
-	*gp0 = swatch_x[index] | (48 << 16)
-	*gp0 = 44 | (96 << 16)
-end
-```
-
-</section>
-
-<section class="keep-together">
-
-### Read the stored pixels and publish the first image
-
-Raw GPUREAD probes and immediate register reads are separate from the fresh VBlank observation. The following two callback increments hold this first image for viewing; they are not a minimum display-latency guarantee.
-
-```lua
-for index = 0, 3 do
-	*gp0 = 0xc0000000
-	*gp0 = (swatch_x[index] + 22) | (96 << 16)
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.swatch_words[index] = *gp0
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-
-*pmode = 0x0000ff21
-*irq_ack = 0x00000004
-local before<const> = result.vblank_sequence
-result.before_vblank = before
-*irq_mask = 0x00000004
-while result.vblank_sequence == before do
-	halt_until_irq
-end
-result.after_vblank = result.vblank_sequence
-result.completed = 1
-local hold<const> = result.vblank_sequence
-while result.vblank_sequence - hold < 2 do
-	halt_until_irq
-end
-
-```
-
-</section>
+Enable the first image with PMODE_LOW=`0x0000ff21`. Acknowledge stale VBlank
+bit 2 at `0x08000004` after that store, sample the software callback sequence,
+unmask bit 2 at `0x08000008`, and wait for the sequence to change. The capture
+keeps the first image selected for two further callback increments before
+preparing the material comparison. That viewing interval is not a minimum
+presentation-latency guarantee.
 
 <section class="keep-together">
 
@@ -6538,9 +6180,17 @@ Each command starts with FLAG cleared and finishes with `00400000H`. The third l
 
 The second 256×192 picture contains three equal 56×96 swatches at X=20, 100 and 180, Y=48: reference, material A and material B, from left to right. Stage A remains selected and untouched while drawing Stage B is confined to raw rows 256–447. Use opaque, untextured 60H rectangles for both the black clear and the swatches; a 02H fill does not follow the drawing offset or stored-mask setting.
 
+Keep the previous light, color and ambient controls. Mask interrupt delivery
+while preparing the second surface. Send GP0 words `0xe3040000`,
+`0xe406fcff`, `0xe5080000` to select its bounds and offset. Clear it with
+`0x60000000`, `0x00000000`, `0x00c00100`. Reload the normal into D[0]–D[1]
+before the three lighting commands. Each swatch packet contains
+`0x60000000 | (RGB2 & 0x00ffffff)`, its local packed position `(X,48)`,
+then `0x00600038` (56×96).
+
 At a pitch of 1024 words, framebuffer row 256 means base word 00040000H, FBP=64 and DISPFB1_LOW=000FA040H, with source X/Y still zero. This framebuffer base is separate from the relative drawing offset Y=256: swatch Y=48 becomes raw Y=304. C0 transfers ignore that offset; read the centers at absolute (48,352), (128,352) and (208,352). The next table distinguishes stored GX16 words, the complete C0 register word and displayed RGB; the preceding table retains the original GTE bytes.
 
-After draining probe readback, wait for GPU idle. With interrupt delivery masked, write the new framebuffer selection, acknowledge stale controller VBlank pending state, record the callback sequence, unmask VBlank and wait for a fresh callback. Neither surface is subsequently reused. This sequence promises no general surface release, atomic update or display latency. Both chosen surfaces lie outside the queried firmware region; the query is not an allocator.
+After the three material probes, repeat the four first-surface center probes to retain its unchanged GX16 words. After draining probe readback, wait for GPU idle. With interrupt delivery masked, write the new framebuffer selection, acknowledge stale controller VBlank pending state, record the callback sequence, unmask VBlank and wait for a fresh callback. Neither surface is subsequently reused. This sequence promises no general surface release, atomic update or display latency. Both chosen surfaces lie outside the queried firmware region; the query is not an allocator.
 
 | Swatch | Stored GX16 | C0 word | Display R,G,B |
 |---|---|---|---|
@@ -6553,104 +6203,6 @@ After draining probe readback, wait for GPU idle. With interrupt delivery masked
 ![GTE unmodulated lighting reference and two material tints](figures/gte-material.png)
 
 *Second picture: the unmodified 256×192 capture shows reference, material A and material B on black. Display RGB reflects RGB555 truncation and expansion, not the original GTE bytes.*
-
-</section>
-
-<section class="keep-together">
-
-### Prepare the lighting reference and materials in the second surface
-
-Continue the same entry module. The existing light, color and ambient controls remain unchanged; the first framebuffer stays selected while this block draws the second.
-
-```lua
--- Keep the first surface selected while drawing only into rows 256..447.
-*irq_mask = 0
-*gp0 = 0xe3000000 | (256 << 10)
-*gp0 = 0xe40000ff | (447 << 10)
-*gp0 = 0xe5000000 | (256 << 11)
-*gp0 = 0x60000000
-*gp0 = 0
-*gp0 = 256 | (192 << 16)
-
--- NCS and NCCS do not use the IR0 left by the depth-cue comparison.
-data[gte.data_vxy0] = normal_words[0]
-data[gte.data_vz0] = normal_words[1]
-for index = 0, 2 do
-	data[gte.data_rgb] = materials[index]
-	if index == 0 then
-		*command = (gte.opcode_ncs
-			| gte.command_sf_shift_12 | gte.command_lm_positive)
-	else
-		*command = (gte.opcode_nccs
-			| gte.command_sf_shift_12 | gte.command_lm_positive)
-	end
-	local rgb<const> = data[gte.data_rgb2]
-	result.material_rgb2[index] = rgb
-	result.material_flags[index] = control[gte.control_flag]
-	*gp0 = 0x60000000 | (rgb & 0x00ffffff)
-	*gp0 = material_x[index] | (48 << 16)
-	*gp0 = 56 | (96 << 16)
-end
-result.material_ir0 = data[gte.data_ir0]
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Check both surfaces and select the second image
-
-Continue with absolute raw probes, a separate GPU-idle wait and the final framebuffer publication. Neither surface is overwritten afterwards.
-
-```lua
--- Drawing offset affects rectangles, not C0 transfer coordinates.
-for index = 0, 2 do
-	*gp0 = 0xc0000000
-	*gp0 = (material_x[index] + 28) | (352 << 16)
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.material_words[index] = *gp0
-end
-for index = 0, 3 do
-	*gp0 = 0xc0000000
-	*gp0 = (swatch_x[index] + 22) | (96 << 16)
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.preserved_depth_words[index] = *gp0
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-
--- Only change the framebuffer after the second image is complete.
-*framebuffer = 0x000fa040
-*irq_ack = 0x00000004
-local material_before<const> = result.vblank_sequence
-result.material_before_vblank = material_before
-*irq_mask = 0x00000004
-while result.vblank_sequence == material_before do
-	halt_until_irq
-end
-result.material_after_vblank = result.vblank_sequence
-result.completed = 2
-while true do
-	halt_until_irq
-end
-```
-
-</section>
-
-<section class="keep-together">
-
-Create `res/manifest/manifest.rommanifest` with these complete contents:
-
-```yaml
-title: GTE Depth Cue Manual Example
-hardware:
-    - type: rom
-```
 
 </section>
 
@@ -6686,15 +6238,36 @@ This plane is not a GTE setting. The divider instead tests H>=2×SZ3: A meets eq
 
 Retain projection FLAG before issuing NCLIP. NCLIP clears FLAG at entry and computes signed doubled screen-space area; its new zero FLAG does not erase the earlier projection condition. Neither command constructs intersections or chooses replacement triangles. Every RTPT here reports IR0=0 and nominal CYCLES=23; 23 is not measured elapsed execution or frame time.
 
-For BLua construction, keep signed geometry in numeric locals and emit typed gte_vector transfer records. Reads of i16 storage return raw unsigned halves; do not reread those fields as signed geometry. Transfer the raw records to the GTE, whose datapath decodes signed components.
+Keep signed geometry in the software calculation until the intersections have been constructed. For transfer, pack each vertex into two raw words: signed X/Y halfwords in the first, then signed Z in the low half of the second; this example sets the unused high half to zero. Transfer those complete words to D[0]–D[5]. The GTE datapath decodes the signed components; raw halfword bit patterns are not signed working values for the clipping calculation.
 
 This exact finite construction needs no rounding decision. It is not a general clipper, attribute-interpolation policy, or all-case guarantee.
 
+Transfer ABC, then DBC and DCE as the triples in the table. Issue RTPT
+`0x00080030` for each triple and NCLIP `0x00000006` afterwards. Seed D[19]
+(SZ3) with zero before the first RTPT, so the older retained depth becomes zero
+in SZ0. Rotation C[0]–C[4] uses the identity words listed in the hardware frame
+sequence; C[5]–C[7] are zero. C[24]–C[28] contain `0x00800000`,
+`0x00600000`, `0x00000100`, `0x00000000`, `0x00000000`.
+
 ### Displaying the result
 
-Both images use the same flat source RGB (64, 160, 224), supplied directly to the GPU; no GTE colour command is involved. With dithering disabled and the stored mask bit set, the GX16 word is F288H, displayed as RGB (66, 165, 231).
+Both images use the same flat source RGB (64, 160, 224), supplied directly in GP0 triangle command `0x20e0a040`; no GTE colour command is involved. With dithering disabled and the stored mask bit set, the GX16 word is F288H, displayed as RGB (66, 165, 231).
 
 The two 256 × 192 raw surfaces have a 1024-word pitch: A occupies rows 0–191 and B rows 256–447. Drawing bounds select each surface, and E5 adds the relative Y offset 256 for B. Display selection is different: FBP 64 selects base word 40000H, while the display source remains 0. A remains selected while B is drawn; neither surface is subsequently reused.
+
+Use the display initialization words in the preceding depth-cue sequence:
+PCRTC RESET=`0x00000200`, initial PMODE_LOW=0, DISPFB1_LOW=`0x000fa000`,
+DISPFB1_HIGH=0, DISPLAY1_LOW=`0x018252a8`, DISPLAY1_HIGH=`0x000bf3ff`,
+and GP1=`0x09000000`. Send GP0 `0xe1000400`, `0xe2000000`,
+`0xe6000001` before drawing. For stage index `s` (0 or 1), select bounds and
+offset with `0xe3000000 | ((s << 8) << 10)`,
+`0xe40000ff | (((s << 8) + 191) << 10)`, and
+`0xe5000000 | ((s << 8) << 11)`. Clear with the three-word opaque rectangle
+packet `0x60000000`, `0x00000000`, `0x00c00100`, then send each triangle's
+command and its three retained screen words. After readback and GPU idle,
+select DISPFB1_LOW=`0x000fa000 | (s << 6)` and PMODE_LOW=`0x0000ff21`.
+The first surface remains selected for two additional callback increments
+before drawing the second; this is a viewing interval, not a latency promise.
 
 C0 probes use absolute raw coordinates, independent of E5. The probes at (128, 64)/(128, 112) return F288H/F288H for A; (128, 320)/(128, 368) return 8000H/F288H for B.
 
@@ -6709,314 +6282,6 @@ The example exclusively owns the GTE, GPU, display, VBlank handling, and both su
 | ![Original blue ABC triangle on black, with apex at (128, 32).](figures/gte-near-original.png) | ![Clipped blue DBC/DCE trapezoid on black, with its top edge at Y 96.](figures/gte-near-clipped.png) |
 
 The actual images show ABC versus DBC/DCE: the new top edge is E(96, 96) → D(160, 96), with the same B/C base.
-
-</section>
-
-<section class="keep-together">
-
-### Complete BLua near-plane cartridge
-
-For project layout, building and checking this cartridge, use the [Build and inspect example cartridges](../programming/getting-started.md#build-and-inspect-gte-near-plane-clipping) development guide — “Build and inspect GTE near-plane clipping”. No earlier example cartridge is required.
-
-Create `results.lua` as this complete const module. It keeps raw transfer records and retained command/display observations in explicit BSS.
-
-```lua
-module<const>
-
-local gte<const> = require('cartlib/gx/gte')
-
-struct gte_clip_result
-	completed: word
-	vblank_sequence: word
-	before_vblank: word[2]
-	after_vblank: word[2]
-	system_origin: word
-	system_size: word
-	original: gte_vector[3]
-	quad: gte_vector[4]
-	screen: word[3][3]
-	depth: word[3][4]
-	projection_flags: word[3]
-	projection_cycles: word[3]
-	ir0: word[3]
-	area: word[3]
-	area_flags: word[3]
-	probe_words: word[2][2]
-end
-
-bss result: gte_clip_result
-
-return { result = result }
-```
-
-</section>
-
-<section class="keep-together">
-
-### Declare the mapped ports
-
-Create `cart.lua` by concatenating the following seven blocks in order. Later blocks continue the open stage loop; they are not separate modules.
-
-```lua
-module<entry>
-
-local gte<const> = require('cartlib/gx/gte')
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *gte_clip_result = state.result
-local data<const>: *word[32] = gte.data
-local control<const>: *word[32] = gte.control
-local command<const>: *word = gte.command
-local cycles<const>: *word = gte.cycles
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local window<const>: *word = 0x08010364
-local extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Supply the shared transform and projection
-
-The input geometry is already in view space. Identity rotation and zero translation avoid transforming the constructed intersections a second time.
-
-```lua
--- These positions are already in view space.
-rodata transform: gte_transform = {
-	rotation = {
-		rows = { { 4096, 0, 0 }, { 0, 4096, 0 }, { 0, 0, 4096 } },
-		pad = 0,
-	},
-	translation = { 0, 0, 0 },
-}
-rodata projection: gte_projection = {
-	offset_x = 128 << 16,
-	offset_y = 96 << 16,
-	h = 256,
-	cue_gain = 0,
-	cue_offset = 0,
-}
-rodata quad_indices: u8[6] = { 0, 1, 2, 0, 2, 3 }
-rodata probe_xy: word[2] = { 128 | (64 << 16), 128 | (112 << 16) }
-local near_z<const> = 256
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Configure the owned resources
-
-The existing BIOS query reports the firmware reservation. This chosen two-surface footprint is not a general allocation policy.
-
-```lua
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
-end
-
--- Own GTE, ports, display, handler and both raw 256x192 surfaces.
-result.system_origin, result.system_size = system_vram_region()
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*window = 0x018252a8
-*extent = 0x000bf3ff
-*gp1 = 0x09000000
-local transform_words<const>: *word = transform
-for index = 0, sizeof(gte_transform) // 4 - 1 do
-	control[gte.control_r11r12 + index] = transform_words[index]
-end
-local projection_words<const>: *word = projection
-for index = 0, sizeof(gte_projection) // 4 - 1 do
-	control[gte.control_ofx + index] = projection_words[index]
-end
--- Seed only the old depth that will become SZ0 after the first RTPT.
-data[gte.data_sz3] = 0
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe6000001
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Construct the transfer records from numeric coordinates
-
-The signed working values are numeric locals. Emit both the original triangle and D,B,C,E into typed transfer records; do not perform this interpolation by rereading their raw `i16` halves.
-
-```lua
--- Compute in numeric locals; i16 storage reads are raw unsigned halves.
-local ax<const> = 0
-local ay<const> = -32
-local az<const> = 128
-local by<const> = 64
-local bz<const> = 512
-result.original[0].x = ax
-result.original[0].y = ay
-result.original[0].z = az
-result.original[0].pad = 0
--- One known outside vertex, two inside: construct D,B,C,E in BSS.
-for edge = 1, 2 do
-	local bx = 96
-	local slot = 0
-	if edge == 2 then
-		bx = -96
-		slot = 3
-	end
-	result.original[edge].x = bx
-	result.original[edge].y = by
-	result.original[edge].z = bz
-	result.original[edge].pad = 0
-	local cut<const>: *gte_vector = &result.quad[slot]
-	local numerator<const> = near_z - az
-	local denominator<const> = bz - az
-	cut.x = ax + (bx - ax) * numerator // denominator
-	cut.y = ay + (by - ay) * numerator // denominator
-	cut.z = near_z
-	cut.pad = 0
-	result.quad[edge].x = bx
-	result.quad[edge].y = by
-	result.quad[edge].z = bz
-	result.quad[edge].pad = 0
-end
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Begin the two drawing stages
-
-A single outer loop draws into raw rows 0–191, then 256–447. Keep the first framebuffer selected while preparing the second.
-
-```lua
-for stage = 0, 1 do
-	local base_y<const> = stage << 8
-	*irq_mask = 0
-	*gp0 = 0xe3000000 | (base_y << 10)
-	*gp0 = 0xe40000ff | ((base_y + 191) << 10)
-	*gp0 = 0xe5000000 | (base_y << 11)
-	*gp0 = 0x60000000
-	*gp0 = 0
-	*gp0 = 256 | (192 << 16)
-
-	-- Stage 0 projects ABC; stage 1 projects DBC followed by DCE.
-```
-
-</section>
-
-<section class="keep-together">
-
-### Project each triple and explicitly submit its triangle
-
-Continue inside the same stage loop. Retain projection FLAG before NCLIP replaces it; neither the flag nor the area automatically rejects the submitted primitive.
-
-```lua
-	for face = 0, stage do
-		local sample<const> = stage + face
-		for vertex = 0, 2 do
-			local input: *word = &result.original[vertex]
-			if stage == 1 then
-				input = &result.quad[quad_indices[face * 3 + vertex]]
-			end
-			data[vertex * 2] = input[0]
-			data[vertex * 2 + 1] = input[1]
-		end
-		*command = gte.opcode_rtpt | gte.command_sf_shift_12
-		result.projection_flags[sample] = control[gte.control_flag]
-		result.projection_cycles[sample] = *cycles
-		result.ir0[sample] = data[gte.data_ir0]
-		for vertex = 0, 2 do
-			result.screen[sample][vertex] = data[gte.data_sxy0 + vertex]
-		end
-		for index = 0, 3 do
-			result.depth[sample][index] = data[gte.data_sz0 + index]
-		end
-		-- NCLIP replaces FLAG; it does not clip or reject anything.
-		*command = gte.opcode_nclip
-		result.area[sample] = data[gte.data_mac0]
-		result.area_flags[sample] = control[gte.control_flag]
-		*gp0 = 0x20e0a040
-		for vertex = 0, 2 do
-			*gp0 = result.screen[sample][vertex]
-		end
-	end
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Read the raw probes and publish each image
-
-Continue and close the same stage loop. Readback readiness, GPU idle and the fresh VBlank sequence are separate observations; neither surface is later reused.
-
-```lua
-	-- Absolute C0 positions do not inherit the drawing offset.
-	for probe = 0, 1 do
-		*gp0 = 0xc0000000
-		*gp0 = probe_xy[probe] + (base_y << 16)
-		*gp0 = 0x00010001
-		while (*gp1 & 0x08000000) == 0 do
-		end
-		result.probe_words[stage][probe] = *gp0
-	end
-	while (*gp1 & 0x04000000) == 0 do
-	end
-	*framebuffer = 0x000fa000 | (stage << 6)
-	*pmode = 0x0000ff21
-	*irq_ack = 0x00000004
-	local before<const> = result.vblank_sequence
-	result.before_vblank[stage] = before
-	*irq_mask = 0x00000004
-	while result.vblank_sequence == before do
-		halt_until_irq
-	end
-	result.after_vblank[stage] = result.vblank_sequence
-	result.completed = stage + 1
-	if stage == 0 then
-		local hold<const> = result.vblank_sequence
-		while result.vblank_sequence - hold < 2 do
-			halt_until_irq
-		end
-	end
-end
--- Neither displayed surface is ever reused by this finite example.
-while true do
-	halt_until_irq
-end
-```
-
-</section>
-
-<section class="keep-together">
-
-Create `res/manifest/manifest.rommanifest` with the complete contents below:
-
-```yaml
-title: GTE Near Plane Manual Example
-hardware:
-    - type: rom
-```
 
 </section>
 

@@ -241,9 +241,12 @@ Use aligned word reads for these registers. Writes are read-only-access faults. 
 
 ### Software timing
 
-For elapsed intervals, the existing `cartlib/clock` library provides `milliseconds()` and `elapsed_milliseconds(start, current)`. The former returns the raw `TIME_MS` word; the latter computes unsigned wrapping sample distance. That distance is meaningful only when the actual interval is shorter than one complete 2^32-millisecond period. A zero result is valid when both samples fall in the same millisecond. `os.difftime` is ordinary integer subtraction, not wrapping hardware-time arithmetic.
-
-The existing clock library already performs the Q16 conversion when configuring tick intervals; its retained gameplay and frame deltas are schedule quanta, not live elapsed clocks.
+For two raw `TIME_MS` samples, compute elapsed milliseconds as the low 32 bits
+of `current − start`. In BLua, `(current - start) & 0xffffffff` expresses this
+unsigned wrapping distance directly. The result measures the interval only
+when the actual elapsed time is shorter than one complete 2^32-millisecond
+period. A zero result is valid when both samples fall in the same millisecond.
+`os.difftime` is ordinary subtraction, not wrapping hardware-time arithmetic.
 
 The BIOS `os.clock()` returns `TIME_MS / 1000`, in seconds with millisecond resolution. The no-argument `os.time()` returns `TIME_MS // 1000`, in whole seconds. Both inherit the hardware word's wrap and neither measures time spent exclusively executing cartridge instructions. `os.time(date_table)` instead calculates a civil timestamp from the supplied fields; it does not set the console clock. These functions do not establish a wall-clock or real-time-clock service.
 
@@ -324,13 +327,12 @@ Each sample occupies 24 bytes. The complete BSS object occupies **172 bytes**, i
 
 ### Bind the ports and arrange the wake-up source
 
-The entry program begins with the two module references and explicit word-port bindings:
+The entry program begins with its result-module reference and explicit word-port bindings:
 
 ```lua
 module<entry>
 
 local state<const> = require('results')
-local clock<const> = require('cartlib/clock')
 local result<const>: *system_manual_result = state.result
 local irq_ack<const>: *word = 0x08000004
 local irq_mask<const>: *word = 0x08000008
@@ -419,11 +421,11 @@ The four observations follow immediately:
 for index = 0, 3 do
 	local sample<const>: *system_manual_sample = &result.samples[index]
 	sample.before_ms = *time_ms
-	while clock.elapsed_milliseconds(sample.before_ms, *time_ms) < 100 do
+	while ((*time_ms - sample.before_ms) & 0xffffffff) < 100 do
 		halt_until_irq
 	end
 	sample.after_ms = *time_ms
-	sample.elapsed_ms = clock.elapsed_milliseconds(sample.before_ms, sample.after_ms)
+	sample.elapsed_ms = (sample.after_ms - sample.before_ms) & 0xffffffff
 	sample.frame_ms_q16 = *frame_ms_q16
 	sample.cycles_per_frame = *cycles_per_frame
 	sample.status = *status
@@ -433,7 +435,7 @@ end
 
 </section>
 
-`&result.samples[index]` takes the address of the selected typed sample. The program records a start word and repeatedly asks whether the unsigned elapsed distance is still less than 100 milliseconds. The existing clock library owns the wrapping calculation; no local encoder or subtraction convention is needed. Its elapsed-distance contract requires the actual interval to be shorter than one full `TIME_MS` period.
+`&result.samples[index]` takes the address of the selected typed sample. The program records a start word and repeatedly asks whether the unsigned elapsed distance is still less than 100 milliseconds. The inline mask retains the low 32 bits of the sample difference. This calculation requires the actual interval to be shorter than one full `TIME_MS` period; it does not extend the counter or count missed wraps.
 
 After each interrupt wake-up, the program checks the predicate again. The resulting `elapsed_ms` is **at least 100**, not necessarily exactly 100. VBlank delivery and the instructions between the reads can make it larger; this is not an exact 100-millisecond cadence or an instruction-active-only measurement. The start for each observation is taken anew.
 

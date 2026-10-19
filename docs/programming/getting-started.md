@@ -255,7 +255,7 @@ As with the storage check, this integration route compiles a derived cartridge c
 
 Use the supplied programs and named checks below to observe their results without guessing RAM addresses. After the tooling build above (`npm run build:product:node-headless-tooling -- --debug`), run each command pair from the repository root. Cart builds handle the matching BIOS automatically.
 
-All three suites compile derived integration images containing the ordinary program entry and fixture, then run on fresh targets. They are not byte-for-byte playback of the ordinary ROM; absolute linked addresses need not match. A missing suite, failed assertion or expired case is not success.
+Both suites compile derived integration images containing the ordinary program entry and fixture, then run on fresh targets. They are not byte-for-byte playback of the ordinary ROM; absolute linked addresses need not match. A missing suite, failed assertion or expired case is not success.
 
 ### GEO
 
@@ -311,53 +311,6 @@ npm run headless:game -- imgdec_manual --ttl 2
 
 TTL 2 is 2000 ms of virtual host time, not picture verification. No native or
 accelerated-backend parity, physical throughput or fixed IRQ latency follows.
-
-### APU
-
-Use the [complete APU program](../book1/apu.md#worked-blua-program):
-
-```sh
-npm run build:toolchain:cart -- apu_manual --debug
-npm run headless:test -- apu_manual tests/carts/apu_manual/apu_manual_assert.lua
-```
-
-Expect:
-
-```text
-[test] pcm_transfer_generator_and_badp: passed
-```
-
-This checks 16 transfer words and private-RAM roundtrip, separate DMA/APU completion, paused voice state with advancing sample clock, four end events, ended-bank clearing and no faults. It does not establish audible output. These commands were checked in an existing checkout, not fresh-platform certification.
-
-#### Listen to the ordinary APU cartridge
-
-The numeric headless check above runs assertions in a derived test cartridge; it does not demonstrate audible output. For ordinary ROM playback, build the existing `apu_manual` cart and non-debug browser player from the repository root:
-
-```sh
-npm run build:product:browser-player
-npm run build:toolchain:cart -- apu_manual
-```
-
-Reuse the already-running `dist` server on port 8080; do not start a duplicate. Only when starting from scratch, run:
-
-```sh
-npm run serve:dist
-```
-
-Open **http://127.0.0.1:8080/index.html?rom=apu_manual.rom**. Keep `index.html` in the URL: the server's root redirect drops the query. Wait for “Press any key, button or touch screen to start...”, then **press and release a keyboard key**, or **finish a screen touch**. This non-debug startup awaits audio resume before creating the guest runtime.
-
-Expect this short sequence:
-
-| Phase | Expected sound |
-| --- | --- |
-| ROM PCM sine | Brief 440 Hz sine, brief silent pause, resumed sine, then fade-out. |
-| Private-RAM PCM | The same PCM waveform, briefly played and faded after its RAM transfer exercise. |
-| Square generator | Brief 440 Hz square-wave timbre, brighter than the sine, then fade-out. |
-| Packed asset | The authored `tone.wav` one-shot, then silence as the cart halts. |
-
-These are very short, once-per-boot events, not multi-second stages: the authored waits are 50 ms and fades 10 ms at the 44,100-frame/s machine output clock, not guaranteed wall-clock durations. Transfers and command processing can add gaps. Negative gain reverses polarity; it does not change pitch or promise an audible distinction.
-
-Debug playback can produce sound, but debug startup runs the guest automatically without waiting for the audio-unlock interaction. A late click, key release, or touch end can therefore miss the initial short sequence. Use the non-debug gate above when checking all four phases. This route is not proof of playback on every browser, device, or speaker.
 
 ## Check the display-surface program
 
@@ -1173,83 +1126,6 @@ is not a fabricated selected-frame descriptor. No forced collection, code
 reuse/exhaustion, reset/snapshot, native/all-input/optimizer, fresh installation,
 SDK or whole-console acceptance follows from these finite executions. The
 common Table-length dependency and dynamic unary-& lowering hole remain open.
-
-## Build and inspect GTE depth cue
-
-Use the complete [two-stage GTE color program](../book1/gte.md#gte-depth-cue-output).
-Put its two modules in `carts/gte_cue_manual/cart.lua` and
-`carts/gte_cue_manual/results.lua`, and its manifest in
-`carts/gte_cue_manual/res/manifest/manifest.rommanifest`. The supplied assertion
-suite and capture timeline are in `tests/carts/gte_cue_manual/`; keep those files
-present before building the debug cartridge. No earlier example cartridge is a
-prerequisite. With the [checkout prerequisites](#prerequisites), run from the
-repository root:
-
-```sh
-npm run build:product:node-headless-tooling -- --debug
-npm run build:toolchain:cart -- gte_cue_manual --debug
-npm run headless:test -- gte_cue_manual tests/carts/gte_cue_manual/gte_cue_manual_assert.lua
-npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/gte_cue_manual/gte_cue_manual_demo.json gte_cue_manual
-```
-
-The cartridge build exports `dist/gte_cue_manual.debug.rom` and its matching
-`dist/system/bmsx-bios.debug.rom`. The supplied integration case reports:
-
-```text
-[test] depth_cue_and_display_words: passed
-```
-
-That case checks all four depth IR0/RGB2/FLAG rows, all three NCS/NCCS
-lighting/material rows, raw probes of both surfaces, retained first-image
-probes, firmware exclusion and both fresh VBlank observations. The final command
-separately runs the ordinary ROM and captures two native 256×192 images in
-`tests/carts/gte_cue_manual/screenshots/`: `frame_00001.png` is the four-depth
-comparison; `frame_00004.png` is unmodulated lighting, material A and material B.
-Those selected frames are not fixed hardware-latency guarantees. One shared
-setup produces both images, with the first still selected while drawing the
-second elsewhere in local memory. Displayed GX16 RGB differs from retained GTE
-eight-bit results; compare the calculation and display tables rather than
-replacing one with the other. This route was checked in the working checkout,
-not on every OS or a fresh SDK installation.
-
-## Build and inspect GTE near-plane clipping
-
-Use the complete [near-plane image program](../book1/gte.md#gte-near-plane-output).
-Put its two modules in `carts/gte_clip_manual/cart.lua` and
-`carts/gte_clip_manual/results.lua`, and its manifest in
-`carts/gte_clip_manual/res/manifest/manifest.rommanifest`. Keep the supplied
-assertion and timeline in `tests/carts/gte_clip_manual/` before the debug build.
-No earlier example cartridge is needed. With the [checkout prerequisites](#prerequisites),
-run from the repository root:
-
-```sh
-npm run build:product:node-headless-tooling -- --debug
-npm run build:toolchain:cart -- gte_clip_manual --debug
-npm run headless:test -- gte_clip_manual tests/carts/gte_clip_manual/gte_clip_manual_assert.lua
-npm run headless:tooling -- --debug --ttl 5 --input-timeline tests/carts/gte_clip_manual/gte_clip_manual_demo.json gte_clip_manual
-```
-
-The build exports `dist/gte_clip_manual.debug.rom` and its matching
-`dist/system/bmsx-bios.debug.rom`. The supplied case reports:
-
-```text
-[test] near_plane_geometry_and_display: passed
-```
-
-It checks the constructed raw D/B/C/E records, every retained SXY/SZ/FLAG/IR0
-row, nominal RTPT CYCLES, separately saved NCLIP areas/flags, raw image probes,
-firmware exclusion and both fresh VBlank observations. The last command
-separately runs the ordinary ROM and saves two native 256×192 captures under
-`tests/carts/gte_clip_manual/screenshots/`: `frame_00001.png` shows the unchanged
-ABC triangle; `frame_00004.png` shows the constructed DBC/DCE trapezoid.
-
-One setup supplies both pictures. The first remains selected while the second
-is drawn into a separate raw surface, and neither is subsequently reused.
-Projection FLAG does not automatically remove geometry; the example deliberately
-submits ABC as well as the clipped triangles. The selected frame numbers are
-observation checkpoints, not fixed hardware latency. Source numeric coordinates,
-raw typed transfer records and displayed GX16 color are distinct. This route
-was checked in the working checkout, not on every OS or a fresh SDK installation.
 
 ## Build and inspect GPU dithering
 

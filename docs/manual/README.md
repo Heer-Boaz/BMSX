@@ -38,6 +38,15 @@ The series must cover the installed machine, software/programming interfaces
 and cartridge/socket/card hardware. Familiarity with another console is not
 familiarity with this one; volume numbering does not change this scope.
 
+The references specify the machine, BLua32 and installed BIOS only. `cartlib`
+is an independent cartridge-software product, not BIOS or bundled firmware.
+Do not include its APIs, types, recipes, packaging conventions or dependent
+examples in any volume. Retained library material belongs outside this series,
+with its own internal-development identity rather than BMSX book numbering or
+the hardware-reference house style. Specify binary interfaces from the actual
+CPU, device and BIOS consumers so a developer can write an independent linker,
+ROM packer and cartridge program; the current build tools are not the standard.
+
 The reader must be able to establish startup and memory ownership, find usable
 and reserved addresses, prepare each unit's actual data representation, program
 every documented operation, connect adjacent units, synchronize work, inspect

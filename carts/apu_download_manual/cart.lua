@@ -20,7 +20,7 @@ rodata counts: word[2] = { 20, 4 }
 rodata offsets: word[2] = { 0, 0x40 }
 
 -- Own DMA0, the APU transfer ports and sample-RAM bytes0..159. No voices.
--- Poll DMA directly; no interrupt callback or cartlib DMA service owns it.
+-- Poll DMA directly; no interrupt callback owns this channel.
 *irq_mask = 0
 *transfer_control = 0
 *transfer_address = 0

@@ -267,8 +267,6 @@ Input RESET zeroes the output parameters and capability word without issuing a s
 
 This complete program starts at a fresh cartridge entry through the installed BIOS. It assumes zero-initialized cartridge BSS and exclusive ownership of the raw input latch, the central VBlank interrupt handler and the central interrupt mask. It is not an initialization sequence for an arbitrary resumed cartridge or a cartridge sharing those resources.
 
-The existing cartridge-library input tick system is a separate sampling owner: its construction arms a sample, and each frame update advances its input state and arms again. Do not run an independent raw sampling owner alongside it. Its player numbering is also separate: library player 1 selects raw pad 0. Library action mappings and edge state do not change the raw keyboard or pad bit layouts above.
-
 The constant module named `results` declares the cartridge's retained observations. It contains 51 words (204 bytes): ten observation/history words, eight keyboard words, four pointer words, 28 pad words and one rumble-support word. The module's BSS declaration owns this storage; no fixed storage address is assumed.
 
 ### Retained result module

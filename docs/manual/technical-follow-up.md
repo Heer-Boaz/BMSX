@@ -101,22 +101,13 @@ The concrete writing/observation assignments are:
   guest, independent reader and actual-print evidence are recorded in the GPU
   reviews. This closes that finite route, not every GPU transport scenario,
   physical bandwidth or graphics-illustration task.
-- **GTE depth cue, material and near plane — completed finite lessons:** the
-  [two-stage program](../book1/gte.md#gte-depth-cue-output) now supplies 250
-  complete BLua source lines, actual RTPS/NCDS and NCS/NCCS result/flag tables
-  and two ordinary 256×192 output plates. Equal screen-space shapes isolate
-  color; the second lesson contrasts unmodulated lighting with two materials
-  without changing normal/L/K/ambient. One shared setup feeds separate raw
-  surfaces; the first remains selected while the second is drawn, and neither
-  is subsequently reused. Calculation RGB2, stored GX16 and displayed RGB remain
-  distinct. Independent paired-owner/source and all-pixel image checks, fresh
-  public reconstruction, executed supplied-checkout build route and actual-PDF
-  evidence are retained in the cue/material reviews. Supplied near-plane
-  intersections are now also demonstrated by the separate
-  [206-line near-plane program](../book1/gte.md#gte-near-plane-output): actual ABC
-  versus DBC/DCE images, explicit numeric intersection construction and raw GTE
-  transfer records, retained RTPT/NCLIP state and independent all-pixel checks.
-  These close finite lessons, not the broader graphics-output inventory.
+- **GTE depth cue, material and near plane:** the
+  [depth-cue and material lessons](../book1/gte.md#gte-depth-cue-output) and
+  [near-plane lesson](../book1/gte.md#gte-near-plane-output) retain hardware
+  setup, numerical results and actual output plates. Library-dependent complete
+  listings and their build recipes are no longer part of this series. Existing
+  execution evidence applies to those original programs, not to a new
+  independent source listing.
 - **PCRTC source versus destination — completed finite lesson:** the
   [complete154-line cartridge and three actual output plates](../book1/pcrtc.md#pcrtc-source-and-window)
   now show a fixed256×192 circuit-2 canvas and128×96 circuit-1 cutout: source(0,0)/
@@ -1790,26 +1781,20 @@ chapters where the orientation is missing. Preserve technical detail.
   Check the opening explanations and programming sequences across Book I, not
   just APU. Explain source/storage choices, data representations, register and
   command operations, visibility and completion in hardware terms first.
-  Move module-specific lookup and convenience-call recipes, such as
-  `rom_dir.audio`, `apu.source` and `apu.play_plain`, to the software examples.
-  Retain useful material. Fold this into each chapter's remaining content work;
+  Remove all third-party library APIs, types, recipes and dependent examples
+  from the entire BMSX series, not just chapter openings. Preserve useful
+  library material outside the series as independent internal-development
+  documentation. Fold this into each chapter's remaining content work;
   do not start separate per-change reviews or presentation rounds for it.
 
-## RID01: resource-ID token boundary
+## Independent machine-image specification
 
-- [ ] Resolve UTF-8 producer hashing versus codepoint hashing in
-  `cartlib/rom_dir.lua`. The filename producer does not restrict IDs to ASCII.
-  Exact paired-source locations are in the existing
-  [cartridge facts](../book3/facts/cartridge.md#rid01-withhold-unrestricted-id-lookup-acceptance).
-  Hold unrestricted lookup-API acceptance; do not turn this into a permanent
-  hardware name restriction. Raw TOC spans and the existing ASCII examples are
-  unaffected. No runtime fix is part of this documentation change.
-
-## CSF01: collision-asset reflection origin
-
-- [ ] Resolve the polygon versus bounding-box reflection conventions before
-  promising uniform image/geometry flip equivalence. Exact producer locations
-  and compound-bound implications are in the existing
-  [cartridge facts](../book3/facts/cartridge.md#csf01-reflection-origin-boundary-remains-unresolved).
-  The raw G2D2 layout and GEO descriptors are separate contracts. Do not turn
-  the producer question into a hardware quirk or fix it in this writing slice.
+- [ ] Complete the boot-header, executable-image, function-record, constant,
+  name-table and instruction-linkage descriptions from their CPU and BIOS
+  consumers. Distinguish unread producer fields from machine requirements.
+  This contract must suffice for an independent linker and ROM packer.
+- [ ] Image-string decoding differs between the owners: fatal UTF-8 decoding
+  at `machine/ts/machine/cpu/cpu.ts:139,929–949` versus raw-byte interning at
+  `machine/cpp/machine/cpu/cpu.cpp:484–504` and
+  `machine/cpp/machine/cpu/string_pool.cpp:55–56,139–143`. Do not standardize
+  malformed-byte behavior or infer a fix from this documentation work.

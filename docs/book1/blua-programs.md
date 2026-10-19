@@ -1567,7 +1567,7 @@ The module name comes from the source path. It is not the name of a local variab
 | --- | --- |
 | `carts/example/lib/runtime_settings.lua` | `lib/runtime_settings` |
 | `carts/example/lib/runtime_settings.LUA` | `lib/runtime_settings` |
-| `cartlib/gx/display.lua` | `cartlib/gx/display` |
+| `carts/example/lib/display.lua` | `lib/display` |
 | `res/lib/runtime_settings.lua` | `lib/runtime_settings` |
 
 The remaining path text keeps its case. Dots within a name are not converted to slashes. Use the supplied module's literal path; do not infer a dotted-name search convention or relative-file search from the spelling of an import. Two source files cannot provide the same module path. There is no duplicate-path winner or namespace merge.
