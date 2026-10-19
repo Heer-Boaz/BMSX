@@ -2,7 +2,7 @@
 
 2026-09-11. Baseline `e0594da89`. This changes the shared semantic query
 owner, not Behavior Lens, the binder's language rules or the guest runtime.
-The stronger correlated source query in [B04](behavior_source_authoring_design.md)
+The stronger correlated source query in [B04](lua_written_source_queries.md)
 remains open.
 
 Follow-up: [query consumption and demand-index maintenance](lua_query_evaluation.md)

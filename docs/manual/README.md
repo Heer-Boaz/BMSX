@@ -16,7 +16,7 @@ They are manufacturer documentation, not an edited account of the emulator.
 
 [volumes.json](volumes.json) owns the titles and [catalog.json](catalog.json)
 owns chapter membership. Existing `docs/book1/` paths are source locations, not
-book classification. See the [series organization](booklet-structure.md).
+book classification.
 A draft's presence or length does not establish completeness or publication.
 
 `docs/architecture.md` describes internal software architecture only. It must
@@ -80,9 +80,8 @@ images when they clarify graphics behavior; label input, settings and visible
 result without presenting captures as exhaustive proof. Preserve meaningful
 numerical inputs, intermediate results and output examples.
 
-Historical manuals inform exposition, not BMSX facts. The
-[organization review](booklet-structure.md) distinguishes original manufacturer
-material, later editions and consumer manuals. Sony's
+Historical manuals inform exposition, not BMSX facts. Distinguish original
+manufacturer material from later editions and consumer manuals. Sony's
 [Fall 1996 GTE seminar](https://psx.arthus.net/sdk/Psy-Q/DOCS/TRAINING/FALL96/gte.pdf)
 provides a period example of purpose, coordinate/data-flow explanation and
 worked mathematical stages preceding low-level use. Do not copy its addresses,
@@ -100,8 +99,9 @@ manuals rather than automatically selecting any one as correct. Suspected bugs
 and unresolved product decisions stay in engineering material, not as invented
 hardware restrictions or permanent guarantees of defective behavior.
 
-Use the existing fact/review records when evidence needs a durable location.
-Do not create a new Markdown report for each paragraph. Substantial chapters
+Keep working fact sheets temporary. Put regression evidence in tests and
+substantive source decisions in the commit, not a second Markdown reference.
+Record unresolved product questions in the existing chapter catalog. Substantial chapters
 can be split into named sections with independent writers; each assignment
 owns finished prose and its supporting facts. Merge into the existing chapter.
 Complete the chapter's known content work before commissioning its detailed
@@ -120,9 +120,11 @@ Assess the completed chapter on all of these dimensions:
 | Completeness | Supplies every necessary representation, operation, synchronization and result contract |
 
 Factual accuracy is necessary but does not imply any of these by itself.
-Existing coverage topics and review flags remain in
-[review-template.json](review-template.json). Reopen affected reviews when text
-changes; do not mark a rewritten draft approved because its predecessor passed.
+The existing chapter catalog retains open questions and the three source,
+figure and print review decisions, with concise inline evidence. There are no
+mandatory fact-sheet, outline or report files. Reopen affected reviews when
+text changes; do not mark a rewritten draft approved because its predecessor
+passed.
 The publisher is not a source checker and a successful render is not acceptance.
 
 ## Print and navigation
@@ -163,7 +165,7 @@ npm run test:manual
 ```
 
 Preview/publish use the existing Playwright/Chromium pipeline and write ignored
-HTML, PDF and receipt files in `build/manual`. Publication checks coverage and
+HTML, PDF and receipt files in `build/manual`. Publication checks open questions and
 review decisions before rendering; preview may render an unapproved draft.
 Mechanical overflow/asset checks do not establish good exposition, correct
 hardware behavior or semantic diagram accuracy. Do not add another publisher,
@@ -173,4 +175,14 @@ The separate development companion is HTML. After chapter previews exist,
 `node scripts/manual/build.mjs preview contents` generates the current draft
 series entry point without rebuilding chapters. It does not publish a complete
 series. Add new chapters through the existing catalog, with the appropriate
-volume and existing fact/review representation.
+volume and its compact catalog review entry.
+
+## Internal-documentation retention
+
+Retain internal documentation only for current, unique architectural or
+operational guidance that is costly to recover from the owners and tests.
+Keep one explanation with its responsible subsystem. Delete completed plans,
+handover notes, patch narratives, captured test logs, frozen extraction packets
+and duplicate specifications; Git retains their history. Do not move them into
+an archive directory or recreate them under another name. A chapter outline
+belongs in the chapter while drafting, not a permanent parallel document.

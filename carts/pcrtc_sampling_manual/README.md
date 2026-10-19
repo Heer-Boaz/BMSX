@@ -37,20 +37,7 @@ The timeline captures presentation frame 1, not a guaranteed hardware latency.
 The actual 8×1 PNG at `tests/carts/pcrtc_sampling_manual/screenshots/frame_00001.png`
 is copied unmodified to `docs/book1/figures/pcrtc-sampling.png`. All 8 RGB pixels
 are separately checked: red 0,16,24,33,49,57,66,82; green/blue 0. Capture alpha FF
-is not evidence of PCRTC sample alpha 80. The public listing reconstructs both
-complete modules and manifest without a private producer or local ABI helper.
+is not evidence of PCRTC sample alpha 80. Use the supplied project files to reproduce the capture.
 
-## Source precedent and scope
-
-Before implementation, MAME's production
-[V9938 owner](https://github.com/mamedev/mame/blob/master/src/devices/video/v9938.cpp)
-was inspected for separation of register state, per-line output work and VBlank
-events. No foreign address, timing or scanout rule supplies BMSX facts. Actual
-paired BMSX PCRTC owners and software consumers are indexed in
-[the finite fact sheet](../../docs/book1/facts/pcrtc-sampling.md).
-
-Typed ports/static source storage follow the actual BIOS and the already
-executed `pcrtc_window_manual` cartridge. No runtime, BIOS, compiler, renderer,
-publisher, helper, ABI encoder, allocation or frame-loop framework is added.
-No native, accelerated-backend, physical-clock or whole-manual acceptance is
-claimed by this finite example.
+See the [PCRTC source-sampling reference](../../docs/book1/pcrtc.md) for the
+hardware behavior; this directory is an optional regression cartridge.

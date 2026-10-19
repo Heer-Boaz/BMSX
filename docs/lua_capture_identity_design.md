@@ -11,8 +11,7 @@ Live compilation now retains the six original slots before lowering. Source
 removal, Undo and reapplication run through ordinary Save & Hot Resume and
 `<init>`, preserving the live heap. This is the compiler prerequisite, **not**
 the Scene Editor Remove button or a general-purpose heap migration system.
-The subsequent UI slice and its actual pointer/draft/history proof are described
-in [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md#direct-sourcemember-verwijderen-2026-09-08).
+
 
 ## Production references
 

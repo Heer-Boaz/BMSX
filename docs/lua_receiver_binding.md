@@ -1,7 +1,7 @@
 # Lua receiver binding: one lexical read/write route
 
-2026-09-10, baseline `157d8027f`. Follow-through on the
-[parameter-context correction](lua_parameter_context.md), within B04.
+Receiver identity and formal parameter bindings are separate compiler and
+semantic-model responsibilities.
 
 ## Reproduced error and production references
 

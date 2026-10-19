@@ -35,8 +35,8 @@ if (!['check', 'preview', 'publish'].includes(mode) || !id || extra.length !== 0
 			}
 		} else {
 			const chapter = await loadChapter(repositoryRoot, id);
-			const failures = await publicationFailures(repositoryRoot, chapter);
-			console.log(`${id}: ${chapter.entry.chapter}\nFact sheet: ${chapter.entry.facts}`);
+			const failures = publicationFailures(chapter);
+			console.log(`${id}: ${chapter.entry.chapter}`);
 			if (failures.length !== 0) {
 				console.error(`Publication blocked:\n${failures.map(failure => `- ${failure}`).join('\n')}`);
 			}

@@ -4,7 +4,7 @@
 foundation in [Lua query dependencies](lua_query_dependencies.md). It changes
 the language query owner, not Studio feature caches, immutable binder facts,
 cartlib or the machine. The stronger correlated source query in
-[B04](behavior_source_authoring_design.md) remains open.
+[B04](lua_written_source_queries.md) remains open.
 
 ## Production references and ownership
 

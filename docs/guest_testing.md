@@ -1,7 +1,6 @@
 # Guest testing
 
-Implemented contract. `testing_framework_design.md` is the original design
-proposal, not a statement that every proposed IDE capability exists.
+Current authoring and execution contract for the guest-test tools.
 
 ## Authoring
 
@@ -163,7 +162,7 @@ identity do not depend on the authoring CPU or current editor contents.
 separate test target is not implemented. Failed Lua threads cannot be resumed. The former command that debugged the authoring Runtime was
 removed rather than preserved through a facade. No mid-case Hot Resume or test
 session checkpoint restore is offered. Ordinary cartridge coroutine save-state
-and TS/C++ replay are supported (see `lua_threads.md`). Native guest execution
+and TS/C++ replay are supported. Native guest execution
 of the test library is covered; the CLI/Studio test adapter itself is TypeScript.
 
 ## Budgets and measured cost

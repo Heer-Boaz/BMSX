@@ -135,7 +135,7 @@ implementation or new copy of the system boot harness was added for it.
   to the preceding slice; Studio and navigation captures were inspected. This
   is regression coverage, not broader recognizer or cross-parent-edit proof.
 - `git diff --check` passes. The string-prefix color/casing report and harness
-  review remain separately open in `behavior_authoring_ux_review.md`.
+  review are separate concerns.
 
 ### Performance
 

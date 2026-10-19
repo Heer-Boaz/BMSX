@@ -1,7 +1,7 @@
 # Lua write ownership: the body is not the destination
 
 2026-09-10, baseline `0c27e89f6`. Second producer correction for
-[B04](behavior_source_authoring_design.md), following
+[B04](lua_written_source_queries.md), following
 [distinct function-body/return ownership](lua_function_source_ownership.md).
 This does **not** complete source provenance or API-call certainty.
 
@@ -153,7 +153,7 @@ all captured assignments during composition would not establish that contract;
 the latter would also lose useful analysis inside uncalled bodies. Preserve the
 existing navigation query's actual scope while designing the stronger relation.
 
-The subsequent [receiver-projection correction](lua_receiver_projection.md)
+The subsequent [receiver-projection correction](lua_query_dependencies.md)
 separates projected receiver-writer selection from module writes and makes the
 navigation projection request explicit. It also retains projected lexical table
 writes. That fixes name-demand publication ownership, not the shared-relation

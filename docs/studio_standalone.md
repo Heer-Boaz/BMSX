@@ -110,8 +110,7 @@ an assets-only static host with **no BMSX API implementation**, then disables
 network access after loading. No offline installer/service worker or cold-start
 asset cache was added. Native host runtime/Terminal ownership is unchanged.
 
-The mobile fixed-canvas limitation remains explicit in the
-[platform backlog](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29).
+
 
 ## Validation
 

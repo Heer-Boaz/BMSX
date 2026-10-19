@@ -1,8 +1,7 @@
 # Lua function sources: bodies are not storage bindings
 
-Implemented on 2026-09-10, against `8c8eb5964`. This is the first producer
-boundary of [B04](behavior_source_authoring_design.md), not its completed
-source-query contract or permission to broaden graph editing.
+Function-body ownership is a binder/summary responsibility, not an editor
+recognition heuristic.
 
 ## Failure and production reference
 

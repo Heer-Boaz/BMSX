@@ -83,7 +83,7 @@ queue suspension or process shutdown. Events are neither dropped nor replayed.
 This follows [Node's pipe backpressure](https://github.com/nodejs/node/blob/main/lib/internal/streams/legacy.js),
 not a larger arbitrary message-size budget or a secondary event queue.
 Source proposals remain governed by the [source-tool context](studio_source_tools.md)
-and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
+and ordinary workspace review, not by transport IDs.
 
 ## Evidence and limits
 

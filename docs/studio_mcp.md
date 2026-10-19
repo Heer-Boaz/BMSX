@@ -29,8 +29,7 @@ workspace trust. No user-wide configuration is modified.
 
 Browser-host startup still requires secure, cross-origin-isolated delivery for
 audio. A plain HTTP LAN URL does not meet that requirement; localhost does.
-This deployment limitation is separate from MCP/API LAN admission; see the
-[platform backlog](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29).
+This deployment limitation is separate from MCP/API LAN admission.
 
 The helper obtains the existing server capability from `GET /__bmsx__/session`
 and returns it through Codex's native headers-helper interface. It never reads

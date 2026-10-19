@@ -48,20 +48,3 @@ native file selection, file-service ownership, bounded transfer and explicit
 overwrite/cancellation semantics. BMSX uses its existing server and exclusive
 creation boundary, not an additional file-service framework or a fallback
 transport. There are no machine, cartlib, C++ or per-frame datapath changes.
-
-## Evidence
-
-Live acceptance created a new cartridge, imported a PNG, WAV and AEM YAML through
-the native picker, authored canonical Lua through Studio review, built saved
-inputs and opened the exact artifact. The sprite appeared in Actor Lab; the new
-ActionEffect reached `aem.handle_event` with the new event name and produced
-nonzero isolated browser audio output. See the bounded
-[acceptance report](studio_productivity_assessment.md#new-assets-and-new-behavior-registrations).
-
-The actual HTTP interruption probe verified that a partial upload never appeared
-at its final path and was retired after client abort. Two simultaneous uploads
-to one destination produced 201/412 and one complete file. Native-picker UI
-checks covered `res/`, duplicate rejection and a batch where the first file
-remained after the second was rejected. The HTTP suite also checks admission,
-path containment, exclusive creation and byte equality; it does not assert UI
-wording or snapshot layout.

@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from 'pdf-lib';
 import { chromium } from 'playwright';
-import { coverageTopics, loadChapter, loadContents, loadDevelopmentGuide, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
+import { loadChapter, loadContents, loadDevelopmentGuide, publicationFailures, repositoryRoot, reviewKinds } from '../../scripts/manual/chapter.mjs';
 import { chapterHtml, renderChapter } from '../../scripts/manual/render.mjs';
 
 const sampleFigure = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" role="img"><title>Fixture figure</title><text x="10" y="25">Fixture</text></svg>';
@@ -42,21 +42,15 @@ async function fixture(t, chapterSource = sampleChapter) {
 	await cp(resolve(repositoryRoot, 'docs/manual'), join(root, 'docs/manual'), { recursive: true });
 	const entry = {
 		book: 'II', label: 'SAMPLE', chapter: 'docs/book2/sample.md',
-		facts: 'docs/book2/facts/sample.md', review: 'docs/book2/reviews/sample.json',
+		review: { open: [], reviews: Object.fromEntries(reviewKinds.map(kind => [kind, { passed: false, evidence: '' }])) },
 	};
-	const review = JSON.parse(await readFile(join(root, 'docs/manual/review-template.json'), 'utf8'));
-	for (const coverage of Object.values(review.coverage)) {
-		coverage.resolution = 'Synthetic fixture coverage; no BMSX hardware claim.';
-	}
+
 	const files = {
 		'docs/manual/catalog.json': JSON.stringify({ sample: entry }),
 		'docs/programming/getting-started.md': '# Fixture development guide\n',
 		[entry.chapter]: chapterSource,
-		[entry.facts]: '# Fixture facts\n\nThe factual review is separate from printing.\n',
-		[entry.review]: JSON.stringify(review),
 		'docs/book2/figures/sample.svg': sampleFigure,
 		'docs/book2/figures/sample.png': samplePng,
-		'docs/book2/reviews/evidence.md': '# Synthetic review evidence\n\nOnly the test fixture is approved here.\n',
 	};
 	for (const [path, content] of Object.entries(files)) {
 		await mkdir(dirname(join(root, path)), { recursive: true });
@@ -70,39 +64,28 @@ async function approveFixture(root) {
 	for (const kind of reviewKinds) {
 		chapter.review.reviews[kind] = {
 			passed: true,
-			report: 'docs/book2/reviews/evidence.md',
+			evidence: 'Synthetic fixture approval, not a BMSX factual review.',
 		};
 	}
-	await writeFile(join(root, chapter.entry.review), JSON.stringify(chapter.review));
+	const catalogPath = join(root, 'docs/manual/catalog.json');
+	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+	catalog.sample.review = chapter.review;
+	await writeFile(catalogPath, JSON.stringify(catalog));
 	return loadChapter(root, 'sample');
 }
 
-test('review template has every required contract topic and review pass', async () => {
-	const review = JSON.parse(await readFile(resolve(repositoryRoot, 'docs/manual/review-template.json'), 'utf8'));
-	assert.deepEqual(Object.keys(review.coverage), coverageTopics);
-	assert.deepEqual(Object.keys(review.reviews), reviewKinds);
-	assert.ok(Object.values(review.coverage).every(topic => topic.resolution === '' && topic.open.length === 0));
-	assert.ok(Object.values(review.reviews).every(pass => pass.passed === false && pass.report === ''));
-});
-
-test('publication requires explicit coverage, closed questions, and passed reviews with evidence', async t => {
+test('publication requires closed questions and explicit review evidence without report files', async t => {
 	const root = await fixture(t);
 	let chapter = await loadChapter(root, 'sample');
-	assert.deepEqual(await publicationFailures(root, chapter), reviewKinds.map(kind => `${kind} review: pending`));
+	assert.deepEqual(publicationFailures(chapter), reviewKinds.map(kind => `${kind} review: pending`));
 	chapter = await approveFixture(root);
-	assert.deepEqual(await publicationFailures(root, chapter), []);
-	chapter.review.coverage.visibility.open.push('Exact latch edge is not established.');
-	chapter.review.coverage.faults.resolution = '';
-	assert.deepEqual(await publicationFailures(root, chapter), [
-		'visibility: Exact latch edge is not established.',
-		'faults: no coverage decision recorded',
-	]);
+	assert.deepEqual(publicationFailures(chapter), []);
+	chapter.review.open.push('Exact latch edge is not established.');
+	assert.deepEqual(publicationFailures(chapter), ['Exact latch edge is not established.']);
 	chapter.review.reviews.figures.passed = false;
-	assert.ok((await publicationFailures(root, chapter)).includes('figures review: pending'));
-	chapter.review.reviews.print.report = '';
-	assert.ok((await publicationFailures(root, chapter)).includes('print review: no evidence report recorded'));
-	chapter.review.reviews.print.report = 'docs/book2/reviews/missing.md';
-	await assert.rejects(publicationFailures(root, chapter), { code: 'ENOENT' });
+	assert.ok(publicationFailures(chapter).includes('figures review: pending'));
+	chapter.review.reviews.print.evidence = '';
+	assert.ok(publicationFailures(chapter).includes('print review: no evidence recorded'));
 });
 
 test('styling can reopen print review without invalidating facts or figure semantics', async t => {
@@ -113,9 +96,12 @@ test('styling can reopen print review without invalidating facts or figure seman
 	assert.match(changed.stylesheet, /letter-spacing: \.5pt/);
 	assert.deepEqual(changed.review.reviews, chapter.review.reviews);
 	changed.review.reviews.print.passed = false;
-	await writeFile(join(root, changed.entry.review), JSON.stringify(changed.review));
+	const catalogPath = join(root, 'docs/manual/catalog.json');
+	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+	catalog.sample.review = changed.review;
+	await writeFile(catalogPath, JSON.stringify(catalog));
 	const reopened = await loadChapter(root, 'sample');
-	assert.deepEqual(await publicationFailures(root, reopened), ['print review: pending']);
+	assert.deepEqual(publicationFailures(reopened), ['print review: pending']);
 	assert.equal(reopened.review.reviews.facts.passed, true);
 	assert.equal(reopened.review.reviews.figures.passed, true);
 });
@@ -370,7 +356,7 @@ test('contents CLI preflights preview targets, emits portable HTML/PDF, and cann
 test('Chromium prints a tagged/outlined portable PDF and a compact layout/engine receipt', async t => {
 	const root = await fixture(t);
 	const chapter = await approveFixture(root);
-	assert.deepEqual(await publicationFailures(root, chapter), []);
+	assert.deepEqual(publicationFailures(chapter), []);
 	const output = await renderChapter(chapter, 'publish', join(root, 'build/manual'));
 	const pdf = await readFile(output.pdf);
 	assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
@@ -507,13 +493,13 @@ test('PCRTC uses the shared publisher independently of its current review status
 
 test('CLI applies current chapter publication decisions from a different working directory', async () => {
 	const chapter = await loadChapter(repositoryRoot, 'pcrtc');
-	const failures = await publicationFailures(repositoryRoot, chapter);
+	const failures = publicationFailures(chapter);
 	for (const mode of ['check', 'publish']) {
 		const result = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/manual/build.mjs'), mode, 'pcrtc'], {
 			cwd: tmpdir(), encoding: 'utf8',
 		});
 		assert.equal(result.status, failures.length === 0 ? 0 : 1, result.stderr);
-		assert.match(result.stdout, /Fact sheet: docs\/book1\/facts\/pcrtc\.md/);
+		assert.match(result.stdout, /pcrtc: docs\/book1\/pcrtc\.md/);
 		if (failures.length === 0) {
 			assert.doesNotMatch(result.stderr, /Publication blocked:/);
 			if (mode === 'publish') assert.match(result.stdout, /Published chapter:/);
@@ -578,7 +564,6 @@ async function navigationFixture(t) {
 	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 	catalog['other-unit'] = {
 		book: 'I', label: 'OTHER', chapter: 'docs/book1/nested/other-source.md',
-		facts: 'docs/book1/facts/other.md', review: 'docs/book1/reviews/other.json',
 	};
 	await writeFile(catalogPath, JSON.stringify(catalog));
 	return root;

@@ -12,6 +12,10 @@ not determine product ownership. Public manuals explain hardware and BIOS from
 the cartridge programmer's perspective, with compact real examples and no
 repository, test, emulator or tool-specific assumptions. Keep hardware facts in
 the manuals rather than copying them into internal engineering documents.
+Keep internal documents only for current, unique architectural/operational
+value; delete completed plans, handovers, review logs and duplicate fact sheets
+instead of archiving them elsewhere. Manual open questions and concise review
+evidence live in the existing chapter catalog; tests and commits retain proof.
 
 Coding policies: *no defensive checks, trust the types, trust proper initialization and configuration (thus: no `ensure`), let the code just fail (thus: trust the code and just let runtime errors pop-up)!, and no legacy fallbacks permitted!*
 

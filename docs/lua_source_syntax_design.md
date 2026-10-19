@@ -14,7 +14,7 @@ closure-layout dependency, recorded below as historical failed evidence.
 The [capture owner](lua_capture_identity_design.md) now supplies correspondence
 and live slot retention, and the subsequent Scene Editor Remove slice passes
 the actual three-backend source-application workflow. Its current evidence is
-in [scene authoring](studio_scene_authoring_design.md).
+in [scene authoring](scene_lifetimes.md).
 
 ## Production references and decisions
 

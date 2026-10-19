@@ -3,154 +3,484 @@
 		"book": "I",
 		"label": "CONSOLE",
 		"chapter": "docs/book1/console.md",
-		"facts": "docs/book1/facts/console.md",
-		"review": "docs/book1/reviews/console.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged chapter."
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged chapter."
+				}
+			}
+		}
 	},
 	"cpu": {
 		"book": "II",
 		"label": "CPU",
 		"chapter": "docs/book1/cpu.md",
-		"facts": "docs/book1/facts/cpu.md",
-		"review": "docs/book1/reviews/cpu.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"memory": {
 		"book": "I",
 		"label": "MEMORY",
 		"chapter": "docs/book1/memory.md",
-		"facts": "docs/book1/facts/memory-map.md",
-		"review": "docs/book1/reviews/memory.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Fresh BIOS monitor recovery capture from tests/ide/memory_recovery_manual.idetest.js; 10 assertions passed and the changed FRAMES/DEPTH plate was visually checked. Other figures unchanged."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"blua-programs": {
 		"book": "II",
 		"label": "BLUA PROGRAMS",
 		"chapter": "docs/book1/blua-programs.md",
-		"facts": "docs/book1/facts/blua-programs.md",
-		"review": "docs/book1/reviews/blua-programs.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-base": {
 		"book": "II",
 		"label": "BIOS BASE",
 		"chapter": "docs/book1/bios-base.md",
-		"facts": "docs/book1/facts/bios-base.md",
-		"review": "docs/book1/reviews/bios-base.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-math": {
 		"book": "II",
 		"label": "BIOS MATH",
 		"chapter": "docs/book1/bios-math.md",
-		"facts": "docs/book1/facts/bios-math.md",
-		"review": "docs/book1/reviews/bios-math.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-os": {
 		"book": "II",
 		"label": "BIOS TIME AND CALENDAR",
 		"chapter": "docs/book1/bios-os.md",
-		"facts": "docs/book1/facts/bios-os.md",
-		"review": "docs/book1/reviews/bios-os.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-loader": {
 		"book": "II",
 		"label": "BIOS RUNTIME COMPILATION",
 		"chapter": "docs/book1/bios-loader.md",
-		"facts": "docs/book1/facts/bios-loader.md",
-		"review": "docs/book1/reviews/bios-loader.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-table": {
 		"book": "II",
 		"label": "BIOS TABLE",
 		"chapter": "docs/book1/bios-table.md",
-		"facts": "docs/book1/facts/bios-table.md",
-		"review": "docs/book1/reviews/bios-table.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"bios-string": {
 		"book": "II",
 		"label": "BIOS STRING",
 		"chapter": "docs/book1/bios-string.md",
-		"facts": "docs/book1/facts/bios-string.md",
-		"review": "docs/book1/reviews/bios-string.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"coroutines": {
 		"book": "II",
 		"label": "COROUTINES",
 		"chapter": "docs/book1/coroutines.md",
-		"facts": "docs/book1/facts/coroutines.md",
-		"review": "docs/book1/reviews/coroutines.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"pcrtc": {
 		"book": "I",
 		"label": "PCRTC",
 		"chapter": "docs/book1/pcrtc.md",
-		"facts": "docs/book1/facts/pcrtc.md",
-		"review": "docs/book1/reviews/pcrtc.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"gte": {
 		"book": "I",
 		"label": "GTE",
 		"chapter": "docs/book1/gte.md",
-		"facts": "docs/book1/facts/gte.md",
-		"review": "docs/book1/reviews/gte.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"gpu": {
 		"book": "I",
 		"label": "GPU",
 		"chapter": "docs/book1/gpu.md",
-		"facts": "docs/book1/facts/gpu.md",
-		"review": "docs/book1/reviews/gpu.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"irq": {
 		"book": "I",
 		"label": "IRQ",
 		"chapter": "docs/book1/irq.md",
-		"facts": "docs/book1/facts/irq.md",
-		"review": "docs/book1/reviews/irq.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"dma": {
 		"book": "I",
 		"label": "DMA",
 		"chapter": "docs/book1/dma.md",
-		"facts": "docs/book1/facts/dma.md",
-		"review": "docs/book1/reviews/dma.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"apu": {
 		"book": "I",
 		"label": "APU",
 		"chapter": "docs/book1/apu.md",
-		"facts": "docs/book1/facts/apu.md",
-		"review": "docs/book1/reviews/apu.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"geo": {
 		"book": "I",
 		"label": "GEO",
 		"chapter": "docs/book1/geo.md",
-		"facts": "docs/book1/facts/geo.md",
-		"review": "docs/book1/reviews/geo.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"imgdec": {
 		"book": "I",
 		"label": "IMGDEC",
 		"chapter": "docs/book1/imgdec.md",
-		"facts": "docs/book1/facts/imgdec.md",
-		"review": "docs/book1/reviews/imgdec.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"input": {
 		"book": "I",
 		"label": "INPUT",
 		"chapter": "docs/book1/input.md",
-		"facts": "docs/book1/facts/input.md",
-		"review": "docs/book1/reviews/input.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"system": {
 		"book": "I",
 		"label": "SYSTEM",
 		"chapter": "docs/book1/system.md",
-		"facts": "docs/book1/facts/system.md",
-		"review": "docs/book1/reviews/system.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	},
 	"cartridge": {
 		"book": "III",
 		"label": "CARTRIDGE",
 		"chapter": "docs/book3/cartridge.md",
-		"facts": "docs/book3/facts/cartridge.md",
-		"review": "docs/book3/reviews/cartridge.json"
+		"review": {
+			"open": [],
+			"reviews": {
+				"facts": {
+					"passed": false,
+					"evidence": ""
+				},
+				"figures": {
+					"passed": true,
+					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
+				},
+				"print": {
+					"passed": false,
+					"evidence": ""
+				}
+			}
+		}
 	}
 }

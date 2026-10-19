@@ -27,6 +27,11 @@
   authenticity, independence, explanation, relevance, product boundaries and
   technical completeness as well as factual accuracy. Content precedes print
   polishing. Use existing documentation/tooling; do not add status-file layers.
+- Purge non-manual documents without current, unique engineering or operational
+  value. Completed plans, handovers, review logs, frozen fact sheets and
+  duplicate specifications belong in Git history, not an archive or replacement
+  Markdown tree. Keep manual open questions/review evidence in the existing
+  catalog; regression evidence belongs in tests and substantive commit notes.
 
 ## Implementation rules
 

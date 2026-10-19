@@ -1,13 +1,9 @@
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { marked } from 'marked';
 
 export const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
-export const coverageTopics = [
-	'boundary', 'registers', 'datapath', 'visibility', 'timing',
-	'interrupts', 'faults', 'reset', 'programming',
-];
 export const reviewKinds = ['facts', 'figures', 'print'];
 export const developmentGuide = {
 	id: 'getting-started',
@@ -20,13 +16,12 @@ export async function loadChapter(root, id) {
 		throw new Error(`Unknown manual chapter ${id}. Available: ${Object.keys(catalog).join(', ')}`);
 	}
 	const entry = catalog[id];
-	const [document, review, volumes] = await Promise.all([
+	const [document, volumes] = await Promise.all([
 		loadDocument(root, id, entry, catalog),
-		readFile(resolve(root, entry.review), 'utf8'),
 		readFile(resolve(root, 'docs/manual/volumes.json'), 'utf8'),
 	]);
 	const volumeTitle = JSON.parse(volumes)[entry.book];
-	return { ...document, volumeTitle, runningTitle: `Book ${entry.book} · ${volumeTitle}`, review: JSON.parse(review) };
+	return { ...document, volumeTitle, runningTitle: `Book ${entry.book} · ${volumeTitle}`, review: entry.review };
 }
 
 export async function loadDevelopmentGuide(root) {
@@ -87,26 +82,14 @@ async function loadDocument(root, id, entry, catalog, source = readFile(resolve(
 	return { id, entry, sourceURL: chapterURL, documents, tokens, stylesheet, figures: new Map(figures), fonts: new Map(fonts) };
 }
 
-export async function publicationFailures(root, chapter) {
-	const failures = [];
-	for (const topic of coverageTopics) {
-		const coverage = chapter.review.coverage[topic];
-		if (coverage.resolution === '') {
-			failures.push(`${topic}: no coverage decision recorded`);
-		}
-		for (const gap of coverage.open) {
-			failures.push(`${topic}: ${gap}`);
-		}
-	}
+export function publicationFailures(chapter) {
+	const failures = [...chapter.review.open];
 	for (const kind of reviewKinds) {
 		const review = chapter.review.reviews[kind];
 		if (!review.passed) {
 			failures.push(`${kind} review: pending`);
-		} else if (review.report === '') {
-			failures.push(`${kind} review: no evidence report recorded`);
-		} else {
-			// A missing report is a build error, not an implicit approval.
-			await access(resolve(root, review.report));
+		} else if (review.evidence === '') {
+			failures.push(`${kind} review: no evidence recorded`);
 		}
 	}
 	return failures;

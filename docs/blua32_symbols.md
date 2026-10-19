@@ -83,30 +83,3 @@ no schema version, negotiation or legacy reader: this is generated internal
 data, and both producers and readers change together. Rebuild debug ROMs and
 sidecars after a format change. The rompacker hashes the tooling sources into
 its build identity, including the codec, so old cached outputs are not reused.
-
-## Verification
-
-`test:symbols-parity` compiles real O0–O3 symbol graphs and compares all fields
-after TS encoding, native decoding/re-encoding and TS decoding. Pass sidecar
-paths as extra arguments to include real builds. Unit tests cover shared-node
-identity, optional/deleted declarations, static storage kinds and native node
-lifetime independently of the decoded image. Debugger, probe and Hot Resume
-tests exercise the consumers; executable bytes are independent of this format.
-
-### BIOS measurement, 2026-10-06
-
-The actual O3 BIOS sidecar from `2304ad61a` was decoded with the old generic
-codec and compared field-for-field with a freshly rebuilt pooled sidecar:
-
-| Metric | Object-tree format | Pooled format |
-| --- | ---: | ---: |
-| Sidecar bytes | 5,053,143 | 1,876,391 |
-| Distinct decoded objects/arrays | 421,269 | 135,608 |
-| Decode median | 32.20 ms | 10.47 ms |
-| Encode median | 124.89 ms | 63.32 ms |
-
-Timings are local Node 22.23.1 measurements: five warmups, fifteen samples,
-explicit GC before each sample. They describe this BIOS codec workload, not
-guest execution or all cartridges. The debug ROM shrank from 16,194,019 to
-13,017,267 bytes. Both rebuilt debug and release executable images remained
-byte-identical to their baselines (320,156 bytes); release ROM size was unchanged.

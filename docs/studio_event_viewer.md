@@ -84,10 +84,6 @@ Identities are evidence inside the emission, never live inspection handles.
 
 Debug metadata describes execution; it must not change the emulated machine.
 Ordinary debug, release and Hot Resume builds erase **all** trace statements.
-The earlier debug-only native CALL transport was an architectural error: it added
-nine guest cycles per event. It has been removed, including `hostTraceChannels`,
-`BuiltinFunctionId.Trace` and its bootstrap-lifetime exception. Adding the same
-cost to release or weakening the machine contract is not an acceptable fix.
 Explicit Scenario sink selection remains available only in derived test images.
 
 The current observation path is entirely host-side:
@@ -123,9 +119,8 @@ without tooling metadata. This affects tool availability, not executable
 semantics. Packed metadata can relocate an executable image; fixed-address image
 comparison distinguishes that placement from added guest work.
 
-The pre-edit TS/C++ representation table and hot callsites are recorded in
-[event observation parity](event_observation_parity.md). Native players expose
-the same CPU mechanism but allocate no Studio event history.
+Native players expose the same CPU mechanism but allocate no Studio event
+history.
 
 ## Physical recording provenance
 
@@ -212,8 +207,6 @@ shortcut, hidden editor or permanent Copy button is involved.
   stored values, presentation and focus-routed copy are separate responsibilities.
 
 These references establish ownership patterns, not BMSX performance guarantees.
-Measurements of the retired native CALL transport in commits `217278bf0` through
-`2a3792476` do **not** validate the current transport or debug/release equivalence.
 
 ## Reproduction
 
@@ -242,78 +235,3 @@ payloads require their own measurements; this is not a universal FPS claim.
 Coverage is common cartlib **emission**, not arbitrary callbacks, interrupts,
 listener completion or duration. Full unbounded capture, persistent trace export
 and reconstruction of expired events are not implemented.
-
-## Validation of the host-only correction (2026-10-05)
-
-- 81 focused CPU/event/binding/tool checks and 82 compiler/packer/boot/Hot Resume/
-  Scenario-debugger regressions pass. IDE, tests and scripts typechecks pass;
-  boundary audit reports zero violations. Core-parity checks structure only.
-- Native CPU supervisor (including observation), CPU save-state and ROM tooling
-  suites pass. Newly built Nemesis debug media has equal complete TS/C++ state
-  after all three replay windows and after history seeking/live branching.
-- Actual Browser Studio was operated via keyboard, pointer and Terminal clipboard:
-  startup history, close/reopen, immutable nested/cyclic payloads, details/filter/
-  copy, 2052-event overflow, frame stepping, playback, rewind/rejoin, live branch
-  and Hot Resume. Copied events retain timeline 1 on rejoin, use 2 after a branch
-  and 3 after installation. Inspected screenshots show health 9 after mutation,
-  fresh post-install events and the sparse-payload truncation warning. Browser
-  logs contain no warnings/errors. This is separate evidence from harness tests.
-- An isolated 31-round alternating fixture (8 warmups) executes 1000 emissions
-  with 32 arithmetic iterations between each. No observer / automatic history
-  medians are **67.49 / 68.63 ms**, about **1.69%** additional host time. Both use
-  **263015 guest cycles**, equal heap usage and equal complete CPU state. The
-  removed transport used 272015 cycles for this fixture; those 9000 extra guest
-  cycles are gone, not charged elsewhere.
-- The three real Nemesis windows (120 frames after ticks 400/1200/2400) capture
-  5/6/8 events. Observed/unobserved host-time differences are **+0.25%, +0.34%,
-  -0.32%**; the small negative sample is noise, not a speedup claim. Complete
-  runtime state remains equal. These low-event windows are not a worst-case bound.
-- BIOS/Nemesis debug and release media, Browser Studio and Node headless tooling
-  were rebuilt. Browser WebGPU/WebGL pixel parity is a separate outstanding gate;
-  these event/CPU checks do not establish accelerated-renderer correctness.
-
-Raw samples, complete replay states, UI screenshots and copied values are kept
-in `.bmsx/authoring/event-observation-parity/` (ignored local evidence).
-
-## Event-to-frame navigation validation (2026-10-07)
-
-- The real Browser Studio workflow passes on software, WebGL2 and WebGPU. The
-  harness installs a small authored cartlib-emitter fixture through the source
-  model and Reboot; subsequent selection, filter, Details, copy, Go to Frame,
-  Previous/Next, Continue from Here and Clear use keyboard/pointer controls.
-  Inspected screenshots show aligned columns, frame 57 before event #17, and
-  disabled navigation for discarded timeline-2 evidence alongside timeline 3.
-  Reactivating the Events tab with Details open retains property keyboard focus.
-- A separate public `studio_seek_event` invocation completes real physical replay
-  while selection/filter/Clear are changed through the UI. An ordinary queued
-  host-work fence holds the admitted operation while these interactions occur;
-  the result retains its original event identity and reaches its requested
-  frame. This distinguishes tool-lifetime coverage from the pointer-only checks.
-- The focused event, frame-navigation/scheduler, Actor and inspection regressions
-  pass (162 tests). Event tests compare stored payloads and unchanged guest state;
-  navigation tests exercise lifecycle and recording identity, not presentation
-  string contracts. Both TS and native scheduler suites cover rejoining, nested
-  branch cutoffs, overlapping cycles after reset, ring reuse and input expiration.
-- Actual Nemesis media passes complete TS/C++ replay and retained-history state
-  comparison. The native host rewind and libretro rewind/menu-pause ABI runners
-  also pass. The two added checkpoint fields do not enter save-state data.
-- Six platform regressions cover the real Codex app-server, browser runtime tools
-  and finite navigation on software, WebGL2 and WebGPU. Their deterministic local
-  Responses provider checks tool exposure, including `studio_seek_event`; this
-  is not a claim about a personal account's authentication or live-model quality.
-- Browser Studio builds, IDE/tests typechecks and architecture/core-parity audits
-  pass. Structural parity and these interaction checks do not establish general
-  accelerated-renderer pixel parity or a universal host-time overhead bound.
-
-Reproduce the browser interaction checks with:
-
-```sh
-node tests/conformance/runtime_replay/browser.mjs --studio-event-navigation \
-  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom \
-  .bmsx/authoring/event-navigation/viewer.png
-```
-
-Screenshots and logs are retained in `.bmsx/authoring/event-navigation/` (ignored
-local evidence). Browser logs include a resource 404 and Chromium ReadPixels
-performance warnings; there were no uncaught browser exceptions. The interaction
-checks are not a claim of a warning-free browser environment.

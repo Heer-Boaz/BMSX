@@ -313,7 +313,11 @@ Choose evidence for the changed surface: focused source/unit checks,
 TypeScript/native builds, cross-runtime execution, real backend output or
 visible UI interaction as appropriate. Typechecks do not prove ownership,
 performance or public usability. Keep results and temporary probes out of this
-architecture description; commits and bounded engineering records retain them.
+architecture description; tests and commits retain them.
+
+Retain other internal documents only for current, unique ownership, algorithm
+or operational guidance. Delete historical plans, handovers and review logs
+rather than collecting them in an archive or another status index.
 
 Update this file when responsibilities or dependency direction change. Keep
 feature algorithms with their owner/design documentation. Do not append patch

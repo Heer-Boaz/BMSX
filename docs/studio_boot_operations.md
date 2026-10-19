@@ -1,7 +1,7 @@
 # Studio startup and Reboot results
 
 Status: implemented, 2026-09-23. Gate 3c of
-[Studio foundation](studio_architecture_foundation.md), not Codex integration.
+[Studio foundation](architecture.md), not Codex integration.
 
 ## Pre-implementation owner audit at `411b16616`
 

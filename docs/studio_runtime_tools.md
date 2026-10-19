@@ -19,7 +19,7 @@ unimplemented rows below are not advertised capabilities.
 | Pause, finite video stepping, retained-history seek | execution/history owners + RuntimeFrameNavigation | actual completion, retained-range and cancellation tests | implemented for the authoring target; validation below |
 | Installed-source breakpoints, Continue and source stepping | RuntimeBreakpoints / RuntimeDebuggerExecution | exact bindings, execution intent, actual stops and cancellation | implemented for authoring target; see [source debugger](studio_source_debugger.md) |
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
-| Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
+| Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](book1/blua-programs.md) |
 | Implicit cart bindings in Lua Terminal | BIOS compiler named-register lowering | real conversation/manual writes, TS/C++ monitor parity | implemented; [binding contexts](studio_terminal_contexts.md) |
 | Frame-context Lua Terminal | installed compiler/debugger binding contract | actual selected binding writes, liveness and frame lifetime, not copied scope tables | implemented for installed source stops via shared Terminal/conversation tools; public-owner recovery/restore/rewind workflow and native BIOS TS/C++ HID parity tested; [binding contract](studio_terminal_contexts.md) |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
@@ -301,7 +301,7 @@ The subsequent [Terminal slice](studio_lua_terminal.md) adds actual conversation
 execution, stopped/completed observations, request cancellation and physical
 BIOS-monitor parity. That initial slice explicitly supported only the Terminal's
 own session namespace. The subsequent
-[named global-register access](global_register_access.md) slice permits explicit
+[named global-register access](book1/blua-programs.md) slice permits explicit
 `getglobal`/`setglobal` calls to the actual ordinary registerfile and live cart
 objects, including from a conversation. The
 [binding-context slice](studio_terminal_contexts.md) now also supplies implicit

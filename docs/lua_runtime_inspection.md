@@ -62,8 +62,7 @@ runtime-reader vraagt geen workspace-value/factory-expansie op.
   die binding gekozen, pas daarna haar waardelocatie. Een niet-beschikbare local
   mag niet de waarde uit een oudere recursieve aanroep opleveren. Een initializer
   die nog in zijn callee staat heeft nog geen beschikbaar resultaat in de nieuwe
-  local. De [herreview en recursieproef](studio_owner_review_2026_09_13.md#a01--waardebeschikbaarheid-koos-onbedoeld-de-functieaanroep)
-  leggen de gevonden verborgen fallback en correctie vast.
+  local.
 - Globals volgen de werkelijke system-/ordinary-registerfile. De twee carts
   krijgen geen verzonnen afzonderlijke global heaps. Fysieke stackframes
   worden wel per execution-domain geselecteerd.

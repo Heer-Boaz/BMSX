@@ -106,10 +106,6 @@ This is finite written-definition traversal, not a may-call/effect fixpoint.
 
 ## Incrementality
 
-The next parse/bind work is specified in
-[Incremental Lua parsing and binding](lua_incremental_analysis_plan.md).
-It separates the measured baseline from the planned syntax-representation,
-incremental-parser and scope-binding slices; annotations remain out of scope.
 Syntax roots retain source, persistent tokens and recovery diagnostics; the
 global parse cache is removed. Relative syntax and edit transport now permit
 lexical and grammar-part reuse through the same parser used by compilation.

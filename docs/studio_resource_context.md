@@ -1,9 +1,8 @@
 # Studio resource context and lifetime
 
-Status: resource diagnostics and document lifetime implemented, with the later
-[multi-file review](studio_workspace_edit_review.md) and
-[assistant contribution](studio_assistant_contribution.md) consuming those owners.
-The original pre-implementation audit below was at `0f2f709bc`.
+Resource diagnostics, workspace review and the
+[assistant contribution](studio_assistant_contribution.md) consume the same
+resource-owned document lifetime.
 
 ## Live owner findings
 
