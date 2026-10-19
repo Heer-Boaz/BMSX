@@ -191,3 +191,23 @@ Current PCRTC SHA256:
 `226794ec705b5cc4345941e72014bc79d84f97f8952322e03229b34e85abc2cf`.
 GTE and cartridge canonical PDFs remain unchanged. Whole-series/SDK and portable
 PDF navigation acceptance remain open. `git diff --check` passes.
+
+## Independent-hardware edition — 2026-10-19
+
+Accepted final publication-layout proof `/tmp/bmsx-manual-final-print/apu.pdf`:
+28 pages, SHA256 `08ba02fc548867c2d140a76a9891bedee2130a0ddc9ca272065d9b05471eb7bc`.
+An independent reader individually inspected all 28 pages of the preceding
+`4b238162182a865ffecb1be18a3fe3372bce732307faccf263d9f7a7eb445b08` proof at
+original 833×1179 detail. Two staging-table heading/instruction splits were
+corrected using existing authored grouping. Root individually viewed the four
+changed final pages 3–4 and 6–7; all other final pages match the inspected proof
+in complete decoded RGBA and dimensions. The self-contained BADP nibble-order
+paragraph remains on page 12 with its illustrative table on page 13; this is
+ordinary cross-page reference flow, not a stranded heading or instruction.
+Tables, both figures, code and running matter remain readable and unclipped.
+Chromium 153.0.8010.12; PDFium 156.0.8076.0, scale 1.4; Linux x64.
+This approves print, not unresolved APU engineering policy or PDF navigation.
+
+All 28 canonical publication pages match the accepted proof in complete
+decoded RGBA and dimensions at scale 1.4. Ordinary publication/check and
+the existing 24 manual tests pass.

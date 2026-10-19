@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/irq-source.md"
 		},
 		"print": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/irq-print.md"
 		}
 	}

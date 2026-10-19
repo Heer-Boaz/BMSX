@@ -136,6 +136,8 @@ rodata pcm: i16[32] = {
 }
 ```
 
+<section class="keep-together">
+
 Choose one column and write **all 21 words** with aligned CPU stores. Do not
 interleave another producer's staging writes. Parameter order below follows
 increasing address; CMD is separate and must be written last.
@@ -163,6 +165,8 @@ increasing address; CMD is separate and must be written last.
 | `08000168H` | FADE_SAMPLES | 0 | 0 |
 | `0800016CH` | GENERATOR_KIND | 0 | 1 |
 | `08000170H` | GENERATOR_DUTY_Q12 | `00000800H` | `00000800H` |
+
+</section>
 
 Write `00000001H` to CMD at `08000174H` to submit PLAY. Capture restores
 staging defaults and the visible selector to zero; it does not mean that the
@@ -279,6 +283,8 @@ Use word accesses. STATUS, fault code/detail, event words, selected-source and
 ACTIVE_MASK writes raise system READ_ONLY without mutation. Queue-counter and
 SAMPLE_SEQUENCE writes are accepted but do not change their device-produced values.
 
+<section class="keep-together">
+
 ### Staging and selected-window parameters
 
 All rows below have read/write word access. The two reset columns intentionally
@@ -300,6 +306,8 @@ The selected addresses alias the bank chosen by staging SLOT bits 3:0.
 |7|SOURCE_DATA_BYTES| `0800013cH` | `080001b0H` | `00000000H` | `00000000H` |
 |8|SOURCE_LOOP_START_SAMPLE| `08000140H` | `080001b4H` | `00000000H` | `00000000H` |
 |9|SOURCE_LOOP_END_SAMPLE| `08000144H` | `080001b8H` | `00000000H` | `00000000H` |
+
+</section>
 
 #### Slot and playback words
 

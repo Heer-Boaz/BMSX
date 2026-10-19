@@ -1,10 +1,10 @@
 # DMA print acceptance
 
-## Reader-first opening: review pending — 2026-10-19
+## Reader-first opening — 2026-10-19
 
-The new hardware overview precedes the retained specification table. Earlier
-page acceptance below does not approve the changed layout; the current print
-flag is false. Content/source/reader checks remain separate from final print.
+The new hardware overview precedes the retained specification table. The current
+publication-layout acceptance is recorded at the end of this file.
+Content/source/reader checks remain separate from final print.
 PDF navigation/viewer work is deferred while content takes priority.
 
 ## Volume-title revalidation — 2026-10-18
@@ -111,3 +111,18 @@ proof in full decoded RGBA and dimensions, record
 Logs `/tmp/bmsx-dma-selector-manual-{check,publish}.log`; existing manual19test
 regression log `/tmp/bmsx-gpu-startup-manual-tests.log`. No whole-book/SDK or
 portable-navigation approval is implied. `git diff --check` passes.
+
+## Independent-hardware publication — 2026-10-19
+
+Accepted final publication-layout proof `/tmp/bmsx-manual-final-print/dma.pdf`:
+17 pages, SHA256 `b774d28f025251d31d207ab3455f4e0a09307101dd5bac0b3bce1fa290d6cae7`.
+Page 1 was individually viewed at original detail. Pages 2–9 are covered by exact
+nonoverlapping RGBA regions: body from the individually inspected current
+preview, top band from an inspected preview/publication, bottom from the
+accepted publication. Pages 10–17 match the accepted publication completely.
+PDFium 156.0.8076.0, scale 1.4; Chromium 153.0.8010.12, Linux x64.
+The hardware opening, table, complete page boundaries and running matter are
+clean. No source or portable-navigation acceptance is inferred from print.
+
+All canonical publication pages match this accepted proof in complete decoded
+RGBA and dimensions at scale 1.4; ordinary publication passes.

@@ -23,6 +23,8 @@ address/access/reset and named-source tables appear in the register reference.
 FLAGS reads the full pending word. The diagram ends at the controller output;
 the CPU interrupt-enable gate is separate.
 
+<section class="keep-together">
+
 ### Latching, masking and acknowledgement
 
 Let **P** be the pending word, **M** the mask, **R** a raised-bit word and **A** an accepted ACK word. All bitwise operations below are 32-bit operations:
@@ -34,6 +36,8 @@ Write ACK A:   P ← P AND NOT A    M is unchanged
 
 Interrupt indication asserted ⇔ (P AND M) ≠ 0
 ```
+
+</section>
 
 Raising a bit latches it regardless of MASK. Raising it again while it remains pending leaves the same bit set; the controller does not record how many times it was raised. This is coalescing, not a backlog of events.
 
@@ -343,6 +347,8 @@ values, and the controller's pending, clear and output equations operate on
 the complete 32-bit words. This does not assign a cartridge-programmable request
 source to an unnamed bit. Cartridge-source device programming belongs to Book III.
 
+<section class="keep-together">
+
 ## Register access, faults and reset
 
 The following rules concern the three controller words. A word access still
@@ -356,6 +362,8 @@ obeys the read-only rule for FLAGS.
 | U8 write | Any controller byte address | UNALIGNED_IO bus fault 2; no register operation |
 | U16 read/write | Even controller address | UNALIGNED_IO bus fault 2; no register operation |
 | Word write to FLAGS | At `08000000H` | READ_ONLY bus fault 3; pending unchanged |
+
+</section>
 
 CPU alignment rejection precedes these mapped-access rules. The common address
 exception and system fault-latch contract is described under

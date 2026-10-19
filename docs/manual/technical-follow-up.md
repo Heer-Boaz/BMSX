@@ -1519,6 +1519,13 @@ links, the admitted delivery set and portable cross-PDF actions are not repaired
 by heading IDs; unreferenced IDs are not automatically exported as PDF named
 destinations. No source prose, hardware behavior or publication approval changed.
 
+Delivery must cover the development companion as well as the 22 catalog chapters:
+`docs/programming/getting-started.md` is the only local link target outside that
+catalog and is referenced by 13 chapters. A chapter-only filename map would leave
+those build/observation links broken. Current publication-layout proofs for
+console, IRQ and cartridge still contain no cross-document URI actions; print
+acceptance does not close NAV01.
+
 
 ## First Book III chapter: cartridge sockets and mapped cards
 

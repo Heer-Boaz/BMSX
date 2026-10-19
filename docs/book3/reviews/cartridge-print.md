@@ -84,3 +84,17 @@ canonical artifact in complete decoded RGBA bytes and dimensions, including
 running matter. Record: `/tmp/bmsx-rom-header-other-pdf-identity.json`.
 This carries actual-page print evidence, not a new runtime or clickable-PDF-link
 approval; the separate unresolved portable-navigation issue remains open.
+
+## Independent-hardware publication — 2026-10-19
+
+Accepted final publication-layout proof `/tmp/bmsx-manual-final-print/cartridge.pdf`:
+12 pages, SHA256 `664dd8cd5d0029f033468b7d7ab9fa5d66f19776ed22580cfe5ae6e1fd2a025b`.
+An independent reader individually viewed pages 1–5 and 8–10 at original detail,
+PDFium 156.0.8076.0, scale 1.6 (952×1348). Pages 6–7 and 11–12 match the accepted
+publication `f364c22714c22470756f069f7946f3f5095e909f1ee195d3d087c78e143c6c9b`
+in complete decoded RGBA and dimensions at scale 1.4. Tables, listings, figure,
+page boundaries and running matter are clean. Chromium 153.0.8010.12, Linux x64.
+This approves print, not cross-document PDF navigation or whole-series coverage.
+
+All canonical publication pages match this accepted proof in complete decoded
+RGBA and dimensions at scale 1.4; ordinary publication passes.

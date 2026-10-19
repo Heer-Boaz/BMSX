@@ -80,3 +80,20 @@ pixel-identical at scale 1.4; this SVG-only chapter has no changed printed
 content. Chromium 153.0.8010.12, the bundled fonts and existing SVG styling
 are unchanged. The actual-page acceptance above therefore remains applicable;
 this comparison is not a new factual review or an output-image claim.
+
+## Current independent-hardware edition — 2026-10-19
+
+The final13-page publication-layout proof is
+`/tmp/bmsx-manual-final-print/irq.pdf`, SHA256
+`6b7f913d11af64b847652b381f0f8fb23fd45a4a9f5752685c7dd44f4f6813d6`.
+Two observed splits were corrected with existing authored grouping: the access
+table's heading/lead and the latching calculation's heading/lead/equations.
+Final pages1–2 were individually viewed after the last correction; pages3–13
+exactly match the preceding checked proof. Its3–10 body regions exactly match
+the individually viewed current draft, with running bands matching the accepted
+publication;11–13 match that publication completely. No clipping, collisions,
+split code or stranded leads remain. Chromium153.0.8010.12, PDFium156.0.8076.0,
+scale1.4, Linuxx64. This approves print, not portable cross-PDF navigation.
+
+All canonical publication pages match this accepted proof in complete decoded
+RGBA and dimensions at scale 1.4; ordinary publication passes.

@@ -76,3 +76,15 @@ All seven complete PDFium 1.5x page rasters are pixel-identical to the private
 publication-layout proof whose every page was individually viewed above;
 no DRAFT marking remains. The published artifact is therefore covered by that
 actual-page acceptance, not merely inferred from an older draft or build exit.
+
+## Current independent-hardware edition — 2026-10-19
+
+Accepted final publication-layout proof `/tmp/bmsx-manual-final-print/console.pdf`:
+7 pages, SHA256 `89646eb356d07694030574f33aacd4baca07e85e4399993d7e1d7873546970fd`.
+An independent reader individually inspected all seven current pages at original
+detail: PDFium 156.0.8076.0, scale 1.5 (893×1263). Both figures, tables, text,
+page boundaries and running matter are clean. Chromium 153.0.8010.12, Linux x64.
+Print acceptance does not close portable navigation or whole-console coverage.
+
+All seven canonical publication pages match the accepted proof in complete
+decoded RGBA and dimensions at scale 1.5; ordinary publication/check pass.
