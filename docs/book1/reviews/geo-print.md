@@ -1,5 +1,30 @@
 # GEO print acceptance
 
+## Current hardware-only edition — 2026-10-19
+
+**Print PASS:** all 45 complete publication-mode pages were individually viewed
+at original readable detail: one independent reviewer covered 1–30, another
+31–45. Proof: `/tmp/bmsx-manual-final-hardware/geo.pdf`, SHA-256
+`7fbfe49ce813d1fcc3d86955e53987fb593c74b72ba51ffaa1beb32879c6fab9`.
+Source SHA-256: `ae5503015b3091b394f1c7b6259af3c766fbdf847d6fd41798c02b945e287fb2`.
+
+All six figures, dummy-scene sprite/hull/contact plates and adjacent captions,
+register/operation tables, complete listings and running matter remain legible
+and bounded. No clipping, broken drawing, table collision, stranded heading or
+unusable page break was found; no layout edit or repeat screenshot round was
+needed. Rasters: `/tmp/bmsx-geo-final-print/page-01.png` through `page-45.png`.
+
+Chromium 153.0.8010.12, Node v22.23.1/Linux x64; PDFium 156.0.8076.0 via
+pypdfium2 5.14.0, 1.5× full-page rendering (893×1263). The layout receipt has no
+mechanical errors. This supersedes earlier current-artifact counts and pending
+print status, not source/execution evidence, the separate extreme-count owner
+question or whole-series release acceptance.
+
+Normal chapter check/publication and all 27 manual tests pass. All 45 canonical
+pages equal the accepted proof in complete decoded RGBA bytes and dimensions;
+canonical SHA-256: `5de454b3f793d142842bcc34e254b2ad3b3e9aca36a58e69f173f3ceff5f9920`.
+Evidence: `/tmp/bmsx-manual-final-hardware/canonical-identity.json`.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/geo.pdf`:

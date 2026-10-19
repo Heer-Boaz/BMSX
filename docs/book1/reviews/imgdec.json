@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Actual53+258line two-module typed BLua cartridge retains RAM, GP0, CPU fault and fresh-START recovery, then draws the successful indexed upload through GPU/PCRTC. One const and seven ordered entry parts reproduce both executed files exactly. Actual ordinary build/playback and derived guest case preserve all26 RAM results, phase/IRQ/fault/recovery observations and20 source/CLUT GPUREAD words, adding360 picture-row words, one outside-background word and a real full output plate. Independent actual-source/program/image and public-reader checks pass; optional readback remains outside the printed cartridge. Final print is pending.",
+			"resolution": "Actual53+258line two-module typed BLua cartridge retains RAM, GP0, CPU fault and fresh-START recovery, then draws the successful indexed upload through GPU/PCRTC. One const and seven ordered entry parts reproduce both executed files exactly. Actual ordinary build/playback and derived guest case preserve all26 RAM results, phase/IRQ/fault/recovery observations and20 source/CLUT GPUREAD words, adding360 picture-row words, one outside-background word and a real full output plate. Independent actual-source/program/image and public-reader checks pass; optional readback remains outside the printed cartridge.",
 			"open": []
 		}
 	},
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/imgdec-source.md"
 		},
 		"print": {
-			"passed": false,
+			"passed": true,
 			"report": "docs/book1/reviews/imgdec-print.md"
 		}
 	}

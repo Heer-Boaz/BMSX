@@ -1,11 +1,28 @@
 # IMGDEC print acceptance
 
-## Displayed-output continuation: review pending — 2026-10-19
+## Current hardware-only edition — 2026-10-19
 
-The extended program and new actual output plate are not covered by the older
-page acceptance below. The current print flag is false. Content, executable
-program and source/image checks are handled separately; PDF navigation/viewer
-work remains deferred while content takes priority.
+**Print PASS:** all 27 actual publication-mode pages were independently viewed
+at original readable detail, PDFium 1.4× (833×1179). Proof:
+`/tmp/bmsx-manual-final-hardware/imgdec.pdf`, SHA-256
+`0c6d2892f13cda19c7f855fad6c672bb29282dff6320e26b3814f5a68f9ab39d`.
+Source SHA-256: `b23918e7e484e81d767310e4b1608ff23d5959ffdc0d5e21edfb091f43c4bad4`.
+
+The hardware opening, complete port/stream/timing/fault tables, datapath figure,
+all program parts and actual indexed-patch image with its caption are legible
+and bounded. No clipped field/code, broken drawing, separated image/caption or
+unusable page break was found; no layout edit or repeat screenshot round was
+needed. Rasters: `/tmp/bmsx-imgdec-final-print-pages/001.png` through `027.png`.
+
+Chromium 153.0.8010.12, Node v22.23.1/Linux x64; PDFium 156.0.8076.0 via
+pypdfium2 5.14.0. The two-figure layout receipt has no mechanical errors.
+This supersedes earlier current-artifact counts and the pending print decision,
+not source/figure/execution evidence or whole-series release acceptance.
+
+Normal chapter check/publication and all 27 manual tests pass. All 27 canonical
+pages equal the accepted proof in complete decoded RGBA bytes and dimensions;
+canonical SHA-256: `879babef22ecdf96116cde1c64a5ab919f340d6eb87a20b0098eab7c0a9f0b01`.
+Evidence: `/tmp/bmsx-manual-final-hardware/canonical-identity.json`.
 
 ## Volume-title revalidation — 2026-10-18
 

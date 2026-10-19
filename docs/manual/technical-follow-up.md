@@ -37,7 +37,7 @@ owners remain specification decisions, not numbers to invent.
 
 | Unit | Latest bounded evidence and next action |
 |---|---|
-| CPU | Capacity/value/ISA/cost teaching remains. Inverse field assembly, function-record relocation versus image indices, CLOSURE address ranges and five exact byte examples now support independent image construction; CPU7 and existing limitations remain separate. |
+| CPU | Resource/value/ISA/cost teaching is present, including inverse field assembly, function-record relocation versus image indices, CLOSURE address ranges and five exact byte examples for independent image construction. CPU7 and the recorded owner/producer disagreements remain separate; another instruction table is not the missing work. |
 | Memory | Consumed boot/image/table/record layouts, the full I/O-bank directory and retained-slot/decoder boundaries are explicit. Matching BIOS storage/link information is distinguished from compulsory placement. RDB01, FSEL01, image-text decoding and final whole-console acceptance remain open. |
 | SYSTEM | The prior paired control/phase/banking/reset/timing check remains bounded. RDB01 now reopens unread CPU-owned readback at synchronous-fault entry; [source and ordinary-ROM evidence](../book1/facts/system-readback-entry.md). Known yield/HALT precedence remains separate; arbitrary-state combinations are not approved. |
 | GTE | Fresh bounded paired capacity/normal-and-PLUS interface/timing inventory found no new required quantitative paragraph; existing arithmetic/program/output lessons remain. No fresh exhaustive arithmetic or execution approval is implied. |
@@ -286,7 +286,8 @@ The complete53+258-line two-module BLua program, exact eight printed source
 parts, actual full256×192 capture, preserved26 RAM comparisons and381 raw
 GPUREAD comparisons pass bounded actual-source/image and public-reader checks.
 Storage4×6 halfwords,16×6 texels and the120×40 draw remain distinct. No runtime,
-BIOS, compiler, publisher or harness changed; final print and broader hardware
+BIOS, compiler, publisher or harness changed. The complete current publication
+proof also passes [final print](../book1/reviews/imgdec-print.md); broader hardware
 and graphics completeness remain open. Evidence: [IMGDEC source review](../book1/reviews/imgdec-source.md).
 
 ### IMGDEC software-authority follow-up: repeated DONE on empty DATA read
@@ -544,9 +545,10 @@ is16pixels; the24pixel direction arrows are explicitly not depth measures.
 Independent current-owner replay14vectors and existing156vector parity pass;
 full cart validation, retained suite and separate ordinary playback pass.
 Independent source, public-only newcomer and all-six-image checks pass, and
-all44 actual PDF pages have been inspected with the final four-page layout
-correction rechecked. See [the scene acceptance](../book1/reviews/geo-scene-source.md)
-and [print acceptance](../book1/reviews/geo-print.md). No new publisher/capture
+the original 44-page edition was inspected with its four-page correction
+rechecked. The complete current hardware-only 45-page proof also passes
+[final print](../book1/reviews/geo-print.md). See
+[the scene acceptance](../book1/reviews/geo-scene-source.md). No new publisher/capture
 framework or runtime repair was added.
 
 This closes the requested controlled dummy-scene/sprite/hull illustrations,
