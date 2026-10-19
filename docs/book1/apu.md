@@ -380,6 +380,8 @@ byte offset starts from its bits 18:2 with bits 1:0 zero. Its readback is not a
 progress counter. TRANSFER_DATA reads return the existing data latch to the CPU;
 DMA accesses have the distinct FIFO effects described in sample RAM transfer.
 
+<div class="keep-together">
+
 ## Voice sources and their lifetime
 
 Program a source description for each sampled voice. The description identifies
@@ -400,6 +402,8 @@ a file header.
 | SOURCE_LOOP_START_SAMPLE / SOURCE_LOOP_END_SAMPLE | Source-frame loop bounds |
 | GENERATOR_KIND | Zero for source-buffer playback; one for the square generator |
 | GENERATOR_DUTY_Q12 | Square-generator duty threshold |
+
+</div>
 
 A frame contains the channel samples at one source-time position. Thus a stereo frame is two samples, not two frames. START_SAMPLE and loop bounds count frames; byte offsets count bytes.
 
@@ -475,6 +479,8 @@ For example, mono PCM16 frames [0,10000,−10000,0], a source rate of 22050 Hz a
 
 The final pair is zero because the last source frame is held for interpolation until the cursor reaches the nonloop end.
 
+<div class="keep-together">
+
 ### Size a PCM source
 
 For mono or stereo PCM, count storage from source frames, not output frames:
@@ -483,6 +489,8 @@ For mono or stereo PCM, count storage from source frames, not output frames:
 bytes per source frame = channels × bytes per channel sample
 PCM payload bytes      = SOURCE_FRAME_COUNT × bytes per source frame
 ```
+
+</div>
 
 SOURCE_DATA_OFFSET locates that payload within the bound SOURCE_BYTES region.
 Keep the complete payload inside the region. The descriptor words are programmed
@@ -533,6 +541,8 @@ Seeking chooses the last entry whose frame number is no greater than the
 requested frame. An empty table starts at frame zero and compressed offset
 zero. If every entry frame exceeds the request, entry zero is selected.
 
+<div class="keep-together">
+
 ### Blocks and channel state
 
 At a block offset relative to the data start, the block has this layout:
@@ -545,6 +555,8 @@ At a block offset relative to the data start, the block has this layout:
 | +6 + 4c | Channel c unsigned byte step-table index |
 | +7 + 4c | One byte not read by the decoder |
 | +4 + 4×SOURCE_CHANNELS | Nibble payload begins |
+
+</div>
 
 Channel records are stored in increasing channel order. BLOCK_BYTES includes the block header and payload and locates the next block: next block offset equals current block offset plus BLOCK_BYTES. Loading a block replaces each channel's predictor and index and resets the block frame index and nibble cursor to zero.
 
@@ -593,6 +605,8 @@ The step table has 89 entries, indexed 0 through 88.
 
 For code c, read step s from the current index. Start difference at s shifted right by three. Add s when bit 2 is set, s shifted right by one when bit 1 is set, and s shifted right by two when bit 0 is set. These shifts discard low bits. If bit 3 is set, subtract the difference from the predictor; otherwise add it. Saturate the new predictor to −32768 through +32767.
 
+<div class="keep-together">
+
 Then change the index using the low three code bits, independently of bit 3:
 
 | Code bits 2:0 | Index change |
@@ -605,6 +619,8 @@ Then change the index using the low three code bits, independently of bit 3:
 | 5 | +4 |
 | 6 | +6 |
 | 7 | +8 |
+
+</div>
 
 Saturate the updated index to 0 through 88. The header's index byte is used for the initial lookup before that update saturation; it is not checked or clipped first.
 
@@ -754,6 +770,8 @@ PLAY clears histories and filter output before installing its programmed coeffic
 
 STOP_SLOT with FADE_SAMPLES=0 stops immediately and clears all 21 slot words. Stopping an idle slot also clears its bank. With a non-idle slot and a positive duration, STOP_SLOT instead enters FADING for at most that many rendered output frames: an unlooped source can end sooner. A paused voice remains paused, so its fade waits for resume. Writing FADE_SAMPLES alone does not begin a fade.
 
+<div class="keep-together">
+
 For initial retained signed gain G0 and duration N, configure:
 
 ```text
@@ -762,6 +780,8 @@ R = G0 − Q × N
 error = N − 1
 remaining = N
 ```
+
+</div>
 
 Each frame uses the current gain before any fade adjustment. After phase advancement, first apply the loop wrap or nonloop source-end check. If the source has ended, stop. Otherwise decrement remaining. If it becomes zero, end immediately without another gain update. Otherwise add the magnitude of R to error. If error is at least N, subtract N and use carry=sign(R); otherwise carry=0. The new current gain is WRAP32(currentGain−Q−carry).
 

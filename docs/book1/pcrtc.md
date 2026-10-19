@@ -1059,6 +1059,8 @@ RC, LC, and the divider field set the half-line period through the equations in 
 2.7. Step X is the number of horizontal signal units per output pixel. A latched Step X
 of zero prevents pixel output.
 
+</section>
+
 | Divider field | Multiplier used with RC |
 |---:|---:|
 | 0 | 1 |
@@ -1078,8 +1080,6 @@ select toggling; otherwise VSync sets FIELD to one.
 
 **Timing-write caution:** changing either word restarts the beam, even when the changed
 bits are retained bits. A restart does not acknowledge CSR events or assign FIELD.
-
-</section>
 
 <section class="register-entry">
 

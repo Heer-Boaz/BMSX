@@ -229,13 +229,9 @@ Supported scanout interpretations are CT32, CT24, CT16, CT16S and GX16; GPU24 is
 
 Beam timing is programmed through the SMODE, SYNCH and SYNCV words. PCRTC timing calculations use a **13,500,000 Hz reference** to derive half-line and field periods and refresh from those words. Output extent follows the enabled display windows and signal step. Consequently, the hardware overview has no single universal screen resolution or fixed 50/60 Hz refresh specification.
 
-Display configuration is staged in programmed words and retained for
-presentation at its publication boundary. Beam timing has separate live effects.
-The [PCRTC chapter](pcrtc.md) describes how storage layout, source sampling,
-display windows and beam timing determine the output.
-
-The diagram below shows command supply, shared drawing storage and the two
-display-reading circuits.
+Programmed display configuration is retained for presentation at its publication
+boundary; beam timing has separate live effects. See [PCRTC](pcrtc.md) for
+programming details.
 
 ![GPU command supply, shared local memory and two-circuit PCRTC reading](figures/console-video.svg)
 
@@ -271,7 +267,5 @@ source bus and DMA request waits in an upload's elapsed time. In manual-write
 mode, each accepted CPU DATA write stores one 32-bit word immediately and
 advances the sample-RAM address by four bytes. The [APU chapter](apu.md) defines
 playback and both transfer directions.
-
-The diagram distinguishes the playback source path from sample-RAM transport.
 
 ![ROM and private sample-RAM playback sources, with separate CPU or DMA upload path](figures/console-audio.svg)

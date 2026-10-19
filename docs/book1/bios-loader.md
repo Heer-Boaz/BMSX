@@ -38,6 +38,8 @@ compiled chunk.
 | `lua_compiler.compile_syntax` | `compile_syntax(chunk, chunk_name, environment, external_scope)` | Direct compilation of a syntax chunk, without text parsing. |
 | `lua_compiler.syntax_factory` | Syntax-construction interface | Supplies the syntax factory; its construction contract is separate from loading. |
 
+<div class="keep-together">
+
 ### Text loading
 
 `load` has five fixed parameters, in this order:
@@ -49,6 +51,8 @@ compiled chunk.
 | 3 | `mode` | Only `nil` bypasses the mode scan and accepts text. | A supplied String must contain lowercase `t`. |
 | 4 | `environment` | `nil` selects ordinary global-name routing. | A non-`nil` guest value supplies the environment-name route. |
 | 5 | `external_scope` | An omitted argument becomes `nil`. | Forwarded to compilation for external-name binding. |
+
+</div>
 
 Mode acceptance happens first, before the chunk-name default or text parsing.
 For a supplied String, the entire acceptance test is whether a lowercase `t`
@@ -92,6 +96,8 @@ exception or interrupt also prevents protection from unwinding across that
 boundary; hardware-access and opcode faults do not become a
 `nil, errorValue` pair.
 
+<div class="keep-together">
+
 Program in this order:
 
 1. Select the text source, chunk label, mode, and any environment or external
@@ -100,6 +106,8 @@ Program in this order:
 3. If the first result is `nil`, handle the second value as the failure payload,
    including a possible `nil` payload.
 4. Otherwise, invoke the returned closure explicitly when execution is wanted.
+
+</div>
 
 ### Name binding and retained dependencies
 
@@ -143,12 +151,16 @@ specific respect:
 | `load(chunk, chunkname?, mode?, env?)` | 1 | 5, including `external_scope` |
 | `lua_compiler.compile_syntax(chunk, chunkname, env?)` | 2 | 4, including `external_scope` |
 
+<div class="keep-together">
+
 For recognized calls, this source-call check rejects a written expression count
 below the required count; it does not impose a maximum. The omitted
 `external_scope` entry is not a runtime argument limit. A reached call fills
 missing fixed parameters with `nil` and does not retain surplus arguments in
 these non-vararg functions. That runtime behavior does not establish permission
 for every shortened source call or general source-input acceptance.
+
+</div>
 
 ### Compilation work
 
@@ -187,6 +199,8 @@ There are no long comments or long quoted strings. LF advances the source line; 
 
 A leading sign is an operator, not part of the numeric literal. These spellings do not specify additional numeric range or rounding guarantees.
 
+<div class="keep-together">
+
 ### Quoted strings
 
 Use single or double quotes. An unescaped CR, LF, or end of source before the closing quote is an unfinished string.
@@ -199,6 +213,8 @@ Use single or double quotes. An unescaped CR, LF, or end of source before the cl
 | Decimal escape | Backslash followed by up to three decimal digits; the value must not exceed 255. |
 | Hexadecimal escape | `\x` followed by exactly two hexadecimal digits. |
 | `\z` | Skip subsequent whitespace. |
+
+</div>
 
 ### Expressions and suffixes
 
@@ -224,6 +240,8 @@ Calls require parentheses, including calls with no arguments. The commas in a ca
 
 A member/index path must begin at a visible name. Thus `items[index].value` has the required shape, but `make_items().value` does not: a member or index path cannot begin at a call result, literal, or function expression. This restriction does not by itself exclude `make_items():method()`, whose receiver belongs to a method call rather than a member/index path.
 
+<div class="keep-together">
+
 ### Operators
 
 Unary operators bind more tightly than the binary operators below.
@@ -234,6 +252,8 @@ Unary operators bind more tightly than the binary operators below.
 | `not expression` | Logical negation |
 | `#expression` | Length |
 | `&expression` | String-ID form. Evaluate the operand once as one value and retain its String value unchanged. The result is not a numeric address or pointer; literals, variables, indexed values and calls can supply the String. |
+
+</div>
 
 <div class="keep-together">
 
@@ -298,6 +318,8 @@ end
 
 By contrast, in `local f = function() return f() end`, the `f` inside the function does not denote the local being introduced by that declaration.
 
+<div class="keep-together">
+
 Names resolve in this order:
 
 | Priority | Binding |
@@ -306,6 +328,8 @@ Names resolve in this order:
 | 2 | Captured enclosing local or parameter. |
 | 3 | A supplied external binding. |
 | 4 | A key in the supplied environment, or a global name when no environment is supplied. |
+
+</div>
 
 An absent external name continues to environment/global lookup; it is not automatically an unknown-name error. A supplied external entry that represents a struct type is not a runtime value, and an unavailable external entry has no live location. Ordinary source names such as `_env` do not independently change this lookup order.
 
@@ -400,6 +424,8 @@ Binding and compilation annotate nodes in place. Do not recompile an already ann
 
 All lists in this interface are ordinary consecutive, 1-based guest Tables. They are consumed through `#list` and `list[index]`; a packed table's `.n` field has no role. Pass `{}` for an empty statement, parameter, argument, return-expression, or clause list. There are no default empty lists or hole-filling rules.
 
+<div class="keep-together">
+
 ### Chunk, blocks, names, and literals
 
 The names below are members of `lua_compiler.syntax_factory`.
@@ -411,6 +437,8 @@ The names below are members of `lua_compiler.syntax_factory`.
 | `identifier(name)` | `kind = s.identifier_expression`, `name`. |
 | `generated_symbol(name)` | Untagged `{ name = name }` record; no common node fields. |
 | `reference(symbol)` | `kind = s.identifier_expression`, `name = symbol`. |
+
+</div>
 
 `chunk.body` must be a block node. `block.statements` is a statement-node list. A function body and every conditional or loop block also use a block node, not a raw statement list.
 
@@ -553,11 +581,15 @@ A compiled external read calls:
 read_binding(descriptor)
 ```
 
+<div class="keep-together">
+
 A compiled external assignment calls:
 
 ```lua
 write_binding(descriptor, value)
 ```
+
+</div>
 
 The descriptor is the exact object selected from `names`; it is not reconstructed. Compilation retains that descriptor and the selected callback for the generated access. These callbacks run when the compiled code performs the access, not as a name-lookup substitute during binding.
 
@@ -640,11 +672,15 @@ The exported tables are ordinary tables, but changing compiler constants is not 
 
 ### Errors and compiler-owned fields
 
+<div class="keep-together">
+
 Semantic diagnostics use this form:
 
 ```text
 [load:<chunk_name>] <message> at <line>:<column>
 ```
+
+</div>
 
 Fresh factory nodes therefore report location `1:1`. Supplying a diagnostic chunk name is important: this route does not fill one in before error formatting.
 
@@ -670,11 +706,15 @@ The following conditions explicitly raise during binding:
 | Type-only external entry used as a value | The descriptor is not a value binding. |
 | Unavailable external entry | Its location cannot be used. |
 
+<div class="keep-together">
+
 Excessive register requirements raise:
 
 ```text
 [load:<chunk_name>] function or expression needs too many registers
 ```
+
+</div>
 
 Invalid `literal` dispatch raises during tree construction, before `compile_syntax` is called. Supply the node and argument forms listed in the factory tables, including
 the call-statement and String operand restrictions. Incorrect node shapes
@@ -733,11 +773,15 @@ Reference arithmetic, not BLua source:
 
 These are emitted counts, not counts of user locals or source statements. The block calculation includes the 16-byte header and allocation rounding; a remainder smaller than 32 bytes is additionally consumed rather than split off.
 
+<div class="keep-together">
+
 Each generated function has a ceiling of **16,384 total register slots**. This total includes required constants, the allocation owner where present, and temporaries. It is not a guarantee of 16,384 user locals or parameters, nor that every smaller programme will compile. Exceeding the ceiling raises:
 
 ```
 [load:<chunk_name>] function or expression needs too many registers
 ```
+
+</div>
 
 ### What keeps compiled code alive
 
@@ -816,6 +860,8 @@ compilation did not copy its fields. Compare the first result with `nil` to
 recognize failure: the second result can be any error payload, including nil.
 Calling the closure is a separate operation with its own error boundary.
 
+<div class="keep-together">
+
 ### Bind an external location
 
 An external descriptor takes precedence over an environment field of the same
@@ -837,6 +883,8 @@ if chunk == nil then
 end
 local first, second = chunk(), chunk()
 ```
+
+</div>
 
 The calls return 12 and 14; `binding.value` becomes 14 while
 `environment.external_value` remains 1000. `step` has no external descriptor

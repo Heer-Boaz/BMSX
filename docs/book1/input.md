@@ -47,6 +47,8 @@ For usage `u`, select word `u >> 5` and bit `u & 31`. Its word is at the keyboar
 
 For example, `KeyA` is usage `04H`: word 0, bit 4, mask `00000010H`. This is not pad A. Pad A is bit 0 of a pad's buttons word, with mask `00000001H`.
 
+<div class="keep-together">
+
 The following table gives the keyboard usage assignments. Usage IDs are decimal.
 
 | Key names | Usage IDs |
@@ -69,6 +71,8 @@ The following table gives the keyboard usage assignments. Usage IDs are decimal.
 | `Lang1`, `Lang2` | 144, 145 |
 | `ControlLeft`, `ShiftLeft`, `AltLeft`, `MetaLeft` | 224, 225, 226, 227 |
 | `ControlRight`, `ShiftRight`, `AltRight`, `MetaRight` | 228, 229, 230, 231 |
+
+</div>
 
 ### Pad records
 

@@ -40,6 +40,8 @@ the installed String-index Table after the global `string` name is rebound.
 For character selection, use `string.byte` or a substring operation rather
 than numeric Table-style indexing.
 
+<div class="keep-together">
+
 Choose the interface according to the input representation:
 
 | Input or task | Interface | Units |
@@ -50,6 +52,8 @@ Choose the interface according to the input representation:
 | Format a Number or other value for display | `string.format(format, ...)` | The format selects textual representation, width and precision. |
 | Build or read a formatted String record | `string.pack`, `string.unpack` | Codepoint-valued packet units; these calls do not transfer a record to mapped storage. |
 | Interpret existing floating-point words | Named import `string/float/decode` | One binary32 word or high/low binary64 words; one Number result. |
+
+</div>
 
 In particular, the size of a packed String is not a DMA transfer length.
 Define a byte layout in mapped storage when a device consumes bytes or words;
@@ -79,6 +83,8 @@ The same text can be constructed as
 `string.char(0x41, 0x7a, 0xe9, 0x1f680)`. Method syntax uses the installed
 String-index Table; it does not make String positions into memory addresses.
 
+<div class="keep-together">
+
 ## Codepoint access, construction, length and UTF-8 input
 
 These four interfaces operate on codepoints or bring encoded bytes into a
@@ -90,6 +96,8 @@ String. Their names do not make a String a byte buffer.
 | `string.char(...)` | Zero or more Numbers | Exactly one String |
 | `string.len(value)` | Required value supporting the length operation | Exactly one Number, if the operation completes |
 | `string.from_utf8(address, byte_count)` | Numeric mapped byte address and a byte count | Exactly one String, if decoding completes with the installed bindings |
+
+</div>
 
 ### `string.byte(value, position)`
 
@@ -577,6 +585,8 @@ A pattern is interpreted as matching reaches it. There is no separate whole-patt
 
 <a id="complete-program-patterns-and-substitutions"></a>
 
+<div class="keep-together">
+
 ### Example: patterns and substitutions
 
 Capture a record's text fields, then convert the numeric fields explicitly:
@@ -594,6 +604,8 @@ end
 local text, count = string.gsub('red blue', '(%a+)', '[%1]')
 -- text is '[red] [blue]'; count is 2.
 ```
+
+</div>
 
 The following worked values distinguish matching and replacement choices:
 
@@ -627,6 +639,8 @@ end)
 
 An ordinary character matches the same codepoint. A dot, `.`, matches any available codepoint, including a newline. An escaped punctuation character matches that punctuation literally: for example, `%.` denotes a literal dot.
 
+<div class="keep-together">
+
 The named classes are:
 
 | Class | Members |
@@ -642,6 +656,8 @@ The named classes are:
 | `%w` | ASCII letters, digits, and underscore |
 | `%x` | `0`–`9`, `A`–`F`, and `a`–`f` |
 | `%z` | Codepoint 0 |
+
+</div>
 
 Every uppercase ASCII letter following `%` complements the match for its lowercase letter. This rule is not restricted to the named classes: `%D` matches a non-digit, while `%Q` matches anything except lowercase `q`. An otherwise unrecognised nonuppercase escape matches its token literally; `%q` matches `q`, and `%0` matches `0`. Outside bracket sets, `%b`, `%f`, and `%1` through `%9` instead introduce the special constructs described below.
 
@@ -718,6 +734,8 @@ The `[` must immediately follow `%f`; otherwise a reached frontier construct rai
 
 ### Reached errors and incomplete forms
 
+<div class="keep-together">
+
 Pattern syntax has these explicit error conditions:
 
 | Reached condition | Error text |
@@ -726,6 +744,8 @@ Pattern syntax has these explicit error conditions:
 | `%f` is not immediately followed by `[` | `invalid string pattern` |
 | `)` finds no capture entry with an unset finish | `invalid string pattern` |
 | `%1`–`%9` names a missing, unfinished, or position capture | `invalid string pattern capture` |
+
+</div>
 
 These error Strings are passed to the current global `error` function. String, Table and arithmetic operations retain their own errors.
 
@@ -787,6 +807,8 @@ Failure returns one nil. On success, `match` builds a result sequence containing
 
 There is no plain-search argument. Surplus arguments are ignored, rather than selecting a different search mode.
 
+<div class="keep-together">
+
 ### `string.gmatch`
 
 ```text
@@ -794,6 +816,8 @@ string.gmatch(source, pattern)
 ```
 
 Returns one iterator function. The outer call captures `source` and `pattern` and initializes its search position to 1; it does not inspect either input or parse the pattern before returning. It does not return separate state and control values. Surplus outer-call arguments are ignored.
+
+</div>
 
 Call the returned function with no arguments; any supplied arguments are ignored. Each call searches from its current codepoint position. Success constructs and expands the same result sequence as `string.match`: the whole match when there are no captures, otherwise capture values in opening order. Failure returns one nil.
 
@@ -857,6 +881,8 @@ checks. Both forms use the field extraction and Number arithmetic under
 [Decoding](#decoding), without reading a String or mapped memory. Surplus
 arguments are ignored. This import does not supply a separate public encoder.
 
+<div class="keep-together">
+
 ## String packet packing
 
 `string.pack`, `string.packsize`, and `string.unpack` construct and read formatted packets held in a BLua String. The format determines field widths, signedness, byte order, and padding.
@@ -866,6 +892,8 @@ packet = string.pack(format, ...)
 size = string.packsize(format)
 v1, v2, ..., next_pos = string.unpack(format, packet [, pos])
 ```
+
+</div>
 
 - `pack` returns one String. Each integer, floating-point, or text field consumes one argument, including a zero-width `c0` field. Controls and padding consume none. Extra arguments are ignored.
 - `packsize` returns one Number: the size of a fixed-size format, including its padding. A format containing `z` or `s` is variable-length and causes an error.
@@ -902,6 +930,8 @@ The returned packet is a String value. Packing does not allocate mapped storage 
 
 <a id="complete-program-a-packed-record"></a>
 
+<div class="keep-together">
+
 ### Example: a packed record
 
 The format below combines a fixed header, a length-prefixed payload and a
@@ -921,6 +951,8 @@ local version, flags, delta, sample, calibration, tag, next_pos =
 local decoded_payload, status, after_record =
     string.unpack('s1 z', record, next_pos)
 ```
+
+</div>
 
 The header returns `1`, `4660`, `-300`, `1.25`, `-2.5`, `'POS'`, then next
 position 24. The second call returns the three-codepoint payload, `'ready'`,
@@ -1128,6 +1160,8 @@ d, n:
 
 </section>
 
+<div class="keep-together">
+
 Using that field's `B`, `S`, and `emax`:
 
 ```text
@@ -1136,6 +1170,8 @@ e == emax and m ~= 0:  0 / 0
 e == 0:               sign * (m / S) * 2^(1 - B)
 otherwise:            sign * (1 + m / S) * 2^(e - B)
 ```
+
+</div>
 
 Source digits are not validated as octets. NaN payloads are reduced to a Number NaN by the arithmetic above.
 

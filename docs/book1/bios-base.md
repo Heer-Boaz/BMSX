@@ -386,6 +386,8 @@ local suffix_count = select('#', select(2, 'skip', nil, 9)) -- 2
 local empty_count = select('#', select(4, 'skip', nil, 9))  -- 0
 ```
 
+<div class="keep-together">
+
 For a global owned by the cartridge, both a global-name expression and
 `getglobal` see writes made with `setglobal`. Protection does not reverse an
 earlier write.
@@ -400,6 +402,8 @@ end)
 local after = getglobal('score_counter') -- 22, despite the error
 setglobal('score_counter', nil)
 ```
+
+</div>
 
 ### Console output
 

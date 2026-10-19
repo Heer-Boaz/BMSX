@@ -517,11 +517,6 @@ repeated writes to the GP0 stream port.
 
 ### GPUSTAT fields
 
-A GPUSTAT read first synchronizes already-due GPU command completions, then
-updates beam-derived fields and recomputes command/DMA conditions. Stored
-configuration readback, a retained request latch and current readiness are thus
-parts of the same returned word, not interchangeable kinds of completion.
-
 <table>
 <thead><tr><th>Bits</th><th>Field</th><th>Value and producer</th></tr></thead>
 <tbody>
@@ -547,6 +542,11 @@ parts of the same returned word, not interchangeable kinds of completion.
 <tr><td>10:0</td><td>Draw-mode readback</td><td>Stored GP0 draw-mode bits 10:0, without re-encoding.</td></tr>
 </tbody>
 </table>
+
+A GPUSTAT read first synchronizes already-due GPU command completions, then
+updates beam-derived fields and recomputes command/DMA conditions. Stored
+configuration readback, a retained request latch and current readiness are thus
+parts of the same returned word, not interchangeable kinds of completion.
 
 The GP1 mode fields are GPU register readback, not PCRTC beam-clock selectors.
 For bit 31, use the decoded display-start Y and the current PCRTC field. When
@@ -3967,6 +3967,8 @@ loads/stores with two-cycle base cost. An address `base+4` uses displacement 1;
 no extra address ADD is hidden in this schedule. Every GP0 store uses the same
 r0 address, not an incrementing destination.
 
+<div class="keep-together">
+
 ### Specify every stored instruction
 
 The operation column describes ISA effects, not BLua source syntax. EQ uses
@@ -3994,6 +3996,8 @@ BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
 | 26 | JMP: jump to instruction 23 |
 | 27 | STORE_MEM_D: r12 → Word[r10+4], retain idle observation |
 | 28 | RET: return, two cycles |
+
+</div>
 
 There are 29 stored instruction words, but loops change the executed count. In
 this case instructions 16…19 execute nine unsuccessful passes, followed by

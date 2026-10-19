@@ -42,7 +42,11 @@ false, a Number or an object as well as a String.
 | `pcall` | `pcall(f, ...)` | Call `f` with protection. |
 | `xpcall` | `xpcall(f, msgh, ...)` | Call `f` with protection and transform its error through `msgh`. |
 
+<div class="keep-together">
+
 Brackets mark the optional `level` argument. The ellipses denote arguments forwarded to the target. Supply the leading arguments shown in each signature. If an indirect call omits a fixed argument, that argument arrives as nil: a missing first argument to `error` raises nil, and a missing protected target is nil. No maximum argument or result count is specified here.
+
+</div>
 
 ### Raising a value
 
@@ -279,6 +283,8 @@ local index_ok, index_error = pcall(rawget, {}, nil)
 -- false, 'Table index is nil.'.
 ```
 
+<div class="keep-together">
+
 Only the handler's first result is retained. A language error in the handler
 instead produces the handler-error String.
 
@@ -291,6 +297,8 @@ local handled, message = xpcall(function() error('body') end,
     function() error('handler') end)
 -- false, 'error in error handling'.
 ```
+
+</div>
 
 ### Yield and resume
 
@@ -345,6 +353,8 @@ coroutine.close(abandoned)
 local retained = read() -- 19: the assignment of 20 never ran.
 ```
 
+<div class="keep-together">
+
 ### Wrapped calls
 
 A wrapped coroutine exchanges the same tuples without resume's Boolean prefix.
@@ -368,3 +378,5 @@ end)
 local ok, caught = pcall(invoke) -- false, failure
 local closed = coroutine.close(failed_thread) -- true: already closed by wrap.
 ```
+
+</div>

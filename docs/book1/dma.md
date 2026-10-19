@@ -75,6 +75,8 @@ For a GP0 route, program GP0's address explicitly and select GX_WRITE on that
 side. FORCE is suitable for an ordinary memory endpoint; a device endpoint must
 also satisfy its own packet, readiness and block-size rules.
 
+<div class="keep-together">
+
 ### Assemble CONTROL
 
 The following expression describes its defined fields. Each request is its
@@ -87,6 +89,8 @@ CONTROL = read_increment
         | (write_request << 6)
         | ((block_length - 1) << 10)
 ```
+
+</div>
 
 The following CONTROL words select the example routes:
 

@@ -896,12 +896,14 @@ The six source rows make the token kinds visible:
 | 68 | Zero | `0000000000000000` | Purple throughout |
 | 69 | Zero | `0000000000000000` | Purple throughout |
 
-Indices `2`–`6` select red, green, blue, white and gray. Indices `0` and `1` both select CLUT halfwords `0x0000`. A fetched zero suppresses the destination write, leaving the purple `0x3088` underlay—not black.
+Indices `2`–`6` select red, green, blue, white and gray. CLUT entries `0` and
+`1` both contain `0000H`; these zero texels leave the purple `3088H` underlay
+unchanged, rather than writing black.
 
-IMGDEC emits a texture upload occupying **4 × 6 halfwords**, plus the CLUT upload. The GPU selects palette4, interpreting each halfword as four low-nibble-first indices: **16 × 6 texels**. It rasterizes the **120 × 40** patch; the PCRTC source window maps it to screen **(64,72)**.
+IMGDEC supplies **4 × 6 halfwords** of texture plus the CLUT upload. Palette4
+reads four low-nibble-first indices per halfword: **16 × 6 texels**. The GPU
+draws the **120 × 40** patch; PCRTC maps it to screen **(64,72)**.
 
-For these exact UV endpoints, `(0,64)` through `(15,69)`, the first and last source columns are four displayed pixels wide, and the first and last rows are four pixels high. Interior columns and rows occupy eight pixels each. This is not uniform eightfold scaling.
-
-The three stages serve different purposes: IMGDEC reconstructs upload packets,
-the GPU interprets the texture and draws the patch, and PCRTC samples the
-selected framebuffer for display.
+For UV endpoints `(0,64)` through `(15,69)`, the outermost columns and rows
+occupy four displayed pixels each; interior columns and rows occupy eight.
+The scaling is not uniformly eightfold.

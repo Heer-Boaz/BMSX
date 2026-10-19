@@ -52,6 +52,8 @@ reads the addressed records and writes their results. OVERLAP2D clears its
 summary when the command is accepted. A zero-count job completes at launch
 without processing a record.
 
+<section class="keep-together">
+
 ## An authored sprite and its collision hull
 
 The following scene uses two copies of a 16 × 16 indexed drone sprite and a
@@ -64,6 +66,8 @@ explicit octagon, in the stated vertex order:
 (4,0), (12,0), (16,4), (16,12),
 (12,16), (4,16), (0,12), (0,4)
 ```
+
+</section>
 
 The sprite and hull share local origin `(0,0)`; the white cross marks their
 center `(8,8)`. These poses use translation only. A remains at `(0,0)` while B
@@ -315,6 +319,8 @@ The interrupt acknowledgement does not acknowledge a sticky local fault.
 
 ### Extend the sequence to a contact query or fault recovery
 
+<div class="keep-together">
+
 OVERLAP2D requires separately prepared binary32 shapes and instances; the Q16
 vertex array above is not its input format. For two axis-aligned squares of
 side 4 at translations `(0,0)` and `(1,1)`, use kind 1 descriptors with bounds
@@ -330,6 +336,8 @@ Program the following words, then issue CMD=22H and wait until STATUS.BUSY clear
 | COUNT | 1 | 2 |
 | PARAM0 / PARAM1 | 1 / 1 | 2 / 1 |
 | STRIDE0 / STRIDE1 / STRIDE2 | 20 / 12 / 2 | 20 / 0 / 0 |
+
+</div>
 
 Both modes produce normal `(0,−1)`, depth 3 and world contact `(2.5,2.5)`;
 piece indices and feature are zero. The normal points **B to A**, unlike SAT2.
@@ -355,9 +363,9 @@ FAULT=0 without reading the still-programmed bad record. It raises GEO_DONE;
 acknowledge central bit 3 separately when that request is no longer needed.
 No recovery step erases the earlier RAM results.
 
-## Register reference
+<section class="keep-together">
 
-The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The offsets below are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
+## Register reference
 
 | Offset | Address | Register | Access | Reset | Word interpretation |
 |---|---|---|---|---|---|
@@ -378,6 +386,10 @@ The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The of
 | `+0x38` | `0x0800005c` | `PROCESSED` | RO | `0` | Full 32-bit number of completed outer records. |
 | `+0x3c` | `0x08000060` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `0xffff`. |
 | Separate | `0x08010224` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
+
+</section>
+
+The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The offsets below are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
 
 Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
 

@@ -41,6 +41,8 @@ local label = os.date('%F %T', timestamp)   -- '2024-02-29 01:02:03'
 local elapsed = os.difftime(timestamp, timestamp - 90) -- 90 seconds
 ```
 
+<div class="keep-together">
+
 Calendar-year and ISO-week-year fields can differ at a year boundary:
 
 | Call | Result |
@@ -50,6 +52,8 @@ Calendar-year and ISO-week-year fields can differ at a year boundary:
 | `os.date('%c', 0)` | `'Thu Jan 01 00:00:00 1970'` |
 | `os.date('%F %T', -1)` | `'1969-12-31 23:59:59'` |
 | `os.date('offset %z zone %Z %%', 0)` | `'offset +0000 zone BMSX %'` |
+
+</div>
 
 ## `os.clock()` — sampled time in seconds
 
@@ -83,6 +87,8 @@ timestamp, and the same Table receives normalized calendar fields. Nil
 selects sampling; every other supplied value selects the date-field route.
 Conversion leaves the sampled clock unchanged.
 
+<div class="keep-together">
+
 ### Civil timestamp convention
 
 The civil-conversion formulas map timestamp 0 to the following fields:
@@ -99,7 +105,11 @@ The civil-conversion formulas map timestamp 0 to the following fields:
 | `yday` | 1 |
 | `isdst` | false |
 
+</div>
+
 This origin belongs to civil-date conversion; it is independent of the running millisecond counter.
+
+<div class="keep-together">
 
 For example:
 
@@ -107,6 +117,8 @@ For example:
 local date = { year = 1970, month = 1, day = 1, hour = 0 }
 local timestamp = os.time(date)
 ```
+
+</div>
 
 Here `timestamp` is 0, and `date` receives all nine fields shown above. If `hour` had also been omitted, its default would have been 12, producing 43200 instead.
 
@@ -189,10 +201,14 @@ Missing required fields produce these exact messages:
 - `field 'month' missing in date table`
 - `field 'day' missing in date table`
 
+<div class="keep-together">
+
 For each supplied field, the integer check precedes the bounds check. Their exact message forms are:
 
 - `field '<field>' is not an integer`
 - `field '<field>' is out-of-bound`
+
+</div>
 
 Here `<field>` is replaced by `year`, `month`, `day`, `hour`, `min`, or `sec`, as appropriate. Because fields are processed in order, a failure in an earlier field is reached before a later field is read.
 
@@ -279,6 +295,8 @@ result = era * 146097 + day_of_era - 719468
 
 </div>
 
+<div class="keep-together">
+
 **Inverse calculation: `C(days)`**
 
 ```text
@@ -300,6 +318,8 @@ if month <= 2: year = year + 1
 result = (year, month, day)
 ```
 
+</div>
+
 **Month normalization for `os.time`**
 
 Before applying `D`, `os.time` calculates the normalized year and month as follows. The timestamp expression is split into successive additions to retain its calculation order.
@@ -317,6 +337,8 @@ timestamp = timestamp + sec
 
 The resulting timestamp then undergoes the ordinary time-value check. Timestamp decomposition and the date/week rules use the same `D` and `C` calculations.
 
+<div class="keep-together">
+
 ## `os.date`
 
 ```lua
@@ -324,6 +346,8 @@ os.date(format, timestamp)
 ```
 
 `os.date` returns one value: either a formatted String or a newly created Table. Choose the Table form when the individual calendar fields are needed; choose a format string when textual output is needed. It defines no date-specific processing for additional arguments.
+
+</div>
 
 <div class="keep-together">
 

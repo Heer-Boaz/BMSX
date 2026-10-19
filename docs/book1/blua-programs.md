@@ -915,6 +915,8 @@ source loop a fixed per-iteration cycle charge.
 
 <a id="complete-program-generic-iteration"></a>
 
+<div class="keep-together">
+
 ### Generic `for`
 
 A generic `for` obtains each set of loop-variable values by calling an iterator:
@@ -926,6 +928,8 @@ end
 ```
 
 There must be at least one loop name and one expression after `in`.
+
+</div>
 
 Before the first iteration, the expression list is evaluated once, in source order, and adjusted to three values: **iterator, state, control**. Each expression before the last supplies one value. Only the final expression can supply multiple results: a final call or `...` can fill the remaining entries. Missing entries become `nil`; surplus values are discarded. With three or more expressions, each supplies one value and only the first three values are retained. **Every expression is still evaluated**, including expressions whose results are discarded. Their effects and errors occur before the first iterator call.
 
@@ -960,11 +964,15 @@ Iteration uses [ordinary calls](cpu.md#calls-closures-globals-and-tables), passi
 
 See the [BIOS iteration routines](bios-base.md#traversal-argument-selection-globals-and-output).
 
+<div class="keep-together">
+
 ### Labels and goto
 
 Labels use `::name::` and branches use `goto name`.
 
 Label names have **function-wide scope**, not block scope. A `goto` can name a label written before or after it, including a label in another lexical block of the same function. A nested function has its own label names: a label in another function cannot satisfy the jump. Each chunk also has its own label scope.
+
+</div>
 
 A second label with the same name in one function is rejected as `Duplicate label 'name'.`, even if the labels occupy different blocks. A target name not defined in that function is reported as `Missing label(s): ...`. A same-spelling label in a separate function is independent.
 

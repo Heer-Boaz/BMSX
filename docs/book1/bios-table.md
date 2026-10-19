@@ -140,6 +140,8 @@ The reads use ordinary indexing. An explicit positive interval can therefore rea
 
 Unpacking uses a recursive call chain whose depth grows linearly with the number of selected positions, returning successively wider result lists. It has no result-count or recursion cap of its own. Empty-range handling calls the current global `select` with argument 1; its zero-result behavior assumes the installed `select`.
 
+<div class="keep-together">
+
 ### `table.concat`
 
 ```text
@@ -147,6 +149,8 @@ table.concat(target [, separator [, start [, end]]]) -> text
 ```
 
 `table.concat` returns exactly one String, joining the selected positions in ascending order without changing the target. Each position is read by ordinary indexing. A `nil` value contributes an empty String; every other value is converted with the current global `tostring`. Separators remain between adjacent positions even when one or both positions read as `nil`.
+
+</div>
 
 An omitted or explicitly `nil` separator is the empty String. Any other separator is converted with `tostring`, so the installed `tostring` accepts values other than Strings here as well. This conversion happens before the selected values are read, even for a single-position interval where no separator is inserted. An empty interval instead returns an empty String before converting the separator or reading any positions.
 
@@ -183,6 +187,8 @@ For a positional insertion with a finite numeric position:
 
 The position is not checked or clamped. Zero and negative positions name those actual keys; they do not count backward from the end. If `p > L`, no keys are shifted and the only assignment is at `p`. A fractional position is rounded downward by `// 1`, so `5.9` selects key `5`.
 
+<div class="keep-together">
+
 For example, starting with the plain table `{10, 20}` and no key `0`:
 
 ```lua
@@ -191,6 +197,8 @@ table.insert(values, 0, 7)
 -- values[0] is 7; values[1] is nil;
 -- values[2] is 10; values[3] is 20.
 ```
+
+</div>
 
 <section class="keep-together">
 
@@ -366,8 +374,9 @@ local last = table.remove(sequence) -- 5.5; sequence is now 9, 8, 7.
 
 ### Handle an interrupted sort
 
-An error does not undo earlier swaps. This short example shows both the error
-object's identity and the values left by one particular interrupted sort:
+An error does not undo earlier swaps. This example preserves the error object's
+identity and shows the partial arrangement for one input and error point. Other
+inputs or error points need not produce the same arrangement or callback count.
 
 ```lua
 local values = {3, 1, 2}
@@ -383,6 +392,3 @@ end)
 -- ok is false; caught is the same Table as failure.
 -- values now has 1, 3, 2 at keys 1, 2, 3.
 ```
-
-The partial arrangement follows this input and this error point. Do not use
-it as a guarantee of the sequence or callback count after another failure.

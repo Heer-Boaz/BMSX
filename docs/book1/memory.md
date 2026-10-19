@@ -295,6 +295,8 @@ executable cartridge and performs the handoff described below.
 
 <a id="rom-header-fields"></a>
 
+<div class="keep-together">
+
 ### ROM header fields
 
 The ROM header begins at the ROM base. Provide at least its first **60 bytes**,
@@ -315,6 +317,8 @@ identification and startup fields when selecting a cartridge.
 | `0x30` | Exception function | Absolute function-record address. | Not read. |
 | `0x34`, `0x38` | Declared static-layout token words | Not read. | Not read. |
 
+</div>
+
 System ROM begins at `00000000H` and has execution-domain ID −1. Either
 cartridge socket uses ROM base `10000000H`, with domain ID 0 or 1 selecting the
 socket. Add the program-offset word to this base and retain the low 32 bits to
@@ -327,6 +331,8 @@ must supply the reset program. CPU selection uses the fields shown in its
 column; identification checks belong to BIOS cartridge selection. The exception
 address's use follows the exception-routing rules, including the system route
 for synchronous cartridge faults.
+
+<div class="keep-together">
 
 ### BLua32 executable image
 
@@ -342,6 +348,8 @@ to the program-header address obtained above. The CPU uses these six unsigned
 | `0x24` | Global-name count | Number of 8-byte name records. |
 | `0x28` | System-global-name-table address | Absolute machine byte address in installed ROM. |
 | `0x2c` | System-global-name count | Number of 8-byte name records. |
+
+</div>
 
 The other four-byte header slots describe the program's sections. They retain
 the following format; CPU program selection does not use them to locate the
@@ -434,6 +442,8 @@ occupy mapped memory. Constant and name-table records and their text require ROM
 
 Function-record words are little-endian; [instruction words are big-endian](cpu.md#instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
+<div class="keep-together">
+
 ### Optional BIOS diagnostic directory
 
 The ROM word at byte offset `0x3c` supplies a **ROM-relative byte offset** to
@@ -460,6 +470,8 @@ count is a number of records, not a byte count.
 | `0x40`, `0x44` | Scope-name byte count; name-byte-table offset |
 | `0x48` | Static-global binding count; these occupy the first binding records |
 
+</div>
+
 #### Source locations
 
 | Record | Bytes | Four-byte fields, in increasing byte-offset order |
@@ -480,6 +492,8 @@ it strips terminal CR/LF bytes from the displayed line. Paths and source spans
 use explicit byte counts, not NUL termination. Source bytes may occupy their
 ordinary ROM location; they need not be duplicated inside the directory.
 
+<div class="keep-together">
+
 #### Named frame scopes
 
 Scope functions are sorted by their absolute function-record address. BIOS
@@ -494,6 +508,8 @@ evaluation, not additional CPU call frames or instruction-fetch bounds.
 | Scope frame | 28 | Inline depth; directory-relative name offset; name byte count; first active-interval index; active-interval count; first binding index; binding count |
 | Binding | 32 | Directory-relative name offset; name byte count; flags; location; first visible-interval index; visible-interval count; first live-interval index; live-interval count |
 | Interval | 8 | First instruction-word position; exclusive end position |
+
+</div>
 
 Interval lists are sorted nonoverlapping half-open ranges in instruction-word
 positions relative to the function's code address. Names use UTF-8 byte spans.

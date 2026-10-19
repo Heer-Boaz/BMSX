@@ -96,6 +96,8 @@ ordinary CPU cost. [Timing and bus programming](#timing-and-bus-programming)
 and the complete work-interval example explain how to budget transfers and
 arithmetic together.
 
+<section class="keep-together">
+
 ## A first projection in BLua
 
 Starting from reset-zero state, the following sequence selects an identity
@@ -120,6 +122,8 @@ local flags<const> = control[31]
 local screen<const> = data[14]        -- SXY2 = 0x007000a0: (160,112)
 local depth<const> = data[19]         -- SZ3 = 512
 ```
+
+</section>
 
 The projection factor is 256/512=1/2, so `(128+32,96+16)=(160,112)`.
 FLAG is zero. The normal command's results are already available when its store
@@ -292,6 +296,8 @@ packing, and intermediate precision are separate programming steps. In
 particular, copying a camera's world position into TR would implement the wrong
 operation under this convention.
 
+<div class="keep-together">
+
 Consider one exact example. Choose:
 
 ```text
@@ -300,6 +306,10 @@ model world origin b = (200,40,768)
 viewing origin c    = (120,56,256)
 view axes          = world axes, so R_view is identity
 ```
+
+</div>
+
+
 
 The combined matrix therefore has rows `(0,-4096,0)`, `(4096,0,0)`, and
 `(0,0,4096)` in raw coefficient units. Its translation is:
@@ -525,6 +535,8 @@ The upper half of C[4] is not independent matrix storage. Its register write
 retains and sign-extends the low signed halfword. With this positive final
 coefficient, reading C[4] returns `0x00001000`.
 
+<div class="keep-together">
+
 The translations use **complete signed words** in the chosen spatial units:
 
 | Control word | Meaning | Signed value | Complete raw word |
@@ -532,6 +544,8 @@ The translations use **complete signed words** in the chosen spatial units:
 | C[5] | TRX | 40 | `0x00000028` |
 | C[6] | TRY | −24 | `0xffffffe8` |
 | C[7] | TRZ | 512 | `0x00000200` |
+
+</div>
 
 Do not multiply these values by 4096 before writing them. The row calculation
 already multiplies TR by 4096 before adding the coefficient products. That puts
@@ -582,6 +596,8 @@ coefficient through integer rounding; it is not a reliable substitute for the
 
 ### Follow a nonzero vertex through the actual rows
 
+<div class="keep-together">
+
 Now submit local vertex `(64,16,0)`. Its V0 input words are D[0]=`0x00100040`
 (X in the low half, Y in the high half) and D[1]=`0x00000000` (Z in the low
 half). Applying the programmed raw rows gives:
@@ -596,6 +612,10 @@ A_Y = 4096*(-24) + 4096*64 + 6144*16 + 0*0
 A_Z = 4096*512 + 0*64 + 0*16 + 4096*0
     = 2097152
 ```
+
+</div>
+
+
 
 With `SF=1`, the shifted MAC values are `(56,64,512)`. They fit the IR limits,
 so IR1, IR2, and IR3 retain those same values with LM=0. The new depth is 512.
@@ -652,6 +672,8 @@ integer arithmetic it must also determine **where precision is discarded**.
 
 ### Derive the order and the translated origin
 
+<div class="keep-together">
+
 Write the local transform as `(B,b)` and the transform applied after it as
 `(A,a)`. With column vectors:
 
@@ -661,6 +683,10 @@ v = A*u + a
   = A*(B*p+b) + a
   = (A*B)*p + (A*b+a)
 ```
+
+</div>
+
+
 
 Thus the combined matrix is `A*B`, and its translation is `A*b+a`. The matrix
 nearest the input acts first. Merely adding a and b would leave the local origin
@@ -719,6 +745,8 @@ Choose this explicit storage policy for the combined transform:
   Retain a signed16 matrix and signed32 translation only when the resulting
   values fit those representations and the preceding arithmetic has not wrapped.
 
+<div class="keep-together">
+
 For these small operands no wrap or limiting occurs. The nine unshifted matrix
 sums are:
 
@@ -728,6 +756,10 @@ A_raw*B_raw =
 [ 16777216   15101952  -20133888 ]
 [        0   13422592   10067968 ]
 ```
+
+</div>
+
+
 
 For example, row 1, column 2 is
 `4096*0 + 6144*(-3277) + 0*2458 = -20133888`. Dividing by 4096 gives −4915.5;
@@ -845,6 +877,8 @@ has already rounded a matrix coefficient and both fractional translation
 components during composition. Neither sequence has FLAG bits set in this case;
 quantization does not require an overflow or saturation flag.
 
+<div class="keep-together">
+
 Retaining the stored A/B coefficient fractions and all intermediate translation
 fractions in a wider software calculation, then rounding only the final vertex,
 is a third policy. The differences are not universally in favour of one of the
@@ -854,6 +888,8 @@ two GTE sequences:
 |---|---|---|---|
 | `(64,16,8)` | `(91,45,536)` | `(90,44,536)` | `(91,45,536)` |
 | `(37,29,11)` | `(61,25,548)` | `(59,25,548)` | `(60,26,548)` |
+
+</div>
 
 Choose the policy appropriate to the program's coordinate precision and use
 it consistently. Precomposing once saves a transform per vertex, while the
@@ -938,6 +974,8 @@ working boundary with additional margin. Screen saturation also is not an
 intersection calculation: it changes a coordinate without constructing the
 missing geometric edge.
 
+<div class="keep-together">
+
 For an example, keep H=256 and choose the view-space near plane Z=256, retaining
 points with Z greater than or equal to 256. These are software choices. Consider
 one constant-color triangle, already transformed into view coordinates:
@@ -948,6 +986,12 @@ B = ( 64,-64,512)    inside
 C = (  0, 64,512)    inside
 ```
 
+</div>
+
+
+
+<div class="keep-together">
+
 Projecting A unchanged would take the divide-overflow branch because 256 equals
 twice its depth 128. Dropping the whole triangle would also discard its visible
 portion. Software can instead intersect the crossing edges with the chosen
@@ -956,6 +1000,10 @@ plane. For edge P→Q, linearly parameterized by `P+t*(Q-P)`, solve:
 ```text
 t = (nearZ - P.Z)/(Q.Z - P.Z)
 ```
+
+</div>
+
+
 
 A crossing edge has endpoints on opposite sides; the required t lies in 0–1.
 Here both edges from A have t=1/3. Their exact intersections are:
@@ -1333,6 +1381,8 @@ by RGBC again. Neither sequence means “continue where the previous compound
 command left off.” A completed compound command does not expose all its earlier
 stages as separate retained results.
 
+<div class="keep-together">
+
 When software already has the earlier stages, it can instead load the appropriate
 IR values explicitly. For this setup:
 
@@ -1340,6 +1390,8 @@ IR values explicitly. For this setup:
 |---|---|---|
 | Directional responses `(3482,1228,0)` | `0x00000d9a`, `0x000004cc`, `0x00000000` | CC for material A's uncued result; CDP for its cued result |
 | Channel gains `(4045,3481,1612)` | `0x00000fcd`, `0x00000d99`, `0x0000064c` | DCPL for material A's cued result |
+
+</div>
 
 With the displayed matrix, base-color and cue operands, those continuations
 produce the corresponding RGB words above. Each overwrites IR again. Retaining
@@ -1398,6 +1450,8 @@ Choose Q12 scalar weights: 3/4 is raw 3072 (`0x0c00`) and 1/4 is raw 1024
 The weights add to one because software chose them that way; hardware does not
 require a convex blend or normalize the weights.
 
+<div class="keep-together">
+
 Use GPF to establish the weighted first term, then GPL to add the second. For
 these bounded operands, their relevant calculations are:
 
@@ -1405,6 +1459,10 @@ these bounded operands, their relevant calculations are:
 GPF: new MAC_i = (IR0*IR_i) ASR 12
 GPL: new MAC_i = (IR0*IR_i + 4096*old signed MAC_i) ASR 12
 ```
+
+</div>
+
+
 
 Both commands then clamp each signed MAC result into IR. The command
 reference also specifies signed44 and visible-word wrapping; neither occurs in this
@@ -1527,6 +1585,8 @@ halves of C[0], C[2], and C[4]. A scratch setup using complete words
 `0x0000000c`, `0x0000fff8`, and `0x00000004` respectively supplies `(12,-8,4)`;
 the other matrix coefficients are not OP operands.
 
+<div class="keep-together">
+
 These diagonal values are raw integer edge components, **not Q12 rotation
 coefficients** in this calculation. Select `SF=0`, `LM=0`, normal OP word
 `0x0000000c`. No factor of 4096 needs removing. The three results are:
@@ -1536,6 +1596,10 @@ nX = uY*vZ - uZ*vY = (-8)*8 - 4*20       = -144
 nY = uZ*vX - uX*vZ = 4*(-4) - 12*8       = -112
 nZ = uX*vY - uY*vX = 12*20 - (-8)*(-4)   = 208
 ```
+
+</div>
+
+
 
 Both MAC and IR hold `(-144,-112,208)`; FLAG is zero. The result is perpendicular
 to both supplied edges: its dot products with u and v are zero. Swapping the
@@ -2342,6 +2406,8 @@ All addresses below accept aligned 32-bit register accesses. D[n] is at `0x08010
 
 The old IR values, old MAC values, V1/V2, RGBC and color histories are not arithmetic operands. In particular, loading V1 does not make RTPS process it.
 
+<div class="keep-together">
+
 **Register footprint and history lifetime.** Each command replaces the following results, whether or not it sets a flag:
 
 | MODIFIED | Effect |
@@ -2354,6 +2420,8 @@ The old IR values, old MAC values, V1/V2, RGBC and color histories are not arith
 | D[24] — MAC0 | Low word of the **depth-cue** expression, replacing both screen expressions |
 | C[31] — FLAG | Cleared at command start, then accumulates conditions from every stage |
 | COMMAND; CYCLES | Last raw command word; nominal duration `0x0000000f` |
+
+</div>
 
 D[15] reads the new SXY2; it is not a fourth retained screen position. D[28] and D[29] read a packed value derived from the new IR1–IR3, even though RTPS does not write a packed-color latch or push a color. Each derived channel is `clamp(IR ASR 7,0,31)`, packed red in bits 4:0, green in 9:5 and blue in 14:10.
 
@@ -2764,6 +2832,8 @@ For example, `0x00080012` selects SF=1, matrix 0, V0, translation/control 0 and 
 | 2 | C[16]–C[20], conventionally the color matrix |
 | 3 | Synthetic matrix from RGBC.R, signed IR0 and parts of C[1]/C[2], specified below |
 
+<div class="keep-together">
+
 For mx=0,1,2, let b=8×mx. The exact row-major packing is:
 
 ```text
@@ -2772,6 +2842,10 @@ row 1      lo(C[b])       hi(C[b])       lo(C[b+1])
 row 2      hi(C[b+1])     lo(C[b+2])     hi(C[b+2])
 row 3      lo(C[b+3])     hi(C[b+3])     lo(C[b+4])
 ```
+
+</div>
+
+
 
 The upper half of the last matrix word is not a tenth coefficient. Writes to C[4], C[12] and C[20] sign-extend their low halfword, without changing the coefficient consumed.
 
@@ -2887,6 +2961,8 @@ A3 = 10×4096 + 1024×12 − 1024×(−7) + 4096×5 = 80896
 
 </section>
 
+<div class="keep-together">
+
 The unrounded mathematical results are `(10.25,−13.75,19.75)`. ASR12 produces `(10,−14,19)`, not `(10,−13,19)`. Both MAC1–MAC3 and IR1–IR3 read `0x0000000a`, `0xfffffff2`, `0x00000013`. FLAG is zero and CYCLES is 8. The same operands expose the option differences:
 
 | Command | Signed MAC1–MAC3 | Final IR1–IR3 | FLAG |
@@ -2895,6 +2971,8 @@ The unrounded mathematical results are `(10.25,−13.75,19.75)`. ASR12 produces 
 | `0x00088412` — SF1, LM1 | `(10,−14,19)` | `(10,0,19)` | `0x80800000` — ERROR, IR2 |
 | `0x00008012` — SF0, LM0 | `(41984,−56320,80896)` | `(32767,−32768,32767)` | `0x81c00000` — ERROR, IR1/2/3 |
 | `0x00008412` — SF0, LM1 | `(41984,−56320,80896)` | `(32767,0,32767)` | `0x81c00000` |
+
+</div>
 
 **Worked synthetic matrix and current-IR input.** Program RGBC D[6]=`0x7faabb05`, IR0 D[8]=`0xffffff00` (−256), C[1]=`0x12340080` and C[2]=`0xabcdffc0`. Load IR1–IR3 with `(3,−4,5)` using `0x00000003`, `0xfffffffc`, `0x00000005`. Issue `0x0007e012`: SF=0, mx=3, v=3, cv=3, LM=0.
 
@@ -2981,6 +3059,8 @@ COMMAND retains the issued word and CYCLES reports nominal6. Subsequent commands
 replace FLAG and may replace MAC/IR; retain a needed cross product before SQR or
 another arithmetic stage overwrites it.
 
+<div class="keep-together">
+
 **Worked signed cross product.** Put d=(12,−8,4) in the diagonal and
 v=(−4,20,8) in IR. Complete scratch words C[0]=0000000c, C[2]=0000fff8,
 C[4]=00000004 provide the diagonal; other coefficients are not consumed.
@@ -2991,6 +3071,10 @@ x1 = (-8)*8 - 4*20 = -144
 x2 = 4*(-4) - 12*8 = -112
 x3 = 12*20 - (-8)*(-4) = 208
 ```
+
+</div>
+
+
 
 MAC and IR both become (−144,−112,208), FLAG=0. The result's dot product with
 each supplied operand is zero. Swapping the operands changes its sign; software

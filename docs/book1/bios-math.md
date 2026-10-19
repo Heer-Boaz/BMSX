@@ -311,6 +311,8 @@ The private approximation used by `math.atan` is:
 P(v) = (pi * 0.25 * v) + (0.273 * v * (1 - abs(v)))
 ```
 
+<div class="keep-together">
+
 Here `abs` is the retained private absolute-value operation. Define `A(v)` by
 these ordered cases:
 
@@ -319,6 +321,8 @@ these ordered cases:
 | `v > 1` | `h - P(1 / v)` |
 | `v < -1` | `-h - P(1 / v)` |
 | Otherwise | `P(v)` |
+
+</div>
 
 <div class="keep-together">
 
@@ -367,6 +371,8 @@ unchanged if it equals zero or positive infinity. Consequently negative
 infinity produces NaN, positive infinity is preserved, and either zero sign
 is preserved.
 
+<div class="keep-together">
+
 For other inputs, initialize `normalized = value` and `scale = 1`, then
 perform these loops in order:
 
@@ -374,6 +380,8 @@ perform these loops in order:
 while normalized >= 4: normalized *= 0.25; scale *= 2
 while normalized < 1:  normalized *= 4;    scale *= 0.5
 ```
+
+</div>
 
 Set `estimate = normalized`, perform exactly eight refinements,
 
@@ -622,6 +630,8 @@ It stores the result in the word, reads the stored unsigned word back, and divid
 
 ## Programming examples
 
+<div class="keep-together">
+
 ### Convert an angle and form an offset
 
 The angular functions take radians. To place a point on a circle with radius
@@ -641,6 +651,8 @@ The offsets are approximately `(55.4256,32)` position units; rounding selects
 Choose rounding or truncation deliberately when converting a calculated
 position to whole pixels. These functions do not produce GTE coefficients or
 GPU packet fields; use the destination unit's documented representation.
+
+</div>
 
 ### Repeat a pseudorandom sequence
 

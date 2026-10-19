@@ -1117,11 +1117,15 @@ A readiness check is not a permission or fault preflight. An aligned but not-rea
 
 The two halves of an `F64LE` access are fault-ordered. A new fault on the low half prevents the high-half access. A high-half fault leaves the low-half access or store already performed. A load updates its destination only if both halves succeed. The high half of an `F64LE` store is not covered by a separate readiness preflight.
 
+<div class="keep-together">
+
 Memory instructions are available in user and supervisor modes. Each mapped
 target applies its own access rules. In I/O space, an aligned U8 load reads a
 whole register and returns its low byte. U8 stores and U16LE accesses fault.
 Word, U32LE, F32LE and each half of F64LE use whole-word register operations,
 including that register's side effects.
+
+</div>
 
 ### Counted word stores
 
@@ -1229,8 +1233,6 @@ Returning from an NMI-marked exception frame also restores the retained pre-NMI 
 
 <section class="keep-together">
 
-<section class="keep-together">
-
 ### BLua control syntax
 
 `halt_until_irq` is the BLua statement for `HALT`, as used in the complete
@@ -1281,9 +1283,6 @@ For BIOS memory-fault service, see
 | `34H` | `RFE` | Supervisor only: return from the current exception frame using active EPC and the Status restoration above; a non-exception frame hard-halts | 1 |
 | `3FH` | `HALT` | Consume a retained interrupt event, or record the current thread/frame-depth HALT condition | 1 |
 
-</section>
-
-
 `RFE` and `HALT` do not use `A`, `B`, or `C`.
 
 <a id="cp0-in-cartridge-irq"></a>
@@ -1327,12 +1326,16 @@ callback, saved Status is `0000000CH`, Cause is `00000400H`, and EPC is the
 variable interrupted **instruction address**, not a function-record address.
 Full supplied flags contain VBlank and may contain other masked pending bits.
 
+<div class="keep-together">
+
 The callback returns normally. The standard IRQ entry performs RFE and main
 continues after the wait. Do not issue RFE from the callback's ordinary call
 frame. CPU supervisor privilege during IRQ does not by itself activate the
 SYSTEM supervisor device context; SYSTEM STATUS remains zero under these
 assumptions. Masking further delivery does not clear CPU interrupt enable or
 prevent later VBlank pending bits from being raised.
+
+</div>
 
 ## Memory faults and saved PC
 

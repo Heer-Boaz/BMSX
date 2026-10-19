@@ -125,11 +125,15 @@ After IRQ entry:  STATUS = 0000000cH  non-user mode; IEc = 0
 After RFE:        STATUS = 00000003H  user mode; IEc = 1
 ```
 
+<div class="keep-together">
+
 `RFE` returns to the address in `EPC` and restores the low four status bits as follows:
 
 ```text
 STATUS := (STATUS & ~0000000fH) | ((STATUS >> 2) & 0000000fH)
 ```
+
+</div>
 
 `RFE` is an exception-return instruction, not a general procedure return. It requires non-user mode and an exception to return from. User-mode execution takes the coprocessor-unusable exception; execution without an exception to return from hard-halts.
 
@@ -323,7 +327,12 @@ function irq(flags)
         *gpu_services = *gpu_services + 1
     end
 end
+```
 
+With the handler installed, establish the masked requests, then enable GPU
+delivery and wait for the two services:
+
+```lua
 *irq_mask = 0
 while (*gp1 & 0x04000000) == 0 do
 end
@@ -373,6 +382,8 @@ reads zero. The two service increments count these controlled services after
 re-arming; they do not count all possible source arrivals or establish an
 interrupt-latency bound.
 
+<div class="keep-together">
+
 ## Register reference
 
 Use four-byte-aligned, 32-bit word accesses. The three addresses name separate
@@ -383,6 +394,8 @@ operations: a pending-word read, a selective clear and an enable-word replacemen
 | `08000000H` | `IO_IRQ_FLAGS` | Read only | 31:0 pending requests | `00000000H` |
 | `08000004H` | `IO_IRQ_ACK` | Read zero / write-one-to-clear | 31:0 pending-bit clear selection | `00000000H` |
 | `08000008H` | `IO_IRQ_MASK` | Read/write | 31:0 delivery enables | `00000000H` |
+
+</div>
 
 ### IO_IRQ_FLAGS — pending requests
 
@@ -427,6 +440,15 @@ closes delivery from this controller; it neither clears pending requests nor
 acknowledges their producers. Enabling an already-pending bit can assert the
 output without waiting for another source request.
 
+### Controller reset
+
+Reset clears pending and MASK and returns ACK readback to zero. Writing MASK=0
+alone does not reproduce reset: pending requests remain. Writing ACK with all
+ones alone does not reproduce reset either: the enable word remains unchanged.
+Source-unit reset and re-arming remain that unit's separate operations.
+
+<div class="keep-together">
+
 ### Named source bits
 
 The same bit position is used in FLAGS, ACK and MASK. The names identify the
@@ -446,6 +468,8 @@ source; they do not make all source units use the same request or re-arm rule.
 | 9 | `00000200H` | `IRQ_CARTRIDGE_SLOT0` |
 | 10 | `00000400H` | `IRQ_CARTRIDGE_SLOT1` |
 
+</div>
+
 Bits 31:11 are unnamed, not hardwired-zero fields. MASK retains their written
 values, and the controller's pending, clear and output equations operate on
 the complete 32-bit words. This does not assign a cartridge-programmable request
@@ -453,7 +477,9 @@ source to an unnamed bit. Cartridge-source device programming belongs to Book II
 
 <section class="keep-together">
 
-## Register access, faults and reset
+<a id="register-access-faults-and-reset"></a>
+
+## Register access and faults
 
 The following rules concern the three controller words. A word access still
 obeys the read-only rule for FLAGS.
@@ -479,8 +505,3 @@ at A+4, stopping if the first access faults. Thus an F64 store starting at FLAGS
 faults before ACK is reached. Starting at ACK instead performs a pending clear
 followed by a MASK replacement; it is not a combined controller operation.
 Use separate word stores when those are the operations intended.
-
-Reset clears pending and MASK and returns ACK readback to zero. Writing MASK=0
-alone does not reproduce reset: pending requests remain. Writing ACK with all
-ones alone does not reproduce reset either: the enable word remains unchanged.
-Source-unit reset and re-arming remain that unit's separate operations.
