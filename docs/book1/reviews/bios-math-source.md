@@ -1,5 +1,23 @@
 # BIOS Math: bounded source and execution review
 
+## Current software disposition — 2026-10-19
+
+**BH01 is repaired.** `machine/bios/math/trig.lua` supplies the ordinary
+binary64 radian functions; `math/sin` retains its separate phase-word/Q16
+interface. Independent kernel/range-reduction review found no issue. O0/O3
+regressions cover finite exponents, quadrants, NaN, infinities and signed zero,
+including literal `-0.0`; finite native execution and complete TS/C++ runtime
+save-state comparison pass at both levels. The fresh BIOS and ordinary Math
+cartridge pass84 assertions; separate playback retains24 diagnostic lines,
+with the two changed trig lines reconciled in the manuscript and cartridge.
+
+The chapter source now describes the repaired interface. Its updated source
+and print acceptance are pending; old acceptance/hashes below do not approve
+this revision. Table length, LS01 and BZ01 are also repaired separately; CPU7
+and other unresolved runtime/firmware questions are not closed by this work.
+
+## Historical source and print evidence
+
 2026-10-18, baseline `0fca01fd4` plus the working documentation/example slice.
 **Finite source/claim, fresh public-reader and canonical actual-PDF print
 passes; this is not whole-manual completion.**

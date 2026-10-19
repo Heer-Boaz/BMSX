@@ -1,13 +1,9 @@
-local sin_turn32<const> = require('math/sin')
+local trig<const> = require('math/trig')
 
 local pi<const> = 3.141592653589793238462643383279502884
 local half_pi<const> = pi * 0.5
-local two_pi<const> = pi * 2.0
 local deg_per_rad<const> = 180.0 / pi
 local rad_per_deg<const> = pi / 180.0
-local turn32_per_rad<const> = 4294967296.0 / two_pi
-local q16_inv_scale<const> = 1.0 / 65536.0
-local quarter_turn<const> = 0x40000000
 local maxinteger<const> = 9007199254740991
 local mininteger<const> = -9007199254740991
 local huge<const> = 1.0 / 0.0
@@ -95,29 +91,6 @@ end
 
 local rad<const> = function(value)
 	return value * rad_per_deg
-end
-
-local sin<const> = function(radians)
-	local sin_q16<const> = sin_turn32((trunc(radians * turn32_per_rad)) & 0xffffffff)
-	return sin_q16 * q16_inv_scale
-end
-
-local cos<const> = function(radians)
-	local cos_q16<const> = sin_turn32((trunc(radians * turn32_per_rad) + quarter_turn) & 0xffffffff)
-	return cos_q16 * q16_inv_scale
-end
-
-local tan<const> = function(radians)
-	local angle<const> = (trunc(radians * turn32_per_rad)) & 0xffffffff
-	local sin_q16<const> = sin_turn32(angle)
-	local cos_q16<const> = sin_turn32((angle + quarter_turn) & 0xffffffff)
-	if cos_q16 == 0 then
-		if sin_q16 < 0 then
-			return -huge
-		end
-		return huge
-	end
-	return sin_q16 / cos_q16
 end
 
 local sqrt<const> = function(value)
@@ -352,7 +325,7 @@ return {
 	asin = asin,
 	atan = atan,
 	ceil = ceil,
-	cos = cos,
+	cos = trig.cos,
 	deg = deg,
 	exp = exp,
 	floor = floor,
@@ -370,9 +343,9 @@ return {
 	randomseed = randomseed,
 	round = round,
 	sign = sign,
-	sin = sin,
+	sin = trig.sin,
 	sqrt = sqrt,
-	tan = tan,
+	tan = trig.tan,
 	tointeger = tointeger,
 	type = type_name,
 	ult = ult,

@@ -1,5 +1,12 @@
 # Frozen source facts: eleven Math angle/transcendental interfaces
 
+**Historical snapshot.** The radian `sin`/`cos`/`tan` facts, dependencies and
+phase-quantized results below were superseded on2026-10-19 by
+`machine/bios/math/trig.lua`. The named phase-word/Q16 primitive is unchanged;
+ordinary radian calls no longer use it. See the current disposition in
+[bios-math.md](bios-math.md); do not use T02/T04's old radian conversion as the
+current API. The other eight interfaces were not changed by that repair.
+
 2026-10-18, HEAD fd0895c39. Root independently opened the actual files/ranges
 below. This sheet is extraction, not public prose, execution or an accuracy
 claim. No architecture manuscript or historical manual used. No disagreement

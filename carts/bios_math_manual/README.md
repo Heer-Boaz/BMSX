@@ -46,12 +46,12 @@ Math modf zero reciprocals	-inf	inf
 Math zero signs	1	1	1	1	1	1	1
 Math min error	false	min expects at least one argument.
 Math max error	false	max expects at least one argument.
-Math trigonometry	0	1	0	0.499969	0.499985	1
+Math trigonometry	0	1	0	0.5	0.5	1
 Math angles	3.14159	180	0.785398	2.35619	1.5708	0
 Math root	3	1	true
 Math exponentials	1	2.71828	0.367879	inf	0
 Math logarithms	0	3	2	-inf	true
-Math nonnumeric angles	0	0	0	1.5708
+Math nonnumeric angles	nan	nan	nan	1.5708
 Math random modes	1	0.236456	3	0	8
 Math random replay	1	0.236456	true
 Math random error	false	random upper bound must be positive.	0.504242
@@ -60,8 +60,8 @@ Math random false	0.236068	true	0.819534
 Math constants	-9.0072e+15	9.0072e+15	3.14159	inf
 ```
 
-The precise stored lookup examples are 32766/65536 and 32767/65536, not exact
-one-half. Seed 1 replay and the two bound rejections expose consumed updates;
+The stored radian examples are approximately 0.49999999999999994 and
+0.5000000000000001; both print as 0.5, without Q16 output quantization. Seed 1 replay and the two bound rejections expose consumed updates;
 false seed and false/nil bounds take different branches. No clock-default seed
 or statistical quality is tested. The parked tail leaves the observations
 available after completion.

@@ -4,7 +4,7 @@ The installed `math` Table contains twenty-five callable entries and four numeri
 
 ## Availability and dependencies
 
-The BIOS initializes `base`, then `os`, and installs the returned math module as the global `math`. Math-module initialization also loads the sine module, even when only an elementary operation will be used. None of the elementary operations in this section calls that imported sine function.
+The BIOS initializes `base`, then `os`, and installs the returned math module as the global `math`. Math-module initialization also loads the radian trigonometry module, even when only an elementary operation will be used. The elementary operations below do not call its trigonometric functions.
 
 `math` is an ordinary table. Its entries contain function values or numeric constants. Several functions call private functions retained by the module: `fmod` and `modf` use private truncation; `tointeger` uses private truncation and the retained infinity constant; `math.type` uses the retained `tointeger` function. Changing `math.tointeger`, for example, does not change the function called by `math.type`.
 
@@ -219,7 +219,7 @@ logarithms. All eleven interfaces return exactly one Number.
 | `math.rad(value)` | Degree-scale value to radians. |
 | `math.sin(radians)` | Approximate sine. |
 | `math.cos(radians)` | Approximate cosine. |
-| `math.tan(radians)` | Ratio of the sine and cosine lookup results. |
+| `math.tan(radians)` | Approximate tangent. |
 | `math.atan(y, x)` | Approximate angle in radians; `x == nil` selects the one-value form. |
 | `math.asin(value)` | Approximate inverse sine in radians. |
 | `math.acos(value)` | Approximate inverse cosine in radians. |
@@ -268,82 +268,33 @@ produces NaN.
 
 ### Sine, cosine and tangent
 
-These functions use a 32-bit phase for one turn. A quarter-turn is
-`Q = 0x40000000`. For each call, first calculate:
+These functions accept radian-scale Numbers and return dimensionless binary64
+approximations. They do **not** convert their arguments to 32-bit phases or
+quantize their results to Q16. Small angles therefore retain their floating-point
+scale: `math.sin(0.000001)` is nonzero.
 
-```text
-s = radians * (4294967296 / (pi * 2))
-```
+The BIOS reduces an argument to a nearby multiple of pi/2 and evaluates floating
+polynomials on the remaining angle. The remainder has separate leading and tail
+components to retain cancellation information. Large finite angles use a
+multiword 2/pi reduction covering the binary64 exponent range, rather than a
+remainder against a single rounded `2*pi` constant.
 
-Let `S(a)` denote the private integer sine lookup described below. The public
-results are calculated as follows:
+| Input | `math.sin` | `math.cos` | `math.tan` |
+|---|---|---|---|
+| `+0` | `+0` | `1` | `+0` |
+| `-0` | `-0` | `1` | `-0` |
+| NaN or either infinity | NaN | NaN | NaN |
 
-```text
-math.sin(radians): S(T(s) & 0xffffffff) * (1 / 65536)
-math.cos(radians): S((T(s) + Q) & 0xffffffff) * (1 / 65536)
-```
+These are approximations, not promises of correctly rounded real functions.
+A rounded Number such as `math.pi / 2` is not an exact-real tangent pole; the
+computed tangent can therefore be large and finite. Work depends on argument
+magnitude and cancellation. There is no fixed whole-call cycle count.
 
-For tangent, the phase is converted to a word before adding the quarter-turn:
-
-```text
-a = T(s) & 0xffffffff
-u = S(a)
-v = S((a + Q) & 0xffffffff)
-```
-
-If `v == 0`, `math.tan` returns negative infinity when `u < 0`, and positive
-infinity otherwise. Otherwise it returns `u / v`, without first converting
-both lookup results to normalized sine and cosine Numbers. A nonzero integer
-denominator gives a finite result in `[-65536, 65536]`. Infinity is selected
-by a zero **quantized denominator**, not by a test for an exact-real pole.
-
-`T` discards fractional phase before wrapping. The mask retains the 32 phase
-bits; it does not guarantee an unsigned Number result. In particular, cosine
-adds `Q` **before** word conversion, whereas tangent adds it **after** its
-first word conversion. This difference matters for nonfinite arithmetic:
-
-| `radians` | `math.sin` | `math.cos` | `math.tan` |
-| --- | --- | --- | --- |
-| NaN, either infinity, or a nonnumber, including `nil` | `0` | `0` | `0` |
-
-For sine and cosine, the nonfinite phase converts to word zero. For cosine,
-the earlier addition of `Q` does not make that phase finite. Tangent instead
-forms word zero first, so its denominator lookup receives a quarter-turn.
-Do not substitute `math.cos(0)` for the nonnumeric cosine case.
-
-<div class="keep-together">
-
-The lookup uses a fixed quarter-wave table `L` with 257 word entries,
-`L[0] = 0` and `L[256] = 65536`. It reflects the phase into that quarter-wave,
-interpolates between adjacent entries, and applies the sign:
-
-```text
-quadrant = (a >> 30) & 3
-phase = a & 0x3fffffff
-```
-
-</div>
-
-For an odd quadrant, replace `phase` by `Q - phase`. Start with
-`value = 65536`; if `phase != Q`, calculate:
-
-```text
-index = (phase >> 22) & 255
-fraction = phase & 0x3fffff
-base = L[index]
-delta = L[index + 1] - base
-value = base + ((delta * fraction) >> 22)
-```
-
-Return `0 - value` for quadrants 2 and 3, and `value` otherwise. Sine and cosine
-results lie in `[-1, 1]` and are multiples of `1 / 65536`. This is table-based
-linear interpolation with word arithmetic, not ideal sine or cosine. These
-range and quantization bounds are not approximation-error bounds or a promise
-that every value in an interval is reachable.
-
-There is no input-magnitude reduction loop. Each lookup uses arithmetic,
-branches and at most two table-word reads. Sine and cosine invoke it once;
-tangent invokes it twice.
+The separately named BIOS import `require('math/sin')` is a different interface:
+it accepts a **32-bit turn-phase word** and returns an **integer Q16 sine**.
+A phase of `0x40000000` means one quarter-turn and returns `65536`, not `1`.
+That primitive retains its quarter-wave lookup and interpolation; the three
+ordinary radian functions do not call it.
 
 ### Inverse angles
 
@@ -838,7 +789,7 @@ print('Math max error', max_ok, max_error)
 ### Entry 3: angles, roots, exponentials and logarithms
 
 ```lua
--- Angles are ordinary radians; the BIOS owns the turn/lookup conversion.
+-- Angles are ordinary radians; the BIOS owns binary64 argument reduction.
 result.trig[0] = math.sin(0)
 result.trig[1] = math.cos(0)
 result.trig[2] = math.tan(0)
@@ -876,7 +827,7 @@ print('Math exponentials', result.exponentials[0], result.exponentials[1],
 print('Math logarithms', result.logarithms[0], result.logarithms[1],
 	result.logarithms[2], result.logarithms[3], result.log_nan ~= result.log_nan)
 
--- Reached word conversion is not an argument-type exception or string parse.
+-- Nonnumeric arithmetic does not enter the phase-word/Q16 primitive.
 result.trig_nonnumeric[0] = math.sin('text')
 result.trig_nonnumeric[1] = math.cos('text')
 result.trig_nonnumeric[2] = math.tan('text')
@@ -963,12 +914,12 @@ Math modf zero reciprocals	-inf	inf
 Math zero signs	1	1	1	1	1	1	1
 Math min error	false	min expects at least one argument.
 Math max error	false	max expects at least one argument.
-Math trigonometry	0	1	0	0.499969	0.499985	1
+Math trigonometry	0	1	0	0.5	0.5	1
 Math angles	3.14159	180	0.785398	2.35619	1.5708	0
 Math root	3	1	true
 Math exponentials	1	2.71828	0.367879	inf	0
 Math logarithms	0	3	2	-inf	true
-Math nonnumeric angles	0	0	0	1.5708
+Math nonnumeric angles	nan	nan	nan	1.5708
 Math random modes	1	0.236456	3	0	8
 Math random replay	1	0.236456	true
 ```
@@ -1000,7 +951,7 @@ Math constants	-9.0072e+15	9.0072e+15	3.14159	inf
 
 | Group | What this program establishes |
 | --- | --- |
-| Trigonometry | `sin(0)`, `cos(0)` and `tan(0)` give `0,1,0`. The stored `sin(rad(30))` is `32766/65536`; `cos(rad(60))` is `32767/65536`. Their printed forms differ by one output quantum rather than both being exactly `0.5`. This is a specific lookup/phase example, not a general error bound. |
+| Trigonometry | `sin(0)`, `cos(0)` and `tan(0)` give `0,1,0`. The stored `sin(rad(30))` is approximately `0.49999999999999994`; `cos(rad(60))` is approximately `0.5000000000000001`. Both print as `0.5`; neither result is quantized to a Q16 output step. These values are finite observations, not a general error bound. |
 | Angle choices | Conversion gives radians for 180 degrees and degrees for pi radians. One- and two-argument atan choose different quadrants; asin and acos are also exercised. |
 | Roots and exponentials | The root is three, its negative-zero input is preserved, and the negative root input produces NaN. Exponential samples include zero, positive and negative inputs plus the explicit overflow/underflow branches. |
 | Logarithm options | Natural log of one, base-two log of eight and base-ten log of one hundred print `0,3,2`. Log of zero gives negative infinity; a negative input gives NaN. |

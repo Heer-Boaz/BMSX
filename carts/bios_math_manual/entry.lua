@@ -77,7 +77,7 @@ result.max_error = not max_ok and max_error == 'max expects at least one argumen
 print('Math min error', min_ok, min_error)
 print('Math max error', max_ok, max_error)
 
--- Angles are ordinary radians; the BIOS owns the turn/lookup conversion.
+-- Angles are ordinary radians; the BIOS owns binary64 argument reduction.
 result.trig[0] = math.sin(0)
 result.trig[1] = math.cos(0)
 result.trig[2] = math.tan(0)
@@ -115,7 +115,7 @@ print('Math exponentials', result.exponentials[0], result.exponentials[1],
 print('Math logarithms', result.logarithms[0], result.logarithms[1],
 	result.logarithms[2], result.logarithms[3], result.log_nan ~= result.log_nan)
 
--- Reached word conversion is not an argument-type exception or string parse.
+-- Nonnumeric arithmetic does not enter the phase-word/Q16 primitive.
 result.trig_nonnumeric[0] = math.sin('text')
 result.trig_nonnumeric[1] = math.cos('text')
 result.trig_nonnumeric[2] = math.tan('text')

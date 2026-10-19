@@ -135,6 +135,7 @@ bios_gpu.reset_320x240()
 const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
 	['math/sin', 'machine/bios/math/sin.lua'],
+	['math/trig', 'machine/bios/math/trig.lua'],
 ] as const;
 const CART_MODULE_FILES = [
 	['cartlib/gx/display', 'cartlib/gx/display.lua'],

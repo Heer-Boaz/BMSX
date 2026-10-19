@@ -1,17 +1,15 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "Installed BIOS math table:29 fields,25 callables and4 constants; ordinary Number operations, not a registerfile, integer subtype or replacement cartridge ABI.",
-			"open": [
-				"BH01: decide the intended public numerical precision of ordinary trigonometric calls versus the separate phase-word/Q16 primitive. Source accuracy and current tests are not API design approval."
-			]
+			"resolution": "Installed BIOS math table: 29 fields, 25 callables and 4 constants. Ordinary radian trigonometry uses binary64 range reduction and kernels, separate from the named turn-phase/Q16 primitive; BH01 software repair is complete.",
+			"open": []
 		},
 		"registers": {
 			"resolution": "All25 callable interfaces and4 constant fields have sourced reference coverage, including fixed formals, nil/default distinctions and exact result counts; this ordinary BIOS Table introduces no mapped registerfile or per-API reset words.",
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Elementary Number formulas, selection and classification; exact32-bit phase lookup/interpolation and proven range/quantum bounds; inverse polynomial/quadrant branches; normalized root, exponential and logarithm approximations; shared RNG recurrence and word conversion. Range and finite observations are not uniform mathematical accuracy or reachability guarantees.",
+			"resolution": "Elementary Number formulas, selection and classification; radian reduction with leading/tail remainder and binary64-range multiword reduction; floating sine/cosine/tangent kernels; separate raw phase-word/Q16 primitive; inverse approximations, roots, exponential/logarithm and RNG recurrence. Finite tests do not promise correctly rounded results or uniform mathematical accuracy.",
 			"open": []
 		},
 		"visibility": {
@@ -19,7 +17,7 @@
 			"open": []
 		},
 		"timing": {
-			"resolution": "Elementary bounded computation is distinct from min/max repeated-tail quadratic movement. Lookup has at most two word reads; square root has8 refinements, exponential16 series updates and natural log15, with explicit input-dependent normalization/scaling. Primitive charges and these work counts are not whole-call cycles; presentation offset4 is not latency.",
+			"resolution": "Elementary bounded computation is distinct from min/max quadratic tail movement. Radian trigonometry has argument/cancellation-dependent reduction work, with invocation-local workspace only on the large-argument path. The separate phase primitive uses at most two lookup reads. Existing root/exponential/logarithm work counts remain; no fixed whole-call cycle budget is claimed.",
 			"open": []
 		},
 		"interrupts": {
@@ -27,23 +25,21 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Exact elementary/RNG raised Strings are scoped to initialized live dependencies; angle/transcendental numerical branches and nonnumber/NaN behavior are specified without invented type/domain validators. Static known-call minimum and cartridge-floor source policy are distinct from reached faults. Canonical CPU/Memory/protected-call contracts own connected execution/access boundaries.",
-			"open": [
-				"BH01: decide ordinary trig special-value behavior before ratifying observed NaN/infinity-to-zero and negative-zero sign loss; repair any demonstrated owning-API defect before publication. No blanket strict-Lua compatibility decision is inferred."
-			]
+			"resolution": "Exact elementary/RNG raised Strings are scoped to initialized live dependencies; angle/transcendental numerical branches and nonnumber/NaN behavior are specified without invented type/domain validators. Static known-call minimum and cartridge-floor source policy are distinct from reached faults. Canonical CPU/Memory/protected-call contracts own connected execution/access boundaries. BH01 radian NaN/infinity and signed-zero behavior is covered at O0/O3, including source literals, without adding argument validators.",
+			"open": []
 		},
 		"reset": {
 			"resolution": "BIOS installation and declared shared RNG initializer are stated without inventing independent per-thread/cart streams, universal reset/persistence or save-state claims. Canonical Memory/CPU/SYSTEM chapters remain the startup/reset authorities.",
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete67+172-line ordinary BLua program with84 retained assertions and24 separately observed ordinary diagnostic lines; final artifact73cd790 passes unchanged-quality build and repeated executions. Independent actual-program source comparison and fresh context-isolated public-only whole-chapter/route reconstruction pass. No native/all-input/accuracy/statistical or whole-console guarantee; actual PDF acceptance is recorded separately.",
+			"resolution": "Existing complete ordinary BLua cartridge passes 84 retained assertions with the repaired BIOS, and separate ordinary playback emits 24 Math lines. New radian regressions cover O0/O3 numerical and IEEE edges; finite TS/native execution and complete save-state comparison also pass at both optimization levels. This is not all-input, correct-rounding or whole-console acceptance. Updated chapter source and print acceptance remain separate.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-math-source.md"
 		},
 		"figures": {
@@ -51,7 +47,7 @@
 			"report": "docs/book1/reviews/bios-math-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-math-print.md"
 		}
 	}

@@ -1,5 +1,19 @@
 # BIOS math library: finite evidence index
 
+## Current disposition — 2026-10-19
+
+BH01 is repaired by `machine/bios/math/trig.lua` and the ordinary Math exports.
+Radian inputs no longer pass through phase-word/Q16 conversion. The public
+chapter and ordinary cartridge observations have been reconciled; O0/O3
+regressions and finite TS/native execution pass, including signed-zero source
+literals. The named `math/sin` phase primitive is unchanged. Updated chapter
+source/print acceptance remains pending, not blocked on the former trig bug.
+The earlier range/quantum and output observations below describe the old
+implementation only. Table length, BZ01 and LS01 are independently repaired;
+CPU7 and remaining firmware/whole-console questions remain open.
+
+## Historical evidence index
+
 2026-10-18, baseline `0fca01fd4`. The actual export table at
 `machine/bios/math.lua:349–379` has twenty-five callables and four numeric
 constants. This index records bounded source evidence, not whole-manual approval.
