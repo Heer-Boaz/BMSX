@@ -257,6 +257,105 @@ The entire access must fit inside the cartridge aperture. The highest admitted a
 DMA uses these same mapped-access rules, but a fault does not abort its programmed read, write, and count progression. `DONE` therefore does not prove that endpoint addresses were valid. The first outstanding bus fault retains its code, address, and access; later faults do not replace it. See [Book I: Memory — Bus faults](../book1/memory.md#bus-fault-status-and-cpu-exceptions) for the fault registers and acknowledgement procedure.
 
 
+## ROM resources
+
+The ROM address window exposes package bytes. A resource directory describes
+where particular data and metadata reside within those bytes; it does not
+create another device, allocate a destination or configure a hardware unit.
+Keep the package base distinct from the embedded executable-image base and
+from the destination of a transfer.
+
+### Package offsets and source spans
+
+The [ROM package header](../book1/memory.md#rom-header-fields) gives the
+table-of-contents offset at byte `10H` and its byte count at `14H`.
+For cartridge ROM, let `B = 10000000H` and `T = B + toc_offset`.
+Directory words are unsigned, 32-bit and little-endian. All offsets below
+are **byte offsets**, not word indices.
+
+| Base | Byte offset | Field and unit |
+|---|---|---|
+| `T` | `00H` | Magic: `434F5442H` |
+| `T` | `04H` | Header size: 48 bytes |
+| `T` | `08H` | Entry size: 84 bytes |
+| `T` | `0CH` | Entry count |
+| `T` | `10H` | Entry-table offset from `T`; emitted as 48 |
+| `T` | `14H` | String-table offset from `T`; emitted as `48 + entry_count × 84` |
+| `T` | `18H` | String-table byte count |
+
+Entry `i`, counting from zero, begins at `E = T + 48 + i × 84`.
+The following fields locate its identity and source spans.
+
+| Base | Byte offset | Field and unit |
+|---|---|---|
+| `E` | `00H`, `04H` | Resource token, low and high words |
+| `E` | `08H` | Resource kind |
+| `E` | `10H`, `14H` | Resource-ID offset from the **string table**, and UTF-8 byte count |
+| `E` | `28H`, `2CH` | Main-data start and exclusive end, both from `B` |
+| `E` | `34H`, `38H` | Metadata start and exclusive end, both from `B` |
+| `E` | `44H`, `48H` | Collision-data start and exclusive end, both from `B` |
+
+For a present span, its source address is `B + start` and its byte count is
+`end − start`. Do not add the package DATA offset, TOC offset,
+metadata-section offset or executable-image offset again. An absent span has
+both endpoint words set to `FFFFFFFFH`; a present empty span instead has equal
+start and end offsets. Finding an entry does not establish that it has a
+nonempty main-data span.
+
+Primary and collision-data starts are four-byte aligned. Metadata records are
+packed without a separate alignment requirement for each record; do not assume
+that a metadata address is suitable for an ordinary word load.
+
+### Data format determines the next operation
+
+The resource kind does not make every payload a directly usable hardware
+source. The ordinary packed resource routes are:
+
+| Kind | Stored representation | Next hardware-related operation |
+|---|---|---|
+| Image, 1 | Image metadata and optional collision data; no primary pixel blob | The image entry is not a raw-pixel source or a GP0 upload packet. |
+| Texture, 11 | An IMGDEC stream and texture metadata | Decode the stream through [IMGDEC](../book1/imgdec.md); its output supplies the GPU upload words. |
+| Audio, 2 | A BADP container and audio metadata | Program the [APU source descriptor](../book1/apu.md#library-playback-routes) from the container header and byte extent. |
+
+Metadata is serialized descriptive data, not a device command packet.
+Resolving a ROM source, decoding or transporting its bytes, committing them to
+device storage, and using that storage are separate operations. The adjacent
+unit's completion and source-lifetime rules still apply.
+
+### Software resource records
+
+The `cartlib/rom_dir` library returns a table describing a located entry.
+Its source fields have these meanings:
+
+| Field | Meaning |
+|---|---|
+| `resid` | The ID used when this cached record was constructed |
+| `type` | The recognized resource-kind name; `image`, `texture` or `audio` for the routes above |
+| `addr` | Source ROM base plus `data_start` for a present main-data span; zero when absent |
+| `len` | Main-data byte count; zero when absent |
+| `meta` | Optional decoded metadata |
+| `imgmeta`, `texturemeta`, `audiometa` | Aliases for `meta` on image, texture and audio records, respectively |
+| `collision_addr` | Image collision-data source address, or zero when absent; no corresponding length field is returned |
+
+Metadata is decoded when the record is first constructed. Ordinary lookup does
+not decode the main payload. The table is neither a GPU destination nor an APU
+source binding, and obtaining it performs no upload.
+
+Repeated lookup returns the same cached record and metadata tables, not private
+copies. The directory indexes system ROM at `00000000H` and the currently
+mapped cartridge at `10000000H` when initialized. Each record uses its source
+ROM's base; not every record is a cartridge-ROM address.
+After changing that mapping, `reload_cartridge_directory()` rebuilds its
+cartridge indexes and decoded-record cache; it leaves the system directory
+unchanged and does not update previously returned tables. It neither reads nor
+writes SELECT and does not detect mapping changes automatically.
+
+A retained cartridge address is still a mapped address, not a socket-encoded
+handle. Ordinary CPU data accesses follow SELECT, not the active instruction
+socket. Rebuilding a directory does not pin a source or complete an outstanding
+hardware operation. Preserve the selection and source lifetime required by the
+[DMA](../book1/dma.md) or [APU](../book1/apu.md) operation that uses the bytes.
+
 ## Two-card programming example
 
 This example gives the bootable card in **socket 0** ROM, 256 bytes of RAM and a

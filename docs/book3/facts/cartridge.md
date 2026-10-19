@@ -261,3 +261,67 @@ Scope: paired live specifications and bounded owners; no chapter prose, runtime 
 - Both full modules and both manifests reconstructed from public listings compare byte-for-byte to authored files. Quality-enabled ordinary validation and actual existing-route guest execution pass; separate ordinary two-media player launch reaches finiteTTL without being claimed as payload proof.
 - Focused10TSowner tests,3native CTest suites and19publishing tests pass. Canonical check/publish pass; all12published pages exact full decodedRGBA+dimensions equal the individually inspected finalproof. No runtime/compiler/BIOS/renderer/publisher/CSS/helper change or new common harness was made.
 - Existing software-authority and physical-spec exclusions above remain. Shared whole-console, SDK, portablePDF navigation and other publication stops in older chapters are not closed by this bounded chapter.
+
+## ROM resources: source spans and software records
+
+Scope: current emitted resource layout and directory records, not a new device
+or approval of arbitrary resource-ID lookup. No new execution or review is
+claimed. Header fields remain canonical in Memory rather than duplicated here.
+
+- Package TOC offset/count are byte fields +10H/+14H. Cartridge base B=10000000H;
+  T=B+TOC offset. Paired leaves: `machine/ts/spec/bmsx/rom_package.ts:1–16`,
+  `machine/cpp/spec/bmsx/rom_package.h:9–24`; base leaves
+  `machine/ts/spec/bmsx/memory_map.ts:6–11`, C++ `:12–17`.
+- TOC words are unsigned32 LE: magic434F5442H, header48, entry84, count at0CH,
+  entry-table offset10H, string-table offset14H/length18H; table offsets are
+  relative to T. Producer emits entry table48 and string table48+count*84.
+  Paired definitions: `machine/ts/spec/bmsx/rom_toc.ts:1–56`,
+  `machine/cpp/spec/bmsx/rom_toc.h:9–64`. Actual encoders
+  `toolchain/ts/rompack/toc_encode.ts:63–65,93–98,118–160`,
+  `machine/cpp/rompack/tooling/toc_encode.cpp:94–124,146–208,220–224`.
+- Entry i begins T+48+i*84. Token low/high00H/04H, kind08H; ID offset10H and
+  UTF8 byte length14H use the string-table base. Main span28H/2CH, metadata
+  span34H/38H and collision span44H/48H use ROM-package-relative start/end,
+  end exclusive. Same paired TOC leaves/encoders; consumer
+  `cartlib/rom_dir.lua:87–99,125–142,238–247`.
+- Present span address=B+start, length=end-start; neither package DATA nor
+  executable offset is added. Missing endpoints bothFFFFFFFFH, while present
+  empty buffers have start=end. Main/collision starts align4; metadata records
+  concatenate without individual alignment. Producers
+  `toolchain/ts/rompack/asset_layout.ts:28–78`,
+  `toolchain/ts/rompack/rom_prefix_layout.ts:49–77`; invalid sentinel encoder
+  `toolchain/ts/rompack/toc_encode.ts:59–60,128–136`.
+- Image kind1 emits metadata and optional collision buffer, no main buffer;
+  texture kind11 emits IMGDEC stream and metadata; audio kind2 emits BADP and
+  audio metadata. `scripts/rompacker/rombuilder.ts:847–870,982–997`;
+  `scripts/rompacker/adpcm.ts:5–7,355–366,439–457,472–479` supplies BADP marker,
+  version1/header48 and generated or retained bytes. Metadata is serialized
+  descriptive data: `toolchain/ts/rompack/metadata_encode.ts:41–50`.
+- `cartlib/rom_dir.lua:233–273` constructs fields resid/type/addr/len, optional
+  meta and image/texture/audio aliases, image collision_addr (no length).
+  Span helper `:87–92` returns addr/len zero for absent start. The table only
+  resolves sources/decodes metadata; it submits no hardware work. Recognized
+  kind-name set is `:31–53`, not a promise that every raw kind yields a name.
+- Metadata decodes at first record construction; cached table reused by entry
+  address. Initialization indexes system base0 plus currently mapped cartridge
+  base10000000H; reload_cartridge_directory replaces cartridge indexes/records
+  only, with no SELECT access/detection or modification of retained old tables.
+  `cartlib/rom_dir.lua:116–145,216–260,303–322`. Existing hardware selection,
+  DMA service and APU source-binding/lifetime facts remain authoritative.
+
+### RID01: withhold unrestricted ID-lookup acceptance
+
+The name producer removes whitespace/lowercases but imposes no ASCII limit:
+`toolchain/ts/rompack/assets.ts:14–17`, consumed by filename discovery
+`scripts/rompacker/rombuilder.ts:396–400`. Paired token owners hash UTF8 bytes:
+`machine/ts/rompack/tokens.ts:5–19`, `machine/cpp/rompack/tokens.cpp:7–16`.
+Guest `cartlib/rom_dir.lua:147–156` instead hashes String elements through #id
+and string.byte. Both CPU mirrors define those as codepoint count/values:
+`machine/ts/machine/cpu/cpu.ts:2672–2677,4342–4345`,
+`machine/cpp/machine/cpu/cpu_dispatch.inl:319–324`,
+`machine/cpp/machine/cpu/cpu.cpp:2196–2204`; BIOS binding
+`machine/bios/string/base.lua:1,39`. This is a producer/consumer mismatch, not
+a TS/C++ runtime disagreement or an intended ASCII hardware restriction.
+ASCII token equivalence is unaffected. No runtime fix, fallback, new source-name
+restriction, all-input guarantee or malformed-name ABI is inferred. Hold the
+broader lookup-function reference; raw spans/record field meanings remain usable.

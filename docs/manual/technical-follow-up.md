@@ -1794,3 +1794,13 @@ chapters where the orientation is missing. Preserve technical detail.
   `rom_dir.audio`, `apu.source` and `apu.play_plain`, to the software examples.
   Retain useful material. Fold this into each chapter's remaining content work;
   do not start separate per-change reviews or presentation rounds for it.
+
+## RID01: resource-ID token boundary
+
+- [ ] Resolve UTF-8 producer hashing versus codepoint hashing in
+  `cartlib/rom_dir.lua`. The filename producer does not restrict IDs to ASCII.
+  Exact paired-source locations are in the existing
+  [cartridge facts](../book3/facts/cartridge.md#rid01-withhold-unrestricted-id-lookup-acceptance).
+  Hold unrestricted lookup-API acceptance; do not turn this into a permanent
+  hardware name restriction. Raw TOC spans and the existing ASCII examples are
+  unaffected. No runtime fix is part of this documentation change.

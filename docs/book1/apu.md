@@ -898,6 +898,14 @@ The following software routes use `cartlib/apu`; ROM directory lookup uses
 `cartlib/rom_dir`. The library owns DMA0 for its transfer operations, unlike the
 hardware interface, which admits either DMA channel.
 
+A [ROM resource record](../book3/cartridge.md#software-resource-records)
+supplies `addr` and `len`: the mapped source address and its byte extent.
+`apu.source(record)` reads the BADP header at that address, not `audiometa`,
+to construct the source descriptor. It selects four-bit BADP, takes the data
+offset from the header and sets the data byte count to `len − data_offset`.
+This step neither copies samples nor programs the APU. `apu.play` and
+`apu.play_plain` subsequently write the command staging bank and submit PLAY.
+
 | Starting material | Route to playback |
 |---|---|
 | Normally packed ROM audio | Obtain its record with `rom_dir.audio(audio_id)`, prepare the BADP source with `apu.source(record)`, then call `apu.play_plain(source, slot)`. `apu.play` accepts explicit rate, gain, start and filter words. |

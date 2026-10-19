@@ -34,12 +34,14 @@
 		},
 		"programming": {
 			"resolution": "Complete 133-line ordinary BLua route, both card manifests, exact fresh-machine socket placement/build/launch/expected results. Independent actual-source and public-only reader checks pass; root compares all4 reconstructed files exact, passed guest assertions and separate ordinary playback remain distinguished. Every final printed page is actually inspected or exactly full-RGBA carried.",
-			"open": []
+			"open": [
+				"RID01: emitted resource tokens hash UTF-8 bytes, but cartlib/rom_dir hashes String codepoints. Names are not restricted to ASCII by their producer. Resolve the owning hash boundary before publishing an unrestricted ID-lookup contract; raw TOC spans and existing ASCII examples are unaffected."
+			]
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book3/reviews/cartridge-source.md"
 		},
 		"figures": {
@@ -47,7 +49,7 @@
 			"report": "docs/book3/reviews/cartridge-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book3/reviews/cartridge-print.md"
 		}
 	}

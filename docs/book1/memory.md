@@ -195,6 +195,9 @@ Function-record addresses are absolute machine addresses, not image offsets or i
 
 The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the EXEC subsection for the startup sequence.
 
+For resource-directory entries, payload offsets and byte extents, see
+[Book III: ROM resources](../book3/cartridge.md#rom-resources).
+
 ### BIOS cartridge selection
 
 The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:

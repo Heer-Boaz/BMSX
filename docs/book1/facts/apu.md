@@ -717,3 +717,14 @@ sample-accurate waveform parity or every-browser proof. Pulse capture reported
 timestamp adjustments; its durations are not used as APU timing contracts.
 Ordinary ROM SHA256: `5b3f7036c65937d3506afbcb8e4823d88c3eb75125c4ef8385c0a4a5403682d9`;
 artifact `613e58e504bc82b71488c281724f8db6cb80e5f525a6fa8a8357901d539c1930`.
+
+## Library record-to-descriptor boundary
+
+`cartlib/apu.lua:103–126` reads record.addr/len and the BADP header at addr,
+not record.audiometa, returns source_addr/source_bytes plus header fields,
+selects bits_per_sample4 and data_bytes=source_bytes-data_offset. It returns
+an ordinary table without copying sample bytes or touching MMIO. `play`
+`:128–151` and `play_plain` `:153–176` subsequently program staging then CMD1.
+Record layout/lifecycle and raw resource-span evidence are in the existing
+`docs/book3/facts/cartridge.md` ROM-resources section; RID01 there withholds
+unrestricted ID-lookup acceptance rather than imposing an ASCII-only contract.
