@@ -1894,6 +1894,73 @@ test('GX-GPU supervisor context preserves a partial CPU-to-VRAM packet exactly',
 	);
 });
 
+test('GX-GPU supervisor banks unread pixels and queued ingress; LEAVE discards only supervisor scratch', () => {
+	for (const saved of [false, true]) {
+		let { gpu } = createGpu();
+		const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const bytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+		bytes.set([0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55]);
+		gpu.replaceVramSnapshotBytes(bytes);
+		gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+		gpu.writeGp0(0);
+		gpu.writeGp0((1 << 16) | 5);
+		completeGpuCommands(gpu);
+		// A complete environment command remains behind the unread pixels.
+		gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x321);
+		gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+		gpu.beginSupervisorControlQuiesce();
+		gpu.beginSupervisorQuiesce();
+		assert.equal(gpu.supervisorQuiescent(), false, 'PENDING backend data is not a bank boundary');
+		backend.executeGxGpuReadback(gpu);
+		gpu.retireExecutedCommands();
+		assert.equal(gpu.readGp0(), 0x22221111);
+		const readback = gpu.readDeviceOutput().readbackPort;
+		const userBytes = readback.pixelBytes;
+		assert.equal(readback.pixelCursor, 2);
+		assert.equal(gpu.supervisorQuiescent(), true);
+		gpu.enterSupervisorContext();
+		assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+		assert.notEqual(readback.pixelBytes, userBytes, 'banking switches buffer ownership');
+		assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, 0);
+		assert.equal(gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST, 0);
+		assert.deepEqual(gpu.captureState().userIngressContext.gp0FifoWords, [((GX_GPU_GP0_DRAW_MODE << 24) | 0x321) >>> 0]);
+		if (saved) {
+			const snapshot = gpu.captureSaveState();
+			gpu = createGpu().gpu;
+			gpu.restoreSaveState(snapshot);
+		}
+		// The monitor's own completed-but-unread transfer is transient on LEAVE.
+		gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+		gpu.writeGp0(0);
+		gpu.writeGp0((1 << 16) | 1);
+		completeGpuCommands(gpu);
+		backend.executeGxGpuReadback(gpu);
+		gpu.retireExecutedCommands();
+		assert.equal(gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_READY);
+		gpu.beginSupervisorQuiesce();
+		assert.equal(gpu.supervisorQuiescent(), true);
+		gpu.leaveSupervisorContext();
+		const resumed = gpu.readDeviceOutput().readbackPort;
+		assert.equal(resumed.phase, GX_GPU_READBACK_READY);
+		assert.equal(resumed.pixelCursor, 2);
+		assert.equal(resumed.width, 5);
+		if (!saved) assert.equal(resumed.pixelBytes, userBytes);
+		assert.equal(gpu.readGpuReadWord(), 0x22221111);
+		assert.notEqual(gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST, 0);
+		assert.equal(gpu.readDrawModeWord(), 0);
+		assert.equal(gpu.readGp0(), 0x44443333);
+		assert.equal(gpu.readDrawModeWord(), 0, 'queued command waits for final unread pixel');
+		assert.equal(gpu.readGp0(), 0x00005555);
+		assert.equal(resumed.phase, GX_GPU_READBACK_IDLE);
+		assert.equal(gpu.readDrawModeWord(), 0x321, 'original queued word resumes after original transfer');
+		gpu.reset();
+		const reset = gpu.captureState().userIngressContext;
+		assert.equal(reset.readbackPhase, GX_GPU_READBACK_IDLE);
+		assert.equal(reset.readbackPixelBytes.length, 0);
+		assert.deepEqual(reset.gp0FifoWords, []);
+	}
+});
+
 test('GX-GPU executes PSX polylines incrementally with retained endpoint state', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;

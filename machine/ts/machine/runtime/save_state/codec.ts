@@ -735,6 +735,17 @@ function encodeGxGpuIngressContextState(state: GxGpuIngressContextState): GxGpuI
 		gp0PolylinePositionWord: state.gp0PolylinePositionWord >>> 0,
 		gp0PolylineNextColorWord: state.gp0PolylineNextColorWord >>> 0,
 		commandBufferWords: encodeVector(state.commandBufferWords, (word) => word >>> 0),
+		readbackPhase: state.readbackPhase,
+		readbackFenceCommandCount: state.readbackFenceCommandCount,
+		readbackX: state.readbackX,
+		readbackY: state.readbackY,
+		readbackVramYAddressExtensionWord: state.readbackVramYAddressExtensionWord,
+		readbackWidth: state.readbackWidth,
+		readbackHeight: state.readbackHeight,
+		readbackPixelCursor: state.readbackPixelCursor,
+		readbackPixelBytes: state.readbackPixelBytes,
+		gp0FifoWords: encodeVector(state.gp0FifoWords, (word) => word >>> 0),
+		gp0DmaIngressWords: encodeVector(state.gp0DmaIngressWords, (word) => word >>> 0),
 	};
 }
 
@@ -757,6 +768,17 @@ function decodeGxGpuIngressContextState(value: unknown, label: string): GxGpuIng
 		gp0PolylinePositionWord: requireBoundedU32(requireObjectKey(object, 'gp0PolylinePositionWord', label, `${label}.gp0PolylinePositionWord`), `${label}.gp0PolylinePositionWord`, 0, 0xffffffff),
 		gp0PolylineNextColorWord: requireBoundedU32(requireObjectKey(object, 'gp0PolylineNextColorWord', label, `${label}.gp0PolylineNextColorWord`), `${label}.gp0PolylineNextColorWord`, 0, 0xffffffff),
 		commandBufferWords: decodeU32VectorWithMaxLength(requireObjectKey(object, 'commandBufferWords', label, `${label}.commandBufferWords`), `${label}.commandBufferWords`, GX_GPU_COMMAND_WORD_CAPACITY),
+		readbackPhase: requireBoundedU32(requireObjectKey(object, 'readbackPhase', label, `${label}.readbackPhase`), `${label}.readbackPhase`, 0, 0xffffffff),
+		readbackFenceCommandCount: requireBoundedU32(requireObjectKey(object, 'readbackFenceCommandCount', label, `${label}.readbackFenceCommandCount`), `${label}.readbackFenceCommandCount`, 0, 0xffffffff),
+		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, 0xffffffff),
+		readbackY: requireBoundedU32(requireObjectKey(object, 'readbackY', label, `${label}.readbackY`), `${label}.readbackY`, 0, 0xffffffff),
+		readbackVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'readbackVramYAddressExtensionWord', label, `${label}.readbackVramYAddressExtensionWord`), `${label}.readbackVramYAddressExtensionWord`, 0, 0xffffffff),
+		readbackWidth: requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, 0xffffffff),
+		readbackHeight: requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, 0xffffffff),
+		readbackPixelCursor: requireBoundedU32(requireObjectKey(object, 'readbackPixelCursor', label, `${label}.readbackPixelCursor`), `${label}.readbackPixelCursor`, 0, 0xffffffff),
+		readbackPixelBytes: requireBinaryValue(requireObjectKey(object, 'readbackPixelBytes', label, `${label}.readbackPixelBytes`), `${label}.readbackPixelBytes`),
+		gp0FifoWords: decodeVector(requireObjectKey(object, 'gp0FifoWords', label, `${label}.gp0FifoWords`), `${label}.gp0FifoWords`, (word, index) => requireBoundedU32(word, `${label}.gp0FifoWords[${index}]`, 0, 0xffffffff)),
+		gp0DmaIngressWords: decodeVector(requireObjectKey(object, 'gp0DmaIngressWords', label, `${label}.gp0DmaIngressWords`), `${label}.gp0DmaIngressWords`, (word, index) => requireBoundedU32(word, `${label}.gp0DmaIngressWords[${index}]`, 0, 0xffffffff)),
 	};
 }
 

@@ -173,9 +173,12 @@ void GxGpu::clearIngressContext(GxGpuIngressContextBank& context) {
 	context.gp0PolylinePositionWord = 0u;
 	context.gp0PolylineNextColorWord = 0u;
 	context.commandBufferWordCount = 0u;
+	context.gp0Fifo.reset();
+	context.gp0DmaIngress.reset();
+	context.readback.clear();
 }
 
-void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) const {
+void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) {
 	context.gp0CommandTargetWordCount = m_gp0CommandTargetWordCount;
 	context.gp0CommandWordCount = m_gp0CommandWordCount;
 	std::copy(m_gp0CommandWords.begin(), m_gp0CommandWords.begin() + static_cast<std::ptrdiff_t>(m_gp0CommandWordCount), context.gp0CommandWords.begin());
@@ -194,9 +197,12 @@ void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) const {
 	context.gp0PolylineNextColorWord = m_gp0PolylineNextColorWord;
 	context.commandBufferWordCount = m_commandBuffer.wordCount;
 	std::copy(m_commandBuffer.words.begin(), m_commandBuffer.words.begin() + static_cast<std::ptrdiff_t>(m_commandBuffer.wordCount), context.commandBufferWords->begin());
+	std::swap(m_gp0Fifo, context.gp0Fifo);
+	std::swap(m_gp0DmaIngress, context.gp0DmaIngress);
+	m_commandBuffer.readback.swapContext(context.readback);
 }
 
-void GxGpu::loadLiveIngressContext(const GxGpuIngressContextBank& context) {
+void GxGpu::loadLiveIngressContext(GxGpuIngressContextBank& context) {
 	m_gp0CommandWordCount = context.gp0CommandWordCount;
 	m_gp0CommandTargetWordCount = context.gp0CommandTargetWordCount;
 	std::copy(context.gp0CommandWords.begin(), context.gp0CommandWords.begin() + static_cast<std::ptrdiff_t>(context.gp0CommandWordCount), m_gp0CommandWords.begin());
@@ -215,6 +221,9 @@ void GxGpu::loadLiveIngressContext(const GxGpuIngressContextBank& context) {
 	m_gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
 	m_commandBuffer.wordCount = context.commandBufferWordCount;
 	std::copy(context.commandBufferWords->begin(), context.commandBufferWords->begin() + static_cast<std::ptrdiff_t>(context.commandBufferWordCount), m_commandBuffer.words.begin());
+	std::swap(m_gp0Fifo, context.gp0Fifo);
+	std::swap(m_gp0DmaIngress, context.gp0DmaIngress);
+	m_commandBuffer.readback.swapContext(context.readback);
 }
 
 GxGpuIngressContextState GxGpu::captureIngressContext(const GxGpuIngressContextBank& context) const {
@@ -235,6 +244,19 @@ GxGpuIngressContextState GxGpu::captureIngressContext(const GxGpuIngressContextB
 	state.gp0PolylinePositionWord = context.gp0PolylinePositionWord;
 	state.gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
 	state.commandBufferWords.assign(context.commandBufferWords->begin(), context.commandBufferWords->begin() + static_cast<std::ptrdiff_t>(context.commandBufferWordCount));
+	state.gp0FifoWords = context.gp0Fifo.captureWords();
+	state.gp0DmaIngressWords = context.gp0DmaIngress.captureWords();
+	state.readbackPhase = context.readback.phase;
+	state.readbackFenceCommandCount = context.readback.fenceCommandCount;
+	state.readbackX = context.readback.x;
+	state.readbackY = context.readback.y;
+	state.readbackVramYAddressExtensionWord = context.readback.vramYAddressExtensionWord;
+	state.readbackWidth = context.readback.width;
+	state.readbackHeight = context.readback.height;
+	state.readbackPixelCursor = context.readback.pixelCursor;
+	if (context.readback.phase == GX_GPU_READBACK_READY) {
+		state.readbackPixelBytes.assign(context.readback.pixelBytes.get(), context.readback.pixelBytes.get() + static_cast<size_t>(context.readback.width) * context.readback.height * 2u);
+	}
 	return state;
 }
 
@@ -257,9 +279,22 @@ void GxGpu::restoreIngressContext(GxGpuIngressContextBank& context, const GxGpuI
 	context.gp0PolylineNextColorWord = state.gp0PolylineNextColorWord;
 	context.commandBufferWordCount = state.commandBufferWords.size();
 	std::copy(state.commandBufferWords.begin(), state.commandBufferWords.end(), context.commandBufferWords->begin());
+	context.gp0Fifo.restoreWords(state.gp0FifoWords);
+	context.gp0DmaIngress.restoreWords(state.gp0DmaIngressWords);
+	context.readback.phase = state.readbackPhase;
+	context.readback.fenceCommandCount = state.readbackFenceCommandCount;
+	context.readback.x = state.readbackX;
+	context.readback.y = state.readbackY;
+	context.readback.vramYAddressExtensionWord = state.readbackVramYAddressExtensionWord;
+	context.readback.width = state.readbackWidth;
+	context.readback.height = state.readbackHeight;
+	context.readback.pixelCursor = state.readbackPixelCursor;
+	std::copy(state.readbackPixelBytes.begin(), state.readbackPixelBytes.end(), context.readback.pixelBytes.get());
 }
 
 void GxGpu::resetTransientContext() {
+	m_gp0Fifo.reset();
+	m_gp0DmaIngress.reset();
 	m_commandBuffer.reset();
 	clearGp0CommandState();
 	m_gpuReadWord = 0u;
@@ -461,12 +496,12 @@ bool GxGpu::supervisorFenceReady() const {
 	return m_supervisorIngressQuiesceRequested
 		&& m_supervisorIngressStopped
 		&& m_pendingCommandCompletionCycle == 0
-		&& m_gp0DmaIngress.empty()
-		&& m_gp0Fifo.empty()
-		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
+		&& (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
+			|| m_commandBuffer.readback.phase() == GX_GPU_READBACK_READY)
 		&& m_commandBuffer.commandCount == 0u;
 }
 
+// USER ingress and unread pixels retain ownership while the transient supervisor runs.
 void GxGpu::enterSupervisorContext() {
 	updateScanoutStatusBits();
 	updateDynamicStatusBits();
@@ -480,6 +515,7 @@ void GxGpu::enterSupervisorContext() {
 	m_pcrtcPresentationPending = true;
 }
 
+// LEAVE tears down supervisor scratch, including its unread readback, then resumes USER.
 void GxGpu::leaveSupervisorContext() {
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressQuiesceRequested = false;

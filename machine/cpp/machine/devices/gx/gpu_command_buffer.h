@@ -63,6 +63,29 @@ struct GxGpuCommandBufferState {
 	std::vector<u8> readbackPixelBytes;
 };
 
+struct GxGpuReadbackContext {
+	u8 phase = GX_GPU_READBACK_IDLE;
+	size_t fenceCommandCount = 0u;
+	u32 x = 0u;
+	u32 y = 0u;
+	u8 vramYAddressExtensionWord = 0u;
+	u32 width = 0u;
+	u32 height = 0u;
+	u32 pixelCursor = 0u;
+	std::unique_ptr<u8[]> pixelBytes = std::make_unique<u8[]>(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
+
+	void clear() {
+		phase = GX_GPU_READBACK_IDLE;
+		fenceCommandCount = 0u;
+		x = 0u;
+		y = 0u;
+		vramYAddressExtensionWord = 0u;
+		width = 0u;
+		height = 0u;
+		pixelCursor = 0u;
+	}
+};
+
 class GxGpuReadbackPort {
 public:
 	explicit GxGpuReadbackPort(DmaController& dmaController)
@@ -98,6 +121,21 @@ public:
 			m_phase = GX_GPU_READBACK_READY;
 			updateDmaRequest();
 		}
+	}
+
+	// Switch owned storage at the supervisor boundary, never consume guest pixels.
+	void swapContext(GxGpuReadbackContext& context) {
+		std::swap(m_phase, context.phase);
+		std::swap(m_fenceCommandCount, context.fenceCommandCount);
+		std::swap(m_x, context.x);
+		std::swap(m_y, context.y);
+		std::swap(m_vramYAddressExtensionWord, context.vramYAddressExtensionWord);
+		std::swap(m_width, context.width);
+		std::swap(m_height, context.height);
+		std::swap(m_pixelCursor, context.pixelCursor);
+		m_pixelBytes.swap(context.pixelBytes);
+		m_token += 1u;
+		updateDmaRequest();
 	}
 
 private:

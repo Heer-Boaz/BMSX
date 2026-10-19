@@ -775,6 +775,17 @@ BinValue encodeGxGpuIngressContextState(const GxGpuIngressContextState& state) {
 	object["gp0PolylinePositionWord"] = static_cast<i64>(state.gp0PolylinePositionWord);
 	object["gp0PolylineNextColorWord"] = static_cast<i64>(state.gp0PolylineNextColorWord);
 	object["commandBufferWords"] = encodeVector(state.commandBufferWords, encodeScalar<i64, u32>);
+	object["readbackPhase"] = static_cast<i64>(state.readbackPhase);
+	object["readbackFenceCommandCount"] = static_cast<i64>(state.readbackFenceCommandCount);
+	object["readbackX"] = static_cast<i64>(state.readbackX);
+	object["readbackY"] = static_cast<i64>(state.readbackY);
+	object["readbackVramYAddressExtensionWord"] = static_cast<i64>(state.readbackVramYAddressExtensionWord);
+	object["readbackWidth"] = static_cast<i64>(state.readbackWidth);
+	object["readbackHeight"] = static_cast<i64>(state.readbackHeight);
+	object["readbackPixelCursor"] = static_cast<i64>(state.readbackPixelCursor);
+	object["readbackPixelBytes"] = BinBinary(state.readbackPixelBytes);
+	object["gp0FifoWords"] = encodeVector(state.gp0FifoWords, encodeScalar<i64, u32>);
+	object["gp0DmaIngressWords"] = encodeVector(state.gp0DmaIngressWords, encodeScalar<i64, u32>);
 	return BinValue(std::move(object));
 }
 
@@ -797,6 +808,17 @@ GxGpuIngressContextState decodeGxGpuIngressContextState(const BinValue& value, c
 	state.gp0PolylinePositionWord = requireU32(requireField(object, "gp0PolylinePositionWord", label), "machine.gxGpu.userIngressContext.gp0PolylinePositionWord");
 	state.gp0PolylineNextColorWord = requireU32(requireField(object, "gp0PolylineNextColorWord", label), "machine.gxGpu.userIngressContext.gp0PolylineNextColorWord");
 	state.commandBufferWords = decodeU32VectorWithMaxLength(requireField(object, "commandBufferWords", label), "machine.gxGpu.userIngressContext.commandBufferWords", GX_GPU_COMMAND_WORD_CAPACITY);
+	state.readbackPhase = static_cast<u8>(requireU32(requireField(object, "readbackPhase", label), "machine.gxGpu.userIngressContext.readbackPhase"));
+	state.readbackWidth = requireU32(requireField(object, "readbackWidth", label), "machine.gxGpu.userIngressContext.readbackWidth");
+	state.readbackHeight = requireU32(requireField(object, "readbackHeight", label), "machine.gxGpu.userIngressContext.readbackHeight");
+	state.readbackFenceCommandCount = requireU32(requireField(object, "readbackFenceCommandCount", label), "machine.gxGpu.userIngressContext.readbackFenceCommandCount");
+	state.readbackX = requireU32(requireField(object, "readbackX", label), "machine.gxGpu.userIngressContext.readbackX");
+	state.readbackY = requireU32(requireField(object, "readbackY", label), "machine.gxGpu.userIngressContext.readbackY");
+	state.readbackVramYAddressExtensionWord = static_cast<u8>(requireU32(requireField(object, "readbackVramYAddressExtensionWord", label), "machine.gxGpu.userIngressContext.readbackVramYAddressExtensionWord"));
+	state.readbackPixelCursor = requireU32(requireField(object, "readbackPixelCursor", label), "machine.gxGpu.userIngressContext.readbackPixelCursor");
+	state.readbackPixelBytes = requireBinary(requireField(object, "readbackPixelBytes", label), "machine.gxGpu.userIngressContext.readbackPixelBytes");
+	state.gp0FifoWords = decodeVector<u32>(requireField(object, "gp0FifoWords", label), "machine.gxGpu.userIngressContext.gp0FifoWords", [](const BinValue& word, size_t) { return requireU32(word, "machine.gxGpu.userIngressContext.gp0FifoWords[]"); });
+	state.gp0DmaIngressWords = decodeVector<u32>(requireField(object, "gp0DmaIngressWords", label), "machine.gxGpu.userIngressContext.gp0DmaIngressWords", [](const BinValue& word, size_t) { return requireU32(word, "machine.gxGpu.userIngressContext.gp0DmaIngressWords[]"); });
 	return state;
 }
 

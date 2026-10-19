@@ -3,6 +3,7 @@
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/gx/pcrtc.h"
+#include "spec/gx/gp0.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/gx/gte.h"
@@ -356,6 +357,43 @@ void testSupervisorFaultPublicationBoundary() {
 		memory.readMappedU32LE(bmsx::IO_SYS_SUPERVISOR_FAULT_SEQUENCE) == 1u,
 		"firmware publication advances the physical fault sequence"
 	);
+}
+
+void testSupervisorFaultParksUnreadReadbackAndWireState() {
+	SystemRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& machine = runtime.machine;
+	auto& gpu = machine.gxGpu;
+	auto& memory = machine.memory;
+	const auto& bytes = gpu.readVramSnapshotBytes();
+	const bmsx::u32 expected = static_cast<bmsx::u32>(bytes[0]) | (static_cast<bmsx::u32>(bytes[1]) << 8u);
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
+	gpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
+	auto& readback = gpu.readDeviceOutput().readbackPort;
+	require(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), "readback backend claims the completed C0 fence");
+	readback.pixelBytes()[0] = bytes[0];
+	readback.pixelBytes()[1] = bytes[1];
+	readback.completeReadback(readback.token());
+	gpu.retireExecutedCommands();
+	require(gpu.readDeviceOutput().readbackPort.phase() == bmsx::GX_GPU_READBACK_READY, "fault test starts with unread READY pixels");
+	memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_SUPERVISOR_FAULT);
+	require(machine.systemController.cpuHeld(), "FAULT holds CPU during context transition");
+	machine.systemController.onService();
+	require(!machine.systemController.cpuHeld(), "unread GPUREAD no longer deadlocks FAULT entry");
+	require((memory.readMappedU32LE(bmsx::IO_SYS_STATUS) & bmsx::SYS_STATUS_SUPERVISOR_ACTIVE) != 0u, "FAULT reaches ACTIVE");
+	require(gpu.readDeviceOutput().readbackPort.phase() == bmsx::GX_GPU_READBACK_IDLE, "supervisor uses empty active transfer");
+	require(gpu.captureState().userIngressContext.readbackPhase == bmsx::GX_GPU_READBACK_READY, "USER unread pixels remain parked");
+	bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(
+		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime)),
+		memory.ramByteCount(), bytes.size()));
+	memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_SUPERVISOR_LEAVE);
+	machine.systemController.onService();
+	require(!machine.systemController.supervisorContextActive(), "LEAVE returns to USER");
+	require(gpu.readDeviceOutput().readbackPort.phase() == bmsx::GX_GPU_READBACK_READY, "wire state preserves parked USER readback");
+	require(gpu.readGp0() == expected, "USER receives its exact original unread pixel");
+	require(gpu.readDeviceOutput().readbackPort.phase() == bmsx::GX_GPU_READBACK_IDLE, "USER actual consume completes the transfer");
 }
 
 void testNestedSupervisorFaultPreservesExitRequest() {
@@ -1067,6 +1105,7 @@ void testRuntimeRestorePreservesInFlightFrameBudget() {
 int main() {
 	testResetCommandLatch();
 	testSupervisorFaultPublicationBoundary();
+	testSupervisorFaultParksUnreadReadbackAndWireState();
 	testNestedSupervisorFaultPreservesExitRequest();
 	testSystemTimingRegisters();
 	testSystemFrameMillisecondsQ16WordWidth();

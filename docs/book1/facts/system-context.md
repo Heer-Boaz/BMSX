@@ -397,3 +397,14 @@ Source agreement in this named boundary; no new audio playback/physical output
 claim or dedicated execution test added here.
 
 ---
+
+## SX02/SX03 ownership update — 2026-10-19
+
+The historical IDLE/empty-ingress fence above is superseded by RDB01's actual
+owner change. Stable readback is IDLE or READY; PENDING/SUBMITTED still require
+backend completion, and the rendered command prefix must be retired. USER
+banking now retains both FIFOs plus raw readback descriptor/cursor/pixel-buffer
+ownership and the existing GPUREAD register latch. Supervisor scratch starts
+empty and is explicitly torn down on LEAVE, before USER restoration. No guest
+read is invented, and shared VRAM is not restored. The current source ranges
+and paired regression/ordinary-ROM evidence are in [RDB01](system-readback-entry.md#retained-user-readback-ownership--resolved-2026-10-19).

@@ -154,3 +154,15 @@ separators. RDB01 fault coverage and final print acceptance remain open.
 The 2026-10-19 INPUT preservation-table row has a bounded independent source
 PASS recorded in [input-source.md](input-source.md#bios-handoff-and-supervisor-ownership--2026-10-19).
 RDB01 and final print remain open; no runtime or supervisor policy was changed.
+
+## RDB01 owner resolution and bounded manuscript update — 2026-10-19
+
+The implementing slice replaces the old IDLE/empty-FIFO requirement with stable
+READY/IDLE ownership banking, including unread USER pixels/cursor, GPUREAD and
+queued ingress. SYSTEM's GPU-boundary/preservation rows and LEAVE paragraph now
+state that distinction and explicitly transient supervisor teardown. The
+[existing RDB01 fact record](../facts/system-readback-entry.md#retained-user-readback-ownership--resolved-2026-10-19)
+contains exact owner ranges and the passing 39-assertion ordinary unread-fault
+reproduction. The former readback-entry liveness hold is resolved. This implementation
+note is not independent approval of the changed sentences or final print;
+those existing decisions remain false until integration checks them.

@@ -95,7 +95,7 @@ export type GxGpuReadbackPortView = GxGpuReadbackView & {
 	completeReadback(token: number): void;
 };
 
-class GxGpuReadbackPort implements GxGpuReadbackPortView {
+export class GxGpuReadbackContext {
 	public phase = GX_GPU_READBACK_IDLE;
 	public fenceCommandCount = 0;
 	public x = 0;
@@ -104,11 +104,59 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public width = 0;
 	public height = 0;
 	public pixelCursor = 0;
-	public readonly pixelBytes = new Uint8Array(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
+	public pixelBytes = new Uint8Array(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
+
+	public clear(): void {
+		this.phase = GX_GPU_READBACK_IDLE;
+		this.fenceCommandCount = 0;
+		this.x = 0;
+		this.y = 0;
+		this.vramYAddressExtensionWord = 0;
+		this.width = 0;
+		this.height = 0;
+		this.pixelCursor = 0;
+	}
+}
+
+class GxGpuReadbackPort extends GxGpuReadbackContext implements GxGpuReadbackPortView {
 	public token = 0;
 	private dmaReadEnabled = false;
 
 	public constructor(private readonly dmaController: DmaController) {
+		super();
+	}
+
+	/** Switch owned storage at the supervisor boundary, never consume guest pixels. */
+	public swapContext(context: GxGpuReadbackContext): void {
+		let word = this.phase;
+		this.phase = context.phase;
+		context.phase = word;
+		word = this.fenceCommandCount;
+		this.fenceCommandCount = context.fenceCommandCount;
+		context.fenceCommandCount = word;
+		word = this.x;
+		this.x = context.x;
+		context.x = word;
+		word = this.y;
+		this.y = context.y;
+		context.y = word;
+		word = this.vramYAddressExtensionWord;
+		this.vramYAddressExtensionWord = context.vramYAddressExtensionWord;
+		context.vramYAddressExtensionWord = word;
+		word = this.width;
+		this.width = context.width;
+		context.width = word;
+		word = this.height;
+		this.height = context.height;
+		context.height = word;
+		word = this.pixelCursor;
+		this.pixelCursor = context.pixelCursor;
+		context.pixelCursor = word;
+		const bytes = this.pixelBytes;
+		this.pixelBytes = context.pixelBytes;
+		context.pixelBytes = bytes;
+		this.token = (this.token + 1) >>> 0;
+		this.updateDmaRequest();
 	}
 
 	public setDmaReadEnabled(enabled: boolean): void {
@@ -194,7 +242,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 }
 
 let gxGpuCommandBufferNextSerial = 0;
-const gxGpuEmptyReadbackPixelBytes = new Uint8Array(0);
+export const GX_GPU_EMPTY_READBACK_PIXEL_BYTES = new Uint8Array(0);
 
 export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	private publishRevision(): void {
@@ -306,7 +354,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			readbackPixelCursor: this.readback.pixelCursor,
 			readbackPixelBytes: this.readback.phase === GX_GPU_READBACK_READY
 				? this.readback.pixelBytes.slice(0, this.readback.width * this.readback.height * 2)
-				: gxGpuEmptyReadbackPixelBytes,
+				: GX_GPU_EMPTY_READBACK_PIXEL_BYTES,
 		};
 	}
 

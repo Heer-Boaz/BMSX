@@ -1,4 +1,6 @@
 import { cartridgeSlots } from '../helpers/cartridge';
+import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
+import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -190,6 +192,45 @@ test('supervisor fault capture is published only at the firmware presentation bo
 	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0);
 	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH);
 	assert.equal(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 1);
+});
+
+test('synchronous-fault context entry parks unread GPUREAD and its save-state survives until LEAVE', () => {
+	const images = linkRawTestBlua32Pair(makeExecutionSelectorSystemSource(), makeClosureCartSource(1, 'readback_fault.lua', true));
+	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
+	runtime.boot();
+	const machine = runtime.machine;
+	const gpu = machine.gxGpu;
+	const memory = machine.memory;
+	const source = gpu.readVramSnapshotBytes();
+	const expected = source[0]! | (source[1]! << 8);
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+	gpu.onService(Number.MAX_SAFE_INTEGER);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), true);
+	readback.pixelBytes[0] = source[0]!;
+	readback.pixelBytes[1] = source[1]!;
+	readback.completeReadback(readback.token);
+	gpu.retireExecutedCommands();
+	assert.equal(gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_READY);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	assert.equal(machine.systemController.cpuHeld(), true);
+	machine.systemController.onService();
+	assert.equal(machine.systemController.cpuHeld(), false);
+	assert.notEqual(memory.readMappedU32LE(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE, 0);
+	assert.equal(gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(gpu.captureState().userIngressContext.readbackPhase, GX_GPU_READBACK_READY);
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(
+		encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+		memory.ramByteCount(), source.byteLength,
+	));
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	machine.systemController.onService();
+	assert.equal(machine.systemController.supervisorContextActive(), false);
+	assert.equal(gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_READY);
+	assert.equal(gpu.readGp0(), expected);
+	assert.equal(gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 });
 
 test('a nested supervisor fault preserves the latched exit request', () => {

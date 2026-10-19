@@ -118,6 +118,17 @@ struct GxGpuIngressContextState {
 	u32 gp0PolylinePositionWord = 0u;
 	u32 gp0PolylineNextColorWord = 0u;
 	std::vector<u32> commandBufferWords;
+	std::vector<u32> gp0FifoWords;
+	std::vector<u32> gp0DmaIngressWords;
+	u8 readbackPhase = 0u;
+	size_t readbackFenceCommandCount = 0u;
+	u32 readbackX = 0u;
+	u32 readbackY = 0u;
+	u8 readbackVramYAddressExtensionWord = 0u;
+	u32 readbackWidth = 0u;
+	u32 readbackHeight = 0u;
+	u32 readbackPixelCursor = 0u;
+	std::vector<u8> readbackPixelBytes;
 };
 
 struct GxGpuIngressContextBank {
@@ -139,6 +150,9 @@ struct GxGpuIngressContextBank {
 	u32 gp0PolylineNextColorWord = 0u;
 	size_t commandBufferWordCount = 0u;
 	std::unique_ptr<std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY>> commandBufferWords;
+	WordFifo<GX_GPU_COMMAND_FIFO_WORD_CAPACITY> gp0Fifo;
+	WordFifo<GX_GPU_DMA_INGRESS_WORD_CAPACITY> gp0DmaIngress;
+	GxGpuReadbackContext readback;
 };
 
 struct GxGpuState {
@@ -344,8 +358,8 @@ private:
 	void storeLiveRegisterContext(GxGpuRegisterContextState& context) const;
 	void loadLiveRegisterContext(const GxGpuRegisterContextState& context);
 	void clearIngressContext(GxGpuIngressContextBank& context);
-	void storeLiveIngressContext(GxGpuIngressContextBank& context) const;
-	void loadLiveIngressContext(const GxGpuIngressContextBank& context);
+	void storeLiveIngressContext(GxGpuIngressContextBank& context);
+	void loadLiveIngressContext(GxGpuIngressContextBank& context);
 	GxGpuIngressContextState captureIngressContext(const GxGpuIngressContextBank& context) const;
 	void restoreIngressContext(GxGpuIngressContextBank& context, const GxGpuIngressContextState& state);
 	void resetTransientContext();

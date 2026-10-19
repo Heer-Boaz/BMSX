@@ -2200,6 +2200,68 @@ void testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands() {
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
 }
 
+void testSupervisorBanksUnreadReadbackAndTransientTeardown() {
+	for (bool saved : {false, true}) {
+		GpuHarness harness;
+		bmsx::GxGpu& gpu = harness.gpu;
+		std::vector<bmsx::u8> bytes(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const std::array<bmsx::u8, 10u> samples{0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55};
+		std::copy(samples.begin(), samples.end(), bytes.begin());
+		gpu.replaceVramSnapshotBytes(bytes);
+		gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+		gpu.writeGp0(0u);
+		gpu.writeGp0((1u << 16u) | 5u);
+		completeGpuCommands(harness);
+		gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x321u);
+		gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+		gpu.beginSupervisorControlQuiesce();
+		gpu.beginSupervisorQuiesce();
+		require(!gpu.supervisorQuiescent(), "PENDING backend data is not a bank boundary");
+		const auto& output = gpu.readDeviceOutput();
+		SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+		frame.backend.executeGxGpuReadback(gpu);
+		gpu.retireExecutedCommands();
+		require(gpu.readGp0() == 0x22221111u, "user consumes the first two pixels");
+		const auto* userBytes = output.readbackPort.pixelBytes();
+		require(output.readbackPort.pixelCursor() == 2u, "user cursor retains three unread pixels");
+		require(gpu.supervisorQuiescent(), "READY readback and queued ingress can be parked");
+		gpu.enterSupervisorContext();
+		require(output.readbackPort.phase() == bmsx::GX_GPU_READBACK_IDLE, "supervisor starts with empty readback");
+		require(output.readbackPort.pixelBytes() != userBytes, "entry switches buffer ownership without cloning");
+		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "parked USER data does not drive active DREQ");
+		require(gpu.captureState().userIngressContext.gp0FifoWords == std::vector<bmsx::u32>{(bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x321u}, "bank retains queued environment word");
+		if (saved) {
+			const auto snapshot = gpu.captureSaveState();
+			gpu.reset();
+			gpu.restoreSaveState(snapshot);
+		}
+		gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+		gpu.writeGp0(0u);
+		gpu.writeGp0((1u << 16u) | 1u);
+		completeGpuCommands(harness);
+		frame.backend.executeGxGpuReadback(gpu);
+		gpu.retireExecutedCommands();
+		require(output.readbackPort.phase() == bmsx::GX_GPU_READBACK_READY, "supervisor creates its own unread scratch transfer");
+		gpu.beginSupervisorQuiesce();
+		require(gpu.supervisorQuiescent(), "LEAVE admits terminal supervisor readback for explicit teardown");
+		gpu.leaveSupervisorContext();
+		require(output.readbackPort.phase() == bmsx::GX_GPU_READBACK_READY, "LEAVE restores unread USER transfer");
+		require(output.readbackPort.pixelCursor() == 2u && output.readbackPort.width() == 5u, "LEAVE restores exact USER descriptor and cursor");
+		if (!saved) require(output.readbackPort.pixelBytes() == userBytes, "LEAVE returns original buffer ownership");
+		require(gpu.readGpuReadWord() == 0x22221111u, "LEAVE restores retained GPUREAD latch");
+		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "restored USER bank drives its own DREQ");
+		require(gpu.readDrawModeWord() == 0u, "queued USER command has not run");
+		require(gpu.readGp0() == 0x44443333u, "USER resumes at its original unread cursor");
+		require(gpu.readDrawModeWord() == 0u, "queued command waits for final pixel");
+		require(gpu.readGp0() == 0x5555u, "odd final USER pixel remains exact");
+		require(output.readbackPort.phase() == bmsx::GX_GPU_READBACK_IDLE, "only actual reads consume USER data");
+		require(gpu.readDrawModeWord() == 0x321u, "original queued suffix resumes after USER readback");
+		gpu.reset();
+		const auto reset = gpu.captureState().userIngressContext;
+		require(reset.readbackPhase == bmsx::GX_GPU_READBACK_IDLE && reset.readbackPixelBytes.empty() && reset.gp0FifoWords.empty(), "device reset explicitly clears parked USER state");
+	}
+}
+
 void testGp1ClearFifoAbortsReadyGpureadAndQueuedSuffix() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -4727,6 +4789,7 @@ int main() {
 	testGpureadDoesNotClaimC0AppendedAfterPublishedFence();
 	testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands();
 	testGp1ClearFifoAbortsReadyGpureadAndQueuedSuffix();
+	testSupervisorBanksUnreadReadbackAndTransientTeardown();
 	testGpureadRestoreRearmsSubmittedAndResetClearsRequest();
 	testSoftwareBackendConsumesOnlyPresentableCommands();
 	testSoftwareBackendCapturesMidFrameVramAndPublishesItOnce();

@@ -82,7 +82,7 @@ system cycles.
 |---|---|---|
 | Producer boundary | GEO is no longer BUSY; IMGDEC has no scheduled decode batch | GEO may complete normally or report its normal error. IMGDEC need not finish the stream or empty its FIFOs. |
 | DMA boundary | No admitted block and no DMA service in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
-| GPU boundary | Ingress has stopped, both ingress FIFOs are empty, no command completion is pending, readback is idle and no commands remain queued | A partial packet can still exist in assembly storage. The boundary is not a requirement that all packet-assembly words be zero. |
+| GPU boundary | Ingress has stopped, no command completion is pending, readback is idle or its unread result is complete, and no commands remain queued for rendering | The completed unread result and words waiting behind it can be retained. An unfinished readback must complete before this boundary; the fence does not consume pixels. |
 
 At the start of entry, new GEO CMD and DMA TRIGGER writes are held at their
 admission gates, as are GPU GP1 control writes. IMGDEC suppresses its input and
@@ -102,7 +102,7 @@ The following preservation rules apply to that activated context:
 |---|---|---|
 | IRQ | Cartridge FLAGS and MASK are retained; supervisor FLAGS and MASK start at zero. Leave restores the retained cartridge words. | Supervisor pending bits are not merged into the restored cartridge word. A request explicitly directed to the retained cartridge bank can accumulate there. |
 | DMA | Channel register words and the next-channel arbitration position are retained. Supervisor channels start clear. Leave restores the cartridge channels and resumes arbitration. | Payload RAM is not copied. Quiescing one admitted block is not completion of the entire transfer. |
-| GPU | Cartridge drawing/display registers and partial packet, image-load and polyline assembly state are retained and restored. | VRAM remains shared. Restoring registers does not undo supervisor writes to framebuffer or texture bytes. |
+| GPU | Cartridge drawing/display registers, both ingress FIFOs, partial packet/image-load/polyline assembly, and unread readback bytes, descriptor, cursor and GPUREAD latch are retained and restored. Supervisor starts with empty ingress and readback state. | Parked cartridge readback does not drive the supervisor DMA request. VRAM remains shared; restoring the cartridge bank does not undo supervisor writes to framebuffer or texture bytes. |
 | PCRTC | Programmed and presented composition words are retained separately. | Beam timing words and beam phase are not part of this composition bank. |
 | GEO | The current job reaches a terminal phase; new CMD admission remains held until leave. | There is no separate supervisor GEO job/register bank. Its ordinary result and fault words remain meaningful. |
 | IMGDEC | Stream state remains in place at a scheduled-batch boundary and can resume on leave. | Quiescence is not stream DONE, and there is no separate supervisor decoder bank. |
@@ -125,7 +125,11 @@ explained under **Memory and program storage**; a retained cartridge GPU context
 does not grant ownership of those VRAM bytes.
 
 LEAVE crosses the DMA and GPU boundaries for the supervisor's work before
-restoring the cartridge contexts. It releases GEO/IMGDEC admission and the APU
+restoring the cartridge contexts. Supervisor ingress and its own completed unread
+readback are transient scratch discarded by this explicit context teardown;
+cartridge readback resumes at its retained cursor, with its DMA request derived
+from the restored direction and readiness. This is not an implicit read or
+cancellation of the cartridge transfer. LEAVE releases GEO/IMGDEC admission and the APU
 voice hold, and restores the cartridge IRQ bank. That device restoration is
 separate from the CPU's exception return. Neither LEAVE nor a restored register
 bank repairs the faulting cartridge instruction or grants safe reuse of shared

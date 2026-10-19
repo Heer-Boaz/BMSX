@@ -34,6 +34,7 @@ import {
 } from '../../../spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+	GX_GPU_EMPTY_READBACK_PIXEL_BYTES,
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -50,6 +51,7 @@ import {
 	GX_GPU_READBACK_SUBMITTED,
 	GX_GPU_SKIPPED_LINE_NONE,
 	GxGpuCommandBuffer,
+	GxGpuReadbackContext,
 	type GxGpuCommandBufferState,
 } from './gpu_command_buffer';
 import {
@@ -245,6 +247,17 @@ export type GxGpuIngressContextState = {
 	gp0PolylinePositionWord: number;
 	gp0PolylineNextColorWord: number;
 	commandBufferWords: number[];
+	gp0FifoWords: number[];
+	gp0DmaIngressWords: number[];
+	readbackPhase: number;
+	readbackFenceCommandCount: number;
+	readbackX: number;
+	readbackY: number;
+	readbackVramYAddressExtensionWord: number;
+	readbackWidth: number;
+	readbackHeight: number;
+	readbackPixelCursor: number;
+	readbackPixelBytes: Uint8Array;
 };
 
 type GxGpuIngressContextBank = {
@@ -266,6 +279,9 @@ type GxGpuIngressContextBank = {
 	gp0PolylineNextColorWord: number;
 	commandBufferWordCount: number;
 	commandBufferWords: Uint32Array;
+	gp0Fifo: WordFifo;
+	gp0DmaIngress: WordFifo;
+	readback: GxGpuReadbackContext;
 };
 
 export type GxGpuState = {
@@ -333,8 +349,8 @@ export class GxGpu {
 	private readonly commandBuffer: GxGpuCommandBuffer;
 	private readonly pcrtc: GxGpuPcrtc;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
-	private readonly gp0Fifo = new WordFifo(GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
-	private readonly gp0DmaIngress = new WordFifo(GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+	private gp0Fifo = new WordFifo(GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+	private gp0DmaIngress = new WordFifo(GX_GPU_DMA_INGRESS_WORD_CAPACITY);
 	private gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
 	private gp0IngressWordsRemaining = 0;
 	private gp0IngressPolylineWordsPerVertex = 0;
@@ -426,6 +442,9 @@ export class GxGpu {
 		gp0PolylineNextColorWord: 0,
 		commandBufferWordCount: 0,
 		commandBufferWords: new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0Fifo: new WordFifo(GX_GPU_COMMAND_FIFO_WORD_CAPACITY),
+		gp0DmaIngress: new WordFifo(GX_GPU_DMA_INGRESS_WORD_CAPACITY),
+		readback: new GxGpuReadbackContext(),
 	};
 	private readonly vramSnapshotBytes: Uint8Array;
 	private vramSnapshotSerial = 0n;
@@ -572,6 +591,9 @@ export class GxGpu {
 		context.gp0PolylinePositionWord = 0;
 		context.gp0PolylineNextColorWord = 0;
 		context.commandBufferWordCount = 0;
+		context.gp0Fifo.reset();
+		context.gp0DmaIngress.reset();
+		context.readback.clear();
 	}
 
 	private storeLiveIngressContext(context: GxGpuIngressContextBank): void {
@@ -597,6 +619,13 @@ export class GxGpu {
 		for (let index = 0; index < this.commandBuffer.wordCount; index += 1) {
 			context.commandBufferWords[index] = this.commandBuffer.words[index];
 		}
+		const fifo = this.gp0Fifo;
+		this.gp0Fifo = context.gp0Fifo;
+		context.gp0Fifo = fifo;
+		const ingress = this.gp0DmaIngress;
+		this.gp0DmaIngress = context.gp0DmaIngress;
+		context.gp0DmaIngress = ingress;
+		this.commandBuffer.readback.swapContext(context.readback);
 	}
 
 	private loadLiveIngressContext(context: GxGpuIngressContextBank): void {
@@ -622,6 +651,13 @@ export class GxGpu {
 		for (let index = 0; index < context.commandBufferWordCount; index += 1) {
 			this.commandBuffer.words[index] = context.commandBufferWords[index];
 		}
+		const fifo = this.gp0Fifo;
+		this.gp0Fifo = context.gp0Fifo;
+		context.gp0Fifo = fifo;
+		const ingress = this.gp0DmaIngress;
+		this.gp0DmaIngress = context.gp0DmaIngress;
+		context.gp0DmaIngress = ingress;
+		this.commandBuffer.readback.swapContext(context.readback);
 	}
 
 	private captureIngressContext(context: GxGpuIngressContextBank): GxGpuIngressContextState {
@@ -642,6 +678,19 @@ export class GxGpu {
 			gp0PolylinePositionWord: context.gp0PolylinePositionWord,
 			gp0PolylineNextColorWord: context.gp0PolylineNextColorWord,
 			commandBufferWords: Array.from(context.commandBufferWords.subarray(0, context.commandBufferWordCount)),
+			gp0FifoWords: context.gp0Fifo.captureWords(),
+			gp0DmaIngressWords: context.gp0DmaIngress.captureWords(),
+			readbackPhase: context.readback.phase,
+			readbackFenceCommandCount: context.readback.fenceCommandCount,
+			readbackX: context.readback.x,
+			readbackY: context.readback.y,
+			readbackVramYAddressExtensionWord: context.readback.vramYAddressExtensionWord,
+			readbackWidth: context.readback.width,
+			readbackHeight: context.readback.height,
+			readbackPixelCursor: context.readback.pixelCursor,
+			readbackPixelBytes: context.readback.phase === GX_GPU_READBACK_READY
+				? context.readback.pixelBytes.slice(0, context.readback.width * context.readback.height * 2)
+				: GX_GPU_EMPTY_READBACK_PIXEL_BYTES,
 		};
 	}
 
@@ -664,6 +713,17 @@ export class GxGpu {
 		context.gp0PolylineNextColorWord = state.gp0PolylineNextColorWord;
 		context.commandBufferWordCount = state.commandBufferWords.length;
 		context.commandBufferWords.set(state.commandBufferWords);
+		context.gp0Fifo.restoreWords(state.gp0FifoWords);
+		context.gp0DmaIngress.restoreWords(state.gp0DmaIngressWords);
+		context.readback.phase = state.readbackPhase;
+		context.readback.fenceCommandCount = state.readbackFenceCommandCount;
+		context.readback.x = state.readbackX;
+		context.readback.y = state.readbackY;
+		context.readback.vramYAddressExtensionWord = state.readbackVramYAddressExtensionWord;
+		context.readback.width = state.readbackWidth;
+		context.readback.height = state.readbackHeight;
+		context.readback.pixelCursor = state.readbackPixelCursor;
+		context.readback.pixelBytes.set(state.readbackPixelBytes);
 	}
 
 	private storeLiveRegisterContext(context: GxGpuRegisterContextState): void {
@@ -730,6 +790,8 @@ export class GxGpu {
 	}
 
 	private resetTransientContext(): void {
+		this.gp0Fifo.reset();
+		this.gp0DmaIngress.reset();
 		this.commandBuffer.reset();
 		this.clearGp0CommandState();
 		this.gpuReadWord = 0;
@@ -931,12 +993,12 @@ export class GxGpu {
 		return this.supervisorIngressQuiesceRequested
 			&& this.supervisorIngressStopped
 			&& this.pendingCommandCompletionCycle === 0
-			&& this.gp0DmaIngress.empty()
-			&& this.gp0Fifo.empty()
-			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
+			&& (this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
+				|| this.commandBuffer.readback.phase === GX_GPU_READBACK_READY)
 			&& this.commandBuffer.commandCount === 0;
 	}
 
+	// USER ingress and unread pixels retain ownership while the transient supervisor runs.
 	public enterSupervisorContext(): void {
 		this.updateScanoutStatusBits();
 		this.updateDynamicStatusBits();
@@ -950,6 +1012,7 @@ export class GxGpu {
 		this.pcrtcPresentationPending = true;
 	}
 
+	// LEAVE tears down supervisor scratch, including its unread readback, then resumes USER.
 	public leaveSupervisorContext(): void {
 		this.supervisorQuiesceRequested = false;
 		this.supervisorIngressQuiesceRequested = false;

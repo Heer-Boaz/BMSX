@@ -1,10 +1,10 @@
 # RDB01 — unread GPU readback blocks synchronous-fault entry
 
-**Engineering defect record, not a cartridge contract.** Observed 2026-10-18
+**Historical defect and current resolution; not a cartridge workaround.** Observed 2026-10-18
 with the owners at `1dd0239bd`. Keep the affected supervisor-entry coverage
-open; do not prescribe avoiding faults, guessed draining, cancellation or a
-register-reset workaround as the intended hardware interface. No runtime fix
-or completion policy is selected here.
+open at that baseline; do not prescribe avoiding faults, guessed draining, cancellation or a
+register-reset workaround. The 2026-10-19 ownership transition below supersedes
+that baseline completion-policy gap.
 
 ## Paired owner evidence
 
@@ -50,3 +50,39 @@ The temporary cart was removed; no runtime or maintained test changed.
 
 Detailed source extraction: `/tmp/bmsx-system-gpu-readback-entry-facts-current.md`.
 Commands and execution limits: `/tmp/bmsx-gpu-readback-fault-reproduction-current.md`.
+
+## Retained USER readback ownership — resolved 2026-10-19
+
+The GPU fence now accepts terminal IDLE or READY readback after ingress stops,
+command timing completes and the rendered command prefix retires. PENDING and
+SUBMITTED still wait for the backend; unread pixels are not fabricated, consumed
+or canceled to make entry complete. Entry swaps both ingress FIFOs and the raw
+readback descriptor/cursor/pixel-buffer ownership into the retained USER bank.
+The GPUREAD latch remains in the existing register bank. The supervisor gets
+empty ingress/readback; its explicitly transient scratch is reset on LEAVE,
+then the original USER data, cursor, FIFO words and DMA direction resume.
+VRAM itself remains shared. No MMIO snapshot/rollback was added.
+
+Sources: `machine/ts/machine/devices/gx/gpu.ts:601-660,992-1027` and
+`machine/cpp/machine/devices/gx/gpu.cpp:181-226,495-530`;
+readback-owned storage switches in `gpu_command_buffer.ts:101-163` and
+`gpu_command_buffer.h:66-140` in those same owner directories. The parked raw
+state is serialized by the existing paired save-state codecs; schema version 4
+rejects the older incomplete shape without a compatibility fallback.
+
+Focused TS GPU/SYSTEM tests cover a partially consumed odd-sized USER result,
+queued ingress, real software readback, pending-backend fencing, buffer identity,
+DREQ isolation/restoration, transient supervisor READY teardown and serialized
+USER-bank roundtrip. The maintained C++ counterparts cover the same boundaries;
+both native GPU/SYSTEM suites and the CPU save-state replay suite pass after a fresh rebuild.
+
+The unchanged ordinary unread diagnostic source was rebuilt with the current
+BIOS and executed on the fresh v4 headless product. Its actual unmapped load at
+PC `1001AEFCH` now reaches ACTIVE, unholds the CPU and publishes sequence 1.
+Across subsequent bounded observations the active supervisor readback is IDLE,
+while USER remains READY, 1 by 1, cursor 0, exact red pixel bytes `1F 00`.
+All 39 assertions pass; the observer neither reads GPUREAD nor writes/restores
+machine state. Evidence: `/tmp/bmsx-rdb01-fixed/{build.log,run.log,observe-fixed.idetest.js}`.
+This closes the reproduced liveness defect, not every GPU/fault combination or
+native execution of that ordinary diagnostic ROM. Temporary source was removed
+from the repository after the run; no maintained cartridge was added.
