@@ -60,11 +60,29 @@ The linker checks that the linked static storage fits within the RAM byte count 
 
 ## Firmware reservation in VRAM
 
+The 2 MiB VRAM is shared GPU storage, arranged as 1024 rows of 1024 **16-bit words**. Each row spans 2048 bytes. A drawing destination, texture source or display source selects storage within that same memory; it does not create a separate CPU byte-address allocation.
+
 The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and linked static-storage reservations in main RAM.
+
+<a id="handoff-is-not-release"></a>
+
+### Handoff is not release
+
+Clearing terminal text or status, or selecting a smaller active terminal viewport, does not shrink the queried full-layout reservation. Cartridge handoff does not release it either. The BIOS monitor later uses the same terminal coordinates and uploads the system atlas again before drawing its output.
+
+Keep the complete queried region out of cartridge allocations. The query does not install hardware write protection or grant permission to overwrite that region, and it does not establish that every coordinate outside it is free.
+
+For the limits of later device-context restoration, see [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service). Restoring device context does not restore overwritten VRAM pixels.
 
 ### Query the linked firmware
 
-The named BIOS function `gpu/system_vram_region` takes no arguments and returns two packed words. Call it through `require`; do not substitute a numerical function address or treat its name as an asset identifier.
+The named BIOS function `gpu/system_vram_region` takes no arguments and returns two packed words. Its result describes the linked firmware's reservation, not a fixed hardware address.
+
+The first return word contains x in its low half and y in its high half. The second contains width and height, not right and bottom coordinates. The returned rectangle is `[x, x + width) × [y, y + height)`.
+
+Here x and width count **16-bit VRAM words** across a row; y and height count **rows**. These are not CPU byte addresses, main-RAM offsets or counts of 32-bit transfer words. The query describes the linked terminal layout and actual atlas extent: it neither uploads pixels nor waits for a transfer, allocates storage or checks live VRAM contents.
+
+Call it through `require`; do not substitute a numerical function address or treat its name as an asset identifier.
 
 ```lua
 local system_vram_region<const> = require('gpu/system_vram_region')
@@ -74,10 +92,6 @@ local y<const> = system_origin >> 16
 local width<const> = system_size & 0x0000ffff
 local height<const> = system_size >> 16
 ```
-
-The first return word contains x in its low half and y in its high half. The second contains width and height, not right and bottom coordinates. The returned rectangle is `[x, x + width) × [y, y + height)`.
-
-Here x and width count **16-bit VRAM words** across a row; y and height count **rows**. These are not CPU byte addresses, main-RAM offsets or counts of 32-bit transfer words. The query describes the linked terminal layout and actual atlas extent: it neither uploads pixels nor waits for a transfer, allocates storage or checks live VRAM contents.
 
 ### Current-firmware example
 
@@ -92,16 +106,6 @@ For the current firmware image's terminal layout and packed atlas, the rectangle
 For those dimensions, the returned origin word is `0x02d002c0` and the size word is `0x00fc0140`. These numbers are a **current-firmware example**, not universal constants for cartridge code. The atlas's configured maximum is 256 × 64, but its actual packed extent need not fill that maximum; consume the query result instead.
 
 The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
-
-<a id="handoff-is-not-release"></a>
-
-### Handoff is not release
-
-Clearing terminal text or status, or selecting a smaller active terminal viewport, does not shrink the queried full-layout reservation. Cartridge handoff does not release it either. The BIOS monitor later uses the same terminal coordinates and uploads the system atlas again before drawing its output.
-
-Keep the complete queried region out of cartridge allocations. The query does not install hardware write protection or grant permission to overwrite that region, and it does not establish that every coordinate outside it is free.
-
-For the limits of later device-context restoration, see [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service). Restoring device context does not restore overwritten VRAM pixels.
 
 ## ROM contents, RAM sections, and startup
 

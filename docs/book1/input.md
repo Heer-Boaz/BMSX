@@ -133,8 +133,6 @@ Keyboard and button words describe sampled levels. They are not an event queue. 
 
 These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
 
-The existing cartridge-library input tick system is a separate sampling owner: its construction arms a sample, and each frame update advances its input state and arms again. Do not run an independent raw sampling owner alongside it. Its player numbering is also separate: library player 1 selects raw pad 0. Library action mappings and edge state do not change the raw keyboard or pad bit layouts above.
-
 ## Sampling and snapshot reads
 
 The sampling path is one-shot. Write the complete word `00000001H` (ARM) to `IO_INP_CTRL` to leave one sample request pending. At an accepted VBlank-begin edge, the controller latches the keyboard, pointer, all four pad records and output-capability word as one snapshot. It then increments `IO_INP_STATUS` modulo 2³². The accepted sample clears the pending request; it does not clear the retained ARM word in `IO_INP_CTRL`.
@@ -268,6 +266,8 @@ Input RESET zeroes the output parameters and capability word without issuing a s
 ## Complete input sampling program
 
 This complete program starts at a fresh cartridge entry through the installed BIOS. It assumes zero-initialized cartridge BSS and exclusive ownership of the raw input latch, the central VBlank interrupt handler and the central interrupt mask. It is not an initialization sequence for an arbitrary resumed cartridge or a cartridge sharing those resources.
+
+The existing cartridge-library input tick system is a separate sampling owner: its construction arms a sample, and each frame update advances its input state and arms again. Do not run an independent raw sampling owner alongside it. Its player numbering is also separate: library player 1 selects raw pad 0. Library action mappings and edge state do not change the raw keyboard or pad bit layouts above.
 
 The constant module named `results` declares the cartridge's retained observations. It contains 51 words (204 bytes): ten observation/history words, eight keyboard words, four pointer words, 28 pad words and one rumble-support word. The module's BSS declaration owns this storage; no fixed storage address is assumed.
 

@@ -55,51 +55,65 @@ from the command FIFO; its timing and visibility are specified below.
 
 ## Programming sequence
 
-Choose the source-storage route first. The library operations below are supplied
-by `cartlib/apu`; ROM directory lookup uses `cartlib/rom_dir`.
+Choose a source region and decoder before programming a voice. The source
+address, transfer offset and CPU address of an upload buffer are different
+operands.
 
-| Starting material | Route to playback |
+| Starting material | Hardware route to playback |
 |---|---|
-| Normally packed ROM audio | Obtain its record with `rom_dir.audio(audio_id)`, prepare the BADP source with `apu.source(record)`, then call `apu.play_plain(source, slot)`. `apu.play` accepts explicit rate, gain, start and filter words. |
-| Authored ROM PCM | Retain typed `rodata` samples and program their address, byte extent and PCM metadata. The APU does not parse a PCM container header. |
-| Samples produced in main RAM | Upload through the transfer port, then PLAY from `apu.sample_ram_base + byte_offset`, not from the main-RAM buffer. |
-| Square generator | Program generator kind one, rate, loop and duty. No sample upload or source-buffer binding is needed. |
+| PCM or BADP in installed system ROM or the selected cartridge ROM | Bind the complete region with SOURCE_ADDR and SOURCE_BYTES, and program its source metadata. PCM metadata is not read from a container header. |
+| PCM or BADP in private sample RAM | Bind the source at `40000000H + byte_offset`, after the sample bytes have committed to RAM. This range is not a CPU load/store window. |
+| Samples in main RAM, cartridge RAM or cartridge mailbox space | Transfer the bytes into private sample RAM first; these are not direct playback sources. |
+| Square generator | Program GENERATOR_KIND=1, rate, loop and duty. No sample upload or source-buffer binding is needed. |
 
-1. **Own the required resources.** Reserve a playback slot. Uploads and downloads
-   also need the shared transfer ports and, with the library, DMA0.
-   Finish earlier owned transfers before reprogramming the channel.
-   Requiring `cartlib/apu` installs the DMA/IRQ library route; retain its DMA
-   callbacks rather than defining a competing global `irq`. Library DMA waits
-   require CPU interrupt acceptance and the enabled DMA completion sources.
-2. **Prepare the source bytes.** `apu.upload` starts transport without waiting.
-   Keep its source unchanged until `dma.wait0_idle()` returns, then separately
-   wait for STATUS.TRANSFER_BUSY to clear before playback or a mode change.
-   DMA DONE is not the final sample-RAM commit. For download, DMA completion
-   instead marks receipt of the requested words; select transfer STOP afterward
-   to discard unwanted prefetch. See [Sample RAM transfer](#sample-ram-transfer).
-3. **Submit coherent configuration.** Write staging parameters first and CMD
-   last, or use the library playback functions. Serialize staging-bank users
-   and check CMD_FREE before a burst: a full FIFO replaces its oldest command.
+SOURCE_BITS_PER_SAMPLE selects BADP with 4, PCM16 with 16, and the PCM8 branch
+otherwise. SOURCE_DATA_OFFSET is a byte displacement within the bound region;
+START_SAMPLE and loop bounds count source frames.
+
+1. **Own the required resources.** Reserve a playback slot and serialize users
+   of the shared staging bank. Own the shared transfer ports for a sample-RAM
+   transfer; for DMA, also reserve the chosen system-DMA channel. Either channel
+   can supply or drain the APU FIFO with the same capability. Finish earlier
+   owned transfers before reprogramming their resources.
+2. **Prepare the sample storage.** TRANSFER_ADDRESS programs a moving RAM byte
+   offset from bits 18:2, not a playback source address. Offset zero corresponds
+   to source address `40000000H`; readback retains the programmed word rather
+   than following transfer progress. MANUAL_WRITE CPU stores through
+   TRANSFER_DATA write RAM directly. DMA_WRITE and DMA_READ instead use the
+   sixteen-word sample-transfer FIFO, a fixed TRANSFER_DATA endpoint and the
+   corresponding APU_WRITE or APU_READ block request.
+3. **Separate DMA transport from RAM commit.** Keep an upload's DMA source
+   unchanged until channel DONE, then separately wait for
+   STATUS.TRANSFER_BUSY to clear before playback or a mode change. DONE reports
+   the final system-DMA accesses, not the final sample-RAM commit. For download,
+   channel DONE marks receipt of the requested words; select transfer STOP
+   afterward to discard unwanted prefetch. The transfer unit has no separate
+   completion IRQ. See [Sample RAM transfer](#sample-ram-transfer).
+4. **Capture coherent configuration.** Assemble the 21-word staging bank
+   before writing CMD. A recognized nonzero command captures all 21 words, restores
+   staging defaults and selects live bank zero. Check CMD_FREE before a burst
+   that must retain every command: the sixteen-entry command FIFO replaces
+   its oldest entry when full. It is separate from the sample-transfer FIFO.
    Source extents and offsets are bytes; start positions and loop bounds are
    source frames. Unity rate is `00010000H`, unity gain `00001000H`.
-4. **Separate staging from live control.** PLAY binds at execution, not capture;
-   keep the intended cartridge socket selected until then. Capture resets the
-   visible slot selector to zero, so reselect through staging SLOT before using
-   the live bank. A live gain store changes that voice; a staging gain store
-   only prepares a command. Do not use a live edit as an ordered follow-up to a
-   still-queued PLAY. Use PLAY for a coherent source replacement rather
-   than consecutive live source-field stores.
-5. **Retain storage until the voice is finished.** Pause retains the voice and
-   its source requirement. Natural ends and completed nonzero fades publish
-   SLOT_ENDED; `apu.stop_slot(slot, 0)` does not. Register end service through
-   `cartlib/irq` when needed. For one controlled outstanding end, snapshot a
-   retained service sequence before issuing PLAY or the faded stop, then wait
-   on that predicate: another IRQ can wake the CPU, and the hardware retains
-   only the latest end event. See [End events and interrupts](#end-events-and-interrupts).
+5. **Distinguish capture, execution and live access.** PLAY binds at execution,
+   not capture; keep the intended cartridge socket selected until then.
+   Reselect through staging SLOT after capture before using the selected-slot
+   window. Its stores change that bank directly, while other staging stores
+   only prepare a command. A live edit is not an ordered follow-up to a
+   still-queued PLAY. Use PLAY for a coherent source replacement rather than
+   consecutive live source-field stores.
+6. **Retain playback storage for the voice's lifetime.** PLAY does not copy its
+   sample payload, and pause retains the voice and its source requirement.
+   Natural ends and completed nonzero fades publish SLOT_ENDED; an immediate
+   zero-fade STOP_SLOT does not. The APU retains only the latest end event,
+   not one FIFO entry per end. Its central interrupt request is distinct from
+   DMA completion, and an interrupt wakeup alone does not identify which
+   condition completed. See [End events and interrupts](#end-events-and-interrupts).
 
-The [worked program](#worked-blua-program) supplies the complete imports, typed
-operands and interrupt setup for these routes. The sections below define the
-register operations and their hardware effects.
+The sections below define these register operations and hardware effects.
+[Library playback routes](#library-playback-routes), next to the worked program,
+show the corresponding convenience calls and software completion predicates.
 
 ## Commands and slot ownership
 
@@ -877,6 +891,54 @@ voices, faults, events and sample-clock sequence. It restores the staging
 parameter defaults and clears all slot-bank words. No global-reset command is
 encoded among CMD zero through five. STOP_SLOT affects its target; transfer
 STOP changes transfer mode. Neither is a private-sample-RAM clear operation.
+
+## Library playback routes
+
+The following software routes use `cartlib/apu`; ROM directory lookup uses
+`cartlib/rom_dir`. The library owns DMA0 for its transfer operations, unlike the
+hardware interface, which admits either DMA channel.
+
+| Starting material | Route to playback |
+|---|---|
+| Normally packed ROM audio | Obtain its record with `rom_dir.audio(audio_id)`, prepare the BADP source with `apu.source(record)`, then call `apu.play_plain(source, slot)`. `apu.play` accepts explicit rate, gain, start and filter words. |
+| Authored ROM PCM | Retain typed `rodata` samples and program their address, byte extent and PCM metadata. The APU does not parse a PCM container header. |
+| Samples produced in main RAM | Upload through the transfer port, then PLAY from `apu.sample_ram_base + byte_offset`, not from the main-RAM buffer. |
+| Square generator | Program generator kind one, rate, loop and duty. No sample upload or source-buffer binding is needed. |
+
+1. **Own the required resources.** Reserve a playback slot. Uploads and downloads
+   also need the shared transfer ports and, with the library, DMA0.
+   Finish earlier owned transfers before reprogramming the channel.
+   Requiring `cartlib/apu` installs the DMA/IRQ library route; retain its DMA
+   callbacks rather than defining a competing global `irq`. Library DMA waits
+   require CPU interrupt acceptance and the enabled DMA completion sources.
+2. **Prepare the source bytes.** `apu.upload` starts transport without waiting.
+   Keep its source unchanged until `dma.wait0_idle()` returns, then separately
+   wait for STATUS.TRANSFER_BUSY to clear before playback or a mode change.
+   DMA DONE is not the final sample-RAM commit. For download, DMA completion
+   instead marks receipt of the requested words; select transfer STOP afterward
+   to discard unwanted prefetch. See [Sample RAM transfer](#sample-ram-transfer).
+3. **Submit coherent configuration.** Write staging parameters first and CMD
+   last, or use the library playback functions. Serialize staging-bank users
+   and check CMD_FREE before a burst: a full FIFO replaces its oldest command.
+   Source extents and offsets are bytes; start positions and loop bounds are
+   source frames. Unity rate is `00010000H`, unity gain `00001000H`.
+4. **Separate staging from live control.** PLAY binds at execution, not capture;
+   keep the intended cartridge socket selected until then. Capture resets the
+   visible slot selector to zero, so reselect through staging SLOT before using
+   the live bank. A live gain store changes that voice; a staging gain store
+   only prepares a command. Do not use a live edit as an ordered follow-up to a
+   still-queued PLAY. Use PLAY for a coherent source replacement rather
+   than consecutive live source-field stores.
+5. **Retain storage until the voice is finished.** Pause retains the voice and
+   its source requirement. Natural ends and completed nonzero fades publish
+   SLOT_ENDED; `apu.stop_slot(slot, 0)` does not. Register end service through
+   `cartlib/irq` when needed. For one controlled outstanding end, snapshot a
+   retained service sequence before issuing PLAY or the faded stop, then wait
+   on that predicate: another IRQ can wake the CPU, and the hardware retains
+   only the latest end event. See [End events and interrupts](#end-events-and-interrupts).
+
+The [worked program](#worked-blua-program) below supplies the complete imports,
+typed operands and interrupt setup for the library transfer and playback route.
 
 ## Worked BLua program
 

@@ -235,11 +235,15 @@ constant registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
-For elapsed intervals, the existing `cartlib/clock` library provides `milliseconds()` and `elapsed_milliseconds(start, current)`. The former returns the raw `TIME_MS` word; the latter computes unsigned wrapping sample distance. That distance is meaningful only when the actual interval is shorter than one complete 2^32-millisecond period. A zero result is valid when both samples fall in the same millisecond. `os.difftime` is ordinary integer subtraction, not wrapping hardware-time arithmetic.
-
-`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. The full period is maintained separately, rather than recovered from this register. A sufficiently long period can therefore wrap the reported word without shortening the complete period. The existing clock library already performs the Q16 conversion when configuring tick intervals; its retained gameplay and frame deltas are schedule quanta, not live elapsed clocks.
+`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. The full period is maintained separately, rather than recovered from this register. A sufficiently long period can therefore wrap the reported word without shortening the complete period.
 
 `CYCLES_PER_FRAME` is a whole-period budget, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive budgets differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
+
+### Software timing
+
+For elapsed intervals, the existing `cartlib/clock` library provides `milliseconds()` and `elapsed_milliseconds(start, current)`. The former returns the raw `TIME_MS` word; the latter computes unsigned wrapping sample distance. That distance is meaningful only when the actual interval is shorter than one complete 2^32-millisecond period. A zero result is valid when both samples fall in the same millisecond. `os.difftime` is ordinary integer subtraction, not wrapping hardware-time arithmetic.
+
+The existing clock library already performs the Q16 conversion when configuring tick intervals; its retained gameplay and frame deltas are schedule quanta, not live elapsed clocks.
 
 The BIOS `os.clock()` returns `TIME_MS / 1000`, in seconds with millisecond resolution. The no-argument `os.time()` returns `TIME_MS // 1000`, in whole seconds. Both inherit the hardware word's wrap and neither measures time spent exclusively executing cartridge instructions. `os.time(date_table)` instead calculates a civil timestamp from the supplied fields; it does not set the console clock. These functions do not establish a wall-clock or real-time-clock service.
 
@@ -255,6 +259,8 @@ Use aligned word writes. `PRINT_CHAR` accepts a Unicode codepoint, not a memory 
 Character writes only extend the current partial line. Even a `PRINT_CHAR` write of `0x0000000a` does not publish it. Every `PRINT_FLUSH` write—including a write of zero—attempts to append one ASCII line-feed byte and publish the entire partial line. The written value is not a length, threshold, or enable mask. A successful flush publishes diagnostic text; it is not a screen-display command, interrupt, or acknowledgement that the receiver has drained the text.
 
 Completed unread lines and the current partial line share one 8192-byte queue. Each character needs space for its complete one- to four-byte UTF-8 encoding. If a character cannot fit, the current partial line is discarded, completed unread lines are preserved, and further character writes are ignored until the next flush. That flush publishes nothing and clears the overflow condition. If the flush itself first encounters insufficient space for its added line-feed byte, it likewise discards the partial line, publishes nothing, and leaves overflow cleared. In particular, 8192 unflushed ASCII characters leave no room for the flush's line feed, so that entire partial line is lost. No readiness, free-space, or accepted-line counter is available through these ports. Reset empties the queue and clears both register words.
+
+### BIOS console integration
 
 BIOS `print(...)` converts each argument with `tostring`, separates arguments with tabs, writes to the BIOS console, and ends the line. Console writes send the full codepoints to `PRINT_CHAR` and also append to a separate 8192-byte BIOS history; codepoints above `0xff` become `?` in that history. Ending the line appends a history line feed and writes `PRINT_FLUSH = 1`. Thus `print` sends text to both diagnostic output and BIOS history, but does not itself flush the console display.
 
