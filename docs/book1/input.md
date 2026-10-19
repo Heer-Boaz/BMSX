@@ -94,7 +94,13 @@ The buttons word uses these bit positions. The table makes no claim about unlist
 | 7 | Right trigger | 16 | Home |
 | 8 | Select | 17 | Touchpad |
 
-Trigger button bits and trigger axis words are separate fields. Do not infer a common actuation threshold, continuous trigger update rate, calibration, dead zone or saturation rule from their representation. Neutral words alone do not identify whether a pad is connected.
+Stick axes use −1 at the left or upper endpoint, zero at center, and +1 at
+the right or lower endpoint. Trigger travel uses zero at release and one at full
+travel. Digital trigger attachments supply only zero or one; analog attachments
+also supply intermediate values. Travel updates independently of the trigger's
+button bit, including movement while the button remains pressed. The button
+threshold belongs to the attachment, not the controller latch. Neutral words
+alone do not identify whether a pad is connected.
 
 ### Pointer words
 
@@ -108,9 +114,19 @@ The pointer has a buttons word, X, Y and wheel, in that order. Its button positi
 | 3 | Back |
 | 4 | Forward |
 
-The table makes no claim about unlisted button bits. X and Y are retained signed 16.16 pointer-space positions, not movement deltas. Do not assume that one coordinate unit is one display pixel, or that the interface defines a common origin, clipping range or display transform.
+X and Y are retained signed 16.16 positions in the displayed image's raster
+coordinate system, not movement deltas or physical screen coordinates. The
+upper-left pixel is (0,0); X increases rightward and Y downward. Standard pointing
+attachments map the image to its displayed extent and clip position to
+`0..width−1` and `0..height−1`. Changing the display mode does not itself clear
+the retained controller snapshot.
 
-The wheel values supplied by the input sources use signed 16.16 poll deltas, not an absolute wheel position. Reading the retained wheel word does not consume or clear it. Neither a common physical wheel unit nor preservation of all wheel movement across skipped samples is established by this interface.
+The wheel word is a signed 16.16 delta in logical scroll steps, positive
+downward and negative upward. One step is `00010000H`; a half step is
+`00008000H`. It describes the most recent attachment update, not an absolute
+wheel position or an accumulation since ARM. A subsequent stationary update
+supplies zero. Reading the retained controller word does not consume or clear
+it, so skipped controller samples can miss movement.
 
 ### Signed 16.16 values
 
@@ -329,7 +345,11 @@ The command is dispatched on the APPLY write, without waiting for ARM or a VBlan
 
 The normal intensity interval is `00000000H` through `00010000H`, inclusive. In this interval the intensity is the raw word divided by 65536: zero at `00000000H`, one-half at `00008000H`, and unit intensity at `00010000H`, with a step of 1/65536. These are request values, not a guarantee of a particular physical vibration strength.
 
-The intensity register retains all 32 bits. The controller does not clamp, mask or reject words above the normal interval; this chapter assigns no exact output behavior to those words.
+The intensity register retains all 32 bits, and APPLY decodes the full
+unsigned U16.16 word exactly: `FFFFFFFFH` requests
+`65535 + 65535/65536`. The output attachment saturates requests above one to
+its maximum intensity. This saturation does not rewrite the programmed word.
+Unsupported output attachments produce no effect.
 
 `IO_INP_OUTPUT_DURATION_MS` holds an unsigned 32-bit millisecond duration operand. The controller retains and uses the complete word without scaling, truncation or range clamping. It does not turn this word into a readable elapsed-time or remaining-time counter, and it does not decrement the register while an effect is active. A requested duration is not a guarantee of physical actuator timing.
 

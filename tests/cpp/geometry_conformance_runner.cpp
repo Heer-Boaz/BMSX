@@ -8,7 +8,7 @@ class IdleInput final : public bmsx::InputControllerInputSource {
 public:
 	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&, bmsx::InputControllerSampleContext) override {}
 	bool supervisorRequestLineHigh() const override { return false; }
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {}
 };
 
 int main(int argc, char** argv) {
@@ -26,6 +26,19 @@ int main(int argc, char** argv) {
 			bmsx::u32 address, word;
 			input >> address >> word;
 			memory.writeMappedWord(address, word);
+		}
+		bmsx::u32 pairCounterSeed;
+		input >> pairCounterSeed;
+		if (pairCounterSeed != 0u) {
+			auto state = geometry.captureState();
+			state.activeJob->exactPairCount = pairCounterSeed;
+			state.activeJob->broadphasePairCount = pairCounterSeed;
+			geometry.restoreState(state, 0);
+			geometry.accrueCycles(1, 1);
+			geometry.onService(1);
+			const auto progressed = geometry.captureState();
+			std::cout << progressed.activeJob->exactPairCount << ' '
+				<< progressed.activeJob->broadphasePairCount << ' ';
 		}
 		geometry.accrueCycles(1000, 1000);
 		geometry.onService(1000);

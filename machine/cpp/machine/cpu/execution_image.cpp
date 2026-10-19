@@ -10,6 +10,7 @@ const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLE
 	cycles[static_cast<size_t>(DecodedDispatchOp::FusedShlBxor)] = BASE_CYCLES[static_cast<size_t>(OpCode::SHL)];
 	cycles[static_cast<size_t>(DecodedDispatchOp::FusedAddShl)] = BASE_CYCLES[static_cast<size_t>(OpCode::ADD)];
 	cycles[static_cast<size_t>(DecodedDispatchOp::FusedShrBxor)] = BASE_CYCLES[static_cast<size_t>(OpCode::SHR)];
+	cycles[static_cast<size_t>(DecodedDispatchOp::ReservedMemory)] = BASE_CYCLES[static_cast<size_t>(OpCode::LOAD_MEM)];
 	return cycles;
 }();
 

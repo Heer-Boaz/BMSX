@@ -21,7 +21,7 @@ if (command.length === 0) {
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-geometry-'));
 const vectors = geometryVectors();
 const path = join(directory, 'vectors.txt');
-writeFileSync(path, vectors.map(v => [v.writes.length, ...v.writes.flat(), v.reads.length, ...v.reads].join(' ')).join('\n'));
+writeFileSync(path, vectors.map(v => [v.writes.length, ...v.writes.flat(), v.pairCounterSeed, v.reads.length, ...v.reads].join(' ')).join('\n'));
 const native = spawnSync(command[0], [...command.slice(1), path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
 assert.equal(native.status, 0, native.stderr);
 const rows = native.stdout.trim().split('\n').map(line => line.trim().split(/\s+/).map(Number));
@@ -33,11 +33,23 @@ for (let i = 0; i < vectors.length; i++) {
 	machine.resetDevices();
 	machine.geometryController.setTiming(1, 1, 0);
 	for (const [address, word] of v.writes) memory.writeMappedWord(address, word);
+	const counterWords: number[] = [];
+	if (v.pairCounterSeed !== 0) {
+		const state = machine.geometryController.captureState();
+		state.activeJob!.exactPairCount = v.pairCounterSeed;
+		state.activeJob!.broadphasePairCount = v.pairCounterSeed;
+		machine.geometryController.restoreState(state, 0);
+		machine.geometryController.accrueCycles(1, 1);
+		machine.geometryController.onService(1);
+		const progressed = machine.geometryController.captureState().activeJob!;
+		counterWords.push(progressed.exactPairCount, progressed.broadphasePairCount);
+		assert.deepEqual(counterWords, [(v.pairCounterSeed + 1) >>> 0, (v.pairCounterSeed + 1) >>> 0], `${v.name}: retained raw counters`);
+	}
 	machine.geometryController.accrueCycles(1000, 1000);
 	machine.geometryController.onService(1000);
 	const expected = v.reads.map(address => memory.readMappedWord(address));
 	assert.equal(expected[0], GEO_STATUS_DONE, v.name);
-	assert.deepEqual(rows[i], expected, `${v.name}: raw result/status words; evidence ${directory}`);
+	assert.deepEqual(rows[i], [...counterWords, ...expected], `${v.name}: raw result/status words; evidence ${directory}`);
 }
 assert.equal(rows[0][12], 1, 'ordinary overlapping polygons publish a contact');
 assert.equal(rows[1][12], 0, 'overlap excludes touching boundaries');

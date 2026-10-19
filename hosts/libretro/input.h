@@ -92,7 +92,7 @@ public:
 	void applyInputControllerVibrationEffect(
 		i32 padIndex,
 		f64 durationMs,
-		f32 intensity) override;
+		f64 intensity) override;
 
 private:
 	bool setRumbleStrength(unsigned port, u16 strength);

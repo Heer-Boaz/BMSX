@@ -496,10 +496,7 @@ StringId CPU::internExecutionString(
 		m_executionReadView
 	);
 	return m_stringPool.intern(
-		std::string_view(
-			reinterpret_cast<const char*>(m_executionReadView.data()),
-			m_executionReadView.size()
-		),
+		scalarUtf8Text({m_executionReadView.data(), m_executionReadView.size()}),
 		false
 	);
 }
@@ -949,13 +946,20 @@ bool CPU::decodeInstruction(
 			MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS)
 		);
 		decoded.disp = ext;
+		if (rawC > static_cast<u32>(MemoryAccessKind::F64LE)
+			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
+				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
+				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
+				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
+			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedMemory);
+		}
 		if (static_cast<OpCode>(op) == OpCode::GETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SELF) {
 			decoded.tableCacheSlot = -1;
 		}
 	}
-	decoded.dispatchOp = op;
+	decoded.dispatchOp = decoded.op;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
 	if (instructionCacheable && page.writeWatch) {
 		*page.writeWatch = 1u;
@@ -2509,12 +2513,18 @@ RunResult CPU::runLoop(
 dispatch_instruction:
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
+				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
 					goto dispatch_observe;
 #include "machine/cpu/cpu_dispatch.inl"
 				}
 			} else {
 				switch (dispatchOp) {
+				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					DISPATCH_CONTINUE();
 				case static_cast<u8>(DecodedDispatchOp::Observe):
 					goto dispatch_observe;
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
@@ -2625,7 +2635,7 @@ dispatch_observe:
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
 			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
-			instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[dispatchOp]);
+			instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
 			goto dispatch_instruction;
 
 dispatch_continue:
@@ -3025,7 +3035,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
 	frame->registers = m_activeThread->stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
-	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
+	std::fill_n(frame->registers, targetCapacity, valueNil());
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < argCount) {
@@ -3102,7 +3112,7 @@ CallFrame* CPU::pushLatchedFrame(
 	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
 	frame->registers = m_activeThread->stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
-	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
+	std::fill_n(frame->registers, targetCapacity, valueNil());
 	const Value* sourceArgs = argsInStack ? m_activeThread->stack.data() + argsOffset : args;
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {

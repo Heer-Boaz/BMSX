@@ -41,7 +41,7 @@ Low-level wire requests remain available for holds across decisions:
 
 | `execute` | fields | result |
 | --- | --- | --- |
-| `input` | `events`: key `{type:'key',code,down}`, pointer `{type:'pointer',x,y}`, button `{type:'button',button,down}`, wheel `{type:'wheel',deltaY}` | `{hostFrame}` after input processing |
+| `input` | `events`: key `{type:'key',code,down}`, pointer `{type:'pointer',x,y}`, button `{type:'button',button,down}`, wheel `{type:'wheel',deltaY}` (signed logical steps, positive down) | `{hostFrame}` after input processing |
 | `wait` | positive integral `frames` | `{hostFrame}` after host iterations, not guest ticks |
 | `capture` | — | `{presentationFrame,width,height,path}` for the next presentation |
 | `clipboard-set` / `clipboard-get` | `text` for set | ordinary clipboard; native reports unsupported |

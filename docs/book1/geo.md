@@ -789,6 +789,10 @@ The summary at `DST1` is:
 | `+8` | U32 | `broadphasePairCount` |
 | `+12` | U32 | Flags: bit 0 overflow; ordinary value zero |
 
+The exact-pair and broadphase-pair counters are unsigned 32-bit counters. Each
+increment wraps modulo 2^32: `FFFFFFFFH + 1` becomes `00000000H`. The counters
+do not impose a smaller limit on COUNT or terminate a full pass at rollover.
+
 It contains neither capacity nor processed count. The processed count advances only after an entire input record succeeds: one candidate record in candidate mode, one outer instance in full pass. Full pass reads its final instance and publishes a summary even though that record has no later partner.
 
 ### Capacity, partial progress, and faults

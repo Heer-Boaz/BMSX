@@ -110,6 +110,8 @@ for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: a ROM w
 local index<const> = frame_count(running_thread()) - 1
 local names, message = frame_bindings.resolve(index, 0)
 assert(names == nil and message == 'Frame symbols are unavailable.')
+local choices, message = frame_bindings.list(index)
+assert(choices == nil and message == 'Frame symbols are unavailable.')
 local ok, message = repl.evaluate_frame('unexpected_global_write = 1', '=no-symbols', index, 0)
 assert(not ok and message == 'Frame symbols are unavailable.' and getglobal('unexpected_global_write') == nil)
 return true
@@ -117,4 +119,45 @@ return true
 	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+});
+
+for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: enumerate active depths and evaluate a discovered stopped scope`, () => {
+	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
+function discover_stopped_scope(index)
+ return pcall(function()
+ local choices<const>, message<const> = frame_bindings.list(index)
+ assert(choices ~= nil, message)
+ local depth
+ for at = 1, #choices, 2 do
+  if choices[at + 1] == 'inspect' then depth = choices[at] end
+ end
+ assert(depth ~= nil, 'discover the active source scope')
+ local ok<const>, result<const> = repl.evaluate_frame('return offset', '=discovered-scope', index, depth)
+ assert(ok and result == 42, 'frame result: ' .. tostring(result))
+ return true
+ end)
+end
+local exercise = function(value, ...)
+ local inspect<const> = function(offset)
+  halt_until_irq
+  return offset + 1
+ end
+ return inspect(value)
+end
+return exercise(42)
+`, optLevel));
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('discover_stopped_scope')!) as Closure, [depth - 1]);
+	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
+	const values = materializeCpuCompletionValues(cpu);
+	assert.deepEqual(values, [true, true], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	cpu.clearHaltUntilIrq();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 43]);
 });

@@ -14,10 +14,12 @@ DISPATCH_LABEL(LOADK) {
 }
 
 DISPATCH_LABEL(LOADNIL) {
-	std::fill_n(registers + a, b, valueNil());
-	const int nextTop = a + b;
-	if (nextTop > FRAME.top) {
-		FRAME.top = nextTop;
+	if (b != 0) {
+		std::fill_n(registers + a, b, valueNil());
+		const int nextTop = a + b;
+		if (nextTop > FRAME.top) {
+			FRAME.top = nextTop;
+		}
 	}
 	DISPATCH_CONTINUE();
 }
@@ -717,6 +719,10 @@ DISPATCH_LABEL(RFE) {
 }
 
 DISPATCH_LABEL(LOADKR) {
-	SET_REGISTER_FAST(a, IMAGE.constPool[static_cast<size_t>(asNumber(REG(b)))]);
+	const u32 constantIndex = toU32(REG(b));
+	if (constantIndex >= IMAGE.constPool.size()) {
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	}
+	SET_REGISTER_FAST(a, IMAGE.constPool[constantIndex]);
 	DISPATCH_CONTINUE();
 }

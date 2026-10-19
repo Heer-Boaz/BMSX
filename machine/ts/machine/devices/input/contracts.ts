@@ -69,7 +69,7 @@ export type InputControllerPadSnapshots = [
 export type InputControllerSnapshot = {
 	keyWords: Uint32Array; // INPUT_CONTROLLER_KEY_WORD_COUNT words; bit = HID usage pressed
 	pointerButtons: number;
-	pointerXQ16: number; // raw s16.16 host pointer-space coordinate
+	pointerXQ16: number; // raw s16.16 display-raster coordinate
 	pointerYQ16: number;
 	pointerWheelQ16: number;
 	rumbleSupportMask: number; // bit per pad

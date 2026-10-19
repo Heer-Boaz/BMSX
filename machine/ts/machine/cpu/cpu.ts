@@ -27,6 +27,7 @@ import {
 	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
 	CPU_CAUSE_IRQ,
 	CPU_CAUSE_NMI,
@@ -136,7 +137,7 @@ import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKin
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
 
-const executionStringDecoder = new TextDecoder('utf-8', { fatal: true });
+const executionStringDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 const CLOSURE_HEAP_BYTES = 16;
 const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
@@ -1279,14 +1280,14 @@ export class CPU implements MappedPageInvalidator {
 		if (op === OpCode.WIDE) {
 			width = 2;
 			if (pageOffset === DECODED_PAGE_WORDS - 1) {
-				bodyPage = this.decodedPageForFrame(frame, pc + INSTRUCTION_BYTES);
+				bodyPage = this.decodedPageForFrame(frame, (pc + INSTRUCTION_BYTES) >>> 0);
 				instructionCacheable = instructionCacheable && bodyPage.cacheable;
 			}
 			wideA = (sourceWord >>> 12) & 0x3f;
 			wideB = (sourceWord >>> 6) & 0x3f;
 			wideC = sourceWord & 0x3f;
 			bodyWord = this.memory.readMappedBusU32BE(
-				pc + INSTRUCTION_BYTES,
+				(pc + INSTRUCTION_BYTES) >>> 0,
 				this.executionBusSignals,
 			);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
@@ -1361,11 +1362,16 @@ export class CPU implements MappedPageInvalidator {
 				MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS),
 			);
 			page.disp[pageOffset] = ext;
+			if (rawC > MemoryAccessKind.F64LE
+				&& (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM
+					|| op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
+				page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+			}
 			if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
 				page.tableCacheSlots[pageOffset] = -1;
 			}
 		}
-		page.dispatchOps[pageOffset] = op;
+		page.dispatchOps[pageOffset] = page.ops[pageOffset];
 		page.refreshState[pageOffset] = instructionCacheable ? 0 : DECODED_REFRESH_DECODE;
 		if (instructionCacheable && page.writeWatches !== null) {
 			page.writeWatches[page.writeWatchIndex] = 1;
@@ -1388,7 +1394,7 @@ export class CPU implements MappedPageInvalidator {
 		if (!fusionCandidate || !instructionCacheable) {
 			return true;
 		}
-		const nextPc = pc + width * INSTRUCTION_BYTES;
+		const nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
 		if (observed?.has(nextPc)) return true;
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
 		if (!nextPage.cacheable) {
@@ -1806,14 +1812,14 @@ export class CPU implements MappedPageInvalidator {
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
-					if (this.yieldRequested) {
-						this.yieldRequested = false;
-						return RunResult.Yielded;
-					}
 					if (this.hardHalted
 						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
+					}
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
 					}
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
@@ -1842,9 +1848,9 @@ export class CPU implements MappedPageInvalidator {
 					const width = page.widths[pageOffset];
 					const dispatchOp = page.dispatchOps[pageOffset];
 					this.currentInstructionPc = pc;
-					frame.pc = pc + (width * INSTRUCTION_BYTES);
+					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
-					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
 					this.instructionBudgetRemaining -= dispatchBaseCycles[dispatchOp];
 					this.executeInstruction(
 						frame,
@@ -1871,14 +1877,14 @@ export class CPU implements MappedPageInvalidator {
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
-					if (this.yieldRequested) {
-						this.yieldRequested = false;
-						return RunResult.Yielded;
-					}
 					if (this.hardHalted
 						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
+					}
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
 					}
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
@@ -1921,9 +1927,9 @@ export class CPU implements MappedPageInvalidator {
 					const op = page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
 						? DecodedDispatchOp.Observe : page.ops[pageOffset];
 					this.currentInstructionPc = pc;
-					frame.pc = pc + (width * INSTRUCTION_BYTES);
+					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
-					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
 						frame,
@@ -1999,7 +2005,7 @@ export class CPU implements MappedPageInvalidator {
 			&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
 			return;
 		}
-		const nextPc = pc + page.widths[pageOffset] * INSTRUCTION_BYTES;
+		const nextPc = (pc + page.widths[pageOffset] * INSTRUCTION_BYTES) >>> 0;
 		frame.pc = nextPc;
 	}
 
@@ -2253,9 +2259,9 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const width = secondPage.widths[secondPageOffset];
 		this.currentInstructionPc = pc;
-		frame.pc = pc + width * INSTRUCTION_BYTES;
+		frame.pc = (pc + width * INSTRUCTION_BYTES) >>> 0;
 		this.lastExecutionDomainId = image.executionDomainId;
-		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+		this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
 		this.instructionBudgetRemaining -= BASE_CYCLES[
 			isAddShl ? OpCode.SHL : OpCode.BXOR
 		];
@@ -2295,7 +2301,7 @@ export class CPU implements MappedPageInvalidator {
 				case DecodedDispatchOp.Observe:
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
-					this.instructionBudgetRemaining -= BASE_CYCLES[page.ops[pageOffset]];
+					this.instructionBudgetRemaining -= DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
 					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset]);
 					return;
 				case DecodedDispatchOp.FusedShlBxor:
@@ -2305,6 +2311,9 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.WIDE:
 					this.hardHalt();
+					return;
+				case DecodedDispatchOp.ReservedMemory:
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				case OpCode.MOV:
 					this.copyRegisterFast(frame, registers, a, page.b[pageOffset]);
@@ -2799,15 +2808,20 @@ export class CPU implements MappedPageInvalidator {
 						this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
 					}
 					return;
-				case OpCode.LOADKR:
+				case OpCode.LOADKR: {
+					const constantIndex = registers.getNumber(page.b[pageOffset]) >>> 0;
+					if (constantIndex >= image.constTags.length) {
+						throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					}
 					this.setRegisterConstantFast(
 						frame,
 						registers,
 						a,
 						image,
-						registers.getNumber(page.b[pageOffset]),
+						constantIndex,
 					);
 					return;
+				}
 
 				case OpCode.LE: {
 					const rkB = page.rkB[pageOffset];

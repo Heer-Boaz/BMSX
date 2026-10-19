@@ -3,6 +3,7 @@ export type HostControlInputEvent =
 	| { type: 'key'; code: string; down: boolean }
 	| { type: 'pointer'; x: number; y: number }
 	| { type: 'button'; button: 'primary' | 'secondary' | 'aux' | 'back' | 'forward'; down: boolean }
+	/** Signed logical wheel steps; positive values scroll down. */
 	| { type: 'wheel'; deltaY: number };
 
 export type HostControlRequest = { id: number } & (

@@ -5,7 +5,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { RemoteInput } from '../../hosts/common/input/remote';
-import type { InputEvt } from '../../hosts/common/input/contracts';
+import type { InputEvt, InputEventSink } from '../../hosts/common/input/contracts';
+import { Input } from '../../hosts/common/input/manager';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
 import { parseNodeToolingOptions } from '../../scripts/bootrom/platforms/node_tooling_options';
@@ -60,7 +63,14 @@ test('client paste uses the clipboard and ordinary keyboard; unsupported clipboa
 test('remote input owns press IDs across requests and releases only held input', () => {
 	const events: InputEvt[] = [];
 	const clock = new VirtualHeadlessClock();
-	const remote = new RemoteInput({ post: event => events.push(event) }, clock);
+	const sink: InputEventSink = {
+		resetInput() {}, cancelPointerButtons() {}, connectInputDevice() {}, disconnectInputDevice() {},
+		setSupervisorRequestLine: down => events.push({ type: 'supervisor-request', down, timestamp: clock.now() }),
+		inputButton: (deviceId, code, down, value, timestamp, pressId) => events.push({ type: 'button', deviceId, code, down, value, timestamp, pressId }),
+		inputAxis1: (deviceId, code, x, timestamp) => events.push({ type: 'axis1', deviceId, code, x, timestamp }),
+		inputAxis2: (deviceId, code, x, y, timestamp) => events.push({ type: 'axis2', deviceId, code, x, y, timestamp }),
+	};
+	const remote = new RemoteInput(sink, clock);
 	remote.apply([{ type: 'key', code: 'ControlLeft', down: true }, { type: 'key', code: 'KeyP', down: true }]);
 	clock.advance(20);
 	remote.apply([{ type: 'key', code: 'KeyP', down: false }]);
@@ -73,6 +83,23 @@ test('remote input owns press IDs across requests and releases only held input',
 	]);
 	assert.equal(buttons[2].timestamp, 20);
 	assert.deepEqual(events[3], { type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: 120, y: 80, timestamp: 20 });
+});
+
+test('remote pointer reaches the machine in raster pixels and signed logical wheel steps', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const remote = new RemoteInput(input, clock);
+	const snapshot = createInputControllerSnapshot();
+	remote.apply([{ type: 'pointer', x: 120, y: 80 }]);
+	for (const steps of [1, -3, 0]) {
+		remote.apply([{ type: 'wheel', deltaY: steps }]);
+		input.pollInput();
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+		assert.equal(snapshot.pointerXQ16, 120 * 65536);
+		assert.equal(snapshot.pointerYQ16, 80 * 65536);
+		assert.equal(snapshot.pointerWheelQ16, (steps * 65536) >>> 0);
+	}
 });
 
 test('disk workspace transport persists contents and record timestamps without replacing fetch', async t => {

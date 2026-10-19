@@ -303,3 +303,68 @@ export { Input } from './hosts/common/input/manager';`, resolveDir: process.cwd(
 		probe.video.dispose();
 	});
 });
+
+test('browser attachment samples use raster coordinates, scroll steps and current analog trigger travel', async t => {
+	const fixture = await build({
+		stdin: {
+			contents: `export { BrowserInputHub } from './hosts/browser/input';
+export { Input } from './hosts/common/input/manager';
+export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';`,
+			resolveDir: process.cwd(),
+		},
+		bundle: true, platform: 'browser', format: 'iife', globalName: 'fixture', write: false,
+		tsconfig: 'tsconfig.base.json',
+	});
+	const browser = await chromium.launch();
+	t.after(() => browser.close());
+	const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+	await page.setContent('<canvas id="screen" width="320" height="240" style="position:absolute;left:100px;top:80px;width:640px;height:480px"></canvas>');
+	await page.addScriptTag({ content: fixture.outputFiles[0].text });
+	await page.addScriptTag({ content: `
+		const pad = {
+			index: 0, id: 'Standard test controller', timestamp: 1, axes: [0, 0, 0, 0],
+			buttons: Array.from({length: 17}, () => ({pressed: false, value: 0})),
+			vibrationActuator: { playEffect(_kind, effect) {
+				window.lastVibration = {...effect}; return Promise.resolve('complete');
+			}},
+		};
+		Object.defineProperty(navigator, 'getGamepads', {value: () => [pad]});
+		const screen = document.getElementById('screen');
+		const clock = {now: () => 0};
+		const hub = new fixture.BrowserInputHub(screen, screen, clock, null, 'F12');
+		const input = new fixture.Input(clock, hub, 0);
+		const snapshot = fixture.createInputControllerSnapshot();
+		window.attachment = {pad, hub, input, snapshot};
+	` });
+	await page.mouse.move(420, 320);
+	const position = await page.evaluate(() => {
+		const {hub, input, snapshot} = (globalThis as any).attachment;
+		hub.poll(0); input.pollInput(); input.sampleInputControllerSnapshot(snapshot, 0);
+		return {x: snapshot.pointerXQ16, y: snapshot.pointerYQ16,
+			ui: input.getPlayerInput(1).inputHandlers.pointer.getButtonState('pointer_position').value2d};
+	});
+	assert.deepEqual(position, {x: 160 * 65536, y: 120 * 65536, ui: [420, 320]});
+	for (const [mode, delta] of [[0, 120], [1, 3], [2, 1]]) {
+		const wheel = await page.evaluate(([deltaMode, deltaY]) => {
+			const {input, snapshot} = (globalThis as any).attachment;
+			document.getElementById('screen').dispatchEvent(new WheelEvent('wheel', {deltaMode, deltaY, bubbles: true}));
+			input.pollInput(); input.sampleInputControllerSnapshot(snapshot, 0);
+			return snapshot.pointerWheelQ16;
+		}, [mode, delta]);
+		assert.equal(wheel, 65536);
+	}
+	const trigger = await page.evaluate(() => {
+		const {pad, hub, input, snapshot} = (globalThis as any).attachment;
+		const result = [];
+		for (const value of [0.25, 0.75, 0.875, 0.125, 0]) {
+			pad.timestamp += 1; pad.buttons[6] = {pressed: value >= 0.5, value};
+			hub.poll(pad.timestamp); input.pollInput(); input.sampleInputControllerSnapshot(snapshot, 0);
+			result.push(snapshot.pads[0].axesQ16[4]);
+		}
+		input.applyInputControllerVibrationEffect(0, 100, 0xffffffff / 65536);
+		return {result, effect: (globalThis as any).lastVibration};
+	});
+	assert.deepEqual(trigger.result, [0x4000, 0xc000, 0xe000, 0x2000, 0]);
+	assert.equal(trigger.effect.strongMagnitude, 1);
+	assert.equal(trigger.effect.weakMagnitude, 1);
+});

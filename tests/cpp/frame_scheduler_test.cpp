@@ -51,7 +51,7 @@ public:
 		return supervisorHigh;
 	}
 
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {
 	}
 
 	int sampleCount = 0;

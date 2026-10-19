@@ -219,7 +219,7 @@ Unary operators bind more tightly than the binary operators below.
 | `-expression` | Negation |
 | `not expression` | Logical negation |
 | `#expression` | Length |
-| `&"text"` or `&'text'` | String-ID literal form; its value is the quoted string itself, not a numeric address or pointer. Parentheses around the string literal are permitted. |
+| `&expression` | String-ID form. Evaluate the operand once as one value and retain its String value unchanged. The result is not a numeric address or pointer; literals, variables, indexed values and calls can supply the String. |
 
 <div class="keep-together">
 
@@ -430,7 +430,7 @@ Member and index bases must form an identifier-rooted path, recursively composed
 
 For an ordinary call, omit `method_name` or pass `nil`; `callee` is the callable expression. For a method call, `callee` is the **receiver expression**, not an already selected member, and `method_name` is the method key, normally its spelling string. `arguments` is an expression-node list. Do not include the receiver as its first explicit argument: the method form supplies the implicit receiver argument itself. Use `{}` for no explicit arguments.
 
-Unary and binary operators are the numeric constants in `f.syntax`, not source spelling strings, token numbers, or instruction words. For `s.unary_string_id`, the supported operand is a **direct `string_literal` node**. That form produces the literal String value unchanged, not a numeric pointer or raw address. Arbitrary computed operands are not supported by this operator's dynamic-expression path.
+Unary and binary operators are the numeric constants in `f.syntax`, not source spelling strings, token numbers, or instruction words. `s.unary_string_id` accepts a String-valued expression node. Its operand is evaluated once as one value; a call's additional results are discarded. The result is the same String value, not a numeric pointer or raw address.
 
 A function's `parameters` is a list of **identifier occurrence nodes**, not strings. Its `body` is a block node. Every parameter needs its own occurrence. A generated-symbol parameter is represented with a fresh `reference(symbol)` just like a generated-symbol local declaration.
 
@@ -590,7 +590,7 @@ All constants below are members of `f.syntax`. Node kinds and operators occupy o
 | Operator constant | Value | Category |
 |---|---:|---|
 | `unary_negate` | 1 | Numeric negation. |
-| `unary_string_id` | 2 | Direct string-literal form only; produces its String value. |
+| `unary_string_id` | 2 | String-ID form; retains the operand's String value. |
 | `unary_not` | 3 | Logical negation. |
 | `unary_length` | 4 | Length. |
 

@@ -113,3 +113,44 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 		assert.equal(cpu.getGlobalByKey(score), 0);
 	}
 });
+
+for (const optLevel of [0, 3] as const) test(`firmware string-id expressions preserve computed strings and scalar calls at O${optLevel}`, () => {
+	const { cpu } = createCartlibProgramHarness(`
+return pcall(function()
+local literal<const> = 'literal'
+local dynamic = 'com' .. 'puted'
+local calls = 0
+local obtain = function(...)
+ calls = calls + 1
+ return dynamic, 'discarded'
+end
+local chunk<const> = assert(load([=[
+ local text = 'local'
+ local captured = function() return text end
+ local first = &obtain()
+ return &'literal', &dynamic, &text, &&captured(), first, values[&dynamic], &obtain()
+]=], '=string-id', 't', { dynamic = dynamic, obtain = obtain, values = { computed = 17 } }))
+local a, b, c, d, e, f, g, h = chunk()
+return a == literal and b == dynamic and c == 'local' and d == 'local'
+ and e == dynamic and f == 17 and g == dynamic and h == nil and calls == 2
+end)
+`, { optLevel });
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+});
+
+for (const optLevel of [0, 3] as const) test(`generated string-id syntax accepts a computed operand at O${optLevel}`, () => {
+	const { cpu } = createCartlibProgramHarness(`
+return pcall(function()
+obtain = function(...) return 'string', 'discarded' end
+local f<const> = lua_compiler.syntax_factory
+local expression<const> = f.unary_expression(f.syntax.unary_string_id,
+ f.call_expression(f.identifier('obtain'), {}))
+local chunk<const> = f.chunk(f.block({ f.return_statement({ expression }) }))
+local value, extra = lua_compiler.compile_syntax(chunk, '=string-id-syntax')()
+return value == 'string' and extra == nil
+end)
+`, { optLevel });
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+});

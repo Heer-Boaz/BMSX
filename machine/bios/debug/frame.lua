@@ -15,7 +15,7 @@ local raise<const> = __bmsx_error
 local frame<const> = {}
 
 -- Resolve the selected ancestor at its actual suspension, not the evaluator's PC.
-function frame.resolve(frame_index, inline_depth)
+local suspension<const> = function(frame_index)
 	local thread<const> = running()
 	local function_address<const>, pc, _<const>, _<const>, domain<const> = frame_header(thread, frame_index)
 	if frame_index + 1 < frame_count(thread) then
@@ -31,7 +31,23 @@ function frame.resolve(frame_index, inline_depth)
 		end
 		rom_base = 0x10000000
 	end
-	return scopes.resolve(rom_base, function_address, pc, inline_depth)
+	return rom_base, function_address, pc
+end
+
+function frame.list(frame_index)
+	local base<const>, address<const>, pc<const> = suspension(frame_index)
+	if base == nil then
+		return nil, address
+	end
+	return scopes.list(base, address, pc)
+end
+
+function frame.resolve(frame_index, inline_depth)
+	local base<const>, address<const>, pc<const> = suspension(frame_index)
+	if base == nil then
+		return nil, address
+	end
+	return scopes.resolve(base, address, pc, inline_depth)
 end
 
 function frame.open(frame_index, names, owner_frame)

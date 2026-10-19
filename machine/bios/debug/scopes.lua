@@ -46,7 +46,7 @@ local decode_binding<const> = function(base, binding_table, slot, interval_addre
 	}
 end
 
-function scopes.resolve(rom_base, function_address, pc, inline_depth)
+local locate_function<const> = function(rom_base, function_address, pc)
 	local rom<const>: *word = rom_base
 	local directory_offset<const> = rom[directory_header_index]
 	if directory_offset == 0 then
@@ -71,8 +71,42 @@ function scopes.resolve(rom_base, function_address, pc, inline_depth)
 	end
 	local function_index<const> = first * function_words
 	local word<const> = (pc - functions[function_index + 1]) >> 2
-	local frame_start<const> = functions[function_index + 2]
-	local frame_end<const> = frame_start + functions[function_index + 3]
+	return base, functions + function_index * 4, word
+end
+
+function scopes.list(rom_base, function_address, pc)
+	local base<const>, scope_function_address<const>, word<const> = locate_function(rom_base, function_address, pc)
+	if base == nil then
+		return nil, scope_function_address
+	end
+	local directory<const>: *word = base
+	local scope_function<const>: *word = scope_function_address
+	local frames<const>: *word = base + directory[frame_table_index]
+	local intervals<const> = base + directory[interval_table_index]
+	local list<const> = {}
+	local first<const> = scope_function[2]
+	for frame_index = first, first + scope_function[3] - 1 do
+		local at<const> = frame_index * frame_words
+		if contains(intervals, frames[at + 3], frames[at + 4], word) then
+			list[#list + 1] = frames[at]
+			list[#list + 1] = decode_utf8(base + frames[at + 1], frames[at + 2])
+		end
+	end
+	if #list == 0 then
+		return nil, 'Frame source scope is unavailable at this PC.'
+	end
+	return list
+end
+
+function scopes.resolve(rom_base, function_address, pc, inline_depth)
+	local base<const>, scope_function_address<const>, word<const> = locate_function(rom_base, function_address, pc)
+	if base == nil then
+		return nil, scope_function_address
+	end
+	local directory<const>: *word = base
+	local scope_function<const>: *word = scope_function_address
+	local frame_start<const> = scope_function[2]
+	local frame_end<const> = frame_start + scope_function[3]
 	local frames<const>: *word = base + directory[frame_table_index]
 	local intervals<const>: *word = base + directory[interval_table_index]
 	for frame_index = frame_start, frame_end - 1 do

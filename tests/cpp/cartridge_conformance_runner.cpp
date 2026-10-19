@@ -36,7 +36,7 @@ public:
 	void applyInputControllerVibrationEffect(
 		bmsx::i32,
 		bmsx::f64,
-		bmsx::f32
+		bmsx::f64
 	) override {
 	}
 };

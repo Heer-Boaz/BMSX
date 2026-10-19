@@ -875,6 +875,9 @@ emit_value = function(
 			target,
 			target_is_temporary
 		)
+		if expression.operator == syntax.unary_string_id then
+			return operand_register
+		end
 		bytecode.emit_abc(
 			instruction_words,
 			opcode_by_unary_operator[expression.operator],

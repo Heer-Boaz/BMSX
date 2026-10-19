@@ -19,7 +19,7 @@ bool HistoryInputSource::supervisorRequestLineHigh() const {
 	return high;
 }
 
-void HistoryInputSource::applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) {
+void HistoryInputSource::applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f64 intensity) {
 	if (history.mode == HistoryMode::Replaying || history.mode == HistoryMode::Reviewing) return;
 	live.applyInputControllerVibrationEffect(padIndex, durationMs, intensity);
 }

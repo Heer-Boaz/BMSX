@@ -105,10 +105,24 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 		if (code === 'lt') {
 			this.inputControllerAxesQ16[InputControllerGamepadAxis.LeftTrigger] =
-				down ? encodeSignedFix16(value) : 0;
+				encodeSignedFix16(value);
 		} else if (code === 'rt') {
 			this.inputControllerAxesQ16[InputControllerGamepadAxis.RightTrigger] =
-				down ? encodeSignedFix16(value) : 0;
+				encodeSignedFix16(value);
+		}
+	}
+
+	public ingestAxis1(code: string, value: number, timestamp: number): void {
+		const state = getPressedState(this.buttonStates, code);
+		state.value = value;
+		state.timestamp = timestamp;
+		switch (code) {
+			case 'lt':
+				this.inputControllerAxesQ16[InputControllerGamepadAxis.LeftTrigger] = encodeSignedFix16(value);
+				break;
+			case 'rt':
+				this.inputControllerAxesQ16[InputControllerGamepadAxis.RightTrigger] = encodeSignedFix16(value);
+				break;
 		}
 	}
 

@@ -91,7 +91,7 @@ export class ExecutionAddressSpace {
 			return null;
 		}
 		return {
-			imageAddress: romBaseAddress + imageOffset,
+			imageAddress: (romBaseAddress + imageOffset) >>> 0,
 			executionDomainId,
 			startupFunctionAddress: readLE32(
 				bytes,

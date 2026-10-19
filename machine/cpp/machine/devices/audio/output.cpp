@@ -322,6 +322,9 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 			cursorQ16 += record.phaseStepQ16 + phaseCarry;
 			if (hasLoop) {
 				cursorQ16 = wrapLoopCursor(cursorQ16, record.loopStartQ16, record.loopEndQ16);
+			} else if (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16) {
+				ended = true;
+				break;
 			}
 			if (fadeRemaining != 0u) {
 				fadeRemaining -= 1u;
@@ -342,9 +345,6 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 					- static_cast<i64>(record.fadeStepQ12)
 					- static_cast<i64>(fadeRemainderCarry)
 				);
-			} else if (!hasLoop && (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16)) {
-				ended = true;
-				break;
 			}
 		}
 

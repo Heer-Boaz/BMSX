@@ -1162,6 +1162,80 @@ function advanceRealApu(harness: ReturnType<typeof createRealAudioHarness>, nowC
 	harness.audio.onService(nowCycles);
 }
 
+test('APU source end and fade completion are independent of mixer batch subdivision', () => {
+	const cases = [
+		{ name: 'source-first', frames: 3, start: 0, rate: 65536, hz: 44100, loop: false, fade: 8, count: 3, step: 2048 },
+		{ name: 'reverse-source-first', frames: 3, start: 2, rate: 0xffff0000, hz: 44100, loop: false, fade: 8, count: 3, step: 2048 },
+		{ name: 'fade-first', frames: 3, start: 0, rate: 65536, hz: 44100, loop: false, fade: 2, count: 2, step: 8192 },
+		{ name: 'simultaneous', frames: 4, start: 0, rate: 65536, hz: 44100, loop: false, fade: 4, count: 4, step: 4096 },
+		{ name: 'loop', frames: 3, start: 0, rate: 65536, hz: 44100, loop: true, fade: 8, count: 8, step: 2048 },
+		{ name: 'stationary', frames: 3, start: 0, rate: 0, hz: 44100, loop: false, fade: 8, count: 8, step: 2048 },
+		{ name: 'fractional-rate', frames: 3, start: 0, rate: 65536, hz: 8000, loop: false, fade: 32, count: 17, step: 512 },
+		{ name: 'cross-internal-batch', frames: 129, start: 0, rate: 65536, hz: 44100, loop: false, fade: 256, count: 129, step: 64 },
+		{ name: 'already-ended', frames: 3, start: 3, rate: 65536, hz: 44100, loop: false, fade: 8, count: 0, step: 2048 },
+	];
+	for (const c of cases) {
+		const prepare = () => {
+			const harness = createRealAudioHarness();
+			const bytes = new Uint8Array(256).fill(0xff);
+			bytes.fill(0xc0, 0, c.frames);
+			writeSampleRamBytes(harness.memory, bytes);
+			writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, bytes.length);
+			for (const [address, word] of [
+				[IO_APU_SOURCE_FRAME_COUNT, c.frames], [IO_APU_SOURCE_SAMPLE_RATE_HZ, c.hz],
+				[IO_APU_START_SAMPLE, c.start], [IO_APU_RATE_STEP_Q16, c.rate],
+				[IO_APU_SOURCE_LOOP_END_SAMPLE, c.loop ? c.frames : 0],
+				[IO_APU_GAIN_Q12, 4096], [IO_APU_SLOT, 1],
+			]) harness.memory.writeMappedWord(address!, word!);
+			writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
+			harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+			harness.memory.writeMappedWord(IO_APU_FADE_SAMPLES, c.fade);
+			writeApuCommand(harness.memory, harness.audio, APU_CMD_STOP_SLOT);
+			assert.equal(harness.audioOutput.captureState().voices[0]!.fadeSamplesRemaining, c.fade, c.name);
+			return harness;
+		};
+		for (const chunk of [1, 7, 260]) {
+			const harness = prepare();
+			assert.equal(harness.audioOutput.samplesUntilNextEvent(260), c.count || 1, c.name);
+			let ends = 0;
+			for (let frame = 0; frame < 260;) {
+				const count = Math.min(chunk, 260 - frame);
+				const ended = harness.audioOutput.renderMachineFrames(count, frame);
+				if (ended !== 0) {
+					assert.equal(ended, 2, c.name);
+					if (chunk === 1) assert.equal(frame + count, c.count || 1, c.name);
+					ends += 1;
+				}
+				frame += count;
+			}
+			assert.equal(ends, 1, `${c.name}: one end`);
+			assert.deepEqual(harness.audioOutput.captureState().voices, [], c.name);
+			for (let frame = 0; frame < 260; frame += 1) {
+				const sample = frame < c.count ? 16384 - frame * c.step : 0;
+				assert.equal(harness.audioOutput.outputRing.readFramePacked(), ((sample << 16) | sample) >>> 0, `${c.name}: ${chunk}/${frame}`);
+			}
+		}
+		const event = prepare();
+		if (c.count > 1) {
+			advanceRealApu(event, c.count - 1);
+			assert.equal(event.memory.readIoU32(IO_APU_EVENT_SEQ), 0, c.name);
+			assert.equal(event.memory.readIoU32(IO_APU_ACTIVE_MASK), 2, c.name);
+		}
+		advanceRealApu(event, c.count || 1);
+		const state = event.audio.captureState();
+		assert.equal(state.slotPhases[1], APU_SLOT_PHASE_IDLE, c.name);
+		assert.deepEqual(state.slotRegisterWords.slice(21, 42), new Array(21).fill(0), c.name);
+		assert.equal(event.memory.readIoU32(IO_APU_ACTIVE_MASK), 0, c.name);
+		assert.equal(event.memory.readIoU32(IO_APU_EVENT_SEQ), 1, c.name);
+		assert.equal(event.memory.readIoU32(IO_APU_EVENT_KIND), APU_EVENT_SLOT_ENDED, c.name);
+		assert.equal(event.memory.readIoU32(IO_APU_EVENT_SLOT), 1, c.name);
+		assert.equal(event.memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR), APU_SAMPLE_RAM_BASE, c.name);
+		assert.equal(event.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_APU, IRQ_APU, c.name);
+		advanceRealApu(event, 260);
+		assert.equal(event.memory.readIoU32(IO_APU_EVENT_SEQ), 1, c.name);
+	}
+});
+
 function advanceScheduledApuTo(harness: ReturnType<typeof createRealAudioHarness>, targetCycle: number): void {
 	while (harness.scheduler.nextDeadline() <= targetCycle) {
 		const deadline = harness.scheduler.nextDeadline();

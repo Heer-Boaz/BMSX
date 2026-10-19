@@ -13,15 +13,17 @@ export const enum DecodedDispatchOp {
 	FusedAddShl = OPCODE_COUNT + 1,
 	FusedShrBxor = OPCODE_COUNT + 2,
 	Observe = OPCODE_COUNT + 3,
+	ReservedMemory = OPCODE_COUNT + 4,
 }
 
-export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 4;
+export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5;
 
 export const DECODED_DISPATCH_BASE_CYCLES = new Uint8Array(DECODED_DISPATCH_OP_COUNT);
 DECODED_DISPATCH_BASE_CYCLES.set(BASE_CYCLES);
 DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShlBxor] = BASE_CYCLES[OpCode.SHL];
 DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedAddShl] = BASE_CYCLES[OpCode.ADD];
 DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.FusedShrBxor] = BASE_CYCLES[OpCode.SHR];
+DECODED_DISPATCH_BASE_CYCLES[DecodedDispatchOp.ReservedMemory] = BASE_CYCLES[OpCode.LOAD_MEM];
 
 export function decodedDispatchOp(first: OpCode, second: OpCode): number {
 	switch (first) {

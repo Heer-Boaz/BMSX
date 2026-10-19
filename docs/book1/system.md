@@ -199,6 +199,7 @@ The raw Cause word uses the following values. The exception-code mask is
 | `0x00000014` | Address-error store |
 | `0x00000018` | Instruction-bus error |
 | `0x0000001c` | Data-bus error |
+| `0x00000028` | Reserved instruction |
 | `0x0000002c` | Coprocessor unusable |
 | `0x00000034` | Trap |
 

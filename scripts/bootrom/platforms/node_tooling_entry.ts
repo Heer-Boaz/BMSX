@@ -221,7 +221,7 @@ async function main(): Promise<void> {
 			}
 			const captureDirectory = path.resolve('.bmsx/control/screenshots', String(process.pid));
 			await fs.mkdir(captureDirectory, { recursive: true });
-			const control = new HostControlSession(new RemoteInput(inputHub, clock), videoBackend, captureDirectory, ide ? clipboard : undefined);
+			const control = new HostControlSession(new RemoteInput(input, clock), videoBackend, captureDirectory, ide ? clipboard : undefined);
 			const finished = Promise.withResolvers<void>();
 			const server = new HostControlServer(request => control.execute(request), () => control.disconnect(), finished.resolve);
 			const port = await server.listen(options.mode.port);

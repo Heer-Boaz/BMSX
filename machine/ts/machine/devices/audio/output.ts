@@ -403,6 +403,9 @@ export class ApuOutputMixer {
 				cursorQ16 += record.phaseStepQ16 + phaseCarry;
 				if (hasLoop) {
 					cursorQ16 = this.wrapLoopCursor(cursorQ16, record.loopStartQ16, record.loopEndQ16);
+				} else if (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16) {
+					ended = true;
+					break;
 				}
 				if (fadeRemaining !== 0) {
 					fadeRemaining -= 1;
@@ -419,9 +422,6 @@ export class ApuOutputMixer {
 						fadeError = nextFadeError >>> 0;
 					}
 					gainQ12 = wrapI32(gainQ12 - record.fadeStepQ12 - fadeRemainderCarry);
-				} else if (!hasLoop && (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16)) {
-					ended = true;
-					break;
 				}
 			}
 

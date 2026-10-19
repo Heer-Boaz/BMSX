@@ -62,3 +62,22 @@ for (const origin of [0, 1000]) {
 		assert.equal(state.justpressed, false);
 	});
 }
+
+test('analog trigger motion updates sampled magnitude without repeating button edges', () => {
+	const input = new GamepadInput({ now: () => 0 } as HostClock, device.id, device);
+	const snapshot = { buttons: 0, axesQ16: new Uint32Array(6) };
+	input.ingestButton('lt', true, 0.6, 0, 1);
+	input.pollInput();
+	assert.equal(input.getButtonState('lt').justpressed, true);
+	input.ingestAxis1('lt', 0.75, 1);
+	input.pollInput();
+	input.writeInputControllerPadSnapshot(snapshot);
+	assert.equal(snapshot.axesQ16[4], 0xc000);
+	assert.equal(input.getButtonState('lt').pressed, true);
+	assert.equal(input.getButtonState('lt').justpressed, false);
+	input.ingestButton('lt', false, 0.25, 2, 1);
+	input.pollInput();
+	input.writeInputControllerPadSnapshot(snapshot);
+	assert.equal(snapshot.axesQ16[4], 0x4000, 'below-threshold analog travel is independent of the button level');
+	assert.equal(input.getButtonState('lt').justreleased, true);
+});

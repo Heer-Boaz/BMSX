@@ -557,15 +557,15 @@ bool LibretroInput::setRumbleStrength(unsigned port, u16 strength) {
 void LibretroInput::applyInputControllerVibrationEffect(
 		i32 padIndex,
 		f64 durationMs,
-		f32 intensity) {
+		f64 intensity) {
 	const unsigned port = static_cast<unsigned>(padIndex);
 	const u32 portMask = 1u << port;
 	if ((m_rumble_support_mask & portMask) == 0u) {
 		return;
 	}
-	const f32 boundedIntensity = std::clamp(intensity, 0.0F, 1.0F);
+	const f64 boundedIntensity = std::clamp(intensity, 0.0, 1.0);
 	const u16 strength = durationMs > 0.0
-		? static_cast<u16>(boundedIntensity * 65535.0F)
+		? static_cast<u16>(boundedIntensity * 65535.0)
 		: 0u;
 	if (!setRumbleStrength(port, strength)) {
 		m_rumble_support_mask &= ~portMask;

@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <span>
+#include <stdexcept>
 
 namespace bmsx {
 
@@ -16,6 +17,49 @@ inline u8 utf8ByteAt(const std::string& text, size_t index) {
 
 inline bool isUtf8Continuation(u8 value) {
 	return (value & 0xC0u) == 0x80u;
+}
+
+// External serialized text uses complete, shortest-form Unicode scalar sequences.
+// U+FEFF is an ordinary scalar; this codec does not consume a transport BOM.
+inline std::string_view scalarUtf8Text(std::span<const u8> bytes) {
+	size_t index = 0;
+	while (index < bytes.size()) {
+		const u8 first = bytes[index++];
+		if (first < 0x80u) continue;
+		u32 scalar;
+		u32 minimum;
+		size_t continuationCount;
+		if (first >= 0xC2u && first <= 0xDFu) {
+			scalar = first & 0x1Fu;
+			minimum = 0x80u;
+			continuationCount = 1u;
+		} else if (first >= 0xE0u && first <= 0xEFu) {
+			scalar = first & 0x0Fu;
+			minimum = 0x800u;
+			continuationCount = 2u;
+		} else if (first >= 0xF0u && first <= 0xF4u) {
+			scalar = first & 0x07u;
+			minimum = 0x10000u;
+			continuationCount = 3u;
+		} else {
+			throw std::runtime_error("Invalid scalar UTF-8 text.");
+		}
+		if (continuationCount > bytes.size() - index) {
+			throw std::runtime_error("Invalid scalar UTF-8 text.");
+		}
+		for (size_t offset = 0; offset < continuationCount; ++offset) {
+			const u8 next = bytes[index++];
+			if (!isUtf8Continuation(next)) {
+				throw std::runtime_error("Invalid scalar UTF-8 text.");
+			}
+			scalar = (scalar << 6u) | (next & 0x3Fu);
+		}
+		if (scalar < minimum || scalar > 0x10FFFFu
+			|| (scalar >= 0xD800u && scalar <= 0xDFFFu)) {
+			throw std::runtime_error("Invalid scalar UTF-8 text.");
+		}
+	}
+	return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
 inline void appendUtf8TailBytes(std::string& out, u32 codepoint, i32 count) {

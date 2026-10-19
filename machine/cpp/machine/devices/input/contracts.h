@@ -72,7 +72,7 @@ struct InputControllerPadSnapshot {
 struct InputControllerSnapshot {
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> keyWords{}; // bit = HID usage pressed
 	u32 pointerButtons = 0;
-	u32 pointerXQ16 = 0u; // raw s16.16 host pointer-space coordinate
+	u32 pointerXQ16 = 0u; // raw s16.16 display-raster coordinate
 	u32 pointerYQ16 = 0u;
 	u32 pointerWheelQ16 = 0u;
 	u32 rumbleSupportMask = 0; // bit per pad
@@ -119,14 +119,14 @@ public:
 		InputControllerSnapshot& snapshot,
 		InputControllerSampleContext context) = 0;
 	virtual auto supervisorRequestLineHigh() const -> bool = 0;
-	virtual void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) = 0;
+	virtual void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f64 intensity) = 0;
 };
 
 constexpr u32 INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = static_cast<u32>(FIX16_ONE);
 constexpr u32 INP_OUTPUT_CTRL_APPLY = 1u;
 
-inline f32 decodeInputOutputIntensityQ16(u32 value) {
-	return static_cast<f32>(value) / static_cast<f32>(INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
+inline f64 decodeInputOutputIntensityQ16(u32 value) {
+	return static_cast<f64>(value) / static_cast<f64>(INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
 }
 
 } // namespace bmsx

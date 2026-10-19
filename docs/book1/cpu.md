@@ -162,15 +162,18 @@ K0–K16383. A raw count/key field instead keeps its unsigned encoded value.
 
 An instruction's encoding range does not allocate its referenced registers or
 constants. A frame obtains its entry PC, parameter count and stack allocation
-from its function record. Declared register slots begin nil before arguments
-are copied; missing fixed parameters are nil. Ordinary register writes can
+from its function record. The reserved capacity is at least one slot, including
+when the record's maximum stack is zero. All reserved slots begin nil before
+arguments are copied; missing fixed parameters are nil. Ordinary register writes can
 extend the active range, while result placement and open varargs have the
 specific top rules in the call reference. Do not treat the instruction's
 maximum field value as available scratch storage in every function.
 
 ### Fetch and conditional skip
 
-Instruction PC is a byte address and must be four-byte aligned. A misaligned
+Instruction PC is an unsigned 32-bit byte address and must be four-byte aligned.
+Sequential advancement, WIDE-body addresses, branch targets and conditional
+skips retain the low 32 bits of the calculated address. A misaligned
 fetch records BadAddress and raises `AddressErrorLoad`. A new bus fault reading
 either the first word or the WIDE body raises `InstructionBusError`; the saved
 fetch PC is the instruction start, including the prefix address when the body
@@ -402,7 +405,7 @@ The constant and copy instructions move complete values or create a specific val
 |---|---:|---|---|---:|
 | MOV | `01H` | A destination; B source register; C unused | `R[A] = R[B]`, preserving the complete value | 1 |
 | LOADK | `02H` | A destination; Bx identifies an existing constant | `R[A] = K[Bx]`, preserving the constant's value kind | 1 |
-| LOADNIL | `03H` | A first register; B positive register count; C unused | Set exactly `R[A]` through `R[A+B−1]` to nil; raise frame top to at least A+B without lowering it | 1 |
+| LOADNIL | `03H` | A first register; B register count; C unused | For B>0, set exactly `R[A]` through `R[A+B−1]` to nil and raise frame top to at least A+B without lowering it. B=0 changes neither slots nor top. | 1 |
 | KNIL | `05H` | A destination; B and C unused | `R[A] = nil` | 1 |
 | KFALSE | `06H` | A destination; B and C unused | `R[A] = false` | 1 |
 | KTRUE | `07H` | A destination; B and C unused | `R[A] = true` | 1 |
@@ -410,7 +413,7 @@ The constant and copy instructions move complete values or create a specific val
 | K1 | `09H` | A destination; B and C unused | Number 1 in `R[A]` | 1 |
 | KM1 | `0AH` | A destination; B and C unused | Number −1 in `R[A]` | 1 |
 | KSMI | `0BH` | A destination; signed immediate sBx within the encoding range above | Number equal to sBx in `R[A]` | 1 |
-| LOADKR | `35H` | A destination; B source register; `R[B]` is a Number containing a nonnegative integral index i within the constant pool; C unused | `R[A] = K[i]`, preserving the constant's value kind; B is not an RK operand | 1 |
+| LOADKR | `35H` | A destination; B source register; C unused | Convert `R[B]` to unsigned 32-bit index i, then `R[A] = K[i]`, preserving the constant's value kind. An index outside the pool raises `INVALID_ARGUMENT` (10) before the destination is written. B is not an RK operand. | 1 |
 
 </section>
 
@@ -1029,6 +1032,13 @@ The `C` operand of a scalar load or store selects one of six formats:
 
 
 All multi-byte formats are little-endian: the least significant byte occupies the lowest address. `Word` and `U32LE` transfer the same numeric data, but identify the access differently in bus-fault metadata. Floating-point transfers decode or encode floating-point bits; they are not integer conversions of the floating-point number. No guarantee of preserving every NaN payload is made.
+
+A scalar load or store with C greater than 5 is a reserved instruction. It
+raises `ReservedInstruction` (exception code 10, Cause `00000028H`) with EPC at
+the instruction start, before address conversion, alignment checks or a data
+access. BadAddress and the Memory fault record are unchanged. The normal
+two-cycle base charge still applies. In counted word stores, C is a word count,
+not a scalar-format selector.
 
 Address conversion and integer-store conversion truncate toward zero and retain the unsigned low 32 bits. Non-numeric register values take the numeric-conversion path through NaN and become zero on this integer path. Numeric NaN and infinities also become zero on this integer path. Floating-point stores use numeric conversion instead, so a non-numeric register value becomes NaN. A fractional address is converted before its alignment is checked.
 

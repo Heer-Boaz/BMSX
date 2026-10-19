@@ -3,7 +3,7 @@ import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
-export type GeometryVector = { name: string; writes: [number, number][]; reads: number[] };
+export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number };
 const instances = GEO_SCRATCH_BASE, shapes = GEO_SCRATCH_BASE + 0x100, vertices = GEO_SCRATCH_BASE + 0x200;
 const result = GEO_SCRATCH_BASE + 0x400, summary = GEO_SCRATCH_BASE + 0x500;
 
@@ -30,7 +30,7 @@ function vector(name: string, a: readonly number[], b: readonly number[], sat: b
 		[io.IO_GEO_STRIDE0, 20], [io.IO_GEO_STRIDE1, sat ? 16 : 0], [io.IO_GEO_STRIDE2, sat ? 8 : 0],
 		[io.IO_GEO_CMD, sat ? geo.IO_CMD_GEO_SAT2_BATCH : geo.IO_CMD_GEO_OVERLAP2D_PASS],
 	);
-	return { name, writes, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+	return { name, writes, pairCounterSeed: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
 		...Array.from({ length: 9 }, (_, i) => result + i * 4), ...Array.from({ length: 4 }, (_, i) => summary + i * 4)] };
 }
 
@@ -77,5 +77,12 @@ export function geometryVectors(): GeometryVector[] {
 	result.push(vector('sat-unfused-normal',
 		[-475, 112, 45437, 72136, 4475, 47602],
 		[3351, 6114, 49263, 78138, 8301, 53604], true));
+	for (const pairCounterSeed of [0x7fff_ffff, 0xffff_fffe, 0xffff_ffff]) {
+		const seeded = vector(`overlap-counter-${pairCounterSeed.toString(16)}`,
+			[0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits),
+			[1, 1, 5, 1, 5, 5, 1, 5].map(numberToF32Bits), false);
+		seeded.pairCounterSeed = pairCounterSeed;
+		result.push(seeded);
+	}
 	return result;
 }

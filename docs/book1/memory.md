@@ -288,7 +288,7 @@ The machine boot reader requires a **60-byte ROM-backed prefix**, occupying offs
 | `0x30` | Exception function | Absolute function-record address. | Not read. |
 | `0x34`, `0x38` | Declared static-layout token words | Not read. | Not read. |
 
-For system domain −1, the ROM base is `0x00000000`. For cartridge domains 0 and 1, it is `0x10000000`, with the domain selecting the cartridge socket. The executable-image address is that ROM base plus the image-offset word. The three function-record addresses are already absolute: do **not** add the ROM base or image address to them, and do not use the image offset as an instruction PC.
+For system domain −1, the ROM base is `0x00000000`. For cartridge domains 0 and 1, it is `0x10000000`, with the domain selecting the cartridge socket. The executable-image address is the low 32 bits of that ROM base plus the image-offset word. The resulting address must bind to installed ROM storage. The three function-record addresses are already absolute: do **not** add the ROM base or image address to them, and do not use the image offset as an instruction PC.
 
 Boot resolution first binds all 60 bytes to installed ROM storage. An unbacked prefix or a zero image offset means no executable image; failure to resolve the system image is an error. This binding does not inspect the magic or header-size word, require the optional diagnostic-directory word, or validate the declared image byte count. The BIOS adds the cartridge checks below. The exception-address field alone does not specify cartridge fault routing.
 
@@ -346,6 +346,13 @@ Both name tables use the same layout. Name record `i` begins at `tableAddress + 
 | `0x04` | Text byte count, u32 little-endian. |
 
 Text lengths count **bytes**, not codepoints. Reads consume the specified span, not a NUL-terminated sequence. A zero byte within the span is part of the text. A zero byte count produces empty text without reading the address.
+
+Constant text and names use complete, shortest-form UTF-8 encodings of Unicode
+scalar values. Invalid leading or continuation bytes, truncated sequences,
+overlong encodings, surrogate values D800H–DFFFH and values above 10FFFFH make
+image activation fail. An initial `EF BB BF` encodes the ordinary character
+U+FEFF; it is retained rather than removed as a byte-order marker. A string
+beginning with U+FEFF therefore differs from the string without that character.
 
 The ordinary-global and system-global tables register names in separate namespaces. Each table index maps to the corresponding runtime global slot. An already registered name reuses its slot and value; a newly registered name begins nil. The name record contains no initial value.
 
@@ -1098,11 +1105,23 @@ end
 
 `source` first receives the invalid address stored in `source_address`. The first read faults before assigning `result.first`. `safe_words`, by contrast, names the linked address of two backed DATA words. Repair the existing `source` binding to that address: changing the `source_address` word alone would leave the stopped read’s already loaded pointer unchanged. Do not change EPC; the same read must be retried with the repaired operand.
 
-At the monitor, inspect `FRAMES`. In the supplied sample, the source frame is physical index `00000001`, depth `0`, and its PC matches the fault EPC. Indices are displayed in hexadecimal, but bare command counts are decimal: use the `0x` prefix. Other programs or builds need not use this index. For the supplied sample, the sequence is:
+At the monitor, inspect `FRAMES`. Each physical frame row gives its index,
+function-record address and PC. Following `DEPTH` rows list the installed
+source-scope names active at that frame's suspension PC, including inlined
+functions. Choose the physical index from the preceding frame row and the
+depth from the matching source-scope row. Missing diagnostic information is
+reported instead of supplying a guessed scope. A binding must also be live and
+mutable at that PC to be assigned.
+
+In the supplied sample, the source frame is physical index `00000001`, depth
+`00000000`, and its PC matches the fault EPC. Both selectors are displayed as
+eight hexadecimal digits without a prefix; bare command selectors are decimal,
+so use `0x` when copying them. Other programs or builds need not use this pair.
+For the supplied sample, the sequence is:
 
 ```text
 FRAMES
-LUA --FRAME 0x00000001 0 source = safe_words
+LUA --FRAME 0x00000001 0x00000000 source = safe_words
 CONT
 ```
 

@@ -1,6 +1,7 @@
 local terminal<const> = require('tty/terminal')
 local layout<const> = require('tty/layout')
 local source_location<const> = require('shell/source_location')
+local frame_scopes<const> = require('debug/frame')
 
 local byte<const> = __bmsx_string_byte
 local running<const> = __bmsx_coroutine_running
@@ -53,6 +54,7 @@ local exception_code_address_error_load<const> = 4
 local exception_code_address_error_store<const> = 5
 local exception_code_instruction_bus_error<const> = 6
 local exception_code_data_bus_error<const> = 7
+local exception_code_reserved_instruction<const> = 10
 local exception_code_coprocessor_unusable<const> = 11
 local exception_code_trap<const> = 13
 local exception_nmi<const> = 0xfffffffb
@@ -69,7 +71,7 @@ rodata command_registry: monitor_command[] = {
 	{ name = 'CLS', usage = 'CLS', description = 'CLEAR TERMINAL OUTPUT', kind = command_clear },
 	{ name = 'CONT', usage = 'CONT', description = 'RESUME CART AT EPC', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT [CLEAR]', description = 'SHOW OR CLEAR SAVED FAULT STATE', kind = command_fault },
-	{ name = 'FRAMES', usage = 'FRAMES', description = 'RETAINED HEX INDICES, FUNCTION AND PC', kind = command_frames },
+	{ name = 'FRAMES', usage = 'FRAMES', description = 'RETAINED FRAMES AND ACTIVE SOURCE DEPTHS', kind = command_frames },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
 	{ name = 'LUA', usage = 'LUA [--SESSION | --FRAME INDEX DEPTH] <SOURCE>', description = 'EVALUATE CART, SESSION OR RETAINED FRAME', kind = command_lua },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
@@ -89,6 +91,7 @@ rodata exception_registry: monitor_exception[] = {
 	{ code = exception_code_address_error_store, mnemonic = 'ADES', description = 'ADDRESS ERROR STORE', has_bad_address = 1 },
 	{ code = exception_code_instruction_bus_error, mnemonic = 'IBE', description = 'INSTRUCTION BUS ERROR', has_bad_address = 0 },
 	{ code = exception_code_data_bus_error, mnemonic = 'DBE', description = 'DATA BUS ERROR', has_bad_address = 0 },
+	{ code = exception_code_reserved_instruction, mnemonic = 'RI', description = 'RESERVED INSTRUCTION', has_bad_address = 0 },
 	{ code = exception_code_coprocessor_unusable, mnemonic = 'CPU', description = 'COPROCESSOR UNUSABLE', has_bad_address = 0 },
 	{ code = exception_code_trap, mnemonic = 'TRAP', description = 'LUA RUNTIME FAULT', has_bad_address = 0 },
 }
@@ -123,6 +126,8 @@ bss monitor_fault_exception: word
 bss monitor_fault_has_bad_address: word
 bss monitor_fault_has_lua_fault_reason: word
 
+local monitor_frame_scopes
+local monitor_frame_scope_error
 local monitor_entry_lua_fault_message
 local monitor_fault_lua_fault_message
 
@@ -347,6 +352,8 @@ local arguments_end<const> = function(line, index, length)
 end
 
 function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value, columns, retained_frames)
+	monitor_frame_scopes = nil
+	monitor_frame_scope_error = nil
 	*monitor_command_columns = columns
 	*monitor_retained_frames = retained_frames
 	*monitor_entry_status = status
@@ -512,6 +519,8 @@ function monitor_commands.accept_candidate(line, capacity, selected)
 end
 
 function monitor_commands.start(line, length)
+	monitor_frame_scopes = nil
+	monitor_frame_scope_error = nil
 	local command<const>, argument_index<const> = command_span(line, length)
 	if command == command_not_found then
 		if skip_spaces(line, 0, length) == length then
@@ -648,6 +657,8 @@ function monitor_commands.start(line, length)
 end
 
 function monitor_commands.cancel()
+	monitor_frame_scopes = nil
+	monitor_frame_scope_error = nil
 	*monitor_command_producer = producer_none
 end
 
@@ -670,7 +681,7 @@ function monitor_commands.next_row(row)
 	if entry.kind == command_frames then
 		local cursor<const> = *monitor_command_cursor
 		if cursor == 0 then
-			write_text(row, 0, 'INDEX    FUNCTION PC (HEX; DEPTH 0)', palette_accent)
+			write_text(row, 0, 'INDEX    FUNCTION PC (HEX)', palette_accent)
 			*monitor_command_cursor = 1
 			if *monitor_retained_frames == 0 then
 				*monitor_command_producer = producer_none
@@ -679,15 +690,35 @@ function monitor_commands.next_row(row)
 			return row_more
 		end
 		local index<const> = *monitor_retained_frames - cursor
+		local list<const> = monitor_frame_scopes
+		if list ~= nil or monitor_frame_scope_error ~= nil then
+			if list ~= nil then
+				local at<const> = *monitor_command_value
+				local column = write_text(row, 0, '  DEPTH ', palette_accent)
+				column = write_hex(row, column, list[at], palette_accent)
+				write_text(row, column + 1, list[at + 1], palette_text)
+				if at + 2 <= #list then
+					*monitor_command_value = at + 2
+					return row_more
+				end
+				monitor_frame_scopes = nil
+			else
+				write_text(row, 2, monitor_frame_scope_error, palette_text)
+				monitor_frame_scope_error = nil
+			end
+			*monitor_command_cursor = cursor + 1
+			if index == 0 then
+				*monitor_command_producer = producer_none
+				return row_done
+			end
+			return row_more
+		end
 		local address<const>, pc<const> = frame_header(running(), index)
 		local column = write_hex(row, 0, index, palette_accent)
 		column = write_hex(row, column + 1, address, palette_text)
 		write_hex(row, column + 1, pc, palette_text)
-		*monitor_command_cursor = cursor + 1
-		if index == 0 then
-			*monitor_command_producer = producer_none
-			return row_done
-		end
+		monitor_frame_scopes, monitor_frame_scope_error = frame_scopes.list(index)
+		*monitor_command_value = 1
 		return row_more
 	end
 	if entry.kind == command_fault or entry.kind == command_registers then

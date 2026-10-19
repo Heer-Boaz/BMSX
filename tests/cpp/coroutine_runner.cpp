@@ -12,7 +12,7 @@ class CoroutineInput final : public bmsx::InputControllerInputSource {
 public:
 	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&, bmsx::InputControllerSampleContext) override {}
 	bool supervisorRequestLineHigh() const override { return false; }
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {}
 };
 
 static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {

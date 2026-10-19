@@ -222,3 +222,13 @@ test('input controller derives source-sampling context from the supervisor phase
 		InputControllerSampleContext.Supervisor,
 	]);
 });
+
+test('output intensity preserves every U16.16 input word through the request boundary', () => {
+	const live = createHarness();
+	for (const word of [0, 1, 0x10000, 0x10001, 0xffffffff]) {
+		live.memory.writeMappedWord(IO_INP_OUTPUT_INTENSITY_Q16, word);
+		live.memory.writeMappedWord(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
+		assert.equal(live.vibrations.at(-1).intensity, word / 65536);
+		assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_INTENSITY_Q16), word);
+	}
+});

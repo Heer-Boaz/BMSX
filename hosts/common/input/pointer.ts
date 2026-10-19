@@ -48,6 +48,7 @@ export class PointerInput implements PointerInputHandler {
 	private pendingDeltaY = 0;
 	private pendingDeltaTimestamp = 0;
 	private pendingWheel = 0;
+	private pendingAttachmentWheel = 0;
 	private pendingWheelTimestamp = 0;
 	private inputControllerButtons = 0;
 	private routedInputControllerButtons = 0;
@@ -112,7 +113,8 @@ export class PointerInput implements PointerInputHandler {
 			wheel.pressedAtMs = 0;
 			wheel.releasedAtMs = now;
 		}
-		this.inputControllerWheelQ16 = encodeSignedFix16(wheelDelta);
+		this.inputControllerWheelQ16 = encodeSignedFix16(this.pendingAttachmentWheel);
+		this.pendingAttachmentWheel = 0;
 		this.pendingWheel = 0;
 
 		for (let index = 0; index < POINTER_DEFAULT_CODES.length; index += 1) {
@@ -214,6 +216,11 @@ export class PointerInput implements PointerInputHandler {
 	}
 
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
+		if (code === 'pointer_attachment_position') {
+			this.inputControllerXQ16 = encodeSignedFix16(x);
+			this.inputControllerYQ16 = encodeSignedFix16(y);
+			return;
+		}
 		const current = getPressedState(this.buttonStates, code);
 		const dx = this.lastPositionValid ? (x - this.lastPositionX) : 0;
 		const dy = this.lastPositionValid ? (y - this.lastPositionY) : 0;
@@ -228,10 +235,6 @@ export class PointerInput implements PointerInputHandler {
 		value2d[0] = x;
 		value2d[1] = y;
 		current.timestamp = timestamp;
-		if (code === 'pointer_position') {
-			this.inputControllerXQ16 = encodeSignedFix16(x);
-			this.inputControllerYQ16 = encodeSignedFix16(y);
-		}
 
 		this.pendingDeltaX += dx;
 		this.pendingDeltaY += dy;
@@ -239,6 +242,10 @@ export class PointerInput implements PointerInputHandler {
 	}
 
 	public ingestAxis1(code: string, x: number, timestamp: number): void {
+		if (code === 'pointer_attachment_wheel') {
+			this.pendingAttachmentWheel += x;
+			return;
+		}
 		const current = getPressedState(this.buttonStates, code);
 		current.timestamp = timestamp;
 		if (code === 'pointer_wheel') {
@@ -292,6 +299,7 @@ export class PointerInput implements PointerInputHandler {
 		this.pendingDeltaY = 0;
 		this.pendingDeltaTimestamp = 0;
 		this.pendingWheel = 0;
+		this.pendingAttachmentWheel = 0;
 		this.pendingWheelTimestamp = 0;
 		this.inputControllerButtons = 0;
 		this.routedInputControllerButtons = 0;

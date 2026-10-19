@@ -21,7 +21,7 @@ public:
 		if (shifted != 0) snapshot.keyWords[7] |= 1u << 1; // USB HID Left Shift, 225.
 	}
 	bool supervisorRequestLineHigh() const override { return supervisor != 0; }
-	void applyInputControllerVibrationEffect(i32, f64, f32) override {}
+	void applyInputControllerVibrationEffect(i32, f64, f64) override {}
 };
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);

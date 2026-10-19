@@ -419,7 +419,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	}
 
 	private routeAxis1(binding: DeviceBinding, code: string, x: number, timestamp: number): void {
-		if (binding.source === 'pointer') {
+		if (binding.source === 'pointer' || binding.source === 'gamepad') {
 			binding.handler.ingestAxis1(code, x, timestamp);
 		}
 	}

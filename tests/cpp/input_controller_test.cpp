@@ -34,7 +34,8 @@ public:
 		return supervisorRequestLine;
 	}
 
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64 intensity) override {
+		lastIntensity = intensity;
 	}
 
 	void setKey(bmsx::u32 usage, bool down) {
@@ -51,6 +52,7 @@ public:
 	std::array<bmsx::InputControllerSampleContext, 2> sampleContexts{};
 	int fullSampleCount = 0;
 	bool supervisorRequestLine = false;
+	bmsx::f64 lastIntensity = 0;
 };
 
 struct InputControllerHarness {
@@ -145,9 +147,22 @@ void testSupervisorPhaseSelectsTheSourceSamplingContext() {
 	);
 }
 
+void testOutputIntensityPreservesEveryFractionBit() {
+	InputControllerHarness harness;
+	for (const bmsx::u32 word : {0u, 1u, 0x10000u, 0x10001u, 0xffffffffu}) {
+		harness.memory.writeMappedU32LE(bmsx::IO_INP_OUTPUT_INTENSITY_Q16, word);
+		harness.memory.writeMappedU32LE(bmsx::IO_INP_OUTPUT_CTRL, bmsx::INP_OUTPUT_CTRL_APPLY);
+		require(harness.input.lastIntensity == static_cast<bmsx::f64>(word) / 65536.0,
+			"all U16.16 bits reach the output source without binary32 narrowing");
+		require(harness.memory.readIoU32(bmsx::IO_INP_OUTPUT_INTENSITY_Q16) == word,
+			"output decoding does not rewrite the raw register word");
+	}
+}
+
 } // namespace
 
 int main() {
+	testOutputIntensityPreservesEveryFractionBit();
 	testSystemNmiEdgeDoesNotPublishAnUnarmedSnapshot();
 	testArmedVblankPublishesTheFullSnapshot();
 	testSupervisorPhaseSelectsTheSourceSamplingContext();

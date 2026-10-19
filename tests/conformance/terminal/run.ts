@@ -72,6 +72,7 @@ const commands = [
 	'lua return string.find("abcd","bc")',
 	'lua print("FRAMES-BEGIN")',
 	'frames',
+	'lua local name="frame";return &name',
 	'lua --frame 0 0 vblank_count=37;return vblank_count,nil,false',
 	'lua --frame 0 0 vblank_count=38;error("frame error")',
 	'lua --frame 0 0 return vblank_count',
@@ -88,7 +89,7 @@ commands[commands.indexOf('lua hot_resume_new_game_count')] = 'lua --session hot
 const punctuation: Record<string, [string, boolean]> = {
 	' ': ['Space', false], '(': ['Digit9', true], ')': ['Digit0', true],
 	'"': ['Quote', true], '=': ['Equal', false], '+': ['Equal', true],
-	'#': ['Digit3', true],
+	'#': ['Digit3', true], '&': ['Digit7', true],
 	'-': ['Minus', false], '_': ['Minus', true], '.': ['Period', false], ';': ['Semicolon', false], ',': ['Comma', false],
 };
 for (const command of commands) {
@@ -118,6 +119,9 @@ try {
 	assert.match(result, /GLOBALS-BEGIN\nnil\n1\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
 	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\nnil\n85\n95\ncart error\n91\n/);
 	assert.match(result, /TUPLES-BEGIN\nnil\nnil\n7\tnil\tfalse\t9\tnil\n1\t7\tnil\tfalse\t9\tnil\n7\n5\n6\ntrue\t7\tnil\tfalse\t9\tnil\n0\n2\t3\n/);
+	assert.match(result, /INDEX    FUNCTION PC \(HEX\)/);
+	assert.match(result, /  DEPTH [0-9A-F]{8} .+/, 'FRAMES exposes selectable active source scopes');
+	assert.match(result, /\nframe\n37\tnil\tfalse/, 'computed String-ID evaluates through the physical BIOS compiler');
 	assert.match(result, /37\tnil\tfalse\nframe error\n38\nFrame source scope is unavailable/, 'selected native frame writes and pre-error side effects are real');
 	assert.ok(result.endsWith('TERMINAL-END\nnil\n'), 'syntax error does not kill the physical monitor');
 	console.log('TERMINAL-PARITY:PASS (real BIOS monitor, HID input, TypeScript and native C++)');

@@ -1,3 +1,4 @@
+import { mapDisplayPointToViewport } from '../../machine/ts/render/video_output';
 import { clipboardAction, type ClipboardAction } from '../common/clipboard';
 import {
 	type GamepadDevice as HostGamepadDevice,
@@ -37,6 +38,8 @@ class GamepadDevice implements HostGamepadDevice {
 	private lastTimestamp = -1;
 	private readonly buttonPrev: Uint8Array;
 	private readonly pressIds: Float64Array;
+	private leftTrigger = 0;
+	private rightTrigger = 0;
 	private readonly vibrationEffect: GamepadEffectParameters = {
 		duration: 0,
 		strongMagnitude: 0,
@@ -80,6 +83,7 @@ class GamepadDevice implements HostGamepadDevice {
 	}
 
 	setVibration(durationMs: number, intensity: number): void {
+		intensity = Math.min(intensity, 1);
 		const actuator = this.vibrationActuator;
 		if (actuator) {
 			this.vibrationEffect.duration = durationMs;
@@ -117,9 +121,18 @@ class GamepadDevice implements HostGamepadDevice {
 				sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[i], true, buttons[i].value, time, pressId);
 			} else if (!pressed && prev) {
 				const pressId = this.pressIds[i];
-				sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[i], false, 0, time, pressId);
+				sink.inputButton(this.id, GAMEPAD_BUTTON_IDS[i], false, buttons[i].value, time, pressId);
 			}
 			this.buttonPrev[i] = pressed ? 1 : 0;
+		}
+
+		if (this.mappedButtonCount > 6 && buttons[6].value !== this.leftTrigger) {
+			this.leftTrigger = buttons[6].value;
+			sink.inputAxis1(this.id, 'lt', this.leftTrigger, time);
+		}
+		if (this.mappedButtonCount > 7 && buttons[7].value !== this.rightTrigger) {
+			this.rightTrigger = buttons[7].value;
+			sink.inputAxis1(this.id, 'rt', this.rightTrigger, time);
 		}
 
 		if (this.mappedAxisCount >= 2) {
@@ -160,6 +173,10 @@ export class BrowserInputHub implements InputSource {
 	private readonly activePointerIds: number[] = [];
 	private readonly activePointerButtonMasks: number[] = [];
 	private activePointerCount = 0;
+	private readonly attachmentPointer = { x: 0, y: 0 };
+	private attachmentPointerPending = false;
+	private pointerClientX = 0;
+	private pointerClientY = 0;
 	private readonly pointerButtonCounts = new Uint32Array(POINTER_BUTTON_CODES.length);
 	private readonly pointerPressIds = new Float64Array(POINTER_BUTTON_CODES.length);
 	private readonly ownerDocument: Document;
@@ -167,7 +184,7 @@ export class BrowserInputHub implements InputSource {
 	private traceObserver: BrowserInputTraceObserver | null = null;
 
 	constructor(
-		private readonly surface: HTMLElement,
+		private readonly surface: HTMLCanvasElement,
 		private readonly gestureSurface: HTMLElement,
 		clock: HostClock,
 		onscreenGamepad: BrowserOnscreenGamepad,
@@ -305,6 +322,15 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	poll(time: number): void {
+		if (this.attachmentPointerPending) {
+			this.attachmentPointerPending = false;
+			const bounds = this.surface.getBoundingClientRect();
+			mapDisplayPointToViewport(bounds, this.surface.width, this.surface.height,
+				this.pointerClientX, this.pointerClientY, this.attachmentPointer);
+			this.sink.inputAxis2('pointer:0', 'pointer_attachment_position',
+				Math.max(0, Math.min(this.surface.width - 1, this.attachmentPointer.x)),
+				Math.max(0, Math.min(this.surface.height - 1, this.attachmentPointer.y)), time);
+		}
 		const pads = navigator.getGamepads();
 		for (let index = 0; index < this.gamepads.length; index += 1) {
 			const device = this.gamepads[index];
@@ -396,6 +422,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private readonly cancelInput = (): void => {
+		this.attachmentPointerPending = false;
 		this.hostControls?.cancelContacts();
 		this.onscreenKeyboard?.cancelContacts();
 		this.onscreenGamepad?.cancelContacts();
@@ -455,7 +482,7 @@ export class BrowserInputHub implements InputSource {
 		this.surface.setPointerCapture(event.pointerId);
 		const now = this.clock.now();
 		this.updateCanvasButtons(0, buttons, now, false);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private readonly onPointerUp = (event: PointerEvent): void => {
@@ -539,7 +566,7 @@ export class BrowserInputHub implements InputSource {
 		const last = --this.activePointerCount;
 		this.activePointerIds[index] = this.activePointerIds[last];
 		this.activePointerButtonMasks[index] = this.activePointerButtonMasks[last];
-		if (!cancelled) this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		if (!cancelled) this.publishPointerPosition(event, now);
 	}
 
 	private readonly onPointerMove = (event: PointerEvent): void => {
@@ -574,13 +601,20 @@ export class BrowserInputHub implements InputSource {
 			const buttons = event.pointerType === 'touch' ? 1 : event.buttons;
 			this.updateCanvasButtons(this.activePointerButtonMasks[index], buttons, now, false);
 			this.activePointerButtonMasks[index] = buttons;
-			this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+			this.publishPointerPosition(event, now);
 			return;
 		}
 		if (event.pointerType !== 'touch' && event.buttons === 0 && this.surface.contains(event.target as Node)) {
-			this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, this.clock.now());
+			this.publishPointerPosition(event, this.clock.now());
 		}
 	};
+
+	private publishPointerPosition(event: PointerEvent, now: number): void {
+		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.pointerClientX = event.clientX;
+		this.pointerClientY = event.clientY;
+		this.attachmentPointerPending = true;
+	}
 
 	private onWheel = (event: WheelEvent) => {
 		event.preventDefault();
@@ -588,6 +622,9 @@ export class BrowserInputHub implements InputSource {
 		event.stopImmediatePropagation();
 		const now = this.clock.now();
 		this.sink.inputAxis1('pointer:0', 'pointer_wheel', event.deltaY, now);
+		const unitsPerStep = event.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? 120
+			: event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : 1;
+		this.sink.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY / unitsPerStep, now);
 	};
 
 	private onContextMenu = (event: MouseEvent) => {
@@ -601,7 +638,7 @@ export class BrowserInputHub implements InputSource {
 			|| this.onscreenGamepad?.ownsContact(event.pointerId)) return;
 		if (event.buttons !== 0 && this.activePointerIndex(event.pointerId) < 0) return;
 		const now = this.clock.now();
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private scanInitialGamepads(): void {

@@ -28,7 +28,7 @@ public:
 		if (rejectLiveInput) throw std::runtime_error("replay read the live supervisor line");
 		return false;
 	}
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {
 		if (rejectLiveInput) throw std::runtime_error("replay repeated host vibration");
 	}
 };

@@ -38,6 +38,32 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	inline_scope_enumeration: `
+local exercise = function(value, ...)
+ local inspect<const> = function(offset)
+  local thread<const> = running_thread()
+  local choices<const> = frame_bindings.list(frame_count(thread) - 1)
+  return choices, offset
+ end
+ local choices, result = inspect(value)
+ assert(result == 42)
+ local found = false
+ for at = 1, #choices, 2 do
+  if choices[at + 1] == 'inspect' then
+   assert(choices[at] == (optimization_level == 3 and 1 or 0), 'inline depth from installed records')
+   found = true
+  end
+ end
+ assert(found)
+ local thread<const> = running_thread()
+ choices = frame_bindings.list(frame_count(thread) - 1)
+ for at = 1, #choices, 2 do
+  assert(choices[at + 1] ~= 'inspect', 'completed inline occurrences are not listed')
+ end
+ return true
+end
+return exercise(42)
+`,
 	physical_header: `
 local thread<const> = running_thread()
 local index<const> = frame_count(thread) - 1

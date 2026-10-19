@@ -614,13 +614,13 @@ For loop [4,8), START_SAMPLE=1 wraps to frame 5 before playback, not to frame 1 
 
 ### Nonloop completion
 
-At render entry, an unlooped cursor outside [0, SOURCE_FRAME_COUNT×65536) ends without contributing a sample. Otherwise the current frame is rendered before phase advancement. With no fade active, crossing either boundary then ends the voice after that rendered sample.
+Before an output sample, an unlooped cursor outside [0, SOURCE_FRAME_COUNT×65536) ends without contributing a sample. Otherwise the current frame is rendered before phase advancement. Crossing either boundary then ends the voice after that rendered sample, including while a fade is active.
 
 At source rate 44100 Hz and unity rate, a nonloop source of N frames played from zero emits frames 0 through N−1. At negative unity rate, start at N−1 to emit N−1 down through zero. Starting at N is already outside the interval. An in-range zero-rate voice does not naturally end by phase motion alone.
 
-A nonzero fade bypasses only the post-sample check, not the entry check; see
-“Stop and fade” below. Do not assume either exact stopping at the normal source
-end or completion of the entire fade after its source runs out.
+Natural source completion and fade completion use the same output-sample edge.
+The earlier condition ends the voice; coincident completion produces one end
+notification. A fade does not extend an unlooped source.
 
 <div class="keep-together">
 
@@ -704,7 +704,7 @@ PLAY clears histories and filter output before installing its programmed coeffic
 
 ## Stop and fade
 
-STOP_SLOT with FADE_SAMPLES=0 stops immediately and clears all 21 slot words. Stopping an idle slot also clears its bank. With a non-idle slot and a positive duration, STOP_SLOT instead enters FADING and schedules that many rendered output frames. A paused voice remains paused, so its fade waits for resume. Writing FADE_SAMPLES alone does not begin a fade.
+STOP_SLOT with FADE_SAMPLES=0 stops immediately and clears all 21 slot words. Stopping an idle slot also clears its bank. With a non-idle slot and a positive duration, STOP_SLOT instead enters FADING for at most that many rendered output frames: an unlooped source can end sooner. A paused voice remains paused, so its fade waits for resume. Writing FADE_SAMPLES alone does not begin a fade.
 
 For initial retained signed gain G0 and duration N, configure:
 
@@ -715,18 +715,16 @@ error = N − 1
 remaining = N
 ```
 
-Each frame uses the current gain before any fade adjustment. After phase advancement, decrement remaining. If it becomes zero, end immediately without another gain update. Otherwise add the magnitude of R to error. If error is at least N, subtract N and use carry=sign(R); otherwise carry=0. The new current gain is WRAP32(currentGain−Q−carry).
+Each frame uses the current gain before any fade adjustment. After phase advancement, first apply the loop wrap or nonloop source-end check. If the source has ended, stop. Otherwise decrement remaining. If it becomes zero, end immediately without another gain update. Otherwise add the magnitude of R to error. If error is at least N, subtract N and use carry=sign(R); otherwise carry=0. The new current gain is WRAP32(currentGain−Q−carry).
 
-At G0=4096 and N=4, the four frame gains are 4096,3072,2048,1024, then the voice stops. There is no fifth frame at zero gain. A live GAIN_Q12 write sets current gain immediately and replans this arithmetic over the remaining frame count, not the original duration.
+At G0=4096 and N=4, with sufficient remaining source data or an enabled loop, the four frame gains are 4096,3072,2048,1024, then the voice stops. There is no fifth frame at zero gain. A live GAIN_Q12 write sets current gain immediately and replans this arithmetic over the remaining frame count, not the original duration.
 
-**A nonzero fade suppresses the post-frame source-end check, but not the entry
-check.** If output processing starts with an unlooped cursor already outside
-the declared frame interval, the voice ends even when fade frames remain.
-During continuing output work, the skipped post-frame check can instead let
-the cursor advance past the source end. Neither exact source-end clamping nor
-completion of the entire fade is guaranteed in that case; no padding, clipping
-or recovery is promised. Keep the fade inside the remaining source data or
-provide a valid loop for its duration.
+An unlooped source stops when its cursor first leaves its declared frame
+interval, even with fade frames remaining. No sample is fetched beyond that
+interval to finish the fade. For example, three remaining source frames at
+44100 Hz and unity rate permit only three output frames of an eight-frame
+fade. With G0=4096 their gains are 4096,3584,3072, then playback ends. Provide
+enough remaining data or a valid loop when the complete fade is required.
 
 Natural completion and fade completion end and clear the slot and produce the slot-ended notification described in the event section. An immediate explicit stop does not emit that notification.
 

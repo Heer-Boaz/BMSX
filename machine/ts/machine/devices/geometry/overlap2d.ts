@@ -136,8 +136,8 @@ export class GeometryOverlap2dUnit {
 
 	public writeSummary(job: GeometryJobState, flags: number): void {
 		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET, job.resultCount >>> 0);
-		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET, job.exactPairCount >>> 0);
-		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET, job.broadphasePairCount >>> 0);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET, job.exactPairCount);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET, job.broadphasePairCount);
 		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET, flags >>> 0);
 	}
 
@@ -223,7 +223,7 @@ export class GeometryOverlap2dUnit {
 		if ((maskA & layerB) === 0 || (maskB & layerA) === 0) {
 			return GEO_FAULT_NONE;
 		}
-		job.broadphasePairCount += 1;
+		job.broadphasePairCount = (job.broadphasePairCount + 1) >>> 0;
 		const shapeABoundsFault = this.readPieceBounds(shapeAAddr, txA, tyA, this.boundsA);
 		if (shapeABoundsFault !== GEO_FAULT_NONE) {
 			return shapeABoundsFault;
@@ -250,7 +250,7 @@ export class GeometryOverlap2dUnit {
 			|| (!shapeBIsCompound && shapeBKind !== GEO_PRIMITIVE_AABB && shapeBKind !== GEO_PRIMITIVE_CONVEX_POLY)) {
 			return GEO_FAULT_DESCRIPTOR_KIND;
 		}
-		job.exactPairCount += 1;
+		job.exactPairCount = (job.exactPairCount + 1) >>> 0;
 		let bestHit = false;
 		let bestDepth = Number.POSITIVE_INFINITY;
 		let bestPieceA = 0;

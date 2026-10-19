@@ -51,7 +51,7 @@ public:
 		bmsx::InputControllerSnapshot&,
 		bmsx::InputControllerSampleContext) override {}
 	auto supervisorRequestLineHigh() const -> bool override { return false; }
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {}
 };
 
 auto makeRuntimeImage(bmsx::OpCode startupOpcode) -> bmsx::test::Blua32TestImage {

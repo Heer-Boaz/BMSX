@@ -76,7 +76,7 @@ public:
 		return false;
 	}
 
-	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {
+	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f64) override {
 	}
 };
 
@@ -372,6 +372,107 @@ void programPcmVoice(AudioHarness& harness, bmsx::u32 sourceAddress) {
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	harness.audio.onService(harness.scheduler.nowCycles());
+}
+
+void testSourceEndAndFadeBatchSubdivision() {
+	struct Case {
+		bmsx::u32 frames, start, rate, hz;
+		bool loop;
+		bmsx::u32 fade, count, step;
+	};
+	constexpr std::array<Case, 9> cases{{
+		{3u, 0u, 65536u, 44100u, false, 8u, 3u, 2048u},
+		{3u, 2u, 0xffff0000u, 44100u, false, 8u, 3u, 2048u},
+		{3u, 0u, 65536u, 44100u, false, 2u, 2u, 8192u},
+		{4u, 0u, 65536u, 44100u, false, 4u, 4u, 4096u},
+		{3u, 0u, 65536u, 44100u, true, 8u, 8u, 2048u},
+		{3u, 0u, 0u, 44100u, false, 8u, 8u, 2048u},
+		{3u, 0u, 65536u, 8000u, false, 32u, 17u, 512u},
+		{129u, 0u, 65536u, 44100u, false, 256u, 129u, 64u},
+		{3u, 3u, 65536u, 44100u, false, 8u, 0u, 2048u},
+	}};
+	for (const Case& c : cases) {
+		const auto prepare = [&c](AudioHarness& harness) {
+			auto& memory = harness.memory;
+			memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+			memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+			for (bmsx::u32 offset = 0u; offset < 256u; offset += 4u) {
+				bmsx::u32 word = 0u;
+				for (bmsx::u32 byte = 0u; byte < 4u; ++byte) {
+					word |= (offset + byte < c.frames ? 0xc0u : 0xffu) << (byte * 8u);
+				}
+				memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, word);
+			}
+			memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 0u);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 256u);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, c.hz);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, c.frames);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 256u);
+			memory.writeMappedU32LE(bmsx::IO_APU_START_SAMPLE, c.start);
+			memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, c.rate);
+			memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, c.loop ? c.frames : 0u);
+			memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, 4096u);
+			memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+			memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+			harness.audio.onService(0);
+			memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+			memory.writeMappedU32LE(bmsx::IO_APU_FADE_SAMPLES, c.fade);
+			memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+			harness.audio.onService(0);
+			require(harness.output.captureState().voices[0].fadeSamplesRemaining == c.fade, "STOP should start the requested fade");
+		};
+		for (const bmsx::u32 chunk : {1u, 7u, 260u}) {
+			AudioHarness harness;
+			prepare(harness);
+			require(harness.output.samplesUntilNextEvent(260) == (c.count != 0u ? c.count : 1u), "event predictor should select the earliest source/fade edge");
+			bmsx::u32 ends = 0u;
+			for (bmsx::u32 frame = 0u; frame < 260u;) {
+				const bmsx::u32 count = std::min(chunk, 260u - frame);
+				const bmsx::u32 ended = harness.output.renderMachineFrames(count, frame);
+				if (ended != 0u) {
+					require(ended == 2u, "only the source voice should end");
+					if (chunk == 1u) require(frame + count == (c.count != 0u ? c.count : 1u), "END mask should assert on the exact source/fade edge");
+					++ends;
+				}
+				frame += count;
+			}
+			require(ends == 1u && harness.output.captureState().voices.empty(), "source/fade completion should end once independently of batch subdivision");
+			for (bmsx::u32 frame = 0u; frame < 260u; ++frame) {
+				const bmsx::u32 sample = frame < c.count ? 16384u - frame * c.step : 0u;
+				require(harness.output.outputRing.readFramePacked() == ((sample << 16u) | sample), "source/fade subdivision should preserve exact PCM and never read the source sentinel");
+			}
+		}
+		AudioHarness event;
+		prepare(event);
+		if (c.count > 1u) {
+			event.scheduler.advanceTo(c.count - 1u);
+			event.audio.onService(c.count - 1u);
+			require(event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 0u
+				&& event.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u,
+				"source/fade should remain active before its end edge");
+		}
+		const bmsx::u32 endCycle = c.count != 0u ? c.count : 1u;
+		event.scheduler.advanceTo(endCycle);
+		event.audio.onService(endCycle);
+		const auto state = event.audio.captureState();
+		require(state.slotPhases[1] == bmsx::APU_SLOT_PHASE_IDLE, "source/fade END should clear the phase");
+		for (bmsx::u32 index = 0u; index < bmsx::APU_PARAMETER_REGISTER_COUNT; ++index) {
+			require(state.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, index)] == 0u, "source/fade END should clear every bank word");
+		}
+		require(event.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u
+			&& event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 1u
+			&& event.memory.readIoU32(bmsx::IO_APU_EVENT_KIND) == bmsx::APU_EVENT_SLOT_ENDED
+			&& event.memory.readIoU32(bmsx::IO_APU_EVENT_SLOT) == 1u
+			&& event.memory.readIoU32(bmsx::IO_APU_EVENT_SOURCE_ADDR) == bmsx::APU_SAMPLE_RAM_BASE
+			&& (event.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_APU) != 0u,
+			"source/fade edge should clear the slot and emit one source-tagged END interrupt");
+		event.scheduler.advanceTo(260);
+		event.audio.onService(260);
+		require(event.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == 1u, "finished source/fade should not emit another END");
+	}
 }
 
 void testApuVoiceLatchesCartridgeSocketAcrossRestore() {
@@ -1128,6 +1229,7 @@ int main() {
 	testRawBiquadDatapath();
 	testPauseResumeRetainsVoiceTransportAcrossRestore();
 	testFixedPointMixerVectors();
+	testSourceEndAndFadeBatchSubdivision();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();
 	testResamplerDropsOverwrittenInterpolationEndpoints();
