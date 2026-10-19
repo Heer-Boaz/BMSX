@@ -19,16 +19,9 @@ BMSX programmers:
 
 Register maps, instruction encodings, executable layouts, device protocols,
 public firmware calls and machine timing belong in those books, not here.
-The [manual authoring guide](manual/README.md) defines their editorial standard.
+Source verification and editorial rules live in the
+[manual authoring guide](manual/README.md) and [repository instructions](../AGENTS.md).
 A directory name does not determine book membership or product ownership.
-
-Mirrored numeric specification leaves, live owners and tests provide the
-implementation evidence used to check the books. A disagreement is a defect or
-an unresolved specification question to investigate, not permission to choose
-whichever document is convenient. This file, historical handovers and test
-transcripts cannot settle a hardware question. Keep source evidence and known
-implementation discrepancies outside the public prose; do not convert them into
-permanent product guarantees.
 
 ## Architectural roles
 
@@ -138,11 +131,8 @@ primitives; source parsing remains a frontend responsibility. Domain-specific
 conversions stay with their owner; feature files do not invent alternate
 encoders.
 
-Before changing a mirrored datapath, identify both representations and every
-hot-path caller. Verify the actual owners and runtime evidence, not only the
-parity audit's file/symbol accounting. Host-only UI implementations need not
-manufacture unused counterparts, but guest behavior and serialized machine
-state remain cross-runtime responsibilities.
+Guest behavior and serialized machine state are cross-runtime responsibilities.
+Host-only UI implementations do not require unused counterparts.
 
 ## Toolchain and media ownership
 
@@ -306,22 +296,3 @@ isolated-target owners. No provider protocol, process handle or conversation
 state enters emulated machine state. Detailed lifecycle rules belong in
 [assistant integration](studio_assistant_contribution.md) and
 [process ownership](studio_codex_process_contract.md).
-
-## Validation and document maintenance
-
-Choose evidence for the changed surface: focused source/unit checks,
-TypeScript/native builds, cross-runtime execution, real backend output or
-visible UI interaction as appropriate. Typechecks do not prove ownership,
-performance or public usability. Keep results and temporary probes out of this
-architecture description; tests and commits retain them.
-
-Retain other internal documents only for current, unique ownership, algorithm
-or operational guidance. Delete historical plans, handovers and review logs
-rather than collecting them in an archive or another status index.
-
-Update this file when responsibilities or dependency direction change. Keep
-feature algorithms with their owner/design documentation. Do not append patch
-narratives, test counts, retired implementations, speculative future designs or
-another hardware reference. Hardware changes update the relevant manual and
-its verified implementation together; internal architecture may link to that
-manual but must not duplicate its specification.

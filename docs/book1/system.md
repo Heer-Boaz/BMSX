@@ -1,12 +1,21 @@
 # System control and timing
 
-SYSTEM supplies five hardware facilities: reset requests, staged supervisor device-context transitions, a retained fault report, timing readouts, and diagnostic text output. The fault report separates capturing CPU diagnostics from publishing a new sequence value; it is not a continuously updated view of CPU exception registers.
+The system controller maintains console-time readouts, accepts reset requests
+and coordinates BIOS supervisor service. Its fault-report words retain CPU
+diagnostics for the monitor. A separate pair of ports provides line-oriented
+diagnostic text output.
 
-For cartridge programs, timing means measuring elapsed console time and inspecting the programmed video period. `TIME_MS` supplies whole milliseconds derived from system cycles. `FRAME_MS_Q16` reports the programmed beam period in fractional milliseconds, while `CYCLES_PER_FRAME` reports a full VBlank-period cycle budget, not a countdown. These readouts do not provide a timer alarm or generate their own interrupt request. Interrupt delivery remains a separate facility.
+Cartridge programs normally use TIME_MS to measure elapsed time and the two
+frame-timing words to inspect the programmed video period. VBlank interrupts
+provide frame synchronization; these readouts provide measurements. Diagnostic
+output appends codepoints through PRINT_CHAR and submits a complete line
+through PRINT_FLUSH.
 
-Output means a line-oriented diagnostic channel, not drawing on the screen. `PRINT_CHAR` appends a Unicode codepoint to the current line; `PRINT_FLUSH` completes and publishes that line when queue space permits. These accesses neither request an interrupt nor enter supervisor service.
-
-A supervisor device context is not a CPU privilege mode. SYSTEM can be entering or leaving that context while CPU exception handling is in progress. In particular, `LEAVE` begins device-context restoration; it does not perform CPU exception return. Conversely, CPU exception return does not restore the device context.
+Supervisor service preserves selected cartridge device state while BIOS uses
+its own IRQ, DMA and GPU context. It is coordinated with CPU exception entry,
+but device-context restoration and CPU exception return remain separate steps:
+LEAVE restores the devices, while RFE returns the CPU. Firmware follows both
+protocols before cartridge execution resumes.
 
 USER, ENTRY_VECTOR and ACTIVE name stages in this description, not additional
 register fields. STATUS exposes only the flags listed below.
@@ -89,20 +98,36 @@ These flags are independent. Entry can set `SUPERVISOR_ACTIVE` before `RESUMABLE
 
 ## Privilege and supervisor entry
 
-The control gate follows CPU current mode, not the cartridge or firmware origin of the executing function. Ordinary cartridge startup enters user mode. User-mode CP0 reads and writes take a coprocessor-unusable exception, but a cartridge-owned interrupt handler runs after exception entry clears the current user-mode bit. It is therefore incorrect to treat every instruction belonging to a cartridge as unprivileged. Conversely, importing or calling an ordinary library function does not grant supervisor privilege.
+SYSTEM supervisor commands require current CPU supervisor mode. Normal
+cartridge entry runs in user mode; exception entry clears the current user-mode
+bit before its handler executes. Thus a cartridge IRQ handler can perform
+privileged operations even though the interrupted cartridge code could not.
+CP0 access in user mode raises coprocessor-unusable. Ordinary function calls
+retain the caller's CPU mode.
 
-Normal supervisor entry begins with a separate request wire, not a CONTROL bit or a particular guest key. The input unit observes the wire at every VBlank edge and forwards low-to-high transitions, independently of whether input sampling is armed. SYSTEM accepts such an edge in USER and begins entry staging. An edge in ACTIVE with `RESUMABLE` set instead sets `EXIT_REQUESTED`; in other stages it has no effect. Keeping the wire high does not generate another rising edge.
+Normal monitor entry begins with a rising edge on the supervisor-request wire.
+INPUT samples that wire at every VBlank, independently of its ARM capture
+request. In USER, an edge starts the entry sequence. In ACTIVE with RESUMABLE
+set, an edge sets EXIT_REQUESTED so firmware can leave the monitor. Other stages
+ignore the edge. The wire must return low before a later rising edge can be
+recognized.
 
-During normal entry, `SUPERVISOR_ACTIVE` is visible while device quiescence is still in progress. When that preparation finishes, SYSTEM reaches ENTRY_VECTOR and requests a CPU NMI. This is a pending interrupt request, not immediate execution of the exception function. The firmware's NMI path writes ENTER to complete device-context activation. ENTER is therefore a completion command for an entry already in progress, not a software call for entry. No ordinary-cartridge supervisor-request callable is supplied by the public BIOS imports.
+SUPERVISOR_ACTIVE becomes visible during entry quiescence. Once the device
+boundary is reached, SYSTEM enters ENTRY_VECTOR and requests NMI. The CPU
+accepts NMI through its normal interrupt boundary and enters the system
+exception function. Firmware then writes ENTER to activate the supervisor
+device context. ENTER is accepted only at ENTRY_VECTOR; initiating entry uses
+the request wire. The public cartridge BIOS imports provide no callable request
+for this wire.
 
 A synchronous fault takes a different route. The CPU enters the system exception function, and the firmware writes FAULT to capture its diagnostics. If this starts from USER, SYSTEM quiesces the devices and then activates the supervisor context directly, without issuing another NMI. A FAULT received during another non-ACTIVE stage redirects the target without restarting that stage; in ACTIVE it only captures the report. Activation sets `RESUMABLE` even on the fault route. The detailed device banks and quiescence rules are separate from these CPU-entry and command edges.
 
 ## Device boundaries during supervisor service
 
-Supervisor service retains selected cartridge device context; it does not create
-another copy of all console memory. Entry proceeds through producer, DMA and GPU
-boundaries in that order. These are completion conditions, not a fixed number of
-system cycles.
+Entry waits for accepted producer work, then the admitted DMA block, then the
+GPU boundary. This ordering lets data already in flight reach its proper
+stopping point before the register contexts are exchanged. Transition time
+depends on that work. Main RAM, VRAM and APU sample RAM remain shared storage.
 
 | Entry boundary | Condition before proceeding | Cartridge consequence |
 |---|---|---|
@@ -110,13 +135,11 @@ system cycles.
 | DMA boundary | No admitted block and no DMA service in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
 | GPU boundary | Ingress has stopped, no command completion is pending, readback is idle or its unread result is complete, and no commands remain queued for rendering | The completed unread result and words waiting behind it can be retained. An unfinished readback must complete before this boundary; the fence does not consume pixels. |
 
-At the start of entry, new GEO CMD and DMA TRIGGER writes are held at their
-admission gates, as are GPU GP1 control writes. IMGDEC suppresses its input and
-output DMA request lines and admits no next decode batch after its scheduled
-batch completes. These gates are not blanket protection of every device word or
-of shared RAM. The ordinary supervisor-request path does not hold the CPU
-throughout producer quiescence; the cartridge must not interpret the transition
-as an immediate freeze of all its instructions or hardware.
+At entry's first stage, new GEO CMD, DMA TRIGGER and GPU GP1 writes are held.
+IMGDEC lowers both DMA requests and stops after its scheduled decode batch.
+Shared RAM and other device words remain accessible under their normal rules.
+The ordinary request path allows CPU execution during producer quiescence;
+software observing SUPERVISOR_ACTIVE can therefore still be running before NMI.
 
 <section class="keep-together">
 
@@ -137,10 +160,10 @@ The following preservation rules apply to that activated context:
 
 </section>
 
-While the APU voice clock is held, elapsed cycles do not accrue a deferred voice
-catch-up workload. Leave releases the hold and schedules voice service again.
-This is not a promise that every APU transfer, register or DMA operation is
-frozen.
+While the APU voice clock is held, voice playback position stays at the synchronized
+entry point. Leave reanchors voice timing and resumes playback from that
+position. The separate sample-transfer engine can finish accepted FIFO/RAM
+batches during the hold.
 
 Supervisor PCRTC composition initially routes the cartridge's **presented**
 circuit-1 source and display words into circuit 2, copies its presented background
@@ -180,11 +203,19 @@ all 32 bits of each word are retained.
 
 </section>
 
-FAULT captures the five CPU payload words without advancing the sequence. FAULT_PUBLISH advances only the sequence and does not recapture those words. Consequently, the sequence is a **publication edge**, not a live-exception counter or an atomic-snapshot guarantee. It can advance without a new capture, and the payload can change before publication. Zero is both the reset sequence and a value reached on wrap; it is not a reserved invalid value.
+FAULT copies the five CPU payload words. FAULT_PUBLISH advances SEQUENCE
+modulo 2^32 and leaves that payload unchanged. Software can capture first and
+publish later; a new sequence identifies publication rather than the instant
+of CPU exception entry. Zero is a valid sequence after reset and after wrap.
 
 The firmware's synchronous-fault path publishes after preparing the monitor display and waiting another VBlank. Publication is therefore later than CPU fault admission. An NMI entry alone does not refresh this bank: the words change through FAULT capture, not by following the CPU diagnostic registers continuously.
 
-Interpret each payload word in context. A synchronous exception normally supplies the faulting instruction's EPC, whereas asynchronous interrupt entry supplies the interrupted frame's current PC; firmware may write EPC before a subsequent capture. Address exceptions update BadAddress, but a mapped-MMIO data-bus exception does not necessarily do so. Lua-fault entry updates LuaReason, while unrelated exception entry leaves its previous value intact. A new fault sequence therefore does not guarantee a newly produced BadAddress or LuaReason.
+Interpret the payload using Cause. Synchronous entry records the faulting
+instruction's EPC; asynchronous entry records the interrupted PC. A subsequent
+firmware EPC write is included in a later FAULT capture. Address exceptions
+update BadAddress, while data-bus errors leave its previous value. Lua traps
+update LuaReason; unrelated exceptions retain that word. These retained fields
+must be read with the recorded cause.
 
 <section class="keep-together">
 
@@ -293,7 +324,11 @@ The BIOS `os.clock()` returns `TIME_MS / 1000`, in seconds with millisecond reso
 
 Use aligned word writes. `PRINT_CHAR` accepts a Unicode codepoint, not a memory address, string reference, packed group of characters, or UTF-8 byte. Values `0x00000000`–`0x0000007f` encode as one UTF-8 byte, `0x00000080`–`0x000007ff` as two, `0x00000800`–`0x0000ffff` as three except for surrogates, and `0x00010000`–`0x0010ffff` as four. Surrogate words `0x0000d800`–`0x0000dfff` and words above `0x0010ffff` append the single byte `0x3f` (`?`). Readback still returns the original word, including an invalid codepoint word.
 
-Character writes only extend the current partial line. Even a `PRINT_CHAR` write of `0x0000000a` does not publish it. Every `PRINT_FLUSH` write—including a write of zero—attempts to append one ASCII line-feed byte and publish the entire partial line. The written value is not a length, threshold, or enable mask. A successful flush publishes diagnostic text; it is not a screen-display command, interrupt, or acknowledgement that the receiver has drained the text.
+PRINT_CHAR extends the current partial line, including when its codepoint is
+line feed. Every PRINT_FLUSH write appends an ASCII line-feed byte and submits
+the partial line when space permits; zero and nonzero write values have the
+same action. Submitted text is available on the diagnostic channel. Screen text
+uses the separate BIOS console drawing path described below.
 
 Completed unread lines and the current partial line share one 8192-byte queue. Each character needs space for its complete one- to four-byte UTF-8 encoding. If a character cannot fit, the current partial line is discarded, completed unread lines are preserved, and further character writes are ignored until the next flush. That flush publishes nothing and clears the overflow condition. If the flush itself first encounters insufficient space for its added line-feed byte, it likewise discards the partial line, publishes nothing, and leaves overflow cleared. In particular, 8192 unflushed ASCII characters leave no room for the flush's line feed, so that entire partial line is lost. No readiness, free-space, or accepted-line counter is available through these ports. Reset empties the queue and clears both register words.
 

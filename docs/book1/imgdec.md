@@ -2,31 +2,22 @@
 
 ## Function and resources
 
-IMGDEC expands a compressed word stream into a sequence of GPU GP0
-CPU-to-VRAM upload packets. Its output contains upload-command headers and
-decoded payload words. A texture upload is emitted first; a CLUT upload follows
-when the stream specifies a nonzero CLUT payload count.
+The image decompression unit expands compressed texture and palette data into
+GPU upload packets. A program supplies the compressed stream and VRAM
+destination fields; IMGDEC produces a texture-upload header and decoded words,
+followed by a CLUT upload when palette data is present. This permits compressed
+image data in ROM to be uploaded through DMA with little CPU involvement.
 
-IMGDEC is a stream decompressor and packet producer, not a VRAM write port or
-a renderer. Produced words enter its output FIFO. They must be transferred
-from DATA to the destination that consumes the upload packets; producing a
-packet does not itself write its payload into VRAM.
+The DATA port has separate input and output FIFOs. CPU writes or an input DMA
+channel feed compressed words into it. CPU reads or an output DMA channel
+remove the generated packets. Route the output to GPU GP0 for an upload, or to
+RAM for later use. The GPU performs the resulting VRAM writes.
 
-Compressed words reach DATA through CPU writes or a programmed DMA transfer
-from ROM or RAM. Generated words leave DATA through CPU reads or DMA; software
-can retain them in RAM or forward them to GPU GP0. These are transfers through
-the mapped data port, not memory-fetch or VRAM-write operations performed by
-IMGDEC itself.
-
-Separate DMA channels can remain armed for input and output. DMA admits one
-block at a time, while IMGDEC's scheduled decoding can overlap those transfers.
-The FIFOs decouple their progress: a decode step can wait for required input
-that is still on its way;
-a full output FIFO prevents another output batch. If output remains blocked,
-input can also fill and hold off its producer. In the request-gated DATA-to-GP0
-route, an output block needs both IMGDEC's output request and the GPU write
-request. Decoder output readiness alone therefore does not guarantee transfer
-progress.
+Input and output DMA can remain armed while decoding proceeds. The shared DMA
+controller serves one block at a time. Request lines regulate FIFO flow: missing input
+holds decoding, and a full output FIFO holds the next output batch. If the
+output remains blocked, input can fill in turn. A direct DATA-to-GP0 DMA block
+starts when both IMGDEC output and GPU write requests permit it.
 
 The programming interface, compressed input, decoded payload, and output
 packets use 32-bit words. Input and output counts are word counts, not byte
@@ -48,17 +39,16 @@ see [Memory — Addresses and data sizes](memory.md#addresses-and-data-sizes).
 | System-cycle timebase | 33,868,800 cycles per second |
 | Output-word charge | 2 system cycles per output word, including generated headers |
 
-The cycle timebase and per-word charge measure decoder output work, including
-generated headers. They do not specify a separate IMGDEC oscillator, a
-compressed-input rate, or guaranteed end-to-end upload bandwidth. Source
-transfer, output draining and downstream GPU processing remain distinct work;
-IMGDEC completion does not establish GPU storage or display completion.
+Each generated word, including packet headers, costs two system cycles.
+Budget source transport, output DMA and GPU processing separately. IMGDEC DONE
+indicates that the complete output stream has been read; wait for GPU completion
+before using the uploaded image.
 
 ![IMGDEC stream, header and payload-history paths](figures/imgdec-flow.svg)
 
-Solid arrows carry words; the dashed arrow selects the header stage. Payload
-history excludes generated headers. DATA reads drain the output stream; GPU
-processing is downstream. This is functional word flow, not a bus waveform.
+Compressed words select literals, repeated values, zeros or copies from
+payload history. Generated GPU headers bypass that history. DATA reads drain
+the resulting packet stream for RAM storage or GPU processing.
 
 ## Starting a transfer
 
@@ -81,12 +71,11 @@ processing is downstream. This is functional word flow, not a bus waveform.
 
 ### Decode the worked stream into RAM
 
-Start through ordinary BIOS cartridge entry with both DMA channels and IMGDEC
-idle. Own their ports and the interrupt mask exclusively. The following
-known-valid stream is the 19-word example in the stream reference below; it produces 26 output words,
-not 20. Input and output are armed before START so neither waits for the other
-to finish the entire stream. These fragments use consecutive hardware-word
-indices, not a RAM descriptor fetched by the units.
+The following nineteen-word stream produces twenty decoded payload words and
+six header words, for twenty-six output words. With IMGDEC and both DMA channels
+idle, arm output before starting the input and decoder. The fragments assume
+exclusive use of those units and the interrupt mask. Array indices address
+consecutive hardware registers.
 
 ```lua
 rodata stream: word[19] = {
@@ -135,12 +124,12 @@ IMGDEC STATUS is `02H`, INPUT_WORDS_RECEIVED is 19 and DECODED_WORD_COUNT is 20.
 Both DMA counts are zero and both DMA statuses are DONE. The three separate
 pending interrupt bits are raised even though delivery is masked.
 
-The DMA-first wait is for this known-valid stream. It is not a malformed-stream
-loader: FORMAT_FAULT withdraws IMGDEC requests and can leave a DMA channel
-BUSY indefinitely. Input completion, output receipt, decoder success and a
-bus-fault-free transfer are separate conditions. See
-[DMA, Completion and interrupts](dma.md#completion-and-interrupts) for a
-handler-owned service sequence instead of polling.
+For this valid stream, both DMA channels complete normally. For a general
+loader, also monitor IMGDEC STATUS while waiting: FORMAT_FAULT withdraws its
+requests and can leave a channel BUSY. Stop or recover that transfer before
+reusing its resources. Inspect bus faults as well as decoder status.
+[DMA, Completion and interrupts](dma.md#completion-and-interrupts) gives the
+interrupt-driven completion sequence.
 
 <div class="keep-together">
 
@@ -149,8 +138,8 @@ handler-owned service sequence instead of polling.
 IMGDEC occupies nine consecutive 32-bit registers, beginning at
 `0x080103FC`. Adjacent registers are four bytes apart. All reset values in the
 table are complete 32-bit words. R denotes read-only; R/W denotes read/write.
-The five configuration registers are identified explicitly because their
-writes share one admission gate.
+The five configuration registers share the inactive-only write condition
+described below.
 
 | Address | Name | Access | Bits | Reset | Function |
 |---|---|---|---|---|---|
@@ -169,7 +158,9 @@ writes share one admission gate.
 Writes to STATUS, INPUT_WORDS_RECEIVED, or DECODED_WORD_COUNT raise
 `BUS_FAULT_READ_ONLY`; they do not acknowledge or clear those registers.
 
-### Programming words and write admission
+<a id="programming-words-and-write-admission"></a>
+
+### Configuration writes
 
 INPUT_WORD_COUNT, TEXTURE_DESTINATION, TEXTURE_SIZE, and CLUT_DESTINATION
 retain the complete words written to them. Reads return those retained words.
@@ -178,11 +169,11 @@ corresponding output headers; it does not normalize them on write or readback.
 The destination and size words are packet fields, not addresses from which
 IMGDEC fetches input.
 
-Program all four words before writing START. Configuration writes are admitted
-only while IMGDEC is inactive and quiescence has not been requested. The same
-gate applies to CONTROL. Consequently, writing START during an active stream
-is not an abort or restart operation. A CPU configuration write waits until
-the admission gate opens rather than replacing the active programming words.
+Program all four words before START. Configuration and CONTROL accept writes
+while IMGDEC is inactive and no system pause is requested. A CPU write made
+while this condition is false waits until it can proceed. To restart after a
+fault, wait for the stopped state and issue a new START; writing START during
+active decoding waits rather than aborting the stream.
 
 The programming words remain in their registers during the stream. The input
 count governs input submission and completion checks; destination and size
@@ -257,9 +248,9 @@ For a CPU DATA write to proceed, all of the following must hold:
 - DMA does not own the DATA write port.
 
 A blocked CPU write waits and retries; it does not submit a word or advance input progress.
-These CPU admission tests require only one free FIFO word, not a complete DMA block.
-DMA DATA writes do not use these CPU admission tests.
-DMA input must therefore be paced by the IMGDEC input request and the programmed transfer count.
+A new CPU write needs one free FIFO word. DMA input uses the separate
+block-request threshold and programmed transfer count; pace it through that
+request line.
 
 Every DATA write that executes replaces the retained DATA word.
 It enters the input FIFO if space remains and increments INPUT_WORDS_RECEIVED modulo 2^32.
@@ -323,20 +314,19 @@ INPUT_WORDS_RECEIVED must equal INPUT_WORD_COUNT, and the input FIFO must be emp
 For DMA output, this completion check occurs only at BLOCK_END.
 
 A successful stop replaces STATUS with DONE; a format-error stop replaces it with FORMAT_FAULT.
-Both stops clear active processing, cancel scheduled decoding, withdraw both IMGDEC DMA requests,
-release configuration-write waits, and raise the IMGDEC interrupt.
+Both stops end active processing, cancel the pending decode batch, withdraw
+both DMA requests and raise the IMGDEC interrupt. Waiting configuration writes
+can then proceed when the system-pause condition also permits them.
 Neither stop empties the FIFOs nor clears DATA or the programming registers.
 FORMAT_FAULT can therefore leave a generated output prefix in the output FIFO.
-It does not turn that prefix into a successful complete transfer, and output DMA request 6 is withdrawn.
-An armed DMA channel can consequently remain BUSY waiting for a request;
-a decoder fault does not itself complete or reset that channel.
+With output request 6 withdrawn, an armed DMA channel can remain BUSY waiting
+for more output. Inspect and recover that channel separately.
 CPU reads may remove retained output when DMA does not own the read port.
 
 **Caution — read exactly the known output count.** After a drained successful
 stream, an extra CPU DATA read without a DMA read-port owner returns the last
 word and repeats the completion check. It can raise IRQ_IMGDEC again without
-producing or consuming a new word. Empty DATA reads are not a completion poll
-or a one-shot interrupt guarantee. After FORMAT_FAULT, an empty read does not
+producing or consuming a new word. Poll STATUS rather than making extra DATA reads for completion. After FORMAT_FAULT, an empty read does not
 by itself satisfy successful-completion conditions.
 
 ### Interrupts and fault recovery
@@ -360,7 +350,8 @@ An accepted interrupt records a CPU event when no HALT wait is latched.
 A subsequent `halt_until_irq` consumes that event instead of sleeping;
 otherwise it establishes the HALT wait.
 This permits the predicate to be rechecked even when an interrupt is accepted between its test and HALT.
-An interrupt from another source is not proof of IMGDEC completion.
+Recheck IMGDEC STATUS after waking, since another interrupt source can also
+wake the CPU.
 
 All five IMGDEC configuration registers accept writes only while inactive and no system pause is requested.
 There is no active-job ABORT or restart command through CONTROL.
@@ -381,14 +372,14 @@ run, repeat, back-reference distance and scheduled-word state are cleared.
 History availability is reset; no history word remains valid for a new stream.
 The central interrupt flag is not acknowledged by this unit reset.
 
-System pause is not a unit reset, a successful completion, or a request to drain the FIFOs.
-When pause is requested, IMGDEC withdraws both DMA requests and admits no new CPU DATA writes
-or configuration writes; it schedules no new decode batch.
-A batch already scheduled still executes when due.
-The unit is quiescent once pause has been requested and no decode batch remains scheduled.
-Quiescent does not mean inactive, and either FIFO can still contain words.
-On leaving system pause, the unit resumes scheduling and recomputes its DMA requests;
-waiting configuration writes are retried under the normal inactive-only admission rule.
+System pause preserves the active stream and FIFO contents. On a pause
+request, IMGDEC withdraws both DMA requests and holds new CPU DATA writes,
+configuration writes and output batches. A batch already in progress completes
+at its normal edge, after which the unit is quiescent. Either FIFO can still
+contain words, and STATUS can still indicate an active stream.
+
+On resume, decoding and request generation continue. A waiting configuration
+write still requires the stream to become inactive before it proceeds.
 
 
 ## Work timing and transfer budget
@@ -401,13 +392,13 @@ Compressed input length alone does not determine the output-work budget.
 
 ### Output batches
 
-IMGDEC schedules one output batch at a time.
-If a batch of `N` words is scheduled at cycle `A`, its deadline is:
+IMGDEC processes one output batch at a time. A batch of `N` words starting
+at cycle `A` completes at:
 
 `A + 2 × N`
 
-The entire batch is published together at its completion edge;
-words are not exposed individually at two-cycle intervals within the batch.
+The entire batch enters the output FIFO at that edge. No word from it is
+available during the intervening cycles.
 An output header is always a three-word batch and requires three free FIFO slots.
 A payload batch contains the smallest of:
 
@@ -417,7 +408,7 @@ A payload batch contains the smallest of:
 - 16 words;
 - for a literal run, the input words currently available.
 
-No batch is scheduled while the required header, token or repeat word is missing.
+A new batch waits for any required header, token or repeat word.
 Input starvation therefore adds waiting time rather than a fixed parsing charge.
 A full output FIFO prevents a new batch; a header also waits if fewer than three
 slots are free. Draining the output can therefore be necessary for further work.
@@ -432,12 +423,10 @@ At two cycles per word, uninterrupted IMGDEC output work corresponds to:
 - **16,934,400 32-bit output words/s**;
 - **67,737,600 output bytes/s**.
 
-These rates require uninterrupted service, sufficient input and output capacity,
-and no source or sink waiting. Header words consume the same budget as payload.
-The figures convert the installed cycle budget; they are not a separate decoder
-clock, an electrical bus bandwidth, a compressed-input rate, or a guaranteed
-complete-upload or displayed-frame rate. Transfer and waiting time must be
-budgeted separately.
+These are output rates with sufficient input, free FIFO space and uninterrupted
+operation. Headers consume the same budget as payload. For a complete upload,
+add DMA transport and any waiting for input or GPU readiness, as in the following
+example.
 
 ### Controlled ROM-to-RAM transfer
 
@@ -455,7 +444,8 @@ For these transfers, each ROM input block costs `4 + 8 × N` cycles and each RAM
 output block costs `1 + N` cycles. Each new block incurs its setup charge.
 The 19-word input splits into 16 and 3 words, costing 132 and 28 cycles.
 The 26-word output splits into 16 and 10 words, costing 17 and 11 cycles.
-These are installed transfer budgets, not electrical bus ratings.
+The input and output costs overlap decoding where their request conditions
+permit.
 
 | Cycle | Event | Input received | Payload decoded | Output queued | Output read |
 |---:|---|---:|---:|---:|---:|
@@ -472,7 +462,7 @@ These are installed transfer budgets, not electrical bus ratings.
 | 196 | Ten-word output tail ends; IMGDEC and output DMA DONE | 19 | 20 | 0 | 26 |
 
 The first header is due at `132 + 6 = 138`; subsequent batch charges are
-4, 4, 8, 8, 6 and 16 cycles, placing the last publication at cycle 184.
+4, 4, 8, 8, 6 and 16 cycles, placing the last output batch at cycle 184.
 The input tail ends independently at `132 + 28 = 160`.
 At cycle 162 only 15 output words are queued, below the first 16-word block size.
 The CLUT header raises that total to 18 at cycle 168, admitting the output block.
@@ -481,8 +471,8 @@ That block ends at `168 + 17 = 185`; its ten-word tail ends at `185 + 11 = 196`.
 The **52 charged output-work cycles** and **196-cycle controlled timeline** describe
 separate quantities. Input transfer, output transfer and decoding overlap;
 adding their individual budgets would count overlapping time more than once.
-This timeline ends with output in RAM. It is neither guest-routine latency,
-interrupt-delivery latency, a VRAM-completion time, nor a displayed-frame deadline.
+The timeline ends with output in RAM. Add CPU setup and result handling; a
+direct GPU upload also requires GPU processing and PCRTC display timing.
 
 
 ## Compressed word stream
@@ -779,9 +769,8 @@ operands:
 The direct control word selects fixed DATA and GP0 addresses, IMGDEC_READ and
 GX_WRITE requests, and sixteen-word blocks. Keep count 26. It waits for both
 request lines; decoder output readiness alone cannot make GP0 ready. After
-both DMA completions and IMGDEC DONE, wait separately for GPU idle. Neither
-DMA completion nor decoder DONE means that GPU processing or display
-publication has finished.
+both DMA completions and IMGDEC DONE, wait separately for GPU idle. GPU processing continues after the transfer; PCRTC displays the completed
+source according to its own latch timing.
 
 ### Inspect a fault, then start a fresh stream
 
@@ -886,8 +875,8 @@ next header.
 | CLUT | `c0000000H`, `00800040H`, `00010010H` | 8 words, equal to `ram_output[18..25]` |
 
 Each returned word contains two raw storage halfwords, first in bits 15:0.
-The last read clears READY. This verifies storage, unlike observing GPU idle
-alone. It does not imply that the display has published those pixels.
+The last read clears READY. Readback returns the stored halfwords independently of display selection.
+GPU idle alone reports no pixel values.
 See [GPU](gpu.md) for complete upload, drawing and readback rules.
 
 <a id="imgdec-indexed-output"></a>
@@ -913,4 +902,6 @@ IMGDEC emits a texture upload occupying **4 × 6 halfwords**, plus the CLUT uplo
 
 For these exact UV endpoints, `(0,64)` through `(15,69)`, the first and last source columns are four displayed pixels wide, and the first and last rows are four pixels high. Interior columns and rows occupy eight pixels each. This is not uniform eightfold scaling.
 
-IMGDEC supplies upload words, not rendered pixels. Texture interpretation and drawing belong to the GPU; selecting and presenting the display source belongs to PCRTC.
+The three stages serve different purposes: IMGDEC reconstructs upload packets,
+the GPU interprets the texture and draws the patch, and PCRTC samples the
+selected framebuffer for display.

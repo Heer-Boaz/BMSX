@@ -1,9 +1,12 @@
 # Geometry batch unit
 
-GEO reads addressed records, performs a selected two-dimensional geometry
-operation and writes results to main RAM. One command captures a job's
-addresses, counts, parameters and strides; it does not copy the operands.
-The three commands serve different data formats and tasks:
+The geometry batch unit transforms two-dimensional vertex arrays and tests
+convex shapes for intersection. A game can use it to move collision hulls into
+world coordinates, test candidate pairs and obtain overlap information while
+the CPU performs other work. GEO reads records and geometry from addressed
+memory and writes its results to main RAM.
+
+Choose the operation according to the required coordinates and result:
 
 | Command word | Operation | Coordinate representation | One outer record |
 |---|---|---|---|
@@ -11,23 +14,17 @@ The three commands serve different data formats and tasks:
 | 00000021H | SAT2_BATCH | Signed Q16.16 | Test one supplied convex-polygon pair |
 | 00000022H | OVERLAP2D_PASS | Binary32 | Test one candidate pair, or one full-pass outer instance |
 
-All three commands share one active-job slot and work-credit budget; they are
-not independently running engines. A transform followed by a collision test
-is two successive jobs, not an automatically chained pipeline. Do not submit
-another command while BUSY: the CMD write discards the running job and rejects
-the new one.
+The unit executes one job at a time. To transform hulls and then test them,
+complete XFORM2 before submitting SAT2 with the transformed vertex buffer.
+CMD captures the job configuration, while operand bytes are read during
+processing. Keep those buffers unchanged until completion. A CMD write while
+BUSY discards the running job and rejects the new submission.
 
-The work-credit rate funds outer-record processing, one unit per outer record
-for any command. It is not a vertex, collision-pair, contact or byte throughput.
-One OVERLAP2D full-pass outer record can examine many pairs, so credit thresholds
-are not whole-job completion guarantees.
-
-GEO is not the GTE register arithmetic path and is not a rasterizer. Its RAM
-vertices and collision results are not GP0 packets or displayed pixels. Use the
-[GTE chapter](gte.md) for that unit's arithmetic and projection interface and
-the [GPU chapter](gpu.md) when submitting drawing commands. In particular,
-OVERLAP2D's binary32 vertices cannot be substituted for the Q16.16 words read
-by XFORM2 or SAT2 merely because both occupy one word per component.
+XFORM2 and SAT2 share signed Q16.16 coordinates. OVERLAP2D takes binary32
+geometry and adds instance translations; prepare that representation separately.
+The [GTE](gte.md) provides the console's register-based transformation and
+projection arithmetic. To draw GEO vertices or diagnostics, convert the results
+into [GPU](gpu.md) packets as illustrated below.
 
 ## GEO specifications
 
@@ -42,39 +39,44 @@ by XFORM2 or SAT2 merely because both occupy one word per component.
 | Installed main RAM | 4 MiB; addressed operand and result storage, not a private GEO payload buffer |
 | Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080bffffH; not an automatic operand destination |
 | System-cycle timebase | 33,868,800 cycles/s |
-| GEO work-credit rate | 16,384,000 outer-record units/s; not a vertex, pair or memory-byte bandwidth rating |
+| GEO work-credit rate | 16,384,000 outer-record units/s |
 
-The job's addresses select the actual buffers. The assigned workspace is part
-of main RAM; the controller does not replace a supplied address with its base.
-The programming sequence below uses explicitly declared operand and result buffers.
-Operation-specific record sizes and limits follow in the command reference.
+Program source and destination addresses explicitly. The assigned workspace
+is available in main RAM; commands use the addresses supplied by the program.
+Record sizes and operation-specific limits appear in the command reference.
 
 ![GEO captured configuration and live operand paths](figures/geo-job.svg)
 
-The upper path captures configuration. The lower path reads current operands
-at record service and writes RAM results; capturing an address does not capture
-its contents. This shows the normal nonzero-job path, not an electrical bus or
-a cycle waveform. OVERLAP2D additionally clears its summary at command
-acceptance, and zero-count completion does not pass through record service.
+A command latches addresses, counts, parameters and strides. Processing then
+reads the addressed records and writes their results. OVERLAP2D clears its
+summary when the command is accepted. A zero-count job completes at launch
+without processing a record.
 
 ## An authored sprite and its collision hull
 
-A sprite image and a collision polygon are different cartridge inputs. This example uses two copies of an authored 16 × 16 indexed drone. Its six direct16 RGB555 palette words are `0000H`, `8000H`, `294AH`, `4631H`, `6318H`, and `7FFFH`. Index 0 is transparent; index 1 is opaque black. Neither transparent pixels nor the image rectangle instruct GEO to discover a collision boundary.
-
-The cartridge deliberately associates the artwork with this convex octagon, in the stated vertex order:
+The following scene uses two copies of a 16 × 16 indexed drone sprite and a
+separately defined convex collision hull. The six direct16 RGB555 palette words
+are `0000H`, `8000H`, `294AH`, `4631H`, `6318H` and `7FFFH`. Index 0 is transparent;
+index 1 is opaque black. The GPU draws the sprite while GEO operates on this
+explicit octagon, in the stated vertex order:
 
 ```
 (4,0), (12,0), (16,4), (16,12),
 (12,16), (4,16), (0,12), (0,4)
 ```
 
-Both copies have local origin `(0,0)` and pivot `(8,8)`. Vertices and artwork share that local coordinate space. The pivot is an illustration mark and asset convention, not a GEO register or hidden matrix translation. These poses use no rotation or scale. A stays at world translation `(0,0)`; B moves to `(20,0)`, `(16,0)`, then `(12,0)`. A world point is its local point plus the corresponding translation. The hull is an explicit authoring choice, not an image-alpha measurement.
+The sprite and hull share local origin `(0,0)`; the white cross marks their
+center `(8,8)`. These poses use translation only. A remains at `(0,0)` while B
+moves to `(20,0)`, `(16,0)` and `(12,0)`. Add the instance translation to each
+local vertex to obtain its world coordinates.
 
 <section class="keep-together">
 
 ![Local drone with cyan octagon, gray coordinate axes and white pivot cross.](figures/geo-scene-local.png)
 
-**Local coordinates.** The gray axes start at the image origin; the white cross marks pivot `(8,8)`, not a GEO control. The cyan polygon is the separately authored collision hull. This view projects local coordinates as `(96+4x,64+4y)`; the pivot is therefore at display pixel `(128,96)`.
+**Local coordinates.** Gray axes start at the image origin. Cyan marks the
+collision hull and the white cross marks `(8,8)`. The view maps local coordinates
+to display pixels as `(96+4x,64+4y)`, placing the cross at `(128,96)`.
 
 </section>
 
@@ -82,7 +84,9 @@ Both copies have local origin `(0,0)` and pivot `(8,8)`. Vertices and artwork sh
 
 ![Two separated blue and red drones against a star and lane backdrop, without geometry overlays.](figures/geo-scene-plain.png)
 
-**Artwork alone.** The two drones share one texture. The stars and lane are background artwork, not GEO shapes. This and the following world views use display coordinates `(32+4x,64+4y)`: positive X runs right and positive Y down. The four-pixels-per-unit projection belongs to this illustration, not to GEO.
+**Artwork alone.** The drones share one texture against a star and lane
+background. The world views use display coordinates `(32+4x,64+4y)`: positive X
+runs right and positive Y down, at four pixels per world unit.
 
 </section>
 
@@ -110,7 +114,10 @@ B: [1, 8, 64, 0]
 
 The pair is `[0,0,0,1,0]`, in field order `flags, shape_a, result_index, shape_b, flags2`. Set SRC0=pair, SRC1=descriptors, SRC2=XFORM2's world buffer, DST0=20-byte result, COUNT=1, STRIDE0=20 and STRIDE1=16; submit CMD=`21H`.
 
-CMD captures configuration, not operand bytes. Keep XFORM2's records, local hull and matrices unchanged until it completes. Keep SAT2's pair, descriptors and world buffer unchanged through SAT2. There is no queued dependency command: check successful XFORM2 completion before submitting SAT2. A new CMD while BUSY rejects and discards the running job. Successful XFORM2 here has STATUS=2, FAULT=0, PROCESSED=2; successful SAT2 has STATUS=2, FAULT=0, PROCESSED=1. An interrupt alone does not establish success. Consume each pose's results before overwriting its buffers.
+Retain XFORM2's records, local hull and matrices until completion. For this
+job, successful completion gives STATUS=2, FAULT=0 and PROCESSED=2. Then submit
+SAT2, retaining its pair, descriptors and world vertices until it completes with
+STATUS=2, FAULT=0 and PROCESSED=1. Read the results before reusing the buffers.
 
 ### Three exact poses
 
@@ -128,7 +135,11 @@ Metadata 2 selects A's edge 2, the directed segment `(16,4) → (16,12)`. SAT2 p
 
 ### A separate floating-point contact query
 
-OVERLAP2D does not read Q16 coordinates. Supply actual F32 vertices and bounds separately; interpreting XFORM2's words as F32 does not convert them. The cartridge divides the authored local Q16 coordinates by 65536 and stores F32 vertices once. Both instances share that polygon and bounds `(0,0,16,16)`, with F32 translations matching the poses. Instances contain translation, not an affine matrix. Rotation or scale would require separately produced matching F32 geometry and bounds.
+For OVERLAP2D, prepare binary32 vertices and bounds separately from the Q16
+buffer. Convert the local coordinates to numeric values and store them as F32.
+Both instances share the polygon and bounds `(0,0,16,16)`, with F32 translations
+matching the poses. Instances apply translation only; rotation and scale require
+transformed F32 geometry and matching bounds.
 
 The 96-byte polygon object has kind=3, count=8, data offset=32 and bounds offset=16, with offsets relative to its descriptor. Both instances use layer=mask=1. The candidate is `[0,1,44524F4EH]`; its final word is cartridge-supplied pair information, not a computed feature. Set SRC0=instances, SRC1=candidate, DST0=36-byte contact storage, DST1=16-byte summary, COUNT=1, PARAM0=1, PARAM1=1 and strides `20,12,2`; submit CMD=`22H`.
 
@@ -142,7 +153,9 @@ The completed summary is `result_count, exact_pairs, broadphase_pairs, flags`:
 
 OVERLAP2D requires positive depth for a contact and points its normal from B towards A, opposite to SAT2's convention. The overlapping contact has piece indices `0,0` and feature 2. Here feature 2 is the winning edge index only, without SAT2's shape selector.
 
-For this vertex order, the clipped intersection has six vertices. Their arithmetic mean is `(14,8)`. The reported point is world-space, neither a guaranteed area centroid nor a selected boundary point. Clipping is winding-sensitive and does not normalize winding.
+For this vertex order, the clipped intersection has six vertices. Their arithmetic mean is `(14,8)`. The reported point is the world-space mean of clipped vertices. This differs
+from an area-weighted centroid or a boundary contact. Supply the directed
+winding required by the clipping rule.
 
 <section class="keep-together">
 
@@ -178,11 +191,22 @@ Sprites are submitted before hulls. Each hull becomes eight finite flat-line pac
 
 The yellow bracket uses the winning horizontal projection interval. The green arrow has a separate illustrative anchor. The magenta arrow and white cross use the valid F32 world point. The cross is drawn last. These arrowheads and bracket placements are authored for the illustrated horizontal normals, not an arbitrary rotated-normal renderer.
 
-The example owns idle GEO, GPU/PCRTC and the central interrupt mask exclusively. It uses valid authored operands and retains each job's completion report; it is not an inherited-state initialization or general fault-recovery routine. Its two 256 × 192 GX16 surfaces occupy VRAM word-X `[0,256)`, rows `[0,192)` and `[256,448)`; the texture occupies word-X `[640,704)`, rows `[0,64)`. Rows have 1024 halfwords. These rectangular spans avoid each other and the linked firmware's queried reservation, here origin `(704,720)`, size `320 × 252`. Query that reservation for a different firmware; these numbers are not a universal reservation constant.
+The scene uses two 256 × 192 GX16 drawing surfaces: VRAM word-X `[0,256)`,
+rows `[0,192)` and `[256,448)`. The texture occupies word-X `[640,704)`, rows
+`[0,64)`. Each VRAM row has 1024 halfwords. These rectangles leave the BIOS
+reservation untouched: in this example its queried origin is `(704,720)` and
+size `320 × 252`. Query the installed BIOS reservation before allocating VRAM;
+its extent can differ between firmware images.
 
 PCRTC is reset and display output disabled during setup. Drawing selects the surface's draw area and offset. Fill command `02H` ignores both, so clearing the second surface explicitly uses its raw VRAM origin `(0,256)` rather than relying on the draw offset.
 
-After drawing, wait for GPUSTAT bit 26 to indicate idle. **GPU idle is not display publication.** Mask interrupt delivery, program the framebuffer selection and display enable, acknowledge stale VBlank bit `4`, record the VBlank callback counter while masked, then enable the owned sources with mask `1CH`. Wait for that counter to change: this observes a fresh VBlank after the writes, not an unrelated GEO completion. Each illustration then holds for eight later VBlank services, an authored viewing cadence rather than a required device delay.
+After drawing, wait for GPUSTAT bit 26, then select the completed framebuffer
+and enable display. PCRTC applies the display configuration at its VBlank latch;
+wait for a fresh VBlank to observe the new picture. With exclusive use of the
+interrupt mask, mask delivery during setup, acknowledge old VBlank bit `4`,
+record the handler's VBlank counter and enable the owned sources with mask
+`1CH`. A change in that counter identifies the required edge. The illustrations
+hold each pose for eight further VBlank intervals for viewing.
 
 The scene therefore has three explicit hand-offs: XFORM2 output becomes SAT2 input, completed collision results select drawing packets, and a completed GPU picture becomes a PCRTC source. None of these hand-offs launches the next unit automatically.
 
@@ -357,13 +381,21 @@ The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The of
 
 Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
 
-The mapped register access rules are distinct from the command memory datapath. GEO's direct data reads and output writes access main-memory backing, not mapped register actions. Installed RAM includes backing at addresses in the IO aperture. A command output address in that aperture is not a mapped register write and does not invoke a register action. Apply the operation's memory-range rules; do not treat the aperture as an automatic exclusion from every accepted RAM range.
+GEO's RAM data path accesses bytes directly, including RAM at addresses
+reserved for CPU I/O. Writing a GEO result there changes the underlying RAM
+rather than operating an I/O register. Apply each command's range rules when
+allocating buffers, and keep results out of memory reserved for other uses.
 
 ## Work budget and timing
 
-The installed system-cycle rate is 33,868,800 cycles per second and GEO receives 16,384,000 work units per second while busy. These numbers define cycle-based work credit. They are not vertex, collision-pair, contact, or memory-bandwidth ratings.
+GEO accrues work credit at 16,384,000 units/s against the 33,868,800-Hz system
+timebase. One unit permits one outer record to run, including a record that
+faults. XFORM2 consumes one record per vertex span, SAT2 one per supplied pair,
+and OVERLAP2D one per candidate or full-pass outer instance.
 
-One work unit funds one outer-record invocation, whether that invocation succeeds or returns a fault. The accounting is the same for all three commands. Vertex count, record byte size, broadphase and exact tests, clipping, and contact count do not add controller work units. A full-pass invocation can examine many pairs, so its work-unit rate must not be advertised as a pair-processing rate.
+The cost within a record does not add credit units. In particular, an OVERLAP2D
+full-pass record can test several pairs and produce several contacts. Use the
+outer-record count, rather than vertex or contact count, for this timing budget.
 
 A fresh nonzero launch starts with no accumulated whole work units and no fractional carry. Idle time does not bank work. While busy, elapsed CPU cycles add credit at the ratio
 
@@ -382,9 +414,13 @@ For a fresh, continuously accrued budget, the credit threshold for `N > 0` outer
 | 64 | 133 |
 | 640 | 1323 |
 
-These are calculated credit thresholds, not whole-routine completion guarantees. They exclude delayed service, launch and CPU-instruction overhead, interrupt handling, and termination by fault, abort, or rejection. No separate setup-latency or per-vertex cost term is specified by this budget. There is no public GEO clock-control register.
+The thresholds cover GEO work credit. CPU setup, delayed service and interrupt
+handling add to an operation's elapsed time; a fault, abort or rejection can
+terminate it early. The credit rate is fixed.
 
-`COUNT` is a full unsigned 32-bit word; the controller imposes no smaller batch-count limit. This does not remove operation limits: XFORM2 accepts at most 64 vertices, SAT2 polygons at most 64 vertices, and OVERLAP polygons at most 64 vertices with at most 128 clip vertices. The 16-word register bank does not provide 16 job slots.
+COUNT accepts the full unsigned 32-bit range. Per-record limits still apply:
+64 vertices for an XFORM2 span or SAT2/OVERLAP polygon, and 128 clipping vertices
+in OVERLAP2D.
 
 ## Completion, faults, and recovery
 
@@ -408,7 +444,7 @@ A rejected submission publishes `STATUS = 0x8` (`REJECTED` without `DONE`), rese
 | `0x8001` | `REJECT_BUSY` |
 | `0x8002` | `REJECT_BAD_CMD` |
 
-The table defines the code space; it does not mean every operation emits every code. Consult the operation's record rules for its failure conditions.
+The command reference below identifies which conditions produce each fault.
 
 To stop a busy job, write `CTRL` with bit 0 set. `ABORT` terminates it with `DONE | ERROR`, code `ABORTED`, and the current completed-record index. Earlier outputs remain. The pulse clears itself. In idle or `DONE`, it changes no job result. With `ERROR` or `REJECTED` already latched, it cannot replace the first fault.
 
@@ -722,7 +758,7 @@ Compound piece `i` is the descriptor at `parent + dataOffset + i × 16`: the arr
 
 Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `0x100000000`. There is no alignment predicate in this pass.
 
-Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. Summary publication is not atomic.
+Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. The four summary words are written separately, in order.
 
 ### Filtering, order, and counts
 
@@ -799,7 +835,7 @@ It contains neither capacity nor processed count. The processed count advances o
 
 Capacity is checked only after the complete piece search selects a hit. If `resultCount >= PARAM1`, the pass publishes current counters with overflow bit 0 set, then faults with `RESULT_CAPACITY`; it writes no new result and does not increment `resultCount`. Capacity zero can succeed when there are no hits. This check precedes destination validation.
 
-Each actual result separately requires a non-wrapping 36-byte span in installed main RAM. The entire declared capacity is not preflighted. `resultCount` advances after all nine result words are written. Earlier results and writes remain after a later fault; there is no rollback.
+Each actual result separately requires a non-wrapping 36-byte span in installed main RAM. The entire declared capacity is not preflighted. `resultCount` advances after all nine result words are written. Earlier results remain after a later fault.
 
 The summary is written initially, after every successful input record, and on capacity overflow. Other faults do not refresh it. In particular, a failing full-pass outer record may already have advanced counters or written contacts that its last published summary does not include. The failing record does not advance the processed count.
 

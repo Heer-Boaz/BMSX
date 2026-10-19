@@ -8,15 +8,15 @@
 			"reviews": {
 				"facts": {
 					"passed": true,
-					"evidence": "Approval retained from 233cfe142; unchanged chapter."
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
 					"evidence": "Approval retained from 233cfe142; unchanged figure assets."
 				},
 				"print": {
-					"passed": true,
-					"evidence": "Approval retained from 233cfe142; unchanged chapter."
+					"passed": false,
+					"evidence": ""
 				}
 			}
 		}
@@ -29,8 +29,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -51,8 +51,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -73,8 +73,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -95,8 +95,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -117,8 +117,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -139,8 +139,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -161,8 +161,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -183,8 +183,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -205,8 +205,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -227,8 +227,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed language/BIOS prose pass source-checked; IEEE fields, phase sine and storage/lifetime checked against live BIOS. Grouped-result correction verified through shared frontend, O0/O3 native parity and actual BIOS format callers."
 				},
 				"figures": {
 					"passed": true,
@@ -249,8 +249,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed graphics prose pass independently source-checked; all ten PCRTC configuration rows recalculated through timing and scanout owners. GP1 reset wording corrected. Preserved arithmetic/reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -271,8 +271,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed graphics prose pass independently source-checked; all ten PCRTC configuration rows recalculated through timing and scanout owners. GP1 reset wording corrected. Preserved arithmetic/reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -293,8 +293,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed graphics prose pass independently source-checked; all ten PCRTC configuration rows recalculated through timing and scanout owners. GP1 reset wording corrected. Preserved arithmetic/reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -315,8 +315,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -337,8 +337,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -359,8 +359,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed peripheral prose pass independently checked against mirrored device owners and numeric leaves; IMGDEC shared DMA arbitration clarified. Register, format and timing reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -381,8 +381,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed peripheral prose pass independently checked against mirrored device owners and numeric leaves; IMGDEC shared DMA arbitration clarified. Register, format and timing reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -403,8 +403,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed peripheral prose pass independently checked against mirrored device owners and numeric leaves; IMGDEC shared DMA arbitration clarified. Register, format and timing reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -425,8 +425,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed peripheral prose pass independently checked against mirrored device owners and numeric leaves; IMGDEC shared DMA arbitration clarified. Register, format and timing reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -447,8 +447,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed core prose and programming pass independently checked against mirrored specifications, CPU/memory/DMA owners and BIOS consumers; boot-delay wording corrected. Preserved numerical reference retained."
 				},
 				"figures": {
 					"passed": true,
@@ -469,8 +469,8 @@
 			"open": [],
 			"reviews": {
 				"facts": {
-					"passed": false,
-					"evidence": ""
+					"passed": true,
+					"evidence": "Completed peripheral prose pass independently checked against mirrored device owners and numeric leaves; IMGDEC shared DMA arbitration clarified. Register, format and timing reference retained."
 				},
 				"figures": {
 					"passed": true,

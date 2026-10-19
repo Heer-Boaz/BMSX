@@ -1,30 +1,43 @@
 # BIOS base services
 
-The installed BIOS supplies the twelve globals in this chapter before cartridge
-execution. They need no cartridge import. They check and convert language values,
-traverse Tables, select argument tuples, access ordinary globals and produce
-diagnostic text. They are not a second set of device-register ports.
+The BIOS supplies functions for value checks, numeric and text conversion,
+Table traversal, argument selection, global-name access and console output.
+Use the installed global names directly after normal BIOS startup.
 
-The [CPU reference](cpu.md) defines language values, Number arithmetic and
-ordinary calls. [Memory and program storage](memory.md) defines typed byte
-storage, module declarations and startup. [Protected calls and coroutines](coroutines.md)
-defines `error`, `pcall`, `xpcall` and the `coroutine` interface.
-[System control and timing](system.md) defines the diagnostic interface and
-retained fault report.
-The table/metatable raw-access globals are described in the CPU reference;
-other installed libraries are separate interfaces.
+This chapter covers twelve base functions. The [Table and metatable
+interface](cpu.md#bios-interface) specifies `rawget`, `rawset`,
+`getmetatable` and `setmetatable`. [Protected calls and coroutines](coroutines.md)
+specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
+words are described in [System control](system.md).
 
-The contracts below describe the installed bindings. These public names are
-ordinary global values, not permanently reserved operations. Some BIOS functions
-capture their primitive dependencies; others resolve ordinary globals at each
-call, as specified below. Deliberately replacing a binding can therefore affect
-other calls that use it.
+Choose the operation according to the representation being used:
+
+| Task | Interface | Important distinction |
+| --- | --- | --- |
+| Convert numeric text | `tonumber(value [, base])` | Conversion can return nil. Arithmetic does not implicitly parse a numeric String. |
+| Produce diagnostic text | `tostring(value)`, `print(...)` | `tostring` returns text; `print` sends a line to the BIOS console. |
+| Traverse own Table entries | `next(target [, key])`, `pairs(target)` | Entry traversal is different from a numeric sequence ending at its first missing value. |
+| Traverse a numeric sequence | `ipairs(target)` | Starts at key 1 and stops at nil; use an explicit count when nil is part of a tuple. |
+| Count or select call arguments | `select(selector, ...)` | Supplied nil positions still count. [Table packing](bios-table.md#tablepack) preserves that count in a Table. |
+| Access a global by a computed name | `getglobal(name)`, `setglobal(name, value)` | These select ordinary global bindings, not keys in a global-environment Table. |
+| Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see the [Table BIOS interface](cpu.md#bios-interface). |
+| Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#bios-interface). |
+
+The descriptions apply to the installed BIOS functions. Public names are
+ordinary global bindings: assignment replaces the function found through that
+name. Saved function references continue to select their original values;
+entries below identify dependencies that instead read a current global.
 
 ## Value checks and conversion
 
-The five globals in this section check values, compare them, or convert them to a Number or String. Their contracts use BMSX value categories, not the appearance of a value: a String containing digits is still a String until a conversion succeeds, and a Number does not become false merely because it is zero.
+Use a conversion when a different value kind is required. A String of
+digits remains text until conversion succeeds; numeric zero remains truthy.
 
-Calls preserve the distinction between an omitted argument and an explicitly supplied `nil` where the function counts its arguments. A missing fixed parameter receives `nil`. Results also have a count: selecting a fixed number of results truncates excess results or fills missing positions with `nil`; an expanding result position preserves the actual count. The multiple-result rules do not make every expression position expanding.
+A missing fixed argument arrives as nil. Variadic interfaces count the
+supplied positions, including explicit nils. A fixed receiving list discards
+excess results and fills missing positions with nil; an expanding result
+position carries the returned count. These rules matter for assertions and
+argument tuples as well as for ordinary function calls.
 
 ### `assert(condition, ...)`
 
@@ -55,7 +68,9 @@ Consequently, `assert(false, nil)` raises `nil`, whereas `assert(false)` raises 
 
 ### `rawequal(left, right)`
 
-`rawequal` returns exactly one Boolean. It uses ordinary BMSX equality directly, without conversion and without invoking an equality metamethod. Missing operands are `nil`; arguments after the two operands do not participate.
+Returns one Boolean using BMSX equality. Missing operands are nil and
+surplus operands are ignored. Values are compared in their existing kinds;
+`__eq` is not called.
 
 | Operand categories | Equality rule |
 | --- | --- |
@@ -63,11 +78,14 @@ Consequently, `assert(false, nil)` raises `nil`, whereas `assert(false)` raises 
 | `nil` and `nil` | Equal |
 | Booleans | Equal when they have the same Boolean value |
 | Numbers | Numeric equality; NaN is unequal, and positive and negative zero are equal |
-| Strings | Compare their scalar String IDs |
-| Built-in functions | Compare their scalar function IDs |
+| Strings | Equal String values |
+| Built-in functions | Equal when they designate the same built-in routine |
 | Tables, closures, and Threads | Compare reference identity within the same category |
 
-The public type name `function` covers both closures and built-in functions, but that shared label does not make different callable categories equal. Likewise, a Number and a String spelling that Number are unequal. Distinct Tables are unequal even when their entries match; two references to the same Table are equal. No copy, structural comparison, or text conversion is performed.
+Closures and built-in routines both have type name `function`, but remain
+distinct value categories for equality. A Number and its textual spelling
+compare unequal. Two Table references compare equal only when they refer to
+the same Table, even if separate Tables have matching entries.
 
 <section class="keep-together">
 
@@ -91,7 +109,9 @@ These are exact, lowercase labels. In particular, Boolean values do not have sep
 
 ### `tostring(value)`
 
-`tostring` returns exactly one String. Its operation is the ordinary concatenation `'' .. value`, using BMSX scalar-to-String conversion; it does not perform a separate `__tostring` lookup. An omitted argument converts as `nil`. Further arguments are not parameters and do not affect the result.
+Returns one String using the same value conversion as `'' .. value`.
+An omitted argument converts as nil; surplus arguments are ignored.
+`__tostring` does not participate in this conversion.
 
 | Value | String contents |
 | --- | --- |
@@ -163,7 +183,10 @@ For a nonnil base, the installed function performs these operations in order:
 3. Require `integer_base` to be between `2` and `36`, inclusive. Otherwise, raise the exact String `bad argument #2 to tonumber (base out of range)`.
 4. Parse the String using that base, returning a Number or `nil`.
 
-The String-value check therefore precedes base arithmetic and range checking. There is no separate base-type check before `base // 1`: do not treat the three literal errors as an exhaustive diagnostic catalogue for every possible base value, or assume a String-to-Number coercion for the base. The function's `type` and explicit error operations resolve their ordinary globals when called; the contracts here describe those globals as installed. See [Protected calls and coroutines](coroutines.md) for error handling.
+Supply the base as a Number. The String-value check precedes its arithmetic
+and range checks; a numeric String supplied as the base fails the integer
+comparison. Error reporting uses the current global `error`, and kind checks
+use current `type`. [Protected calls](coroutines.md) receive a raised value.
 
 </section>
 
@@ -175,9 +198,10 @@ There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `to
 
 ## Traversal, argument selection, globals, and output
 
-The installed base functions in this section provide table traversal, access to argument lists and ordinary globals, and console output. They are ordinary global function values. A call uses the value resolved for that name; the name alone does not reserve an operation independently of its current binding. The dependencies described below matter when a program replaces one of these globals.
-
-Result counts are part of each contract. A function returning one nil is different from a function returning no values, even though assigning either result to one variable produces nil. A fixed-result context truncates excess results or supplies missing results as nil. An open-result context retains the actual count. Calls do not expand to all their results in every expression position; an expanding final argument can pass the complete result list to another call.
+Choose entry traversal for all own Table mappings, or indexed iteration for
+a sequence ending at nil. Use `select` when the supplied argument count,
+including nil positions, must be preserved. Name-based global access and
+console output use the same ordinary call and result-adjustment rules.
 
 <section class="keep-together">
 
@@ -189,19 +213,31 @@ Result counts are part of each contract. A function returning one nil is differe
 
 A successful step returns exactly two results, `(key, value)`. Array keys are Numbers, and the returned value retains its stored representation. Exhaustion returns exactly **one nil**, not zero results and not a pair of nils. Starting with a nil key visits live array slots in ascending order, followed by live hash slots, according to the Table's current storage. This is not a guarantee of insertion order or a sorted ordering of all keys.
 
-Continuation follows that storage as well. A continuation key identifying an array slot within the current capacity resumes after that slot, even when its value is now nil. A non-array continuation key not recognized in the Table's current continuation storage ends traversal rather than raising an invalid-key error. Some removed mappings leave recognizable continuation nodes; an absent live mapping alone does not prove that its key will terminate traversal. These rules do not establish a mutation-safe traversal order or a guarantee across changes to Table storage. In particular, do not turn the array-first traversal rule into a conclusion about Table length.
+Use the returned key to continue traversal of the same Table. An array key
+within the current capacity resumes after that slot even if its value has
+become nil. An unrecognized non-array continuation key ends traversal.
+Removal can retain a recognizable continuation position, so a missing mapping
+alone does not decide that outcome. Changes that reorganize Table storage can
+change traversal; keep the Table's entry structure stable when a complete
+single traversal is required.
 
 `next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
 
 ### `pairs(target)`
 
-`pairs` is an iterator factory. It returns exactly three results, `(next, target, nil)`, using the **current ordinary global `next`** as its first result. It does not validate the target while constructing this triple and does not inspect `__pairs`. Consequently, with the installed `next`, an unsuitable target faults when iteration is attempted, not when `pairs(target)` returns. Replacing global `next` changes the iterator supplied by later calls to `pairs`.
+Returns the three values `next, target, nil`, selecting the current global
+`next`. The first iterator call checks the target through that function.
+`__pairs` is ignored. Replacing `next` therefore changes the iterator returned
+by subsequent `pairs` calls.
 
 A generic `for` obtains three values from its iterator expression: iterator, state, and initial control. Each step calls the iterator with `(state, control)`. The loop ends only when the first result is nil; false does not end it. Otherwise that first result becomes the next control. With the installed `next`, this mechanism traverses the stored entries described above. `pairs` adds no separate ordering or mutation guarantee.
 
 ### `ipairs(target)`
 
-`ipairs` also returns exactly three results: `(ipairs_iterator, target, 0)`. It does not check the target when constructing the triple. Unlike `pairs`, its first result is a captured local iterator function rather than a lookup of a global iterator name. It does not consult `__ipairs`.
+Returns `ipairs_iterator, target, 0`. The iterator begins at key 1 and uses
+ordinary indexed reads. It is the BIOS sequence iterator, independent of the
+current global `next`; `__ipairs` is ignored. The target is first accessed
+when the iterator runs.
 
 Each iterator step computes `next_index = index + 1` and reads `target[next_index]` using ordinary indexing. If the read produces nil, the step returns exactly one nil. Otherwise it returns exactly two results, `(next_index, value)`. A false value is therefore an ordinary sequence element and is returned, not treated as a stopping condition. A nil encountered at an index stops this traversal even when later indexes contain values.
 
@@ -227,7 +263,11 @@ A numeric selector is converted to a signed 32-bit register word: discard its fr
 
 </section>
 
-The selected values are returned unchanged, including intervening or trailing nils. Selecting from an empty argument list produces zero values, whereas selecting `'#'` from it produces one Number, zero. The zero and overly negative cases are not range errors: filtering leaves the complete argument list. The overly large positive case is genuinely an empty result list, not a single nil; fixed-result assignment can conceal that distinction by supplying nil to the receiving variable.
+Results keep their original values and nil positions. With an empty tail,
+a numeric selector returns zero results while `'#'` returns the Number zero.
+A zero or overly negative selector returns the complete tail. An overly large
+positive selector returns zero results; a fixed receiving list then fills its
+variables with nil through ordinary result adjustment.
 
 ### `getglobal(name)` and `setglobal(name, value)`
 
@@ -235,19 +275,25 @@ The selected values are returned unchanged, including intervening or trailing ni
 
 `setglobal` requires the same uncoerced String name and uses the same argument fault for an omitted or non-String name. It writes its second argument unchanged to that ordinary global. Omitting the second argument writes nil; later arguments are unused. A previously unknown name receives an ordinary global slot, including when the value written is nil. The function itself returns **zero results**. A caller requesting one result nevertheless receives nil through normal result padding.
 
-These functions address actual ordinary globals. They do not look up or assign a local or an upvalue merely because it has the same spelling, and they do not access the separate system-global namespace described in [CPU reference](cpu.md). A stored Table remains that Table rather than a copied collection. A String passed to `getglobal` or `setglobal` does not redirect the operation to that separate namespace.
-
-The write takes effect when `setglobal` runs. An error later in the surrounding operation does not undo it. Protecting a call changes how a failure is received, not whether an earlier global write occurred; it is not a transaction around state changes. See [Protected calls and coroutines](coroutines.md) for the failure-handling contract.
+These calls select the ordinary global bank. Lexical locals and captured
+variables with the same spelling remain separate, as does the
+[system-global namespace](cpu.md#two-global-namespaces). Values retain their
+identity, so storing a Table stores a reference to that Table. `setglobal`
+writes when called, and that write remains visible after a later error.
 
 ### `print(...)`
 
 `print` writes one console field for every argument position, with one tab between adjacent positions and no leading or trailing separator. Nil arguments are counted and converted rather than omitted; a list consisting entirely of nils still has one field per argument. After the fields it ends the line. Calling `print` with no arguments also ends a line.
 
-The function uses the current ordinary global `select` to count and select arguments, and the current ordinary global `tostring` to convert one selected value at each position. These dependencies are mutable. The field-counting and conversion behavior above describes the installed functions; replacing either dependency can change what `print` does or cause it to fail. See [Value checks and conversion](#value-checks-and-conversion) for the installed `tostring` conversion rules. The console dependency itself is captured locally rather than obtained through either of those public globals.
+Argument selection uses current `select`; conversion uses current
+`tostring`. The destination remains the BIOS console when either of those
+global bindings is replaced. The conversion rules appear under
+[Value checks and conversion](#value-checks-and-conversion).
 
 Console writing sends character codes through the system-print interface. Separately, it retains one-byte history entries: codes through 255 are retained unchanged, and larger codes are recorded as 63. The original code still goes to the system-print interface. Writing a field does not itself append a newline. Ending the line records newline code 10 in that history and writes 1 to the system-print-flush register. The history has capacity for 8192 one-byte entries and is distinct from the SYSTEM diagnostic queue. This is console output, not a file-stream operation or a drawing call. See [System control and timing](system.md) for the transport and presentation boundaries; a `print` call does not by itself specify when a display is presented.
 
-On successful completion, `print` returns exactly **one nil**. Its ordinary function body falls through to the default one-nil return. This differs from the zero-result contract of `setglobal`, even though a single-result assignment receives nil from either call.
+Successful `print` returns **one nil**. In contrast, `setglobal` returns
+zero results. A single-result assignment receives nil in either case.
 
 ### Faults and incremental cycle charges
 

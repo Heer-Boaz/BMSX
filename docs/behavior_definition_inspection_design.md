@@ -1,16 +1,8 @@
 # Declaratieve behavior-authoring en inspectie van geladen definities
 
-Datum: 2026-09-13. Live baseline: `c30009e07`.
-**Status: D1-history/composite broninputs, de generieke D2-leesbasis en gerichte
-ActionEffect-/FSM-instance-inspectie en hun geladen catalogi gebouwd; ook
-BT-instance/blackboard-inspectie is aangesloten. BT-definitieopname en
-allocation-/broncorrespondentie blijven open.**
-
-Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
-declaratieve manier van programmeren; die is de norm voor visuele authoring.
-Het is geen opdracht om alle mogelijke Lua-programma's grafisch omkeerbaar te
-maken. Het begrenst de eerder open factory-/API-herkomst als voorwaarde voor
-verdere Behavior Lens-UX, zonder correcte taalfeiten of bronbewerkingen te vervangen.
+Dit document beschrijft de ontwerpgrenzen voor declaratieve behavior-authoring
+en de inspectie van geladen definities. Cartlib is onafhankelijke spelsoftware;
+deze Studio-integratie definieert geen console- of BIOS-interface.
 
 ## 1. Beslissingen en grenzen
 
@@ -104,7 +96,7 @@ tekstmodellen, semantische snapshots en gerichte Lua-editowners.
 | FSM | [library.lua](../cartlib/fsm/library.lua), [fsm.lua](../cartlib/fsm/fsm.lua) en [fsm_component.lua](../cartlib/fsm/fsm_component.lua): de geladen state-definitiehiërarchie blijft bestaan; handlers, paden en evaluatie worden afgeleid/gecompileerd. De oorspronkelijke blueprint en geladen definitie zijn niet identiek. |
 | ActionEffect | [actioneffects.lua](../cartlib/actioneffects.lua) en [actioneffect_component.lua](../cartlib/actioneffects/actioneffect_component.lua): de aangeleverde definitie blijft bewaard. Een gegund effect verwijst naar zijn definitie en heeft eigen cooldown-/periodieke state. |
 | Componentcatalogus | [registry.lua](../cartlib/registry.lua) indexeert bestaande entries. Dit is niet tevens een catalogus van alle geregistreerde maar ongebruikte behavior-definities. De afzonderlijke definitieregisters zijn lokale tabellen; de [catalogusreader](behavior_definition_catalog.md) leest die voor FSM/ActionEffect via bestaande capturesymbolen, zonder extra publicatie. |
-| Broninterpretatie | [source_reader.ts](../ide/workbench/contrib/behavior_lens/source_reader.ts) consumeert geschreven workspacefeiten. [API-herkenning](lua_source_api_bindings.md) consumeert generieke importpaden via ongewijzigde locals; die bewijzen geen uitvoering of exclusieve runtime-API-herkomst. |
+| Broninterpretatie | [source_reader.ts](../ide/language/lua/source_reader.ts) consumeert geschreven workspacefeiten. [API-herkenning](lua_source_api_bindings.md) consumeert generieke importpaden via ongewijzigde locals; die bewijzen geen uitvoering of exclusieve runtime-API-herkomst. |
 | Bestaande inspectie | [suspended_guest.ts](../ide/runtime/suspended_guest.ts) leest de echte VM-representatie; de bestaande Scenario-observers lezen geselecteerde guestkanalen. Geen van beide is al een algemene geladen-definitiecatalogus. |
 | Bron versus installatie | [sources.ts](../ide/runtime/sources.ts) en [runtime_source_status.ts](../ide/workbench/services/working_copy/runtime_source_status.ts) kennen werkbron en geïnstalleerde bron. Dat is niet automatisch de herkomst van iedere huidige heapdefinitie. |
 
@@ -195,7 +187,7 @@ De meetrecorder wordt niet impliciet een Studio-database of Resource-framework.
 
 De bestaande `blua32.trace` is geen kant-en-klare oplossing: de compiler kan
 haar wissen, volledig emitteren of [exacte kanalen selecteren](lua_trace_selection.md),
-maar [scenario_cartridge.ts](../toolchain/ts/rompack/scenario_cartridge.ts)
+maar [test_cartridge.ts](../toolchain/ts/rompack/test_cartridge.ts)
 blijft de expliciete uitvoerproducer die alle kanalen aanzet. Gewone debug-ROMs
 wissen de statements. [Vooraf geladen modules](lua_preload_initialization.md)
 kunnen inmiddels vóór de game-initialisatie een geselecteerde opname toelaten;
@@ -400,23 +392,6 @@ bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle
 denkbare factories. Correctheidsfouten in gedeelde taalowners blijven echte
 bugs; dit scopebesluit rechtvaardigt geen naamheuristiek of bekende verkeerde
 bronlink.
-
-## 10. Onderzoeksbewijs van deze ontwerpslice
-
-De genoemde BMSX-owners zijn gelezen op de bovenstaande baseline. Godot,
-LimboAI en Qt Creator zijn op de vermelde commits vastgezet en hun genoemde
-methodes zijn in de daadwerkelijke GitHub-bron gecontroleerd. De resource-
-en UI-subsetdocumentatie is op 2026-09-13 geraadpleegd. Lokale onderzoekskopieën:
-`/tmp/bmsx-behavior-contract-design/refs/`.
-
-Er is geen runtimeproef, performancewinst, werkende native inspectie of nieuw
-publicatieprotocol bewezen in deze documentwijziging. De kosten- en lifetimes-
-proeven hierboven zijn acceptatievoorwaarden, geen alvast behaalde resultaten.
-
-Documentvalidatie: 26 nieuw toegevoegde lokale Markdown-links bestaan;
-`audit:architecture-boundaries:strict` meldt 0 issues, `audit:core-parity` en
-`git diff --check` slagen. Ongewijzigde historische voorbeeldlinks vallen buiten
-die linkcheck. Er zijn voor deze documentslice geen product-/runtime-tests gedraaid.
 
 [ue-tree]: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/AIModule/UBehaviorTree
 [ue-workflow]: https://dev.epicgames.com/documentation/en-us/unreal-engine/behavior-tree-in-unreal-engine---user-guide

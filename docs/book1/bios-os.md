@@ -1,18 +1,16 @@
 # BIOS time and calendar services
 
-The installed `os` Table supplies four functions: sample time in seconds,
-convert a civil date to a timestamp, decompose or format a timestamp, and
-subtract whole-second values. The `os` Table is installed before cartridge entry. It contains no filesystem
-or process interface.
+The BIOS provides sampled elapsed time and civil-date conversion through the
+`os` Table. Use `clock` or the no-argument `time` form to sample system time.
+Use explicit timestamps with `time(date)` and `date(format, timestamp)` for
+stored calendar dates. `difftime` subtracts whole-second values.
 
-Use [System control and timing](system.md) for the underlying time word and
-machine timing, [CPU values and numeric instructions](cpu.md#values-and-numeric-instructions)
-for Number arithmetic, and [Memory and program storage](memory.md) for typed
-storage and startup. [BIOS Math](bios-math.md) defines `math.modf`;
-[BIOS String operations](bios-string.md) defines String slicing and codepoints.
-[Protected calls and coroutines](coroutines.md) defines error interception.
-The sampled counter and the civil timestamp convention are distinct: a
-sampled values measure system time rather than a wall-clock or RTC reading.
+The sampled counter is the system millisecond word, not a calendar clock.
+Civil conversion uses its own 1970 epoch and fixed BMSX zone convention.
+The [system-control reference](system.md) specifies the underlying counter;
+[Number arithmetic](cpu.md#values-and-numeric-instructions) determines
+precision in date calculations. These services provide no filesystem or
+process operations.
 
 | Call | Returned value | Operation |
 | --- | --- | --- |
@@ -20,6 +18,12 @@ sampled values measure system time rather than a wall-clock or RTC reading.
 | `os.time(date_table)` | One Number, whole seconds | With nil, sample time; otherwise normalize the supplied civil fields in place and return their timestamp. |
 | `os.date(format, timestamp)` | One String or new Table | Format or decompose the selected timestamp. |
 | `os.difftime(t2, t1)` | One Number, seconds | Check each argument against its integer component, then subtract. |
+
+Use sampled time for intervals within one counter range. Use an explicit
+civil timestamp for stored dates. Passing a sampled `os.time()` result to
+`os.date()` applies the civil epoch to that number; it does not obtain the
+current calendar date from a clock or preserve elapsed time across counter
+wrap. The two uses share seconds as a unit, not a common time origin.
 
 <a id="complete-program-time-and-calendar-operations"></a>
 
@@ -51,7 +55,11 @@ Calendar-year and ISO-week-year fields can differ at a year boundary:
 
 `os.clock()` returns one Number: the current sampled millisecond word divided by 1000. Use it when a seconds value with millisecond granularity is more useful than the whole-second result of `os.time()`.
 
-The sampled word contains whole milliseconds modulo 2³². Consequently, `os.clock()` ranges from 0 through 4294967.295 seconds and returns to zero when that word wraps. The division does not extend the counter's range, and decimal millisecond fractions need not have exact Number representations. This is not a CPU-exclusive accounting clock.
+The sampled word contains whole milliseconds modulo 2³². `os.clock()`
+therefore ranges from 0 through 4294967.295 seconds and wraps to zero with
+that word. Decimal millisecond fractions are rounded to Number precision.
+The counter measures system time, including intervals when a particular
+program is not executing.
 
 For example, two readings can be subtracted to measure a span within the same uninterrupted counter range:
 
@@ -62,15 +70,18 @@ local after = os.clock()
 local elapsed = after - before
 ```
 
-The subtraction does not compensate for a wrap between the readings. Neither `os.clock()` nor `os.difftime()` supplies wrap compensation.
-
-Each call samples the word anew. This function performs one time-word read and a division; it does not construct a civil-date Table or maintain a separate accumulated clock.
+Each call takes a new sample. If the word wraps between readings, direct
+subtraction crosses that discontinuity. Track wrap at the counter level when
+an interval must span it; `os.difftime` also performs ordinary subtraction.
 
 ## `os.time([date_table])` — whole seconds or civil conversion
 
 `os.time()` and `os.time(nil)` return one Number: the sampled millisecond word divided by 1000 with floor division. The result is a whole-second value in the range 0 through 4294967. Its wrap is still the wrap of the underlying 2³²-millisecond word, not a 2³²-second interval. This call takes its own sample; it does not reuse a preceding `os.clock()` reading.
 
-Any argument other than nil selects civil conversion. In normal use, pass a Table containing the date fields described below. The function returns a whole-second timestamp and normalizes that same Table in place. It does not set the sampled clock.
+Supply a date Table for civil conversion. The result is a whole-second
+timestamp, and the same Table receives normalized calendar fields. Nil
+selects sampling; every other supplied value selects the date-field route.
+Conversion leaves the sampled clock unchanged.
 
 ### Civil timestamp convention
 
@@ -118,11 +129,14 @@ Fields are read and checked in this exact order: `year`, `month`, `day`, `hour`,
 
 Only nil selects a missing-field error or an optional default. False is a supplied value, not a default. A nil optional field uses its default without undergoing the integer check.
 
-For a supplied field, the integer check compares the value with the integer part returned by the retained `math.modf` function. There is no numeric-string conversion. Fractions, NaN, and non-Number field values fail this equality check. Numeric infinities pass the equality check but fail the subsequent field bounds check.
+A supplied field must equal its truncated integer component and pass the
+listed bounds. Fractions, NaN and non-Number values fail the integer test;
+infinities fail the bounds test. Supply Numbers, not numeric Strings.
 
-The field bounds are adjusted integer bounds, not conventional calendar limits. In particular, they do not restrict months to 1–12, hours to 0–23, or minutes and seconds to 0–59.
-
-The only input fields used in the calculation are the six listed above. Existing `wday`, `yday`, and `isdst` fields do not affect the result.
+Out-of-range calendar fields within those numeric bounds normalize
+arithmetically. For example, month 13 carries into the next year and hour 25
+carries into the next day. Only the six listed fields contribute to the
+timestamp; `wday`, `yday` and `isdst` are recomputed outputs.
 
 ### Normalization and result checking
 
@@ -140,7 +154,10 @@ local timestamp = os.time(date)
 
 This produces timestamp 90000 and normalizes the Table to 1970-01-02 at 01:00:00, together with its recomputed `wday`, `yday`, and `isdst` fields.
 
-The combined timestamp is checked after all six input fields. It must first compare equal to its integer part, then lie within the inclusive range −9007199254740991 through 9007199254740991. These are separate checks from the input-field bounds. They apply to the computed Number, not an ideal unlimited-precision calculation: accepting the individual fields does not guarantee acceptance of their combination or exact intermediate arithmetic at every admitted magnitude.
+After the six fields pass, their combined timestamp must equal its integer
+component and lie in the inclusive range −9007199254740991 through
+9007199254740991. Intermediate arithmetic uses Number precision, so the
+combined calculation can fail even when each individual field is accepted.
 
 Negative timestamps use floor-day decomposition. For example, timestamp −1 belongs to the day before timestamp 0, at 23:59:59; the day is not obtained by truncating toward zero.
 
@@ -184,13 +201,20 @@ After the fields, the combined timestamp checks use these exact messages, in ord
 - `time is not an integer`
 - `time is out-of-bound`
 
-The conversion does not perform a separate top-level Table-type check before its first field read. For example, `os.time(false)` selects conversion and fails that read with `Attempted to index field on a non-table value.`; it does not behave like `os.time()`.
-
-Ordinary indexing and assignment faults remain applicable. Their relevant messages are `Attempted to index field on a non-table value.`, `Attempted to assign to a non-table value.`, and `Metatable __index loop detected.` A String follows BLua's ordinary String-indexing rules rather than necessarily failing the first read.
+Date fields use ordinary indexed reads and writes. Passing false selects
+conversion and fails its first field read with
+`Attempted to index field on a non-table value.` Other indexed-access errors
+retain their ordinary texts, including
+`Attempted to assign to a non-table value.` and
+`Metatable __index loop detected.`
 
 ### Work involved
 
-The no-argument/nil form performs one time-word read and a division, without constructing a civil-date Table. Explicit-date conversion performs six field reads/checks, fixed calendar arithmetic and inverse decomposition, then nine stores into the existing Table. It does not advance through the intervening dates one by one. Ordinary Table lookup and storage, function calls, errors and faults retain their instruction costs.
+Sampling reads one time word and divides. Date conversion reads six input
+fields, calculates the timestamp and normalized date, then writes nine
+fields. Its calendar calculation uses arithmetic rather than advancing one
+day at a time. Ordinary calls, field accesses and arithmetic contribute their
+CPU instruction costs.
 
 ## `os.difftime(t2, t1)` — subtract whole-second values
 
@@ -210,19 +234,31 @@ The function obtains the integer parts of `t2` and then `t1` before making eithe
 
 Fractions, NaN, missing/nil arguments, false, and other non-Number values fail the corresponding equality check; numeric strings are not parsed. If both arguments fail, the `t2` message is reached first, although both integer-part calculations have already occurred.
 
-Unlike civil conversion, this function does not apply either the civil-field bounds or the ±9007199254740991 timestamp bounds. Numeric infinities compare equal to their integer parts and pass these checks; their subtraction can produce infinity or NaN. The result is ordinary Number subtraction, not arbitrary-precision integer arithmetic.
+The operands are checked for integer equality without the civil-field or
+timestamp bounds. Infinities therefore pass those checks; their subtraction
+can yield infinity or NaN. The result uses ordinary Number precision.
 
-`os.difftime()` does not sample the time word, invoke civil conversion, or repair the sampled word's wrap. In particular, subtracting `os.time()` readings across that wrap does not produce a wrap-adjusted elapsed duration. Its work consists of two integer-part calculations, the ordered equality checks and one subtraction.
+`difftime` reads no clock and applies no calendar conversion. For samples
+straddling the millisecond-counter wrap, account for the discontinuity before
+using ordinary whole-second subtraction.
 
 ### Retained dependencies and call arguments
 
-The integer-part function used by the checks in `os.time()` and `os.difftime()` is retained during BIOS installation. Reassigning public `math`, or changing public `math.modf` afterward, does not rebind that retained function. Error calls, by contrast, use the public `error` name when reached; replacing it changes those calls and the rejection behavior described above.
+Integer checks use the truncation function saved at BIOS installation;
+replacing public `math.modf` leaves those checks unchanged. Reported errors
+call the current global `error`.
 
-These are fixed-parameter functions. Missing parameters are nil, and surplus arguments are ignored; there is no separate automatic argument-count error. Thus missing `date_table` selects the sampled-time form, whereas missing `t2` or `t1` is subject to the stated `os.difftime()` integer checks. See [known-call argument diagnostics](blua-programs.md#known-call-argument-diagnostics) for the corresponding direct-call source forms.
+Missing fixed parameters are nil and surplus arguments are ignored. Thus an
+omitted date Table selects sampling, while missing `difftime` operands fail
+their integer checks. [BLua source-call diagnostics](blua-programs.md#known-call-argument-diagnostics)
+also apply when the callee signature is known at compilation.
 
 ## Shared civil-day calculations
 
-The calendar formulas use `D(year, month, day)` for the forward civil-day calculation and `C(days)` for its civil inverse. These are explanatory names, not public BIOS functions; the blocks below are formula notation rather than BLua programs. All arithmetic is ordinary Number arithmetic; `//` and `%` are not word operations. The written calculation order is significant: intermediate values have Number precision, not unlimited integer precision.
+The formulas below define `D(year, month, day)`, the civil-day index, and
+`C(days)`, its inverse. They use Number arithmetic in the written order,
+including `//` and `%`. These are reference formulas, not additional BIOS
+functions or BLua program listings.
 
 <div class="keep-together">
 
@@ -308,16 +344,10 @@ Only `nil` selects a default. An omitted parameter is `nil` on an ordinary call.
 
 Thus `"*t"` and `"!*t"` select the Table result. `"!!*t"` does not: after removing one `!`, the remaining `"!*t"` is an ordinary format string. With a valid timestamp it is copied literally. The removed `!` is not retained as a mode flag and does not select a different calendar or time-zone calculation.
 
-The order of operations is significant:
-
-1. Select the format default.
-2. Inspect the format and remove at most one leading `!`.
-3. Select or validate the timestamp.
-4. Check for the exact format `"*t"`.
-5. Decompose the timestamp into calendar fields.
-6. For a String result, scan the format.
-
-An empty format therefore still selects or validates its timestamp before returning an empty String. An invalid conversion is not examined until after timestamp validation and calendar decomposition.
+`date` selects the format, removes one leading `!`, then selects or checks
+the timestamp. It decomposes the calendar fields before producing the chosen
+Table or scanning a String format. An empty format still checks its timestamp;
+a malformed conversion is reached after timestamp processing.
 
 `false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and raises `Attempted to get length of an unsupported value.` (Lua reason 0); it does not produce a date-specific argument error. A false timestamp is passed to the retained `math.modf` function rather than selecting the default timestamp. Its integer check invokes `error` with `time is not an integer`, before the bounds check.
 
@@ -530,14 +560,19 @@ With the supplied `tostring`, numbers use the shared numeric-text conversion:
 
 The formatter pads that result unchanged. `%Y`, `%G` and `%C` can therefore contain rounded scientific text for large years or centuries. `%Y` is padded to a minimum length of four, not constrained to four decimal digits. Calendar arithmetic uses Number operations, including at the extremes of the accepted timestamp range.
 
-### Dependencies and amount of work
+### Library bindings and execution cost
 
-During BIOS installation, the OS library obtains the String and Math tables. Its later calls retain the String table reference and the `math.modf` function obtained then. Later timestamp validation uses that retained function. Calls to `string.sub` look up the `sub` field on the retained String table each time: replacing the global `string` binding does not change that table reference, but changing that table's `sub` field changes the function used. Global `tostring` and `error` are looked up when needed, rather than captured at initialization.
+Date validation retains its installation-time truncation function. Formatting
+uses `sub` from the original String Table, while `tostring` and `error` are
+read through their current global bindings. Replacing the `string` global
+leaves that original Table in use; replacing its `sub` field changes slicing.
 
-The Table form performs one calendar decomposition and writes its fields. It skips format scanning, name output, week formatting, and padding. The String form performs one initial decomposition, then builds its result through growing concatenation. Each occurrence of `%G`, `%g`, `%V`, or the accepted `%OV` independently calculates the ISO year/week pair; the pair is not cached for the call.
+The Table result performs one calendar decomposition and stores the nine
+fields. String output additionally scans and concatenates text. ISO-week
+conversions calculate their year/week pair for each occurrence, and padding
+adds characters until the requested minimum length is reached. Format length,
+selected conversions and output size therefore affect execution cost.
 
-A literal advances the scanner by one codepoint, a plain conversion by two, and a modified conversion by three. Calendar conversion uses arithmetic and conditionals rather than traversing every intervening day or year. Padding prepends one character per iteration until the minimum text length is reached.
-
-The supplied codepoint lookup scans from the beginning of a String to the requested position, so repeated single-codepoint slices do not provide constant-time random access. Removing a leading `!` may also construct a tail slice; multi-codepoint slices use a temporary character collection and concatenation.
-
-The fixed `%z`, `%Z` and `isdst` values are output conventions, not time-zone or daylight-saving calculations.
+`%z`, `%Z` and `isdst` always use the fixed values listed above. They represent
+the BIOS civil-time convention rather than a configurable zone or
+daylight-saving rule.

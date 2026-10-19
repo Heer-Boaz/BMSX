@@ -1,38 +1,50 @@
 # BLua source programs and extensions
 
+BLua provides the language facilities used to control the BMSX: named
+functions and modules, fixed byte layouts, typed address access, direct
+register access and interrupt waiting. This chapter specifies those forms
+and the source rules that differ from general Lua.
+
+Use the hardware chapters for device register values and command sequences.
+Use the BIOS chapters for installed function calls. The source forms here
+select accesses and calls; the addressed device or called routine determines
+their effects.
+
 ## BLua extensions
 
 BLua provides explicit source forms for program linkage, static storage, typed
 address access, processor control, instrumentation, and augmented assignment.
 Hardware programming is a principal use, but not the limit of these extensions.
 
-This reference explains those forms rather than reteaching general Lua.
-For general Lua learning material, see the [official Lua documentation](https://www.lua.org/docs.html).
-Shared syntax does not by itself imply identical semantics in every operation.
-The local `<const>` attribute also exists in [Lua 5.4](https://www.lua.org/manual/5.4/manual.html#3.3.7);
-BLua's `module<const>` namespace and static-call rules are a separate distinction.
+For general Lua syntax and introductory material, see the
+[Lua documentation](https://www.lua.org/docs.html). The rules in this chapter
+apply where BLua differs. Local `<const>` has its familiar binding role;
+`module<const>` additionally selects the static namespace and call rules
+specified below.
 
 | Extension family | Source forms | Detailed reference |
 | --- | --- | --- |
 | Module roles and static linkage | `module<entry>`, `module<const>`, literal `require`, static exports, `<init>` | Module modes, static imports, and `<init>` below |
-| Static storage and layouts | `struct`, `bss`, `data`, `rodata`, typed arrays | [Memory: typed byte storage and address views](memory.md#typed-byte-storage-and-address-views) |
-| Typed address selection | `local p: *type`, `*p`, fields, indices, unary `&`, `sizeof`, `offsetof`, static-array `#` | [Memory](memory.md) |
+| Static storage and layouts | `struct`, `bss`, `data`, `rodata`, typed arrays | [Typed storage, layouts, and address views](#typed-storage-layouts-and-address-views) |
+| Typed address selection | `local p: *type`, `*p`, fields, indices, unary `&`, `sizeof`, `offsetof`, static-array `#` | [Views, selection, and byte addresses](#views-selection-and-byte-addresses) |
 | Six raw mapped-access forms | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [Memory](memory.md) and mapped access below |
 | Six control fields | `cop0.bad_address`, `cop0.lua_fault_reason`, `cop0.status`, `cop0.cause`, `cop0.epc`, `cop0.exec` | [CPU](cpu.md) and control access below |
 | Three intrinsic operations | `blua32.closure`, `blua32.trace`, `blua32.trace_sink` | Intrinsic operations below |
 | Interrupt wait statement | `halt_until_irq` | [CPU](cpu.md) and interrupt wait below |
 | Six augmented assignments | `+=`, `-=`, `*=`, `/=`, `%=`, `^=` | Augmented assignment below |
 
-Memory-map names, `cop0`, and `blua32` are special source forms, not ordinary
-first-class tables. Typed views do not allocate storage, and unary `*` requires
-a typed view or declared storage. Use the detailed access contracts when choosing a form.
+Memory-map names, `cop0` and `blua32` must be used in their direct source
+forms. Choose a mapped access for an explicit address and width, or a typed
+view when field offsets and element strides belong to a declared layout.
+Unary `*` reads a typed selection; the view itself occupies no new byte range.
 
 
 ## Typed storage, layouts, and address views
 
-BLua storage declarations describe byte ranges with fixed layouts.
-Use them for scalar state, compact buffers, lookup tables, structured records, and typed access to an existing address.
-They are distinct from ordinary local values and tables: a storage name denotes an address, and a typed view describes how to access bytes at an address.
+Storage declarations define byte ranges for scalar state, transfer buffers,
+lookup tables and structured records. A storage name supplies its byte
+address. Field selection and indexing apply the declared layout to that
+address; scalar dereference reads or writes the selected bytes.
 
 ### Declaration and expression reference
 
@@ -79,13 +91,14 @@ An alignment of four means that the address must be divisible by four.
 
 </div>
 
-The names `i8`, `i16`, and `i32` do **not** select signed loads.
-They have the same unsigned reads as the corresponding `u` names; do not rely on them to sign-extend a stored negative value.
-`word` does not serialize an arbitrary BLua value, and `addr` does not supply a pointed-to type.
-A `string` field contains neither inline characters nor a pointer to UTF-8 bytes.
-A RODATA String initializer supplies a String constant reference. A typed read
-returns the selected image constant; the view does not convert that value into
-a String merely because its storage type is named `string`.
+`i8`, `i16` and `i32` have the same **unsigned load** behavior as their `u`
+counterparts. Sign extension must be explicit when a stored field represents
+a signed quantity. `word` holds a numeric register word, and `addr` holds a
+numeric address; select the target layout with an annotated view.
+
+A `string` field holds a constant reference. Its RODATA initializer selects a
+String constant, and a read returns the referenced value. It is separate from
+inline text bytes; use byte storage and an explicit decoder for encoded text.
 
 ### Choosing a storage section
 
@@ -111,13 +124,12 @@ Assigning a new value directly to a `bss` or `data` name is rejected; the name i
 
 Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
 It precedes static module initializers and the entry routine.
-The compact linked layout places cartridge DATA after the matching firmware's
-BSS and cartridge BSS after its DATA. This is a link-time placement choice, not
-a BIOS allocation service or a hardware adjacency requirement. Preserve the
-actual firmware footprint and reservations, and use the linked storage
-addresses rather than assuming a numeric placement. See
-[Memory: reserved and cartridge storage](memory.md#reserved-and-cartridge-storage-in-main-ram)
-for placement and matching-firmware information.
+Locate writable program sections outside the installed firmware's RAM
+reservation. The standard placement puts program DATA after firmware BSS,
+then program BSS after DATA. Access declarations by their resolved addresses;
+fixed offsets from the start of RAM can overwrite firmware state. See
+[reserved and cartridge storage](memory.md#reserved-and-cartridge-storage-in-main-ram)
+for the firmware footprint and placement rules.
 
 Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
 Two separate `u8` declarations therefore need not occupy adjacent bytes.
@@ -216,12 +228,15 @@ Storage value references remain ordered; forward visibility of a type does not m
 
 ### Views, selection, and byte addresses
 
-A typed local view carries an address value and supplies a layout for selection.
-It does not allocate storage, construct a table, copy a record, or acquire ownership of the addressed bytes.
-The annotation is specifically `: *type_name`; it is not a general scalar-local type annotation.
-Both declared storage and typed views support field and element selection.
+A typed local view supplies a layout for an existing address. Declare it
+with `: *type_name`, then select fields or elements in the same way as for
+declared storage. The addressed bytes keep their existing lifetime and access
+permissions; creating the view reserves no storage and copies no record.
 
 Indexing is **zero-based**.
+This is different from the one-based sequence keys used by the
+[Table library](bios-table.md). A typed array describes consecutive bytes;
+an ordinary Table is a collection of language values keyed by values.
 For a view of `u16`, `view[1]` selects the address two bytes after `view`.
 For a view of `sample`, `view[1]` selects the address `sizeof(sample)` bytes after it.
 For a multidimensional array, each index removes one dimension and uses the size of the remaining array as the stride.
@@ -268,8 +283,8 @@ Do not use `#view` as a pointer-capacity query.
 ### Access hazards
 
 Typed indexing emits no array bounds check or runtime integer-index check.
-A statically known noninteger index is rejected, but a declared length does not prevent a computed address from leaving the range.
-Keep indices and byte-address arithmetic within the intended storage.
+A statically known noninteger index is rejected. For computed indices, the
+programmer must keep the resulting byte address within the intended range.
 
 Effective access addresses are converted to unsigned 32-bit addresses.
 Misaligned accesses cause a synchronous address exception before the mapped access: two-byte alignment for `u16`/`i16`, four-byte alignment for `u32`/`i32`, `word`, `addr`, `f32`, and `f64`.
@@ -278,9 +293,9 @@ A bus fault causes a synchronous data-bus exception; a failed load leaves its de
 A store can wait for the mapped destination to become ready before writing.
 
 Direct writes through `rodata` selections are rejected, as are static string-reference assignments and whole-array or whole-struct assignments.
-A local typed view does not retain `rodata` provenance or provide const-pointer protection.
-`<const>` prevents rebinding that local; it does **not** prevent stores through it.
-Do not treat a view annotation as a guarantee of writable memory or a way to make image storage writable.
+A local view of a RODATA address permits store syntax, so the mapped memory
+permissions still govern a write through that view. `<const>` fixes the local
+address binding while allowing stores through it.
 
 Typed accesses to memory-mapped I/O invoke the mapped device rather than behaving like inert RAM.
 Word accesses are not interchangeable with narrow accesses: an aligned I/O byte read reads the slot and keeps its low byte, other byte positions fault, byte writes fault, and 16-bit reads and writes fault.
@@ -313,10 +328,11 @@ Each requires exactly one target and one right-hand expression. There is no
 `//=`, bitwise or shift assignment, concatenation assignment, or increment or
 decrement form. In particular, `--` begins a comment, not a decrement.
 
-The target is prepared first and the right-hand expression is evaluated next;
-then the target's value is read, the arithmetic is performed, and the result
-is written back. Do not treat this as a textual replacement that repeats the
-target expression, or as a promise of an atomic operation.
+Evaluation prepares the target once, evaluates the right-hand expression,
+reads the target, performs the arithmetic and writes the result. This is a
+read followed by a write. Device read effects and write effects both apply;
+use explicit register values for commands whose fields are not suitable for
+read-modify-write operation.
 
 ### Unary `&`: storage address or String
 
@@ -324,10 +340,10 @@ For a typed storage selection, unary `&` obtains the selected storage address
 without reading its contents. A record field or indexed element therefore
 selects an address using its declared layout.
 
-The String use is different: unary `&` retains the String value. It does not
-expose a numeric string identifier or a pointer to character bytes. Do not use
-this spelling to infer a byte-buffer interface or a general address conversion.
-The String form and the typed-storage form must not be conflated.
+For a String operand, unary `&` returns the String value unchanged. Use
+String operations on that result. Only the typed-storage form yields a byte
+address; a String operand supplies neither a character-buffer address nor a
+numeric identifier.
 
 ### Named members with `->`
 
@@ -353,14 +369,12 @@ Keep a continuation multiplication operator on the existing expression line.
 Parentheses do not remove this particular newline rule; do not generalize it
 to every operator.
 
-These are the relevant BLua spellings and source conventions, not a claim that
-every familiar construct is a new extension. In particular, local `<const>`
-is also present in Lua 5.4.
 
 ## Module modes, static imports, and `<init>`
 
-The important distinction is between a runtime export, a compile-time namespace,
-and a static function call target. They are not interchangeable.
+A module publishes either an ordinary value or static exports. Use an
+ordinary value for mutable state and replaceable function fields. Use static
+exports for named constants, storage addresses and directly resolved calls.
 
 ### Choose the module mode
 
@@ -373,10 +387,11 @@ The spellings are case-sensitive; an optional semicolon may follow the marker.
 | `module<entry>` | The program's entry chunk, entered after its ordinary dependencies are initialized. |
 | `module<const>` | A compile-time export namespace or root static function, not an allocated module table. |
 
-A linked program has one entry chunk. `module<entry>` declares that role;
-it does not name the module. Module names are supplied literal paths using `/`,
-not numeric asset identifiers. Dots are not converted to slashes, and two
-supplied modules cannot share one path. The module marker does not choose a physical cartridge socket or enter it.
+A program has one entry chunk. `module<entry>` declares that role. Each
+module also has a distinct path using `/`; dots remain literal path
+characters. Use that path in imports. Physical cartridge selection and
+startup are specified separately in [Memory](memory.md) and
+[Cartridge interfaces](../book3/cartridge.md).
 
 ### Import a literal module path
 
@@ -414,7 +429,6 @@ The module's top-level code is initialized before entry; an ordinary `require`
 expression reads its retained export rather than rerunning that code at the
 written import line. Successful initialization is recorded separately from the
 export, so exporting `nil` or `false` does not cause another initialization.
-This is not a promise about initialization across resets or replaced programs.
 An ordinary module with no final single-expression export supplies `true`;
 additional requested import results are nil. An earlier return does not select
 an alternative published export.
@@ -499,8 +513,9 @@ prepare()
 
 </div>
 
-The final line is an explicit call. The attribute alone does not call the body.
-The participant is an ordinary local closure; unlike a const export, it may capture runtime locals.
+The explicit `prepare()` call runs the body at that source position.
+`<init>` marks participation in the separate preparation sequence. The
+participant is an ordinary local closure and may capture local state.
 Declarations inside `if`, loops, `do`, or other functions are not top-level
 participants. `<init>` is forbidden in a const module and is not an attribute on
 global or method declarations. A non-entry participant module must be statically required.
@@ -513,14 +528,15 @@ When the separate participant sequence is invoked, it first completes any pendin
 ordinary-module initialization, then calls participants with zero arguments.
 Dependency-module participants precede importer-module participants; entry
 participants are last, with declaration order retained within each module.
-This sequence does not rerun section initialization or entry, and it has no
-per-participant completion latch. `<init>` is therefore not a once-only constructor
-or a promise that each reset or program replacement will call the function.
+Each invocation runs that participant order again. DATA, BSS and the entry
+chunk keep their existing state during the sequence. Use the explicit startup
+call for preparation required at normal entry; the annotation alone supplies
+no startup call or once-only latch.
 
-## Compiler-owned access forms and intrinsics
+## Direct access forms and intrinsics
 
 BLua provides direct memory access, control-register access, closure construction, selectable
-tracing, and an interrupt-wait statement. These are compiler-owned source forms, not a library of
+tracing, and an interrupt-wait statement. These are language forms, not a library of
 replaceable tables and functions.
 
 The six memory roots are `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, and `memf64le`. The two
@@ -581,8 +597,8 @@ register as though it were ordinary byte storage. For example, a `mem8` I/O read
 slot and returns that slot's low eight bits; a byte address between slots faults. `mem16le` I/O
 accesses fault even when their two-byte alignment is correct. Word and unsigned 32-bit I/O accesses
 use the addressed device slot. Mapped bus faults raise synchronous data-bus-error exceptions. A
-device may also stall a store until it is ready; this is device readiness, not a source-level
-transaction or a request to add a retry loop.
+device that holds a store pending completes the access when it becomes ready;
+the processor waits for that access rather than requiring repeated writes.
 
 ### Typed dereference is a separate form
 
@@ -632,7 +648,7 @@ complete source-visible field set is:
 Other field names are rejected. Reading `cop0.exec` or assigning a read-only field is also rejected,
 rather than providing another control-register operation. Every permitted read and write still
 requires supervisor mode. In user mode it raises a coprocessor-unusable synchronous exception;
-ordinary cartridge code does not gain privileged access by using this syntax.
+ordinary program code does not gain privileged access by using this syntax.
 
 `cop0.status` and `cop0.epc` writes supply raw unsigned 32-bit words. In `status`, bit 0 is current
 interrupt enable and bit 1 is current user mode. Writing `cop0.exec` requests execution of the
@@ -660,9 +676,9 @@ operation names are rejected.
 
 #### `blua32.closure(function_address)`
 
-`closure` requires exactly one source argument and produces a closure value. It may appear in an
-expression or as a call statement. The argument expression supplies one result; additional requested
-result positions are filled with nil rather than additional closures.
+`closure` constructs one closure from the supplied function-record address.
+Supply exactly one argument. The form is valid in an expression or a call
+statement; requesting further results supplies nil in those positions.
 
 The address is consumed as an unsigned 32-bit function-record address in the active execution image.
 The function record is read before closure construction; an unsuccessful record read hard-halts
@@ -827,9 +843,11 @@ recognized only before `end`, `else`, `elseif`, `until`, or end of source;
 `return;` is not its accepted spelling. An expressionless source return supplies
 one nil, not zero results.
 
-Grouping parentheses in linked BLua source do not force a call to one result.
-For example, `local a, b = (pair())` can receive both returned values. The BIOS
-runtime-loaded language has a distinct [result-count contract](bios-loader.md#calls-and-results).
+A parenthesized call or variable-argument expression supplies exactly one
+result. Extra results are discarded; a call returning no values supplies nil.
+Thus `local a, b = (pair())` assigns the first result to `a` and nil to `b`,
+even when `pair` returns two values. The same call adjustment applies in the
+[BIOS runtime-loaded language](bios-loader.md#calls-and-results).
 
 <a id="complete-program-numeric-loop-control"></a>
 
@@ -885,9 +903,8 @@ An explicit zero step is accepted, not replaced by one or rejected as a
 zero-step error. It takes the second test above. With finite Numbers, a start
 below the limit skips the body, while a start equal to or above the limit
 allows initial entry. If the body leaves the variable unchanged, adding zero
-makes no counter progress. This does not make every zero-step loop empty or
-promise that every entered one runs forever: changing the loop variable can
-make the next test exit, and `break` can leave immediately.
+makes no counter progress. Changing the loop variable can make the next test exit; `break` can leave
+immediately.
 
 The control path uses ordinary [Number addition and comparison](cpu.md#values-and-numeric-instructions);
 header and body calls have the usual [call and result-adjustment costs](cpu.md#calls-closures-globals-and-tables).
@@ -912,7 +929,9 @@ There must be at least one loop name and one expression after `in`.
 
 Before the first iteration, the expression list is evaluated once, in source order, and adjusted to three values: **iterator, state, control**. Each expression before the last supplies one value. Only the final expression can supply multiple results: a final call or `...` can fill the remaining entries. Missing entries become `nil`; surplus values are discarded. With three or more expressions, each supplies one value and only the first three values are retained. **Every expression is still evaluated**, including expressions whose results are discarded. Their effects and errors occur before the first iterator call.
 
-Grouping parentheses do not force a call to supply only one result in BLua. In particular, a final `(factory())` can still supply multiple values to this list.
+A final parenthesized `(factory())` supplies one value to this list. Use an
+unparenthesized final call when the iterator factory returns iterator, state
+and control together.
 
 The three retained values are cached, not recomputed on subsequent iterations. Rebinding a source variable does not replace its cached value. Caching a mutable value does not copy its contents: changes to shared contents remain visible.
 
@@ -951,17 +970,22 @@ A second label with the same name in one function is rejected as `Duplicate labe
 
 BLua does not reject a jump merely because it crosses a local declaration or enters or leaves a lexical block. The jump must still have a defined target and an encodable displacement. These are not checks on local scope or initialization.
 
-Acceptance does **not** insert skipped initialization, local cleanup, or capture-close operations. A forward jump can skip initializers; a backward jump resumes at its earlier target. Neither crossing establishes a blanket value for a skipped local: in particular, it does not guarantee a fresh `nil` value or recreate locals on a backward jump. Keep required initialization on the executed path; a jump is not a block-entry initialization operation.
+A forward jump can skip local initialization; a backward jump resumes at its
+earlier target with existing values. Jumps insert neither initialization nor
+capture-close operations at crossed block boundaries. Keep required
+initialization and state changes on the executed path.
 
 ## Named BIOS function imports
 
 The named BIOS function imports are:
 
-| Module path | Const binding and call form |
-| --- | --- |
-| `math/sin` | `sin_turn32(angle)` |
-| `string/float/decode` | `decode_float(high, low, byte_count)` |
-| `gpu/system_vram_region` | `system_vram_region()` |
+<div class="keep-together">
+
+| Module path | Arguments and returned values | Routine reference |
+| --- | --- | --- |
+| `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#turn-phase-sine) |
+| `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#floating-point-word-decoder) |
+| `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [Firmware reservation in VRAM](memory.md#firmware-reservation-in-vram) |
 
 </div>
 
@@ -974,16 +998,22 @@ local sin_turn32<const> = require('math/sin')
 local decode_float<const> = require('string/float/decode')
 local system_vram_region<const> = require('gpu/system_vram_region')
 
-local sine = sin_turn32(angle)
-local decoded = decode_float(high, low, byte_count)
+local sine = sin_turn32(0x40000000)                 -- 65536: +1 in Q16
+local decoded = decode_float(0x3fa00000, 0, 4)    -- 1.25
 local origin<const>, size<const> = system_vram_region()
 ```
 
 </div>
 
-These examples establish the import names and argument ordering. The routines' numeric conventions, returned-value meanings, and complete contracts belong to their respective routine documentation.
+`math.sin(angle)` is not the turn-phase import: the ordinary Math-library
+function takes radians and returns an unscaled Number. Likewise, the floating
+word decoder does not read a String or a memory address. Follow the routine
+references for complete units, field packing and result contracts.
 
-The module path identifies the imported function; a fixed function address or a numeric asset identifier does not. These named imports resolve directly to static BIOS call targets and do not initialize an ordinary cartridge source module. A cartridge source module cannot replace one by supplying the same path. This list does not imply that every BIOS source file or every global library table is independently available as a named import.
+These paths are reserved published BIOS names. Importing one selects its
+static call target; it leaves ordinary program-module initialization
+unchanged. A program module cannot redefine one of these paths. Other BIOS
+libraries use their installed globals unless a named import is listed.
 
 ## The installed program environment
 
@@ -1008,7 +1038,7 @@ Use the installed functions `getglobal` and `setglobal` to access the ordinary g
 | Call | Arguments | Results |
 | --- | --- | --- |
 | `getglobal(name)` | `name` must be a String. | One value: the current ordinary global value, or `nil` if the name is absent. |
-| `setglobal(name, value)` | `name` must be a String. A reached call with an absent value writes `nil`; cartridge source supplies an explicit `nil` to meet the known-call minimum. | No result values. |
+| `setglobal(name, value)` | `name` must be a String. A reached call with an absent value writes `nil`; BLua source supplies an explicit `nil` to meet the known-call minimum. | No result values. |
 
 </div>
 
@@ -1045,34 +1075,38 @@ Several other installed globals hold ordinary library Tables. The distinction ma
 
 Use those routine chapters for argument domains, precision, errors, random-number behavior and timing conventions.
 
-### Public bindings and captured dependencies
+### Public bindings and library references
 
-Changing a public binding does not replace every use of the corresponding operation inside the BIOS. Some installed routines retain dependencies captured during initialization; others consult public bindings when called.
+Public library bindings can be reassigned. A saved Table or function reference
+continues to refer to its original value after the global name changes.
+The BIOS also retains some dependencies at installation: `assert` keeps its
+selection and error operations, `print` keeps its console destination, and
+String operations retain their listed helper functions. `pairs` instead
+reads the current global `next`; `print` reads current `select` and `tostring`;
+`tonumber` reads current `type` and `error`.
 
-The installed base routines illustrate both cases:
-
-- `assert` uses captured primitive values for selection and error reporting.
-- `pairs` uses the public `next` binding when called.
-- `print` uses public `select` and `tostring`, but retains its captured console dependency.
-- `tonumber` uses public `type` and `error`.
-
-Similarly, the String library captures `table.concat` during initialization. The completed library Table is registered for String indexing. Reassigning the public `string` binding does not, by itself, register a different Table for that purpose.
-
-These distinctions describe the dependencies above, not a general guarantee that arbitrary library replacement is safe. Keep the public binding, the Table or function value it holds, and values already retained by other routines distinct.
+String method lookup uses the installed String-index Table. Reassigning the
+`string` global leaves that method Table in place. The routine references
+describe any further dependency relevant to replacing an installed binding.
 
 ### Fresh system boot and execution transfer
 
-A fresh system boot clears the execution environment, including both global-name banks, before the BIOS installs its initial environment. The normal cartridge-entry path follows that installation.
+Fresh system boot clears both global-name banks, then installs the BIOS
+environment before normal program entry. `EXEC` keeps the existing banks
+and BIOS bindings while replacing execution. Initialize program-owned globals
+explicitly when transferring between programs. See [CPU execution
+control](cpu.md#exec) for the complete transfer behavior.
 
-An `EXEC` transfer is different. The transfer itself does not clear the global-name banks or reinstall the BIOS. It must not be treated as a fresh global environment, a private per-cartridge environment, or a heap-reset guarantee. The fresh-system-boot behavior described here does not establish the behavior of every other reset route or cartridge lifetime.
+### Runtime compilation
 
-### Runtime compilation is a separate interface
+Use BIOS `load` to compile supported text during execution. On success it
+returns a closure; a protected compilation failure returns `nil, errorValue`.
+The [runtime-compilation reference](bios-loader.md) specifies the accepted
+text language, environments, external bindings and errors.
 
-The public `load` function belongs to BIOS runtime compilation. It is not the interface that builds linked cartridge programs, and its presence does not specify the cartridge module pipeline.
-
-The public `load` wrapper reports a protected compilation failure as `nil` followed by an error value. This wrapper behavior does not establish the failure contract of the other `lua_compiler` entries. Its source modes, environment handling, external-scope behavior, and detailed error contracts require their own reference. Do not substitute stock Lua assumptions about chunk environments or file loading for those contracts.
-
-The firmware shell also has a separate session environment Table and a session-specific loading wrapper. That Table is not a wholesale copy of the ordinary global bank, and the shell wrapper is not the public BIOS `load` interface. Neither the shell session nor runtime compilation defines the environment of a linked cartridge program.
+The BIOS monitor maintains its own session environment. Monitor variables
+and loaded-chunk environments are separate from the ordinary global bank;
+use the appropriate interface for the names being read or written.
 
 <a id="complete-program-modules-and-ordinary-globals"></a>
 

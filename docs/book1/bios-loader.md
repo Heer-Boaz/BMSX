@@ -6,12 +6,25 @@
 Neither compilation route invokes the generated chunk. This interface is
 separate from cartridge module declarations and linked startup.
 
-Use [BLua source programs](blua-programs.md) for linked-cartridge source and
+Use [BLua source programs](blua-programs.md) for BLua program source and
 modules, [CPU values and calls](cpu.md#calls-closures-globals-and-tables) for
 ordinary call/capture behavior, [Memory and program storage](memory.md) for
 value storage and reserved addresses, and [Protected calls and coroutines](coroutines.md)
 for the error boundary. The source forms below apply to runtime-compiled text;
-they are not the complete linked-cartridge language.
+they are not the complete BLua program language.
+
+Choose text loading when the input is text authored during execution. Choose
+syntax compilation when a program constructs an expression or procedure from
+known operations and bindings; it avoids formatting and reparsing source text.
+Both routes produce ordinary closures with the same processor call interface.
+Neither route adds cartridge module linkage, static storage declarations or a
+private copy of the installed BIOS environment.
+
+An environment can supply Tables, functions and hardware access routines to
+the compiled chunk. The runtime text language itself has no Table constructor,
+typed storage declaration or raw mapped-memory source form. Pass the required
+values through its environment or external bindings rather than assuming all
+linked BLua extensions are accepted by `load`.
 
 ## Runtime compilation interface
 
@@ -73,10 +86,11 @@ execution and out-of-memory failures supply a reason String. Use the first
 result to distinguish a closure from failure; do not require the error value to
 be truthy or non-`nil`.
 
-The protected result convention is not a promise to catch every fault or undo
-state writes. Its boundary cannot unwind through an intervening
-exception/completion-root frame; hardware-access and opcode faults are not
-promised to become a `nil, errorValue` pair.
+The protected result convention applies to language errors, not hardware
+exceptions. It leaves earlier writes in place. An intervening hardware
+exception or interrupt also prevents protection from unwinding across that
+boundary; hardware-access and opcode faults do not become a
+`nil, errorValue` pair.
 
 Program in this order:
 
@@ -149,7 +163,7 @@ caller call/return work. No fixed total compilation time follows from it.
 
 `load` accepts the source forms in this section. Its input is an executable block, not a list of declarations: statements and a final `return` may appear at the top level. Compiling the block produces a function; it does not execute the block.
 
-This language is narrower than linked-cartridge BLua. A source file accepted for linking is not necessarily accepted by `load`.
+This language is narrower than BLua. A source file accepted for linking is not necessarily accepted by `load`.
 
 ### Names, spacing, and comments
 
@@ -316,9 +330,9 @@ An ordinary call evaluates its callee before evaluating its arguments. A method 
 
 For example, `return a, f()` forwards the results of `f` after `a`; `return a, (f())` uses one result from `f`. Likewise, `g(a, f())` expands the final call, while `g(a, (f()))` does not.
 
-### Linked-cartridge forms are not runtime-loaded forms
+### BLua program forms are not runtime-loaded forms
 
-| Linked-cartridge form | Runtime-loaded distinction |
+| BLua program form | Runtime-loaded distinction |
 | --- | --- |
 | `module<const>`, `module<entry>` | No module-directive form. These spellings are ordinary names and comparison tokens, not directives. |
 | `struct`, `bss`, `data`, `rodata` declarations | No corresponding declaration or type-reference syntax. |
@@ -328,7 +342,7 @@ For example, `return a, f()` forwards the results of `f` after `a`; `return a, (
 | `function name(...) ... end` | No named-function statement; `function` must be followed by `(`. |
 | Local-function `<init>` | Not an accepted local-function form. |
 
-| Other linked-cartridge form | Runtime-loaded distinction |
+| Other BLua program form | Runtime-loaded distinction |
 | --- | --- |
 | Generic `for` | Only the numeric `for name = ...` form is available. |
 | `repeat` loop | No repeat-loop statement. |
@@ -520,7 +534,9 @@ external_scope = {
 }
 ```
 
-This describes the current interface consumed by syntax compilation; it does not define any special descriptor storage format beyond the fields and callback uses below. A descriptor can carry additional data used by its own access callbacks.
+Each name maps to a descriptor Table. The fields below control binding;
+additional fields can hold the location data needed by that descriptor's
+read and write callbacks.
 
 | Member or descriptor field | Consumed meaning |
 |---|---|
@@ -660,7 +676,9 @@ Excessive register requirements raise:
 [load:<chunk_name>] function or expression needs too many registers
 ```
 
-Invalid `literal` dispatch raises during tree construction, before `compile_syntax` is called. Other incorrectly shaped factory arguments are not covered by a general input-validation pass or a uniform diagnostic guarantee. Constructor availability does not make arbitrary argument combinations valid; in particular, respect the call-statement and string-id operand restrictions above.
+Invalid `literal` dispatch raises during tree construction, before `compile_syntax` is called. Supply the node and argument forms listed in the factory tables, including
+the call-statement and String operand restrictions. Incorrect node shapes
+can fail at a later binding or emission operation rather than at construction.
 
 <div class="keep-together">
 
@@ -679,7 +697,10 @@ Those annotations are another reason to keep syntax occurrences private to one c
 
 ## Runtime-compiled code: storage, ownership and lifetime
 
-Runtime compilation uses a BIOS code arena in console RAM. A compilation places its root function, nested functions, capture metadata, and instructions together in one allocation. The constant pool is a separate guest table; it is not copied into that allocation.
+Runtime-compiled procedures occupy the BIOS code arena in main RAM. One
+compilation places its root procedure, nested procedures, capture descriptors
+and instructions in one block. Closures retain the block and its associated
+constant Table while the code remains in use.
 
 ### Storage limits
 
@@ -693,7 +714,9 @@ Runtime compilation uses a BIOS code arena in console RAM. A compilation places 
 | Allocation contents | All functions, capture metadata, and instruction streams from one compilation share one block. Constant-pool tables and closures use the separate guest-object heap. |
 | Final arena-exhaustion error | `runtime compiler memory exhausted` |
 
-The arena's absolute address is not specified here. Its declared capacity is not a per-function size limit or a measure of the remaining guest-object heap.
+The arena belongs to the [firmware RAM reservation](memory.md#reserved-and-cartridge-storage-in-main-ram).
+The capacity above is shared by live compilations; use the separate language
+allocation budget for Tables, closures and other language objects.
 
 ### Resource accounting
 
@@ -722,7 +745,12 @@ The root closure retains the compilation's constant-pool table, which owns the c
 
 Every child closure also retains the allocation owner, in addition to its required captures. An escaping child therefore keeps the entire compilation's code block alive, even if the root closure is no longer reachable or the child needs only some of the compilation's constants. Individual functions within that block are not reclaimed separately.
 
-The arena's ownership reference is weak: the arena does not, by itself, keep an otherwise unreachable allocation owner alive. Once that owner is unreachable and garbage collection clears the weak reference, the allocator can reuse the block. A raw function address alone does not retain the owner. There is no explicit code-block free operation and no specified reclamation deadline after a reference is dropped.
+Keep a closure reachable while its compiled code is needed. Once all
+references retaining that compilation become unreachable, collection makes
+its block reusable. A raw function address does not retain the block. Release
+language references rather than attempting to free a code block explicitly;
+reclamation occurs during collection, not at the assignment that drops a
+reference.
 
 ### Environments and borrowed bindings
 
@@ -742,17 +770,25 @@ Closing a coroutine also retires its borrowed frame scopes. Code retention and b
 
 Allocation first tries the current candidate block. If that cannot satisfy the request, it scans the arena and combines adjacent reusable blocks, stopping at the first sufficiently large run. If that search fails, allocation performs synchronous garbage collection and makes one further scan with coalescing. Failure of that retry raises `runtime compiler memory exhausted`.
 
-The search is bounded by the arena's finite extent, with one collection-and-retry attempt rather than an indefinite retry loop. No elapsed-time or cycle bound is specified for compilation or collection. Compilation can therefore include synchronous collection work before either succeeding or raising the arena-exhaustion error.
+A load may perform collection before it returns. The second unsuccessful
+arena search raises the exhaustion error. Reserve compilation for a point
+where its variable parsing, allocation and collection time can be accepted.
 
-The ordinary guest-object heap is accounted for separately and can also run out of memory. Available object-heap capacity does not guarantee a suitable code block, and available code-arena capacity does not guarantee space for closures or constant-pool tables.
+The [language allocation budget](cpu.md#language-allocation-and-lifetime) is
+accounted for separately and can also be exhausted. Available language-object
+capacity does not guarantee a suitable code block, and available code-arena
+capacity does not guarantee space for closures or constant-pool Tables.
 
 ### System startup and compiled-code storage
 
-Ordinary system startup first copies initialized data to system RAM and zeroes the system executable's BSS. It then initializes modules in dependency-before-dependent order, before entering the BIOS entry function. During that module initialization, the runtime compiler's arena receives its initial free-block header, covering the aligned arena span, and its allocation cursor is set to the arena start. BSS zeroing alone is not this complete initialization: the header and cursor assignments belong to the arena module.
+Normal BIOS startup initializes its DATA and BSS, then prepares the runtime
+code arena before program entry. Starting a program's own DATA and BSS leaves
+that BIOS arena in place. Keep program sections outside firmware-reserved RAM.
 
-When a [hardware system-reset request](system.md) is consumed, it follows the system-reboot sequence. Guest globals, including module-initialized latches, are cleared before the CPU restarts. If execution proceeds through system startup, the sections and arena are therefore initialized anew. This does not mean that all RAM is cleared. A CPU-only restart does not first clear those latches and is not, by itself, an arena-reinitialization guarantee. Replacing ROM bytes or an execution image does not itself invoke section or arena initialization.
-
-In the standard BIOS/cartridge layout, normal BIOS-to-cartridge startup initializes the cartridge's own data and BSS, placed after the BIOS-reserved BSS. This transfer is not a system reboot; entering cartridge startup does not itself reinitialize the BIOS arena. These distinctions do not establish a general lifetime or preservation guarantee for runtime-compiled code across other reset or media-replacement sequences.
+A system reboot clears the execution environment and starts BIOS
+initialization again. A CPU-only restart or a transfer with `EXEC` has a
+different state boundary; see [CPU execution control](cpu.md#exec) and
+[System control](system.md). System reboot begins a new runtime-compilation lifetime.
 
 <a id="complete-program-runtime-compilation"></a>
 

@@ -3,50 +3,50 @@
 <a id="gpu-function"></a>
 ## Function and data flow
 
-The GPU draws supplied screen-space polygons, lines and rectangles into GPU local
-memory. It also fills, uploads, reads and copies raw local-memory images. Supplied
-colors and texture coordinates determine the source pixels; drawing state controls
-the drawing area, offsets, texturing, blending and stored mask bit.
+The GPU converts screen-space polygons, lines and rectangles into pixels in its
+2 MiB local memory. Use polygons for scaled or transformed surfaces, rectangles
+for sprites and tiles, and lines for outlines. Drawing commands supply positions,
+colors and texture coordinates. A retained drawing environment supplies the
+drawing area, coordinate offset, texture page, blending and mask controls.
 
-CPU writes enter a sixteen-word GP0 command FIFO. DMA reaches the same port
-through a separate sixteen-word ingress buffer: an admitted block is staged
-there before its end-of-block hand-off toward the command FIFO. These are not
-thirty-two interchangeable CPU FIFO slots or two drawing engines. Both routes
-feed the same ordered packet assembly and execution path. A DMA block boundary
-does not finish a packet, supply missing image words or terminate a polyline.
-GP1 controls are separate from this stream.
+Commands and their parameters form a stream of 32-bit words written to GP0.
+The GPU assembles complete packets and executes them in order. CPU stores feed
+a sixteen-word command FIFO. DMA supplies the same stream through a separate
+sixteen-word ingress buffer, handing each admitted block to the command FIFO
+at block end. Packet framing continues across those block boundaries. GP1 is
+the separate control port for reset, DMA direction, state queries and GPU mode
+settings.
 
-Input readiness is not completion. CPU-store admission, DMA requests and GPU
-idle answer different questions. Accepted words can remain queued; a partially
-assembled packet still needs its remaining fields. Execution can wait behind
-preceding command work or an active readback. A completed command interval does
-not itself establish that local-memory readback is READY or that a new picture
-has reached the display latch.
+Local memory also holds textures and palettes. Fill, upload and copy commands
+prepare this storage; GPUREAD returns requested raw pixel words to the CPU or
+DMA. These operations share the ordered drawing stream, allowing an upload,
+its draws and a later copy to be placed in the required sequence.
 
-Budget CPU instruction issue, DMA transport and GPU command work separately.
-Command ticks do not include all packet preparation, readiness waits, payload
-supply or readout. CPU work can overlap GPU execution; neither FIFO capacity nor
-an operation's tick count specifies sustained pixel or byte throughput.
+The programmer manages three hand-offs: supplying packets, completing GPU
+work, and selecting a finished image for display. FIFO readiness permits
+further input; GPU idle identifies a drained command path; readback READY
+permits image-data consumption. PCRTC's VBlank-entry latch separately selects
+the settings used to display local memory. Use the indication belonging to
+the hand-off being performed.
 
-Three-dimensional projection, lighting, near-plane clipping and depth-order
-selection precede primitive submission. Triangle interpolation has no depth or
-reciprocal-depth input. A quad is
-two triangle operations, not a four-corner bilinear surface. The cartridge supplies
-the intended draw order and retains any geometry results needed to construct it.
+For three-dimensional scenes, first transform, light and project the geometry
+with GTE or software. Clip and order its primitives, then submit their screen
+positions and colors. Triangle color and texture interpolation are affine in
+screen space; a quad is processed as two triangles. The GPU draws in command
+order, so overlapping surfaces must be submitted in the intended order.
 
-Stored pixels are not display output. PCRTC reads local memory using its selected
-source layout, display windows and output settings. The choice of display storage
-format does not change how GPU primitives address their raw destination words.
-For repeated pictures, use the [frame hand-off sequence](#render-successive-frames)
-and its separate completion and storage-lifetime conditions.
+PCRTC reads the resulting local-memory image using its programmed source
+layout, display windows and composition settings. GPU drawing always uses the
+raw destination-word layout described below. Select a matching PCRTC layout
+for that storage. The [frame hand-off sequence](#render-successive-frames)
+shows how to alternate drawing and display regions.
 
 <a id="gpu-specifications"></a>
 ## Technical specifications
 
-GPU programming words, local-memory words and command-cost ticks are different
-units. A GP0 input word carries **32 bits**; a local-memory word stores **16 bits**.
-Neither is a count of displayed pixels. Drawing, texture lookup and display
-sampling share the same local memory.
+The following specifications distinguish the **32-bit GP0 programming word**,
+the **16-bit local-memory word**, and the **command tick** used for execution
+costs. Drawing, texture lookup and display sampling share local memory.
 
 | Resource or interface | Specification |
 |---|---|
@@ -64,24 +64,20 @@ sampling share the same local memory.
 | Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per cycle |
 | Command-cost conversion | Two command ticks per system cycle |
 
-The input coordinate range is not a maximum display mode. Polygon vertices
-receive the drawing offset as integer sums. Before triangle raster shifting,
+Polygon vertices receive the drawing offset as integer sums. Before triangle raster shifting,
 a triangle is rejected if its inclusive span exceeds **1024 in X or 512 in Y**:
 `maxX−minX+1 > 1024` or `maxY−minY+1 > 512`. The test applies separately to
 each triangle, including each half of a quad.
 
-Triangle color and texture-coordinate planes use supplied screen X/Y only.
-Their inputs contain no Z, W, reciprocal depth, perspective correction or depth
-comparison. Commands affect local memory in their supplied order; the GPU does
-not sort polygons. Projection, lighting, near-plane clipping and depth ordering,
-when required, must precede this drawing path.
+Triangle color and texture-coordinate planes use supplied screen X/Y. Their
+affine interpolation and ordered local-memory writes are detailed in the
+primitive sections. Display-window sizes are programmed separately through PCRTC.
 
 **Issue cost and command completion.** An ordinary scalar word load or store,
 including its displacement form, has a **two-system-cycle base cost**. Address
 and value preparation, control flow and readiness waits are additional. A
 word-sequence store instead charges two base cycles plus its word count divided
-by four, rounded upward. These are charges for the actual issuing instruction,
-not a transfer-bandwidth rating. The sequence advances the destination by four
+by four, rounded upward. The sequence advances the destination by four
 bytes per word: starting at GP0 reaches GP1 next, not another GP0 stream word.
 
 <div class="keep-together">
@@ -96,10 +92,9 @@ Completion deadline = C + (N/2 rounded upward)
 </div>
 
 Zero-cost work completes immediately. Queued execution continues from the prior
-command's deadline, not from a later status-read time. CPU work can overlap
-these intervals; summing every issue charge and every command interval does not
-by itself give a complete workload budget. GP1 controls have no separate queued
-raster-cost interval, and there is no GPU CYCLES register.
+command's deadline. CPU issue and GPU execution can overlap; construct their
+timeline when budgeting a frame. GP1 controls have no queued raster-cost
+interval. Use GPUSTAT to observe progress.
 
 For a fill with rounded width 32 and height 4, the command cost is
 `46 + (32/8 + 9)×4 = 98` ticks, or **49 system cycles**. A normalized
@@ -125,12 +120,6 @@ then A+4, stopping if the first faults. Thus an F64 access at GP0 reaches
 **GP0 then GP1**, not two words of the GP0 stream, and is not an atomic GPU
 transaction. Misaligned accesses fault before the corresponding device operation.
 
-**Unspecified electrical ratings.** The system frequency and two-tick conversion
-do not specify an independent GPU core/PLL clock, electrical IO or local-memory
-bus clock or pin width, arbitration schedule, physical per-pixel fetch cost, or
-guaranteed sustained command, pixel or byte rate. Coordinate and storage limits
-are representable capacities, not rated maximum-resolution video modes.
-
 <a id="gpu-programming-example"></a>
 ## Program a complete picture in BLua
 
@@ -146,11 +135,11 @@ strip receives the actual readback result. The bottom strip displays sixteen
 uploaded palette4 texels. No GTE command is needed: all positions
 are already screen coordinates.
 
-### Declare ports and authored data
+### Ports, texture and command storage
 
 The following listings form one entry sequence. GP0/GP1 are the
-GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source, extent and PMODE
-formats are specified in the PCRTC chapter; they are not alternative GP1 controls.
+GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source,
+extent and PMODE formats are specified in the PCRTC chapter.
 
 ```lua
 module<entry>
@@ -174,7 +163,7 @@ rodata texels: u16[4][4] = {
 }
 ```
 
-### Author complete packets, not register-setting tables
+### Texture uploads and drawing packets
 
 The halfword array is a sixteen-pixel image. Its last row deliberately includes
 both `8000H` and `0000H`: the former draws black; the latter leaves the background.
@@ -186,8 +175,8 @@ T1 supplies page/depth fields `010AH`: X=10×64=640, Y=0, direct16. The persiste
 update preserves the separately programmed draw-to-displayed-field bit. The
 four-word textured rectangle after them supplies no new page.
 
-Each quad maps byte U/V from 0 to 3 across its vertices. It demonstrates affine
-magnification, not a new texture size, perspective correction or filtered sampling.
+Each quad maps byte U/V from 0 to 3 across its vertices, magnifying the texture
+by affine interpolation.
 Raw RGB gain is ignored. The modulated quad halves red and preserves green;
 its supplied blue gain saturates already-full-blue texels. The later six-word
 triangle instead interleaves three colors with three positions and has no UV words.
@@ -243,15 +232,15 @@ The final quad uses palette4 page X=704,Y=0 and constant V=16. Its four
 source halfwords hold sixteen four-bit indices, lowest nibble first: `3210H`
 selects entries 0,1,2,3. The CLUT attribute `4030H` selects raw (768,256);
 entry 0 is red, entry 3 is zero, and entry 4 is nonzero black. The palette and
-indices are separate raw uploads, not a special palette-port operation.
+indices are uploaded separately through GP0.
 Raw texturing ignores the quad's zero color field. The sixteen colors are
-magnified across the bottom strip by interpolating U=0…15; this does not enlarge
-the packed source or allocate sixteen-bit pixels for its indices.
+magnified across the bottom strip by interpolating U=0…15 while the source
+remains four packed words.
 
-### Keep returned words in mutable storage
+### Readback storage and interrupts
 
-The two BSS words hold results, not another copy of the ROM image. The interrupt
-entry acknowledges delivered requests. GPU IRQ delivery is masked during drawing;
+The two BSS words receive the readback result. The interrupt entry acknowledges
+delivered requests. GPU IRQ delivery is masked during drawing;
 its request latch is observed explicitly later.
 
 ```lua
@@ -349,8 +338,8 @@ The C0 request selects the first three texture pixels: red, red, green.
 GPUSTAT bit 27—not bit 26—qualifies consumption. Once ready and without a DMA
 reader owning the port, the two reads return `001F001FH` and `000003E0H`.
 The final word's high half is zero and consuming it releases readback. The
-preceding draw commands must reach this readback's ordered fence before its
-result is supplied; readiness is not a fixed one-cycle transfer promise.
+preceding draw commands must reach the ordered readback fence before its
+result is supplied. Continue waiting until bit 27 reports READY.
 
 ```lua
 -- Three pixels produce two reads. The final read has a zero high half.
@@ -371,7 +360,7 @@ the destination area contains three pixels, not four. The following marker is a
 new **whole** GP0 word, never a value hidden in that unused halfword.
 
 ```lua
--- Re-upload those exact words as a three-pixel witness at (16,112).
+-- Re-upload those exact words as a three-pixel strip at (16,112).
 *gp0 = 0xa0000000
 *gp0 = 16 | (112 << 16)
 *gp0 = 3 | (1 << 16)
@@ -434,11 +423,10 @@ expansion. Mask bits remain part of each stored word.
 
 </div>
 
-This is a static picture, not a frame-loop template. The PCRTC chapter specifies
-the VBlank edge that makes programmed display settings visible; GPU idle and the
-IRQ marker do not acknowledge that publication. Packet preparation and issue
-costs also remain separate from queued command deadlines; the command-cost
-reference does not establish a sustained frame rate for arbitrary cartridge code.
+The picture remains in local memory after drawing. PCRTC's VBlank-entry latch
+makes its display settings active. For animation, alternate storage using
+[Render successive frames](#render-successive-frames); include packet issue,
+GPU execution and the display wait in the frame budget.
 
 <div class="keep-together">
 
@@ -448,7 +436,7 @@ This plate brings several packet types into one 256 × 192 image. The two large 
 
 ![Full 256 by 192 GPU output plate](figures/gpu-output-materials.png)
 
-**GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The tiny marks near the left edge are the readback/upload witness and the unscaled 4 × 4 texture, not missing image detail. The complete image is shown without a crop or added region labels.
+**GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The small marks near the left edge are the readback strip and the unscaled 4 × 4 texture.
 
 </div>
 
@@ -458,7 +446,7 @@ The lower-left overlay selects semi-transparency with background-plus-foreground
 
 <div class="keep-together">
 
-**Nine-region legend.** Positions and sizes below are packet coordinates, not a definition of raster edge coverage. The picture column describes the visible regions. The final column records selected raw VRAM readback words, separately from the image's displayed colour components.
+**Picture regions.** The table identifies each packet's placement and effect, with selected raw VRAM words from the completed drawing.
 
 | Packet location | Picture and packet interpretation | Selected VRAM readback |
 |---|---|---|
@@ -496,8 +484,8 @@ are different; neither address is an ordinary read/write register variable.
 
 Writing GP0 does not make a following read return that command word. Writing at
 the GPUSTAT address sends a GP1 control; it does not assign a status-bit mask.
-The reset status above includes the reset display-mode fields. It is the value
-read at the stated epoch, not a promise that beam-derived bits remain constant.
+The reset status above includes the reset display-mode fields. Beam-derived
+bits subsequently change with the scanout position.
 
 ### Access and ordering
 
@@ -615,8 +603,8 @@ the query result appear at the GP1 read address.
 
 A permitted read packs the first sixteen-bit pixel in the low half and the next
 in the high half. An odd final pixel has a zero high half. Consuming the final
-word returns readback to idle and allows queued command processing to resume;
-that is not a guarantee that the whole GPU immediately becomes idle. The next
+word returns readback to idle and allows queued command processing to resume.
+Check GPU idle separately when more commands are queued. The next
 permitted READY read replaces any intervening query result with image data.
 
 <div class="keep-together">
@@ -637,13 +625,16 @@ The other programmed defaults associated with full GPU reset are:
 
 </div>
 
-These are stored control values, not additional directly addressed ports.
-**GP1(00h) is not a full device reset:** it restores the GPU control defaults
-above except that it preserves GPUREAD and the VRAM Y-extension latch. It does
-not initialize local memory or reset PCRTC. Writing a zero GP1 word is therefore
-not a promise to erase every retained result.
+These control values are selected through GP1 commands. **GP1(00h)** restores
+the defaults above while preserving GPUREAD, the VRAM Y-extension latch and
+PCRTC configuration. It does not initialize or clear local memory.
 
-Full-device reset initializes VRAM with a deterministic pattern, not an all-zero clear. GP1(00h) and PCRTC CSR RESET do not perform that initialization; accepted work or an already-consumed partial upload may still affect pixels, without guaranteeing completion of all queued work. Firmware has uploaded its system texture and used the terminal before cartridge entry, so cartridges do not receive untouched reset pixels. Initialize cartridge-owned storage and preserve the finite firmware footprint described in [Memory and program storage — Firmware reservation in VRAM](memory.md#firmware-reservation-in-vram).
+Full-device reset initializes VRAM with a deterministic pattern. GP1(00h)
+and PCRTC CSR RESET instead perform the command/reset transitions described
+below; accepted drawing and consumed upload data can still change pixels.
+At cartridge entry the BIOS has already uploaded its system texture and used
+the terminal. Initialize the program's drawing and texture regions, preserving
+the [firmware VRAM reservation](memory.md#firmware-reservation-in-vram).
 
 Accepted GP1 changes appear immediately in programmed GPU state after due
 command completions have synchronized. Presented display/status/start/range
@@ -820,9 +811,8 @@ the Y gate is closed; changing the gate changes its decoded address rather than
 requiring that the stored start word be rewritten.
 
 For example, `0x05ffffff` retains `0x000ffffe`: X is 1022, and Y is 511 with the
-nine-bit gate or 1023 with the ten-bit gate. This is address decoding, not a
-promise that the selected start and a particular display window form a useful
-picture.
+nine-bit gate or 1023 with the ten-bit gate. Program PCRTC's source layout and
+window separately for the required displayed picture.
 
 <div class="keep-together">
 
@@ -960,18 +950,22 @@ Consider this sequence. Initially no readback is READY, and the stored texture-w
 
 The third read returns two pixels, low halfword first, rather than the freshly queried constant. The next word has zero in its unused high half because only one pixel remains. Consuming that last word returns readback to idle and allows queued GP0 processing to resume. The final read then repeats the last GPUREAD value; it does not manufacture another pixel.
 
-Ownership is independent of READY. If DMA owns GP0's read port, a CPU read returns the current latch **without consuming** a ready image word; DMA reads can consume that stream. A query neither grants CPU ownership nor protects its answer from a later permitted read. GPUSTAT bit 27 reports READY, not a guarantee that an arbitrary CPU read will return a query answer. Use word reads: a byte read still invokes the full callback and can consume an entire packed image word.
+If DMA owns GP0's read port, a CPU read returns the current latch **without
+consuming** a ready image word; DMA reads consume the stream. Finish that DMA
+ownership before taking over image reads with the CPU. A query uses the same
+latch, so a permitted READY image read replaces its answer. Use word reads:
+even a byte read performs the port-read operation and can consume an entire
+packed image word.
 
 These queries report programmed drawing state. They do not acknowledge VBlank presentation or prove that a newly displayed picture has latched. Keep state inspection, image-data consumption and display acknowledgement separate.
 
 ## Render successive frames
 
-Framebuffers are cartridge-chosen regions of shared GPU local memory, not
-private pixel banks allocated by the GPU. A PCRTC source switch selects other
-addresses; it does not copy or save the old picture. Keep drawing, transfer,
-display configuration and storage reuse as separate steps. The following is a
-software sequence for separately owned drawing and display regions, not a
-hardware allocation or surface-release service.
+Reserve two regions of shared local memory for drawing and display. While
+PCRTC reads the front buffer, draw the next picture into the back buffer.
+After drawing completes, program PCRTC to select the finished buffer and wait
+for the display latch before reusing the former front buffer. The regions are
+chosen by the program; a source switch changes the addresses being read.
 
 | Step | Required work and completion |
 |---|---|
@@ -979,20 +973,16 @@ hardware allocation or surface-release service.
 | Submit the next picture | Complete every packet, upload payload and polyline terminator. Order changes to texture and palette storage with their uses; queued commands do not retain private copies of those pixels. |
 | Finish GPU-side work | Drain any readback result and finish its downstream DMA writes when used. Observe GPU IDLE separately from DMA DONE or a GP0 IRQ marker. None of these acknowledges display publication. |
 | Program the display source | Write the required PCRTC source/configuration words. They remain programmed words until the VBlank-entry latch; separate stores are not an atomic update. See [PCRTC, Section 2.6](pcrtc.md). |
-| Observe the new selection | Use a fresh-after-write VBlank observation, not an already-pending flag or immediate register readback. The [Memory display-switch contract](memory.md#a-display-switch-selects-storage-it-does-not-save-it) gives the IRQ/counter ownership assumptions and exact sequence. |
+| Observe the new selection | Use a fresh-after-write VBlank observation. The [Memory display-switch sequence](memory.md#a-display-switch-selects-storage-it-does-not-save-it) gives the IRQ/counter setup and exact order. |
 
-IDLE reports the input and command-pipeline condition, not a check of a
-particular picture's pixels or ownership of its storage.
+Before rebuilding a former display region, also finish its other uses: the
+second reading circuit, texture or palette sampling, copy sources and readback
+can still refer to it. Keep the pixels intact until all those uses have ended.
 
-Rebuild the old surface only after excluding its remaining uses. Switching one
-reading circuit does not prove that the other circuit, a texture, a CLUT, a copy
-or readback no longer needs that region. VBlank is neither an all-VRAM release
-nor an atomic pixel snapshot or a physical fetch deadline.
-
-The existing [prepare, publish and reuse example](memory.md#prepare-publish-and-reuse-two-surfaces)
-demonstrates A → B → rebuilt A with one enabled reading circuit, exclusive GP0
-and IRQ ownership, and no other uses of either surface. Reuse that complete
-route rather than treating the static picture above as a general frame driver.
+The [two-surface example](memory.md#prepare-publish-and-reuse-two-surfaces)
+demonstrates A → B → rebuilt A with one reading circuit and a VBlank counter.
+It gives the interrupt masking, acknowledgement and fresh-edge sequence used
+to establish each display hand-off.
 
 <a id="gpu-ingress-ownership"></a>
 ## Hand a GP0 stream between CPU and DMA
@@ -1055,9 +1045,14 @@ sequence does not repeatedly address fixed GP0. DMA ownership does not redefine
 those CPU access side effects or turn either port into ordinary RAM.
 
 <a id="gpu-storage"></a>
-## Choose the storage contract before drawing
+## Organize local memory for drawing and display
 
-Keep three units distinct: a **VRAM word** stores sixteen bits, a **GP0 command/input word** carries thirty-two bits, and a **PCRTC source sample** is a color decoded according to the selected display storage format. They are not interchangeable pixel counts or addresses. GPU local memory contains **2 MiB: 1,048,576 sixteen-bit words**, shared by drawing, texture reads and display reads. Selecting a display format changes how PCRTC interprets these words; it does not add storage or change the drawing address calculation.
+GPU local memory contains **2 MiB: 1,048,576 sixteen-bit words**. Divide this
+shared store among drawing destinations, textures, palettes and display sources.
+A **VRAM word** stores sixteen bits; a **GP0 input word** carries thirty-two
+bits. PCRTC decodes a **source sample** from local memory according to its
+selected storage format. Choose the drawing layout and display interpretation
+together before placing a framebuffer.
 
 <div class="keep-together">
 
@@ -1089,15 +1084,20 @@ For a small placement example, arrange a two-by-two RGB555 tile at raw origin `(
 
 The first row is red then green; the second is blue then white. The white word has bit 15 set; that bit is not an extra blue-color bit. The second row starts **1,024 words**, or **2,048 bytes**, after the first—not immediately after its two pixels. These indices and offsets describe local-memory placement, not a GP0 packet or a display-window position.
 
-Before using this image as a framebuffer, choose its PCRTC storage interpretation and source layout together. The PCRTC chapter's **Local-memory address layout** gives the GX16 linear layout and the other supported mappings. In particular, selecting CT16 for display does **not** make a primitive write through CT16 page, block and column addressing. Arrange the bytes for the display format you actually select; then use PCRTC's source origin and display window to choose which samples become visible.
+For a framebuffer drawn by ordinary primitives, GX16 provides the corresponding
+linear display layout. PCRTC also supports page, block and column mappings
+described under **Local-memory address layout** in its chapter. To use one of
+those layouts, arrange the stored words for that mapping; primitive drawing
+continues to use the raw address calculation above. DISPFB's source origin and
+DISPLAY's window then select the visible samples.
 
 <a id="gpu-primitive-choice"></a>
 ## Choose a primitive for the required image
 
 Choose the primitive's coverage and attributes before constructing its packet.
-The GPU consumes screen positions, not a three-dimensional surface. It does not
-sort overlapping primitives or compare their depths. Projection and draw ordering
-must already have supplied the positions and sequence that the image requires.
+Supply screen positions after projection and clipping, and submit overlapping
+primitives in the intended drawing order. The following choices determine the
+packet fields and interpolation available for the image.
 
 | Required operation | Primitive | Supplied attributes |
 |---|---|---|
@@ -1404,8 +1404,8 @@ value(X,Y) = ((intercept + X×sx + Y×sy) >> 12) AND FFH
 Only bits 19:12 supply the final byte. Attribute overflow therefore wraps rather
 than clamping to 0 or 255. Adding 2048 biases the **attribute** by one half unit:
 one half of a color count or texel-coordinate count, not one half screen pixel.
-The quantized steps and anchor still matter; this is not a promise to round an
-ideal mathematical plane to the nearest byte at every pixel.
+The quantized steps and anchor determine rounding at each pixel, as the
+following half-count example shows.
 
 <div class="keep-together">
 
@@ -3144,7 +3144,7 @@ For each admitted row j and column i, raw coordinates are
 `X=(X0+i) AND 3ffH`, `Y=(Y0+j) AND Ymask`. X wraps within its row; an overrun
 past 1023 does not carry into the next row. The Y gate also applies to each
 generated row. These are raw-word addresses, not signed drawing coordinates or
-PCRTC storage-format addresses; see [Choose the storage contract before drawing](#gpu-storage).
+PCRTC storage-format addresses; see [Organize local memory for drawing and display](#gpu-storage).
 
 Each byte loses its low three bits. The stored word is
 `(R>>3) OR ((G>>3)<<5) OR ((B>>3)<<10)`, with **bit 15 clear**. Fill bypasses
@@ -3304,7 +3304,12 @@ As a separate trial from the same old-memory table, suppose only payload words 4
 
 A normal upload has **one command tick** of scheduled command cost, giving one system cycle, independently of image area. That is not a bound on preparing, admitting or supplying its header/payload, nor on making the resulting pixels available for presentation.
 
-Supply CPU words to the **same fixed GP0 port** with the word-access/admission contract, or hand the stream to its DMA owner as described in [Hand a GP0 stream between CPU and DMA](#gpu-ingress-ownership). A contiguous CPU word sequence does not repeatedly address GP0. DMA block boundaries do not finish an incomplete image payload, and DMA ownership excludes interleaved direct CPU writes. Packet completion, command completion and display completion remain separate events.
+Supply CPU words to the **same fixed GP0 port**, or transfer the stream by DMA
+as described in [Hand a GP0 stream between CPU and DMA](#gpu-ingress-ownership).
+Use separate fixed-port CPU stores: a contiguous word sequence advances its
+destination. Keep supplying image words through the end of the counted payload,
+across DMA block boundaries when used, and finish DMA ownership before taking
+over the port with CPU stores.
 
 <a id="gpu-readback-packet"></a>
 ## Read raw local memory — GP0(C0H–DFH)
@@ -3349,7 +3354,7 @@ nine-bit or ten-bit Y mask. X wraps within its 1024-word row, without carrying
 into the next row. The source coordinates, normalized dimensions and Y-extension
 value belong to the retained request; a later gate write does not retarget an
 already emitted request. The raw word representation and address distinction
-are described in [Choose the storage contract before drawing](#gpu-storage).
+are described in [Organize local memory for drawing and display](#gpu-storage).
 
 ### Execution, submission and READY are separate
 
@@ -3397,8 +3402,8 @@ particular pixel value is an end marker.
 Consuming the final word returns readback to idle and resumes queued command
 processing. GPUREAD keeps that final word until another query or permitted data
 read replaces it. The next no-READY read repeats the latch, not a new pixel.
-A byte read is not a nonconsuming peek: it invokes the full read callback and
-can consume an entire packed word. Query/latch interactions are detailed in
+A byte read performs the same port-read operation and can consume an entire
+packed word. Query/latch interactions are detailed in
 [Query drawing state through GPUREAD](#gpu-info-queries); a query does not reserve
 its answer against a ready image read.
 
@@ -3462,8 +3467,7 @@ is pending, submitted or READY, including after only four of the five reads.
 Let R be the cycle when the permitted final read resumes processing, with this
 marker the only queued follow-up. The marker executes in that resumed processing,
 sets its request, and has its own one-tick interval ending at R+1 system cycle.
-This is a relative command timeline, **not** a promised READY deadline or a CPU
-five-read benchmark. The final read releases the image barrier; the marker's
+The final read releases the image barrier; the marker's
 request and GPU idle are still different conditions. Acknowledgement of GPU and
 controller latches follows [GP1 control commands](#gpu-gp1-controls).
 
@@ -3577,7 +3581,9 @@ Destination protection can change which source values cascade. As a separate tri
 
 Copy costs **2×W×H command ticks**, using normalized dimensions, without drawing-area clipping or a mask-hit reduction. Thus the horizontal packet costs six ticks/three scheduled system cycles. The 3×3 packet costs **18 ticks/nine cycles**, both with and without the protected-word contrast. S=zero costs 1,048,576 ticks/524,288 cycles, although the packet still contains only four words.
 
-The signed-eleven-bit geometry estimates for drawing primitives do not apply to copy. These command intervals do not include CPU preparation/issue or establish physical memory bandwidth, pixel-presentation time or a general two-dimensional source-preserving move guarantee.
+Use the normalized raw-image dimensions for this cost. Budget CPU issue or
+DMA transport separately, and use the traversal rules above when the source
+and destination overlap.
 
 <a id="gpu-draw-mode"></a>
 ## Drawing mode — GP0(E1H)
@@ -3604,7 +3610,12 @@ Bit 10 does **not** describe an arbitrary protected display rectangle. One retai
 
 ### State changes at parser execution, not admission
 
-E1 changes current draw mode when the ordered GP0 parser executes its word, not merely when a FIFO accepts it. The register change occurs at the start of its **one-command-tick interval**, whose completion deadline is one system cycle later. E1 is not itself a retained drawing primitive. Every emitted draw retains its own mode and other drawing-state snapshot; later E1 words cannot reinterpret it. This queued interval is not CPU issue cost or a physical raster-clock guarantee.
+E1 changes current draw mode when its word reaches execution in the ordered
+GP0 stream. The change occurs at the start of its **one-command-tick interval**,
+with completion one system cycle later. Each drawing command latches the mode
+and other drawing state used for that primitive. Place E1 before the primitive
+whose mode it selects; later E1 commands leave that primitive's latched state
+unchanged.
 
 <div class="keep-together">
 
@@ -3788,7 +3799,9 @@ deadline = C + ((N + 1) >> 1)
 
 </div>
 
-Zero-tick work completes its execution target immediately. Round each command's interval separately: two one-tick commands occupy two scheduling cycles, not one. Queued work continues from the preceding deadline even when completion is observed late. These are scheduled command intervals, not a specified physical GPU clock or sustained fill rate.
+Zero-tick work completes immediately. Round each command's interval separately:
+two one-tick commands occupy two system cycles. Queued work continues from the
+preceding deadline even when completion is observed late.
 
 The following equations use integer arithmetic. `>>1` and `>>2` discard low bits; drawing-area right/bottom limits are inclusive. A retained skipped-row parity is either active or inactive. The cost equations do not count the exact rows, transparent texels, destination-mask hits or stored pixels.
 
@@ -3895,22 +3908,23 @@ Upload emission and the readback command each cost one tick, independently of ar
 
 E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; their selected register/IRQ effect occurs at parser execution, before that completion deadline. Boundary-discarded NOPs have no queued cost interval. GP1 controls have no separate queued raster-cost interval. For example, an IRQ behind a 32×4 fill starting at cycle 0 executes and raises at 49, then completes at 50; the IRQ does not prove presentation has finished.
 
-Finally, budget the **CPU work** separately. A scalar word issue has two base CPU cycles before address/value preparation, control flow and admission waits. CPU and GPU work can overlap; do not blindly add every modeled command interval to every word-store cost. A complete cartridge budget must include its actual issue schedule and synchronization, not convert these equations into a pixels-per-second or transfer-bandwidth guarantee.
+Finally, budget the **CPU work**. A scalar word issue has two base CPU cycles;
+include address/value preparation, control flow and admission waits as well.
+CPU issue and GPU execution can overlap. The following complete timeline
+shows how their costs combine for one fill-and-fence sequence.
 
 <a id="gpu-complete-budget"></a>
 ## Count a complete issue-and-fence interval
 
-Command ticks do not include preparing words, polling status, acknowledging an
-IRQ or retaining a result. The following complete scalar ISA function supplies a
+The following complete instruction sequence supplies a
 32×4 red fill, queues an IRQ marker, waits for it, saves the observed status,
 acknowledges both IRQ latches, checks idle separately, saves that status and
 returns. **Its cost is 83 system cycles**, not 83 plus the fill's command interval.
 CPU issue/polling and GPU work overlap.
 
-This budget specifies an instruction schedule. It is not a claim that every BLua
-spelling of the same procedure emits these instructions. The preceding programming
-sequence shows BLua port accesses; the schedule here makes its own address setup,
-loads/stores, tests, taken branches and return explicit.
+The schedule includes address setup, loads and stores, status tests, taken
+branches and return. Use the instruction sequence of the program being timed
+when applying the same method to another implementation.
 
 ### Define the interval and initial state
 
@@ -4159,7 +4173,10 @@ DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter
 
 After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes pending deadlines, FIFO contents, partial packets, image transfers, polylines, and readback. GPU and controller acknowledgements remain separate.
 
-Wait for READY; accepting the C0 header and reaching its command deadline do not promise that pixels can be read. Draining its last word clears READY and its DMA request; parsing can then advance beyond the readback barrier to the queued marker. None of DONE, READY, drain, marker, or idle establishes PCRTC publication.
+Wait for READY before reading image data. Consuming the last word clears
+READY and its DMA request, allowing parsing to advance to the queued marker.
+Use PCRTC's VBlank-entry sequence separately when selecting these pixels for
+display.
 
 DMA owns its selected endpoint throughout BUSY, even before admission. Do not interleave CPU GP0 writes or consume GPUREAD pixels as a second reader. A CPU GPUREAD access while DMA owns readback returns the retained latch, not the next pixel. Writing START while DMA is BUSY does not restart it.
 

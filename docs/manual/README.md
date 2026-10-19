@@ -40,6 +40,13 @@ reference. Use hardware terms, register words and physical/programming units.
 Do not mention emulator implementations, source paths, tests, repository
 history, proposed refactors or rejected designs in public prose.
 
+The cartridge is the physical card. Its ROM byte contents, an executable image,
+a source program and writable storage are different subjects. Do not call a
+program a “linked cartridge” or describe ROM data as installed storage. Explain
+instruction fetching, ROM records and initialization where programming requires
+them; omit elementary compiled-versus-interpreted lessons. Apply this distinction
+throughout the chapter, not only in its opening paragraph.
+
 A device chapter normally teaches:
 
 1. What the unit does, its resources and connections to other units.

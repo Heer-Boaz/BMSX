@@ -12,6 +12,8 @@ not determine product ownership. Public manuals explain hardware and BIOS from
 the cartridge programmer's perspective, with compact real examples and no
 repository, test, emulator or tool-specific assumptions. Keep hardware facts in
 the manuals rather than copying them into internal engineering documents.
+A cartridge is a physical card, not a linked or compiled program. Distinguish
+its ROM/RAM/devices from source programs, executable images and byte contents.
 Keep internal documents only for current, unique architectural/operational
 value; delete completed plans, handovers, review logs and duplicate fact sheets
 instead of archiving them elsewhere. Manual open questions and concise review

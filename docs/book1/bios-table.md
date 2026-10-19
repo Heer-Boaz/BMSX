@@ -1,12 +1,13 @@
 # BIOS table library
 
-The installed `table` global provides six operations on ordinary language
-Tables. No cartridge import is required. Use it to preserve argument tuples,
-edit indexed sequences, join values into text, expand indexed values into
-results, and sort a sequence in place. It is not a byte-storage interface or a
-device-register bank. Typed arrays in [Memory and program storage](memory.md) are a
-different representation; their storage index zero is not the first sequence
-key described here.
+Use the BIOS `table` functions to keep argument tuples, edit sequences,
+join values into text and sort a numeric-keyed range. The six functions operate
+on ordinary Tables. Their sequence positions begin at key 1.
+
+[Typed arrays](blua-programs.md#typed-storage-layouts-and-address-views) provide
+the separate byte-addressed representation used for memory buffers and device
+transfers. Choose that representation when fixed element widths, contiguous
+bytes or a device address are required.
 
 | Interface | Purpose | Successful results |
 | --- | --- | --- |
@@ -23,6 +24,12 @@ fallthrough produces one nil; that is not the zero-result tuple returned by an
 empty `unpack` interval. [BIOS base services](bios-base.md) explains `select` and result
 adjustment. [Protected calls and coroutines](coroutines.md) explains interception of an
 error value, including nil, without undoing earlier writes.
+
+`table.pack` creates a Table containing the supplied values, not deep copies
+of them. A packed Table, closure or Thread remains the same referenced value.
+Tables and their retained values use the shared
+[language allocation budget](cpu.md#language-allocation-and-lifetime);
+they do not reserve a mapped byte buffer suitable for a device transfer.
 
 ## Tables, lengths and visible effects
 
@@ -45,12 +52,11 @@ mapping; it does not mask a mapping inherited through `__index`. A read can ther
 copies into an own mapping. The length snapshot does not count those inherited
 values.
 
-These interfaces are intended for Table targets, but they do not begin with a
-Table-only argument check. For a String target, ordinary length is a codepoint
-count and reads use the shared String-index Table, not character positions.
-A reached assignment to a String raises the shared assignment error. The CPU
-reference defines those value-category operations; do not use `unpack` as a
-String-to-character conversion.
+Pass a Table target. Length and element access follow ordinary language
+rules; any failure is reported when the corresponding operation is reached.
+For example, a String has a codepoint length and uses the installed
+String-index Table for reads; assigning to it raises the shared assignment
+error. Use String operations when character access is intended.
 
 Insert, remove and sort write the caller's Table directly, in the stated
 order. There is no deferred commit or restoration on error. Pack creates a new
@@ -152,7 +158,11 @@ table.concat({true, {}, nil, 7}, false, 1, 4)
 
 These conversions use the live global `tostring`, not a permanently captured formatter. Replacing it can change both separator and value conversion.
 
-The recursive join uses `(first + last) // 2` as its midpoint and combines the two parts with the separator. For intervals where the midpoint arithmetic keeps dividing each nonsingleton range into smaller ranges, its call tree is balanced; very large finite bounds can lose that progress through Number rounding. Intermediate joins produce Strings; balanced recursion does not provide a fixed execution-time or peak-allocation guarantee.
+Concatenation divides the selected interval at `(first + last) // 2`, joins
+the two halves and inserts the separator between them. It creates intermediate
+Strings as well as the result. Keep explicit endpoints in an integer range
+where adding and bisecting the bounds remains exact; extreme Number bounds
+can prevent the recursive interval from shrinking.
 
 ## `table.insert`
 
@@ -269,7 +279,11 @@ The comparator must supply a consistent strict ordering: `compare(x, x)` must be
 
 </section>
 
-Do not change the target's keys or ordering from the comparator. The sort does not refresh its length snapshot or retained pivot around callbacks. A comparator error is an ordinary error that can be caught with `pcall`; it does not undo swaps already made. A failed sort can therefore leave the input partly reordered. For the specific input `{3, 1, 2}`, a comparator that returns `left < right` on its first four calls and raises a particular table value on its fifth call leaves the values at keys `1`, `2`, `3` as `1`, `3`, `2`; `pcall` returns `false` followed by that same error table. This is one bounded example, not a promised partial order for other failures.
+Keep the target's entries and ordering unchanged inside the comparator.
+The sort retains its initial length and each current pivot across callback
+calls. A comparator error can be received through `pcall`, but swaps already
+performed remain visible. The [interrupted-sort example](#handle-an-interrupted-sort)
+shows how to distinguish that failure from successful completion.
 
 ### Work performed
 
@@ -279,9 +293,9 @@ For a consistent strict ordering, the sort's initial scan performs at most `L - 
 
 ## Errors and resource limits
 
-There is no separate table-library bounds, arity or invalid-sort error. The
-operation that is actually reached determines a shared error or effect; there
-is no uniform argument-validation pass before the procedure begins.
+Table functions report the errors of the operations they execute. Check
+sequence positions and comparator behavior at the application boundary;
+error handling receives a failure but leaves earlier Table changes visible.
 
 | Reached operation | Error text |
 | --- | --- |
@@ -292,20 +306,17 @@ is no uniform argument-validation pass before the procedure begins.
 | Exhausting the Table-valued index chain | `Metatable __index loop detected.` |
 | Exhausting available heap storage | `Out of memory.` |
 
-This table identifies shared error text, not an assertion that every wrong
-argument immediately raises one of these errors. In particular, mixed-category
-less-than and nonnumber arithmetic follow the CPU value rules described above.
-A comparator can raise an arbitrary original value, not just a String.
+These errors occur when the corresponding operation is reached.
+Mixed-category ordering and non-Number arithmetic follow the CPU rules given
+above. A comparator can also raise any language value of its own.
 [Protected calls and coroutines](coroutines.md) defines the protected-call boundary;
 [System control and timing](system.md) defines hardware fault publication. Do not treat
 error interception as restoration of a modified Table.
 
-There is no table-library maximum endpoint, output size or comparator count
-that makes an arbitrary call safe. Unpacking expands a recursive result chain;
-concatenation creates intermediate Strings; packing repeatedly forwards its
-argument tuple and selects a suffix. The number of numeric stores in a pack is
-not a constant total-work or allocation budget. Large, nonfinite or inconsistent
-inputs do not acquire a termination or resource guarantee from these APIs.
+Choose finite, usable endpoints and a consistent comparator. `unpack`
+expands a recursive result chain, `concat` creates intermediate Strings, and
+`pack` forwards its argument tuple while selecting each value. Budget for
+those language objects and calls as well as for the final Table or String.
 
 ## Programming examples
 

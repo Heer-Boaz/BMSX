@@ -2,13 +2,15 @@
 
 ## Function and resources
 
-The input controller presents keyboard, pointer and pad input as a sampled register file. A cartridge requests a sample, waits for its sequence number to change, and reads the resulting snapshot. Input reads do not consume events or request further samples.
+The input controller samples a keyboard, a pointing device and four game pads.
+A program requests one sample with ARM. At the next VBlank-begin edge, the
+controller copies the control states into its registers and advances the sample
+sequence. The program can then read a stable set of key, button and axis values
+while it updates the game. Each subsequent sample requires another ARM.
 
-ARM requests one capture at the display controller's VBlank-begin edge; it does
-not immediately read the devices. An accepted capture publishes the new data
-and sequence and consumes that request. Arm again for another sample. The
-display edge, not the CPU's register-read rate or entry into an interrupt
-handler, determines this publication point.
+Sampling follows the display timing, so a game can acquire one set of controls
+per display interval without tying input acquisition to the duration of its
+update routine. Register reads leave the captured values unchanged.
 
 The controller provides eight keyboard words, a pointer button word with three pointer data words, and four pad records. Each pad record contains a button word, two pairs of stick-axis words and two trigger words. A separate output port accepts vibration requests for a selected pad; its capability word is sampled with the input data.
 
@@ -24,14 +26,16 @@ The register block occupies 47 consecutive 32-bit words, from byte address `0800
 | Sample sequence | 32 bits, incrementing modulo 2³² |
 | Sample publication | A pending ARM request accepted at VBlank begin |
 
-The display timing controller determines the VBlank edge; see [PCRTC](pcrtc.md). Interrupt delivery is described in [Interrupt controller](irq.md). These conditions do not specify an independent input frequency or transfer bandwidth.
+The sampling interval follows the programmed [PCRTC](pcrtc.md) timing.
+[Interrupt controller](irq.md) describes the VBlank interrupt used to wait for
+this edge.
 
 ![Armed sample latch and independent output request](figures/input-flow.svg)
 
-The armed capture path and output request path are separate. Solid arrows
-carry sample words or request operands; dashed arrows show control or
-publication order. The capability word is sampled input, not output
-acknowledgement. The drawing omits reset paths.
+The capture path transfers control states into the snapshot registers. The
+separate output path sends vibration parameters to the selected pad when APPLY
+is written. Solid arrows carry data; dashed arrows show the control sequence.
+The capability register belongs to the captured input data.
 
 ## Raw input representations
 
@@ -43,7 +47,7 @@ For usage `u`, select word `u >> 5` and bit `u & 31`. Its word is at the keyboar
 
 For example, `KeyA` is usage `04H`: word 0, bit 4, mask `00000010H`. This is not pad A. Pad A is bit 0 of a pad's buttons word, with mask `00000001H`.
 
-The following names have established usage mappings. The table does not assign names or text semantics to every other bit in the bitmap. Usage IDs in this table are decimal.
+The following table gives the keyboard usage assignments. Usage IDs are decimal.
 
 | Key names | Usage IDs |
 | --- | --- |
@@ -80,7 +84,7 @@ There are four raw pad records, indexed 0 through 3. Each record occupies 28 byt
 | `+14H` | Left trigger | 4 |
 | `+18H` | Right trigger | 5 |
 
-The buttons word uses these bit positions. The table makes no claim about unlisted bits.
+The pad button assignments are:
 
 | Bit | Button | Bit | Button |
 | --- | --- | --- | --- |
@@ -138,7 +142,10 @@ Interpret a signed 16.16 word as a signed 32-bit integer divided by 65536.
 | `00010000H` | +1 |
 | `FFFF0000H` | −1 |
 
-The representation has a quantum of `1/65536` and a mathematical range of −32768 through `32767 + 65535/65536`. This is the representable word range, not a promised operating range for a stick, trigger or pointer. The latch copies the supplied words without normalization, calibration, dead-zone processing or masking.
+The representation has a quantum of `1/65536` and a range of −32768 through
+`32767 + 65535/65536`. Stick and trigger operating ranges are given above; pointer
+positions use raster coordinates. The controller retains the attachment's words
+unchanged. Apply any additional calibration or dead zone in the program.
 
 ### Retained levels and software edges
 
@@ -160,7 +167,11 @@ Use this order to obtain a new snapshot:
 3. Read `IO_INP_STATUS` until it differs from the retained value.
 4. Read the required snapshot words before requesting another sample.
 
-The sequence change is the sample-completion indication. The retained value of `IO_INP_CTRL` is not a pending-request indicator. Once published, the snapshot remains unchanged until another sample is accepted or the controller is reset. Reading any input register neither samples the controls nor acknowledges, clears or consumes the snapshot. There is no cartridge-visible queue of individual key, button or pointer events; transitions between accepted samples are not preserved as separate events.
+Use the sequence change as the completion indication; CTRL retains its last
+written command rather than reporting a pending request. The captured words
+remain stable until the next accepted sample or reset. To detect button edges,
+compare successive snapshots as described above. A press and release between
+samples is lost.
 
 Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
 
@@ -218,12 +229,10 @@ while true do
 end
 ```
 
-The program deliberately does not reset INPUT: BIOS boot has already sampled
-it, and its current sequence is the correct baseline. The accepted ARM is
-consumed before the caller reads the words. With no other sampling owner,
-that snapshot remains stable until the next iteration arms another capture.
-Read all required keyboard, pointer and pad words before that next ARM.
-The four pad bases and every snapshot word are listed below.
+The initial STATUS read accommodates samples taken during BIOS boot. Read all
+required keyboard, pointer and pad words before the next ARM. With exclusive
+use of INPUT, the snapshot remains stable throughout those reads. The register
+map below gives the four pad bases and individual snapshot words.
 
 ### Worked KeyA transition sequence
 
@@ -237,9 +246,8 @@ The KeyA mask is `00000010H`, not pad A's `00000001H`. With
 | 3 | `10H` | `0` | `0` | 1 | 0 |
 | 4 | `0` | `0` | `10H` | 1 | 1 |
 
-Counts in this table are calculated software observations, not hardware
-counters. A later unchanged released sample has both edge masks zero. A press
-and release between captures cannot be reconstructed from these levels.
+The cumulative columns show the counts a program obtains from the edge masks.
+An unchanged released sample has both masks zero.
 
 ## Register map
 
@@ -317,7 +325,11 @@ An accepted sample does not replace the output parameter words. ARM itself does 
 
 ## VBlank ordering, interrupts and access faults
 
-Sampling occurs on the display timing controller's VBlank-begin edge, not its VBlank-end edge. At VBlank begin, display presentation is followed by input sampling, then the central VBlank interrupt is raised. An armed sample's data and new `IO_INP_STATUS` are therefore published before that edge raises `IRQ_VBLANK` (`00000004H`). This ordering does not specify a fixed delay before the cartridge's interrupt handler runs.
+At VBlank begin, the display controller presents the frame, INPUT captures any
+armed sample, and the central controller raises `IRQ_VBLANK` (`00000004H`), in
+that order. The interrupt handler can therefore read the new snapshot and
+STATUS sequence. Handler entry depends on the CPU interrupt-enable state and
+other pending work.
 
 Independently of ARM, the controller also observes the dedicated supervisor-request
 wire at each VBlank. A low-to-high transition is forwarded to SYSTEM; holding
@@ -326,8 +338,6 @@ keyboard usage or a pad bit, and does not require a cartridge sample. See
 [SYSTEM, Privilege and supervisor entry](system.md#privilege-and-supervisor-entry).
 
 There is no separate input-complete interrupt. VBlank pending state is coalesced, not a count of completed samples, so test the sample sequence even when using VBlank interrupts. A cartridge that waits with HALT must first enable an owned VBlank interrupt route, and must recheck `IO_INP_STATUS` after waking. An interrupt source that is merely pending but masked does not guarantee a wakeup.
-
-The input controller has no separate sampling clock or defined physical polling rate. Its sample edge follows the programmed display timing; no independent key-to-sample latency or sample-to-handler latency is specified here.
 
 The snapshot words, `IO_INP_STATUS` and `IO_INP_OUTPUT_STATUS` are read-only. A mapped whole-word write to one of these words raises the shared bus fault `BUS_FAULT_READ_ONLY` (code 3), without changing the word. The controller defines no separate input fault register. General alignment and access-size rules are those of the memory interface.
 
@@ -343,7 +353,10 @@ The command is dispatched on the APPLY write, without waiting for ARM or a VBlan
 
 ### Intensity and duration
 
-The normal intensity interval is `00000000H` through `00010000H`, inclusive. In this interval the intensity is the raw word divided by 65536: zero at `00000000H`, one-half at `00008000H`, and unit intensity at `00010000H`, with a step of 1/65536. These are request values, not a guarantee of a particular physical vibration strength.
+The normal intensity interval is `00000000H` through `00010000H`, inclusive.
+Intensity is the raw word divided by 65536: zero at `00000000H`, one-half at
+`00008000H`, and maximum at `00010000H`, with a step of 1/65536. The actuator's
+physical response depends on the attached pad.
 
 The intensity register retains all 32 bits, and APPLY decodes the full
 unsigned U16.16 word exactly: `FFFFFFFFH` requests
@@ -351,7 +364,9 @@ unsigned U16.16 word exactly: `FFFFFFFFH` requests
 its maximum intensity. This saturation does not rewrite the programmed word.
 Unsupported output attachments produce no effect.
 
-`IO_INP_OUTPUT_DURATION_MS` holds an unsigned 32-bit millisecond duration operand. The controller retains and uses the complete word without scaling, truncation or range clamping. It does not turn this word into a readable elapsed-time or remaining-time counter, and it does not decrement the register while an effect is active. A requested duration is not a guarantee of physical actuator timing.
+`IO_INP_OUTPUT_DURATION_MS` holds the requested duration as an unsigned 32-bit
+millisecond count. The complete word is retained unchanged throughout the effect;
+readback gives the programmed duration, not remaining time.
 
 For example, the following ordered writes request pad 0 at half intensity for 100 milliseconds. The last write is the command; the preceding writes only prepare its operands.
 
@@ -366,6 +381,8 @@ For example, the following ordered writes request pad 0 at half intensity for 10
 
 `IO_INP_OUTPUT_STATUS` contains sampled vibration-capability bits, one per pad in bits 0 through 3. It is refreshed with the other input words when an armed sample is accepted. Until then it retains the previous snapshot's value; after reset it is zero until a new sample is accepted. The complete supplied word is retained, including bits above bit 3.
 
-APPLY neither checks nor updates this word. A set capability bit is not an acknowledgement that a request was accepted or completed, and it is not a report that a motor is currently active. The output port provides no busy bit, completion bit, error result or output-complete interrupt.
+Use the capability bits to identify pads supporting vibration. They retain
+their sampled values when APPLY is written. The output port supplies no busy,
+completion or error indication and raises no output-complete interrupt.
 
 Input RESET zeroes the output parameters and capability word without issuing a stop or cancellation command for an earlier request. Do not use a register reset as an output-stop operation.

@@ -1,10 +1,20 @@
 # Interrupt controller
 
-The interrupt controller records pending interrupt bits and combines them with an enable mask to produce one maskable interrupt indication. Its pending word is a set of latched bits, not an event counter or a queue. Masking a bit prevents that bit from asserting the output; it does not prevent the bit from becoming pending and does not acknowledge it.
+Interrupts let a cartridge service device completion and video events while
+the CPU performs other work or waits in HALT. The controller records each
+pending source in FLAGS and combines FLAGS with MASK to assert the CPU's
+maskable interrupt line. Each source has one pending bit, so repeated arrivals
+can coalesce before service.
 
-The controller receives requests from the two DMA channels, PCRTC, the geometry unit, the APU, the GPU command processor, the image decoder and the two cartridge slots. VBlank has its own source bit. Their assigned bits are listed in the register reference. Each producer defines its request conditions and any local acknowledgement or re-arming; the controller does not replace those source-specific rules.
+Sources include DMA completion, PCRTC events, VBlank, GEO completion/errors,
+APU events, GPU markers, IMGDEC events and the two cartridge sockets. Program a
+source's local event controls, install its service routine, then enable its
+MASK bit. The source chapter defines any local acknowledgement or re-arming.
 
-The controller's output feeds CPU interrupt acceptance. Acceptance also requires `STATUS.IEc` to be set and takes a shared IRQ exception entry rather than a separate entry for each source. Source selection and service remain software work. [CPU delivery and waiting](#cpu-delivery-and-waiting) describes that boundary in detail.
+The CPU accepts the line when current interrupt enable `STATUS.IEc` is set.
+All enabled sources share an IRQ entry; software reads FLAGS, services the
+selected sources and acknowledges them. The controller and CPU entry protocol
+are specified below.
 
 ### IRQ specifications
 
@@ -79,7 +89,17 @@ Masking a source does not discard its pending request. Source requests accumulat
 
 The CPU does not choose the highest-priority source or take one vector per pending bit. An accepted maskable interrupt takes the shared IRQ entry for the current execution context: the active program's entry in user mode, or the system entry in non-user mode. Software determines which pending sources to service.
 
-The cartridge IRQ entry reads the **complete `IO_IRQ_FLAGS` word after exception entry** and, if that word is nonzero, calls `irq(flags)` with it. This is a fresh register read, not a snapshot captured when the CPU accepted the interrupt. The argument is not filtered through `IO_IRQ_MASK`: it can include masked pending sources alongside the source that enabled delivery. Returning normally from `irq(flags)` returns control to the IRQ entry, which executes `RFE`.
+The CPU enters the IRQ function whose absolute function-record address is in
+the selected ROM header. It supplies no function arguments. That entry routine
+runs as the exception frame and is responsible for reading source state and
+executing RFE when service is complete.
+
+The standard BLua IRQ entry reads the **complete `IO_IRQ_FLAGS` word** and, when
+it is nonzero, calls `irq(flags)`. This argument reflects the later FLAGS read;
+it can include masked pending bits as well as the bit that enabled delivery.
+The callback returns normally to the entry routine, which executes RFE. A
+separately authored IRQ entry can dispatch differently, but must perform its
+own source reads and exception return.
 
 Neither exception entry nor ordinary interrupt return acknowledges a source. Software must write the appropriate bits to `IO_IRQ_ACK`. Writing one clears the corresponding pending bit; writing zero leaves it unchanged. A source left pending and enabled can request delivery again once `IEc` is restored.
 
@@ -151,9 +171,10 @@ Device timers continue to progress during HALT; parked CPU instructions do not e
 
 ## Timing and service cost
 
-The installed system-cycle timebase is 33.8688 MHz: 33,868,800 cycles per second.
-One system cycle is approximately 29.525699 ns. This states the cycle unit, not a
-maximum interrupt rate or an electrical propagation delay.
+Interrupt service instructions use the 33.8688 MHz system timebase:
+33,868,800 cycles per second, approximately 29.525699 ns per cycle. A service
+interval includes time pending, exception entry, source dispatch, handler work
+and exception return.
 
 There is no delayed-enable instruction after a MASK write. An already-pending
 request is eligible at the next CPU execution boundary that satisfies both
@@ -172,12 +193,11 @@ controller output and execution of a cartridge handler are not the same edge.
 | `RFE` | 1 |
 | `LOAD_MEM`, including the IRQ entry's FLAGS read | 2 |
 
-These are individual instruction base costs. A complete service additionally
-includes the IRQ entry sequence, dispatch and handler work, acknowledgement and
-return; the FLAGS load alone is not its cycle budget. Nor is one HALT cycle a
-request-to-handler delay. During a HALT wait, device timing continues even though
-the parked instructions do not execute. Source timing, masking and service work
-must be considered separately when scheduling the cartridge.
+Add these costs to the executed entry and handler instructions when budgeting
+service. Device timing continues during HALT and while a request is masked.
+Request-to-handler time therefore depends on those waits as well as on the
+instruction sequence. The example below accounts for the entry instructions
+separately from the handler.
 
 ### Worked IRQ entry cost
 
@@ -236,11 +256,10 @@ OR-ing it into an already-set pending bit still leaves just one pending bit.
 The programming example below demonstrates that coalescence before enabling
 delivery.
 
-These are GPU rules, not a universal acknowledgement sequence for every source.
-The [GPU command reference](gpu.md) specifies the marker's queue ordering and
-its separate completion/idle conditions. Neither a marker nor controller ACK
-is a display-publication acknowledgement; display latching remains a
-[PCRTC](pcrtc.md) operation.
+Follow the local acknowledgement sequence of each source. The
+[GPU command reference](gpu.md) defines marker ordering and GPU completion;
+[PCRTC](pcrtc.md) defines display publication. A marker service establishes that
+the marker was reached, while the display has its own publication edge.
 
 ### A pending bit cannot count arrivals during service
 
@@ -263,15 +282,19 @@ Keep a software service count distinct from a source-event count. Several
 requests can coalesce into one service; no software counter recovers arrivals
 already lost in the pending latch.
 
-### Choose one cartridge dispatch route
+<a id="choose-one-cartridge-dispatch-route"></a>
 
-A direct cartridge defines `function irq(flags)` and owns its source selection,
-local service and controller acknowledgement. Its argument is the full pending
-word read by the IRQ entry sequence, not FLAGS AND MASK. If only GPU service is
-owned, clearing `flags & 00000040H` preserves other pending sources; clearing the
-entire argument does not.
+### Install the cartridge handler
 
-Prepare each source's service state before enabling its MASK bit. The programming example below defines its own global handler and owns controller acknowledgement.
+For the standard BLua entry sequence, define `function irq(flags)` before
+enabling interrupt delivery. The handler selects the sources it supports,
+services their local state, and clears their controller bits. Clear only the
+supported subset: `flags & 00000040H` clears GPU pending while preserving other
+sources supplied in the same full FLAGS argument.
+
+Prepare each source's service state before enabling its MASK bit. The following
+example supplies the global callback and performs both GPU and controller
+acknowledgement.
 
 ## Program and service a GPU marker
 
@@ -446,10 +469,10 @@ obeys the read-only rule for FLAGS.
 
 </section>
 
-CPU alignment rejection precedes these mapped-access rules. The common address
-exception and system fault-latch contract is described under
-[PCRTC](pcrtc.md), Sections 2.10 (bus access) and 2.11 (faults). Do not use IRQ_ACK to acknowledge that separate
-system bus-fault latch.
+CPU alignment rejection precedes these mapped-access rules. See
+[Memory — Bus-fault status and CPU exceptions](memory.md#bus-fault-status-and-cpu-exceptions)
+for the shared report and exception behavior. Clear that report through its
+BUS_FAULT_ACK port; IRQ_ACK clears controller pending bits only.
 
 F32 transfers one word's bits. F64 transfers the low word at A and the high word
 at A+4, stopping if the first access faults. Thus an F64 store starting at FLAGS

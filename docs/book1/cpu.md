@@ -1,26 +1,45 @@
 # CPU and BLua32 instruction reference
 
-The CPU executes BLua32 instructions, maintains function-call frames and moves
-numeric scalars between language values and byte-addressed memory. Tables,
-closures and threads are language values, not device words. A word transferred
-to a device is an unsigned 32-bit numeric payload; it does not transfer an
-arbitrary CPU value. Device addresses and payloads are defined by their owning
-unit chapters.
+The BLua32 processor executes the cartridge program, performs arithmetic and
+controls the console's memory-mapped units. Its instruction set operates on
+function-frame value registers and transfers numeric scalars to and from
+byte-addressed storage. Function calls, closures and language error handling
+are part of the processor's execution architecture.
 
-Instruction costs are charged in system cycles; the timebase below does not
-mean one instruction per cycle. A mapped store may wait for its destination
-to become ready. Completing that store or a counted word store does not establish
-completion of a graphics or audio command: the receiving unit defines its own
-work and completion conditions.
+This chapter defines instruction encoding, operand values, execution timing
+and CP0 control. [Memory](memory.md) defines the address map and program records;
+[IRQ](irq.md) defines interrupt-source service; [SYSTEM](system.md) defines
+supervisor device contexts. Device commands and their result formats are
+defined in the corresponding Book I chapters.
 
-The reference begins with execution resources, instruction encoding, cycle
-accounting and reset. Short BLua sequences accompany the operation reference.
-**Memory and program storage** defines the installed address map, reservations,
-section initialization and instruction
-addresses. **Interrupt controller** defines IRQ masks, acknowledgment and the
-installed exception route. **System control and timing** defines supervisor
-device contexts and the timing/diagnostic ports. CPU privilege, device context
-and function origin are not interchangeable.
+## Programming model
+
+Function-local registers hold values used by arithmetic, branches and calls.
+Byte-addressed storage holds instructions, static data, transfer buffers and
+device registers. Scalar memory instructions connect these paths: a load
+produces a Number from addressed bytes, and a store writes the selected numeric
+representation.
+
+| Operation | Source | Result |
+|---|---|---|
+| Arithmetic and comparison | Frame registers or image constants | A language value or a branch/skip decision |
+| Closure call | A closure and argument values | A new call frame; returned values go to the caller's result slots |
+| Typed memory access | Numeric byte address and scalar format | A numeric load or a byte/word write through the memory map |
+| Device programming | Numeric register address and command/operand words | Work admitted by the addressed unit under its own rules |
+| Exception entry | Accepted interrupt or synchronous CPU exception | Saved CP0 state and an exception frame |
+
+Register R0 belongs to the current function frame; R0 in a called function is
+a different slot. An ordinary call retains the caller's continuation and uses
+the callee's function record to establish its entry PC and register capacity.
+A return places results in the caller's requested result range. Captured locals
+remain connected to their closures; the closure rules below describe their
+lifetime.
+
+To control a device, prepare its addressed payload and operands, then write its
+command port. The receiving unit supplies a status or interrupt condition for
+its subsequent completion. Wait for that condition before reusing live input or
+output storage. [Memory](memory.md#device-specific-buffer-lifetimes) describes
+these lifetimes across DMA, geometry, drawing and sound.
 
 <section class="keep-together">
 
@@ -40,6 +59,35 @@ and function origin are not interchangeable.
 | Register/count encoding | Format-dependent limits below, not a fixed physical register allocation or unlimited recursion guarantee |
 
 </section>
+
+### Language allocation and lifetime
+
+The CPU provides a **3.5 MiB language-allocation budget** for system and
+cartridge execution together. Installed library values and active execution
+state already consume part of it at cartridge entry. Further retained values
+and storage growth use the remaining capacity.
+
+The budget covers Table storage, dynamic closures and captured-variable cells,
+Threads and their reserved value-slot capacity, and String storage charges.
+Capacity matters as well as visible contents: a Table can reserve more entries
+than it currently contains, and a Thread's reserved slot storage can exceed its
+active argument/local range. Setting one field to nil or returning from one
+call therefore does not imply an equal immediate increase in available budget.
+
+Collection reclaims allocations that are no longer reachable from retained
+program values. Globals, active frames, reachable Tables and closures, and
+retained Threads can keep other objects alive; mutually referencing objects
+can be reclaimed when the whole group becomes unreachable. Weak Table behavior
+is defined in [Weak references and collection](#weak-references-and-collection).
+Allocation may invoke collection before it succeeds. If the requested growth
+still exceeds capacity, it raises the Lua out-of-memory error. If language
+error handling does not handle it, the CPU takes a Trap exception with
+LuaFaultReason `9` (`OUT_OF_MEMORY`).
+
+Language allocations have value identity rather than cartridge-visible byte
+addresses. Plan DATA/BSS and hardware buffers using the separate byte-storage
+reservations in [Memory](memory.md#reserved-and-cartridge-storage-in-main-ram).
+Use addressed byte storage for exact device records and payloads.
 
 <section class="keep-together">
 
@@ -62,12 +110,11 @@ The opcode chooses how the remaining bits are interpreted:
 
 </section>
 
-The Bx family is `LOADK`, `KSMI`, the three branches, `CLOSURE`, the two ordinary
-global instructions and the two system-global instructions. The displacement
-family is the three memory instructions ending in `_D`. The remaining bodies
-use ABC fields; their operation tables say which fields are registers, counts,
-immediates, direct constant indices or RK operands. Raw B/C and RK are not
-interchangeable interpretations.
+The Bx family comprises LOADK, KSMI, the three branches, CLOSURE and the four
+global-name instructions. Memory forms ending in `_D` use displacement fields;
+other instruction bodies use ABC. Each instruction table identifies which
+operands are registers, counts, immediate values, constant indices or RK
+selectors. Apply that row's interpretation after decoding the fields.
 
 ### WIDE — opcode 00H
 
@@ -198,20 +245,19 @@ and its base charge is deducted. Privilege, address alignment and write-ready
 handling occur after that base charge. There is no refund when a store blocks;
 a later retry incurs its base charge again.
 
-A positive remaining budget admits the next instruction even if that remainder
-is smaller than the instruction's cost. The instruction completes its handler
-rather than being cut in half when the budget reaches zero. For example, after
-a one-cycle `LOADK`, a two-cycle `LOAD_MEM` can enter with only one cycle left
-and leave a remainder of −1: three cycles have been charged, not two. Subsequent
-work uses the actual charged amount, including this overshoot.
+An instruction's base charge is not subdivided at a device-event deadline.
+An admitted operation can carry system time past that deadline; due device work
+is then serviced against the advanced time. For example, a one-cycle `LOADK`
+followed by a successful two-cycle ordinary RAM `LOAD_MEM` consumes three
+cycles, even if a device deadline falls within that interval. A store whose
+destination is not ready still follows the wait/retry rules below. Eight-byte
+and counted accesses retain their specified ordered, potentially partial bus
+effects; the timing rule does not make them atomic.
 
-The machine's cycle time follows these consumed charges. During a running CPU
-interval, current time includes charges already made in that interval; after
-advancing time the machine services due device events. Work is admitted with
-respect to the next event deadline, but the admitted instruction can still
-overshoot as described above. Do not infer a sub-instruction interrupt,
-transaction rollback or a universal request-to-handler delay from a cycle
-budget.
+Use the complete instruction charge when calculating a straight-line sequence.
+Use device status and interrupt protocols for synchronization, rather than
+assuming that a device request interrupts a partially executed instruction.
+Instruction costs do not specify one universal request-to-handler delay.
 
 ### Additional work and waiting
 
@@ -245,11 +291,11 @@ supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 
 ## CPU reset and program replacement
 
-At actual CPU reset, Status is `00000001H`; Cause, EPC, BadAddress,
-LuaFaultReason and the exception-domain word are zero. Retained pre-NMI report
-words are also zero. HALT, blocked-write, hard-halt, retained interrupt event,
-pending NMI and requested-yield states are cleared. The call stack is cleared
-and the system startup static function is entered with zero arguments.
+At CPU reset, Status is `00000001H`; Cause, EPC, BadAddress, LuaFaultReason and
+the exception-domain word are zero. Retained pre-NMI report words are also
+zero. Interrupt-wait, blocked-store, hard-halt and pending interrupt states are
+cleared. The CPU discards the active call stack and enters the system startup
+static function with no arguments.
 
 The first PC comes from that startup function's record, not an assumed
 instruction address zero. Reset is not the same edge as `EXEC`: the latter
@@ -261,16 +307,14 @@ separate software reset request and device-context transitions.
 
 ### Hard halt and instruction exceptions
 
-A reserved opcode, a WIDE body that is itself WIDE, or failure to acquire a
-required function record hard-halts the CPU. EXEC also hard-halts when its
-record does not have STATIC set. Hard halt is distinct from HALT's interrupt
-wait: execution stops accepting interrupts and software cannot wake it with an
-IRQ; reset clears the condition.
+A reserved opcode, a WIDE body containing another WIDE, or an unreadable
+required function record causes a hard halt. EXEC also hard-halts when its
+record lacks STATIC. Execution and interrupt acceptance stop until reset.
+HALT, in contrast, is a resumable interrupt wait.
 
-Instruction-address alignment and mapped instruction-read faults instead enter
-the architectural exception route described above. Do not treat malformed
-instruction or function-record state as a BIOS compilation error or assume it
-will return a recoverable language error.
+Misaligned instruction addresses and mapped instruction-read faults take the
+address-error or instruction-bus-error exception route. The scalar-memory
+reference separately defines ReservedInstruction for unsupported format fields.
 
 ## Worked computation: Numbers, words and stored bytes
 
@@ -318,13 +362,12 @@ stored values. See the Number-to-text rules below.
 
 <section class="keep-together">
 
-The following is an instruction-selection guide for ordinary cartridge source,
-not a one-instruction-per-expression rule. Preparing operands, loading and
-storing typed data, forming a comparison value and taking a control path also
-execute instructions. A static array's `#` uses its declared element count
-rather than a runtime `LEN`.
+The table relates BLua operators to their principal instruction families.
+Include operand preparation, typed loads/stores and branches when calculating
+a source expression's timing. A declared static array's `#` supplies its known
+element count; String and Table length use LEN.
 
-| Source operation | Runtime instruction family |
+| Source operation | Principal instruction family |
 |---|---|
 | `+`, binary `-`, `*`, `/` | `ADD`, `SUB`, `MUL`, `DIV` |
 | `//`, `%`, `^` | `FLOORDIV`, `MOD`, `POW` |
@@ -334,7 +377,7 @@ rather than a runtime `LEN`.
 | `==`, `~=` | `EQ` with true or false expectation |
 | `<`, `<=` | `LT`, `LE` with true expectation |
 | `>`, `>=` | `LT`, `LE` with reversed operands and true expectation |
-| `..` | Concatenation lowering; not an unconditional single `CONCAT` |
+| `..` | CONCAT or CONCATN, with operand preparation |
 
 </section>
 
@@ -785,7 +828,10 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 
 An open upvalue accesses its captured parent-frame register directly. Captures can share an already-linked open upvalue for that slot, so updates through the captured variable remain shared. Closing an upvalue retains the current language value separately from the frame; subsequent reads and writes access that retained storage. `GETUP` and `SETUP` use the same upvalue operand regardless of whether the upvalue is open or closed.
 
-A function record marked static and having zero upvalues uses a closure cache keyed by its function-record address. Repeated construction for that record returns its cached closure value. This does not make the numeric address itself callable.
+Repeated CLOSURE operations for a STATIC function record with no upvalues
+return the same function value for that record address. An ordinary call uses
+that value; a numeric function-record address is supplied to CLOSURE or EXEC
+under their separate operand rules.
 
 ### Two global namespaces
 
@@ -956,9 +1002,13 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 ### Builtin call charges
 
-The `CALL` instruction's base charge is 2 cycles. Calling a builtin additionally incurs that builtin's own base charge before its normal or special call route. Builtin base-charge tiers are 1, 2, and 4 cycles; their per-argument and per-result charge coefficients are zero. Thus the instruction base alone is not the complete charge for a builtin call, nor does the builtin base describe every possible cost of its internal work.
-
-The symbolic faults named in this section identify failure reasons. They do not, by themselves, specify error text or which program context can catch a failure.
+CALL costs 2 base cycles. A primitive target adds its own base charge of 1, 2
+or 4 cycles; this surcharge has no per-argument or per-result term. Installed
+BIOS functions can execute ordinary instructions and call further primitives,
+so include the executed sequence when budgeting the whole service. The
+[BIOS base](bios-base.md), [String](bios-string.md) and
+[protected-call/coroutine](coroutines.md) references identify their primitive
+surcharges and error behavior.
 
 ## Worked values: signed zero and inherited fields
 
@@ -1009,7 +1059,10 @@ reference above rather than assuming another Lua version's metatable behavior.
 
 ## Memory transfers
 
-Memory instructions move numeric scalars between registers and byte-addressed memory. They do not save and restore arbitrary language values. In particular, the `Word` format transfers a raw unsigned 32-bit integer; it is not an encoding of an entire register value. A `Word` load produces an ordinary Number containing that integer.
+Memory instructions transfer numeric scalars between frame registers and
+byte-addressed storage. Word and U32LE loads produce unsigned 32-bit integer
+Numbers. Floating loads interpret the stored IEEE bit pattern. The format
+selector determines the byte width and conversion in the following table.
 
 </section>
 
@@ -1064,7 +1117,11 @@ A readiness check is not a permission or fault preflight. An aligned but not-rea
 
 The two halves of an `F64LE` access are fault-ordered. A new fault on the low half prevents the high-half access. A high-half fault leaves the low-half access or store already performed. A load updates its destination only if both halves succeed. The high half of an `F64LE` store is not covered by a separate readiness preflight.
 
-Memory instructions use the CPU memory bus and do not themselves require supervisor mode. This is not a promise that every mapped target admits every access. In IO space, a `U8` load must be word-aligned and reads the low byte of a whole IO word. IO `U8` stores and `U16LE` loads or stores fault. `Word`, `U32LE`, `F32LE`, and each half of `F64LE` use whole-word mapped accesses; individual device-register meanings remain part of the device contract.
+Memory instructions are available in user and supervisor modes. Each mapped
+target applies its own access rules. In I/O space, an aligned U8 load reads a
+whole register and returns its low byte. U8 stores and U16LE accesses fault.
+Word, U32LE, F32LE and each half of F64LE use whole-word register operations,
+including that register's side effects.
 
 ### Counted word stores
 
@@ -1078,7 +1135,10 @@ Before writing anything, the instruction scans the counted span's IO overlap in 
 
 Once preflight succeeds, the instruction charges one additional cost unit per four counted words, rounded up: `(C + 3) >> 2`. It then attempts the words in increasing `i` order and checks for a new bus fault after every word. The first such fault stops the sequence and raises `DataBusError`. Earlier successful words remain written; later words are not attempted. The full sequence surcharge has already been charged even if a later word faults.
 
-A counted store is not atomic and has no rollback. Its readiness preflight is not a guarantee that every later write will succeed. A blocked attempt writes nothing and retains no partial-sequence offset; a retry starts the instruction again.
+A blocked attempt writes nothing and retries from the instruction start.
+After writes begin, the first new bus fault terminates the sequence with its
+completed prefix retained. Arrange output and recovery around those ordered
+partial effects.
 
 ### Memory instruction reference
 
@@ -1200,11 +1260,17 @@ to read CP0 from ordinary user-mode entry. The BIOS boot handoff uses
 address described in **Memory and program storage**, not a generic language
 function value or an arbitrary instruction address.
 
-The generated IRQ vector calls its bound callback only when its FLAGS read is
-nonzero, then performs `RFE`; a zero FLAGS read skips the callback but still
-reaches `RFE`. The exception vector calls its bound callback and performs `RFE`
-after that callback returns. Return normally from a callback: its normal nested
-call frame is not the exception frame required by raw `RFE`. For the installed response to a synchronous cartridge memory exception, see [Memory — Installed response to a memory exception](memory.md#installed-response-to-a-memory-exception).
+The CPU enters the function selected by the ROM's IRQ or exception address as
+an exception frame with no supplied arguments. Lua-trap entry additionally
+places the error value in R0; other exception entries leave R0 nil.
+
+The standard BLua IRQ entry reads FLAGS, calls `irq(flags)` when it is nonzero,
+and executes RFE. The standard exception entry calls `exception(error_value)`
+and executes RFE after the callback returns. Return normally from either
+callback so its entry routine can perform exception return. A custom entry
+routine must implement its own dispatch and issue RFE from its exception frame.
+For BIOS memory-fault service, see
+[Memory — Installed response to a memory exception](memory.md#installed-response-to-a-memory-exception).
 
 ### Control instruction reference
 
@@ -1261,7 +1327,7 @@ callback, saved Status is `0000000CH`, Cause is `00000400H`, and EPC is the
 variable interrupted **instruction address**, not a function-record address.
 Full supplied flags contain VBlank and may contain other masked pending bits.
 
-The callback returns normally. Its generated IRQ vector performs RFE and main
+The callback returns normally. The standard IRQ entry performs RFE and main
 continues after the wait. Do not issue RFE from the callback's ordinary call
 frame. CPU supervisor privilege during IRQ does not by itself activate the
 SYSTEM supervisor device context; SYSTEM STATUS remains zero under these

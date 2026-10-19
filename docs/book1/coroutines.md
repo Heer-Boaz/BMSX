@@ -1,18 +1,38 @@
 # Protected calls and coroutines
 
-The installed BIOS supplies the `error`, `pcall` and `xpcall` globals and the
-`coroutine` interface used here. These calls exchange language values, including
-Tables, nil and Thread references; they do not exchange device-register words.
-The [CPU reference](cpu.md) defines value kinds and ordinary calls.
-[Memory and program storage](memory.md) defines startup and module declarations.
-The [Interrupt controller](irq.md) and [System control and timing](system.md)
-chapters define hardware exception and interrupt handling separately.
+Protected calls let a program receive a language error and continue at a
+chosen call boundary. Coroutines let one procedure suspend and later continue
+with its local values intact. The BIOS supplies `error`, `pcall`, `xpcall`
+and the `coroutine` Table before normal program entry.
+
+These interfaces carry language values and result tuples. Device status,
+interrupt acceptance and hardware exception return remain governed by the
+[CPU](cpu.md), [interrupt controller](irq.md) and
+[system-control](system.md) interfaces.
+
+## Control flow and hardware progress
+
+Protected calls, coroutines and interrupt waits solve different problems:
+
+| Mechanism | What it changes | What resumes the caller |
+| --- | --- | --- |
+| `pcall` or `xpcall` | Adds a language-error boundary around a call. | The target returns or an eligible language error reaches that boundary. |
+| `coroutine.resume(thread, ...)` | Transfers language execution to the selected suspended thread. | That thread yields, returns or fails with an unhandled language error. |
+| `coroutine.yield(...)` | Suspends the current coroutine and returns values to its resumer. | A later accepted `resume` supplies the yield call's results. |
+| `halt_until_irq` | Waits at the current call depth unless an interrupt event is already pending. | An accepted interrupt event; the [CPU reference](cpu.md#halt) defines the latch and return rules. |
+
+Coroutine execution is cooperative: the resumer waits while its selected
+thread runs. Device operations continue according to their own hardware
+rules. Establish completion from the device's status or interrupt condition
+before consuming its result. A coroutine transfer or a protected error result
+is not a completion indication from a device.
 
 ## Protected calls
 
-Use a protected call when a cartridge needs to receive a language error as a result instead of letting that error escape its current call chain. BMSX installs `error`, `pcall`, and `xpcall` as ordinary global functions before cartridge execution. These public names need no separate import.
-
-Protection does not turn every error into a printable message. The success flag tells you what happened; the remaining values can include `nil`, numbers, or objects whose identity matters.
+Call `pcall` to receive a function's success flag and results or its error
+value. Choose `xpcall` when a handler should transform that error before it
+returns to the caller. Test the success flag: an error value can be nil,
+false, a Number or an object as well as a String.
 
 ### Signatures
 
@@ -26,9 +46,10 @@ Brackets mark the optional `level` argument. The ellipses denote arguments forwa
 
 ### Raising a value
 
-Despite its parameter name, `message` need not be a string. `error` raises its first argument unchanged. It can be `nil`, a boolean, number, string, table, function, or thread. It does not stringify that value. A table used as an error remains that table, rather than becoming a copy or a formatted description.
-
-`error` ignores `level` and additional arguments. The optional `level` does not select a stack level or decorate the thrown value. `error` does not add a source-location prefix or traceback.
+`error` raises its first value unchanged. Every language kind is permitted,
+including nil, false and a Table reference. A raised Table retains its identity.
+The optional `level` and surplus arguments are ignored; the value carries no
+automatically added source prefix or traceback.
 
 An error payload of `nil` is still an error. Inspect the success flag, not the payload's truth value, to distinguish failure from success.
 
@@ -57,7 +78,9 @@ A body error unwinds the body's calls before the saved handler runs. The handler
 
 A language error reaching the same protected boundary while its handler is active replaces the payload with the exact string `error in error handling`. It does not return the handler's newly thrown value.
 
-For a directly invoked built-in handler, the handler-error result covers explicit thrown values and language execution errors, not out-of-memory conditions. It does not guarantee recovery from every handler failure or memory-exhaustion path as `false, "error in error handling"`.
+For a directly called built-in handler, explicit raised values and language
+execution errors produce that handler-error result. Memory exhaustion in that
+handler follows its out-of-memory path instead.
 
 <section class="keep-together">
 
@@ -76,13 +99,19 @@ The protected language-error path handles explicitly raised values, language exe
 
 The target check occurs inside the new protected boundary. For `pcall`, a non-function target therefore gives `false` and its reason string. For `xpcall`, the valid handler receives that target error. The handler check, by contrast, occurs before the new boundary, as described above. For example, `pcall(rawget, {}, nil)` returns `false, 'Table index is nil.'`.
 
-Protection is not a machine-fault sandbox. Synchronous hardware exceptions do not take this protected language-error route; do not use `pcall` as a guarantee of recovery from bus, address, or coprocessor faults. An entered hardware exception or interrupt context also prevents an older protected call from unwinding across that boundary. A newer protected call made within that context can protect calls on its own side of the boundary. These are limits of protection, not an exhaustive list of machine execution boundaries.
+Bus, address and coprocessor faults enter the hardware exception route.
+An entered hardware exception or interrupt also blocks unwinding to an older
+protected call across that boundary. A handler may establish a new protected
+call for language operations on its own side of the boundary. Use the CPU
+exception interface for hardware recovery.
 
 Protected calls belong to individual threads. The innermost active protected call in the current thread receives an eligible error. Installing protection in one thread does not install it in another. Protection in a coroutine is considered before that coroutine is marked failed and its error is returned to its resumer.
 
 A protected body is not made non-yieldable merely by using `pcall` or `xpcall`. An active `xpcall` handler is non-yieldable. A protected body can yield and resume before raising an error. Attempting to yield from its active handler instead produces the handler-error result rather than suspending there.
 
-Ordinary protected unwinding closes captures of removed calls and releases their call storage. It does not promise to undo earlier writes. In the example below, the earlier assignment of `77` remains after the error.
+Protected unwinding closes captured locals of the removed calls and
+releases those calls. Writes already completed remain visible: the example
+below leaves the earlier assignment of `77` in place.
 
 ### Incremental cycle charges
 
@@ -92,7 +121,11 @@ Ordinary protected unwinding closes captures of removed calls and releases their
 
 The BIOS installs the `coroutine` table before cartridge execution. Its eight functions are available through that table; no cartridge import is needed.
 
-A coroutine is a retained language execution context: its entry function, call frames, local/register-stack values, protected calls, and suspension point. Keep this language execution state distinct from the device contexts described in [System control and timing](system.md). Execution is cooperative. One thread is active; an accepted `resume` transfers execution to another thread, and a `yield`, return, or unhandled language error transfers it back. Creating a thread does not run it. The main thread is initially active.
+A coroutine keeps its entry function, call chain, local values, protected
+calls and suspension point. The main thread starts active. Creating another
+thread leaves it suspended; an accepted `resume` starts or continues it.
+Yield, final return or an unhandled language error transfers control back to
+its resumer. At each point only one language thread is active.
 
 ### Creating and identifying threads
 
@@ -163,9 +196,15 @@ Create, status, close, and wrap each declare one fixed parameter; omitted fixed 
 
 ### Hardware IRQ and exception boundaries
 
-Coroutine transfer is not an IRQ wait. Hardware device contexts are described separately in [System control and timing](system.md). Do not use resume or yield to cross hardware exception-handling boundaries. If the active caller carries a hardware exception frame, resume returns exactly `false, "cannot resume coroutine across a hardware exception"`. This rejection takes precedence over rejection for target status and leaves the target unchanged.
+If the active caller has a hardware exception frame, `resume` returns
+`false, "cannot resume coroutine across a hardware exception"`. This check
+precedes the target-status check and leaves the target unchanged.
 
-Yield is forbidden across an entered hardware exception boundary. Protected error handling does not unwind through that boundary to reach an older protected call. An unhandled error at such a boundary is not promised to return as a normal coroutine `false, error` tuple; it follows the Lua fault-exception route. These restrictions do not define interrupt scheduling or the timing of an IRQ wait.
+Yield is also forbidden across an entered exception boundary. A language
+error that cannot reach protection on its own side enters the Lua fault
+exception route. It does not unwind through an older hardware handler to
+return a coroutine result. See [System control](system.md) for device-context
+switching and the [CPU HALT interface](cpu.md#halt) for interrupt waits.
 
 ### Cycle increments
 

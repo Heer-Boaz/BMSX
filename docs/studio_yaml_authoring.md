@@ -2,9 +2,6 @@
 
 ## Source ownership
 
-Status: 2026-10-07. This contract supersedes the old actor-to-Lua migration
-direction. No cart source format changes are required for Studio editing.
-
 | Cart | Authored representation | Runtime consumer |
 | --- | --- | --- |
 | Pietious | `res/data/castle_map.yaml`: numbered rooms, object lists, tile coordinates, maps | `castle/map.lua` decodes room templates and derives scene registrations |
@@ -16,7 +13,7 @@ also derived, not replacement documents. Both YAML files remain canonical;
 Lua owns their gameplay interpretation. Existing directly authored Lua scenes
 remain supported by their own source editor.
 
-## Delivered foundation
+## Text document ownership
 
 Ordinary YAML data resources open as authored text through the existing resource
 resolver and workspace provider. Code views retain the existing resource-owned
@@ -132,107 +129,3 @@ shares the text-file working copy, and its
 retains before/after selection with document edits; `yaml`'s
 [CST stringifier](https://github.com/eemeli/yaml/blob/main/src/parse/cst-stringify.ts)
 retains token text rather than normalizing the authored document.
-
-## Evidence and limits
-
-### Map Editor: 2026-10-07
-
-`tests/conformance/runtime_replay/studio_cart_maps.ts` exercises both real cart
-sources through the normal host-input dispatcher in a real Chromium page, on
-software, WebGL2 and WebGPU. It opens the source and Map Editor, selects in the
-outline/grid, edits coordinates, moves with arrow keys, deselects, shares Undo/Redo
-with the source view, saves through the product workspace API, closes/reopens,
-and reloads the actual browser page to check session recovery. Every unrelated
-source byte is compared. Test sources live in isolated workspace copies.
-
-The input fixture uses `HeadlessInputHub`; this proves browser rendering and
-host-input dispatch, not native browser/OS input or mobile interaction. Captures
-of the actual panes are inspected separately; test assertions do not prescribe
-their labels or prose.
-Retained screenshots show the edited [Pietious room](evidence/cart_map_editor_2026-10-07/pietious.png)
-and [Nemesis stage](evidence/cart_map_editor_2026-10-07/nemesis_s.png), including the
-short rebuild status, and [Save feedback](evidence/cart_map_editor_2026-10-07/nemesis_s_saved.png).
-
-The follow-up checks active-tab reselection with an unsubmitted coordinate draft
-and installed-source status before editing, after Undo, and after Save. The
-actual map-pane unit case moves a marker beyond both viewports, then verifies
-Undo/Redo reveal it without overriding later manual scrolling. This follows
-VS Code's [focused history-selection reveal](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/cursor/cursor.ts),
-not per-frame auto-centering.
-`tests/rompacker/aem_source_scope.test.ts` additionally installs actual BIOS/two-cart
-media and proves YAML bytes/provenance survive AEM relinking and subsequent
-program-only installation. Those operations cannot mark a map edit installed.
-Superseded asynchronous source openings dispose only an unadmitted candidate,
-never a source tab already owned by the editor group. The controller regression
-exercises both cases through the real input resolver.
-Serializer regressions also cover repeated recovery of an inactive map and
-background source Undo before capture. Pending viewport and current tracked
-selection belong to the retained view, not its last rendered controls, following
-VS Code's [view-state lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorWithViewState.ts).
-Source regressions cover unequal Nemesis row lengths and compare version-directed
-scalar meanings against the actual cooker, including the cooked result of a
-Pietious coordinate move. Schema handling follows the YAML library's explicit
-[document schema owner](https://github.com/eemeli/yaml/blob/main/src/doc/Document.ts),
-not cart-specific reparsing or numeric conversion.
-
-The shared focus change is also exercised by the three-backend navigation and
-runtime-inspection workflows. Reopening an existing definition retains its
-inspector, like reselecting its tab; repeated independent inspection steps now
-use the actual Escape close gesture instead of relying on implicit reactivation.
-
-The separate `studio_cart_map_assets.ts` build consumes the saved YAML through
-the actual data cooker and ROM builder, and checks the complete packed value
-and debug-source bytes. This is **not** a boot of a complete modified cart or
-proof of live asset installation. The editor flow additionally checks that
-editing/Save does not execute guest cycles or replace installed media.
-
-Validation after the follow-up: six cart/backend workflows, three assistant
-source-save workflows, and six navigation/runtime-inspection workflows passed;
-Lua tests **3,008 passed, one existing skip**;
-rompacker tests **209 passed**; IDE/tests typechecks, browser
-Studio product build, architecture audit (**0 issues**) and diff check passed.
-The projection tests also exercise stationary source reuse, source identity,
-escaped-marker selection through history and negative authored coordinates.
-Independent review found and fixed collapsed-outline grid selection, repeated
-label measurement on selection, and room identity in navigation history.
-
-Repeatable browser commands, after building the debug BIOS and both carts:
-
-```sh
-node tests/conformance/runtime_replay/browser.mjs --studio-cart-maps pietious \
-  dist/system/bmsx-bios.debug.rom dist/pietious.debug.rom
-node tests/conformance/runtime_replay/browser.mjs --studio-cart-maps nemesis_s \
-  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
-```
-
-### YAML text-editor foundation: 2026-09-20
-
-`tests/ide/yaml_source_editing.mjs` runs both carts in the headless tooling host,
-with isolated workspace copies of their real YAML. It uses keyboard events and
-the host clipboard, without IDE-command or model injection. It checks exact
-source opening, scalar editing, undo/redo, comments, indentation, save to the
-filesystem, and retained-model reopening. Every unrelated source byte is compared;
-the repository fixtures are unchanged. Saved-editor captures were visually inspected.
-The saved-source views are retained for [Pietious](evidence/yaml_source_editing_2026-09-20/pietious_saved.png)
-and [Nemesis S](evidence/yaml_source_editing_2026-09-20/nemesis_s_saved.png).
-This is automated user-I/O evidence, not browser/native-host coverage or proof
-of fresh-process reload, data-asset application, or a graphical level editor.
-
-`tests/lua/workspace_storage.test.ts` covers source admission/coalescing,
-no cooked-data reconstruction, shared history, YAML exclusion from Lua source
-capture/semantic updates, and dirty-session recovery. Language configuration and
-resource selector tests cover language syntax and asset-type/suffix conjunction.
-
-Historical validation: both user-I/O scenarios passed, as did the IDE typecheck and headless
-tooling build. The full Lua suite reports 2,233 passes, one skip and the known
-`named workbench menu materializes one retained generic action bar` failure.
-Independent review found the inherited hardcoded Lua comment prefix before
-delivery; the language-owned fix was reviewed again with no remaining blockers.
-
-The repeatable user-I/O command builds its debug host, BIOS and cart prerequisites:
-
-```sh
-npm run test:ide-yaml
-npx tsc --noEmit -p ide/tsconfig.json
-npm run test:lua
-```

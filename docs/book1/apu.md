@@ -14,17 +14,16 @@ sample RAM. Several slots can read the same bytes with independent playback
 positions. Main RAM is not a direct playback source, and the square generator
 needs no sample payload.
 
-A separate sample-transfer unit moves words between private sample RAM and one
-sixteen-word FIFO. The system DMA controller supplies or drains that FIFO through
-TRANSFER_DATA; the APU performs the RAM side of the transfer. CPU uploads in
-MANUAL_WRITE instead write RAM directly through this port. The private RAM is
-not an ordinary CPU memory window.
+Use the sample-transfer port to load private sample RAM. For a CPU upload,
+MANUAL_WRITE stores each word directly. For DMA, a sixteen-word FIFO buffers the
+transfer while the APU moves words to or from sample RAM. This path operates
+alongside playback.
 
-Voice commands use a different FIFO containing configuration, not sample data.
-Recognized nonzero commands capture parameters; they do not immediately change
-a playing slot. Command capture, execution, sample-RAM commit and output generation have
-distinct edges. Observe the appropriate completion before reusing source bytes
-or issuing dependent work.
+To start a voice, write its source and playback parameters to the shared staging
+bank, then issue PLAY. The command FIFO holds that configuration until execution.
+Later gain, pause and stop commands use the same path; a selected-slot register
+window also permits live parameter changes. The programming sequence below
+separates sample loading, command execution and playback.
 
 ### APU specifications
 
@@ -42,22 +41,21 @@ or issuing dependent work.
 | System-cycle timebase | 33,868,800 cycles per second; 768 cycles per output frame |
 | Sample-RAM transfer budget | 1,058,400 words per second; 32 cycles per scheduled word |
 
-These capacities are different storage: a queued command is not sample data,
-and a selected-slot register window is not another payload RAM. The source
-address range above is accepted in sample descriptors; ordinary CPU loads and
-stores at that address do not access the private sample bytes.
+The `40000000H` source range addresses private RAM for voice playback.
+CPU and DMA transfers use TRANSFER_DATA instead of accessing that range directly.
 
 ![Command capture, live parameters and the per-slot sample path](figures/apu-paths.svg)
 
-Command words carry configuration, not sample payload. The lower path reads
-source data during output processing. The sample-transfer FIFO is separate
-from the command FIFO; its timing and visibility are specified below.
+The command path installs a voice's parameters. At each output frame, the
+voice path reads or generates samples, applies interpolation, filtering and
+gain, and contributes to the stereo mixer. The separate transfer path supplies
+sample RAM.
 
 ## Programming sequence
 
-Choose a source region and decoder before programming a voice. The source
-address, transfer offset and CPU address of an upload buffer are different
-operands.
+First choose where the samples will reside and how they will be decoded.
+ROM samples can play in place. Samples produced or modified in RAM must be
+loaded into private sample RAM before playback.
 
 | Starting material | Hardware route to playback |
 |---|---|
@@ -111,9 +109,8 @@ START_SAMPLE and loop bounds count source frames.
    DMA completion, and an interrupt wakeup alone does not identify which
    condition completed. See [End events and interrupts](#end-events-and-interrupts).
 
-The sections below define these register operations and hardware effects. The
-[worked download](#apu-download-budget) gives a complete raw-port transfer
-sequence with separate DMA completion and sample-transfer control.
+The [worked download](#apu-download-budget) shows the transfer-port sequence
+and the timing of DMA receipt and surplus prefetch.
 
 ### Start a PCM loop or square voice
 
@@ -192,11 +189,10 @@ immediately. This zero-fade stop does not publish SLOT_ENDED.
 
 ### Stage, capture, execute
 
-Write a command's parameter words into the staging bank, then write its complete
-command word to CMD. The recognized values are zero through five, not a
-low-byte opcode field. For example, `00000101H` is not another spelling of PLAY.
-The staging bank is shared by all slots. Complete its parameter writes and CMD
-capture before another producer uses that bank.
+Write the parameters to the shared staging bank, then write CMD last. CMD
+decodes the entire word; the command table defines values zero through five.
+Serialize access to staging so another routine cannot alter a partly prepared
+command.
 
 A valid nonzero command captures **all 21 staging words** into one FIFO entry.
 Subsequent staging writes cannot change that entry. Capture resets the visible
@@ -208,11 +204,10 @@ NONE captures nothing and leaves the staged parameters intact. An unrecognized
 word records BAD_CMD and clears staging to defaults. A latched APU fault does
 not itself block later valid commands.
 
-The service edge first advances preceding audio time, then executes all queued
-commands in FIFO order. It does not render an output sample between each pair
-of commands merely because they occupy different FIFO entries. There is no
-specified per-command elapsed-cycle charge here. Do not use a command count as
-an output-sample delay.
+At command execution, the APU first completes audio due through that cycle,
+then executes the queued commands in FIFO order. Consecutive commands can
+execute without an output frame between them. Use SAMPLE_SEQUENCE when an
+operation requires an elapsed number of output frames.
 
 ### Preserve FIFO entries when every command matters
 
@@ -222,10 +217,9 @@ another accepted command replaces the oldest entry. It neither waits for free
 space nor reports a FIFO-full fault. Use the reported space before submitting a
 burst that must preserve every command.
 
-These queue reads report queue state without advancing audio in their own read
-operations. STATUS and selected-slot reads have the separate synchronization
-behavior described below. Reading a count is not an acknowledgement or a
-command execution request.
+Queue-counter reads return the current queue state. They leave commands
+queued; STATUS and selected-slot accesses synchronize audio through their
+access cycle as described below.
 
 ### Command words
 
@@ -249,7 +243,9 @@ slot-ended event. A nonzero fade of an active slot instead retains its bank
 while fading. Pause and resume do not clear it. SET_SLOT_GAIN can also retain a
 gain word in an inactive bank; that write does not start playback.
 
-### The selected-slot window is a live bank, not another staging bank
+<a id="the-selected-slot-window-is-a-live-bank-not-another-staging-bank"></a>
+
+### Live slot parameters
 
 Write staging SLOT to select one bank through its low four bits. Only that
 staging write immediately changes selection; the other staging parameter
@@ -257,9 +253,8 @@ writes merely prepare a later command. The selected window reads and writes
 the bank itself, after synchronizing preceding output to the access cycle.
 A live write does not enqueue CMD, reset staging or activate an idle slot.
 
-The word at selected-window index 10 is stored slot data. It is **not** the
-window selector. To select a different bank, write staging SLOT at `08000148H`,
-not the selected-window index-10 port at `080001bcH`.
+Select a bank through staging SLOT at `08000148H`. The selected-window SLOT
+word at `080001bcH` is ordinary bank data and leaves the selection unchanged.
 
 ACTIVE_MASK bit n means slot n is non-idle. Paused and fading slots still have
 active bits. STATUS.BUSY is any active slot or queued command, so it can remain
@@ -325,9 +320,9 @@ The selected addresses alias the bank chosen by staging SLOT bits 3:0.
 |19|GENERATOR_KIND| `0800016cH` | `080001e0H` | `00000000H` | `00000000H` |
 |20|GENERATOR_DUTY_Q12| `08000170H` | `080001e4H` | `00000800H` | `00000000H` |
 
-The complete parameter words are stored. Their decoded source units, signed
-rate/gain formats, filter halves and live effects are specified in the following
-sections. Retention is not a validation of the source data those words describe.
+Each port retains the complete parameter word. The following sections give
+the source units, signed rate and gain formats, filter fields and live-write
+effects.
 
 ### Command, status, event and queue ports
 
@@ -387,9 +382,10 @@ DMA accesses have the distinct FIFO effects described in sample RAM transfer.
 
 ## Voice sources and their lifetime
 
-The APU has sixteen independently indexed voices and produces 44,100 stereo output frames per second. Each output channel is a signed 16-bit sample. One slot holds one voice: PLAY on an occupied slot replaces that voice rather than adding another layer.
-
-A source description is programmed explicitly. PCM playback does not obtain its sample rate, channel count or other metadata by parsing a container header.
+Program a source description for each sampled voice. The description identifies
+the byte region, decoder, channel layout, frame count and loop. PCM uses these
+register values directly, so a PCM source needs only sample bytes rather than
+a file header.
 
 | Source field | Meaning |
 |---|---|
@@ -415,21 +411,36 @@ For source-buffer playback, PLAY binds the entire region identified by SOURCE_AD
 | Selected cartridge ROM | Entire extent within 10000000H–2FFFFFFFH, with a ROM device present and the extent within that card's actual ROM bytes |
 | Private sample RAM | 512 KiB at 40000000H–4007FFFFH |
 
-Main RAM, cartridge RAM and cartridge mailbox space are not buffer-playback sources. Transfer sample data from other storage into private sample RAM through the documented transfer ports first. Source-format descriptors do not create another memory route. Descriptor binding does not wrap at the end of private sample RAM. Zero-filled CPU reads beyond an installed system-ROM image do not make that tail valid descriptor padding.
+For samples held in main RAM, card RAM or other storage, transfer the bytes
+into private sample RAM first. A bound source must fit within actual installed
+storage, including the end of private RAM or a ROM. The zero-filled tail of a
+CPU ROM read is outside the bindable source extent.
 
-CMD capture does not retain a cartridge socket. PLAY uses the socket selected when PLAY executes; keep SELECT correct until binding occurs. A later SELECT write alone does not redirect the playing voice. An accepted live write to a source field performs another binding using the selection current for that access, not the voice's retained socket. For the source-field group and failed-write effects, see **Source fields are individually live**. For SELECT itself, see [Book III: Cartridge sockets and mapped card devices — Cartridge controller](../book3/cartridge.md#cartridge-controller).
+PLAY binds the cartridge ROM selected at execution. Keep that socket selected
+until the command executes; later SELECT writes leave the voice on its bound
+ROM. Live source-field writes bind again using the selection at that access.
+See [Source fields are individually live](#source-fields-are-individually-live)
+and [Cartridge controller](../book3/cartridge.md#cartridge-controller).
 
 <div class="keep-together">
 
-The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use its current contents. BADP retains its current and previous decoded frames, so changing compressed bytes does not guarantee that already-decoded samples change immediately.
+The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use the current bytes. BADP caches its current and previous decoded
+frames; edits to compressed bytes take effect when those bytes are decoded again.
 
 </div>
 
-A failed source binding raises SOURCE_RANGE (00000102H), with SOURCE_ADDR as fault detail. A failed PLAY leaves the previous voice and slot bank unchanged. This binding check is not metadata validation: PLAY does not reject sample rate, channel count, frame count, data offset, data-byte count or bit depth on those grounds.
+A failed binding raises SOURCE_RANGE (`00000102H`) with SOURCE_ADDR as detail;
+a failed PLAY leaves the old voice and slot bank intact. Binding checks the
+source region. The decoder then uses the programmed rate, channels, frame count,
+data offset and bit depth directly.
 
-**SOURCE_DATA_BYTES does not limit PCM or BADP reads.** SOURCE_BYTES bounds the region binding, not each later decode operation. Supply mutually consistent metadata and accessible header, table and sample data. A mismatch carries no promise of padding, silence, clipping or recovery.
+**SOURCE_DATA_BYTES does not limit decoding.** SOURCE_BYTES sets the bound
+region, while decode addresses follow the format and frame metadata. Keep the
+header, seek table and sample payload consistent with those values.
 
-Any nonzero GENERATOR_KIND bypasses source binding, but the defined output generator is specifically kind one. Do not use another nonzero kind as a substitute for an empty or silent source: it acquires no source-buffer binding, and no output behavior is specified here for it.
+GENERATOR_KIND=1 selects the square generator and bypasses source binding.
+Other nonzero values also bypass binding but have no defined waveform; use one
+for square output and zero for sampled output.
 
 ## PCM byte layouts and interpolation
 
@@ -464,6 +475,36 @@ For example, mono PCM16 frames [0,10000,−10000,0], a source rate of 22050 Hz a
 
 The final pair is zero because the last source frame is held for interpolation until the cursor reaches the nonloop end.
 
+### Size a PCM source
+
+For mono or stereo PCM, count storage from source frames, not output frames:
+
+```text
+bytes per source frame = channels × bytes per channel sample
+PCM payload bytes      = SOURCE_FRAME_COUNT × bytes per source frame
+```
+
+SOURCE_DATA_OFFSET locates that payload within the bound SOURCE_BYTES region.
+Keep the complete payload inside the region. The descriptor words are programmed
+separately; no PCM file header is required in the sample bytes.
+
+At a source rate of 44,100 Hz, the following sizes hold one second of source
+material. With unity RATE_STEP_Q16, no loop and START_SAMPLE=0, each produces
+44,100 output frames:
+
+| PCM format | Bytes per source frame | One second of payload | Frames in all 512 KiB of sample RAM |
+|---|---:|---:|---:|
+| 8-bit mono | 1 | 44,100 | 524,288 |
+| 8-bit stereo | 2 | 88,200 | 262,144 |
+| 16-bit mono | 2 | 88,200 | 262,144 |
+| 16-bit stereo | 4 | 176,400 | 131,072 |
+
+The last column assumes one payload starting at RAM offset zero, with no other
+sample storage allocated. For example, 131,072 stereo PCM16 frames last about
+2.972 seconds at 44,100 Hz and unity rate. Slots share this RAM: sixteen slots
+do not provide sixteen private 512-KiB banks. Several slots can instead bind
+the same stored sample and retain independent cursors and playback settings.
+
 ## BADP compressed source format
 
 BADP is selected by SOURCE_BITS_PER_SAMPLE=4. Its source metadata still comes from the slot fields. The decoder consumes the following header words relative to SOURCE_ADDR, not relative to SOURCE_DATA_OFFSET:
@@ -484,9 +525,13 @@ Each seek entry occupies eight bytes.
 
 </div>
 
-The data start is SOURCE_ADDR + SOURCE_DATA_OFFSET. Header and seek-table addressing therefore use the source base, whereas a seek entry's compressed offset uses the data base. No signature or version check, or other consumed BADP header field, is specified by this decode path.
+The data start is SOURCE_ADDR + SOURCE_DATA_OFFSET. Header and seek-table
+addresses use the source base; compressed-block offsets use the data base.
+Only the header fields listed above are consumed.
 
-Seeking chooses the last entry whose frame number is no greater than the requested frame. With an empty table it begins at frame zero and compressed offset zero. If no entry frame is no greater than the request, the initial selection of entry zero remains. Do not rely on an invented missing-entry fault.
+Seeking chooses the last entry whose frame number is no greater than the
+requested frame. An empty table starts at frame zero and compressed offset
+zero. If every entry frame exceeds the request, entry zero is selected.
 
 ### Blocks and channel state
 
@@ -575,7 +620,10 @@ BLOCK_FRAMES=2, BLOCK_BYTES=9, initial predictor=1000 and index=0. Code 1 comes 
 
 A seek clears both decoded-frame caches. Starting from the seek-table choice, decoding advances through block headers to the block containing the requested frame, then applies the forward nibble recurrence through that frame. A request for the current or previous cached frame reuses that decoded pair. An earlier uncached request seeks again and decodes forward.
 
-Consequently negative RATE_STEP_Q16 does not run BADP prediction backward. It requests earlier source frames, which are obtained through the same seek and forward-decode procedure. Seek-table placement affects the amount of compressed data that must be decoded to obtain such a frame; no constant-time reverse-decoding guarantee follows from negative rate support.
+With negative RATE_STEP_Q16, the cursor requests earlier frames. An uncached
+frame is obtained by seeking to an earlier entry and decoding forward through
+it. Closely spaced seek entries reduce the amount of compressed data needed
+for these backward requests.
 
 ## Source phase, rate and duration
 
@@ -769,25 +817,30 @@ The installed system clock is 33,868,800 Hz. The APU sample clock runs at 44,100
 | Sample-RAM service for 16 words | 16 × 32 = 512 cycles |
 | Sample-RAM service for 4 words | 4 × 32 = 128 cycles |
 
-These are scheduled internal transfer costs, not electrical bus ratings. They do not include CPU instruction execution, transfer-register programming or DMA source-bus time. MANUAL_WRITE stores take effect at their CPU port-write edge; they do not pass through the timed DMA transfer FIFO.
+These costs cover the sample-RAM side of a DMA transfer. Add CPU setup and
+system-DMA transport separately. MANUAL_WRITE stores take effect at the CPU
+port-write edge, bypassing the FIFO and its timed batches.
 
-This transfer budget belongs to the single RAM/FIFO path, not to each playback
-slot. Its twenty-four words per output-frame interval are not a source-fetch
-allowance to divide among the voices: PCM and BADP playback read their bound
-sources without passing through this FIFO. Playing slots advance on the common
-output clock while transfer batches follow their own deadlines. Adding voices
-does not divide the output rate, and changing transfer mode does not restart
-the output-frame clock.
+All transfers share the RAM/FIFO path. Playback reads its bound sources
+independently of that path, so all sixteen slots retain the 44,100-Hz output
+cadence during sample transfers. Transfer-mode changes leave the output-frame
+clock running.
 
 For a scheduled batch of N words:
 
-**batch deadline = scheduling anchor + 32 × N system cycles**
+**batch completion cycle = batch start cycle + 32 × N**
 
-The transfer-rate accumulator starts at zero and resets on a change of transfer mode. Rewriting the same mode preserves it. At the installed clock ratio, every integer-word batch takes exactly 32 × N cycles and leaves zero fractional carry. A batch has one completion edge: its words do not become visible at successive 32-cycle intervals.
+All N words transfer together at completion. They do not become visible one at
+a time during the interval. Rewriting the same mode preserves a pending batch;
+changing mode cancels it.
 
 ### Sample sequence and edge order
 
-SAMPLE_SEQUENCE at 08000200H reports the low 32 bits of the accumulated output-frame count. Reset starts the count and its fractional timing remainder at zero and establishes the clock phase. The count advances once per 768 system cycles from that phase, including periods with no active voices. Reading it brings the count through the access cycle. A write does not set or reset this count; later reads still return the running sequence. Such a write is not rejected as a read-only-port fault.
+SAMPLE_SEQUENCE at `08000200H` is the low 32 bits of the output-frame count.
+Reset establishes its phase and clears the count. It advances once per 768
+system cycles even when every slot is idle. A read includes all frames due
+through that access cycle. Writes leave the running count unchanged and cause
+no read-only-port fault.
 
 A transfer completing at an output-sample edge is visible to voice processing for that sample. For an access to TRANSFER_ADDRESS, TRANSFER_DATA or TRANSFER_CONTROL at cycle t, the order is:
 
@@ -859,7 +912,11 @@ TRANSFER_CONTROL retains the entire programmed word. Only bits 1:0 select the mo
 | 2 | DMA_WRITE | FIFO-to-RAM batches |
 | 3 | DMA_READ | RAM-to-FIFO batches |
 
-Changing the decoded mode cancels scheduled service, empties the 16-word FIFO and resets transfer timing carry. It preserves RAM, the data latch, TRANSFER_ADDRESS readback and the current moving offset. STOP is not a RAM clear. Rewriting the same mode—even with different upper bits—does not empty the FIFO, cancel an admitted batch or reset carry. Both kinds of control write update requests and attempt to schedule work when no batch is pending.
+Changing the decoded mode cancels the pending batch and empties the FIFO.
+It preserves sample RAM, the data latch, TRANSFER_ADDRESS readback and the moving
+offset. Rewriting the same mode, even with different upper bits, preserves the
+FIFO and pending batch. Either write updates the request levels and starts an
+eligible batch when none is pending.
 
 CPU DATA reads always return the existing data latch. They never fetch RAM, dequeue FIFO data or advance the offset. CPU DATA writes always replace the latch. In MANUAL_WRITE only, they also write RAM immediately and advance the offset. In every other mode a CPU DATA write changes only the latch; it cannot feed the DMA FIFO.
 
@@ -913,11 +970,11 @@ slot, and EVENT_SOURCE_ADDR records that slot's source address from before its
 bank was cleared. EVENT_SEQ advances modulo 2³². All event words are published
 before the central APU interrupt request, bit 5 (`00000020H`), is raised.
 
-This is one latest-event latch, not an event FIFO. If slots 0 and 1 end in the
-same advancement, the event sequence advances twice and the latest payload is
-slot 1. The central pending bit may still represent only one unacknowledged
-request. A callback count cannot reconstruct all coalesced ends or their source
-addresses. Use the event sequence and active mask with that limitation in mind.
+The event registers hold the latest end. If slots 0 and 1 end during the same
+audio advancement, EVENT_SEQ advances twice and EVENT_SLOT becomes 1. The
+central pending bit can combine both requests. Compare the sequence to detect
+new ends and inspect ACTIVE_MASK to determine which slots remain occupied;
+intermediate event addresses are overwritten.
 
 Reading event words does not clear them. There is no separate APU event-ACK
 port. Acknowledge central bit 5 through the [interrupt controller](irq.md);
@@ -930,12 +987,12 @@ STOP with zero fade will wait for an event that command does not produce.
 A nonzero fade needs output progress to reach its end; pausing is not a way to
 complete it. The playback section states its exact pause/fade behavior.
 
-For one controlled outstanding end, sample a BSS service sequence before issuing
-the operation that can produce the end, then wait on that predicate with
-`halt_until_irq`. The handler must service the APU source and advance that
-software sequence. Other IRQs may wake the caller without satisfying it.
-No fixed request-to-handler delay or one-callback-per-output-end guarantee is
-implied. The service sequence must belong to that one outstanding end operation.
+When waiting for an end interrupt, have the handler record the event sequence
+and service the central APU source. Retain a baseline before starting the voice
+or fade, then recheck the completion predicate after every `halt_until_irq`.
+An unrelated interrupt can also wake the CPU. When several voices may end,
+account for the latest-event overwrite rule rather than assigning one handler
+call to each voice.
 
 ## Faults and reset
 
@@ -953,22 +1010,19 @@ or stops all other voices. FAULT_ACK reads zero.
 | `00000001H` | BAD_CMD | Unrecognized complete CMD word; detail is that word |
 | `00000102H` | SOURCE_RANGE | Source binding failed; detail is SOURCE_ADDR |
 
-A failed PLAY bind leaves the prior slot unchanged. A failed active source-bank
-write is different: the raw parameter has already changed; output stops and
-the slot becomes inactive, but its raw bank is not cleared. Do not treat a
-sequence of live source edits as a reversible transaction.
+A failed PLAY leaves the previous slot unchanged. A failed live source-field
+write retains the newly written parameter but stops and deactivates the voice;
+its bank remains readable. Use a staged PLAY for a coherent replacement.
 
-These fault conditions do not certify every metadata field, byte range or
-format choice. DATA_BYTES does not bound decoding, and merely selecting a bit
-depth does not validate that the source contains that encoding. The source and
-format sections describe the actual datapath choices. No FIFO-full fault or
-automatic producer stall protects a full command queue.
+Source metadata controls decode addresses directly. Match it to the supplied
+format and payload. Command-queue overflow is separate from these faults: a
+full queue replaces its oldest entry, so check CMD_FREE before a required burst.
 
 Ordinary CPU access to `40000000H` does not reach sample RAM; it raises the
 system UNMAPPED fault. Invalid mapped I/O widths or alignment use the system
 UNALIGNED_IO fault. Mapped writes to the read-only APU ports use system
-READ_ONLY and do not change those ports. These system reports are not the APU
-BAD_CMD/SOURCE_RANGE latch and do not retroactively undo accepted operations.
+READ_ONLY and do not change those ports. These accesses report through the system bus-fault registers, separately from
+the APU BAD_CMD/SOURCE_RANGE latch.
 
 An APU reset clears sample RAM, transfer FIFO/state, commands, slots, output
 voices, faults, events and sample-clock sequence. It restores the staging
@@ -982,9 +1036,18 @@ STOP changes transfer mode. Neither is a private-sample-RAM clear operation.
 
 ## Worked download: requested data and surplus prefetch
 
-The following timelines separate sample-RAM prefill from DMA transport. Let **O** be a word-aligned programmed starting byte offset within sample RAM, and **Wi** the word at **O + 4i**. Moving offsets below are shown as additions to O, not CPU addresses or `TRANSFER_ADDRESS` readback. These bounded examples do not wrap sample RAM.
+The following examples download twenty words and four words from sample RAM.
+Let **O** be the word-aligned starting byte offset and **Wi** the word at
+**O + 4i**. The tables show the moving offset; TRANSFER_ADDRESS continues to
+read O. Both examples stay within sample RAM without wrapping.
 
-Assume the installed clock is 33,868,800 Hz, the FIFO is empty, and timing carry is zero. Program `TRANSFER_ADDRESS` while stopped, then prearm DMA0 with a fixed `TRANSFER_DATA` source, an aligned incrementing RAM destination, count 20 or 4, APU_READ qualification, FORCE write qualification and 16-word blocks (`CONTROL=00003C12H`). The channel is BUSY but waiting. **Cycle 0** is the register-access edge that genuinely changes `TRANSFER_CONTROL` to DMA_READ, not the start of setup instructions. Keep the CPU inactive afterward. There is no competing DMA, quiescence, destination-boundary crossing, intervening address/control write or clock change; scheduled work completes at its exact deadlines. Rewriting an already-selected DMA_READ mode does not establish this starting state.
+With the transfer unit stopped and FIFO empty, program TRANSFER_ADDRESS and
+arm DMA0 for a fixed TRANSFER_DATA source, an aligned incrementing RAM destination,
+count 20 or 4, APU_READ/FORCE requests and sixteen-word blocks
+(`CONTROL=00003C12H`). The channel waits for prefill. Cycle 0 is the write changing
+TRANSFER_CONTROL from STOP to DMA_READ. The timelines use the installed
+33,868,800-Hz clock, with no intervening CPU accesses, other DMA activity, system
+pause or destination-region crossing.
 
 </section>
 
@@ -1012,7 +1075,8 @@ Sample transfer costs 32 cycles per word. The initial prefill always contains 16
 
 DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block schedules prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
 
-After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. These device-work timelines guarantee neither actual CPU instruction elapsed time nor polling or STOP latency; the STOP boundary names its access edge.
+After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. The STOP cycles refer to register-write edges. A polling loop adds its own
+instruction time before that write.
 
 ### Download words in BLua
 
@@ -1067,6 +1131,5 @@ After successful bus accesses, the results are:
 The second receipt shows that STOP preserves the overlapping sample-RAM bytes.
 Both channel completions have count zero and STATUS=DONE, even with their
 interrupts masked. STOP clears the transfer FIFO and any not-yet-due prefetch;
-it does not clear the DMA status or copied destination. The timing tables
-above distinguish stopping before and exactly at a prefetch deadline. Polling
-instructions do not establish either exact STOP edge or an ideal cycle count.
+it does not clear the DMA status or copied destination. The timing tables above show how the moving offset differs when STOP occurs
+before or exactly at the prefetch deadline.

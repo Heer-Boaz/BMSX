@@ -2,18 +2,24 @@
 
 ## 1. OUTLINE
 
-The PCRTC reads display images through two independent reading circuits and controls
-their output geometry, background, display timing, and display-event interrupts. A
-cartridge programs framebuffer selection and display windows, enables the required
-circuits, and acknowledges the events it uses.
+The PCRTC produces the display from images stored in GPU local memory. Two
+reading circuits select source images, position and magnify their windows,
+and combine their colors over a programmable background. Use one circuit for
+a single framebuffer, or both for independently positioned images and
+composited displays. Timing registers establish the beam sequence and its
+display-event interrupts.
 
-Each reading circuit has its own framebuffer selection, source position, signal
-position, magnification, and window size. Output control selects the enabled circuits
-and their composition settings. Both circuits read GPU local memory directly: PCRTC
-does not rasterize primitives, issue GP0 packets, copy a framebuffer or retain a
-second composed image. The GPU produces stored words; PCRTC selects, decodes and
-combines samples from those words. A GPU completion and a display-latch edge are
-therefore different synchronization points.
+For each circuit, program a framebuffer base, storage format and source
+origin, followed by its signal position, magnification and window extent.
+PMODE enables the circuits and selects their composition. Both circuits read
+the same local memory directly. The GPU prepares its stored words; PCRTC
+selects and decodes samples from them as the display source.
+
+Display changes are synchronized at VBlank entry. Configuration writes first
+update the programmed register bank; the display latch then takes all 22
+configuration words together. Finish drawing before selecting its storage,
+and distinguish the GPU's completion indication from this display-selection
+edge.
 
 ![PCRTC display data path and controls](figures/pcrtc-overview.svg)
 
@@ -23,28 +29,27 @@ Section 4: the intervening addresses are not PCRTC registers.
 
 ### 1.1. TECHNICAL SPECIFICATIONS
 
-PCRTC supplies two reading circuits and one output-composition path. Both circuits
-read the same GPU local memory; enabling a second circuit does not add framebuffer
-storage. Distinguish that memory's sixteen-bit words from the thirty-two-bit words
-used to program PCRTC.
+PCRTC supplies two reading circuits and one output-composition path. Local
+memory stores sixteen-bit words; PCRTC registers are programmed with
+thirty-two-bit words. The table gives the installed resources and field ranges.
 
 | Resource or interface | Specification |
 |---|---|
 | Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
 | Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
 | Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
-| Register map | 26 thirty-two-bit slots: two separate address ranges containing 12 and 14 words; not contiguous RAM |
-| Configuration storage | 22 programmed words and a separate 22-word displayed-configuration latch; the latch is not another addressable register bank |
+| Register map | 26 thirty-two-bit slots in separate 12-word and 14-word address ranges |
+| Configuration storage | 22 programmed words and a separate 22-word display latch |
 | Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
 | Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
 | Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
-| Beam-timing reference | 13,500,000 Hz; not a specified independent core or memory clock |
+| Beam-timing reference | 13,500,000 Hz |
 | Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
 | Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
 
-Window-field capacities are not rated video modes. Horizontal output boundaries
-require the signal-step conversion in Section 2.1; magnification alone does not
-determine output width. Both reading circuits are disabled at reset.
+Use the signal-step conversion in Section 2.1 to calculate horizontal output
+boundaries. Section 3.3 gives complete example configurations. Both reading
+circuits are disabled at reset.
 
 **Calculated reset-timing example.** With the reset timing words, the horizontal
 sum H is 3456, divider product D is 8, LC is 32 and vertical multiplier U is 1.
@@ -54,7 +59,6 @@ The half-line period is therefore:
 T = 27648 / 864000000 seconds = 32 microseconds
 ```
 
-The denominator is part of the timing equation, not an 864 MHz clock specification.
 For a beam restart at system cycle zero:
 
 | Landmark | Half-line | Time from restart | Rounded system-cycle deadline |
@@ -64,11 +68,11 @@ For a beam restart at system cycle zero:
 | VSync; VSINT | 585 | 18.720 ms | 634024 |
 | Field end | 628 | 20.096 ms | 680628 |
 
-This gives approximately 49.761146497 field repetitions per second, not exactly
-50 Hz. Fractional system cycles are retained between events; deadlines round upward
+This gives approximately 49.761146497 field repetitions per second.
+Fractional system cycles are retained between events; deadlines round upward
 without accumulating a fresh rounding error each half-line. An executing CPU
-instruction may finish before a crossed deadline is serviced. These are event
-deadlines, not interrupt-handler response times or a supported-video-mode list.
+instruction may finish before a crossed deadline is serviced. Allow for CPU
+interrupt acceptance and handler execution after these event deadlines.
 HSync points repeat every two half-lines, but a pending HSINT suppresses further
 interrupt requests until acknowledged.
 
@@ -79,14 +83,8 @@ flow have their own instruction costs. Thus 22 separately issued configuration
 stores contribute 44 base cycles before preparation or display-edge waiting; they
 do not form an atomic display update. A word-sequence store instead costs two base
 cycles plus `n/4` rounded upward for its `n` words. Respect the two address ranges.
-These are instruction charges, not an electrical transfer-time or bandwidth rating.
-Immediate readback confirms programmed words, not display-latch completion.
-
-**Unspecified physical guarantees.** No independent PCRTC core/PLL clock, electrical
-pixel-clock waveform, IO or local-memory bus clock or pin width, contention/arbitration
-schedule, per-pixel fetch-cycle cost, or guaranteed sustained transfer/pixel rate is
-specified. The reference clock, register width and representable window sizes must
-not be used to invent those guarantees.
+Immediate readback confirms programmed words. Use a subsequent VBlank entry to
+establish that the display latch has taken them.
 
 ## 2. FUNCTION
 
@@ -405,8 +403,8 @@ alpha there.
 
 ### 2.6. Programmed words and displayed settings
 
-Configuration registers retain complete written words. Readback returns the programmed
-word immediately; it does not report whether that word has reached the display latch.
+Configuration registers retain complete written words. Readback returns the
+programmed value immediately. Display uses the separate configuration latch:
 
 ```text
 Write a changed configuration word
@@ -422,14 +420,14 @@ Write a changed configuration word
                          Display uses the latched settings
 ```
 
-The display latch takes all 22 configuration words together on **VBlank entry**, at the
-end of the active-display interval. It does not wait for VBlank exit or field end. This
-latch precedes the system VBlank interrupt request and is independent of the PCRTC
-event masks.
+The display latch takes all 22 configuration words together on **VBlank entry**,
+at the end of the active-display interval. This precedes the system VBlank
+interrupt request and operates independently of the PCRTC event masks.
 
-Do not use immediate register readback as confirmation of display visibility. A VBlank
-entry between separate store instructions can take an intermediate configuration;
-those instructions do not form an atomic multiword update.
+Complete the configuration before its intended VBlank entry. An edge between
+separate store instructions takes the values written up to that point, including
+an intermediate configuration. Use the fresh-edge sequence in Section 3.4 when
+establishing display completion.
 
 Writing an unchanged configuration word has no effect. A changed write to either
 `SMODE1` word or any `SYNCH1`, `SYNCH2`, or `SYNCV` word also recalculates timing and
@@ -444,15 +442,15 @@ settings immediately.
 The standard BIOS convention assigns cartridge display to circuit 1. During
 supervisor service, the cartridge's displayed circuit-1 framebuffer and window
 become circuit 2's underlay, while firmware programs circuit 1 for its terminal.
-This changes source selection; it does not copy the cartridge image. Preserve
+The underlay continues to read the cartridge's stored image. Preserve
 the [firmware VRAM reservation](memory.md#firmware-reservation-in-vram).
 
-Both circuits remain directly programmable. Using circuit 2 in bare-metal code
-is not prohibited by MMIO protection, but supervisor entry preserves only the
-cartridge's displayed circuit-1 view as its underlay. The complete twelve-word
+Both circuits remain directly programmable. A program using circuit 2 must
+allow for supervisor entry displaying only the cartridge's circuit-1 view as
+its underlay. The complete twelve-word
 composition banks, including circuit 2, are retained separately for programmed
 and displayed state and restored on leave. Timing words, CSR, IMR and the
-physical beam are global, not banked: supervisor changes to them persist.
+physical beam are global: supervisor changes to them persist.
 See [Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service)
 for entry, leave and shared-memory lifetime.
 
@@ -503,11 +501,10 @@ raises VSINT.
 
 ### 2.8. Events and interrupts
 
-Normal operation generates **HSINT and VSINT only**. SIGNAL, FINISH, and EDWINT are
-retained event positions, but have no normal event producer. They remain clear after
-reset during normal operation; they are not hardwired-zero bits. A pending bit in any
-of the five positions obeys the same acknowledgement and masking rules. The names
-SIGNAL, FINISH, and EDWINT do not indicate drawing-completion events.
+Normal operation generates **HSINT and VSINT**. The remaining event positions,
+SIGNAL, FINISH and EDWINT, are retained pending bits and remain clear after
+reset during normal operation. All five positions use the acknowledgement
+and masking rules below. Use the GPU's own completion interface for drawing.
 
 ```text
 Event raised ──► Is its CSR bit already set?
@@ -577,10 +574,10 @@ If `n` payload words have been consumed by image assembly and retained, the pref
 `min(width × height, 2 × n)` pixels. They are processed in row order under the accepted
 upload's retained mask-bit controls. With mask checking enabled, destination bit 15 = 1
 suppresses that pixel's write. On a write, mask-setting mode forces bit 15; otherwise
-source bit 15 is retained. The missing rectangle remainder is not filled. FLUSH or RESET
-can therefore commit a partial upload rather than cancel it, but does not guarantee a
-write for every prefix pixel. Here the count is in input command words, not local-memory
-word addresses.
+source bit 15 is retained. FLUSH or RESET therefore processes the retained
+prefix under these mask rules and leaves the missing remainder untouched.
+Here the count is in input command words; each supplies up to two local-memory
+pixels.
 
 FLUSH leaves the PCRTC and GPU draw/display settings unchanged. RESET restores the
 PCRTC configuration, CSR, and IMR, sets FIELD to zero, restarts the beam, and installs
@@ -748,6 +745,105 @@ requests an interrupt while this mask remains installed.
 If step 2 clears a pending HSINT while timing runs, the next HSync event point is after
 the current half-line. Masked events remain pending until acknowledged; a later unmask
 can therefore request an interrupt immediately.
+
+### 3.3. Select a display geometry and its timing
+
+Output size, source sampling and beam repetition are separate settings. Changing
+`DISPLAY1_HIGH` changes the window; it does not select a corresponding field rate.
+Use the following complete combinations when a 256–640-column GX16 picture is
+required. They give the required register combinations; other configurations
+follow the field equations in Section 2.
+
+Each example enables circuit 1 only, uses source origin (0,0), and reads linear
+GX16 storage with a **1024-word source stride**. Prepare the source image before
+publishing it. Use these common composition words:
+
+| Address | Register | Value |
+|---|---|---|
+| `08010354H` | PMODE_LOW | `0000FF21H` |
+| `08010358H` | PMODE_HIGH | `00000000H` |
+| `0801035CH` | DISPFB1_LOW | `000FA000H` |
+| `08010360H` | DISPFB1_HIGH | `00000000H` |
+| `0801037CH` | BGCOLOR_LOW | `00000000H` |
+| `08010380H` | BGCOLOR_HIGH | `00000000H` |
+
+`DISPFB1_LOW` selects base word zero, FBW=16 and GX16 storage. The two
+`DISPLAY1` words below choose the signal position, magnification and output
+extent. All rows use X magnification 4, Y magnification 1 and horizontal signal
+step 4: adjacent output columns therefore select adjacent source words.
+
+| Output geometry | Timing group | DISPLAY1_LOW | DISPLAY1_HIGH | SYNCV_LOW | SMODE2_LOW |
+|---|---|---|---|---|---|
+| 256 × 192 | A | `018252A8H` | `000BF3FFH` | `02101404H` | `00000000H` |
+| 256 × 212 | A | `018252A8H` | `000D33FFH` | `02101404H` | `00000000H` |
+| 256 × 240 | A | `018252A8H` | `000EF3FFH` | `02101404H` | `00000000H` |
+| 320 × 240 | A | `018252A8H` | `000EF4FFH` | `02101404H` | `00000000H` |
+| 368 × 240 | A | `018252A8H` | `000EF5BFH` | `02101404H` | `00000000H` |
+| 512 × 240 | A | `018252A8H` | `000EF7FFH` | `02101404H` | `00000000H` |
+| 640 × 240 | A | `018252A8H` | `000EF9FFH` | `02101404H` | `00000000H` |
+| 640 × 448, interlaced | B | `0183228CH` | `001BF9FFH` | `01A01801H` | `00000001H` |
+| 640 × 480, interlaced | B | `0183228CH` | `001DF9FFH` | `01A01801H` | `00000001H` |
+| 640 × 512, interlaced | A | `018482A8H` | `001FF9FFH` | `02101401H` | `00000001H` |
+
+Write DISPLAY1_LOW at `08010364H`, DISPLAY1_HIGH at `08010368H`, SYNCV_LOW at
+`080103CCH` and SMODE2_LOW at `080103B4H`. Write SMODE2_HIGH (`080103B8H`)
+as zero. The remaining timing words come from the selected group:
+
+| Address | Register or programming phase | Group A | Group B |
+|---|---|---|---|
+| `080103ACH` | SMODE1_LOW, hold beam during setup | `40836504H` | `40834504H` |
+| `080103ACH` | SMODE1_LOW, run after setup | `40806504H` | `40804504H` |
+| `080103B0H` | SMODE1_HIGH | `00000007H` | `00000007H` |
+| `080103BCH` | SYNCH1_LOW | `1FC83030H` | `1F06F040H` |
+| `080103C0H` | SYNCH1_HIGH | `0007F5C2H` | `0007F5B6H` |
+| `080103C4H` | SYNCH2_LOW | `003484BCH` | `0033A4D8H` |
+| `080103C8H` | SYNCH2_HIGH | `00000000H` | `00000000H` |
+| `080103D0H` | SYNCV_HIGH | `00A90005H` | `00C78006H` |
+
+The resulting repetition rates follow the beam equation, not the width or
+height labels:
+
+| Configuration | Half-line period | Half-lines per field | Field repetitions per second | Complete two-field pairs per second |
+|---|---|---:|---:|---:|
+| Group A, non-interlaced rows above | 32 µs | 628 | Approximately 49.7611465 | Not interlaced |
+| Group B, interlaced rows above | `27456 / 864000000` seconds | 525 | Approximately 59.9400599 | Approximately 29.9700300 |
+| Group A, 640 × 512 interlaced | 32 µs | 625 | 50 | 25 |
+
+For an interlaced row, the stated height is the complete output rectangle.
+One field traverses alternate rows: 224 of 448, 240 of 480, or 256 of 512.
+`FFMD=0` in these examples, so the source row stride is two and source phase
+depends on the signal Y and FIELD as described in Section 2.2. In particular,
+the two group-B examples start at signal Y=50, while the 512-line example
+starts at signal Y=72. Both positions are even, so FIELD selects the source
+row parity directly. Keep both sets of source rows valid.
+
+### 3.4. Program the complete configuration before restarting the beam
+
+This sequence replaces the global beam timing. Use it only while the cartridge
+owns timing configuration and no other writer is changing the display words.
+For an ordinary buffer switch with unchanged timing, use Section 2.6 instead.
+
+1. Write the selected group's **hold-beam** SMODE1_LOW word. PRST and SINT are
+   both set, so no live beam events can occur during the remaining setup.
+2. Write SMODE1_HIGH, both SYNCH1 words, both SYNCH2 words, the selected
+   SYNCV_LOW, its group's SYNCV_HIGH, SMODE2_LOW and zero SMODE2_HIGH.
+3. Write the framebuffer, source origin, DISPLAY1 and background words. Enable
+   circuit 1 with the complete PMODE words above; EN2 remains zero.
+4. Write the group's **run** SMODE1_LOW word last. This clears PRST and SINT
+   and restarts at half-line zero. Observe a subsequent VBlank entry before
+   treating the configuration as displayed.
+
+Holding the live beam is not a request to blank the previously latched picture.
+The new configuration becomes displayed at VBlank entry. Existing pending
+interrupt flags are not acknowledged by this sequence; use a fresh VBlank
+observation as in the [display-switch sequence](memory.md#a-display-switch-selects-storage-it-does-not-save-it).
+
+These writes configure PCRTC. GP1 display-mode and range words are separate
+GPU state: writing them does not substitute for this timing and window setup.
+Drawing bounds, offsets, texture storage and the GP1 Y-address gate likewise
+remain the GPU's programming responsibility. To display another region, replace
+the DISPFB base and source origin while preserving the selected format and
+source stride; a DISPLAY window is not a local-memory allocation.
 
 ## 4. REGISTER REFERENCE
 
@@ -1181,7 +1277,11 @@ the mask–acknowledge–unmask sequence in Section 3.2 when enabling HSINT.
 
 A source origin selects which pixels a circuit reads. A display-window position selects where that circuit contributes to the picture. This example changes them separately while leaving the image in local memory unchanged. Circuit 2 supplies a fixed 256 × 192-pixel canvas; circuit 1 places a 128 × 96-pixel cutout over it. Both circuits read the same image.
 
-The image contains twelve coloured 64 × 64-pixel cells, a white L, a black 16 × 16-pixel square, and a red 8 × 8-pixel square. Finish the initial drawing and readback work before enabling display. Do not issue further drawing, upload, or image-memory writes during stages A, B, and C. The differences between the pictures then demonstrate selection and placement, not a second copy or a repaint.
+The image contains twelve coloured 64 × 64-pixel cells, a white L, a black
+16 × 16-pixel square and a red 8 × 8-pixel square. Finish drawing and readback
+before enabling display, then leave the stored image unchanged through stages
+A, B and C. Each change of source origin or window position then selects a
+different view of the same pixels.
 
 <section class="keep-together">
 
@@ -1467,7 +1567,10 @@ Both reading circuits cover the same 256 × 192 output. Circuit 1 contains red a
 
 </section>
 
-The stored GX16 words are `0x001F` for circuit 1's left half, `0x801F` for its right half, and `0xFC00` for circuit 2. The two red words decode to identical RGB `(255, 0, 0)`. Their differing bit 15 supplies the differing sample alpha; it does not change red intensity. Both reading circuits remain enabled, and ALP remains 128:
+The stored GX16 words are `0x001F` for circuit 1's left half, `0x801F` for its
+right half, and `0xFC00` for circuit 2. Both red words decode to RGB `(255,0,0)`;
+bit 15 supplies their different sample alpha values. Both reading circuits
+remain enabled, and ALP remains 128:
 
 | Phase | PMODE_LOW | MMOD | AMOD | SLBG | ALP |
 |---|---:|---:|---:|---:|---:|
@@ -1487,11 +1590,24 @@ Compare A with B to isolate MMOD. A selects constant `k = ALP = 128`, independen
 | C | `(0, 255, 0)` | `(255, 0, 0)` | 0 | 128 |
 | D | `(0, 0, 255)` | `(255, 0, 0)` | 128 | 128 |
 
-Compare B with C to isolate SLBG: circuit 2's RGB is suppressed, exposing green as the destination. Compare B with D to isolate AMOD: output alpha changes from circuit 1's sample alpha to circuit 2's, without RGB changes. Output alpha is selected independently, not blended. The three distinct RGB pictures cannot demonstrate this alpha difference. The adjacent C-to-D transition restores SLBG as well as changing AMOD; it is not a single-bit comparison.
+Compare B with C for SLBG: the green background replaces circuit 2's blue RGB.
+Compare B with D for AMOD: RGB stays the same, while output alpha changes from
+circuit 1's split values to circuit 2's constant 128. The pictures illustrate
+RGB composition; the table gives the independently selected output alpha.
+Use B as the reference when examining either control separately.
 
-Two immutable 256×192 sources occupy raw VRAM rows 0–191 and 256–447, with pitch 1024 words and both source origins (0,0). Circuit 2 uses FBP=64, base word 40000H. E5 drawing offsets are relative; C0 probes use absolute raw coordinates. Their words 001FH, 801FH, and FC00H describe the sources, not composed output.
+Prepare the two 256×192 sources in raw VRAM rows 0–191 and 256–447, with pitch
+1024 words and both source origins (0,0). Circuit 2 uses FBP=64, base word
+40000H. Keep both images unchanged while stepping through the four PMODE
+settings, and serialize other users of the display registers and GP0 port.
+Both regions lie outside the queried BIOS reservation.
 
-One program exclusively owns the ports, circuits, VBlank handler, and surfaces. The firmware region query reports storage outside these surfaces; it neither allocates nor grants ownership. Sources are never rewritten. Each phase waits for fresh VBlank publication after programming PMODE; this establishes no atomic switching, source-release, minimum-latency, or physical-display-timing guarantee.
+After each PMODE write, acknowledge stale VBlank pending state and wait for
+the VBlank counter to advance, using the sequence below. This establishes that
+the display latch has taken the new composition setting. E5 is used while
+drawing the source images; C0 reads their absolute raw coordinates. Such reads
+return the stored words 001FH, 801FH and FC00H. To predict the displayed
+composite, apply the PMODE equation to the source colors and alpha values.
 
 <section class="keep-together">
 

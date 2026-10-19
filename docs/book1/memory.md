@@ -1,16 +1,14 @@
 # Memory and program storage
 
-The CPU addresses system ROM, main RAM, cartridge storage and device registers
-through one byte-addressed map. That common address notation does not make
-them interchangeable: RAM holds program data and transfer buffers, ROM stores
-read-only bytes, and a register access can issue a command or consume a result.
-Use the selected region's access and ownership rules, not RAM rules everywhere.
+The CPU uses one byte-addressed map for system ROM, main RAM, cartridge storage
+and device registers. Main RAM holds writable program data and transfer
+buffers. ROM supplies read-only bytes. Device registers provide word ports
+whose reads and writes can consume results, change configuration or start work.
 
-GPU local memory and APU sample RAM are separate from CPU main RAM. Reach them
-through the units' image/readback and sample-transfer ports, not an assumed
-ordinary RAM pointer. Within main RAM, I/O reservations, GEO scratch and
-firmware static storage also have owners; an installed byte is not necessarily
-a byte the cartridge may allocate.
+GPU local memory and APU sample RAM have separate access paths. Use GPU image
+and readback commands for local memory, and APU transfer ports for sample RAM.
+Before placing cartridge buffers in main RAM, reserve the I/O area, GEO scratch
+and the installed firmware's static storage as specified below.
 
 ## Addresses and data sizes
 
@@ -124,7 +122,13 @@ slot first and RAM at `0x08010440` second, subject to the ordered fault rules.
 
 ## Reserved and cartridge storage in main RAM
 
-The installed main RAM occupies `0x08000000` through `0x083fffff`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge's linked static storage.
+The installed main RAM occupies `0x08000000` through `0x083fffff`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge program's static storage.
+
+Subtracting the 256 KiB I/O reservation and 512 KiB GEO scratch reservation
+leaves **3.25 MiB** in `[0x080c0000, 0x08400000)` before accounting for system
+and cartridge static storage. The installed firmware occupies the beginning
+of this span. Its actual DATA/BSS footprint, rather than 3.25 MiB alone,
+determines where cartridge placement can begin.
 
 The following ranges use an exclusive end: the end address is the first byte outside the range.
 
@@ -132,8 +136,8 @@ The following ranges use an exclusive end: the end address is the first byte out
 |---|---|---|---|
 | Declared I/O reservation | `0x08000000` | `0x08040000` | 256 KiB |
 | GEO scratch reservation | `0x08040000` | `0x080c0000` | 512 KiB |
-| System static storage | `0x080c0000` | Actual end of system BSS | Depends on the linked system image |
-| Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Depends on the linked cartridge image |
+| System static storage | `0x080c0000` | Actual end of system BSS | Specified by the system executable image |
+| Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
 
 The implemented I/O register aperture ends at `0x08010440`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
 
@@ -170,7 +174,7 @@ when calculating firmware occupancy.
 
 The 2 MiB VRAM is shared GPU storage, arranged as 1024 rows of 1024 **16-bit words**. Each row spans 2048 bytes. A drawing destination, texture source or display source selects storage within that same memory; it does not create a separate CPU byte-address allocation.
 
-The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and linked static-storage reservations in main RAM.
+The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and static-storage reservations in main RAM.
 
 <a id="handoff-is-not-release"></a>
 
@@ -182,13 +186,19 @@ Keep the complete queried region out of cartridge allocations. The query does no
 
 For the limits of later device-context restoration, see [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service). Restoring device context does not restore overwritten VRAM pixels.
 
-### Query the linked firmware
+<a id="query-the-linked-firmware"></a>
 
-The named BIOS function `gpu/system_vram_region` takes no arguments and returns two packed words. Its result describes the linked firmware's reservation, not a fixed hardware address.
+### Query the firmware reservation
+
+The named BIOS function `gpu/system_vram_region` takes no arguments and returns
+two packed words describing the installed firmware's VRAM rectangle.
 
 The first return word contains x in its low half and y in its high half. The second contains width and height, not right and bottom coordinates. The returned rectangle is `[x, x + width) × [y, y + height)`.
 
-Here x and width count **16-bit VRAM words** across a row; y and height count **rows**. These are not CPU byte addresses, main-RAM offsets or counts of 32-bit transfer words. The query describes the linked terminal layout and actual atlas extent: it neither uploads pixels nor waits for a transfer, allocates storage or checks live VRAM contents.
+Here x and width count **16-bit VRAM words** across a row; y and height count
+**rows**. Reserve that rectangle in the cartridge's VRAM layout. The query
+reports the terminal and atlas extent; uploading and synchronizing those bytes
+remain separate operations.
 
 Call it through `require`; do not substitute a numerical function address or treat its name as an asset identifier.
 
@@ -219,12 +229,14 @@ The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of 
 
 <div class="keep-together">
 
-A linked executable image contains executable code, read-only data, and the initial bytes for initialized writable data. Writable static storage has addresses in main RAM. Keep the image location of an initializer separate from the RAM location used by the program.
+ROM stores program instructions, read-only data and the initial contents of
+writable data. During execution, mutable static objects occupy main RAM.
+The following section names distinguish their storage and initialization rules.
 
 | Section | Contents in the ROM image | Address used during execution |
 |---|---|---|
-| TEXT | Executable code | Linked code address in the image |
-| RODATA | Read-only data bytes | Linked RODATA address in the image |
+| TEXT | Executable code | Instruction byte address in ROM |
+| RODATA | Read-only data bytes | Read-only byte address in ROM |
 | DATA | Initializer bytes | DATA run address in main RAM, after startup copies the initializers |
 | BSS | No section byte payload | BSS address in main RAM, after startup clears the section |
 
@@ -235,15 +247,17 @@ DATA consequently has two distinct addresses:
 - Its **load address** identifies the initializer bytes in the ROM image.
 - Its **run address** identifies the writable storage in main RAM.
 
-These addresses are not interchangeable. A reference to the DATA object's working storage uses its run address; the startup copy reads from its load address. The linker resolves object addresses from the appropriate section base and the object's byte offset within that section.
-
-RODATA remains part of the image; it does not acquire a separate DATA-style RAM copy. BSS has a RAM address and a byte count, but contributes no BSS byte payload to the image. Its initial zero contents are established by startup code, not supplied by a special zero-filled memory region.
+Instructions access a DATA object's RAM run address. Startup reads the
+initializer at its ROM load address and copies it to that run address.
+RODATA is used in place in ROM. BSS reserves a RAM address range, whose initial
+zero contents are written by startup; the ROM needs only its address and size.
 
 ### When initialization occurs
 
 <div class="keep-together">
 
-The generated startup function performs the following sequence for its own linked image:
+A program's startup routine establishes its static storage before entering
+application code. The standard BLua startup sequence is:
 
 | Order | Operation |
 |---|---|
@@ -254,29 +268,42 @@ The generated startup function performs the following sequence for its own linke
 
 </div>
 
-The DATA copy and BSS clear cover the padded section byte counts and operate one four-byte word at a time. System startup also clears its boot primitives after module initialization and before entry.
+The DATA copy and BSS clear use four-byte word accesses over their complete
+padded byte counts. System startup initializes the firmware sections; cartridge
+startup initializes the cartridge program's sections. System startup also
+removes the temporary boot-primitive bindings after module initialization.
 
-The program's entry function therefore runs after its DATA initializer bytes have been copied and its BSS has been cleared. System startup initializes the system's sections; cartridge startup initializes the cartridge's sections.
-
-**Selecting or activating an image is not this initialization step.** EXEC does not itself copy DATA or clear BSS. If it selects the generated startup function, executing that function subsequently performs initialization. Selecting another function does not implicitly run startup first.
-
-Running startup again repeats its DATA copy and BSS clear, overwriting those sections with their initial contents. These rules concern the selected image's DATA and BSS only; they do not specify the contents of unrelated RAM at cartridge entry.
+EXEC starts the addressed function. DATA initialization and BSS clearing occur
+only when the instructions performing them execute. Therefore the ROM startup
+address must select the initialization routine when that initialization is
+required. Entering another function leaves the sections as they stand.
+Re-entering startup repeats the copy and clear, replacing the program's
+writable static contents with their initial values.
 
 ## Reset and cartridge startup
 
 ### From reset to the system program
 
-CPU reset selects the system executable image, clears the active call stack and transient CPU execution state, and pushes the system startup function with no arguments. CPU reset sets CPU status to IE (bit 0) before starting the system startup function.
+At reset the CPU selects system ROM and enters the startup function specified
+in its ROM header. The call stack and transient execution state are cleared,
+there are no supplied arguments, and Status starts at `00000001H`: supervisor
+mode with current interrupt enable set.
 
-The generated system startup initializes its own static storage before running static module initialization and the system entry function. Reset and startup are separate steps: selecting an executable image does not itself copy DATA or clear BSS.
+The firmware startup routine initializes system DATA and BSS, runs module
+initializers, then enters the BIOS boot program. That program selects an
+executable cartridge and performs the handoff described below.
 
 <a id="rom-header-fields"></a>
 
 ### ROM header fields
 
-The machine boot reader requires a **60-byte ROM-backed prefix**, occupying offsets `0x00` through `0x3b`. The table gives hexadecimal **byte offsets from the ROM base**, not word indices or offsets from the executable image. Interpreted words are unsigned 32-bit little-endian values. CPU boot resolution and BIOS cartridge selection consume different parts of this prefix:
+The ROM header begins at the ROM base. Provide at least its first **60 bytes**,
+through offset `0x3b`, for CPU program selection. All offsets in the following
+table are byte offsets from that base. Header words are unsigned 32-bit
+little-endian. The CPU uses the program and vector fields; BIOS also checks the
+identification and startup fields when selecting a cartridge.
 
-| Byte offset | Field | CPU boot resolution | BIOS cartridge selection |
+| Byte offset | Field | CPU program selection | BIOS cartridge selection |
 | --- | --- | --- | --- |
 | `0x00` | Magic | Not read. | Requires `0x58534d42`; bytes `42 4d 53 58` spell `BMSX`. |
 | `0x04` | Header size | Not read. | Requires at least 60 bytes. |
@@ -288,13 +315,24 @@ The machine boot reader requires a **60-byte ROM-backed prefix**, occupying offs
 | `0x30` | Exception function | Absolute function-record address. | Not read. |
 | `0x34`, `0x38` | Declared static-layout token words | Not read. | Not read. |
 
-For system domain −1, the ROM base is `0x00000000`. For cartridge domains 0 and 1, it is `0x10000000`, with the domain selecting the cartridge socket. The executable-image address is the low 32 bits of that ROM base plus the image-offset word. The resulting address must bind to installed ROM storage. The three function-record addresses are already absolute: do **not** add the ROM base or image address to them, and do not use the image offset as an instruction PC.
+System ROM begins at `00000000H` and has execution-domain ID −1. Either
+cartridge socket uses ROM base `10000000H`, with domain ID 0 or 1 selecting the
+socket. Add the program-offset word to this base and retain the low 32 bits to
+obtain the BLua32 program-header address. The result must address installed ROM.
+The startup and vector fields are already absolute function-record addresses.
 
-Boot resolution first binds all 60 bytes to installed ROM storage. An unbacked prefix or a zero image offset means no executable image; failure to resolve the system image is an error. This binding does not inspect the magic or header-size word, require the optional diagnostic-directory word, or validate the declared image byte count. The BIOS adds the cartridge checks below. The exception-address field alone does not specify cartridge fault routing.
+All 60 prefix bytes must be present in ROM. A zero program offset marks a ROM
+without a CPU program; an absent prefix likewise provides no program. System ROM
+must supply the reset program. CPU selection uses the fields shown in its
+column; identification checks belong to BIOS cartridge selection. The exception
+address's use follows the exception-routing rules, including the system route
+for synchronous cartridge faults.
 
 ### BLua32 executable image
 
-The image has a separate **96-byte ROM-backed header**. Its offsets below are relative to the **image address**, unlike the boot-prefix offsets above. Activation reads these six unsigned 32-bit little-endian fields:
+The BLua32 program header occupies **96 bytes** in ROM. Its offsets are relative
+to the program-header address obtained above. The CPU uses these six unsigned
+32-bit little-endian fields to establish the program's constants and name banks:
 
 | Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
@@ -305,9 +343,11 @@ The image has a separate **96-byte ROM-backed header**. Its offsets below are re
 | `0x28` | System-global-name-table address | Absolute machine byte address in installed ROM. |
 | `0x2c` | System-global-name count | Number of 8-byte name records. |
 
-The remaining declared header slots are listed for layout identification, **not as activation requirements**. Each listed offset identifies a four-byte slot:
+The other four-byte header slots describe the program's sections. They retain
+the following format; CPU program selection does not use them to locate the
+constant or name tables.
 
-| Image byte offset | Declared field, not interpreted by activation |
+| Image byte offset | Descriptive field |
 | --- | --- |
 | `0x00` | Magic; declared constant `0x32334c42`. |
 | `0x04` | Version; declared constant 1. |
@@ -320,9 +360,17 @@ The remaining declared header slots are listed for layout identification, **not 
 | `0x54`, `0x58` | TEXT address; TEXT byte count. |
 | `0x5c` | Reserved. |
 
-All 96 header bytes must be ROM-backed, including the uninterpreted slots. Activation does not check the declared magic/version, enumerate the function table, derive table locations from a section order, or use declared section extents to bound execution. It neither copies DATA nor clears BSS. Those operations require executed startup instructions, as described above.
+Provide the complete 96-byte header, including its descriptive slots. The CPU
+reads the explicit constant/name addresses and counts. Magic, version,
+function-table enumeration, section order and declared section extents do not
+alter those reads or bound instruction fetching. DATA and BSS are initialized
+by the startup instructions.
 
-The three table-address fields use **absolute machine addresses**, not header-relative or ROM-relative offsets. Table and string reads use the image's execution domain to select a cartridge socket; system-ROM addresses still select system ROM. The referenced spans must be backed by installed ROM, but activation does not constrain them to the declared image byte count. A table count of zero skips that table read, so its address is unused. No particular ordering or contiguity of the tables and referenced text is required by these reads.
+Table addresses are **absolute machine byte addresses**. Tables and their text
+must occupy installed ROM; their placement is independent of table order and
+of the declared image extent. Cartridge ROM reads select the program's
+execution socket, while system-ROM addresses select system ROM. A zero table
+count leaves its address unused.
 
 #### Constant and name records
 
@@ -336,7 +384,9 @@ Constant record `i` begins at `constantTableAddress + 16i`, with zero-based `i`.
 | 3 | Number | Eight-byte IEEE-754 binary64, little-endian, at `0x04`–`0x0b`. |
 | 4 | String | Absolute ROM text byte address at `0x04`; text byte count at `0x08`, both u32 little-endian. |
 
-Record bytes `0x0c`–`0x0f` are not read. Other tags cause activation to fail; tags 0–2 do not read a payload. Constant indices select records in table order.
+Constant indices select records in table order. Tags 0–2 encode their value
+without a payload; bytes `0x0c`–`0x0f` are unused. A record with another tag is
+invalid and prevents program activation.
 
 Both name tables use the same layout. Name record `i` begins at `tableAddress + 8i`:
 
@@ -354,7 +404,10 @@ image activation fail. An initial `EF BB BF` encodes the ordinary character
 U+FEFF; it is retained rather than removed as a byte-order marker. A string
 beginning with U+FEFF therefore differs from the string without that character.
 
-The ordinary-global and system-global tables register names in separate namespaces. Each table index maps to the corresponding runtime global slot. An already registered name reuses its slot and value; a newly registered name begins nil. The name record contains no initial value.
+The two name tables establish separate ordinary-global and system-global
+namespaces. Within each namespace an existing name retains its value and a new
+name begins nil. A name-table index selects that name's slot; initial values
+are established by executed instructions.
 
 #### Function and upvalue records
 
@@ -373,7 +426,11 @@ A function address identifies a **32-byte function record**, not its first instr
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
 
-Upvalue descriptor `i` is read as a four-byte unsigned little-endian word at `upvalueTableAddress + 4i`. Bit 31 set captures a register slot in the parent frame; bit 31 clear captures an upvalue of the parent closure. Bits 0–30 give the zero-based slot or upvalue index. Function and upvalue records are read through the mapped bus, rather than through the ROM-only table/string binding used during image activation.
+Upvalue descriptor `i` is a four-byte unsigned little-endian word at
+`upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31
+clear captures a parent-closure upvalue. Bits 0–30 contain the zero-based index.
+Function and upvalue records use ordinary mapped-bus reads and may therefore
+occupy mapped memory. Constant and name-table records and their text require ROM.
 
 Function-record words are little-endian; [instruction words are big-endian](cpu.md#instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
@@ -465,9 +522,16 @@ The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence 
 - the executable-image-offset word is nonzero;
 - the startup-function word is nonzero.
 
-The first candidate that passes these checks supplies the startup function address. These checks describe BIOS selection; they are not a complete cartridge-header validation specification.
+The first candidate passing all four checks supplies the startup-function
+address. The CPU then applies the function-record and program rules described
+above.
 
-The boot loop waits for vertical blank before each boot-screen update. Handoff requires a ready cartridge and a retained boot-frame counter of at least 50. This is not an exact elapsed-time or consecutive-frame delay after cartridge insertion. At handoff, the BIOS clears and flushes terminal status, writes zero to the IRQ mask, then writes the selected startup function address to COP0 EXEC.
+The boot screen updates at VBlank. BIOS hands over when an executable cartridge
+is ready and its boot-frame counter has reached at least 50. A change between
+the missing, invalid and ready cartridge states resets that counter; changing
+the selected card while its classification remains ready does not by itself
+reset it. At handoff BIOS clears and flushes terminal status, masks central IRQ
+delivery, and writes the selected startup-function address to CP0 EXEC.
 
 ### EXEC and cartridge entry
 
@@ -475,22 +539,29 @@ A startup function address identifies a **function record**, not the address of 
 
 Successful EXEC clears the active call stack, selects the target executable image and execution domain, establishes its entry status, clears CPU halt, wait, blocked-write and yield state, and pushes the selected static function with no arguments. A successful `EXEC` of a cartridge image sets CPU status to IE and user mode (bits 0 and 1) before starting the selected static function—not at a later entry-function call. The BIOS's zero IRQ-mask write must not be confused with clearing the CPU interrupt-enable bit.
 
-EXEC is not a hardware reset and does not itself initialize DATA or BSS. Entering the generated cartridge startup causes those operations to run:
+The standard cartridge startup routine then performs:
 
 1. Copy the cartridge image's DATA initializer bytes from their load address to their RAM run address.
 2. Zero the cartridge image's BSS.
 3. Run static module initialization.
 4. Call the cartridge entry function with no arguments.
 
-Calling another static function through EXEC does not implicitly run this startup sequence. Re-entering generated startup repeats initialization of that image's DATA and BSS.
-
-These operations do not establish an all-zero-RAM cartridge-entry state or promise that unrelated RAM contents persist across a reset or handoff.
+EXEC enters exactly the selected static function. Choose the startup routine
+when section initialization is required; entering another function skips that
+sequence. Re-entering startup repeats the DATA copy and BSS clear. Initialize
+all cartridge-owned storage whose contents the program requires.
 
 <a id="taking-ownership-after-the-bios"></a>
 
 ### Taking ownership after the BIOS
 
-Ordinary BIOS boot hands over a running machine, not an untouched hardware-reset state. The BIOS has already used graphics and the display before `EXEC`. Register reset values therefore do not describe a complete cartridge-entry state. Preserve the existing display deliberately, or program the units you will use according to their chapters. For timing readouts, see [System control and timing — System time and frame timing](system.md#system-time-and-frame-timing); for CPU control fields, see [CPU — CP0 and execution control](cpu.md#cp0-and-execution-control).
+At normal BIOS handoff, video timing is running and the display contains BIOS
+drawing. Cartridge code may retain that display or establish its own drawing
+and display configuration. Program each unit before use; its reset-value table
+applies to reset, while its inherited boot state follows the rules here.
+[System timing](system.md#system-time-and-frame-timing) describes the live
+readouts, and [CPU control](cpu.md#cp0-and-execution-control) describes entry
+privilege and interrupt enable.
 
 The BIOS writes zero to the central interrupt mask before handoff. This masks delivery; it does not clear pending flags or clear CPU interrupt enable, which is set at cartridge entry. Enabling a pending source can make it deliverable without another event. Choose one dispatch owner, install the first source's handler and prepare that source before enabling its delivery. Acknowledge local source state and central pending state as required by the unit; they are separate responsibilities. See [Interrupt controller — Choose one cartridge dispatch route](irq.md#choose-one-cartridge-dispatch-route) and [Acknowledge the source and the controller separately](irq.md#acknowledge-the-source-and-the-controller-separately). The GPU marker example's [Starting conditions](irq.md#starting-conditions) show this ordering for its chosen configuration, not a universal device-reset recipe.
 
@@ -505,7 +576,11 @@ to establish a fresh cartridge sample, including after supervisor return.
 
 #### Firmware work at normal boot handoff
 
-After an ordinary, uninterrupted BIOS boot started by system reset, the cartridge begins with the firmware work listed below complete or absent. The BIOS has finished supplying its final command batch and has reached that batch's GPU completion marker. Its DMA and vertical-blank callbacks do not start further drawing or device jobs. These guarantees describe this normal boot path, not arbitrary entry through `EXEC`.
+On the normal reset-to-cartridge boot path, BIOS has supplied its final GPU
+command batch and reached that batch's completion marker. Firmware DMA and
+VBlank handlers have stopped submitting work. The following unit state is then
+available to the cartridge. Entry through another EXEC route must establish its
+own device state.
 
 | Surface | Firmware work at cartridge entry |
 | --- | --- |
@@ -515,259 +590,104 @@ After an ordinary, uninterrupted BIOS boot started by system reset, the cartridg
 | IMGDEC | No outstanding firmware decode, input, or output job. |
 | APU | No queued firmware command, active playback slot, or outstanding sample-transfer batch. This does not imply that the APU clock or output activity has stopped. |
 
-**Queued drawing is separate from an active producer.** The BIOS marker establishes command ordering; it does not guarantee that the GPU queue is empty, that every submitted drawing operation has finished, or that the final boot image has been displayed. Already submitted BIOS drawing can remain pending even though no firmware writer remains. These statements do not specify a universal register image: `EXEC` itself neither resets devices nor drains their work, so entry through another path does not inherit these normal-boot guarantees.
+Submitted BIOS drawing may still be pending after its final marker, although
+the firmware has stopped producing commands. Before changing resources used by
+that work, use the GPU completion protocol. Display publication remains a
+separate PCRTC event. EXEC leaves the device registers and submitted work in
+place.
 
 ## Typed byte storage and address views
 
-BLua has typed static storage for data that must have a byte address and a defined layout. A static storage name denotes that storage's address. A typed local view describes how to access bytes at an existing address; it does not allocate another buffer.
+Use byte-addressed storage for the records, command words and sample bytes that
+hardware consumes. BLua's `bss`, `data` and `rodata` declarations provide linked
+storage addresses; a local typed view supplies an access layout for an existing
+address. Neither a local value nor an ordinary Table is a device buffer.
 
-### Declaring static storage
+The complete declaration, initializer, type-size, alignment, array and struct
+rules are in [Book II — Typed storage, layouts, and address views](blua-programs.md#typed-storage-layouts-and-address-views).
+That reference also defines `sizeof`, `offsetof`, address-of and zero-based typed
+indexing. The memory rules in this chapter determine what happens when the
+resulting address reaches RAM, ROM or an I/O port.
 
-The declaration keywords are `bss`, `data` and `rodata`, without a leading dot. In the syntax below, `name`, `type` and `expression` stand for the program's binding name, storage type and initializer.
-
-| Declaration | Initial contents | Use |
-|---|---|---|
-| `bss name: type` | Zeroed by generated startup | Writable storage without an authored initializer |
-| `data name: type = expression` | Authored initializer, copied into its run address by generated startup | Writable initialized storage |
-| `rodata name: type = expression` | Authored constant storage | Storage whose directly named writes the compiler rejects |
-
-A BSS declaration takes no initializer. DATA and RODATA declarations require one.
-
-Each declaration receives a linked section address, aligned for its type. It is not a function-local temporary buffer. Section placement can also add padding: after each binding, the section extent is rounded up to four bytes. This placement padding is separate from the size of the declared type.
-
-#### An address is not its stored scalar
-
-Existing firmware declares its random-generator state as:
+For example, a word view of an existing DMA register bank accesses consecutive
+four-byte ports. It does not reserve a DMA channel or alter the port layout:
 
 ```lua
-data rng_state: word = 0x12345678
+local dma0<const>: *word = 0x0800000c
+local remaining = dma0[2]
 ```
 
-Here `rng_state` denotes the address of the state word. The expression `*rng_state` reads the stored word; the same dereference can be an assignment target. The initializer is program state, not a fixed memory-map address.
+The read reaches TRANSFER_COUNT at `08000014H`. By contrast, `dma0 + 2` is the
+byte address `0800000EH`, not that third port. Use an indexed typed access or an
+explicit byte offset that preserves the device's required alignment.
 
-A whole array or struct is likewise not loaded or copied merely by using its storage name. Select a scalar element or field to access a value, or take an address when another operation needs the storage location.
-
-### Primitive sizes and access representations
-
-<div class="keep-together">
-
-Sizes and alignments below are in bytes. `LE` means little-endian.
-
-| Storage type | Size | Alignment | Scalar access representation |
-|---|---:|---:|---|
-| `u8`, `i8` | 1 | 1 | U8: unsigned 8-bit |
-| `u16`, `i16` | 2 | 2 | U16LE: unsigned 16-bit, little-endian |
-| `u32`, `i32`, `addr` | 4 | 4 | U32LE: unsigned 32-bit, little-endian |
-| `word` | 4 | 4 | Word |
-| `f32` | 4 | 4 | F32LE |
-| `f64` | 8 | 4 | F64LE |
-| `string` | 4 | 4 | Constant reference; see below |
-
-</div>
-
-For a raw 32-bit word in backed main RAM, `Word` and `U32LE` read and write the same four little-endian bytes, and a load returns the same unsigned 32-bit value. They remain distinct access kinds with distinct fault `ACCESS` flags.
-
-In particular, `f64` has four-byte alignment, not eight-byte alignment.
-
-The `i8`, `i16` and `i32` names select the same unsigned memory-access kinds as their `u` counterparts. Do not assume signed-load or sign-extension rules from those names.
-
-#### Initialized numeric storage
-
-Static integer-storage initializers must be compile-time integers. Integer fields retain the low 8 bits for `U8`, 16 bits for `U16LE`, and 32 bits for `U32LE` and `Word`.
-
-Static `f32` and `f64` initializers in DATA and RODATA accept compile-time numbers, including array elements and struct fields. They encode IEEE 754 binary32 or binary64 in little-endian order. F32 rounds the computed value to binary32; F64 retains its binary64 value. Both preserve negative zero. The size and alignment rules in the table above still apply; F64 does not require eight-byte alignment.
-
-#### A stored string is a reference
-
-A static `string` initializer must be a compile-time string and is allowed only in RODATA. Its four-byte storage field holds a constant reference, not the string's characters. Reading the field resolves that reference to the string value.
-
-Do not pass the address of such a field as though it addressed inline text, texture, PCM or geometry bytes. This layout does not establish a raw character-byte address or a terminator convention.
-
-### Arrays and structs
-
-#### Arrays
-
-Array dimensions follow the type name in brackets. A resolved array occupies its element size multiplied by every dimension; its alignment is the element type's alignment.
-
-Explicit dimensions must be positive compile-time integers. DATA and RODATA may infer only the outer dimension, written with empty brackets. The initializer must then be a nonempty table, and its field count determines that outer length. BSS does not support inferred length.
-
-DATA and RODATA array initializers are positional tables with exactly the declared number of outer entries. Nested arrays follow the same rule recursively. The entries are encoded into consecutive element positions beginning at element zero. This declaration creates static bytes, not an ordinary runtime table.
-
-#### Structs
-
-A struct declaration starts with `struct name`, contains named `field: type` entries, and ends with `end`. Optional commas or semicolons may follow the fields.
-
-| Layout rule | Result |
-|---|---|
-| Fields retain declaration order | Reordering fields can change offsets and total size |
-| Each field starts at its next correctly aligned offset | Padding can appear between fields |
-| Struct alignment is the largest field alignment | Arrays of the struct retain that alignment |
-| Final size is rounded up to struct alignment | Padding can follow the final field |
-
-Structs are not automatically packed. Duplicate field names and recursive struct layouts are rejected.
-
-A DATA or RODATA struct initializer is a named-field table containing every declared field exactly once. Unknown fields, repeated names, non-identifier keys and omitted fields are rejected. Each field is encoded at its resolved offset. Unoccupied bytes in the emitted initializer, including padding, are zero. That fact concerns the initializer bytes; it is not a general promise that all RAM is initially zero.
-
-### Typed local address views
-
-A local pointer annotation has the form `: *type`, after the local name and any local attribute. Its initializer supplies the address. The annotation determines the layout used for dereference, indexing and field selection; it reserves no pointee storage.
-
-For example, firmware reserves a word array named `terminal_command_words`, with its own compile-time capacity, then binds this view to the array's address:
-
-```lua
-local command_words<const>: *word = terminal_command_words
-```
-
-The storage declaration supplies the bytes. The local view supplies a typed way to access their existing address. `<const>` prevents reassignment of `command_words`; it does **not** prevent writes through that view.
-
-Unary `*` dereferences a typed storage name or view. Scalar reads and writes use the selected type's memory-access representation. Whole arrays and structs are not scalar load or assignment targets: select their scalar members or use their addresses instead. An untyped dereference that cannot resolve a storage view is rejected.
-
-#### Typed indexing is zero-based and element-scaled
-
-A typed subscript selects an element at:
-
-**base byte address + index × selected element size**
-
-There is no subtraction of one. Index zero selects the first element. For an array, indexing removes its outer dimension; the selected element may itself be an array. For a scalar or struct pointer, indexing advances by one pointee-sized element per index.
-
-This address calculation does not insert an array-length bounds comparison. Keep indices within the storage allocated for the operation.
-
-Do not confuse typed indexing with ordinary BLua table construction: positional fields in an ordinary table begin at key one, not element zero.
-
-#### Fields and address-of
-
-Selecting a typed field adds its declared byte offset and retains that field's type. Unary `&` on a typed storage, element or field expression returns its address without loading or copying the stored value.
-
-The firmware monitor's `command_registry` is a RODATA array of `monitor_command` records. During its zero-based traversal, `command` is the record index. Its address-of-element view is written:
-
-```lua
-local entry<const>: *monitor_command = &command_registry[command]
-```
-
-Here `entry` receives the selected record's address, not a copied record. This typed-storage use of `&` does not establish that arbitrary language locals or value slots have exposed physical byte addresses.
-
-### Element counts, byte sizes and field offsets
-
-| Operation | Result |
-|---|---|
-| `#array_name` for a resolved named static array | Its first dimension: an element count |
-| `sizeof(type)` | The complete type size in bytes, including all dimensions and struct padding |
-| `offsetof(Struct.field)` | The field's byte offset within the struct |
-
-For a multidimensional array, `#` is neither the product of all dimensions nor the byte extent. `sizeof` is the byte-size query.
-
-`offsetof` also accepts a path through nested struct fields, written with dots. It adds the offsets along that path. The path is not array-index syntax. Neither `sizeof` nor `offsetof` obtains an address for a local variable or stack slot.
-
-### Raw byte addresses are not element indices
-
-Ordinary `+` and `-` operate on their operand values. Adding one to an address does not multiply that increment by its pointee size. Element scaling belongs to typed indexing, not general address arithmetic.
-
-<div class="keep-together">
-
-The reserved memory-map names also take **byte addresses**, not element indices:
-
-| Access spelling | Selected access |
-|---|---|
-| `mem[address]` | Word |
-| `mem8[address]` | U8 |
-| `mem16le[address]` | U16LE |
-| `mem32le[address]` | U32LE |
-| `memf32le[address]` | F32LE |
-| `memf64le[address]` | F64LE |
-
-</div>
-
-The name selects how to access the bytes at `address`; it does not scale that address. Scalar accesses must satisfy their access-kind alignment and still pass through mapped memory. An address view does not bypass memory-map behavior, and the existence of an access spelling does not mean every I/O port accepts that width.
-
-#### RODATA protection is a direct-write restriction
-
-The compiler rejects assignments through directly resolved RODATA names and their directly selected fields or indices. This is not a read-only-pointer capability: local typed views do not carry that protection as an alias permission. It also does not define what mapped memory does with a write to ROM.
-
-### What a storage declaration does not provide
-
-Use declared storage for its linked allocation and defined byte layout. Do not treat a typed view as another allocation or assume that an arbitrary address names free RAM.
-
-A static string field is not inline character storage. Addressability alone also says nothing about when a device has finished consuming or producing bytes: completion and buffer-reuse rules belong to the particular operation.
+A storage address still carries the region's ownership and lifetime rules.
+Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
+read-only byte source, and keep a device's input bytes unchanged until its
+completion condition releases them. The [record-copy example](#worked-example-prepare-and-copy-two-records)
+below applies typed layouts to exact bytes; [DMA buffer lifetime](#dma-buffer-lifetime)
+and the following unit-specific sections cover asynchronous use.
 
 ## Language execution storage and byte RAM
 
 Function calls use language value slots. A frame's register area follows its variable-argument area in the active thread's slot stack. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
 
-Language allocations are charged against a logical allocation budget, including charges for growth of slot-stack capacity. Although that accounting uses byte amounts, it does not describe a mapped byte-RAM heap or report free RAM bytes. In particular, its capacity calculation does not subtract the actual linked DATA and BSS extents. Keep mapped-memory byte addresses, call-slot counts and logical allocation charges distinct; an accounting amount does not define a buffer's physical layout or address.
+Language values use a shared allocation budget, described under
+[CPU — Language allocation and lifetime](cpu.md#language-allocation-and-lifetime).
+That budget does not describe a mapped byte-RAM heap or report free RAM bytes.
+Mapped DATA/BSS placement and the language budget are separate constraints:
+placing a static byte buffer neither allocates a language Table nor yields a
+byte address for the CPU's value slots.
 
 ### Values are not byte buffers
 
-Keep ordinary BLua values separate from the bytes a cartridge places in memory. A local can hold nil, a boolean, a number, text, a table, a function or a thread. Declaring that local does not reserve a cartridge-addressable byte buffer. Nor does a value's presence in a table give it a byte layout suitable for a device.
+A language value can hold a Number, text, a Table, a function or a Thread.
+Copying a Table or function value preserves its identity; it does not copy its
+contents into main RAM. A device needs the numeric address of storage containing
+its prescribed bytes, not the Table that the program uses to organize them.
 
-Nil, false, true and numeric zero are distinct values. Only nil and false are false in a condition; zero is true. In particular, a boolean is not an implicit numeric field containing zero or one. When a register or memory format requires such a field, supply its explicit numeric value.
-
-An ordinary table constructor creates a table of values. Its entries need not all have the same kind: numbers, strings, booleans, tables and functions can coexist. Positional constructor fields receive keys 1, 2 and so on; named fields use their string keys. Key zero can also be written explicitly. It is an ordinary numeric table key, not a byte address or an automatically supplied first positional entry.
-
-Assignment copies a value, not the contents of a referenced table. If two locals contain the same table, a table store through either local changes that shared table. Reassigning one local changes only the value held by that local. Putting the table in another table entry also preserves this sharing. Function arguments follow the same rule: passing a table preserves its identity rather than copying its entries into memory. Missing parameters receive nil.
-
-Function values likewise remain function values when copied, passed or stored in a table. They are not interchangeable with numeric code addresses. An ordinary function call requires a function value; storing a number does not turn it into one.
-
-Use typed byte storage when the task is to supply an exact memory layout. A typed pointer is a view of its numeric byte address. It neither allocates the pointed-to bytes nor turns a table into a buffer. Its index zero selects the first element; subsequent indices advance by the element size. This differs from a table constructor's positional keys. Typed fields and elements select byte offsets and scalar access kinds, rather than dynamic table entries. Do not infer an address for an arbitrary local, table or string from these storage operations.
-
-Scalar memory loads produce numbers. Integer access kinds read unsigned values of their specified width; floating access kinds interpret floating-point encodings. None reconstructs nil, a boolean, a table, a function or text from a generic word.
-
-Stores are numeric operations too. Integer stores discard the fractional part and write the low bits of the selected width. Floating stores encode the source number in the selected floating-point format. Reading those bytes with an integer access kind reads the integer bit pattern, not the floating-point value. Backed main RAM stores these multibyte scalars little-endian; device registers retain their own access rules and word meanings.
-
-A word store is therefore not a way to save any BLua value. Supply numeric addresses, words and field values explicitly. Neither assignment nor scalar memory access is an automatic table serializer, string-content copy or function serializer.
+Use typed static storage and scalar writes to construct that byte layout.
+Loads return numeric scalars under the selected access format; they do not
+reconstruct arbitrary language values from words. Integer stores retain the
+specified low bits, while floating stores encode floating-point bits. The
+[scalar memory rules](#scalar-memory-accesses) give the alignment, conversion
+and partial-access behavior.
 
 ### Function arguments, results and BIOS calls
 
-Function parameters are source names, not declarations of byte storage. Write the parameter identifiers in order, followed by `...` if the function accepts additional arguments. A parameter list does not accept the typed-local address-view syntax: do not put a `: *word` annotation on a parameter or assume that a caller's local view supplies a typed function signature. Function arguments and results are language values; the call does not place them in a cartridge-addressable byte-RAM stack.
+Passing an address to a function passes its numeric value. It neither copies
+the pointed-to bytes nor extends their lifetime. A callee can establish a typed
+view of that address before accessing it, as in the example below. Ordinary
+calls use value slots, not a cartridge-addressable byte stack.
 
-Each named parameter receives a copy of the corresponding argument value. Replacing that parameter's value does not replace the caller's local binding. Table and closure arguments retain the same references; they are not deep-copied. Passing a numeric address passes that address value, not an implicit address of the caller's variable. A missing named argument supplies `nil`. Extra arguments are discarded by a function without `...`; a vararg function retains the arguments beyond its named parameters, in order. The `...` expression reads those retained values. A call does not fail merely because its argument count differs from the named parameter count, although the called function or BIOS service can impose its own requirements.
-
-To access an address argument as word storage, establish a local view inside the body: `local destination<const>: *word = address`. This binds the existing numeric address and supplies access-type information. It neither allocates destination bytes nor converts a table into byte storage.
-
-A method call adds one argument. With colon-call syntax, the named method is looked up on the receiver, and that receiver is passed as the first argument; explicitly written arguments follow it. A colon-defined function receives that argument as implicit `self`, before its authored parameters. This is a calling convention for language values, not a byte-memory layout for objects.
-
-**Result adjustment.** In cartridge source compilation, an ordinary function call or `...` can supply several values. Whether those values expand depends on the expression's position, not on a separate result buffer that the cartridge must allocate.
-
-| Position | Values used |
-|---|---|
-| An argument before the final argument | One value |
-| A final argument that is a call or `...` | All its results become arguments |
-| An assignment expression before the final expression | One value |
-| A final assignment call or `...` | Enough results for the remaining targets |
-| A return expression before the final expression | One value |
-| A final returned call or `...` | All its results become return values |
-| A standalone call statement | No result is bound to a source name |
-
-Assignment keeps only as many values as it has targets and supplies `nil` for targets without a value. The same adjustment applies to local initialization. Thus a two-result call can initialize two names, while assigning it to one name retains only its first result. A one-value context also receives `nil` if the call supplies no value. A return list can combine individual leading values with the complete results of its final call or `...`; the receiving call context then determines how many of those returned values it uses. In cartridge source compilation, a bare `return`, or reaching the end of a function, returns **one `nil`**, not an empty result list.
-
-In cartridge source compilation, parentheses around a call do not by themselves reduce its results to one. In source compiled on-console by `load`, a parenthesized call is adjusted to one result. To select one result in cartridge source, assign the call to a single local.
-
-A local captured by an ordinary function remains available through that function after the enclosing function returns. The captured value is not an exposed, stable byte address of the departed call's local storage. Ordinary function values can be retained and passed as values; a numeric byte address or numeric identifier is not itself a callable function. Calling a nonfunction raises `CALL_NON_FUNCTION`, reason 1; it does not cast a number into a callable address.
-
-**BIOS calls.** Named static BIOS imports use ordinary function-call argument and result adjustment. The configured direct imports are `math/sin`, `string/float/decode` and `gpu/system_vram_region`; this is not a list of every installed library function. A name bound to such a static import is a call target, not a first-class function value to place in a table, pass as an argument or return. This restriction does not apply to ordinary authored function values.
-
-Installed library globals are a separate route. For example, the BIOS publishes the `string` library as an ordinary global library value; it is not the same mechanism as the named static imports above. Do not infer that every installed library function is a direct static import.
-
-Calling a BIOS function is still a normal function call. It is not `EXEC`, does not constitute a privilege transition, and does not by itself grant permission to access devices or arbitrary BIOS memory.
+Use [CPU — Calling and returning values](cpu.md#calling-and-returning-values)
+for argument/result placement and closure capture, and
+[BLua source semantics](blua-programs.md#blua-source-semantics) for source-level
+varargs and result expansion. Named static BIOS targets and installed global
+library values are distinct call routes; see
+[Named BIOS function imports](blua-programs.md#named-bios-function-imports).
+Calling either kind of BIOS function is an ordinary call, not EXEC or a
+privilege transition. Its documented memory and device requirements still apply.
 
 ### Text, codepoints and UTF-8 bytes
 
-A string is text, not a numeric address of encoded bytes. Work with strings when selecting characters, measuring text or constructing text. Work with typed byte storage when preparing an exact device payload. These are different operations even when the payload happens to contain UTF-8.
+A String holds Unicode text, not the numeric address of encoded bytes.
+`#text` counts codepoints; a byte count for DMA or a hardware record counts bytes.
+For example, U+00E9 is one codepoint but occupies two bytes in UTF-8. U+0000
+is an ordinary character rather than a String terminator.
 
-Both `#s` and `string.len(s)` count codepoints. Neither reports the number of UTF-8 bytes needed to encode the text. A zero codepoint is an ordinary character: it contributes to the length and does not terminate the string. Keep a codepoint count separate from the byte count of any encoded memory span.
+The BIOS bridge `string.from_utf8(address, byte_count)` reads UTF-8 from byte
+memory. Supply a complete, well-formed encoded span; it is not a malformed-input
+validator, and continuation reads for an incomplete final sequence can extend
+past the supplied count. A zero byte within a valid span becomes U+0000.
+The call reads the supplied storage; it does not give a String a byte address or
+turn that source into a retained DMA buffer.
 
-Despite its name, `string.byte(s[, i])` selects one codepoint and returns its numeric scalar value. Positions are 1-based. Omitting `i`, or passing nil for it, selects position 1. A supplied position must be numeric and is converted to a signed 32-bit integer. Positions below 1 or beyond the end return nil. A negative position does not count backwards from the end. The operation returns one codepoint, not a range of characters or a sequence of UTF-8 bytes; an additional range-end argument does not extend it.
-
-`string.char(...)` constructs text from numeric Unicode scalar values. It is not restricted to values from 0 through 255. Each argument is converted to an unsigned 32-bit integer; values above 10FFFFH and values in the surrogate range D800H through DFFFH are rejected as invalid arguments. Zero is accepted as a character. With no arguments, the result is empty text. The numbers supplied to this operation describe characters, not separate bytes for a UTF-8 decoder.
-
-The same distinction applies to character escapes in a literal. A hexadecimal escape consists of `\x` followed by exactly two hexadecimal digits and contributes that character value. A decimal escape consumes up to three digits and accepts values from 0 through 255. Adjacent escapes are adjacent characters; they are not a request to decode a UTF-8 byte sequence.
-
-For UTF-8 already held in byte memory, the existing bridge is `string.from_utf8(address, byte_count)`. Supply the numeric address of a backed span containing complete, well-formed UTF-8 sequences, and its byte count. The count is not a codepoint count. A zero byte becomes the zero codepoint rather than ending the decode.
-
-This decoder is not a safe validator for malformed or truncated input. Its byte count does not make an incomplete final sequence safe: continuation reads for a sequence already begun can extend beyond that count. Provide complete valid spans rather than relying on truncation, zero termination or validation by this operation. The call does not establish ownership of the source storage.
-
-A static `string` field occupies four bytes containing a constant reference. Loading that field as a string obtains the text; the field's byte address locates the reference, not the characters. It is not a UTF-8 source pointer. Likewise, a dynamic string is not a device buffer. The numeric fields written by `string.pack` still form a string value, not a memory address or DMA source. Use explicit typed raw bytes for device payloads rather than treating text operations as byte storage.
-
-The installed library is available through the shared `string` global. Treat both that global and its library table as shared resources: do not overwrite them while other code depends on them. Library availability does not mean a cartridge receives a private table to repurpose.
+A static `string` field instead stores an image constant reference. Its address
+locates that reference, not inline UTF-8. Likewise, `string.pack` produces a
+String value rather than an addressed hardware buffer. Use explicit byte
+storage when supplying a device's payload. [BIOS String operations](bios-string.md)
+defines the text operations, conversions and their full argument contracts.
 
 <a id="complete-blua-call-and-text-program"></a>
 
@@ -936,14 +856,16 @@ The bus-fault latch records the first pending fault. Its retained status and the
 
 These four registers use byte addresses. The access labels describe aligned Word/U32 accesses; they do not grant byte or halfword writes.
 
-| Byte address | Register | Word access and contents | Construction/clear word |
+| Byte address | Register | Word access and contents | System reset / ACK value |
 |---|---|---|---|
 | `0x08010208` | `IO_SYS_BUS_FAULT_CODE` | Read-only. Numerical code of the first pending fault. | `0x00000000` (`BUS_FAULT_NONE`) |
 | `0x0801020c` | `IO_SYS_BUS_FAULT_ADDR` | Read-only. Byte address supplied by the first pending fault. | `0x00000000` |
 | `0x08010210` | `IO_SYS_BUS_FAULT_ACCESS` | Read-only. Access flags supplied by the first pending fault. | `0x00000000` |
 | `0x08010214` | `IO_SYS_BUS_FAULT_ACK` | Reads as zero. A zero word write does not acknowledge; **any nonzero word write** clears the latch. | `0x00000000` |
 
-“Construction/clear word” identifies the words established on construction or explicit latch clear; it is not a specification of every machine-reset sequence. CODE, ADDR and ACCESS retain full 32-bit words. CODE is a numerical code, not a bitmask; ADDR is a byte address; ACCESS is a flags word.
+System reset and a nonzero ACK clear all three report words. CODE, ADDR and
+ACCESS each retain a complete 32-bit word: CODE is an enumerated code, ADDR is a
+byte address and ACCESS is a flags word.
 
 Reading the status registers does not acknowledge a fault. An aligned Word/U32 write to CODE, ADDR or ACCESS reports `BUS_FAULT_READ_ONLY` before writing the destination slot. If no fault is already pending, that rejected write becomes the pending fault, recording its destination address and write access flags. Otherwise, the older recorded fault remains.
 
@@ -978,19 +900,25 @@ Word and U32 have different ACCESS flags even though both access four bytes. The
 
 ### Capture, subsequent faults and acknowledgment
 
-With no fault pending, a reported fault immediately publishes CODE, ADDR and ACCESS and leaves ACK zero. Publication is part of reporting the fault, not deferred to a frame boundary.
+The first fault immediately records CODE, ADDR and ACCESS. These words retain
+that fault until acknowledgement, including when later accesses fault.
 
-While CODE is not `BUS_FAULT_NONE`, later faults do not replace those three retained words. Every reported fault nevertheless advances a separate 32-bit fault sequence, wrapping modulo 2^32. This sequence is not an additional mapped register. It lets the CPU distinguish a new fault from an older pending record.
-
-An aligned nonzero word write to ACK synchronously clears CODE to `BUS_FAULT_NONE`, clears ADDR and ACCESS to zero, and leaves ACK zero. Any nonzero word works; bit 0 alone is not the acknowledgment test. A zero word write leaves the pending fields unchanged. Acknowledgment neither resets nor advances the fault sequence.
+An aligned nonzero word write to ACK clears CODE to BUS_FAULT_NONE and clears
+ADDR and ACCESS. ACK reads zero. Any nonzero value performs the clear; a zero
+write leaves the report unchanged. Read and save a required report before
+acknowledging it.
 
 ### Synchronous CPU exception entry
 
-For an ordinary aligned scalar load, the CPU compares the fault sequence before and after the mapped read. A change causes synchronous data-bus-error entry **before the read value is assigned to the destination register**. For an ordinary aligned scalar store that is ready to proceed, the CPU compares the sequence around the write and enters the same exception if it changes. Exception entry does not imply rollback of an already completed part of an F64 store.
+A new fault during a CPU scalar load enters DataBusError before the destination
+register is written. A new fault during a ready CPU scalar store enters the
+same exception; any earlier effects of a multiword access remain.
 
-Consequently, a new fault still causes this exception when an older fault remains latched. Conversely, an older pending CODE alone does not force a successful later access to fault: an access with no new sequence change can complete normally.
-
-The latch, clear and acknowledgment operations do not themselves request an IRQ or enter a CPU exception. The synchronous ordinary-access checks above provide the exception-entry edge described here.
+Each new CPU bus fault enters this exception even when an older report still
+occupies CODE/ADDR/ACCESS. A pending report by itself leaves successful accesses
+unaffected. Device-master faults update the report without vectoring the CPU.
+Clearing the report acknowledges those diagnostics; exception return is a
+separate CPU operation.
 
 The CPU cause-code field occupies bits 6:2, selected by `CPU_CAUSE_CODE_MASK = 0x0000007c`.
 
@@ -1050,7 +978,7 @@ The displayed result is:
 
 ![BIOS monitor after the unmapped Word load and the three-word MEM command](figures/memory-bus-fault.png)
 
-**Unmapped-load output.** The BIOS reports DBE, the faulting source statement and its EPC; the `MEM` line shows the three Memory report words. EPC is the instruction's address in this linked program, not a constant to copy into another cartridge.
+**Unmapped-load output.** The BIOS reports DBE, the faulting source statement and its EPC; the `MEM` line shows the three Memory report words. EPC is the instruction's address in this program, not a constant to copy into another cartridge.
 
 </div>
 
@@ -1103,7 +1031,7 @@ while true do
 end
 ```
 
-`source` first receives the invalid address stored in `source_address`. The first read faults before assigning `result.first`. `safe_words`, by contrast, names the linked address of two backed DATA words. Repair the existing `source` binding to that address: changing the `source_address` word alone would leave the stopped read’s already loaded pointer unchanged. Do not change EPC; the same read must be retried with the repaired operand.
+`source` first receives the invalid address stored in `source_address`. The first read faults before assigning `result.first`. `safe_words`, by contrast, names the address of two DATA words in main RAM. Repair the existing `source` binding to that address: changing the `source_address` word alone would leave the stopped read’s already loaded pointer unchanged. Do not change EPC; the same read must be retried with the repaired operand.
 
 At the monitor, inspect `FRAMES`. Each physical frame row gives its index,
 function-record address and PC. Following `DEPTH` rows list the installed
@@ -1147,13 +1075,12 @@ FAULT 00000001 -> 00000000
 
 `REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [System control and timing — Reset requests](system.md#reset-requests).
 
-For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#cp0-in-cartridge-irq). The callback returns normally, allowing its generated IRQ vector to perform RFE and resume the interrupted cartridge code.
+For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#cp0-in-cartridge-irq). The callback returns normally, allowing the standard IRQ entry to perform RFE and resume the interrupted cartridge code.
 
 ## Worked example: prepare and copy two records
 
 This sequence prepares bytes without submitting a device job. Start after
-normal cartridge DATA/BSS initialization. The declared objects supply linked
-addresses; no guessed free RAM address is needed.
+normal cartridge DATA/BSS initialization. The declared objects supply the source and destination addresses.
 
 ```lua
 module<entry>
@@ -1222,15 +1149,25 @@ DMA uses byte addresses but counts transfers in **32-bit words**. Starting a tra
 
 The shared record contains CODE (`0x08010208`), ADDR (`0x0801020c`) and ACCESS (`0x08010210`); ACCESS identifies direction and access kind, not a channel or bus master. Read them with aligned Word/U32 MMIO accesses from ordinary cartridge code, not privileged CP0 accesses; reads do not acknowledge them.
 
-Attribution requires an interval from saving the old report through final reads in which only the assessed operation produces bus faults and nobody else acknowledges them. Other channels, CPU accesses, interrupt handlers, BIOS work or devices must not introduce another fault. This is an assumption the program must establish, not automatic isolation.
+To associate the report with one transfer, first arrange exclusive reporting
+for that interval: other DMA work, CPU accesses, interrupt handlers and BIOS
+service must neither introduce a bus fault nor acknowledge one. The report has
+no channel or bus-master identifier.
 
 **Before START**, read CODE and preserve any older nonzero report's CODE/ADDR/ACCESS in owned storage. Write aligned Word/U32 `1` to ACK (`0x08010214`), then read CODE to establish a zero baseline. Start the prepared operation and wait for its real completion predicate. Read CODE again; if nonzero, preserve CODE/ADDR/ACCESS before another ACK. Under the stated assumption, this is the first reported fault since clearing and belongs to the assessed operation.
 
-If the old report must remain physically latched, do not clear it: saving its words preserves information, not the latch. An unchanged pending triple cannot reveal additional faults; concurrent producers or acknowledgers also prevent attribution. Use actual result observations without claiming attribution. Zero CODE is not transfer success: an unready port can discard a word without a bus fault. These registers expose no new-fault counter.
+If the old report must remain latched, preserve it in place and treat later
+transfer faults as unattributed: the report cannot record another fault until
+cleared. Also check the destination unit's status, since a device can refuse an
+unready port write without raising a bus fault.
 
 ### Prepare, start, wait, check, reuse
 
-1. **Prepare the storage.** Use the linked addresses of storage owned by the program. Fill the source before starting, reserve enough destination space for the word count, and use nonoverlapping source and destination ranges for an ordinary copy. A count of 20 means 20 words, or 80 bytes; it does not mean 20 bytes. Keep the source unchanged until DMA has finished reading it, and do not consume the destination as a completed copy before the final writes.
+1. **Prepare the storage.** Fill the source and reserve sufficient destination
+   bytes at known program-storage addresses. Use nonoverlapping ranges for an
+   ordinary copy. A count of 20 transfers 20 words, or 80 bytes. Keep the source
+   stable through its last DMA read and wait for the final destination write
+   before consuming the completed buffer.
 
 2. **Program an idle channel completely.** Set its read address, write address, count, increment choices, request selectors and block length before START. An increment advances its address by four bytes per word; a fixed address advances by zero. The programmed block-length field specifies 1 through 16 words, and the last block uses only the remaining count. Both selected requests must be asserted before a block is admitted. `FORCE` is always asserted; `DISABLED` is never asserted. For a device port, choose its real request selectors rather than use FORCE to send words while the port is not ready.
 
@@ -1240,7 +1177,11 @@ If the old report must remain physically latched, do not clear it: saving its wo
 
 4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. Wait for channel status or service its completion IRQ rather than assuming a transfer delay.
 
-   **DONE is not a success certificate.** An unmapped read can report a bus fault and supply zero to the transfer; an unmapped or read-only destination write can report a fault without writing its target. DMA nevertheless advances its addresses and count rather than aborting on those faults. A write to an I/O port that is not ready can be discarded without retrying that word. Use the before-START attribution procedure above when assessing the bus-fault record, and use the correct request selectors; completion alone does not prove that all intended destination bytes were written.
+   Check the fault report using the procedure above. DMA advances after a
+   faulting access: an unmapped source can supply zero, and an unmapped or
+   read-only destination can reject the write. An unready I/O write can also be
+   discarded without retry. Use the correct device requests and verify the
+   destination's applicable completion/status condition.
 
 5. **Reuse according to the completed operation.** Once DMA has finished its source reads, that transfer no longer needs the source bytes; once its final RAM writes have completed, the RAM destination can be inspected as the completed transfer's output. A receiving device may still have work to do. DMA transport completion does not establish GPU-job completion or permission to reuse a live display surface.
 
@@ -1250,7 +1191,7 @@ For backed RAM, reads observe the current four little-endian bytes and writes im
 
 ### DMA programming example
 
-The [DMA chapter's BLua sequence](dma.md#worked-blua-program) prepares 20 source words and performs two nonoverlapping RAM copies using linked storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
+The [DMA chapter's BLua sequence](dma.md#worked-blua-program) prepares 20 source words and performs two nonoverlapping RAM copies using declared storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
 
 The following GP0 sequence sends a five-word ROM stream, waits for DMA DONE,
 then separately waits for a GPU marker and GPU idle. These are distinct
@@ -1263,7 +1204,11 @@ universal ordering of DMA and device completion.
 
 GEO captures a job's configuration, not its source data. Prepare the buffers before launch, keep them stable during work, and check the terminal state before consuming output or reusing storage. Follow the [GEO launch procedure](geo.md#launching-and-observing-a-job) for operation-specific programming and observation.
 
-1. **Prepare before admission.** Read `STATUS` and program a nonbusy unit. Populate the operation's descriptors and source data, and prepare separate output buffers. Use actual linked buffers; this does not grant extra mapped RAM or GEO scratch storage. XFORM2 destination vertices and AABB outputs require RAM ranges. Set the operation's `SRC0`, `SRC1`, `SRC2`, `DST0`, `DST1`, `COUNT`, `PARAM0`, `PARAM1`, `STRIDE0`, `STRIDE1`, and `STRIDE2` before writing `CMD`.
+1. **Prepare the job.** Wait for a nonbusy unit, then populate the descriptors
+   and source records and reserve separate output buffers. XFORM2 vertex and
+   AABB destinations must occupy writable RAM outside reserved storage. Program
+   SRC0, SRC1, SRC2, DST0, DST1, COUNT, PARAM0, PARAM1 and all three strides
+   before writing CMD.
 
 2. **Know what launch captures.** An accepted, supported nonzero command captures those register words, without reading source bytes. With nonzero `COUNT`, GEO becomes `BUSY` and schedules service. `OVERLAP2D_PASS` writes its summary at launch, before the count test; even a zero-count launch is not necessarily free of buffer writes. Never submit `CMD` while `BUSY`: it neither waits nor queues. It discards the running job, rejects the new command, resets `PROCESSED` to zero, publishes `REJECTED` with `REJECT_BUSY`, and raises the ERROR interrupt.
 
@@ -1303,7 +1248,15 @@ For a supported nonzero command, an accepted CMD write captures the staging para
 
 Keep upload completion separate from playback lifetime. A DMA upload first delivers words to the transfer FIFO; private-RAM writes can remain pending after DMA DONE. After the intended DMA upload completes, with no competing transfer writer, read APU STATUS and wait for TRANSFER_BUSY, bit 10 (`0x400`), to clear before starting a voice over the uploaded bytes. Keep the operation's DMA and fault checks: a clear bit alone does not prove correct data. CPU DATA writes in MANUAL_WRITE commit immediately. Do not change the transfer address while an upload commit is pending. A download may continue prefetching after its DMA completes; select transfer STOP to cancel that work and clear its FIFO before reprogramming. This does not undo committed writes or stop voices.
 
-A paused voice retains a nonexclusive source reference. A looping voice continues reading; a voice STOP command is queued, not completed by its CMD write. A pending STOP fade does not immediately release the source. While fading, the normal post-frame source-boundary check is suppressed: keep the fade within the remaining nonlooping source data or provide a valid loop. An executed no-fade STOP clears that slot's resident voice without emitting SLOT_ENDED. SLOT_ENDED describes one ended slot, not every use of its bytes. Other voices, queued PLAY commands, and staged or planned uses can still require the same source. Account for all of them before overwriting shared samples; neither DMA DONE nor one SLOT_ENDED grants blanket reuse.
+A paused voice retains its source, and a looping voice continues reading it.
+STOP enters the command queue. A fading STOP keeps the source in use until
+natural source end or fade completion, whichever comes first. An executed
+no-fade STOP clears the resident voice without SLOT_ENDED.
+
+Release sample bytes only after every voice and queued PLAY using them has
+finished. SLOT_ENDED identifies one ended slot; another slot can still read the
+same source. Upload DMA completion releases the upload buffer, while playback
+has its separate source lifetime.
 
 Fault acknowledgment clears the fault report, not the voices or command and transfer queues. Reset is destructive: it clears playback, queues, and private sample RAM rather than completing or preserving their contents. See the [APU chapter](apu.md) for source binding and playback, and its [complete raw-port download](apu.md#apu-download-budget) for transfer completion and surplus-prefetch control.
 

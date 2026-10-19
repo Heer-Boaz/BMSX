@@ -23,6 +23,10 @@
   cartridge programmer. Explain purpose and data flow, teach concise real
   programming sequences, then give complete reference details. No source paths,
   emulator internals, tests, history or tool-specific requirements in the books.
+- A cartridge is a physical card, not a compiled or linked program. Distinguish
+  the card's ROM/RAM/devices from program formats and byte contents. Explain
+  execution formats where the interface requires them, not through elementary
+  compiled-versus-interpreted lessons or repository-artifact descriptions.
 - Complete known chapter content before its detailed review; evaluate
   authenticity, independence, explanation, relevance, product boundaries and
   technical completeness as well as factual accuracy. Content precedes print

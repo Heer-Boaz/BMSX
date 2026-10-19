@@ -1,35 +1,50 @@
 # Cartridge sockets and mapped card devices
 
-A cartridge socket identifies a place for a card, not a fixed collection of devices. BMSX provides two sockets, numbered 0 and 1. Each socket can be occupied independently. An occupied socket establishes that a card is present; it does not establish that the card supplies ROM, RAM, or a mailbox, and it does not establish that the card is bootable.
+The BMSX cartridge interface connects two independently occupied sockets,
+numbered 0 and 1, to a shared set of CPU address windows. A card can supply
+program and resource ROM, writable RAM, a word mailbox, or a combination of
+these resources. A RAM- or mailbox-only card can extend a program running from
+the other socket.
+
+Ordinary CPU data accesses use the selected socket. Instruction fetches retain
+their own execution-socket selection, and DMA can select a socket separately
+for each endpoint. A cartridge program can therefore access a second card
+without relocating its own image or redirecting its next instruction fetch.
+The selection and transfer sections below explain when each selection is taken.
 
 ## Card composition
 
-A card may supply ROM, RAM, and a mailbox independently. Presence identifies
-the card as a whole; it does not enumerate those devices or report their
-capacities. Know the inserted card's composition before using its storage or
-mailbox. Selecting a socket does not create a missing device.
+Cards can combine ROM, RAM and a mailbox independently. ROM supplies read-only
+program and resource data, RAM supplies writable space, and the mailbox provides
+data and control ports. Consult the card specification for its installed
+resources and capacities. STATUS reports which sockets are occupied.
 
-| Installed resource | Composition | What its presence establishes |
+| Resource | Use | Capacity |
 | --- | --- | --- |
-| Card | Occupies socket 0 or socket 1 | Socket occupancy, not device inventory or boot readiness |
-| ROM | Optional, independent of RAM and mailbox | Read-only bytes are installed on the card |
-| RAM | Optional; capacity belongs to the particular card | The card supplies writable storage, not necessarily the complete RAM aperture |
-| Mailbox | Optional, independent of ROM and RAM | The card supplies a mailbox device |
+| Socket | Connection for one card | Two sockets, numbered 0 and 1 |
+| Card ROM | Program and read-only data | Card-specific, within the 512-MiB ROM window |
+| Card RAM | Writable data | Card-specific, within the 15-MiB RAM window |
+| Mailbox | Word exchange, interrupt and DMA-request control | DATA and CONTROL words with a local interrupt latch |
 
-Do not derive installed capacity from the size of an address aperture. The
-address windows reserve bus locations; they do not promise that storage is
-installed at every offset. ROM, RAM and mailbox accesses to an absent device
-follow the rules in the corresponding sections below.
+The address windows accommodate cards of different capacities. Addresses beyond
+an installed ROM or RAM return zero; the access section below describes tail
+reads and writes. Socket occupancy alone does not identify a bootable card.
 
 ## Boot selection
 
-The installed BIOS examines present sockets in order, socket 0 before socket 1, using SELECT while inspecting them. It chooses the first card that satisfies its ROM boot-readiness checks. A card can therefore occupy a socket without becoming a boot candidate, and the first occupied socket need not be the socket from which startup proceeds. These checks describe the installed BIOS boot policy, not a cartridge-discovery BIOS interface available to software.
+At startup, the BIOS examines socket 0, then socket 1, selecting each present
+card in turn. It starts the first card with a usable executable ROM image. A
+RAM-only card or a card whose ROM does not meet the startup requirements is
+skipped.
 
-For the ROM header, startup requirements, and boot routes, see [Memory — Cartridge startup](../book1/memory.md#rom-header-fields). Those definitions remain authoritative; card composition alone does not replace their requirements.
+[Memory — Cartridge startup](../book1/memory.md#rom-header-fields) specifies the
+ROM header, startup requirements and entry sequence.
 
 ## Selection and execution
 
-SELECT and the active instruction-fetch domain are distinct. Cartridge instruction fetching follows the socket bound to the active execution domain. Changing SELECT alone does not redirect active cartridge instruction fetching to the other socket, execute that socket, or initialize it.
+The CPU retains an execution-socket latch for cartridge instruction fetches.
+SELECT controls ordinary data accesses independently, allowing a program to
+read the other card while continuing to execute from its original socket.
 
 A cartridge-targeted `CP0.EXEC` samples the selected socket and replaces the
 instruction-fetch latch. Both sockets use the same cartridge addresses, so an
@@ -58,7 +73,9 @@ levels and access restrictions used by that sequence.
 
 ## Cartridge controller
 
-The cartridge controller provides two independent physical sockets, numbered 0 and 1. Either socket may contain a cartridge or be empty. The controller selects a socket without testing whether a cartridge is present; software must distinguish socket selection from cartridge presence.
+The controller's SELECT register chooses the socket used by ordinary data
+accesses. STATUS reports both presence bits and the selected socket, including
+when the selected socket is empty.
 
 ### Controller registers
 
@@ -80,13 +97,17 @@ The cartridge controller provides two independent physical sockets, numbered 0 a
 
 ### Selection and presence
 
-A `SELECT` write takes effect immediately for subsequent ordinary cartridge accesses. It changes selection only: it does not reset either cartridge, generate a cartridge interrupt, or republish cartridge DMA requests.
+A `SELECT` write takes effect for subsequent ordinary cartridge accesses.
+Both cards retain their device state, interrupt latches and DMA-request levels
+across the selection change.
 
 An individual bus transaction may explicitly select a socket instead of using `SELECT`. Such an override does not modify the retained selection word. `STATUS` continues to report ordinary selection, not the socket chosen by that transaction.
 
 <div class="keep-together">
 
-`STATUS` is a computed report, not a writable status latch. Its two presence bits describe both sockets independently of selection. Thus selecting an empty socket still changes bit 16, while the presence bits remain unchanged. Reads from an empty selected socket return zero; writes to it have no effect and generate no cartridge effects.
+The presence bits are independent of selection. Selecting an empty socket
+changes STATUS bit 16 while leaving bits 1:0 unchanged. Reads from that socket
+return zero and writes have no effect.
 
 </div>
 
@@ -97,7 +118,9 @@ Controller reset clears the entire `SELECT` word, resets each present cartridge,
 
 ## Card storage and MMIO access
 
-A card may provide ROM, RAM, and an MMIO attachment independently. The presence of one does not imply the presence of either other region. The address windows below reserve locations on the cartridge bus; their sizes are not a statement of the storage capacity installed on a particular card. ROM and RAM offsets are measured in bytes from their respective window bases.
+Each selected card uses the following address windows. ROM and RAM offsets
+are byte offsets from their respective bases; the card's installed capacity
+may be smaller than the window.
 
 | Region | First address | Exclusive limit | Window size |
 | --- | --- | --- | --- |
@@ -105,7 +128,9 @@ A card may provide ROM, RAM, and an MMIO attachment independently. The presence 
 | RAM | `0x30000000` | `0x30f00000` | 15 MiB |
 | MMIO | `0x30f00000` | `0x31000000` | 1 MiB |
 
-A ROM or RAM read returns zero when that region is absent or when its byte offset is outside installed capacity. Addresses do not wrap around the installed region: a smaller ROM or RAM is not mirrored through the remainder of its window. A write cannot create missing RAM or extend installed RAM capacity. Writes to ROM are ignored.
+Absent or unpopulated ROM and RAM locations read as zero. Smaller memories
+are not mirrored through the remaining window. ROM writes are ignored; a RAM
+write takes effect only when its complete width fits the installed memory.
 
 ROM and RAM scalar values are little-endian: the lowest-addressed byte occupies
 bits 7:0. For scalar ROM and RAM reads, the starting address selects the region. A multi-byte read remains a read of that selected region, including when fewer than the requested number of installed bytes remain. Available bytes occupy the low-order portion of the result; missing high-order bytes are zero. This differs from a byte sequence spanning address windows, where each byte is selected by its own address.
@@ -122,7 +147,7 @@ bits 7:0. For scalar ROM and RAM reads, the starting address selects the region.
 
 MMIO reads return zero when no attachment is present. Otherwise, the register read uses the byte offset from `0x30f00000` without rounding that offset to a word boundary. An 8-bit read selects the returned word's byte lane using address bits 1–0. A 16-bit read selects its low or high half using address bit 1. A 32-bit read returns the complete word. These lane rules describe read results; they do not make narrower MMIO writes effective.
 
-RAM begins zero-filled when provisioned. That initial state must not be confused with logical card reset, which does not clear RAM.
+Card RAM initially contains zero. A logical card reset retains its contents.
 
 
 ## Cartridge mailbox
@@ -212,8 +237,8 @@ not rearm a mailbox edge. When handling both sockets, select the intended card
 before touching its local registers and acknowledge only the central bits owned
 by that handler. The complete CPU-enable, `irq(flags)` and predicate-wait route
 is in [Interrupt controller](../book1/irq.md#cpu-delivery-and-waiting).
-A card-local trigger or a central pending bit is not a remote-work completion
-protocol.
+For a mailbox protocol, assign DATA and interrupt meanings in the card's own
+programming specification.
 
 ## DMA between sockets
 
@@ -226,7 +251,8 @@ A DMA channel can address both cartridge sockets in one transfer without changin
 | 9 | Socket 1 `DREQ_WRITE` | Socket 1 |
 | 10 | Socket 1 `DREQ_READ` | Socket 1 |
 
-The two overrides are independent of one another and of `CART_SELECT`. Selecting a cartridge request does not constrain the endpoint to a particular cartridge address range: its address may target ROM, card RAM, or mailbox MMIO. The request controls admission and socket routing; the addressed region controls the access itself.
+The two overrides are independent of one another and of `CART_SELECT`. Selecting a cartridge request does not constrain the endpoint to a particular cartridge address range: its address may target ROM, card RAM, or mailbox MMIO. The request selects when a block can start and which socket it accesses;
+the endpoint address selects the region within that socket.
 
 Both programmed request conditions must be asserted before a block is admitted. `FORCE` (selector 0) is always asserted; `DISABLED` (selector 15) never is. Mailbox `CONTROL` bit 1 drives `DREQ_READ`, and bit 2 drives `DREQ_WRITE`. Both may be asserted together. These are request levels, not FIFO occupancy indications or a sequence of per-word requests. An absent card, or a card without a mailbox, supplies no asserted cartridge requests.
 
@@ -247,9 +273,18 @@ For example, a four-word copy from socket 0 to socket 1, incrementing both addre
 
 Each increment advances four bytes per word. This block requires socket 0 `DREQ_READ` and socket 1 `DREQ_WRITE`; the CPU’s current selection cannot reroute either endpoint.
 
-Admission and completion are distinct. Admission snapshots the channel’s addresses, remaining count, control, and the number of words in the next block, then establishes its service deadline. No endpoint transfer occurs at admission. At service, each word is read and then written; addresses and remaining count are updated after the block. A zero remaining count completes the channel. An admitted block is nonpreemptible: deasserting a request can prevent a later block from being admitted, but does not cancel or shorten the active block.
+When both requests permit a block to start, DMA captures its addresses,
+remaining count, control and block length. The block's transfer cost elapses
+before endpoint accesses occur. At completion, each word is read and then
+written, after which the channel updates its addresses and count. A zero
+remaining count completes the channel. Once started, a block runs to completion;
+a request dropping low holds off the next block rather than shortening the
+current one.
 
-Selectors other than 7–10 supply no cartridge socket override. Such an endpoint uses `CART_SELECT` when its cartridge access is serviced. `CART_SELECT` is not part of the admitted snapshot, so changing it after admission can redirect a pending, unoverridden access. Keep the selection unchanged until that access completes, or use an explicit cartridge request override.
+With selectors other than 7–10, a cartridge endpoint uses `CART_SELECT` at
+the time of access. Changing SELECT during an active block can therefore
+redirect that endpoint. Keep selection unchanged until completion, or use an
+explicit cartridge request selector.
 
 The installed timing basis is 33,868,800 Hz. For a contiguous N-word endpoint span, cartridge service costs `8N + 4` cycles. This includes card RAM and mailbox MMIO: neither receives main-RAM pricing. Main RAM costs `N + 1` cycles. Two cartridge endpoints have additive costs, even when they select different sockets:
 
@@ -259,11 +294,15 @@ The installed timing basis is 33,868,800 Hz. For a contiguous N-word endpoint sp
 | Cartridge ↔ cartridge | `16N + 8` | 72 | 264 |
 | Cartridge ↔ installed I/O | `8N + 4` | 36 | 132 |
 
-Thus the example ROM(socket 0) → RAM(socket 1) block costs 72 cycles from admission. Incrementing across a cartridge ROM, RAM, or MMIO boundary starts a new span and incurs setup again. These figures are admitted-block service costs, not physical sustainable bandwidth or CPU-launch delay. Request waiting, channel competition, and software programming or polling are additional. See [DMA](../book1/dma.md) for the general channel programming sequence.
+The example ROM(socket 0) → RAM(socket 1) block takes 72 cycles once started.
+Incrementing across a ROM, RAM or MMIO boundary starts another span and incurs
+setup again. Add request waiting, channel competition and CPU setup or polling
+to obtain the complete operation time. [DMA](../book1/dma.md) gives the general
+channel programming sequence.
 
 ## Access faults
 
-The mapped-bus rules below are separate from ordinary CPU admission. Ordinary
+CPU alignment checks precede the cartridge bus access. Ordinary
 halfword accesses require two-byte alignment and word accesses four-byte
 alignment. A misaligned ordinary load or store enters its address-error
 exception before reaching the bus. A new mapped fault during an ordinary load
@@ -337,7 +376,5 @@ mem[0x08000004] = 1
 The received words are `01234567H`, `89ABCDEFH`, `55AA33CCH`, `F00DCAFEH`;
 `first` and `last` select the first and fourth. This writes no socket-0 RAM.
 Logical card reset would retain the destination, so a warm rerun cannot assume
-that untouched card RAM is zero. The one admitted block costs 72 system cycles
-under the timing rules above; CPU setup, request waiting, polling and loads are
-additional. This is not a statement-to-statement latency or interrupt-entry
-guarantee.
+that untouched card RAM is zero. The one block takes 72 system cycles, plus CPU setup, request waiting,
+polling and result reads.

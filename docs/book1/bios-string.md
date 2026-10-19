@@ -1,28 +1,24 @@
 # BIOS String operations
 
-The BIOS supplies the `string` global for text construction, codepoint access,
-ASCII case conversion, slicing, reversal, repetition and mapped UTF-8 input.
-`string.format` builds formatted text; pattern operations search and replace
-text; packing operations construct and read formatted String records. These
-operations use the installed String table without a cartridge import. A
-separate floating-point word decoder is available by named BIOS import.
+Use `string` for text construction, character access, slicing, formatting,
+pattern matching and formatted String records. Normal BIOS startup installs
+the Table and registers it for String method lookup. Call `string.sub(text,
+start, finish)` or the corresponding `text:sub(start, finish)` form.
 
 ## Text values and encoded byte storage
 
-A String is a language value, not a numeric address of its characters. Its
-length counts codepoints. Despite its name, `string.byte` selects one complete
-codepoint; it is not a load from encoded byte storage. `string.char` constructs
-text from numeric codepoints; it does not return a buffer address.
+String positions begin at 1 and count Unicode codepoints. `string.byte`
+selects one complete codepoint; `string.char` constructs a String from numeric
+codepoints. A String's language value is separate from an encoded byte range
+in ROM or RAM.
 
-Encoded bytes instead occupy mapped storage. `string.from_utf8` takes that
-storage's address and a byte count and constructs a String. A static String
-reference field is not a substitute for an encoded byte span. [Memory and
-program storage](memory.md) defines these representations, storage declarations,
-initialization, reservations and ownership. [CPU and BLua32 instruction
-reference](cpu.md) defines Number/word conversion, ordinary indexing and
-instruction charges. [BIOS base services](bios-base.md) and
-[Protected calls and coroutines](coroutines.md) define the connected
-conversion, diagnostic and error interfaces.
+Use `string.from_utf8(address, byte_count)` to construct text from mapped
+UTF-8 bytes. The address selects actual byte storage and the count measures
+encoded bytes. [BLua storage declarations](blua-programs.md#typed-storage-layouts-and-address-views)
+define those ranges; [Memory](memory.md) gives their physical mapping and
+reservations. [CPU value rules](cpu.md) specify indexing and Number
+conversion, and [protected calls](coroutines.md) describe language-error
+handling.
 
 The following example contains four codepoints. String positions start
 at one; the mapped byte offsets start at zero. The last two codepoints each
@@ -39,11 +35,25 @@ Thus eight encoded bytes and four String codepoints describe the same example
 content. A zero codepoint is also content, not a terminator. Codepoint
 operations do not imply that every text display can draw every codepoint.
 
-The contracts below describe the installed bindings. Public library fields
-remain ordinary mutable values. String method lookup uses the installed
-String-index Table, not numeric character indexing. Rebinding the public
-`string` global alone does not replace that installed Table. Captured helper
-functions and their remaining live dependencies are distinguished below.
+Public library fields are mutable. String method lookup continues to use
+the installed String-index Table after the global `string` name is rebound.
+For character selection, use `string.byte` or a substring operation rather
+than numeric Table-style indexing.
+
+Choose the interface according to the input representation:
+
+| Input or task | Interface | Units |
+| --- | --- | --- |
+| Inspect or slice an existing String | `string.byte`, `string.sub`, `string.len` | One-based codepoint positions and codepoint counts. |
+| Construct text from character values | `string.char(...)` | Numeric Unicode codepoints. |
+| Decode an encoded memory span | `string.from_utf8(address, byte_count)` | Mapped byte address and encoded byte count. |
+| Format a Number or other value for display | `string.format(format, ...)` | The format selects textual representation, width and precision. |
+| Build or read a formatted String record | `string.pack`, `string.unpack` | Codepoint-valued packet units; these calls do not transfer a record to mapped storage. |
+| Interpret existing floating-point words | Named import `string/float/decode` | One binary32 word or high/low binary64 words; one Number result. |
+
+In particular, the size of a packed String is not a DMA transfer length.
+Define a byte layout in mapped storage when a device consumes bytes or words;
+use String operations for language text and String records.
 
 <a id="complete-program-codepoints-and-mapped-utf-8"></a>
 
@@ -248,15 +258,11 @@ local capitals = string.upper(text) -- codes 65, 90, 233, 128640
 local small = string.lower(text)    -- codes 97, 122, 233, 128640
 ```
 
-Both functions obtain `L = #value`, visit positions 1 through L, construct a
-String for each mapped codepoint, and join the temporary Table with their
-captured `table.concat`. An empty String therefore produces an empty String.
-
-There is no preliminary String-only check. A Table with L = 0 produces an empty
-String without a codepoint read. A Table with L > 0 reaches `string.byte`, which
-rejects the Table with `Invalid argument.` Other value kinds fail at the length
-operation with `Attempted to get length of an unsupported value.` rather than
-being converted to text.
+The result contains the mapped codepoints in their original order. Empty
+input returns an empty String. Supply a String: a positive-length Table fails
+at character access with `Invalid argument.`, while unsupported length kinds
+raise `Attempted to get length of an unsupported value.` A zero-length Table
+reaches no character read and produces an empty String.
 
 ### Inclusive slices
 
@@ -414,11 +420,9 @@ local floating = string.format('%.2f/%.1e/%#.3g',
     1.25, 12.5, 100)                                 -- '1.25/1.3e+01/100.'
 ```
 
-Two BMSX-specific results are important when selecting an output format:
 `string.format('%.0f', 1000000)` returns `'1e+06'`, because its whole-number
-piece uses ordinary Number-to-text conversion; `string.format('%c', 65)`
-contains **two** codepoints, 65 and 0. Use `string.char(65)` when constructing
-one codepoint. The conversion rules below explain both results.
+piece uses ordinary Number-to-text conversion. The conversion rules below
+explain this output when choosing a numeric format.
 
 ### Conversion syntax and argument order
 
@@ -462,9 +466,16 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 
 **`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the maintained-length rule above.
 
-**`%c` — codepoints from integer and fraction.** The installed function passes both `math.modf` results to `string.char`, integer part first and fractional part second. It consumes one format value and returns one String, not two return values. Each Number is converted to an unsigned 32-bit word by truncation and wrapping. A resulting word greater than `10FFFFH` or within `D800H`–`DFFFH` raises the codepoint error; zero is String content, not a terminator. Number NaN and either infinity become word zero. Original non-Number arguments become Number NaNs through `modf`, rather than reaching `char` with their original category.
+**`%c` — one codepoint.** Takes the integer component from `math.modf` and
+passes that one value to `string.char`. Conversion to an unsigned 32-bit word
+truncates and wraps. A word above `10FFFFH` or within `D800H`–`DFFFH` raises the
+codepoint error. NaN and either infinity convert to codepoint zero; non-Number
+arguments also reach zero through the arithmetic conversion.
 
-For the installed bindings, `string.format('%c', 0)` contains two zero codepoints; both `string.format('%c', 65)` and `string.format('%c', 65.75)` contain codepoints 65 and 0. This differs from the one-codepoint `string.char(65)` form. Width measures the complete formatted String. Precision is ignored, but a precision star still consumes an argument.
+`string.format('%c', 0)` contains one NUL codepoint. Both
+`string.format('%c', 65)` and `string.format('%c', 65.75)` produce `'A'`.
+`string.format('%3c', 65)` produces two spaces followed by `'A'`. Precision is
+ignored, although a precision star still consumes an argument.
 
 <section class="keep-together">
 
@@ -539,13 +550,24 @@ This includes a final bare `%`, a final dot, and a conversion that ends after it
 
 <section class="keep-together">
 
-These checks are not a preflight of the whole format. Earlier literals, conversions and star selections may already have been processed. A raised error returns neither the partial String nor a count. Length evaluation and codepoint operations can also fail; their own errors remain applicable.
+The formatter processes conversions in order. An error can occur after
+earlier argument selections or conversions; the call returns no partial
+String or count. Length and codepoint errors retain their ordinary texts.
 
 </section>
 
-The formatter retains the installed `string.byte`, `string.char`, `string.sub`, `string.rep`, `table.concat` and `math.modf` functions. Changing those table fields later does not replace the retained functions. In contrast, `tostring`, `select` and `error` are looked up when called; replacing them can alter conversion, argument selection and error behavior. Retained substring and concatenation operations can themselves depend on the current `tostring`.
+The formatter keeps its original character, substring, repetition,
+concatenation and truncation functions. Its `tostring`, `select` and `error`
+calls use current globals. Replacing a saved helper's public field leaves
+the saved function in place; that helper can still use current globals of its
+own.
 
-There is no formatter-level output-length, conversion-count, width, precision or total-work cap. Padding can request large Strings; decimal scaling, normalization and base conversion use value-dependent loops. Positive-infinite precision leaves scaling without progress; positive-infinite width can reach nonterminating String repetition. Repeated codepoint reads start from the beginning of their String, so repeated indexed reads repeat the traversal.
+Choose finite widths and precisions appropriate to the output. Large
+padding and decimal precision create more text and require more processing.
+Positive-infinite precision prevents the scaling loop from progressing;
+positive-infinite width can prevent repetition from completing. String
+codepoint access is sequential, so repeated selections at distant positions
+also repeat the intervening traversal.
 
 ## Pattern language
 
@@ -715,11 +737,11 @@ A terminal `%` has no dedicated rejection. Special-escape dispatch first reads a
 
 ## Pattern searches and substitutions
 
-**Shared result and assembly dependency.** Capture bookkeeping, result sequences,
-replacement arguments and output-piece assembly use the [CPU's maintained Table
-lengths](cpu.md#stored-length), including helper Tables created for ordinary
-String inputs. Returned sequences also pass through the ordinary caller's
-result adjustment, defined in the [CPU reference](cpu.md).
+Pattern calls return positions, captured substrings or replacement text as
+specified below. Capture and result sequences use ordinary Table lengths and
+ordinary call-result adjustment. The [CPU reference](cpu.md#stored-length)
+defines those rules. Matching and substitution also allocate temporary
+language objects; budget for them when processing large text.
 
 ### `string.find`
 
@@ -737,11 +759,17 @@ If the normalized start is greater than `#source`, `find` returns one nil before
 
 **Pattern results.** Failure returns one nil. On success, `find` builds a result sequence beginning with the match's start and inclusive end. If there are captures, it appends their values in opening order: substring captures are Strings and position captures are Numbers. With no captures, it builds only the two positions. The result sequence is then expanded into return values.
 
-**Arguments, errors and bindings shared by these four functions.** `source` and `pattern` name Strings, but the pattern functions do not perform entry-time coercion or argument validation. Missing fixed parameters are nil; surplus arguments are ignored. Other argument kinds encounter whichever String-length, substring, codepoint, arithmetic, comparison or indexing operation is reached first; there is no general pattern-specific argument error.
+**Shared arguments and errors.** Supply Strings for `source` and `pattern`.
+Missing fixed parameters are nil and surplus arguments are ignored. Any
+failure is reported by the length, character, substring or other operation
+reached; the pattern interface does not coerce supplied values into text.
 
 Patterns are interpreted as matching reaches them, not validated in a separate pass. Reached syntax errors explicitly raise `invalid string pattern` for an unterminated bracket set, `%f` without its immediately following `[`, or a closing capture with no unfinished capture to close. A reached backreference to a missing, unfinished or position capture raises `invalid string pattern capture`. A terminal `%`, incomplete `%b` delimiters and unfinished opening captures do not have dedicated validation errors; they follow the corresponding operations. See [Pattern language](#pattern-language) for the corresponding parsing rules.
 
-At installation, all four functions retain the then-installed String `byte` and `sub`, Table `concat` and `unpack`, and `tonumber`, `tostring` and `type`. Replacing those fields or globals later does not replace the retained function references. Their own dependencies can still be dynamic: the installed Table `concat` looks up global `tostring`, and the installed `tonumber` looks up global `type`. Pattern errors look up global `error` when raised.
+Pattern operations save their installation-time `byte`, `sub`, `concat`,
+`unpack`, `tonumber`, `tostring` and `type` functions. Their explicit errors
+use current global `error`. Changing a helper's public binding leaves the
+saved reference unchanged, while any globals used by that helper remain live.
 
 Pattern search can backtrack and try multiple candidate positions. Codepoint reads scan from the beginning rather than providing constant-time random access. Pattern size, nesting and input therefore affect work; there is no pattern-local work-step or recursion-depth limit.
 
@@ -802,6 +830,32 @@ For an empty match, after replacement evaluation the function first checks the *
 After substitution stops, the remaining source tail is appended and the output pieces are concatenated. A leading `^` is applied at every current search position, not as a one-time absolute-source-beginning restriction.
 
 A replacement function can have observable effects before a later match or operation fails. Those effects are not rolled back. If a reached operation raises an error, `gsub` does not return a partial output or count. Its private count advances only after replacement evaluation returns. The substitution limit does not bound output size or matching work.
+
+## Floating-point word decoder
+
+The named BIOS import `string/float/decode` binds a static call target,
+not a runtime library Table or a first-class function value:
+
+```lua
+local decode_float<const> = require('string/float/decode')
+local sample = decode_float(0x3fa00000, 0, 4)        -- 1.25
+local calibration = decode_float(0xc0040000, 0, 8)  -- -2.5
+```
+
+Its signature is `decode_float(high, low, byte_count)`, with one Number result.
+Pass the raw unsigned words after reading them in the record's byte order:
+
+| Argument | Four-byte form | Eight-byte form |
+| --- | --- | --- |
+| `high` | Complete 32-bit field | High 32 bits, containing sign and exponent |
+| `low` | Unused; conventionally 0 | Low 32 bits |
+| `byte_count` | 4 | 8 |
+
+Exactly `byte_count == 4` selects the four-byte form; every other value selects
+the eight-byte calculation. There are no separate word-range or argument-type
+checks. Both forms use the field extraction and Number arithmetic under
+[Decoding](#decoding), without reading a String or mapped memory. Surplus
+arguments are ignored. This import does not supply a separate public encoder.
 
 ## String packet packing
 
@@ -1015,52 +1069,44 @@ The following equations specify the transformations, including their subnormal b
 
 #### Encoding
 
-Use these field parameters:
+Pass a Number. `f` encodes IEEE 754 binary32; `d` and `n` encode IEEE 754
+binary64. Finite values are rounded to the nearest representable value, with
+an exact halfway case selecting the even significand. Binary32 conversion
+can therefore lose precision or overflow even when the original Number is
+finite. Binary64 retains a finite Number's representation.
+
+Subnormal results use gradual underflow. Positive and negative zero retain
+their signs, including when a small value rounds to zero. Infinities retain
+their signs. Number NaNs are written with exponent bits all set and fraction
+1; their original payload and sign are not preserved.
+
+| Input Number | Binary32 word | Binary64 high word | Binary64 low word |
+| --- | --- | --- | --- |
+| `0` | `00000000H` | `00000000H` | `00000000H` |
+| `-0.0` | `80000000H` | `80000000H` | `00000000H` |
+| `1.25` | `3FA00000H` | `3FF40000H` | `00000000H` |
+| `2^-149` | `00000001H` | `36A00000H` | `00000000H` |
+| `2^-1074` | `00000000H` | `00000000H` | `00000001H` |
+| Positive infinity | `7F800000H` | `7FF00000H` | `00000000H` |
+| NaN | `7F800001H` | `7FF00000H` | `00000001H` |
+
+A binary32 field writes its word in the selected byte order. A little-endian
+binary64 field writes the low word first, then the high word, with each word
+little-endian. A big-endian binary64 field writes the high word first, then
+the low word, with each word big-endian. Each output octet is held as one
+String codepoint.
+
+For decoding below, the field parameters are:
 
 | Field | Exponent bits `E` | Mantissa bits `M` | Bias `B = 2^(E-1)-1` | Scale `S = 2^M` |
 | --- | ---: | ---: | ---: | ---: |
 | `f` | 8 | 23 | 127 | `2^23` |
 | `d`, `n` | 11 | 52 | 1023 | `2^52` |
 
-Let `emax = 2^E - 1`. The sign starts at 0 and becomes 1 only when the input is less than zero; the input is then negated. A negative-zero Number is not distinguished by that comparison.
-
-- NaN selects exponent `emax` and mantissa 1.
-- Infinity selects exponent `emax` and mantissa 0.
-- Zero leaves both exponent and mantissa at 0.
-- For other finite, nonzero input, start with exponent 0. Repeatedly divide the value by 2 while it is at least 2, incrementing the exponent; repeatedly multiply it by 2 while it is less than 1, decrementing the exponent. Then add the bias to the exponent. In the equations below, `v` is that normalized value and `e` is that biased exponent.
-
-```text
-if e <= 0:
-    m = ((v / 2^(1 - e - B)) * S + 0.5) // 1
-    e = 0
-else if e >= emax:
-    m = 0
-    e = emax
-else:
-    m = ((v - 1) * S + 0.5) // 1
-    if m >= S:
-        m = 0
-        e = e + 1
-```
-
-There is no further correction or range check after that last exponent increment. In particular, the subnormal equation above must not be replaced with a presumed standard-encoding rule.
-
-For `f`, the numeric word passed to the digit writer is:
-
-```text
-sign * 2^31 + e * 2^23 + m
-```
-
-Four digits are written in the selected order. For `d` and `n`, the two words are:
-
-```text
-high = sign * 2^31 + e * 2^20 + (m // 2^32)
-low  = m % 2^32
-```
-
-Little-endian fields write `low` as four little-endian digits, then `high` likewise. Big-endian fields write `high` as four big-endian digits, then `low` likewise.
-
-Unlike the integer path, floating-point packing has no argument-type validation. With the standard globals unchanged, a nonnumeric argument such as nil or a numeric String reaches NaN arithmetic and produces four or eight zero codepoints through the digit writer and `string.char`. This follows the floating-point conversion path, not the integer checks. A Number NaN instead takes the explicit NaN branch above.
+Let `emax = 2^E - 1`. These are field values, not additional format options.
+The encoding operation does not parse numeric Strings or perform the integer
+field's argument checks. Supply Number values rather than using packing as a
+general value conversion.
 
 #### Decoding
 
@@ -1093,32 +1139,6 @@ otherwise:            sign * (1 + m / S) * 2^(e - B)
 
 Source digits are not validated as octets. NaN payloads are reduced to a Number NaN by the arithmetic above.
 
-#### Direct floating-point word decoding
-
-The named BIOS import `string/float/decode` binds a static call target,
-not a runtime library Table or a first-class function value:
-
-```lua
-local decode_float<const> = require('string/float/decode')
-local sample = decode_float(0x3fa00000, 0, 4)        -- 1.25
-local calibration = decode_float(0xc0040000, 0, 8)  -- -2.5
-```
-
-Its signature is `decode_float(high, low, byte_count)`, with one Number result.
-Pass the raw unsigned words after reading them in the record's byte order:
-
-| Argument | Four-byte form | Eight-byte form |
-| --- | --- | --- |
-| `high` | Complete 32-bit field | High 32 bits, containing sign and exponent |
-| `low` | Unused; conventionally 0 | Low 32 bits |
-| `byte_count` | 4 | 8 |
-
-Exactly `byte_count == 4` selects the four-byte form; every other value selects
-the eight-byte calculation. There are no separate word-range or argument-type
-checks. Both forms use the field extraction and Number arithmetic under
-[Decoding](#decoding), without reading a String or mapped memory. Surplus
-arguments are ignored. This import does not supply a separate public encoder.
-
 ### Unpack positions, bounds, and results
 
 `pos` defaults to 1 when absent or nil. Otherwise `pos // 1` supplies the starting position; the zero-based offset is that result minus 1. Fractional finite Numbers therefore round down here. Negative positions are **not** relative to the source's end.
@@ -1142,9 +1162,10 @@ local tag, after_tag = string.unpack("c4", packet, next_pos)
 
 ### Argument categories and library dependencies
 
-There is no common up-front String-category check for formats, text operands, or sources. The operations actually reached determine which categories are accepted. In particular, `#` accepts Strings and Tables, while `string.byte` requires a String.
-
-Some branches can therefore process a Table before reaching any operation requiring a String:
+Use Strings for formats, text fields and input records. Length and
+substring operations still obey their general language rules: `#` accepts
+Tables as well as Strings, while `string.byte` requires a String. As a
+result, these edge cases follow the operations selected by the format:
 
 - A format Table whose length is zero bypasses token reads; a positive-length format Table reaches `string.byte` and fails its String requirement.
 - `c0` can consume even an argument with no supported length operation, because it never requests that length.
@@ -1156,9 +1177,12 @@ Some branches can therefore process a Table before reaching any operation requir
 
 These branches use the CPU's maintained-length rule.
 
-The packing functions retain the `string.byte`, `string.char`, `string.sub`, `table.concat`, and `table.unpack` functions, and their float conversion functions, selected when the String library is initialized. Replacing those public Table entries afterward does not replace the retained functions.
-
-This does not freeze every dependency. Argument selection uses the current global `select`, and directly reported errors use the current global `error`. The retained concatenation operation uses current global `tostring` for non-nil singleton entries. The retained Table-unpack operation uses current global `select` for an empty selected range; a normally completed `string.unpack` result collection is not empty because it includes the next-position result. The behaviors described above assume those globals retain their standard meanings.
+Packing keeps its original character, substring, Table-concatenation,
+Table-unpack and floating-word conversion functions. Argument selection reads
+current `select` and reported errors call current `error`. A saved helper
+continues to use any current globals required by that helper, including
+`tostring` during singleton concatenation. Successful unpacking always
+includes the next-position result, even for a format with no data fields.
 
 <section class="keep-together">
 
@@ -1185,10 +1209,18 @@ The packing module directly reports the following messages, with the capitalizat
 
 </section>
 
-Unsupported length operations and faults in the shared String operations retain those operations' own errors; they are not all converted into one of the messages above. Because parsing and data processing are interleaved, including `X` lookahead, an error does not imply that no earlier work occurred.
+Length, character and substring failures retain their ordinary errors.
+Formats are processed alongside their fields, including `X` lookahead, so a
+later error can follow earlier reads, conversions and argument selections.
 
 ### Work and interface boundaries
 
-The functions repeatedly call String byte/substring operations, construct temporary Tables and Strings, and concatenate or expand result collections. Indexed byte access scans from the String's beginning. Integer conversion adds digit loops; floating-point encoding adds normalization loops. Table concatenation and result expansion also perform their own work.
+Packet size and field kind determine the processing and temporary
+language storage required. Character access scans from the String's
+beginning; integer fields convert their digits and floating fields perform
+word conversion. Large fixed-width text fields construct correspondingly
+large Strings.
 
-Each `string.byte` or `string.char` call adds a two-cycle builtin surcharge, in addition to the surrounding BIOS instruction costs. Large `cN` fields construct correspondingly large Strings; the parser does not cap their widths.
+Each `string.byte` or `string.char` invocation adds its two-cycle primitive
+surcharge, in addition to the executed BIOS instructions and ordinary calls.
+Use the CPU timing rules for the complete sequence.
