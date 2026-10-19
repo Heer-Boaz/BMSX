@@ -142,6 +142,73 @@ Source row phase  = (display signal Y XOR FIELD) AND 1
 In other modes, the source row stride is one and its phase is zero. Read `CSR_LOW.FIELD`
 for the current field value. VSync updates this value as described in Section 2.7.
 
+#### Output rows and source rows
+
+The following mapping applies independently to either enabled reading circuit.
+Use its latched display configuration (Section 2.6), and the current field value
+`F`. Define:
+
+```text
+S = circuit's display signal Y
+D = S - minimum enabled display signal Y
+H = encoded vertical extent + 1
+M = encoded Y magnification + 1
+B = framebuffer source Y
+n = output Y - D
+```
+
+Output Y counts from the top of the combined output, not from signal Y zero.
+The circuit's window contains local rows `0 <= n < H`. Non-interlaced traversal
+selects every such row. Interlaced traversal selects only rows whose **output Y**
+parity equals `F`:
+
+```text
+First selected local row = (D XOR F) AND 1
+Following local rows     = first selected local row + 2, + 4, ...
+```
+
+Stop before `n` reaches or exceeds `H`, the window's exclusive bottom. If the first selected local row
+is outside that window, the circuit supplies no row for that field. For a selected
+row, calculate the framebuffer coordinate below. `div` means nonnegative integer
+division, discarding the remainder.
+
+| Traversal | Framebuffer source Y |
+|---|---|
+| Non-interlaced (`INT=0`) | `B + (n div M)` |
+| Interlaced, non-frame (`INT=1`, `FFMD=0`) | `B + 2 * (n div (2*M)) + ((S XOR F) AND 1)` |
+| Interlaced, frame (`INT=1`, `FFMD=1`) | `B + (n div (2*M))` |
+
+Divide before applying the source row stride; add the source row phase last.
+Output-row selection uses the cropped top `D`, but the non-frame source phase
+uses the original signal origin `S`. They are not interchangeable. Pass the
+resulting source coordinate to the storage-address calculation in Section 2.4;
+it is not a byte address. These equations select this circuit's samples, not
+the final result of the two-circuit composition in Section 2.5.
+
+<section class="keep-together">
+
+#### Worked row selection
+
+Let this circuit start at signal Y 7, with source Y 20, Y magnification 2 and
+height 8. A second enabled circuit starts at signal Y 5. Thus `D=2`, and this
+circuit occupies output rows 2 through 9. All numbers below are decimal; each
+source row corresponds to the output row in the same position.
+
+| Traversal | FIELD | Selected output rows | Framebuffer source rows |
+|---|---:|---|---|
+| Non-interlaced | — | 2, 3, 4, 5, 6, 7, 8, 9 | 20, 20, 21, 21, 22, 22, 23, 23 |
+| Interlaced, non-frame | 0 | 2, 4, 6, 8 | 21, 21, 23, 23 |
+| Interlaced, non-frame | 1 | 3, 5, 7, 9 | 20, 20, 22, 22 |
+| Interlaced, frame | 0 | 2, 4, 6, 8 | 20, 20, 21, 21 |
+| Interlaced, frame | 1 | 3, 5, 7, 9 | 20, 20, 21, 21 |
+
+Here the odd signal origin selects source phase one when `FIELD=0`, even though
+the output window starts on an even row. `INT` alone does not make FIELD alternate;
+the VSync rule in Section 2.7 still applies. FIELD is live state, not one of the
+22 latched configuration words; a later read reports its value at that read.
+
+</section>
+
 ### 2.3. Local-memory samples
 
 Local memory holds `00200000H` bytes, or `00100000H` sixteen-bit words. Within each word,
@@ -175,11 +242,15 @@ GPU24 obtains two words through the CT16 address layout. For framebuffer coordin
 | Even | L[7:0] | L[15:8] | H[7:0] |
 | Odd | L[15:8] | H[7:0] | H[15:8] |
 
+<section class="keep-together">
+
 Every unlisted selector, and selector 18 on circuit 2, supplies **zero RGBA samples**.
 It neither disables the circuit nor raises a format fault. The circuit still performs
 its selected PMODE operation inside its window. For example, copying zero RGB blacks
 that area, whereas blending with zero source alpha preserves the prior RGB. Alpha
 selection still applies as specified in Section 2.5.
+
+</section>
 
 ### 2.4. Local-memory address layout
 

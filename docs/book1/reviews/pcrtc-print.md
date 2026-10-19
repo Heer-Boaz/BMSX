@@ -1,5 +1,34 @@
 # PCRTC print review
 
+## Vertical sampling supplement — 2026-10-19
+
+The complete chapter is now38 pages. Root individually viewed changed
+release-proof pages4–9; an independent print reader viewed10,11,13,27,28,
+30–33 and36–38. The remaining20 pages match accepted page bodies plus
+accepted same-number folios in complete decoded RGBA and page dimensions.
+Only the page-counter rectangle was substituted; headers, chapter footers,
+tables, code and figures remained part of the exact comparison.
+
+The worked example stays with its introduction and complete five-row table.
+The zero-sample paragraph is grouped to avoid a one-line continuation. No
+clipping, lost labels, stranded heading or truncated listing was found.
+A final bound-wording clarification changed only page4; root viewed its actual
+canonical and DRAFT pages. All other37 pages remain byte-exact decoded RGBA.
+Changed DRAFT pages also exactly match the accepted release bodies with the
+previously accepted DRAFT footer substituted, not a new whole-chapter review.
+
+Source SHA256: `6469a68b067315541fc3ccc152be2b187d0b94c017e14f7b59543c5cd676e89a`.
+Release proof: `35479210682b9a2ba44f090521fc7e4ffb9b386bd159fd27e9c2c1b98acf6158`.
+DRAFT: `9456232a7c70f6c512a8da66d01723affe68a02d92ce8a380d96b3049da4be31`.
+Evidence: `/tmp/bmsx-pcrtc-vertical/print/{carry,preview-identity,wording-identity}.json`.
+Ordinary published PDF: `4ac15776b0189b778000b9ece04d6ca99216cf644ac377ebabbcaad024a39d3b`;
+all38 pages exactly match the inspected release proof in RGBA and dimensions
+(`published-identity.json`). All29 manual tests pass; the complete chapter-preview
+navigation audit reports no failures. The existing47-file archive was refreshed
+and its extracted bytes match the current build.
+Existing publisher, stylesheet, fonts and figures are unchanged. This accepts
+the bounded chapter print delta, not whole-series completeness.
+
 ## Current 37-page preview and fault-table lead — 2026-10-18
 
 The old 22-page `pcrtc.preview.pdf` has been replaced with the current complete

@@ -19,6 +19,20 @@ its separate reproduced-before/GPU-tested-after runtime fix. This documentation
 slice changes no backend and does not claim to have rerun that GPU regression.
 The same software composition contract remains authoritative.
 
+## Vertical row mapping supplement — 2026-10-19
+
+The two new Section2.2 subsections close the public-reader gap between Y
+magnification, interlace and source-row selection. Separate extraction and
+independent source/math review checked both spec leaves, mirrored PCRTC owners
+and actual paired software consumers against the narrow anchors retained in
+[the vertical fact section](../facts/pcrtc.md#vertical-source-sampling-and-selected-output-rows).
+All three equations, cropped-output versus original-signal parity, exclusive
+window bounds, five worked rows and live FIELD versus latched configuration
+agree. The stopping rule explicitly includes exceeding H. An additional exact
+arithmetic comparison covered all12,288 local-row/divisor pairs. No new
+guest/backend execution, timing guarantee or nonselected-row persistence is
+claimed; no whole-chapter re-review or runtime edit was needed.
+
 ## Claim review
 
 Extraction, chapter authorship from the fact sheets, and source audits were

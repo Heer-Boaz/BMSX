@@ -1046,6 +1046,49 @@ It records the actual paired software consumers as well as the PCRTC producer.
 Complete real cartridge and independent actual-output evidence are retained in
 [the sampling review](../reviews/pcrtc-sampling-source.md).
 
+## Vertical source sampling and selected output rows
+
+For either enabled active circuit, define `S=display signal Y`,
+`C=minimum enabled signal Y`, `D=S-C`, `B=framebuffer source Y`,
+`H=encoded vertical extent+1`, `M=encoded Y magnification+1`,
+and local output row `n=outputY-D`. M is1..4 and H is1..2048.
+Sources: [TS fields](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L377-L389),
+[C++ fields](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L138-L150),
+[TS crop/window](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L396-L439),
+[C++ crop/window](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L158-L195).
+
+Noninterlaced traversal selects every `0<=n<H`. Interlaced traversal selects
+`n=((D XOR F) AND1)+2*k`, k nonnegative, while `n<H`. Thus output parity uses
+cropped D, not original S; a height-one window can contribute no row for a
+field. Sources: [TS traversal](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L325-L347),
+[C++ traversal](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L37-L57).
+
+The selected row reads sourceY `B+(n div M)` for INT0;
+`B+(n div(2*M))` for INT1/FFMD1; or
+`B+2*(n div(2*M))+((S XOR F) AND1)` for INT1/FFMD0.
+Quotient precedes stride multiplication and phase addition. Sources:
+[TS divisor/stride/phase](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L384-L456),
+[C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L145-L212),
+[actual TS software](../../../machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts#L733-L767),
+[actual C++ software](../../../machine/cpp/render/backend/software/gx_gpu_scanout.cpp#L226-L269).
+The retained reciprocal/shift18 equals the stated quotient for every local
+row0..2047 and occurring divisor1,2,3,4,6,8; bounded arithmetic was checked,
+not a new guest/backend execution. The resulting coordinate enters the
+existing format-specific address/wrap contract, not a byte-address interface.
+
+FIELD is live CSR bit13: VSync updates CSR and traversal immediately;
+`setField` refreshes selected rows and source phase. It is not one of the
+22 configuration words latched at VBlank. Sources:
+[TS field update](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L348-L357),
+[C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L292-L302),
+[TS VSync](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L692-L699),
+[C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L415-L422),
+[TS latch](../../../machine/ts/machine/devices/gx/gpu_pcrtc.ts#L723-L729),
+[C++](../../../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp#L446-L452).
+The new chapter table derives from S7,C5,D2,B20,M2,H8 using these equations;
+it is a worked calculation, not an observed output plate. It makes no claim
+about nonselected-row persistence or final two-circuit composition.
+
 
 ## Constant coefficient, sample alpha and output alpha
 
