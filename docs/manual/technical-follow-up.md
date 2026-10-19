@@ -1785,3 +1785,12 @@ Open with what the hardware does, its channels/units, sharing and adjacent units
 then give specifications and qualified route costs. Do not just rename an
 “Installed resources” table. DMA's opening is updated; apply this to remaining
 chapters where the orientation is missing. Preserve technical detail.
+
+- [ ] **Hardware contract before library recipes — all hardware chapters.**
+  Check the opening explanations and programming sequences across Book I, not
+  just APU. Explain source/storage choices, data representations, register and
+  command operations, visibility and completion in hardware terms first.
+  Move module-specific lookup and convenience-call recipes, such as
+  `rom_dir.audio`, `apu.source` and `apu.play_plain`, to the software examples.
+  Retain useful material. Fold this into each chapter's remaining content work;
+  do not start separate per-change reviews or presentation rounds for it.
