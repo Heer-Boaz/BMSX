@@ -1,5 +1,39 @@
 # GTE print review
 
+## Current independent-hardware edition — 2026-10-19
+
+**Print PASS** for the 129-page publication proof:
+`/tmp/bmsx-manual-final-graphics/corrected/gte.pdf`, SHA-256
+`89669d6145aff8ba838a7b048fb2c9200c2be5ce5aa03327bc73b867bc9e94fd`.
+Source SHA-256: `1c5677d9b3c74b8067c914834c9039858d7f91baf7f6352b4cf3a7c54ecb2ddf`.
+
+The first proof's 42 changed pages were individually viewed at original detail;
+87 others match accepted raster components. Two detached leads (six-word GP0
+packet and exact FIFO trace) were corrected with existing keep groups only.
+All technical source bytes, code, tables and headings are unchanged after
+removing that markup. The independent reviewer then viewed every changed
+final page: 39, 40, 53, 54; both groups are complete with no new print finding.
+
+All other 125 final pages equal full-RGBA composites of previously accepted
+body/static running matter and separately accepted same-number folio pixels.
+Defective initial page bodies are excluded from carry candidates. No text,
+page-count or hash-only substitute is used. Exact mappings and accepted proof
+identities: `/tmp/bmsx-manual-final-graphics/{initial,corrected}/page-carry.json`.
+All ten figures, register/operation tables, raw hardware sequences and running
+matter are accounted for; mechanical layout errors are empty.
+
+Chromium 153.0.8010.12, Node v22.23.1/Linux x64; PDFium 156.0.8076.0,
+pypdfium2 5.14.0, 1.4× full-page rasters. This supersedes historical current
+artifact/count claims below, not source/figure/execution evidence or whole-series
+release acceptance.
+
+The normal chapter check and publication passed. Every one of the 129 canonical
+pages matches the accepted proof's complete RGBA raster and dimensions at 1.4×.
+`build/manual/gte.pdf` SHA-256:
+`4789a87ec9b224f641f8c69492deb03a6f2f26aaa9ae43b9bb3e665d59c3811d`.
+No DRAFT or independent-library text remains. Exact publication comparison:
+`/tmp/bmsx-manual-final-graphics/canonical-identity.json`.
+
 ## Volume-title revalidation — 2026-10-18
 
 Current canonical publication artifact `build/manual/gte.pdf`:

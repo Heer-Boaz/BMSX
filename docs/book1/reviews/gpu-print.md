@@ -1,14 +1,42 @@
 # GPU print review
 
-## Dither and coverage lessons: print review pending — 2026-10-19
+## Current independent-hardware edition — 2026-10-19
 
-The new polygon OFF/ON, rectangle-control and shared-edge/joint output lessons
-have DRAFT previews only. Their source, executable cartridges and actual output
-checks are recorded separately in gpu-source.md. The existing canonical PDF
-does not contain these additions.
-The earlier accepted page sets below do not approve the new chapter layout;
-the current print flag remains false. PDF navigation/viewer work is deferred
-while manual content takes priority.
+**Print PASS** for the 88-page publication proof:
+`/tmp/bmsx-manual-final-graphics/sixth/gpu.pdf`, SHA-256
+`c0ed252d1656985f162ddb32091b0985c81d9252d4d8d4ea75c25464f240e1a9`.
+Source SHA-256: `1a918319ab142cb36432175fa7066ff0e11b676795022173db5b5103559ce036`.
+
+The initial proof's 54 changed pages were individually viewed at original
+detail; 31 others matched accepted raster components. Detached leads and their
+subsequent reflows were corrected with existing keep-together markup, including
+the remaining caption/object pairs. All technical source bytes and every
+non-HTML Markdown token, including code, tables and headings, remain unchanged.
+No stylesheet, publisher, font, example or runtime change was needed.
+
+Every final changed page was independently viewed at original detail: 20–22
+and 57–80. All 27 pass, including the dither/coverage lessons and packet tables.
+The other 61 pages equal full-RGBA composites of previously accepted body/static
+running matter and separately accepted same-number folio pixels. Defective
+earlier page bodies are excluded from carry candidates. Full page dimensions
+and bytes are compared, not text, page counts or hashes alone. Exact mappings
+and accepted proof identities are retained under
+`/tmp/bmsx-manual-final-graphics/`, ending with `sixth/page-carry.json`.
+
+All four figures, register/packet tables and running matter are accounted for;
+mechanical layout errors are empty. Chromium 153.0.8010.12, Node v22.23.1/Linux
+x64; PDFium 156.0.8076.0, pypdfium2 5.14.0, 1.4× full-page rasters. This
+supersedes historical current artifact/count claims below. Source, executable
+cartridge and actual-output evidence remain separately recorded in
+gpu-source.md; this is not whole-series release acceptance.
+
+The normal chapter check and publication passed. All 88 canonical pages match
+the accepted proof's complete RGBA raster and dimensions at 1.4×.
+`build/manual/gpu.pdf` SHA-256:
+`8b5704256add63413b9b2234048e18e30cbf0ac6aa1ba305518be5ede07ba313`.
+No DRAFT or independent-library text remains. Publication comparison:
+`/tmp/bmsx-manual-final-graphics/canonical-identity.json`. All 27 manual-tooling
+tests pass; the refreshed 22-document preview navigation audit has no failures.
 
 ## Volume-title revalidation — 2026-10-18
 

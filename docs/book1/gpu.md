@@ -84,12 +84,16 @@ by four, rounded upward. These are charges for the actual issuing instruction,
 not a transfer-bandwidth rating. The sequence advances the destination by four
 bytes per word: starting at GP0 reaches GP1 next, not another GP0 stream word.
 
+<div class="keep-together">
+
 Accepting a GP0 word and completing an assembled command are separate events.
 For a command with positive cost N ticks starting execution at cycle C:
 
 ```text
 Completion deadline = C + (N/2 rounded upward)
 ```
+
+</div>
 
 Zero-cost work completes immediately. Queued execution continues from the prior
 command's deadline, not from a later status-read time. CPU work can overlap
@@ -572,6 +576,8 @@ payload or open polyline remains. Retained completed commands awaiting
 presentation do not prevent this idle indication. It does not acknowledge a
 new displayed picture.
 
+<div class="keep-together">
+
 **Bit 28** first requires idle readback, no system ingress stop and empty DMA
 ingress. After those requirements:
 
@@ -580,6 +586,8 @@ ingress. After those requirements:
 - With no partial packet and no FIFO words, it is one.
 - Otherwise it is one only for a nonpolygon, nonline packet with fewer
   accumulated words than its target length.
+
+</div>
 
 **A direct CPU GP0 word store** instead requires no system ingress stop, empty
 DMA ingress, a physical GP0 FIFO count below sixteen, and no DMA ownership of
@@ -719,6 +727,8 @@ flushed; a header-only upload is discarded. The unaccepted remainder is not
 manufactured. Do not resume that abandoned image payload as though its header
 were still active: subsequent GP0 words begin a new stream.
 
+<div class="keep-together">
+
 Readback cancellation depends on its phase:
 
 | Readback boundary | Clear effect |
@@ -726,6 +736,8 @@ Readback cancellation depends on its phase:
 | C0 has not activated | Remove an unexecuted C0 at the executed-command prefix boundary |
 | Readback pending | Remove C0 and following retained commands; preserve the prior command prefix |
 | Readback submitted or READY | Clear retained command state and reset the readback stream |
+
+</div>
 
 Thus GP1(01h) can abandon a readback barrier; it is not equivalent to reading
 and consuming its remaining image words. Choose GP1(00h) instead only when the
@@ -932,6 +944,8 @@ The register answers are **raw stored words**, not expanded texture-window masks
 
 GPUREAD also carries image-readback data. With no READY readback, a GP0 read returns the current latch. With a READY stream, a permitted read instead consumes the next packed image word and **replaces** that latch. Issuing a query does not consume, cancel or reserve the readback stream, and does not make its answer take priority over image data.
 
+<div class="keep-together">
+
 Consider this sequence. Initially no readback is READY, and the stored texture-window word is `00010C62H`. Later, an already-requested readback becomes READY with three raw pixel words `001FH,03E0H,7C00H`. Throughout this example no DMA owns the GP0 read port, and no subsequent readback is queued:
 
 | Action before the CPU's GP0 word read | Latch just after query | GP0 read returns | READY after read |
@@ -941,6 +955,8 @@ Consider this sequence. Initially no readback is READY, and the stored texture-w
 | Readback becomes READY; write GP1 `10000007H` | `00000002H` | `03E0001FH` | 1 |
 | No further query; read next word | — | `00007C00H` | 0 |
 | No new query or readback; read again | — | `00007C00H` | 0 |
+
+</div>
 
 The third read returns two pixels, low halfword first, rather than the freshly queried constant. The next word has zero in its unused high half because only one pixel remains. Consuming that last word returns readback to idle and allows queued GP0 processing to resume. The final read then repeats the last GPUREAD value; it does not manufacture another pixel.
 
@@ -993,6 +1009,8 @@ transfer owning GP0's write port excludes direct CPU writes even if the physical
 GP0 FIFO has room. Do not use the FIFO's free space or GPUSTAT bit 28 as permission
 to interleave CPU words into that DMA-owned stream.
 
+<div class="keep-together">
+
 DMA writes first enter a **separate sixteen-word ingress FIFO**, not sixteen
 extra CPU FIFO slots. For an admitted DMA block:
 
@@ -1002,6 +1020,8 @@ extra CPU FIFO slots. For an admitted DMA block:
    words toward the GP0 command FIFO.
 3. The GP0 parser interprets those words under its current packet phase, subject
    to command-completion and readback barriers.
+
+</div>
 
 The DMA write-ready check at this boundary tests whether ingress is stopped.
 The DMA controller owns block sizing and admission; that limited check is not
@@ -1039,6 +1059,8 @@ those CPU access side effects or turn either port into ordinary RAM.
 
 Keep three units distinct: a **VRAM word** stores sixteen bits, a **GP0 command/input word** carries thirty-two bits, and a **PCRTC source sample** is a color decoded according to the selected display storage format. They are not interchangeable pixel counts or addresses. GPU local memory contains **2 MiB: 1,048,576 sixteen-bit words**, shared by drawing, texture reads and display reads. Selecting a display format changes how PCRTC interprets these words; it does not add storage or change the drawing address calculation.
 
+<div class="keep-together">
+
 Raw GPU coordinates address rows of **1,024 words**. For an already decoded raw coordinate, the word index and byte offset within local memory are:
 
 ```text
@@ -1046,9 +1068,13 @@ Word index  = (1024 × Y + (X AND 03FFH)) AND 000FFFFFH
 Byte offset = 2 × word index
 ```
 
+</div>
+
 X wraps within its row. Thus `(1024,16)` addresses word `00004000H`, the same as `(0,16)`, not word `00004400H` at `(0,17)`. The final word-index mask wraps the installed memory. Distinguish that physical storage period from the **Y-address gate**: transfer Y, drawing-area Y, texture-page Y and palette-row Y decode with a nine-bit mask when the gate is closed, or a ten-bit mask when it is open. For a raw image transfer, logical `(32,512)` therefore selects word `00000020H` with the gate closed and `00080020H` with it open. Closing the gate does not remove the upper half of local memory.
 
 Rendered RGB555 words place red in bits 4:0, green in 9:5 and blue in 14:10; bit 15 is stored separately. Eight-bit color components reduce to five bits by discarding their low three bits at storage conversion. Raw image data can instead supply complete sixteen-bit words. Within each stored word, the low byte comes first.
+
+<div class="keep-together">
 
 For a small placement example, arrange a two-by-two RGB555 tile at raw origin `(32,16)`:
 
@@ -1058,6 +1084,8 @@ For a small placement example, arrange a two-by-two RGB555 tile at raw origin `(
 | (33,16) | `00004021H` | `00008042H` | `03E0H` |
 | (32,17) | `00004420H` | `00008840H` | `7C00H` |
 | (33,17) | `00004421H` | `00008842H` | `FFFFH` |
+
+</div>
 
 The first row is red then green; the second is blue then white. The white word has bit 15 set; that bit is not an extra blue-color bit. The second row starts **1,024 words**, or **2,048 bytes**, after the first—not immediately after its two pixels. These indices and offsets describe local-memory placement, not a GP0 packet or a display-window position.
 
@@ -1084,6 +1112,8 @@ bits and its variable height uses nine bits: 0–1023 by 0–511. Either zero ex
 covers no samples. Fixed rectangles are 1×1, 8×8 or 16×16. These are drawing
 rectangle rules, not the raw image-transfer size encoding or fill operation.
 
+<div class="keep-together">
+
 ### A small area with explicit sample limits
 
 Suppose the drawing area contains the entire region, the drawing offset is zero,
@@ -1096,6 +1126,10 @@ Y = 25:  X = 40, 41, 42, 43
 Y = 26:  X = 40, 41, 42, 43
 ```
 
+</div>
+
+<div class="keep-together">
+
 Its right boundary is 44 and bottom boundary is 27; those boundaries are excluded.
 The result is twelve destination samples, not a five-by-four inclusive rectangle.
 A quad with vertices `(40,24)`, `(44,24)`, `(40,27)`, `(44,27)` describes the same
@@ -1105,6 +1139,8 @@ rectangular coverage under these conditions, but takes a different arithmetic pa
 |---|---|---|
 | First | 0, 1, 2 | `(40,24)`, `(44,24)`, `(40,27)` |
 | Second | 2, 1, 3 | `(40,27)`, `(44,24)`, `(44,27)` |
+
+</div>
 
 The common diagonal joins vertices 1 and 2. Each triangle applies its own coverage
 and attribute calculations. The edge rule assigns a normal shared diagonal to
@@ -1139,6 +1175,8 @@ when blending or destination-mask protection makes a second write observable.
 
 A drawing coordinate uses **signed eleven-bit** X and Y values, each ranging from −1024 through 1023. Only the low eleven bits of each sixteen-bit coordinate component participate: `03FFH` means 1023, `0400H` means −1024, and both `07E0H` and `FFE0H` mean −32. Drawing-offset X uses bits 10:0 of its word; drawing-offset Y uses bits 21:11, with the same signed interpretation. The offset moves primitives, not the drawing area. Use each primitive's coordinate rule—not the raw VRAM X-address mask—to determine where it reaches that area.
 
+<div class="keep-together">
+
 Suppose the already-programmed drawing-offset word is `00008400H`: X field `0400H` supplies −1024 and Y field `0010H` supplies +16. Select a drawing area from `(0,0)` through `(1023,511)`, inclusive. Consider this triangle:
 
 | Raw X / Y components | Supplied coordinate | Ordinary offset sum | Triangle coordinate after common shift |
@@ -1146,6 +1184,8 @@ Suppose the already-programmed drawing-offset word is `00008400H`: X field `0400
 | `07E0H / 0000H` | (−32,0) | (−1056,16) | (992,16) |
 | `0020H / 0000H` | (32,0) | (−992,16) | (1056,16) |
 | `0000H / 0020H` | (0,32) | (−1024,48) | (1024,48) |
+
+</div>
 
 Triangles first form the **ordinary integer sums**. Their inclusive span is tested before shifting or drawing-area clipping: `maxX−minX+1` must not exceed 1024, and `maxY−minY+1` must not exceed 512. This example spans 65 by 33 and passes. Separately on each axis, a minimum sum **below −1024** adds 2048 to all three coordinates on that axis; otherwise no shift is added. Here the X minimum is −1056, so every X receives 2048; Y receives no shift. The threshold is strict: a minimum of exactly −1024 does not trigger it. Positive results such as 1056 are not individually wrapped back into the signed range. The drawing area limits which part can produce pixels.
 
@@ -1164,12 +1204,18 @@ Row suppression is separate from this area. When the vertical-resolution and int
 
 Triangle coverage tests **integer pixel coordinates**, not half-pixel centers. After placement, its candidate bounds include the minimum X/Y and exclude the maximum X/Y, intersected with the drawing area. Both nonzero windings are accepted; reversing the winding does not by itself reject a triangle. A zero-area triangle produces no pixels.
 
+<div class="keep-together">
+
 For vertices `(x0,y0)`, `(x1,y1)`, `(x2,y2)`, calculate:
 
 ```text
 A = (x2−x0)×(y1−y0) − (y2−y0)×(x1−x0)
 s = +1 when A > 0; −1 when A < 0
 ```
+
+</div>
+
+<div class="keep-together">
 
 For each directed edge `v1→v2`, `v2→v0`, `v0→v1`, with endpoints `(ax,ay)` and `(bx,by)`, use:
 
@@ -1181,9 +1227,13 @@ minimum = 0 if stepX > 0, or if stepX = 0 and stepY > 0
           1 otherwise
 ```
 
+</div>
+
 A candidate sample must satisfy `E≥minimum` for **all three edges**. An exact edge value of zero therefore belongs to some directed boundaries but not their opposites. Do not replace this rule with “include every boundary pixel.” A rectangle instead covers its clipped left/top inclusive and right/bottom exclusive; it does not run these triangle edge tests.
 
 To make write counts visible, use flat untextured RGB bytes `(32,0,0)`, dithering off, and **enabled additive blending, selection 1**. The source quantizes to RGB555 word `0004H`. Start each case with the shown destination words at `0000H`; disable destination-mask rejection and force-mask, skip no row parity, and include X=0…63 and Y=0…31 in the drawing area. Each write then adds four to the five-bit red channel: one write gives `0004H`, two give `0008H`. Neither result saturates, and stored bit 15 remains zero.
+
+<div class="keep-together">
 
 Choose quad vertices `v0=(40,24)`, `v1=(46,24)`, `v2=(40,26)`, `v3=(46,26)`. The two triangles execute as `(0,1,2)` then `(2,1,3)`. Put `i=X−40`, `j=Y−24`; candidate samples have `0≤i<6`, `0≤j<2`. Both triangles have A=−12. Their three tests reduce to:
 
@@ -1193,12 +1243,18 @@ Choose quad vertices `v0=(40,24)`, `v1=(46,24)`, `v2=(40,26)`, `v3=(46,26)`. The
 | `2i ≥ 0` | `12−6j ≥ 1` |
 | `6j ≥ 0` | `2i+6j−12 ≥ 0` |
 
+</div>
+
+<div class="keep-together">
+
 The complete sample sets are:
 
 | Y | First triangle: covered X | Second triangle: covered X |
 |---|---|---|
 | 24 | 40, 41, 42, 43, 44, 45 | None |
 | 25 | 40, 41, 42 | 43, 44, 45 |
+
+</div>
 
 ![Integer sample ownership on a quad shared diagonal](figures/gpu-shared-edge.svg)
 
@@ -1207,6 +1263,8 @@ All **twelve** pixels receive exactly one write and finish at `0004H`. Sample `(
 There is no once-only coverage operation over an arbitrary four-vertex outline. Move only `v3` to `(41,25)`: the first triangle is unchanged, while the second now has A=+4 and overlapping coverage. Its tests are `i+5j−6≥0`, `i+j−2≥0`, `12−2i−6j≥1`; only `(41,25)` and `(42,25)` pass within its bounds. Both already belong to the first triangle, so each finishes at **`0008H`**. The first triangle's other seven samples finish at `0004H`; `(43,25)` is now untouched at `0000H`. Overlapping halves can blend twice even though an ordinary shared diagonal is owned once.
 
 A polyline joint is different again. Two accepted, unclipped segments `(40,30)→(43,30)→(46,30)` each include **both endpoints** and generate four samples. The shared endpoint `(43,30)` is consequently written by both segments and finishes at `0008H` under the same state; either outer endpoint finishes at `0004H`. A zero-length accepted line generates one sample, rather than following the triangle's zero-area rule. Plan additive or other repeated-write effects around the primitive's actual coverage, not around its apparent outline.
+
+<div class="keep-together">
 
 <a id="gpu-coverage-output"></a>
 
@@ -1224,13 +1282,19 @@ Additive blending makes repeated writes visible. This example clears to black an
 | Upper right | Quad vertices (144,24), (240,24), (144,56), (160,40) | Moving only the fourth vertex produces a bright overlap wedge. Black parts of the 96 × 32 comparison area remain uncovered. |
 | Lower left | Twenty-four polylines at Y=112…135, each X=16 → 64 → 112 | These actually drawn rows form a 97 × 24 band. Both segments include X=64, producing the one-pixel-wide bright joint. |
 
+</div>
+
 The polygon vertex differences are 16 times those of the preceding numerical example. These larger polygons are rasterized afresh; the picture is not an enlargement of its small pixel result. The upper-left result is not a guarantee that an arbitrary quad writes every covered position only once: the upper-right case shows why.
+
+<div class="keep-together">
 
 #### Program changes
 
 Start from the complete [dither comparison program](#gpu-dither-output). Make a separate cartridge and apply exactly these three changes:
 
 1. Replace the entire `drawing_commands` array with this 13-word array.
+
+</div>
 
 ```lua
 rodata drawing_commands: word[] = {
@@ -1281,6 +1345,8 @@ path. Supplying projected vertices therefore does not make the U/V calculation
 perspective-correct. Software must choose geometry and texture coordinates that
 produce the required approximation.
 
+<div class="keep-together">
+
 ### Form a finite plane, not an ideal interpolator
 
 Let the triangle's shifted coordinates be `(x0,y0)`, `(x1,y1)`, `(x2,y2)` and
@@ -1291,6 +1357,10 @@ D = (x1−x0)×(y2−y0) − (x2−x0)×(y1−y0)
 Nx = (a1−a0)×(y2−y1) − (a2−a1)×(y1−y0)
 Ny = (x1−x0)×(a2−a1) − (x2−x1)×(a1−a0)
 ```
+
+</div>
+
+<div class="keep-together">
 
 The X/Y step quotients are `trunc(4096×Nx/D)` and `trunc(4096×Ny/D)`.
 Here `trunc` discards a fractional part **toward zero**, including for a negative
@@ -1303,10 +1373,14 @@ signed interpretation = raw, if bit 19 is clear
                       = raw − 100000H, if bit 19 is set
 ```
 
+</div>
+
 Thus the raw twenty-bit plane retains twelve fractional bits. A large derivative
 wraps in that field; it is not saturated to a plausible color slope. For example,
 a quotient of 983040 has raw value `F0000H` and signed interpretation −65536,
 not a saturated positive step.
+
+<div class="keep-together">
 
 The intercept is anchored at one supplied vertex. The selection depends on X
 and its exact tie rules:
@@ -1318,6 +1392,10 @@ and its exact tie rules:
 | `x1>x0` and `x2<x0` | 2 |
 | `x1>x0` and `x2≥x0` | 0 |
 
+</div>
+
+<div class="keep-together">
+
 Using the signed retained steps `sx`, `sy`, calculate:
 
 ```text
@@ -1326,11 +1404,15 @@ intercept = (4096×aAnchor + 2048 − xAnchor×sx − yAnchor×sy)
 value(X,Y) = ((intercept + X×sx + Y×sy) >> 12) AND FFH
 ```
 
+</div>
+
 Only bits 19:12 supply the final byte. Attribute overflow therefore wraps rather
 than clamping to 0 or 255. Adding 2048 biases the **attribute** by one half unit:
 one half of a color count or texel-coordinate count, not one half screen pixel.
 The quantized steps and anchor still matter; this is not a promise to round an
 ideal mathematical plane to the nearest byte at every pixel.
+
+<div class="keep-together">
 
 ### A half-count that the quantized slope does not reach
 
@@ -1342,6 +1424,10 @@ Use zero drawing offset and these positions and attributes:
 | 1 | 7 | 0 | 250 |
 | 2 | 0 | 6 | 11 |
 
+</div>
+
+<div class="keep-together">
+
 The determinant is 42. X1 exceeds X0 while X2 equals X0, so the anchor is
 **vertex 0**, not vertex 2. The arithmetic is:
 
@@ -1350,6 +1436,10 @@ The determinant is 42. X1 exceeds X0 while X2 equals X0, so the anchor is
 | X step | `983040/7 = 140434 + 2/7` | 140434, raw `22492H` |
 | Y step | `4096/6 = 682 + 2/3` | 682, raw `002AAH` |
 | Intercept | `10×4096+2048` | 43008, raw `0A800H` |
+
+</div>
+
+<div class="keep-together">
 
 At `(0,3)`, the ideal unquantized attribute is 10.5. The actual retained plane
 instead evaluates `43008+3×682=45054`, two raw counts below `11×4096=45056`.
@@ -1361,6 +1451,8 @@ Its byte is therefore **10**, not 11. Moving along that row gives:
 | (1,3) | 185488 | 45 |
 | (2,3) | 325922 | 79 |
 | (3,3) | 466356 | 113 |
+
+</div>
 
 These four integer positions pass this triangle's edge tests when the drawing
 area contains them and no row suppression is active. Other pixel-write controls
@@ -1390,12 +1482,18 @@ Start with the ordinary offset endpoint sums after the line's span check. If the
 
 After this ordering, let `ΔX=x1−x0`, `ΔY=y1−y0`, and `N=max(abs(ΔX),abs(ΔY))`. The line generates samples numbered 0 through N, including both endpoints of an accepted unclipped segment. For N=0, all steps are zero and one sample uses the first supplied color. Consecutive polyline segments perform this calculation separately, so their common endpoint can be processed twice.
 
+<div class="keep-together">
+
 **Position equations—mathematical notation.** Q32 denotes thirty-two fractional bits, not a thirty-two-bit total word width. Let `S=2^32`, and let `trunc0` mean signed division rounded toward zero. For N>0:
 
 ```text
 dX = trunc0((ΔX×S + sign(ΔX)×(N−1)) / N)
 dY = trunc0((ΔY×S + sign(ΔY)×(N−1)) / N)
 ```
+
+</div>
+
+<div class="keep-together">
 
 Here `sign` is −1, 0 or +1. These steps round a nonintegral step magnitude **outward**, not to nearest. The initial Q32 positions are:
 
@@ -1407,7 +1505,11 @@ PX(k) = PX(0) + k×dX
 PY(k) = PY(0) + k×dY
 ```
 
+</div>
+
 The bias 1024 is measured in Q32 units: it is `2^−22` of a pixel, not 1,024 pixels. Convert each position by the mathematical floor of `P/S`, including downward rounding for negative values. Then decode the resulting X/Y as signed eleven-bit coordinates and apply drawing-area and row-parity tests. This floor conversion differs from the `trunc0` used to obtain steps.
+
+<div class="keep-together">
 
 Color uses a separate **twelve-fractional-bit** calculation. For each RGB byte C, N>0 gives:
 
@@ -1417,7 +1519,11 @@ Cfixed(k) = C0×4096 + 2048 + k×dC
 Cbyte(k)  = trunc0(Cfixed(k) / 4096)
 ```
 
+</div>
+
 For N=0, dC is zero. The half-unit color bias and truncated color step are distinct operations; replacing them with an ideal color interpolation rounded once at the end can change a tie. The resulting RGB bytes then undergo eligible dithering and RGB555 reduction. Lines use the draw-mode dither bit for **both flat and Gouraud color**, unlike the more restricted polygon rule. The following source-color calculations have dithering disabled; they do not include later blending or destination protection.
+
+<div class="keep-together">
 
 For a Gouraud line, supply `(14,5)` with RGB `(20,200,40)`, followed by `(10,12)` with RGB `(220,20,180)`. The X-order swap makes the calculation start at `(10,12)` with its associated color. Now `ΔX=4`, `ΔY=−7`, N=7:
 
@@ -1426,6 +1532,10 @@ dX = 2454267027 = 92492493H Q32 units
 dY = −4294967296 = −100000000H Q32 units
 (dR,dG,dB) = (−117028,105325,−81920) Q12 units
 ```
+
+</div>
+
+<div class="keep-together">
 
 The steep, negative-Y line produces:
 
@@ -1440,9 +1550,13 @@ The steep, negative-Y line produces:
 | 6 | (13,6) | (49,174,60) | `1EA6H` |
 | 7 | (14,5) | (20,200,40) | `1722H` |
 
+</div>
+
 If the drawing area admits only rows 7 through 10 and odd rows are suppressed, only k=2 and k=4 pass those tests. They retain source words `4514H` and `31EDH`. Clipping and row suppression do **not** restart position or color progression: the first admitted sample is not assigned the original starting color, and N is not recomputed for the surviving portion.
 
 Equal-X order can be observable at a color tie. Supply `(20,20)` with RGB `(7,64,128)` and `(20,26)` with `(8,64,128)`. N=6 and the red step is `trunc0(4096/6)=682`. At the middle sample `(20,23)`, red fixed value is `7×4096+2048+3×682=32766`, giving byte 7. Reverse the two complete endpoint/color pairs: equal X prevents a swap, the red step becomes −682, and the same middle coordinate has `8×4096+2048−3×682=32770`, giving byte 8. With dithering off, the RGB555 source words are respectively **`4100H` and `4101H`**. Keep this specified order and precision when reproducing a vertical ramp; geometric reversal is not a promise of identical quantized interior colors.
+
+<div class="keep-together">
 
 <a id="gpu-texture-lookup"></a>
 ## Locate texture texels and palette colors
@@ -1456,9 +1570,13 @@ Texture U and V are **unsigned eight-bit coordinates**. Apply the texture window
 | 2: direct16 | 1 | `pageX + U` | Complete sixteen-bit color word |
 | 3: direct16 | 1 | `pageX + U` | Same direct lookup as depth 2 |
 
+</div>
+
 Source-word Y is `pageY+V`. A 256-texel row therefore occupies 64, 128 or 256 raw words; a 64-word page-base unit does not mean every depth occupies only 64 words. All lookups use raw 1,024-word rows: X wraps within its row, and the installed word-index mask is `000FFFFFH`.
 
 Palette depths use the extracted index for a second local-memory read. The CLUT attribute supplies base X `(attribute AND 003FH)×16` and base Y `attribute>>6`, with Y passed through the address gate. Palette4 has sixteen possible indices; palette8 has 256. The CLUT base is sixteen-word-aligned in either case, so a palette8 lookup can cross X=1023 and wrap to X=0 **on the same palette row**.
+
+<div class="keep-together">
 
 ### A packed palette8 lookup across both row ends
 
@@ -1473,6 +1591,10 @@ Use already-selected page/depth fields `0000089FH`, an **open Y-address gate**, 
 | Palette entry | (1008,900) | `000E13F0H` | `7C00H` |
 | Palette entry | (1,900) | `000E1001H` | `0000H` |
 
+</div>
+
+<div class="keep-together">
+
 For V=23, source Y is `768+23=791`. Four lookups produce:
 
 | U | Source-word index | Selected byte/index | CLUT word index | Fetched color word |
@@ -1481,6 +1603,8 @@ For V=23, source Y is `768+23=791`. Four lookups produce:
 | 127 | `000C5FFFH` | `10H` | `000E1000H` | `03E0H` |
 | 128 | `000C5C00H` | `00H` | `000E13F0H` | `7C00H` |
 | 129 | `000C5C00H` | `11H` | `000E1001H` | `0000H` |
+
+</div>
 
 U=126 selects the low byte of `100FH`; U=127 selects its high byte. U=128 advances the raw source X from 1023 to 0, not to the next row. Independently, palette index 16 advances CLUT X from base 1008 to wrapped X=0. Index zero returns the nonzero color word `7C00H`: **palette index zero is not automatically transparent**. Index 17 returns the zero color word, which is transparent. These are fetched source colors, before later color and destination-write controls.
 
@@ -1492,6 +1616,8 @@ uploads, T0 CLUT selection and T1 palette-depth/page selection. Its result
 includes a nonzero entry 0, a transparent entry and a nonzero black entry, so
 palette-index interpretation can be distinguished from fetched-color rules.
 
+<div class="keep-together">
+
 ### Replace coordinate bits with a texture window
 
 The E2 window fields are X mask bits 4:0, Y mask bits 9:5, X offset bits 14:10 and Y offset bits 19:15. Independently for U and V, the mathematical transformation is:
@@ -1502,12 +1628,16 @@ O = (offset AND mask)×8
 windowed coordinate = (coordinate AND A) OR O
 ```
 
+</div>
+
 Only masked offset bits participate; the low three coordinate bits are preserved. This is bit replacement, not clipping to a pixel rectangle or adding an ordinary offset. For raw window value `00010C62H`, the four fields are `(2,3,3,2)`: U uses AND/OR masks `EFH/10H`, and V uses `E7H/10H`. Input `(U,V)=(6FH,1FH)` becomes `(7FH,17H)`, or `(127,23)`. Reusing the example's page and CLUT, it selects the high byte `10H` from `100FH` and fetches color word `03E0H`. Both the texture window and the palette placement must therefore be included when predicting a texture read.
 
 <a id="gpu-texture-rectangles"></a>
 ## Keep a clipped or flipped rectangle on its texture
 
 A textured rectangle anchors its initial U/V at its **unclipped destination origin**. X-flip independently selects a U step of −1 instead of +1; Y-flip selects a V step of −1 instead of +1. Neither bit changes the destination rectangle. It also does not move the texture anchor automatically to the opposite edge: choose the initial U/V for the traversal you intend.
+
+<div class="keep-together">
 
 For already-placed destination origin `(X0,Y0)` and supplied byte coordinates `(U0,V0)`, the mathematical texture-coordinate calculation is:
 
@@ -1518,9 +1648,13 @@ stepU = −1 with X-flip set; otherwise +1
 stepV = −1 with Y-flip set; otherwise +1
 ```
 
+</div>
+
 Use the original destination coordinates in these differences, not the number of pixels which survive clipping. The texture window then transforms the stepped U/V; clipping does not restart them at U0/V0.
 
 Consider a rectangle covering X=10…17 and Y=20…25 before clipping. Let the drawing area remove its first three columns and first two rows, leaving X=13…17 and Y=22…25. Use initial U0=2,V0=1. The first surviving coordinate is therefore three U steps and two V steps from the anchor—not a new texture origin.
+
+<div class="keep-together">
 
 Select these texture-window fields: X mask=1, Y mask=3, X offset=0, Y offset=1. They give U AND/OR masks `F7H/00H` and V masks `E7H/08H`. The first surviving pixel `(13,22)` demonstrates independent flip choices:
 
@@ -1531,9 +1665,13 @@ Select these texture-window fields: X mask=1, Y mask=3, X offset=0, Y offset=1. 
 | 0 | 1 | (5,−1) | (`05H`,`EFH`) |
 | 1 | 1 | (−1,−1) | (`F7H`,`EFH`) |
 
+</div>
+
 The negative values are traversal intermediates, not negative command U/V bytes. The window consumes the eight-bit coordinate domain through its bit replacement. For example, an identity window would map −1 to `FFH`; the selected U window instead gives `(−1 AND F7H) OR 00H = F7H`. Do not substitute raw VRAM's 1,024-word X-row wrap for this eight-bit UV transformation. The texture placement rules determine the later raw-word address.
 
 Keep **both flip bits set**. Across X=13,14,15,16,17, stepped U is −1,−2,−3,−4,−5 and windowed U is `F7H,F6H,F5H,F4H,F3H`. Each row starts with this same first U; it does not continue from the end of the preceding row.
+
+<div class="keep-together">
 
 For row suppression, assume the GPU vertical-resolution and interlace status bits are both set, draw-to-displayed-field is clear, and the retained active-line parity is odd. Odd destination rows are then skipped:
 
@@ -1543,6 +1681,8 @@ For row suppression, assume the GPU vertical-resolution and interlace status bit
 | 23 | −2 | `EEH` | Skipped |
 | 24 | −3 | `EDH` | Admitted |
 | 25 | −4 | `ECH` | Skipped |
+
+</div>
 
 The next admitted row after Y=22 uses `EDH`, **not `EEH`**: skipped Y=23 still advances V. Its first lookup coordinate is `(F7H,EDH)`, while Y=22 starts at `(F7H,EFH)`. These are texture-lookup inputs; later source-color and destination-write rules determine the stored result. Neither drawing-area clipping nor row suppression compresses the texture into fewer rows. The rectangle flip bits do not reverse a triangle's interpolated U/V.
 
@@ -1568,6 +1708,8 @@ F = min(S >> 3, 31)          otherwise
 
 Both right shifts discard low bits. Keep the two stages and their order: do not expand the five-bit texture channel by bit replication, clamp P to a byte before adding d, or add d after producing F. Saturation belongs after the dither addition.
 
+<div class="keep-together">
+
 For texture word `6208H`, RGB5=(8,16,24), the following choices give different material behavior. Dithering is off:
 
 | Supplied RGB bytes | Intermediate P for R/G/B | Source RGB5 | Source word |
@@ -1576,7 +1718,11 @@ For texture word `6208H`, RGB5=(8,16,24), the following choices give different m
 | (64,128,192) | (32,128,288) | (4,16,31) | `7E04H` |
 | (255,255,255) | (127,255,382) | (15,31,31) | `7FEFH` |
 
+</div>
+
 The second choice halves red, preserves green and saturates blue: blue reaches 36 before the limit of 31. The third is not neutral white modulation. Selecting raw texturing instead preserves source `6208H` for all three supplied colors.
+
+<div class="keep-together">
 
 Dither uses the **final destination coordinate**, with the following offset at row `Y AND 3`, column `X AND 3`:
 
@@ -1587,7 +1733,11 @@ Dither uses the **final destination coordinate**, with the following offset at r
 | 2 | −3 | +1 | −4 | 0 |
 | 3 | +3 | −1 | +2 | −2 |
 
+</div>
+
 The same offset is added separately to all three components. It is not indexed by U/V or restarted at a primitive's origin. Moving an otherwise identical sample to a different destination phase can therefore change its source RGB555. Dither acts before five-bit reduction and blending; it is not a PCRTC display effect.
+
+<div class="keep-together">
 
 Take an eligible modulated textured polygon with dithering enabled. Suppose its samples fetch texture word `3527H`, RGB5=(7,9,13), with RGB bytes=(124,100,160). The first products reduce to P=(54,56,130):
 
@@ -1597,17 +1747,19 @@ Take an eligible modulated textured polygon with dithering enabled. Suppose its 
 | (18,21), phase (2,1) | +3 | (57,59,133) | (7,7,16) | `40E7H` |
 | (16,20), phase (0,0) | −4 | (50,52,126) | (6,6,15) | `3CC6H` |
 
+</div>
+
 Neutral gain 128 does not cancel these offsets. At the lower limit, a nonzero fetched word `0001H` with RGB bytes=(1,0,0) gives P=(0,0,0); offset −4 clamps every source channel to zero. That resulting black source does **not** trigger the earlier fetched-zero skip.
 
 Finally, the draw-mode dither setting is not universal. It applies to modulated textured polygons, untextured Gouraud polygons, and both flat and Gouraud lines. Flat untextured polygons, raw-textured polygons, and all rectangles do not dither. Without texturing, eligible dithering adds d to each RGB byte, clamps to 0…255, then discards three bits to obtain RGB555. Thus a modulated textured rectangle can use the same gain calculation, but not the polygon's dither variation.
+
+<div class="keep-together">
 
 <a id="gpu-dither-output"></a>
 
 ### Compare polygon dither with a rectangle control
 
 Use the four panels below to separate polygon dithering from texture sampling. Every panel uses texture material `3527H`, whose RGB5 channels are `(7, 9, 13)`, modulated by RGB bytes `(124, 100, 160)`. The two columns differ in the dither control: OFF on the left, ON on the right. Dither is draw-mode bit 9 (`0200H`).
-
-<div class="keep-together">
 
 ![Four panels comparing textured quads and textured rectangles with dither off and on.](figures/gpu-dither-controls.png)
 
@@ -1738,6 +1890,8 @@ Four decisions act at different stages. A fetched texture word of **exactly `000
 
 For an untextured primitive, its semitransparency selection enables blending of eligible covered pixels without a texture-bit condition. For a textured primitive, a nonzero fetched word with bit 15 clear remains opaque even under a semitransparent command. Setting source bit 15 alone is insufficient: an opaque command still replaces the destination RGB. Neither source nor destination bit 15 supplies a fractional alpha coefficient.
 
+<div class="keep-together">
+
 When blending is enabled, let F be one already-quantized five-bit source channel and B the current five-bit destination channel. The draw-mode selection chooses the following calculation independently for red, green and blue:
 
 | Blend selection | Result channel |
@@ -1747,7 +1901,11 @@ When blending is enabled, let F be one already-quantized five-bit source channel
 | 2: saturated subtraction | `max(B − F, 0)` |
 | 3: quarter-source addition | `min(B + (F >> 2), 31)` |
 
+</div>
+
 The right shifts discard low bits. In selection 0, add **before** halving: B=5,F=3 gives 4, not `(5>>1)+(3>>1)=3`. An odd sum such as 2+7 gives 4. In selection 3, reduce the source **before** adding it; F=3 contributes zero, while F=7 contributes one.
+
+<div class="keep-together">
 
 For destination RGB5=(5,2,29), RGB word `7445H`, and source RGB5=(3,7,7), RGB word `1CE3H`, all four choices are distinguishable:
 
@@ -1758,7 +1916,11 @@ For destination RGB5=(5,2,29), RGB word `7445H`, and source RGB5=(3,7,7), RGB wo
 | 2 | (2,0,22) | `5802H` |
 | 3 | (5,3,30) | `7865H` |
 
+</div>
+
 Addition clips blue's 29+7 to 31. Subtraction clips green's 2−7 to zero; it does not wrap. Quarter-source addition instead adds (0,1,1), preserving those integer truncations.
+
+<div class="keep-together">
 
 The following independent raw-texture samples all start with destination `7445H` and use blend selection 0. Check-mask is off. “Force” means mask-mode bit 0, which sets the output bit 15 without changing blend eligibility:
 
@@ -1771,6 +1933,8 @@ The following independent raw-texture samples all start with destination `7445H`
 | `9CE3H` | No | 0 | Command does not blend; stores `9CE3H` |
 | `9CE3H` | Yes | 0 | Both blend conditions met; stores `C884H` |
 | `1CE3H` | Yes | 1 | Still opaque; forced output stores `9CE3H` |
+
+</div>
 
 `8000H` is therefore not the transparent word: it is nonzero black. In the blended row its RGB becomes (2,1,14), while the output bit 15 comes from the fetched sample. Conversely, force-mask cannot turn `0000H` into a write or turn a bit-15-clear texel into a blended source.
 
@@ -1785,12 +1949,18 @@ On an admitted write, output bit 15 is one if forced. Otherwise textured drawing
 
 A fill, a drawing rectangle and an image transfer can touch a rectangular region, but they do not have the same dimensions, address rules or write controls. Choose **fill** for an aligned solid-color memory operation; choose a **drawing rectangle** for the drawing-area, offset and pixel-write rules; choose **upload or VRAM copy** to move raw sixteen-bit storage words.
 
+<div class="keep-together">
+
 For a variable drawing rectangle, width is the low ten size bits and height the low nine: zero is empty. Fill uses those same low-bit fields but rounds width upward to a multiple of 16 and aligns destination X downward to a multiple of 16. Upload, copy and readback instead normalize each dimension with:
 
 ```text
 W = ((rawWidth  − 1) AND 3FFH) + 1
 H = ((rawHeight − 1) AND 1FFH) + 1
 ```
+
+</div>
+
+<div class="keep-together">
 
 Thus these raw width fields have different meanings, before clipping or write suppression:
 
@@ -1801,7 +1971,11 @@ Thus these raw width fields have different meanings, before clipping or write su
 | 16 | 16 | 16 | 16 |
 | 1023 | 1023 | 1024 | 1023 |
 
+</div>
+
 Zero height likewise means empty for fill/drawing, but 512 rows for an image transfer. A zero image-size word requests **1024×512**, not no work. Fixed 1×1, 8×8 and 16×16 drawing rectangles have no variable size word.
+
+<div class="keep-together">
 
 The write controls are also different:
 
@@ -1811,7 +1985,11 @@ The write controls are also different:
 | Drawing rectangle | Applied | Applied | Applied |
 | Raw upload/copy | Bypassed | Applied | Bypassed |
 
+</div>
+
 Fill truncates its RGB bytes to RGB555 and writes bit 15 clear; it does not blend or dither. Raw upload/copy preserves the supplied RGB bits and source bit 15 unless mask controls reject the write or force bit 15. It does not blend or dither. Drawing rectangles follow their color/texture path, but neither kind dithers. Their origin follows the drawing-coordinate rule; transfer X wraps within a 1,024-word row and transfer Y follows the selected address gate. Do not substitute transfer wrapping for drawing placement.
+
+<div class="keep-together">
 
 For a small control contrast, start both `(31,20)` and `(31,21)` at `8010H`, use zero drawing offset, an including drawing area, and retained suppression of odd rows. Each following operation starts from those same contents:
 
@@ -1822,9 +2000,13 @@ For a small control contrast, start both `(31,20)` and `(31,21)` at `8010H`, use
 | Upload `001FH,0000H`, width=1,height=2; check and force set | `8010H` | `8010H` |
 | Same upload; check clear, force set | `801FH` | `8000H` |
 
+</div>
+
 Red here is supplied RGB=(255,0,0). The fill also writes X=16…30 on admitted row 20: its requested X=31 aligns to 16. It ignores both mask controls, but skips row 21. Drawing cannot replace the protected row-20 destination, while upload ignores row suppression but still obeys destination protection. With checking disabled, upload writes even its zero source word and forces the stored high bit.
 
 **Horizontal overlap is handled per row.** A copy traverses columns backward when `((targetX−sourceX) AND 3FFH)` is nonzero and less than W; otherwise it traverses forward. With both mask controls clear, copy width=3 from X=1022 to X=1023 on one row. In column order X=(1022,1023,0,1), let the before-words be `(0011H,0022H,0033H,0044H)`. The reads run X=0,1023,1022 and write X=1,0,1023, producing `(0011H,0011H,0022H,0033H)`. The X wrap stays in that row.
+
+<div class="keep-together">
 
 **Vertical overlap is not a rectangle snapshot.** Rows always advance in logical order, reading each source word immediately before its write. Select the 512-row Y gate and clear both mask controls. Copy 3×3 from `(1023,510)` to `(1023,511)`; the three columns wrap to X=(1023,0,1):
 
@@ -1834,6 +2016,8 @@ Red here is supplied RGB=(255,0,0). The fill also writes X=16…30 on admitted r
 | 511 | `0044H,0055H,0066H` | `0011H,0022H,0033H` |
 | 0 | `0077H,0088H,0099H` | `0011H,0022H,0033H` |
 | 1 | `00AAH,00BBH,00CCH` | `0011H,0022H,0033H` |
+
+</div>
 
 The first row writes 510→511. The second reads that newly written row 511 and writes it to row 0; the third reads the newly written row 0 and writes row 1. Retained row suppression does not prevent these raw-copy writes. To preserve the original rows in this shift, copy logical rows 2,1,0 as separate one-row commands, or use a nonoverlapping intermediate region; do not expect a hidden snapshot.
 
@@ -1847,6 +2031,8 @@ its operation with bits 31:24; bits 23:0 have the meaning assigned by that
 command. Later words belong to the selected packet until its required fields
 or payload have been consumed. Their high bytes are not independently decoded
 as new opcodes.
+
+<div class="keep-together">
 
 ### Select the family before interpreting option bits
 
@@ -1864,6 +2050,10 @@ The complete opcode-byte map is:
 | `C0H–DFH` | Local-memory readback |
 | `E1H–E6H` | Drawing environment |
 
+</div>
+
+<div class="keep-together">
+
 Every opcode within a listed range selects that family. The option bits do not
 have one universal meaning:
 
@@ -1872,6 +2062,8 @@ have one universal meaning:
 | Polygon | Bit 4 selects Gouraud colors; bit 3 selects a quad rather than a triangle; bit 2 enables texture; bit 1 requests semi-transparency; bit 0 selects raw rather than modulated texture when textured |
 | Line | Bit 4 selects Gouraud colors; bit 3 selects a streamed polyline; bit 1 requests semi-transparency. Bits 2 and 0 do not insert texture fields |
 | Rectangle | Bits 4:3 select the size form; bit 2 enables texture; bit 1 requests semi-transparency; bit 0 selects raw rather than modulated texture when textured |
+
+</div>
 
 In particular, rectangle bit 4 does not request Gouraud colors. Bit 0 does not
 create a raw-color mode for an untextured primitive. Use the selected family's
@@ -1905,11 +2097,15 @@ Each complete new vertex defines another segment from the retained previous
 endpoint. The initial segment and later complete segments need not wait for the
 terminator before executing.
 
+<div class="keep-together">
+
 After that header, the polyline terminator is any word satisfying:
 
 ```text
 (word AND F000F000H) = 50005000H
 ```
+
+</div>
 
 Test this only where a new continuation vertex begins: the next position for a
 flat polyline, or the next **color** for a Gouraud polyline. A matching word in
@@ -1983,6 +2179,8 @@ Supply these thirty-two-bit words to GP0 in order:
 
 </div>
 
+<div class="keep-together">
+
 `C` contains red in bits 7:0, green in 15:8 and blue in 23:16. Each is an
 unsigned byte. Every `Pi` contains X in bits 10:0 and Y in bits 26:16, decoded
 as signed eleven-bit coordinates, −1024…1023. The remaining five bits of each
@@ -1992,6 +2190,8 @@ halfword do not extend that range. One direct packing equation is:
 C = R OR (G << 8) OR (B << 16)
 P = (X AND 07FFH) OR ((Y AND 07FFH) << 16)
 ```
+
+</div>
 
 For example, X=−32 has low field `07E0H`; a sign-extended component `FFE0H`
 decodes to the same X, not a different sixteen-bit position. See [Place primitives across coordinate boundaries](#gpu-coordinate-placement) for drawing-offset and placement
@@ -2017,6 +2217,8 @@ in this packet. The GP0 packet also has no Z, W or GTE operation: projection,
 lighting, any three-dimensional clipping and draw ordering must already have
 provided the desired positions, color and sequence.
 
+<div class="keep-together">
+
 Apply the named **coordinate placement** and **shared-edge** rules, rather than
 assuming a bounding rectangle is filled. In particular:
 
@@ -2029,6 +2231,8 @@ assuming a bounding rectangle is filled. In particular:
   reversing winding is not a backface-culling request.
 - Coverage tests integer samples with the shared-edge tie rule. Mask protection
   or retained row suppression can subsequently remove otherwise covered writes.
+
+</div>
 
 For this family, a set dither-enable bit does **not** dither the color. Drop
 three low bits from each RGB byte to obtain the five-bit source channels.
@@ -2046,6 +2250,8 @@ not affect this flat family. Before each trial below, initialize the affected
 destination words to `1882H`, RGB5=(2,4,6). These are programmed-state and memory
 preconditions, not extra fields in the polygon packet.
 
+<div class="keep-together">
+
 This opaque quad supplies RGB bytes (124,100,160):
 
 | Word | Raw input | Meaning |
@@ -2056,10 +2262,14 @@ This opaque quad supplies RGB bytes (124,100,160):
 | 4 | `001A0028H` | P2=(40,26) |
 | 5 | `001A002EH` | P3=(46,26) |
 
+</div>
+
 The source channels are `(124>>3,100>>3,160>>3)`=(15,12,20), so the stored RGB
 word is `15 OR (12<<5) OR (20<<10)` = **`518FH`**. Bit 15 is zero. The opaque
 opcode ignores the selected additive blend operation, and enabled dithering
 does not vary this result between destination phases.
+
+<div class="keep-together">
 
 Using the sample ownership derived in [Predict shared-edge and joint writes](#gpu-shared-edges):
 
@@ -2067,6 +2277,8 @@ Using the sample ownership derived in [Predict shared-edge and joint writes](#gp
 |---|---|---|
 | 24 | 40,41,42,43,44,45 | None |
 | 25 | 40,41,42 | 43,44,45 |
+
+</div>
 
 All twelve samples finish at `518FH`; other samples remain unchanged. The
 on-diagonal sample (43,25) belongs only to the second triangle. For a triangle
@@ -2093,6 +2305,8 @@ destination-mask checking is enabled, add `(p+1)>>1`; if a row parity is
 suppressed, halve the resulting estimate by a right shift. This is an estimate,
 not a count of covered or successfully stored pixels.
 
+<div class="keep-together">
+
 Neither clipping nor those modifiers apply in the opaque packet's example.
 Each triangle has absolute double area 12 and contributes p=6:
 
@@ -2101,6 +2315,8 @@ Each triangle has absolute double area 12 and contributes p=6:
 | Opaque triangle | `46+6=52` | 26 system cycles |
 | Opaque quad | `82+6+6=94` | 47 system cycles |
 | Semi-transparent quad | `82+9+9=100` | 50 system cycles |
+
+</div>
 
 The first triangle actually covers nine samples and the second three, although
 their work estimates are both six. An in-area collinear triangle contributes
@@ -2123,6 +2339,8 @@ Use this family when each vertex supplies its own RGB color and no texture looku
 
 Within each pair, bit 0 has no color-mode effect because texturing is absent. Bit 4 selects Gouraud color, bit 3 selects the quad, bit 2 is clear, and bit 1 requests semitransparency. Do not insert texture or CLUT words.
 
+<div class="keep-together">
+
 The complete word order is:
 
 ```text
@@ -2130,11 +2348,15 @@ Triangle: (opcode<<24) OR C0, P0, C1, P1, C2, P2
 Quad:     (opcode<<24) OR C0, P0, C1, P1, C2, P2, C3, P3
 ```
 
+</div>
+
 This is packet notation, not cartridge-language code. Each C contains R in bits 7:0, G in 15:8 and B in 23:16, as unsigned bytes. Only the first word's high byte selects an opcode; bits 31:24 of C1–C3 are ignored as color data, even when they resemble a drawing-environment command. The next word after the sixth/eighth starts a new command; there is no terminator.
 
 Each P consumes signed eleven-bit X in bits 10:0 and Y in 26:16, range −1024…1023. The remaining five bits in each halfword do not extend its coordinate. Drawing offsets, per-triangle span rejection, triangle coordinate shifting, drawing-area clipping and retained row suppression follow [Place primitives across coordinate boundaries](#gpu-coordinate-placement). A quad uses triangles (0,1,2) then (2,1,3), with each half constructing its own color planes; it is not four-corner bilinear shading.
 
 The calculation follows [Predict interpolated colors and texture coordinates](#gpu-interpolation): derivatives are determinant quotients truncated toward zero, retained as twenty-bit words with twelve fractional bits. Signed twenty-bit derivatives form the biased intercept; readout extracts bits 19:12 as the RGB byte. Attribute overflow wraps in that finite field rather than clamping to a byte. Do not replace it with a fresh floating-point interpolation. Gouraud untextured polygons are eligible for draw-mode dithering; after any eligible dither, byte saturation and the three-bit reduction produce the five-bit blend source.
+
+<div class="keep-together">
 
 ### Worked six-word triangle
 
@@ -2149,6 +2371,10 @@ Use zero drawing offset, inclusive drawing area X=40…44,Y=24…28, no skipped-
 | 5 | `E250C832H` | C2 RGB=(50,200,80) |
 | 6 | `001C0028H` | P2=(40,28) |
 
+</div>
+
+<div class="keep-together">
+
 Words 3 and 5 do **not** execute E1/E2 commands. For this triangle, determinant D=16 and the plane anchor is vertex 0. The plane construction gives these raw twenty-bit quantities:
 
 | Channel | X-step word | Y-step word | Intercept |
@@ -2156,6 +2382,8 @@ Words 3 and 5 do **not** execute E1/E2 commands. For this triangle, determinant 
 | R | `3C000H` | `0A000H` | `BA800H` |
 | G | `14000H` | `28000H` | `48800H` |
 | B | `D8000H` | `E2000H` | `D8800H` |
+
+</div>
 
 The blue steps represent −40×4096 and −30×4096. These intercepts include the half-color-unit bias, not a half-pixel coverage shift. At covered pixel `(41,25)`, plane evaluation gives `50800H,64800H,82800H`; extracting bits 19:12 yields RGB=(80,100,130). With dithering off, reduction gives RGB5=(10,12,16), packed `418AH`. The opaque, unchecked, unforced write replaces an existing `FFFFH` there with **`418AH`**, clearing its old bit 15.
 
@@ -2212,6 +2440,8 @@ triangles (0,1,2), then (2,1,3), carrying each vertex's own UV. The coordinate,
 size-rejection and shared-edge rules are the same as in [Flat untextured polygons](#gpu-flat-polygons); an arbitrary four-corner outline is not repaired into a different
 split.
 
+<div class="keep-together">
+
 ### T0 selects the palette; T1 changes persistent drawing state
 
 T0's upper half is the CLUT attribute:
@@ -2220,6 +2450,10 @@ T0's upper half is the CLUT attribute:
 CLUT base X = (attribute AND 003FH) × 16 raw words
 CLUT base Y = (attribute >> 6), decoded through the Y-address gate
 ```
+
+</div>
+
+<div class="keep-together">
 
 T1's upper half supplies these drawing-mode fields:
 
@@ -2231,6 +2465,10 @@ T1's upper half supplies these drawing-mode fields:
 | 8:7 | Texture depth: 0 palette4, 1 palette8, 2 or 3 direct sixteen-bit |
 | 11 | Add 512 to texture-page base Y |
 
+</div>
+
+<div class="keep-together">
+
 The page Y result is decoded through the Y-address gate. Other T1 attribute
 bits do not participate in the update:
 
@@ -2238,6 +2476,8 @@ bits do not participate in the update:
 new draw mode = (old draw mode AND NOT 09FFH)
                 OR (T1 attribute AND 09FFH)
 ```
+
+</div>
 
 This changes the **persistent** draw mode before taking this polygon's own
 state snapshot. Bits 9,10,12,13 survive: dither enable, draw-to-displayed-field
@@ -2265,6 +2505,8 @@ Initially program draw mode **`3742H`**. Its dither, draw-to-displayed-field and
 both rectangle-flip bits are set; its old page/depth/blend fields will change.
 Initialize the destination region used below to **`0C41H`**, RGB5=(1,2,3).
 
+<div class="keep-together">
+
 Declare these existing raw local-memory contents before drawing. They are source
 words, not an upload packet or a suggested loading API:
 
@@ -2277,6 +2519,10 @@ words, not an upload packet or a suggested loading API:
 | (5,500) | `E208H` |
 | (6,500) | `0000H` |
 | (7,500) | `8000H` |
+
+</div>
+
+<div class="keep-together">
 
 No sampled source coordinate is left unspecified, and these source regions do
 not overlap the destination. Supply this complete polygon packet:
@@ -2291,10 +2537,14 @@ not overlap the destination. Supply this complete polygon packet:
 | 6 | `001C0028H` | P2=(40,28) |
 | 7 | `E10009FAH` | T2: U2=250,V2=9; ignored upper half=`E100H` |
 
+</div>
+
 The CLUT attribute gives base (1008,500). T1 selects page (960,768), palette8
 and additive blend selection 1. The merge is
 `(3742H AND NOT 09FFH) OR 08BFH = 3EBFH`; preserved bits are `3600H`.
 Word 7 does **not** overwrite this state with an E1 command.
+
+<div class="keep-together">
 
 The UV planes have exact steps of one texel per destination pixel: at covered
 integer samples, U=`250+(X−40)` and V=`5+(Y−24)`. The inherited rectangle flips
@@ -2306,6 +2556,8 @@ do not reverse polygon planes. On row Y=24 the lookups are:
 | 41 | 251,5 | (61,773) | 21 | (5,500) | `E208H` |
 | 42 | 252,5 | (62,773) | 22 | (6,500) | `0000H` |
 | 43 | 253,5 | (62,773) | 23 | (7,500) | `8000H` |
+
+</div>
 
 For X=40, `960+(250>>1)=1085`, which wraps to raw X=61 without changing row
 773. Its low byte selects index 20. Then `1008+20=1028` wraps to CLUT X=4
@@ -2320,6 +2572,8 @@ the same RGB but bit 15 set: dither zero gives source (4,16,31), additive
 blending over (1,2,3) gives (5,18,31), and retained sample bit 15 makes the final
 word **`FE45H`**.
 
+<div class="keep-together">
+
 `0000H` skips the write entirely. `8000H` is nonzero black: at (43,24) its
 modulated source remains black, additive blending preserves background RGB,
 but stored sample bit 15 changes the result to **`8C41H`**. The exact completed
@@ -2331,6 +2585,8 @@ triangle is:
 | 25 | `7E04H` | `FE24H` | `0C41H` (zero sample) | — |
 | 26 | `7DE3H` | `FE45H` | — | — |
 | 27 | `7E04H` | — | — | — |
+
+</div>
 
 Dashes are outside coverage and remain unchanged. There are ten covered samples,
 two fetched-zero skips and eight writes. For the full gain/dither arithmetic
@@ -2346,6 +2602,8 @@ and becomes **`EE49H`**. Semi-transparency and stored-bit selection still apply.
 Use modulation color (128,128,128) for exact unit gain **with dithering off**;
 (255,255,255) is not neutral.
 
+<div class="keep-together">
+
 ### A later rectangle inherits the changed page and preserved flips
 
 With no intervening drawing-mode change, send:
@@ -2353,6 +2611,10 @@ With no intervening drawing-mode change, send:
 ```text
 66C08040H  00180030H  7D3F05FBH  00020002H
 ```
+
+</div>
+
+<div class="keep-together">
 
 This is a two-by-two semi-transparent modulated textured rectangle at (48,24),
 starting U/V=(251,5), using the same CLUT and RGB. Its sole texture word contains
@@ -2365,6 +2627,8 @@ do not dither, despite retained dither enable:
 |---|---|---|
 | 24 | `FE45H` | `7E04H` |
 | 25 | `7E04H` | `FE45H` |
+
+</div>
 
 Thus T1 was not a temporary material choice, and the polygon did not clear flip
 state merely because it did not use it. Program the intended drawing mode before
@@ -2402,6 +2666,8 @@ color from the texture.
 | `3EH` | Quad | Modulated | On | 12 |
 | `3FH` | Quad | Raw | On | 12 |
 
+<div class="keep-together">
+
 The opcode has Gouraud bit 4 and texture bit 2 set. Bit 3 selects a quad, bit 1
 requests semitransparency, and bit 0 selects raw texture. Supply complete GP0
 words in this order:
@@ -2410,6 +2676,8 @@ words in this order:
 Triangle: (opcode<<24) OR C0, P0,T0, C1,P1,T1, C2,P2,T2
 Quad:     (opcode<<24) OR C0, P0,T0, C1,P1,T1, C2,P2,T2, C3,P3,T3
 ```
+
+</div>
 
 Each C contains unsigned R/G/B bytes in bits 7:0, 15:8 and 23:16. Only the first
 word's high byte selects a command; the high byte of C1–C3 is ignored. Each P
@@ -2434,6 +2702,8 @@ T0's upper half is the CLUT attribute: base X is `(attribute AND 3fH)×16` raw
 words, and base Y is `attribute>>6` through the retained Y-address gate. Palette
 lookup uses that base; direct16 depth does not use the CLUT.
 
+<div class="keep-together">
+
 T1's upper half is the texture-page attribute. It is word **6** here, not word 5
 as in a flat-textured packet. Its selected fields are:
 
@@ -2445,11 +2715,17 @@ as in a flat-textured packet. Its selected fields are:
 | 8:7 | Texture depth: 0 palette4; 1 palette8; 2 or 3 direct16 |
 | 11 | Page Y contribution of 512, subject to the Y-address gate |
 
+</div>
+
+<div class="keep-together">
+
 The update is persistent:
 
 ```text
 new draw mode = (old draw mode AND NOT 09ffH) OR (T1 attribute AND 09ffH)
 ```
+
+</div>
 
 It preserves draw-mode bits 9, 10, 12 and 13. Other T1 attribute bits do not
 change them; T2/T3 upper halves do not select further pages. The update happens
@@ -2474,6 +2750,8 @@ bias does not move coverage. Modulated mode evaluates all five R/G/B/U/V planes;
 raw mode ignores RGB for output but still evaluates U/V. There is no Z/W term,
 perspective correction, filtering or mip-level selection in this point sample.
 
+<div class="keep-together">
+
 U/V then undergo texture-window replacement and the page/CLUT lookup in
 [Locate texture texels and palette colors](#gpu-texture-lookup). A fetched
 `0000H` skips the pixel; `8000H` is nonzero black, not transparent. Modulation
@@ -2484,6 +2762,8 @@ p = (t×c) >> 4
 source component = 0,                         if p+d < 0
                  = min((p+d)>>3, 31),         otherwise
 ```
+
+</div>
 
 Here d is the eligible destination-position dither offset, or zero with dithering
 off. Byte 128 is exact unit gain **with dithering off**, not byte 255. Modulated
@@ -2499,6 +2779,8 @@ Without force-mask, output bit 15 copies the fetched texel. The independent zero
 blend and destination-protection rules are in
 [Separate texture transparency, blending and destination protection](#gpu-blending-mask).
 
+<div class="keep-together">
+
 ### Worked nonconstant nine-word triangle
 
 Declare the following initial state and memory; no upload packet is implied:
@@ -2511,6 +2793,10 @@ Declare the following initial state and memory; no upload packet is implied:
   Raw CLUT word `(229,100)` is `F194H`, RGB5=(20,12,28), bit 15 set.
 - All destination words covered by this triangle initially contain `A505H`,
   RGB5=(5,8,9), bit 15 set. Check-mask is off, so that old bit does not protect them.
+
+</div>
+
+<div class="keep-together">
 
 Supply these nine words:
 
@@ -2526,6 +2812,10 @@ Supply these nine words:
 | 8 | `001E0028H` | P2=(40,30) |
 | 9 | `BEEF1709H` | T2: U/V=(9,23); upper half ignored |
 
+</div>
+
+<div class="keep-together">
+
 T1 changes draw mode to `(3709H AND NOT 09ffH) OR 00a3H = 36a3H`: page X=192,
 Y=0, palette8, additive blend mode 1. CLUT attribute 190cH gives base `(192,100)`.
 The triangle determinant is 42 and its plane anchor is vertex 0. The retained
@@ -2538,6 +2828,8 @@ plane quantities are:
 | B | `F6DB7H` | `EAAABH` | `2E360H` |
 | U | `02000H` | `01000H` | `9B800H` |
 | V | `00492H` | `03000H` | `B2130H` |
+
+</div>
 
 For example, the R steps are `trunc(4096×128/7)=74898` and
 `trunc(4096×64/6)=43690`; the negative G/B steps use the same toward-zero rule.
@@ -2558,6 +2850,8 @@ RGB=(140,122,122), U/V=(11,12), d=0 and foreground RGB5=(21,11,26).
 It fetches the same CLUT color through packed word `(197,12)` but stores
 **`FE7AH`** over the declared destination.
 
+<div class="keep-together">
+
 Starting each contrast from the same initial destination:
 
 | Change at (42,26) | Stored result | Reason |
@@ -2565,6 +2859,8 @@ Starting each contrast from the same initial destination:
 | Opcode `34H` instead | `F172H` | Modulated/dithered source replaces RGB; no blend request |
 | Opcode `37H` instead | `FE99H` | RGB fields still present but ignored; raw source (20,12,28) blends |
 | CLUT color `7194H` instead, opcode 36H | `7172H` | Same modulated RGB, but fetched bit 15 clear prevents blending |
+
+</div>
 
 ### Command cost
 
@@ -2610,6 +2906,8 @@ The calculation is the one in [Predict line samples and color ramps](#gpu-line-s
 
 After ordinary drawing-offset sums, reject source spans exceeding 1024×512 inclusive. The accepted segment generates `max(abs(dx),abs(dy))+1` samples, including both endpoints; an accepted zero-length segment generates one. Positions use the specified outward-rounded Q32 steps/biases, while Gouraud bytes use biased Q12 accumulators and truncated color steps. Generated positions wrap to signed eleven bits before drawing-area and row-suppression tests. Neither clipping nor skipped rows restarts the original color ramp.
 
+<div class="keep-together">
+
 For a concrete clipped, descending-Y Gouraud line, use zero offset, inclusive area X=10…14,Y=7…10, retained suppression of odd rows, dithering off and mask-mode low bits zero:
 
 | Word | Raw word | Operand |
@@ -2619,6 +2917,10 @@ For a concrete clipped, descending-Y Gouraud line, use zero offset, inclusive ar
 | 3 | `E1B414DCH` | Second RGB=(220,20,180), not an E1 command |
 | 4 | `000C000AH` | Second endpoint (10,12) |
 
+</div>
+
+<div class="keep-together">
+
 Opcode `55H` deliberately has both ignored bits set. X ordering makes the working start `(10,12)` with RGB=(220,20,180), and the end `(14,5)` with RGB=(20,200,40). N=7 gives eight generated samples. The Q12 RGB steps are −117028,+105325,−81920. Of the samples at original indices 0…7, the area admits indices 2…5; odd-row suppression removes indices 3 and 5:
 
 | Original sample index | Destination | RGB byte readout | Stored RGB555 word |
@@ -2626,7 +2928,11 @@ Opcode `55H` deliberately has both ignored bits set. X ordering makes the workin
 | 2 | (11,10) | (163,71,140) | `4514H` |
 | 4 | (12,8) | (106,123,100) | `31EDH` |
 
+</div>
+
 The intervening rejected samples still advance every accumulator. These two opaque, unchecked, unforced writes replace their old words and write bit 15 clear.
+
+<div class="keep-together">
 
 ### Flat lines also dither
 
@@ -2636,6 +2942,10 @@ The draw-mode dither setting applies to **flat as well as Gouraud lines**. As a 
 450F0807H, 00140010H, 00140013H
 ```
 
+</div>
+
+<div class="keep-together">
+
 Its RGB=(7,8,15) is constant, but absolute destination phases produce different words:
 
 | Destination | Dither offset | RGB555 word |
@@ -2644,6 +2954,8 @@ Its RGB=(7,8,15) is constant, but absolute destination phases produce different 
 | (17,20) | 0 | `0420H` |
 | (18,20) | −3 | `0400H` |
 | (19,20) | +1 | `0821H` |
+
+</div>
 
 The common offset is added to each byte, saturated to 0…255, then reduced by three bits. It is not a per-line phase restarted at the first endpoint, and blending uses the resulting five-bit source.
 
@@ -2667,6 +2979,8 @@ A polyline starts with two endpoints, then adds one segment for each complete co
 | `58H`,`59H`,`5CH`,`5DH` | Gouraud | Off | 4 | 2 |
 | `5AH`,`5BH`,`5EH`,`5FH` | Gouraud | On | 4 | 2 |
 
+<div class="keep-together">
+
 Bit 4 selects Gouraud color, bit 3 selects continuation, and bit 1 requests semitransparency. Bits 2 and 0 neither add texture operands nor select raw color. The word order is:
 
 ```text
@@ -2674,7 +2988,11 @@ Flat:    (opcode<<24) OR C0, P0, P1, P2, P3, ... , terminator
 Gouraud: (opcode<<24) OR C0, P0, C1, P1, C2, P2, C3, P3, ... , terminator
 ```
 
+</div>
+
 This is packet notation. Colors consume unsigned RGB bytes in bits 7:0/15:8/23:16; positions consume signed eleven-bit X/Y fields in bits 10:0/26:16. The complete initial header emits segment P0–P1 **without waiting for termination**. Flat P2 emits P1–P2 using C0 again; Gouraud C2/P2 emits the same segment using C1/C2. The previous endpoint and its color remain available for the following segment.
+
+<div class="keep-together">
 
 ### Terminate at the right field boundary
 
@@ -2684,7 +3002,11 @@ After the initial header, any word satisfying this predicate is a terminator:
 (word AND F000F000H) = 50005000H
 ```
 
+</div>
+
 Test it only at the start of a continuation vertex: the next **position** for flat color, or the next **color** for Gouraud color. `5ABC5DEFH` qualifies. The identical word in a Gouraud continuation's position slot is position data, not a terminator. Initial-header fields are not termination boundaries either.
+
+<div class="keep-together">
 
 The complete eight-word example in [Frame the GP0 command stream](#gpu-command-stream) makes the distinction concrete:
 
@@ -2695,6 +3017,8 @@ The complete eight-word example in [Frame the GP0 command stream](#gpu-command-s
 | 7 | `5ABC5DEFH` | Next continuation-color slot: terminates without adding a segment |
 | 8 | `E1000000H` | Now a new drawing-environment command |
 
+</div>
+
 Moving the marker into word 6 would make it position data. Conversely, a matching full word in a continuation-color slot terminates **before** its low 24 bits can become a color. An opcode-looking or NOP-looking continuation word is not an escape to a command boundary.
 
 There is no fixed total polyline word count. Omitting termination leaves the continuation phase open; supplying a Gouraud color without its position leaves that pair unfinished. A pause while buffered words drain does not discard the retained endpoint. Termination does not undo segments already emitted. Each complete segment retains the drawing state present at its own emission; it does not wait for a final whole-polyline state snapshot.
@@ -2702,6 +3026,8 @@ There is no fixed total polyline word count. Omitting termination leaves the con
 ### Count the joint twice when blending
 
 Every segment uses the finite-line calculation in [Predict line samples and color ramps](#gpu-line-sampling): X ordering exchanges endpoints and their associated colors, equal-X order is retained, and an accepted segment generates `max(abs(dx),abs(dy))+1` samples. Generated positions wrap to signed eleven bits before area/row tests. Clipping or row suppression does not restart a color ramp. Dithering, if enabled, applies to flat as well as Gouraud segments at each absolute destination phase.
+
+<div class="keep-together">
 
 For a complete flat example, use zero offset, inclusive area X=40…46/Y=30, no row suppression, dithering off, mask checking/forcing off and saturated additive blend selection 1. Initialize all seven destination words to `0000H` and supply:
 
@@ -2713,12 +3039,18 @@ For a complete flat example, use zero offset, inclusive area X=40…46/Y=30, no 
 | 4 | `001E002EH` | P2=(46,30); completes the next segment |
 | 5 | `5ABC5DEFH` | Terminates at the next flat position boundary |
 
+</div>
+
+<div class="keep-together">
+
 Each segment generates four samples, including both ends. RGB=(32,0,0) becomes RGB5=(4,0,0), word `0004H`, before blending. The first segment writes X=40…43; the second writes X=43…46. Their common endpoint receives **two additions**, not polygon-style once-only seam ownership:
 
 | Destination X at Y=30 | 40 | 41 | 42 | 43 | 44 | 45 | 46 |
 |---|---|---|---|---|---|---|---|
 | Write count | 1 | 1 | 1 | 2 | 1 | 1 | 1 |
 | Final word | `0004H` | `0004H` | `0004H` | `0008H` | `0004H` | `0004H` | `0004H` |
+
+</div>
 
 These are the results after both segments' pixel writes. The stated mask settings matter: destination protection could reject an old protected word, while forcing would set output bit 15. No sample bit 15 is needed to enable blending for these untextured lines.
 
@@ -2771,13 +3103,19 @@ Every complete rectangle retains its drawing-state snapshot. Later environment c
 
 For both trials below, use zero offset, inclusive drawing area X=13…17/Y=22…25, retained suppression of odd rows, mask checking/forcing off and the dither setting on. Initialize the twenty destination words in that area to `6B5AH` before **each** trial.
 
+<div class="keep-together">
+
 The complete opaque fixed-8×8 packet is only two words:
 
 ```text
 70A0647CH, 0014000AH
 ```
 
+</div>
+
 It supplies RGB=(124,100,160) and origin (10,20). Clipping leaves five columns and four rows; odd-row suppression leaves ten writes on Y=22 and 24. With no rectangle dither, every write is RGB5=(15,12,20), **`518FH`**. Rows 23 and 25 retain `6B5AH`. There is no trailing size word.
+
+<div class="keep-together">
 
 For the textured trial, let current E1 select page (64,256), eight-bit palette sampling and both rectangle flips. Use texture-window fields X-mask=1/Y-mask=3/X-offset=0/Y-offset=1, giving U AND/OR masks `F7H/00H` and V masks `E7H/08H`. Declare these raw source words; all other texture words and palette entries used by this example are `0000H`:
 
@@ -2788,6 +3126,10 @@ For the textured trial, let current E1 select page (64,256), eight-bit palette s
 | Palette color | (133,300) | `25ABH` |
 | Palette color | (22,300) | `8000H` |
 
+</div>
+
+<div class="keep-together">
+
 Supply the complete variable, modulated, opaque packet:
 
 | Word | Raw input | Meaning |
@@ -2796,6 +3138,8 @@ Supply the complete variable, modulated, opaque packet:
 | 2 | `0014000AH` | Origin (10,20) |
 | 3 | `4B3E0102H` | U0=2,V0=1; CLUT base (992,300) |
 | 4 | `00060008H` | Width 8, height 6 |
+
+</div>
 
 The first admitted pixel (13,22) has stepped U/V=(−1,−1), transformed to `F7H/EFH`. Palette8 reads raw (64+123,256+239)=(187,495); odd U selects `A5H`. CLUT X wraps within its row: `(992+165) AND 3FFH=133`, yielding `25ABH`. Neutral gain preserves its RGB5=(11,13,9).
 
@@ -2813,6 +3157,8 @@ Use ordinary signed-eleven-bit position-plus-offset sums for timing, **not** the
 
 In general add `(W+1)>>1` to row cost when semitransparency **or** mask checking is enabled, once even when both are enabled. The wider/greater-area texture branches are listed in [Budget command work separately from issuing words](#gpu-command-costs); use clipped H **before** row halving to select them. An empty rectangle still costs 16 ticks/eight cycles. For example, replacing the textured packet's S with `00060000H` gives width zero and no samples, not a 1024-column image. These intervals exclude CPU word preparation/supply and do not acknowledge presentation.
 
+<div class="keep-together">
+
 <a id="gpu-fill-packet"></a>
 ## Fill raw local memory — GP0(02H)
 
@@ -2826,9 +3172,13 @@ selects this operation. Its complete packet is three GP0 words:
 | 2 | Destination XY: raw X in the low halfword, raw Y in the high halfword |
 | 3 | Size S: width in the low halfword, height in the high halfword |
 
+</div>
+
 There is no pixel payload or terminator. The next word starts a new command;
 its bits are not additional fill pixels. The low twenty-four header bits are
 color, not raw/modulated or semitransparency options.
+
+<div class="keep-together">
 
 ### Decode alignment, dimensions and color
 
@@ -2840,6 +3190,8 @@ Y0 = (XY >> 16) AND Ymask
 W  = ((S AND 3ffH) + 15) AND NOT 0fH
 H  = (S >> 16) AND 1ffH
 ```
+
+</div>
 
 X is aligned **down** to a multiple of 16; the selected width is rounded **up**
 to a multiple of 16. Width 1…16 therefore writes 16 columns, while width 1009…1023
@@ -2877,6 +3229,8 @@ dithering and subtractive blend mode are selected; mask mode has check and force
 both set. The locations named below initially contain `FFFFH`. These are declared
 example contents, not a reset-memory guarantee.
 
+<div class="keep-together">
+
 Supply:
 
 | Word | Raw word | Requested operand |
@@ -2884,6 +3238,10 @@ Supply:
 | 1 | `024964F1H` | RGB=(241,100,73) |
 | 2 | `03FF03FFH` | X=1023,Y=1023 |
 | 3 | `00040011H` | Width 17,height 4 |
+
+</div>
+
+<div class="keep-together">
 
 X aligns to 1008, width rounds to 32, and the nine-bit Y gate selects 511. The four
 row addresses are 511,0,1,2; each row's columns are 1008…1023 followed by 0…15.
@@ -2896,10 +3254,14 @@ The output color is RGB5=(30,12,9), packed **`259EH`**:
 | 1 | Odd: suppressed | `FFFFH`, unchanged |
 | 2 | Even: admitted | `259EH` |
 
+</div>
+
 Exactly 64 distinct words change here. Neighbors such as `(16,0)` and `(1007,2)`
 remain unchanged. The excluding drawing area and nonzero offset do not relocate
 or clip these writes; old bit 15 does not protect them, and force-mask does not
 mark the result. The selected dither/blend state likewise does not alter `259EH`.
+
+<div class="keep-together">
 
 ### Command cost, not stored-pixel count
 
@@ -2908,6 +3270,8 @@ For decoded W/H, the cost is:
 ```text
 ticks = 46 + ((W >> 3) + 9)×H
 ```
+
+</div>
 
 The worked packet costs `46+(4+9)×4=98` command ticks, or **49 scheduled system
 cycles** from execution start. Disabling row suppression would write 128 words
@@ -2951,6 +3315,8 @@ Upload applies the retained destination-mask mode but ignores drawing offset, dr
 
 A normal upload becomes one retained command after the counted payload has been assembled. Its mask mode and Y-address state are snapshotted when the complete upload—or a flushed partial upload—is emitted, not supplied by an extra payload flag. Apparent E commands inside the image cannot change that state.
 
+<div class="keep-together">
+
 ### A 3×3 upload across both address boundaries
 
 Select the 512-row Y-address period and mask mode `3`: checking and forcing both enabled. The following table declares the old destination words. Other draw-state settings do not affect this raw upload. Supply all eight words:
@@ -2966,6 +3332,10 @@ Select the 512-row Y-address period and mask mode `3`: checking and forcing both
 | 7 | `A0007C00H` | Pixels 6/7: `7C00H`,`A000H`; not a new upload |
 | 8 | `E1001234H` | Pixel 8: `1234H`; upper `E100H` ignored |
 
+</div>
+
+<div class="keep-together">
+
 The complete masked result is:
 
 | Pixel index | Destination | Source | Before | After |
@@ -2979,6 +3349,8 @@ The complete masked result is:
 | 6 | (1022,1) | `7C00H` | `4444H` | `FC00H` |
 | 7 | (1023,1) | `A000H` | `8555H` | Unchanged `8555H` |
 | 8 | (0,1) | `1234H` | `6666H` | `9234H` |
+
+</div>
 
 Payload word 5 crosses the logical row boundary: its low half targets (0,511), while its high half targets (1022,0). X overflow alone did **not** move pixel 2 to Y=0; the completed three-pixel row advances Y and the selected gate wraps 512 to zero. Pixel 0 proves that raw zero really writes: force-mask turns it into `8000H`. Pixels 2,5,7 retain their protected old words regardless of their source bits. The ignored upper half of word 8 cannot supply another pixel or start an E1 command.
 
@@ -3001,6 +3373,8 @@ Use this command to return raw sixteen-bit local-memory words through GPUREAD.
 It does not return a PCRTC-composed, magnified or storage-format-converted
 picture, and it does not expose a CPU-addressable local-memory aperture.
 
+<div class="keep-together">
+
 ### Three-word request and normalized dimensions
 
 Every opcode from `C0H` through `DFH` selects the same operation. The opcode's
@@ -3012,6 +3386,8 @@ Supply:
 | 1 | `opcode << 24`; low twenty-four bits ignored |
 | 2 | Source XY: raw X in the low halfword, raw Y in the high halfword |
 | 3 | Size S: raw width in the low halfword, raw height in the high halfword |
+
+</div>
 
 There is **no GP0 pixel payload or terminator**. Image data comes back on reads;
 a following GP0 write belongs to the next command, subject to the readback
@@ -3042,6 +3418,8 @@ completion, it activates a pending readback with cursor zero and a command-count
 fence identifying the required command prefix through this request. That scheduled interval
 is not the time to return all W×H pixels.
 
+<div class="keep-together">
+
 The request progresses through three distinct states:
 
 | State | Meaning for the request |
@@ -3049,6 +3427,8 @@ The request progresses through three distinct states:
 | Pending | Waiting for read work to be submitted at its exact completed-command fence |
 | Submitted | The ordered read work has been claimed; its matching completion is still required |
 | READY | Data is available for permitted GPUREAD consumption; GPUSTAT bit 27 is set |
+
+</div>
 
 The fence ensures the required earlier work is performed before pixel extraction.
 The count and these phases are ordering state, not extra request words or
@@ -3082,6 +3462,8 @@ can consume an entire packed word. Query/latch interactions are detailed in
 [Query drawing state through GPUREAD](#gpu-info-queries); a query does not reserve
 its answer against a ready image read.
 
+<div class="keep-together">
+
 ### Complete odd 3×3 readback across both address wraps
 
 Declare nine-bit Y addressing, GPUREAD=`DEADBEEFH`, no DMA read ownership and no
@@ -3093,6 +3475,8 @@ upload or reset-memory contents are implied:
 | 511 | `0011H` | `8022H` | `0033H` |
 | 0 | `0044H` | `8055H` | `0066H` |
 | 1 | `0077H` | `8088H` | `0099H` |
+
+</div>
 
 <section class="keep-together">
 
@@ -3106,6 +3490,8 @@ Issue:
 
 </section>
 
+<div class="keep-together">
+
 Each row addresses X=1023,0,1; generated rows address 511,0,1. While bit 27 remains
 clear, a GP0 read returns `DEADBEEFH` and does not advance this image. Once READY,
 the five permitted word reads are:
@@ -3117,6 +3503,8 @@ the five permitted word reads are:
 | 3 | `00668055H` | (0,0) | (1,0) | 1 |
 | 4 | `80880077H` | (1023,1) | (0,1) | 1 |
 | 5 | `00000099H` | (1,1) | Unused zero | 0 |
+
+</div>
 
 Read 2 crosses a logical row boundary without padding. Source bit 15 passes
 through unchanged; these are storage words, not newly quantized RGB values.
@@ -3149,6 +3537,8 @@ work. Use the phase-dependent clear description in
 preserves the GPUREAD latch and Y-extension value; neither resetting that GPU
 register state nor reading an old latch proves local memory was erased.
 
+<div class="keep-together">
+
 <a id="gpu-copy-packet"></a>
 ## Raw local-memory copy — GP0(80H–9FH)
 
@@ -3160,11 +3550,15 @@ W = (((S AND FFFFH) − 1) AND 3FFH) + 1
 H = ((((S >> 16) AND FFFFH) − 1) AND 1FFH) + 1
 ```
 
+</div>
+
 This is packet notation and integer mathematics. Each XY has raw X in its low ten bits and raw Y in its upper half through the selected Y-address gate. They are not signed primitive positions. W is 1…1024 and H is 1…512: S=`00000000H` requests **1024×512**, not an empty copy. The 1024-row Y-address setting does not enlarge that 512-row maximum transfer height. After the fourth packet word, the next word is another command, not image data.
 
 The complete packet retains its mask mode and Y-address state when emitted; later environment changes do not reinterpret it. Source/destination X wrap within their respective 1024-word rows, and generated Y values wrap through the selected 512- or 1024-row period. Drawing offset, drawing area, row suppression, blending and dithering do not affect this raw operation.
 
 Check-mask rejects a write when the destination's **old** bit 15 is set. Otherwise force-mask sets output bit 15; with forcing clear, all sixteen source bits are copied. Source `0000H` is writable raw data, not texture transparency. A set source bit 15 is also data: it does not prevent reading or request blending.
+
+<div class="keep-together">
 
 ### Determine traversal before relying on overlap
 
@@ -3174,13 +3568,21 @@ Rows always advance in increasing **logical** row order, even when Y wraps to a 
 D = (destinationX − sourceX) AND 3FFH
 ```
 
+</div>
+
 If `0 < D < W`, visit columns W−1…0; otherwise visit 0…W−1. Read each source word immediately before its destination mask test/write. The operation does **not** first capture a whole source rectangle. Horizontal reverse traversal therefore does not promise source preservation for vertical overlap.
+
+<div class="keep-together">
 
 For a complete wrapped horizontal example, clear both mask controls and initialize row 20 as follows. Supply:
 
 ```text
 9F123456H, 001403FEH, 001403FFH, 00010003H
 ```
+
+</div>
+
+<div class="keep-together">
 
 This copies 3×1 from (1022,20) to (1023,20); the first word deliberately uses alias `9FH` and ignored payload bits. D=1, so columns execute 2,1,0:
 
@@ -3190,12 +3592,16 @@ This copies 3×1 from (1022,20) to (1023,20); the first word deliberately uses a
 | 1 | 1023 / `0022H` | 0 |
 | 0 | 1022 / `0011H` | 1023 |
 
+</div>
+
 | X at Y=20 | 1022 | 1023 | 0 | 1 |
 |---|---|---|---|---|
 | Before | `0011H` | `0022H` | `0033H` | `0044H` |
 | After | `0011H` | `0011H` | `0022H` | `0033H` |
 
 X wrapping stays on row 20; it does not carry into row 21.
+
+<div class="keep-together">
 
 ### A downward copy reads the rows it just wrote
 
@@ -3208,6 +3614,10 @@ Select the 512-row Y-address period, clear both mask controls and supply this co
 | 3 | `01FF03FFH` | Destination (1023,511) |
 | 4 | `00030003H` | Width 3,height 3 |
 
+</div>
+
+<div class="keep-together">
+
 Use the following before-words at the three columns X=(1023,0,1):
 
 | Physical Y | Before | After |
@@ -3216,6 +3626,8 @@ Use the following before-words at the three columns X=(1023,0,1):
 | 511 | `0044H,0055H,0066H` | `0011H,0022H,0033H` |
 | 0 | `0077H,0088H,0099H` | `0011H,0022H,0033H` |
 | 1 | `00AAH,00BBH,00CCH` | `0011H,0022H,0033H` |
+
+</div>
 
 D=0 selects forward columns. Logical row 0 copies 510→511. Logical row 1 then reads the **new** row 511 into physical row 0, and logical row 2 reads the new row 0 into row 1. The result repeats the original first source row; it does not shift three independently preserved original rows. [Choose fill, drawing or a raw transfer](#gpu-memory-operations) describes software ordering when those originals must be preserved.
 
@@ -3254,13 +3666,19 @@ Bit 10 does **not** describe an arbitrary protected display rectangle. One retai
 
 E1 changes current draw mode when the ordered GP0 parser executes its word, not merely when a FIFO accepts it. The register change occurs at the start of its **one-command-tick interval**, whose completion deadline is one system cycle later. E1 is not itself a retained drawing primitive. Every emitted draw retains its own mode and other drawing-state snapshot; later E1 words cannot reinterpret it. This queued interval is not CPU issue cost or a physical raster-clock guarantee.
 
+<div class="keep-together">
+
 Textured polygons have another persistent mode producer. T1's upper attribute half updates current mode **before that polygon takes its snapshot**:
 
 ```text
 new mode = (old mode AND NOT 09FFH) OR (T1 attribute AND 09FFH)
 ```
 
+</div>
+
 This replaces bits 8:0 and 11: page, depth and blend. It preserves bits **9,10,12,13**, regardless of those bits in the attribute. T1 is word 5 of a flat textured polygon or word 6 of a Gouraud textured polygon, counting the command word as 1. It is an operand, not a standalone E1 command. T0 supplies the CLUT, while T2/T3 upper halves do not make further page changes. Textured rectangles have no T1 and use the current mode.
+
+<div class="keep-together">
 
 ### A complete E1 word and a later T1 overwrite
 
@@ -3270,7 +3688,11 @@ Select the 1024-row Y-address period and issue the complete word:
 E1ABDBDFH
 ```
 
+</div>
+
 Only `1BDFH` is retained; the result is identical to `E1001BDFH`. It selects page (960,768), direct depth 3, subtractive blend selection 2, dithering on, bit 10 clear, X flip on and Y flip off. With the 512-row gate instead, the same page selectors yield Y=256, not 768.
+
+<div class="keep-together">
 
 In a later textured polygon, use **`E4A2078CH` in its T1 slot**. Its U/V bytes are (140,7); its attribute is `E4A2H`. The persistent merge is:
 
@@ -3279,6 +3701,10 @@ old preserved bits = 1BDFH AND NOT 09FFH = 1200H
 new selected bits  = E4A2H AND 09FFH     = 00A2H
 new current mode   = 1200H OR 00A2H      = 12A2H
 ```
+
+</div>
+
+<div class="keep-together">
 
 All four preserved flags deliberately disagree with the attribute:
 
@@ -3289,6 +3715,10 @@ All four preserved flags deliberately disagree with the attribute:
 | 12, rectangle X flip | 1 | 0 | 1 |
 | 13, rectangle Y flip | 0 | 1 | 0 |
 
+</div>
+
+<div class="keep-together">
+
 The new mode selects page (128,0), palette8 and additive blend selection 1; the old dither/field/flip flags survive. For an illustrative lookup whose **post-window** U/V are (140,7):
 
 | Mode | First raw texture read |
@@ -3296,11 +3726,15 @@ The new mode selects page (128,0), palette8 and additive blend selection 1; the 
 | `1BDFH`, direct depth 3 | X=(960+140) AND 3FFH=76, Y=768+7=775 |
 | `12A2H`, palette8 | X=128+(140>>1)=198, Y=7; even U selects the low index byte, then the T0-selected CLUT |
 
+</div>
+
 These are lookup inputs, not a claim that a particular polygon vertex is covered. A draw emitted before the merge retains `1BDFH`; the polygon carrying T1 retains `12A2H`; a following textured rectangle also uses `12A2H` until another mode producer changes it.
 
 ### Check only the status bits which echo draw mode
 
 GPUSTAT bits 10:0 echo mode bits 10:0, while mode bit 11 appears at **GPUSTAT bit 15**. GPUSTAT bits 11/12 belong to destination mask mode, not the rectangle flips. Do not read GPUSTAT as a complete fourteen-bit E1 echo.
+
+<div class="keep-together">
 
 After the respective mode update executes, the example therefore gives:
 
@@ -3308,6 +3742,8 @@ After the respective mode update executes, the example therefore gives:
 |---|---|
 | `1BDFH` | `000083DFH` |
 | `12A2H` | `000002A2H` |
+
+</div>
 
 Other status fields still reflect their own controls, beam and command state. These masked observations do not establish drawing completion or expose a separate draw-mode query port.
 
@@ -3326,6 +3762,8 @@ Each command below is **one GP0 word**, formed by ORing its opcode word with the
 
 These update programmed drawing state when the ordered GP0 parser **executes** the command, not merely when its word is accepted at the port. The effect occurs at the start of a one-command-tick interval; its completion deadline is one system cycle later. An environment command is not itself a retained drawing primitive. CPU preparation/admission waits and display completion are separate costs/events.
 
+<div class="keep-together">
+
 ### E2 replaces texture-coordinate bits
 
 Each texture-window mask/offset field is five bits. For either axis, derive the byte-sized operands:
@@ -3335,6 +3773,8 @@ AND byte = (NOT (mask×8)) AND FFH
 OR byte  = (offset AND mask)×8
 result   = (coordinate AND AND-byte) OR OR-byte
 ```
+
+</div>
 
 Apply X fields to U and Y fields to V. This is bit replacement, not an arbitrary clipping rectangle or texture width/height. Offset bits outside the mask do not participate; the low three coordinate bits are unchanged. Reset E2=zero gives AND bytes `FFH` and OR bytes `00H`: identity on byte coordinates, not a forced lookup at zero. For page/CLUT placement after this transformation, see [Locate texture texels and palette colors](#gpu-texture-lookup).
 
@@ -3350,6 +3790,8 @@ With bit 1 set, test the destination's **old** bit 15 before blend/store and rej
 
 GPUSTAT bits **11/12** echo E6 bits **0/1**, respectively. Thus mask mode 3 gives `GPUSTAT AND 00001800H = 00001800H`; mode zero gives zero under that mask. This says nothing about the other status fields or drawing completion. The distinct transparency/blend cases are described in [Separate texture transparency, blending and destination protection](#gpu-blending-mask).
 
+<div class="keep-together">
+
 ### Program concrete state, then preserve its lifetime
 
 Select the 512-row Y-address period and supply these five complete GP0 commands. Their deliberately nonzero ignored bits do not change the retained values:
@@ -3362,6 +3804,10 @@ Select the 512-row Y-address period and supply these five complete GP0 commands.
 | `E5FFEFFEH` | `003FEFFEH` | Offset X=−2,Y=−3 |
 | `E6FFFF03H` | `00000003H` | Check old destination and force permitted output bit 15 |
 
+</div>
+
+<div class="keep-together">
+
 E2's derived byte operands are:
 
 | Axis | Mask field | Offset field | AND byte | OR byte |
@@ -3369,9 +3815,13 @@ E2's derived byte operands are:
 | U | 1 | 0 | `F7H` | `00H` |
 | V | 3 | 1 | `E7H` | `08H` |
 
+</div>
+
 For example, U=`ADH`,V=`09H` becomes **`A5H,09H`**: U changes while V already has the selected replacement bits. No packed byte mask is substituted for the original five-bit command fields.
 
 The drawing area is five columns by four rows, half-open X=[13,18)/Y=[22,26). Raw Y values 534/537 are retained, not destroyed by the 512-row decode. With the 1024-row gate, those same corner words instead select Y=534…537. The offset's raw fields are `7FEH/7FDH`, decoding to −2/−3; a supplied coordinate (16,27) has ordinary offset sum (14,24), inside the selected 512-period area.
+
+<div class="keep-together">
 
 After a drawing packet has actually been **emitted** under this state, execute:
 
@@ -3379,9 +3829,13 @@ After a drawing packet has actually been **emitted** under this state, execute:
 E2000000H, E400640CH, E5000000H, E6000000H
 ```
 
+</div>
+
 Current state now has an identity window, zero offset and no destination-mask controls. The unchanged left limit is 13, but the new right limit is 12, so its X drawing interval is empty. A later drawing primitive that uses the area sees that empty interval.
 
 The already-emitted draw still retains window `8061H`, the earlier two corner words, offset `3FEFFEH`, mask mode 3 and its 512-row Y gate. Later environment writes do not retroactively change those operands. For a pending draw, use its actual command or segment emission as the snapshot boundary, not merely acceptance of its first word. This distinction is why a current-state status observation is not a readout of every queued draw's retained state.
+
+<div class="keep-together">
 
 <a id="gpu-command-costs"></a>
 ## Budget command work separately from issuing words
@@ -3392,11 +3846,15 @@ A command's work cost is measured in **command ticks**, not packet words or stor
 deadline = C + ((N + 1) >> 1)
 ```
 
+</div>
+
 Zero-tick work completes its execution target immediately. Round each command's interval separately: two one-tick commands occupy two scheduling cycles, not one. Queued work continues from the preceding deadline even when completion is observed late. These are scheduled command intervals, not a specified physical GPU clock or sustained fill rate.
 
 The following equations use integer arithmetic. `>>1` and `>>2` discard low bits; drawing-area right/bottom limits are inclusive. A retained skipped-row parity is either active or inactive. The cost equations do not count the exact rows, transparent texels, destination-mask hits or stored pixels.
 
 For polygon, line/polyline and rectangle costs, decode each supplied position component and offset as signed eleven-bit values, then add them as ordinary integers. Do **not** wrap the sum back to signed eleven bits or apply the triangle's common 2048-coordinate shift. Drawing-area Y still uses the retained Y-address gate. These are timing inputs; they do not replace the primitive-specific raster placement rules.
+
+<div class="keep-together">
 
 **Polygons.** Add a setup cost and one work estimate for triangle (0,1,2), plus triangle (2,1,3) for a quad:
 
@@ -3405,6 +3863,10 @@ For polygon, line/polyline and rectangle costs, decode each supplied position co
 | Triangle / quad base | 46 / 82 |
 | Additional Gouraud cost | 288 |
 | Additional texture cost, flat / Gouraud | 180 / 162 |
+
+</div>
+
+<div class="keep-together">
 
 For each triangle, return zero work if its source bounding span exceeds 1024 columns or 512 rows, or the drawing area is empty. The spans include both endpoints: `max−min+1`. Otherwise clamp each vertex's X/Y separately to the inclusive drawing-area limits and calculate:
 
@@ -3416,6 +3878,8 @@ if semitransparent OR mask-check:   p = p + ((p+1) >> 1)
 if skipped-row parity is active:    p = p >> 1
 ```
 
+</div>
+
 Apply these steps in order. Semitransparency and mask checking together add the surcharge **once**, not twice. Raw texturing still pays the textured setup and work terms. Zero work does not remove polygon setup.
 
 For an untextured flat quad at `(38,22),(46,22),(38,29),(46,29)`, use zero offset and drawing area X=40…43,Y=24…26, with no skipping or mask checking. Its two clamped triangles are `(40,24),(43,24),(40,26)` and `(40,26),(43,24),(43,26)`. Each has |D|=6 and p=3: total cost is `82+3+3=88` ticks, or 44 cycles. Yet the original quad covers **12 integer samples** inside that drawing area, not six. Clamping vertices for this estimator is not geometric polygon clipping or a raster sample count.
@@ -3426,12 +3890,18 @@ For the same geometry with Gouraud texturing and both semitransparency and mask 
 
 A finite line costs just that work, whether flat or Gouraud. A polyline's initial two-point header costs `16+work`; later continuation segments cost their individual work without another 16-tick setup. For a vertical line `(40,20)→(40,28)` clipped to Y=22…27, W=1,H=6 gives six ticks/three cycles. Active skipping makes it three ticks/two cycles. The same first segment as a polyline costs 22 ticks/11 cycles, or 19 ticks/10 cycles with skipping. A horizontal line's width can dominate the maximum, so skipping does not generally halve line cost. A zero-work finite line completes immediately; a zero-work initial polyline still costs 16 ticks.
 
+<div class="keep-together">
+
 **Drawing rectangles.** Select the fixed or variable dimensions first, then clip the offset rectangle against the drawing area. An empty result costs 16 ticks. For a nonempty result, let W/H be the clipped dimensions **before** row halving. Set row cost `q=W`, add the texture overhead below when textured, then add `(W+1)>>1` when semitransparency **or** mask checking is enabled. Finally use H′=H without skipping, or `max(1,H>>1)` with skipping:
 
 ```text
 N = 16 + q×H′
 Q = (128 − (128 remainder W)) / W
 ```
+
+</div>
+
+<div class="keep-together">
 
 Q is an exact integral quotient used only in the narrow-width branches. The texture overhead added to q is:
 
@@ -3444,6 +3914,8 @@ Q is an exact integral quotient used only in the narrow-width branches. The text
 | Direct 16-bit, including format 3 | W>128 | `(W>>1)×8` |
 | Direct 16-bit, including format 3 | Otherwise W×H>1024 | `(W>>2)×8×Q` |
 | Direct 16-bit, including format 3 | Otherwise | W |
+
+</div>
 
 The comparisons are strict, and the wide-row test comes first. Use the **original clipped H**, not H′, when choosing a texture branch. For a palette4 rectangle at `(6,6)`, size 11×6, drawing area X=8…15,Y=7…10 clips it to W=8,H=4. With both semitransparency and mask checking, q=`8+8+4=20`; active skipping gives H′=2 and N=`16+20×2=56` ticks/28 cycles. The two flags still add only one four-tick row surcharge.
 
@@ -3466,12 +3938,16 @@ With no semitransparency, mask check or skipping, these nonempty examples expose
 
 At W=64, Q=2. Enabling skipping on the 64×33 palette8 case keeps its overhead 128 and q=192, but uses H′=16: `16+192×16=3088` ticks/1544 cycles. It must not switch to the lower-area branch. These thresholds specify command cost, not a physical texture-cache capacity. Even H=1 remains H′=1 when skipping is active; do not infer one stored row from that minimum cost.
 
+<div class="keep-together">
+
 **Fill and raw transfers.** For fill, decode rounded width `w=((rawWidth AND 3FFH)+15) AND NOT 15` and height `h=rawHeight AND 1FFH`:
 
 ```text
 fill ticks = 46 + ((w >> 3) + 9)×h
 copy ticks = 2×W×H
 ```
+
+</div>
 
 Copy W/H use image normalization: `W=((rawWidth−1) AND 3FFH)+1`, `H=((rawHeight−1) AND 1FFH)+1`. A 32×4 fill costs 98 ticks/49 cycles; a 3×5 copy costs 30 ticks/15 cycles. Fill cost is unchanged by suppressed rows. Even raw fill width=0,height=4 costs 82 ticks/41 cycles although it writes no pixels. Conversely, zero image dimensions select a 1024×512 copy, costing 1,048,576 ticks/524,288 cycles—not an empty operation.
 
@@ -3507,6 +3983,8 @@ the interval. The beam remains on reset line parity zero throughout these 83
 cycles. Startup, the caller and initialization that establishes these preconditions
 are outside this stated interval.
 
+<div class="keep-together">
+
 Reserve eight writable bytes at illustrative RAM address `0x080c1000` for the two
 status snapshots. This is cartridge-owned result storage, not GPU scratch RAM.
 The function loads every address/value it uses; none of its CPU registers is
@@ -3526,6 +4004,8 @@ assumed preloaded:
 | r9 | Controller GPU IRQ bit `0x00000040` |
 | r10 | Result-storage address `0x080c1000` |
 | r11 | GPU idle status mask `0x04000000`, bit 26 |
+
+</div>
 
 r12 holds a GPUSTAT read; r13 holds its masked test. The twelve LOADK instructions
 cost twelve cycles. All memory operations below are scalar displaced **Word**

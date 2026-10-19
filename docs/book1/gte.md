@@ -2033,6 +2033,8 @@ For each iteration, let `b` be the back-buffer index (0 or 1), and let
 | 5 | `y << 16` | Absolute destination (0, y) |
 | 6 | `0x00c00100` | Width 256, height 192 |
 
+<div class="keep-together">
+
 Write TRX as `((iteration >> 5) & 1) << 5`, transfer the position words, then
 issue RTPT `0x00080030`. Retain D[12]–D[14] before replacing the input vectors.
 Issue NCLIP `0x00000006` and select a nonzero MAC0 word whose bit 31 is clear.
@@ -2047,6 +2049,8 @@ then issue NCCT `0x0008043f`. Submit the following complete six-word GP0 packet:
 | 4 | Retained second screen word |
 | 5 | `D[22] & 0x00ffffff` |
 | 6 | Retained third screen word |
+
+</div>
 
 Wait until GP1/status at `0x08010240` has bit 26 set. Write zero to IRQ_MASK
 at `0x08000008`, then `0x000fa000 | (b << 6)` to DISPFB1_LOW at `0x0801035c`
@@ -2515,6 +2519,8 @@ Old IR values, old MAC values, RGBC and RGB histories are not operands. The old 
 
    The full cue expression supplies both the signed32 MAC0 overflow test and the fixed-12 IR0 calculation. A shifted value strictly outside 0…4096 sets IR0 saturation. SF and LM do not change this stage. RTPT has not retained the cue expressions or coefficients for V0 and V1, and has not applied a color operation to any vertex.
 
+<div class="keep-together">
+
 **Register footprint and exact FIFO trace.** Let initial screen words be `(A,B,C)`, initial unsigned depth words be `(a,b,c,d)`, and new screen/depth results be `(P0,z0)`, `(P1,z1)`, `(P2,z2)` for V0/V1/V2. The trace is:
 
 | Point in command | SXY0, SXY1, SXY2 | SZ0, SZ1, SZ2, SZ3 | MAC1–MAC3 / IR1–IR3 | IR0 |
@@ -2523,6 +2529,8 @@ Old IR values, old MAC values, RGBC and RGB histories are not operands. The old 
 | After V0 | B, C, P0 | b, c, d, z0 | V0 results | Unchanged |
 | After V1 | C, P0, P1 | c, d, z0, z1 | V1 results | Unchanged |
 | After V2 | P0, P1, P2 | d, z0, z1, z2 | V2 results | Cue from V2 |
+
+</div>
 
 The intermediate rows specify calculation order and flag accumulation, not separate asynchronous result-publication events. All normal command results are available when the one COMMAND write completes.
 
