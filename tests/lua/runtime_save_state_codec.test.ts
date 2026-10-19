@@ -33,7 +33,7 @@ import {
 	encodeRuntimeSaveState,
 } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../machine/ts/common/serializer/binencoder';
-import { RUNTIME_SAVE_STATE_PROP_NAMES, RUNTIME_SAVE_STATE_VERSION } from '../../machine/ts/machine/runtime/save_state/schema';
+import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { CpuSnapshot, CpuSnapshotWriter, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
@@ -689,19 +689,13 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	assert.deepEqual(decoded.cpuState.snapshot, state.cpuState.snapshot);
 });
 
-test('runtime save-state version 4 requires the retained USER ingress bank', () => {
+test('runtime save-state payload contains only current state and retains the USER ingress bank', () => {
 	const state = createRuntimeSaveState();
 	const encoded = encodeRuntimeSaveState(state);
 	const payload = requireObject(decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES), 'payload');
-	assert.equal(RUNTIME_SAVE_STATE_VERSION, 4);
-	assert.equal(payload.schemaVersion, 4);
+	assert.deepEqual(Object.keys(payload).sort(), ['cpuState', 'machineState', 'pendingEntryCall']);
 	const decoded = decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.deepEqual(decoded.machineState.machine.gxGpu.userIngressContext, state.machineState.machine.gxGpu.userIngressContext);
-	payload.schemaVersion = 3;
-	assert.throws(() => decodeRuntimeSaveState(
-		encodeBinaryWithPropTable(payload, RUNTIME_SAVE_STATE_PROP_NAMES),
-		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes,
-	), /Unsupported runtime save-state schema/);
 });
 
 test('runtime save-state bytes start at the current property-table payload', () => {

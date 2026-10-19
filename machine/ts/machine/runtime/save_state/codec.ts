@@ -91,7 +91,7 @@ import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
-import { RUNTIME_SAVE_STATE_PROP_NAMES, RUNTIME_SAVE_STATE_VERSION } from './schema';
+import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 
 function requireArray(value: unknown, label: string): unknown[] {
 	if (!Array.isArray(value)) {
@@ -1584,7 +1584,6 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
 	return encodeBinaryWithPropTable({
-		schemaVersion: RUNTIME_SAVE_STATE_VERSION,
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
 		pendingEntryCall: state.pendingEntryCall,
@@ -1601,9 +1600,6 @@ export function decodeRuntimeSaveState(
 		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
 		label,
 	);
-	if (requireObjectKey(object, 'schemaVersion', label, 'runtimeSaveState.schemaVersion') !== RUNTIME_SAVE_STATE_VERSION) {
-		throw new Error('Unsupported runtime save-state schema.');
-	}
 	return {
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState', ramByteCount, vramByteCount),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),

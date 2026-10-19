@@ -1,5 +1,3 @@
-export const RUNTIME_SAVE_STATE_VERSION = 4;
-
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'activeCpuUsedCycles',
 	'accumulatedHostTimeMs',
@@ -407,5 +405,4 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'stackCapacity',
 	'error',
 	'haltedUntilIrqThreadRef',
-	'schemaVersion',
 ] as const;

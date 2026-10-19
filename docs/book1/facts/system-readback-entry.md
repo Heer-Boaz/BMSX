@@ -67,8 +67,8 @@ Sources: `machine/ts/machine/devices/gx/gpu.ts:601-660,992-1027` and
 `machine/cpp/machine/devices/gx/gpu.cpp:181-226,495-530`;
 readback-owned storage switches in `gpu_command_buffer.ts:101-163` and
 `gpu_command_buffer.h:66-140` in those same owner directories. The parked raw
-state is serialized by the existing paired save-state codecs; schema version 4
-rejects the older incomplete shape without a compatibility fallback.
+state is serialized directly by the existing paired save-state codecs. Their
+payload contains the current state only, without a format version or legacy decoder.
 
 Focused TS GPU/SYSTEM tests cover a partially consumed odd-sized USER result,
 queued ingress, real software readback, pending-backend fencing, buffer identity,

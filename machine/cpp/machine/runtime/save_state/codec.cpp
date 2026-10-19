@@ -1729,7 +1729,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
 	BinObject object;
-	object["schemaVersion"] = static_cast<i64>(RUNTIME_SAVE_STATE_VERSION);
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["pendingEntryCall"] = state.pendingEntryCall;
@@ -1747,9 +1746,6 @@ RuntimeSaveState decodeRuntimeSaveState(
 		data.size(),
 		RUNTIME_SAVE_STATE_PROP_NAMES);
 	const BinObject& object = requireObject(value, label);
-	if (requireI64(requireField(object, "schemaVersion", label), "runtimeSaveState.schemaVersion") != RUNTIME_SAVE_STATE_VERSION) {
-		throw std::runtime_error("Unsupported runtime save-state schema.");
-	}
 	RuntimeSaveState state;
 	state.machineState = decodeRuntimeSaveMachineState(
 		requireField(object, "machineState", label),
