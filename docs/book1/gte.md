@@ -15,6 +15,169 @@ material color. Software collects the screen positions and colors into GPU
 packets. Near-plane clipping, primitive ordering and packet submission remain
 program operations.
 
+## From a vertex to a screen position {#sec-gte-from-a-vertex-to-a-screen-position}
+
+Projection needs a vertex's position relative to the viewing origin and axes.
+For this example, choose +X to the right, +Y downward, and +Z
+forward from that origin. Use one spatial unit per coordinate count. The vertex
+`V=(64,32,512)` is therefore 64 units to the right, 32 units down, and 512 units
+in front of the viewing origin. These axes and units are choices made by the
+program.
+
+### Transform into the viewing coordinates {#sec-gte-transform-into-the-viewing-coordinates}
+
+Vertices defined in model coordinates are measured from the model's own
+origin. A supplied matrix and translation express them in the chosen viewing
+coordinates. The matrix
+sets how the model axes contribute to the view axes; the translation places the
+model origin in that view. GTE applies this transform before perspective.
+
+Keep the first example simple: its input already uses the viewing origin and
+axes. An **identity matrix** and zero translation therefore leave
+`(64,32,512)` unchanged. More elaborate model placement and viewing transforms
+use the same path; [Coordinate spaces and the supplied transform](#sec-gte-coordinate-spaces-and-the-supplied-transform)
+explains how to derive them.
+
+### Depth determines the projected displacement {#sec-gte-depth-determines-the-projected-displacement}
+
+Perspective converts the transformed X and Y into a displacement on the drawing
+plane. In geometric projection, multiplying by **H/depth** gives that
+displacement. The projection numerator **H** therefore sets magnification:
+increasing H enlarges the displacement, while increasing positive depth with X
+and Y unchanged reduces it. GTE evaluates this relation with integer reciprocal
+arithmetic.
+
+Choose H=256. At depth 512, GTE produces a projection factor of exactly one
+half, so the transformed X and Y are halved:
+
+```text
+projection factor   = 256/512 = 1/2
+screen displacement = (64,32) × 1/2 = (32,16)
+```
+
+Z is still needed even though a screen position has only two components: it
+supplies the depth that determines this factor. GTE also retains the depth as
+a result for later geometric decisions. The exact reciprocal calculation,
+rounding and result limits are specified under
+[Perspective and geometric decisions](#sec-gte-perspective-and-geometric-decisions)
+and in the command reference; the values in this first example are exact and
+remain within those limits.
+
+### Place the projected origin on the screen {#sec-gte-place-the-projected-origin-on-the-screen}
+
+The displacement `(32,16)` is measured from the projection axis, not from the
+screen's coordinate zero. Choose a screen offset of `(128,96)` to place that
+axis, then add the displacement:
+
+```text
+screen position = (128,96) + (32,16) = (160,112)
+```
+
+OFX and OFY hold this screen placement. They are applied after perspective and
+do not move the vertex in space or change its depth. A spatial translation,
+by contrast, changes the viewing coordinates before perspective; its screen
+effect depends on depth. The two settings serve different purposes even when
+they happen to move one vertex by the same amount.
+
+The complete calculation is:
+
+| Stage | Value | Meaning |
+|---|---|---|
+| Input position V | `(64,32,512)` | Position relative to the chosen viewing origin and axes |
+| Identity transform, zero translation | `(64,32,512)` | The same position in view coordinates |
+| Perspective with H=256 | `(32,16)` | Displacement from the projected origin at depth 512 |
+| Screen offset `(128,96)` | `(160,112)` | Final screen position; depth remains 512 |
+
+The next sections encode these same choices as register words and issue one
+projection command.
+
+## Programming geometry {#sec-gte-programming-geometry}
+
+The worked projection chose spatial units, a model-to-view transform, H, and a
+screen offset. GTE retains these settings across commands, so successive
+vertices can share one setup. Encode the settings first, load a vertex, and
+write the projection command last. In the register notation below, D[n]
+identifies data word n and C[n] identifies control word n.
+
+V0, V1 and V2 are three independent input-vector slots, each holding an
+`(X,Y,Z)` triple. Every component is a signed 16-bit integer. X and Y share one
+word; Z occupies the low half of the next. A coordinate count represents the
+spatial unit chosen by the program, which may be a whole model unit or a
+fraction of one.
+
+### Encode spatial and screen quantities {#sec-gte-choose-scales-for-an-operation-not-for-the-registerfile}
+
+The quantities in the worked projection use different scales in their register
+words. Store positions and translations in the same integer spatial units,
+multiply matrix coefficients by 4096, and select `SF=1`. The command removes
+twelve low bits from each accumulated matrix result. Without overflow or
+saturation, the resulting IR coordinates are the transformed positions rounded
+toward negative infinity.
+
+| Quantity under this convention | Programmed representation | Representable range | Consumer |
+|---|---|---|---|
+| Input position X, Y, Z | Signed halfword; one raw count per coordinate unit | −32768–32767 coordinate units | RTPS, RTPT, or a selected MVMVA vector |
+| Matrix coefficient | Signed halfword; coefficient × 4096 | −8 to `8−1/4096` | Matrix dot product; use `SF=1` to remove this factor |
+| Translation X, Y, Z | Signed complete word; one raw count per coordinate unit | −2147483648–2147483647 coordinate units | Translation is multiplied by 4096 before the dot-product additions |
+| H | Unsigned low halfword; unscaled projection numerator whose value sets screen magnification | 0–65535 | Projection numerator, compared with the new unsigned depth |
+| OFX, OFY | Signed complete word; screen-coordinate offset × 65536 | −32768 to `32768−1/65536` screen units | Added before the final sixteen-bit screen shift |
+
+Choose coordinate ranges with allowance for every stage: dot products wrap at
+44 bits, visible MAC words wrap at 32 bits, and IR coordinates are limited to
+signed 16-bit results. A translation that fits its control word can still
+overflow or saturate a later stage.
+
+The identity matrix has `m00=m11=m22=4096` and all other coefficients zero. With `SF=1`, it leaves an input coordinate unchanged before translation. The coefficient 1 is `0x1000`, ½ is `0x0800`, −½ is the halfword `0xf800`, and −1 is `0xf000`.
+
+Select `LM=0` for the signed projection convention used here. It permits negative transformed X and Y. `LM=1` instead limits negative IR results to zero; projection would then use those zeroes in its screen calculation. The command's LM selection is a lower-limit choice, not a clipping enable.
+
+## A first projection in BLua {#sec-gte-a-first-projection-in-blua}
+
+The following sequence programs the calculation just derived. Start from
+reset-zero state, retaining zero translation and zero off-diagonal matrix
+coefficients. Store 4096 in the three diagonal coefficients to encode the
+identity matrix. OFX and OFY contain the chosen screen offset multiplied by
+65536; H is the unscaled numerator 256.
+
+Use input slot V0 for `V=(64,32,512)`. Its X=64 occupies the low half of D[0]
+and Y=32 the high half, giving `0x00200040`; Z=512 occupies the low half of
+D[1]. The register windows are addressed in 32-bit words. RTPS transforms and
+projects this one input; `SF=1` removes the matrix coefficient scale, and
+`LM=0` permits signed transformed coordinates.
+
+```lua
+local data<const>: *word = 0x08010244
+local control<const>: *word = 0x080102c4
+local command<const>: *word = 0x08010344
+control[0] = 0x00001000             -- C[0]: m00=4096, m01=0
+control[2] = 0x00001000             -- C[2]: m11=4096, m12=0
+control[4] = 0x00001000             -- C[4]: m22=4096
+control[24] = 128 << 16
+control[25] = 96 << 16
+control[26] = 256
+data[0] = 0x00200040                  -- V0: X=64 low, Y=32 high
+data[1] = 512                         -- V0: Z=512
+*command = 0x00080001                 -- RTPS, SF=1, LM=0
+local flags<const> = control[31]
+local screen<const> = data[14]        -- SXY2 = 0x007000a0: (160,112)
+local depth<const> = data[19]         -- SZ3 = 512
+```
+
+D[14] contains the predicted screen position `(160,112)`, D[19] retains depth
+512, and FLAG is zero. The normal command's results are already available when
+its store completes; do not poll normal CYCLES as a busy flag. Reading these
+words does not draw a pixel. To draw, place the screen word in a GPU packet; to display,
+select the resulting VRAM area through PCRTC. Retain FLAG and any needed results
+before a later command replaces them.
+
+## Technical specifications {#sec-gte-technical-specifications}
+
+GTE storage consists of registers for operands, coefficients, intermediate
+values and recent results. Keep vertex lists and drawing packets in the
+installed 4 MiB main RAM or cartridge ROM as appropriate. GPU local memory
+provides the separate 2 MiB drawing and texture store. The CPU transfers words
+between these resources and GTE's register interface.
+
 The normal command path has 32 data words, `D[0]`–`D[31]`, and 32 control
 words, `C[0]`–`C[31]`. Controls retain the matrices and coefficients shared by
 successive commands. Data words hold vectors, arithmetic results and the screen,
@@ -27,21 +190,7 @@ operands, results, flags and command status. Use it for a signed vector plus a
 scaled vector; transfer its results explicitly when they are needed as normal
 GTE operands.
 
-Normal-command results can be read as soon as the command write completes.
-PLUS VMAD3 takes five system cycles and retains its previous results until
-the completion edge. Normal commands may be used during that interval.
-Save results before issuing work that will replace them, and inspect FLAG
-before using an overflowed or saturated result in a geometric decision.
-
 ![GTE register and arithmetic paths](figures/gte-overview.svg){#fig-gte-overview}
-
-## Technical specifications {#sec-gte-technical-specifications}
-
-GTE storage consists of registers for operands, coefficients, intermediate
-values and recent results. Keep vertex lists and drawing packets in the
-installed 4 MiB main RAM or cartridge ROM as appropriate. GPU local memory
-provides the separate 2 MiB drawing and texture store. The CPU transfers words
-between these resources and GTE's register interface.
 
 ### Capacity and arithmetic {#sec-gte-capacity-and-arithmetic}
 
@@ -96,78 +245,9 @@ ordinary CPU cost. [Timing and bus programming](#sec-gte-timing-and-bus-programm
 and the complete work-interval example explain how to budget transfers and
 arithmetic together.
 
-## A first projection in BLua {#sec-gte-a-first-projection-in-blua}
-
-Starting from reset-zero state, the following sequence selects an identity
-rotation, zero translation, projection numerator H=256 and screen origin
-(128,96), then projects V0=(64,32,512). The register windows are addressed in
-32-bit words; each packed coordinate half retains its signed component bits.
-
-```lua
-local data<const>: *word = 0x08010244
-local control<const>: *word = 0x080102c4
-local command<const>: *word = 0x08010344
-control[0] = 0x00001000             -- C[0]: m00=4096, m01=0
-control[2] = 0x00001000             -- C[2]: m11=4096, m12=0
-control[4] = 0x00001000             -- C[4]: m22=4096
-control[24] = 128 << 16
-control[25] = 96 << 16
-control[26] = 256
-data[0] = 0x00200040
-data[1] = 512
-*command = 0x00080001                 -- RTPS, SF=1, LM=0
-local flags<const> = control[31]
-local screen<const> = data[14]        -- SXY2 = 0x007000a0: (160,112)
-local depth<const> = data[19]         -- SZ3 = 512
-```
-
-The projection factor is 256/512=1/2, so `(128+32,96+16)=(160,112)`.
-FLAG is zero. The normal command's results are already available when its store
-completes; do not poll normal CYCLES as a busy flag. Reading these words does
-not draw a pixel. To draw, place the screen word in a GPU packet; to display,
-select the resulting VRAM area through PCRTC. Retain FLAG and any needed results
-before a later command replaces them.
-
-## Programming geometry {#sec-gte-programming-geometry}
-
-A useful geometry sequence starts with three questions: what coordinate units does the cartridge use, which transform converts those coordinates into projection coordinates, and where should the projected origin appear on the screen? Program those choices before submitting vertices. GTE retains them across commands, so a group of vertices can share one transform and projection setup.
-
-A **vector** is an ordered triple `(X,Y,Z)`. For projection it describes a position. V0, V1, and V2 are three independent input vectors, not the three components of one vector. Their X and Y components share a word; Z occupies the low half of the next word. Every component is a signed 16-bit integer. The cartridge assigns its meaning: one coordinate unit might represent one unit of a model, or a chosen fraction of that unit. GTE does not convert physical units.
-
-### Choose scales for an operation, not for the registerfile {#sec-gte-choose-scales-for-an-operation-not-for-the-registerfile}
-
-The words do not all have twelve fractional bits. The factors in the selected operation determine their scales. A convenient projection convention is to store positions and translations in the same integer coordinate units, store matrix coefficients multiplied by 4096, and select `SF=1`. The command then removes twelve low bits from each accumulated matrix result. Without overflow or saturation, the resulting IR coordinates are the transformed positions rounded toward negative infinity.
-
-| Quantity under this convention | Programmed representation | Representable range | Consumer |
-|---|---|---|---|
-| Input position X, Y, Z | Signed halfword; one raw count per coordinate unit | −32768–32767 coordinate units | RTPS, RTPT, or a selected MVMVA vector |
-| Matrix coefficient | Signed halfword; coefficient × 4096 | −8 to `8−1/4096` | Matrix dot product; use `SF=1` to remove this factor |
-| Translation X, Y, Z | Signed complete word; one raw count per coordinate unit | −2147483648–2147483647 coordinate units | Translation is multiplied by 4096 before the dot-product additions |
-| H | Unsigned low halfword; unscaled projection numerator whose value sets screen magnification | 0–65535 | Projection numerator, compared with the new unsigned depth |
-| OFX, OFY | Signed complete word; screen-coordinate offset × 65536 | −32768 to `32768−1/65536` screen units | Added before the final sixteen-bit screen shift |
-
-Choose coordinate ranges with allowance for every stage: dot products wrap at
-44 bits, visible MAC words wrap at 32 bits, and IR coordinates are limited to
-signed 16-bit results. A translation that fits its control word can still
-overflow or saturate a later stage.
-
-The identity matrix has `m00=m11=m22=4096` and all other coefficients zero. With `SF=1`, it leaves an input coordinate unchanged before translation. The coefficient 1 is `0x1000`, ½ is `0x0800`, −½ is the halfword `0xf800`, and −1 is `0xf000`.
-
-Matrix coefficients are packed in row order, **two successive coefficients per word**; word boundaries do not coincide with row boundaries. The following examples show all five words for two transforms. Translation is separate.
-
-| Control word | Identity | Mapping `(X,Y,Z)` to `(−Y,X,Z)` |
-|---|---|---|
-| C[0]: m00 low, m01 high | `0x00001000` | `0xf0000000` |
-| C[1]: m02 low, m10 high | `0x00000000` | `0x10000000` |
-| C[2]: m11 low, m12 high | `0x00001000` | `0x00000000` |
-| C[3]: m20 low, m21 high | `0x00000000` | `0x00000000` |
-| C[4]: m22 low | `0x00001000` | `0x00001000` |
-
-For the second matrix, `SF=1`, zero translation, and `(X,Y,Z)=(64,32,512)` give `(−32,64,512)`. The negative coefficient is a signed halfword inside a packed word; it is not a negative floating-point value.
-
-`SF=0` leaves the dot-product result unshifted. It does not change the input words into a different universal numeric format. In particular, projection depth always comes from `A_Z ASR 12`, independently of SF. Switching the Q12 identity above to `SF=0` multiplies its visible X/Y/Z results by 4096 before the IR limits, but does not multiply the depth FIFO result by 4096. It is not an integer-coordinate projection shortcut.
-
-Select `LM=0` for the signed projection convention used here. It permits negative transformed X and Y. `LM=1` instead limits negative IR results to zero; projection would then use those zeroes in its screen calculation. The command's LM selection is a lower-limit choice, not a clipping enable.
+Normal commands may be used while PLUS VMAD3 is pending. Save results before
+issuing work that will replace them, and inspect FLAG before using an overflowed
+or saturated result in a geometric decision.
 
 ## Coordinate spaces and the supplied transform {#sec-gte-coordinate-spaces-and-the-supplied-transform}
 
@@ -292,7 +372,9 @@ packing, and intermediate precision are separate programming steps. In
 particular, copying a camera's world position into TR would implement the wrong
 operation under this convention.
 
-Consider one exact example. Choose:
+The first projection used an input already in view coordinates. To see how a
+model placement and viewing origin combine, now use a different vertex,
+`(64,32,0)`, with a rotated model. Choose:
 
 ```text
 model-axis mapping: (X,Y,Z) -> (-Y,X,Z)
@@ -335,7 +417,7 @@ Moving only the viewing origin by +32 along world X changes this point's view X
 from 48 to 16. The scene moves the opposite way relative to that origin. No GTE
 camera state changes: software updates the supplied translation.
 
-![The same vertex in model, world, view, and screen coordinates. World coordinates are a software interpretation; the supplied GTE transform maps model input directly to view output.](figures/gte-coordinate-spaces.svg){#fig-gte-coordinate-spaces}
+![The rotated-model example: vertex (64,32,0) becomes view position (48,48,512) and screen position (152,120). World coordinates are a software interpretation; the supplied GTE transform maps model input directly to view output.](figures/gte-coordinate-spaces.svg){#fig-gte-coordinate-spaces}
 
 ### Screen placement is not spatial translation {#sec-gte-screen-placement-is-not-spatial-translation}
 
@@ -376,6 +458,8 @@ position of the projection axis. Use TR for placement in the chosen spatial
 frame, and OFX/OFY for placement of that frame's projection on the drawing plane.
 
 ### Keep the coordinate convention within the datapath {#sec-gte-keep-the-coordinate-convention-within-the-datapath}
+
+`SF=0` leaves the dot-product result unshifted. It does not change the input words into a different universal numeric format. In particular, projection depth always comes from `A_Z ASR 12`, independently of SF. Switching the Q12 identity above to `SF=0` multiplies its visible X/Y/Z results by 4096 before the IR limits, but does not multiply the depth FIFO result by 4096. It is not an integer-coordinate projection shortcut.
 
 A useful coordinate system must fit the arithmetic, not merely have convenient
 names. Under the convention used here:
@@ -432,6 +516,20 @@ This example constructs one model-to-view transform directly. It uses the
 previous section's column vectors, one raw count per spatial unit, +X to the
 right, +Y downward, and positive Z in front of the chosen viewing origin. It
 does not require a world-space intermediate or a separately programmed camera.
+
+### Read the packed matrix words {#sec-gte-read-the-packed-matrix-words}
+
+Matrix coefficients are packed in row order, **two successive coefficients per word**; word boundaries do not coincide with row boundaries. The following examples show all five words for two transforms. Translation is separate.
+
+| Control word | Identity | Mapping `(X,Y,Z)` to `(−Y,X,Z)` |
+|---|---|---|
+| C[0]: m00 low, m01 high | `0x00001000` | `0xf0000000` |
+| C[1]: m02 low, m10 high | `0x00000000` | `0x10000000` |
+| C[2]: m11 low, m12 high | `0x00001000` | `0x00000000` |
+| C[3]: m20 low, m21 high | `0x00000000` | `0x00000000` |
+| C[4]: m22 low | `0x00001000` | `0x00001000` |
+
+For the second matrix, `SF=1`, zero translation, and `(X,Y,Z)=(64,32,512)` give `(−32,64,512)`. The negative coefficient is a signed halfword inside a packed word; it is not a negative floating-point value.
 
 ### Define the turn, scale, and translation {#sec-gte-define-the-turn-scale-and-translation}
 

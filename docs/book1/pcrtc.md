@@ -1,97 +1,51 @@
 # PCRTC Display Controller {#sec-pcrtc}
 
-## OUTLINE {#sec-pcrtc-1-outline}
+## Purpose and data flow {#sec-pcrtc-1-outline}
 
-The PCRTC produces the display from images stored in GPU local memory. Two
-reading circuits select source images, position and magnify their windows,
-and combine their colors over a programmable background. Use one circuit for
-a single framebuffer, or both for independently positioned images and
-composited displays. Timing registers establish the beam sequence and its
-display-event interrupts.
+The PCRTC turns images in GPU local memory into the displayed picture. The GPU
+writes the stored pixels; PCRTC selects which pixels to read and how they
+appear in the output. Two reading circuits can select different portions of
+the same memory, each with its own source origin, display window and
+magnification. Their colors are combined over a programmable background.
 
-For each circuit, program a framebuffer base, storage format and source
-origin, followed by its signal position, magnification and window extent.
-PMODE enables the circuits and selects their composition. Both circuits read
-the same local memory directly. The GPU prepares its stored words; PCRTC
-selects and decodes samples from them as the display source.
+Use one circuit to display a completed framebuffer. Use both when two images
+need independent source selections or window positions in the same output.
+The source is still GPU local memory: changing a reading circuit's settings
+selects stored pixels rather than drawing or moving them.
 
-Display changes are synchronized at VBlank entry. Configuration writes first
-update the programmed register bank; the display latch then takes all 22
-configuration words together. Finish drawing before selecting its storage,
-and distinguish the GPU's completion indication from this display-selection
-edge.
+Each circuit has two groups of controls. **DISPFB** describes its stored image
+and source origin. **DISPLAY** describes its output window and magnification.
+**PMODE** enables the circuits and controls their composition. Separate timing
+registers establish the beam sequence and its display-event interrupts.
 
 ![PCRTC display data path and controls](figures/pcrtc-overview.svg){#fig-pcrtc-overview}
 
-PCRTC register words occupy four bytes. The composition registers start at `08010354H`;
-the timing and status registers start at `080103ACH`. Use the individual addresses in
-@sec-pcrtc-4-register-reference: the intervening addresses are not PCRTC registers.
-
-### TECHNICAL SPECIFICATIONS {#sec-pcrtc-11-technical-specifications}
-
-PCRTC supplies two reading circuits and one output-composition path. Local
-memory stores sixteen-bit words; PCRTC registers are programmed with
-thirty-two-bit words. The table gives the installed resources and field ranges.
-
-| Resource or interface | Specification |
-|---|---|
-| Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
-| Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
-| Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
-| Register map | 26 thirty-two-bit slots in separate 12-word and 14-word address ranges |
-| Configuration storage | 22 programmed words and a separate 22-word display latch |
-| Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
-| Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
-| Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
-| Beam-timing reference | 13,500,000 Hz |
-| Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
-| Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
-
-Use the signal-step conversion in @sec-pcrtc-21-framebuffer-reading-and-display-windows to calculate horizontal output
-boundaries. @sec-pcrtc-33-select-a-display-geometry-and-its-timing gives complete example configurations. Both reading
-circuits are disabled at reset.
-
-**Calculated reset-timing example.** With the reset timing words, the horizontal
-sum H is 3456, divider product D is 8, LC is 32 and vertical multiplier U is 1.
-The half-line period is therefore:
-
-```text
-T = 27648 / 864000000 seconds = 32 microseconds
-```
-
-For a beam restart at system cycle zero:
-
-| Landmark | Half-line | Time from restart | Rounded system-cycle deadline |
-|---|---:|---:|---:|
-| First HSync point | 2 | 64 µs | 2168 |
-| VBlank entry; display latch | 576 | 18.432 ms | 624270 |
-| VSync; VSINT | 585 | 18.720 ms | 634024 |
-| Field end | 628 | 20.096 ms | 680628 |
-
-This gives approximately 49.761146497 field repetitions per second.
-Fractional system cycles are retained between events; deadlines round upward
-without accumulating a fresh rounding error each half-line. An executing CPU
-instruction may finish before a crossed deadline is serviced. Allow for CPU
-interrupt acceptance and handler execution after these event deadlines.
-HSync points repeat every two half-lines, but a pending HSINT suppresses further
-interrupt requests until acknowledged.
-
-**CPU transfer costs.** Each ordinary scalar register-word load or store instruction,
-including its displacement form, has a two-system-cycle base cost. PCRTC adds no
-write-ready wait. Address and value preparation, polling and surrounding control
-flow have their own instruction costs. Thus 22 separately issued configuration
-stores contribute 44 base cycles before preparation or display-edge waiting; they
-do not form an atomic display update. A word-sequence store instead costs two base
-cycles plus `n/4` rounded upward for its `n` words. Respect the two address ranges.
-Immediate readback confirms programmed words. Use a subsequent VBlank entry to
-establish that the display latch has taken them.
-
-## FUNCTION {#sec-pcrtc-2-function}
+## Selecting and displaying an image {#sec-pcrtc-2-function}
 
 ### Framebuffer reading and display windows {#sec-pcrtc-21-framebuffer-reading-and-display-windows}
 
-For each circuit, set `DISPFB` to select the framebuffer and source origin. `FBP` is
-the base field and `FBW` is the width field:
+A source origin answers **which stored pixels to read**. A display window
+answers **where and over what extent a circuit contributes to the output**.
+Magnification connects the source pixels to the window's signal coordinates;
+the horizontal signal step then determines which signal positions become
+output pixels. Keep these quantities separate when choosing a picture size.
+
+#### Choose the stored source {#sec-pcrtc-choose-the-stored-source}
+
+Consider a 256 × 192-pixel view of a GX16 image. Its framebuffer base is
+local-memory word address zero, its row width is 1024 pixels, and the desired
+source origin is `(32,16)`. The selected source rectangle is therefore
+`[32,288) × [16,208)`: its last source pixel is `(287,207)`.
+
+The framebuffer row width describes the stored image, not the displayed
+window. In this GX16 example it advances 1024 sixteen-bit words between
+successive source rows, even though only 256 pixels from each row will be
+shown. GX16 uses one sixteen-bit word per pixel. Other storage selections have
+the packing and address layouts specified under
+@sec-pcrtc-23-local-memory-samples and @sec-pcrtc-24-local-memory-address-layout.
+
+DISPFB supplies the base field FBP, the width field FBW, the storage selection,
+and source X/Y. Its base and width units are:
 
 ```text
 Framebuffer base B = FBP × 4096 local-memory words
@@ -99,12 +53,38 @@ Framebuffer width W = FBW × 64 pixels
 Source origin       = (source X, source Y)
 ```
 
-A local-memory word is **16 bits, or two bytes**; a PCRTC register word is **32 bits,
-or four bytes**. One FBP unit therefore covers 8192 bytes. The two word units are not
-interchangeable.
+A local-memory word is **16 bits, or two bytes**; a PCRTC register word is
+**32 bits, or four bytes**. One FBP unit therefore covers 8192 bytes. For the
+chosen source, use FBP=0, FBW=16 and storage selector 31 (GX16).
 
-Set `DISPLAY` to place and size the circuit in signal coordinates. Both magnification
-fields and both extent fields use encoded-plus-one values:
+#### Relate source pixels to the output window {#sec-pcrtc-relate-source-pixels-to-the-output-window}
+
+Keep the reset noninterlaced timing and choose signal origin `(680,37)`, X
+magnification 4 and Y magnification 1. X magnification 4 means that one source
+pixel occupies four horizontal **signal units**. It does not by itself mean
+four output pixels. The horizontal signal step is also 4, meaning that output
+pixels are selected four signal units apart. These equal steps give one source
+pixel per output pixel. Y magnification 1 in noninterlaced output similarly
+selects the next source row for the next output row.
+
+To show 256 columns, the horizontal signal span must be `256 × 4 = 1024`.
+The window runs from signal X 680 up to, but excluding, 1704. Dividing these
+aligned boundaries by the signal step gives 170 and 426; their difference is
+256 output pixels. The vertical window has 192 rows starting at signal Y 37.
+
+![The worked window: source origin (32,16), signal origin (680,37), a 1024-signal-unit horizontal span, and 256 × 192 output pixels with signal step 4.](figures/pcrtc-window.svg){#fig-pcrtc-window}
+
+With only this circuit enabled, its window defines the cropped output, so
+output `(0,0)` reads source `(32,16)` and output `(255,191)` reads source
+`(287,207)`. With both circuits enabled, the output origin uses their minimum
+signal X and Y and the bounds cover both windows. Window position then places
+the circuits relative to one another. Moving a lone enabled window also moves
+the crop; @sec-pcrtc-5-source-origin-and-display-window-position uses a second
+circuit as a fixed canvas to demonstrate a visible placement change.
+
+#### Encode the source and window {#sec-pcrtc-encode-the-source-and-window}
+
+Both magnification fields and both extent fields use encoded-plus-one values:
 
 ```text
 X magnification = encoded X magnification + 1
@@ -113,16 +93,128 @@ Horizontal span = horizontal extent + 1 signal units
 Vertical height = vertical extent + 1
 ```
 
-![Signal position and dimensions of a display window](figures/pcrtc-window.svg){#fig-pcrtc-window}
+Thus this example stores encoded X magnification 3, encoded Y magnification 0,
+horizontal extent 1023 and vertical extent 191. The quantities just derived produce
+these circuit-1 words:
 
-The horizontal interval includes its starting coordinate and excludes its ending
-coordinate. Before conversion to output pixels, each horizontal boundary is rounded
-upward to a signal-step boundary. `SMODE1_LOW[24:21]` sets the horizontal signal step.
+| Word | Field values | Encoded word |
+|---|---|---|
+| DISPFB1_LOW | FBP=0; FBW=16; storage=31 (GX16) | `000FA000H` |
+| DISPFB1_HIGH | Source X=32; source Y=16 | `00008020H` |
+| DISPLAY1_LOW | Signal X=680; signal Y=37; X magnification encoded 3; Y encoded 0 | `018252A8H` |
+| DISPLAY1_HIGH | Horizontal extent=1023; vertical extent=191 | `000BF3FFH` |
 
-With two circuits enabled, the output origin uses the minimum enabled signal X and
-signal Y, and the output bounds cover both circuits. Pixel output requires the
-**latched** timing to run, a nonzero latched horizontal signal step, and at least one
-latched circuit enable.
+For other windows, round each horizontal boundary upward to a signal-step
+boundary before converting it to output pixels. `SMODE1_LOW[24:21]` sets this
+step. Output width comes from the converted window boundaries, not from
+dividing its span by X magnification. The complete sampling equation and a
+case with unequal steps are in @sec-pcrtc-6-horizontal-source-sampling.
+
+Pixel output requires running **latched** timing, a nonzero latched signal
+step, and at least one latched circuit enable. Configuration writes first
+change the programmed words; the display latch selects them at VBlank entry,
+as explained after the following register sequence.
+
+### Set a 256 × 192 window on circuit 1 {#sec-pcrtc-31-set-a-256-192-window-on-circuit-1}
+
+**Starting condition:** PCRTC reset configuration and reset timing. Both reading
+circuits are disabled. Circuit 1's framebuffer base is word address 0, its width is
+1024, and its format selection is GX16. Its reset signal position is (680, 37), with X
+magnification 4 and Y magnification 1.
+
+1. Set the source origin to (32, 16) in `DISPFB1_HIGH`.
+2. Set the display extents for a 256 × 192 output window. The horizontal span is `256 ×
+4 = 1024` signal units, so write horizontal extent 1023 and vertical extent 191.
+3. Enable circuit 1 last with the PMODE word shown below. Leave circuit 2 disabled.
+
+The table gives raw address/value word writes, in order.
+
+| Order | Address | Register | Write value | Setting |
+|---:|---|---|---|---|
+| 1 | `08010360H` | `DISPFB1_HIGH` | `00008020H` | Source X = 32; source Y = 16 |
+| 2 | `08010368H` | `DISPLAY1_HIGH` | `000BF3FFH` | Horizontal extent = 1023; vertical extent = 191 |
+| 3 | `08010354H` | `PMODE_LOW` | `0000FF21H` | EN1 = 1; EN2 = 0; MMOD = 1; AMOD = 0; SLBG = 0; ALP = 255 |
+
+All three writes change their reset values. None restarts the beam. Other framebuffer,
+signal-position, magnification, and timing words remain at their reset values.
+
+After the display latch takes these settings, the output is the 256 × 192
+view derived above, with output origin `(0,0)` and source origin `(32,16)`.
+
+The PMODE word selects circuit-1 RGB directly. Output alpha is the original GX16 sample
+alpha, 0 or 128 from bit 15; it is not forced to 255 by ALP = 255.
+
+Read back the three programmed words to check the settings. The display uses them at
+VBlank entry when the latch takes the new configuration, as shown in @sec-pcrtc-26-programmed-words-and-displayed-settings.
+
+For a complete two-surface cartridge and its observed output, see
+[Prepare, publish and reuse two surfaces](memory.md#sec-memory-prepare-publish-and-reuse-two-surfaces).
+
+### Programmed words and displayed settings {#sec-pcrtc-26-programmed-words-and-displayed-settings}
+
+Finishing an image and selecting it for display are separate operations. Finish
+GPU drawing before publishing the completed image's source and window settings.
+GPU completion establishes that the drawing work has finished; it does not
+select the PCRTC framebuffer. Likewise, a display-selection change does not
+copy the pixels into private PCRTC storage. Preserve the source image while it
+is still in use; [Memory — A display switch selects storage; it does not save it](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
+explains the storage lifetime when changing surfaces.
+
+Configuration registers retain complete written words. Readback returns the
+programmed value immediately, but the new words are not yet the displayed
+selection. Display uses a separate configuration latch:
+
+```text
+Write a changed configuration word
+                │
+                ├──► Programmed word changes ──► Read returns the new word
+                │
+                └──► Wait for VBlank BEGIN
+                                      │
+                                      ▼
+                      Display latch takes all 22 configuration words
+                                      │
+                                      ▼
+                         Display uses the latched settings
+```
+
+The display latch takes all 22 configuration words together on **VBlank entry**,
+at the end of the active-display interval. This precedes the system VBlank
+interrupt request and operates independently of the PCRTC event masks.
+
+Complete the configuration before its intended VBlank entry. An edge between
+separate store instructions takes the values written up to that point, including
+an intermediate configuration. To establish that new settings have been
+displayed, observe a fresh VBlank entry after their final write, not merely an
+already-pending request. The [display-switch sequence](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
+gives this observation with unchanged timing. Use
+@sec-pcrtc-34-program-the-complete-configuration-before-restarting-the-beam
+when replacing the global timing configuration itself.
+
+Writing an unchanged configuration word has no effect. A changed write to either
+`SMODE1` word or any `SYNCH1`, `SYNCH2`, or `SYNCV` word also recalculates timing and
+**restarts the beam immediately**. The display latch does not defer that restart.
+Neither `SMODE2` word restarts the beam. Live beam timing is distinct from latched
+display timing: stopping the beam does not itself blank an already-latched display.
+PCRTC reset is the exception to waiting for VBlank entry: it installs the reset display
+settings immediately.
+
+#### Firmware use of the two circuits {#sec-pcrtc-firmware-use-of-the-two-circuits}
+
+The standard BIOS convention assigns cartridge display to circuit 1. During
+supervisor service, the cartridge's displayed circuit-1 framebuffer and window
+become circuit 2's underlay, while firmware programs circuit 1 for its terminal.
+The underlay continues to read the cartridge's stored image. Preserve
+the [firmware VRAM reservation](memory.md#sec-memory-firmware-reservation-in-vram).
+
+Both circuits remain directly programmable. A program using circuit 2 must
+allow for supervisor entry displaying only the cartridge's circuit-1 view as
+its underlay. The complete twelve-word
+composition banks, including circuit 2, are retained separately for programmed
+and displayed state and restored on leave. Timing words, CSR, IMR and the
+physical beam are global: supervisor changes to them persist.
+See [Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)
+for entry, leave and shared-memory lifetime.
 
 ### Interlaced reading {#sec-pcrtc-22-interlaced-reading}
 
@@ -377,58 +469,29 @@ to CT24, GPU24, and sixteen-bit samples whose bit 15 is set. With AMOD = 1, a pi
 receive circuit-1 RGB while retaining background alpha zero if circuit 2 supplies no
 alpha there.
 
-### Programmed words and displayed settings {#sec-pcrtc-26-programmed-words-and-displayed-settings}
+### TECHNICAL SPECIFICATIONS {#sec-pcrtc-11-technical-specifications}
 
-Configuration registers retain complete written words. Readback returns the
-programmed value immediately. Display uses the separate configuration latch:
+PCRTC supplies two reading circuits and one output-composition path. Local
+memory stores sixteen-bit words; PCRTC registers are programmed with
+thirty-two-bit words. The table gives the installed resources and field ranges.
 
-```text
-Write a changed configuration word
-                │
-                ├──► Programmed word changes ──► Read returns the new word
-                │
-                └──► Wait for VBlank BEGIN
-                                      │
-                                      ▼
-                      Display latch takes all 22 configuration words
-                                      │
-                                      ▼
-                         Display uses the latched settings
-```
+| Resource or interface | Specification |
+|---|---|
+| Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
+| Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
+| Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
+| Register map | 26 thirty-two-bit slots in separate 12-word and 14-word address ranges |
+| Configuration storage | 22 programmed words and a separate 22-word display latch |
+| Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
+| Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
+| Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
+| Beam-timing reference | 13,500,000 Hz |
+| Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
+| Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
 
-The display latch takes all 22 configuration words together on **VBlank entry**,
-at the end of the active-display interval. This precedes the system VBlank
-interrupt request and operates independently of the PCRTC event masks.
-
-Complete the configuration before its intended VBlank entry. An edge between
-separate store instructions takes the values written up to that point, including
-an intermediate configuration. Use the fresh-edge sequence in @sec-pcrtc-34-program-the-complete-configuration-before-restarting-the-beam when
-establishing display completion.
-
-Writing an unchanged configuration word has no effect. A changed write to either
-`SMODE1` word or any `SYNCH1`, `SYNCH2`, or `SYNCV` word also recalculates timing and
-**restarts the beam immediately**. The display latch does not defer that restart.
-Neither `SMODE2` word restarts the beam. Live beam timing is distinct from latched
-display timing: stopping the beam does not itself blank an already-latched display.
-PCRTC reset is the exception to waiting for VBlank entry: it installs the reset display
-settings immediately.
-
-#### Firmware use of the two circuits {#sec-pcrtc-firmware-use-of-the-two-circuits}
-
-The standard BIOS convention assigns cartridge display to circuit 1. During
-supervisor service, the cartridge's displayed circuit-1 framebuffer and window
-become circuit 2's underlay, while firmware programs circuit 1 for its terminal.
-The underlay continues to read the cartridge's stored image. Preserve
-the [firmware VRAM reservation](memory.md#sec-memory-firmware-reservation-in-vram).
-
-Both circuits remain directly programmable. A program using circuit 2 must
-allow for supervisor entry displaying only the cartridge's circuit-1 view as
-its underlay. The complete twelve-word
-composition banks, including circuit 2, are retained separately for programmed
-and displayed state and restored on leave. Timing words, CSR, IMR and the
-physical beam are global: supervisor changes to them persist.
-See [Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)
-for entry, leave and shared-memory lifetime.
+Use the signal-step conversion in @sec-pcrtc-21-framebuffer-reading-and-display-windows to calculate horizontal output
+boundaries. @sec-pcrtc-33-select-a-display-geometry-and-its-timing gives complete example configurations. Both reading
+circuits are disabled at reset.
 
 ### Beam timing {#sec-pcrtc-27-beam-timing}
 
@@ -459,13 +522,35 @@ point follows at half-line two. Restarting does not acknowledge CSR events or ch
 FIELD. Event timing continues from the beam epoch, not from the time an event is
 observed.
 
-At reset, H = 3456, D = 8, LC = 32, and U = 1. The half-line period is therefore
-`27648 / 864000000` seconds. The reset beam sequence is:
+At reset, H = 3456, D = 8, LC = 32, and U = 1. The half-line period is:
+
+```text
+T = 27648 / 864000000 seconds = 32 microseconds
+```
+
+The reset beam sequence is:
 
 ![Reset beam events and active-display and VBlank intervals](figures/pcrtc-reset-timing.svg){#fig-pcrtc-reset-timing}
 
 The reset vertical counts are VDP = 576, VFP = 4, VFPE = 5, VBP = 33, VBPE = 5, and
 VS = 5. VBlank is inactive below half-line 576 and active for the remainder of the field.
+
+For a beam restart at system cycle zero, the calculated event deadlines are:
+
+| Landmark | Half-line | Time from restart | Rounded system-cycle deadline |
+|---|---:|---:|---:|
+| First HSync point | 2 | 64 µs | 2168 |
+| VBlank entry; display latch | 576 | 18.432 ms | 624270 |
+| VSync; VSINT | 585 | 18.720 ms | 634024 |
+| Field end | 628 | 20.096 ms | 680628 |
+
+This gives approximately 49.761146497 field repetitions per second.
+Fractional system cycles are retained between events; deadlines round upward
+without accumulating a fresh rounding error each half-line. An executing CPU
+instruction may finish before a crossed deadline is serviced. Allow for CPU
+interrupt acceptance and handler execution after these event deadlines.
+HSync points repeat every two half-lines, but a pending HSINT suppresses further
+interrupt requests until acknowledged.
 
 At VSync, nonzero CMOD together with odd VFP toggles FIELD; otherwise FIELD becomes one.
 Reset VFP is even: reset FIELD is zero, and the first VSync sets it to one. VSync also
@@ -584,6 +669,16 @@ fault. Earlier writes remain effective. The two PCRTC address ranges do not beco
 contiguous through a multiword instruction. Writes to `CSR_HIGH` and `IMR_HIGH` are
 accepted but ignored; they do not raise READ_ONLY faults.
 
+**CPU transfer costs.** Each ordinary scalar register-word load or store instruction,
+including its displacement form, has a two-system-cycle base cost. PCRTC adds no
+write-ready wait. Address and value preparation, polling and surrounding control
+flow have their own instruction costs. Thus 22 separately issued configuration
+stores contribute 44 base cycles before preparation or display-edge waiting; they
+do not form an atomic display update. A word-sequence store instead costs two base
+cycles plus `n/4` rounded upward for its `n` words. Respect the two address ranges.
+Immediate readback confirms programmed words. Use a subsequent VBlank entry to
+establish that the display latch has taken them.
+
 ### Faults {#sec-pcrtc-211-faults}
 
 Access faults are **synchronous CPU exceptions**, not PCRTC events. They do not set CSR
@@ -617,54 +712,7 @@ bit 13.
 Storage selectors and framebuffer address wrap have the deterministic behavior in
 @sec-pcrtc-23-local-memory-samples and @sec-pcrtc-24-local-memory-address-layout; they are not format, width, or framebuffer-address exceptions.
 
-## SETTING EXAMPLE {#sec-pcrtc-3-setting-example}
-
-### Set a 256 × 192 window on circuit 1 {#sec-pcrtc-31-set-a-256-192-window-on-circuit-1}
-
-**Starting condition:** PCRTC reset configuration and reset timing. Both reading
-circuits are disabled. Circuit 1's framebuffer base is word address 0, its width is
-1024, and its format selection is GX16. Its reset signal position is (680, 37), with X
-magnification 4 and Y magnification 1.
-
-1. Set the source origin to (32, 16) in `DISPFB1_HIGH`.
-2. Set the display extents for a 256 × 192 output window. The horizontal span is `256 ×
-4 = 1024` signal units, so write horizontal extent 1023 and vertical extent 191.
-3. Enable circuit 1 last with the PMODE word shown below. Leave circuit 2 disabled.
-
-The table gives raw address/value word writes, in order.
-
-| Order | Address | Register | Write value | Setting |
-|---:|---|---|---|---|
-| 1 | `08010360H` | `DISPFB1_HIGH` | `00008020H` | Source X = 32; source Y = 16 |
-| 2 | `08010368H` | `DISPLAY1_HIGH` | `000BF3FFH` | Horizontal extent = 1023; vertical extent = 191 |
-| 3 | `08010354H` | `PMODE_LOW` | `0000FF21H` | EN1 = 1; EN2 = 0; MMOD = 1; AMOD = 0; SLBG = 0; ALP = 255 |
-
-All three writes change their reset values. None restarts the beam. Other framebuffer,
-signal-position, magnification, and timing words remain at their reset values.
-
-After the display latch takes these settings, circuit 1 has the following geometry:
-
-| Quantity | Result |
-|---|---|
-| Framebuffer base | Local-memory word address 0 |
-| Framebuffer width | `16 × 64 = 1024` |
-| Storage selection | GX16 |
-| Source origin | `(32, 16)` |
-| Horizontal signal interval | `[680, 1704)` |
-| Reset horizontal signal step | 4 |
-| Converted horizontal boundaries | `680 / 4 = 170`; `1704 / 4 = 426` |
-| Output origin | `(0, 0)` |
-| Output dimensions | **256 × 192** |
-| Traversal | Non-interlaced |
-
-The PMODE word selects circuit-1 RGB directly. Output alpha is the original GX16 sample
-alpha, 0 or 128 from bit 15; it is not forced to 255 by ALP = 255.
-
-Read back the three programmed words to check the settings. The display uses them at
-VBlank entry when the latch takes the new configuration, as shown in @sec-pcrtc-26-programmed-words-and-displayed-settings.
-
-For a complete two-surface cartridge and its observed output, see
-[Prepare, publish and reuse two surfaces](memory.md#sec-memory-prepare-publish-and-reuse-two-surfaces).
+## Timing and interrupt programming examples {#sec-pcrtc-3-setting-example}
 
 ### Acknowledge stale HSINT and unmask only HSINT {#sec-pcrtc-32-acknowledge-stale-hsint-and-unmask-only-hsint}
 
@@ -794,6 +842,10 @@ the DISPFB base and source origin while preserving the selected format and
 source stride; a DISPLAY window is not a local-memory allocation.
 
 ## REGISTER REFERENCE {#sec-pcrtc-4-register-reference}
+
+PCRTC register words occupy four bytes. The composition registers start at
+`08010354H`; the timing and status registers start at `080103ACH`. Use the
+individual addresses below: the intervening addresses are not PCRTC registers.
 
 `R/W` below means that the complete configuration word is retained and returned on read.
 In its layout, `R` marks retained bits with no named operational field. These bits are

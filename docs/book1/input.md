@@ -37,7 +37,76 @@ separate output path sends vibration parameters to the selected pad when APPLY
 is written. Solid arrows carry data; dashed arrows show the control sequence.
 The capability register belongs to the captured input data.
 
+## Sampling and snapshot reads {#sec-input-sampling-and-snapshot-reads}
+
+The sampling path is one-shot. Write the complete word `00000001H` (ARM) to `IO_INP_CTRL` to leave one sample request pending. At an accepted VBlank-begin edge, the controller latches the keyboard, pointer, all four pad records and output-capability word as one snapshot. It then increments `IO_INP_STATUS` modulo 2³². The accepted sample clears the pending request; it does not clear the retained ARM word in `IO_INP_CTRL`.
+
+ARM chooses the next display edge at which to take a sample. STATUS tells the
+program when that choice has taken effect. Until the sequence changes, reading
+a key or axis can still return the preceding sample. Once it changes, the
+program can read several control words from the same captured state without
+another display edge changing them: the request has already been consumed.
+
+Use this order to obtain a new snapshot:
+
+1. Read and retain `IO_INP_STATUS`.
+2. Write ARM to `IO_INP_CTRL`.
+3. Read `IO_INP_STATUS` until it differs from the retained value.
+4. Read the required snapshot words before requesting another sample.
+
+Use the sequence change as the completion indication; CTRL retains its last
+written command rather than reporting a pending request. The captured words
+remain stable until the next accepted sample or reset. To detect button edges,
+compare successive snapshots as described under
+[Retained levels and software edges](#sec-input-retained-levels-and-software-edges). A press and release between
+samples is lost.
+
+Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
+
+## Sample input in BLua {#sec-input-sample-input-in-blua}
+
+The following fragment obtains KeyA and pad 0's left-stick X from one capture.
+It assumes a running beam, ordinary BIOS cartridge entry and exclusive use of
+INPUT. It polls the sequence without changing the interrupt configuration.
+
+```lua
+local control<const>: *word = 0x08000064
+local status<const>: *word = 0x08000068
+local keys<const>: *word = 0x0800006c
+local pad0<const>: *word = 0x0800009c
+
+local before<const> = *status
+*control = 1
+while *status == before do
+end
+local key_a_down<const> = (keys[0] & 0x00000010) ~= 0
+local left_x_word<const> = pad0[1]
+```
+
+KeyA is bit 4 of the first keyboard word. The next word after pad 0's button
+word is its left X axis. For a captured keyboard word of `00000010H` and an
+axis word of `00008000H`, `key_a_down` is true and `left_x_word` represents
++0.5, halfway from the stick's center to its right endpoint. The bit assignments
+and signed 16.16 interpretation are specified in the next section.
+
+Read any other required snapshot words before the next ARM. With exclusive
+use of INPUT, all those reads refer to the same capture. Retaining the current
+STATUS as the baseline accommodates samples taken during BIOS boot; it need
+not begin at zero.
+
+Polling is not required. A program with an enabled VBlank handler can wait
+with HALT, then recheck the same sequence predicate after each wake-up. VBlank
+provides the opportunity to capture; only a sequence change establishes that
+a new sample was accepted. See
+[VBlank ordering, interrupts and access faults](#sec-input-vblank-ordering-interrupts-and-access-faults)
+for interrupt setup requirements and publication order.
+
 ## Raw input representations {#sec-input-raw-input-representations}
+
+Keyboard and button words are bitmaps; stick, trigger and pointer data words
+are signed 16.16 numbers. The following fields describe the meaning and units
+of the captured state. Their register addresses follow in the
+[register map](#sec-input-register-map).
 
 ### Keyboard usage bitmap {#sec-input-keyboard-usage-bitmap}
 
@@ -156,86 +225,12 @@ Keyboard and button words describe sampled levels. They are not an event queue. 
 
 These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
 
-## Sampling and snapshot reads {#sec-input-sampling-and-snapshot-reads}
-
-The sampling path is one-shot. Write the complete word `00000001H` (ARM) to `IO_INP_CTRL` to leave one sample request pending. At an accepted VBlank-begin edge, the controller latches the keyboard, pointer, all four pad records and output-capability word as one snapshot. It then increments `IO_INP_STATUS` modulo 2³². The accepted sample clears the pending request; it does not clear the retained ARM word in `IO_INP_CTRL`.
-
-Use this order to obtain a new snapshot:
-
-1. Read and retain `IO_INP_STATUS`.
-2. Write ARM to `IO_INP_CTRL`.
-3. Read `IO_INP_STATUS` until it differs from the retained value.
-4. Read the required snapshot words before requesting another sample.
-
-Use the sequence change as the completion indication; CTRL retains its last
-written command rather than reporting a pending request. The captured words
-remain stable until the next accepted sample or reset. To detect button edges,
-compare successive snapshots as described above. A press and release between
-samples is lost.
-
-Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
-
-### BIOS handoff and supervisor sampling {#sec-input-bios-handoff-and-supervisor-sampling}
-
-The BIOS samples this controller during boot and does not reset INPUT when
-handing control to the cartridge. The register table's reset words are not a
-cartridge-entry snapshot. Retain the **current** STATUS as the baseline for
-the sampling sequence above; do not require an initial sequence of zero.
-
-INPUT is not context-banked. Cartridge and supervisor share its pending ARM
-request, accepted-sample sequence and register file. The BIOS monitor arms
-captures while it runs: each accepted capture replaces the shared snapshot
-and advances the same sequence. LEAVE does not restore the cartridge's earlier
-snapshot or sequence. After resuming, request and observe a new capture before
-treating those words as a fresh cartridge sample. See
-[SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service),
-for the other units' preservation rules.
-
-## Sample input in BLua {#sec-input-sample-input-in-blua}
-
-This sequence assumes ordinary BIOS cartridge entry, a running beam, and
-exclusive ownership of INPUT and the VBlank interrupt route. The handler
-acknowledges only VBlank. The retained sequence, not a wake-up or CTRL
-readback, tells the caller that a sample has completed.
-
-```lua
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local control<const>: *word = 0x08000064
-local status<const>: *word = 0x08000068
-local keys<const>: *word = 0x0800006c
-
-function irq(flags)
-    *irq_ack = flags & 0x00000004
-end
-
-*irq_mask = 0
-*irq_ack = 0x00000004
-*irq_mask = 0x00000004
-local previous_key = 0
-while true do
-    local before<const> = *status
-    *control = 1
-    while *status == before do
-        halt_until_irq
-    end
-    local current<const> = keys[0] & 0x00000010
-    local pressed<const> = current & ~previous_key
-    local released<const> = previous_key & ~current
-    -- Use the levels and software edges here; read any other snapshot words.
-    previous_key = current
-end
-```
-
-The initial STATUS read accommodates samples taken during BIOS boot. Read all
-required keyboard, pointer and pad words before the next ARM. With exclusive
-use of INPUT, the snapshot remains stable throughout those reads. The register
-map below gives the four pad bases and individual snapshot words.
-
 ### Worked KeyA transition sequence {#sec-input-worked-keya-transition-sequence}
 
-The KeyA mask is `00000010H`, not pad A's `00000001H`. With
-`previous_key` initially zero, four completed samples give:
+The KeyA mask is `00000010H`, not pad A's `00000001H`. Apply the pressed and
+released expressions above to this mask, keeping the current mask as
+`previous` for the next sample. With `previous` initially zero, four completed
+samples give:
 
 | Sample | KeyA level | Pressed mask | Released mask | Cumulative presses | Cumulative releases |
 | --- | --- | --- | --- | --- | --- |
@@ -344,6 +339,22 @@ keyboard usage or a pad bit, and does not require a cartridge sample. See
 There is no separate input-complete interrupt. VBlank pending state is coalesced, not a count of completed samples, so test the sample sequence even when using VBlank interrupts. A cartridge that waits with HALT must first enable an owned VBlank interrupt route, and must recheck `IO_INP_STATUS` after waking. An interrupt source that is merely pending but masked does not guarantee a wakeup.
 
 The snapshot words, `IO_INP_STATUS` and `IO_INP_OUTPUT_STATUS` are read-only. A mapped whole-word write to one of these words raises the shared bus fault `BUS_FAULT_READ_ONLY` (code 3), without changing the word. The controller defines no separate input fault register. General alignment and access-size rules are those of the memory interface.
+
+### BIOS handoff and supervisor sampling {#sec-input-bios-handoff-and-supervisor-sampling}
+
+The BIOS samples this controller during boot and does not reset INPUT when
+handing control to the cartridge. The register table's reset words are not a
+cartridge-entry snapshot. Retain the **current** STATUS as the baseline for
+the sampling sequence above; do not require an initial sequence of zero.
+
+INPUT is not context-banked. Cartridge and supervisor share its pending ARM
+request, accepted-sample sequence and register file. The BIOS monitor arms
+captures while it runs: each accepted capture replaces the shared snapshot
+and advances the same sequence. LEAVE does not restore the cartridge's earlier
+snapshot or sequence. After resuming, request and observe a new capture before
+treating those words as a fresh cartridge sample. See
+[SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service),
+for the other units' preservation rules.
 
 ## Pad output commands {#sec-input-pad-output-commands}
 

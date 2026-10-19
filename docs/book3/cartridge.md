@@ -1,23 +1,25 @@
 # Cartridge sockets and mapped card devices {#sec-cartridge}
 
-The BMSX cartridge interface connects two independently occupied sockets,
-numbered 0 and 1, to a shared set of CPU address windows. A card can supply
-program and resource ROM, writable RAM, a word mailbox, or a combination of
-these resources. A RAM- or mailbox-only card can extend a program running from
-the other socket.
+The BMSX has two cartridge sockets, numbered 0 and 1. A program can execute
+from the ROM in one socket while using data or writable memory on the card in
+the other. A card may contain ROM, RAM, a word mailbox, or a combination of
+these devices; a RAM-only card can therefore extend a program on a second card.
 
-Ordinary CPU data accesses use the selected socket. Instruction fetches retain
-their own execution-socket selection, and DMA can select a socket separately
-for each endpoint. A cartridge program can therefore access a second card
-without relocating its own image or redirecting its next instruction fetch.
-The selection and transfer sections below explain when each selection is taken.
+Both sockets use the same cartridge addresses. To read a card, software must
+choose both **an address within the card** and **the socket to which the access
+is directed**. The address determines whether the access reaches ROM, RAM or a
+mapped device. The socket selection determines which card supplies that region.
+Changing the data selection does not change the socket supplying the program's
+instructions.
 
 ## Card composition {#sec-cartridge-card-composition}
 
-Cards can combine ROM, RAM and a mailbox independently. ROM supplies read-only
-program and resource data, RAM supplies writable space, and the mailbox provides
-data and control ports. Consult the card specification for its installed
-resources and capacities. STATUS reports which sockets are occupied.
+ROM holds the card's read-only bytes, including any program and resource data.
+RAM provides writable memory at separate cartridge addresses. A mailbox adds a
+word port, an interrupt latch and DMA-request controls; it is described as a
+separate device later in this chapter. None of these devices requires the other
+two to be present. Consult the card specification for its installed devices and
+capacities.
 
 | Resource | Use | Capacity |
 | --- | --- | --- |
@@ -26,55 +28,53 @@ resources and capacities. STATUS reports which sockets are occupied.
 | Card RAM | Writable data | Card-specific, within the 15-MiB RAM window |
 | Mailbox | Word exchange, interrupt and DMA-request control | DATA and CONTROL words with a local interrupt latch |
 
-The address windows accommodate cards of different capacities. Addresses beyond
-an installed ROM or RAM return zero; the access section below describes tail
-reads and writes. Socket occupancy alone does not identify a bootable card.
-
-## Boot selection {#sec-cartridge-boot-selection}
-
-At startup, the BIOS examines socket 0, then socket 1, selecting each present
-card in turn. It starts the first card with a usable executable ROM image. A
-RAM-only card or a card whose ROM does not meet the startup requirements is
-skipped.
-
-[[Memory — Cartridge startup](../book1/memory.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “ROM header fields”]{.content-visible when-format="pdf"} specifies the
-ROM header, startup requirements and entry sequence.
+The controller's STATUS register reports which sockets are occupied, not the
+devices or capacities fitted to a card. An occupied socket need not contain a
+bootable ROM. The address windows accommodate cards of different capacities;
+locations beyond installed ROM or RAM read as zero rather than repeating the
+smaller memory.
 
 ## Selection and execution {#sec-cartridge-selection-and-execution}
 
-The CPU retains an execution-socket latch for cartridge instruction fetches.
-SELECT controls ordinary data accesses independently, allowing a program to
-read the other card while continuing to execute from its original socket.
+Consider a program executing from socket 0, with RAM fitted to both cards.
+The word at `30000010H` is at byte offset 16 within either card's RAM. If
+software selects socket 0 and reads that address, it obtains socket 0's word.
+Selecting socket 1 and reading the same address obtains socket 1's word; the
+address itself has not changed.
 
-A cartridge-targeted `CP0.EXEC` samples the selected socket and replaces the
-instruction-fetch latch. Both sockets use the same cartridge addresses, so an
-image does not require relocation merely because it is inserted in the other
-socket. A closure retains a function-record address, not a socket: entering it
-uses the current execution-socket latch. See [[Memory — EXEC and cartridge entry](../book1/memory.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “EXEC and cartridge entry”]{.content-visible when-format="pdf"}
+![The same CPU data address reads different card RAM when SELECT changes; instruction fetch remains on socket 0. The RAM contents shown are example values.](figures/cartridge-selection.svg){#fig-cartridge-selection}
+
+The ordinary data selector is the controller's SELECT register. Its value
+applies to subsequent ordinary cartridge reads and writes until software
+changes it. Selection neither copies memory between cards nor resets either
+card. In the example, the two words keep their separate values as SELECT
+changes.
+
+Instruction fetch uses a separate **execution-socket latch**. A program entered
+from socket 0 continues to fetch its cartridge instructions from socket 0 even
+when SELECT is changed to 1 for data access. This is what permits a running
+program to use the second card: selecting its data does not redirect the next
+instruction to the same address on that card.
+
+A cartridge-targeted `CP0.EXEC` samples SELECT and establishes the execution
+socket for the new entry. Since cartridge addresses are identical in both
+sockets, insertion in the other socket does not by itself require relocation.
+A cartridge-function closure contains a function-record address, not a socket
+selection; calling it uses the current execution socket. See [[Memory — EXEC and cartridge entry](../book1/memory.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “EXEC and cartridge entry”]{.content-visible when-format="pdf"}
 and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “CP0 and execution control”]{.content-visible when-format="pdf"}.
 
-## Programming route {#sec-cartridge-programming-route}
-
-1. Establish the inserted card's composition and preserve any storage still in
-   use. STATUS reports occupancy, not RAM capacity or mailbox presence.
-2. Write SELECT for ordinary CPU accesses. Use aligned word stores for mailbox
-   commands; selecting a socket neither resets nor enters it.
-3. For mailbox interrupts, clear the local latch to rearm its next rising edge,
-   and acknowledge the owned pending bit at the central controller separately.
-4. For DMA, set both request levels, addresses, count and control before START.
-   Use explicit socket request selectors when a pending transfer must remain
-   independent of later CPU selection changes.
-5. Wait for the channel's terminal state and inspect faults before using its
-   output. Transport completion is not an application response from the card.
-
-The following reference defines the retained words, write effects, request
-levels and access restrictions used by that sequence.
+DMA also distinguishes the address from the socket. Its source and destination
+request fields can select different sockets, allowing a direct copy from one
+card to the other. Those endpoint selections are independent of the CPU data
+selector; their encodings and request conditions are given under
+[DMA between sockets](#sec-cartridge-dma-between-sockets).
 
 ## Cartridge controller {#sec-cartridge-cartridge-controller}
 
-The controller's SELECT register chooses the socket used by ordinary data
-accesses. STATUS reports both presence bits and the selected socket, including
-when the selected socket is empty.
+The controller has two installed-I/O registers: SELECT chooses the socket for
+ordinary data accesses, and STATUS reports socket occupancy and that selection.
+They are separate from the registers on either card, so both remain accessible
+regardless of which socket is selected.
 
 ### Controller registers {#sec-cartridge-controller-registers}
 
@@ -83,7 +83,8 @@ when the selected socket is empty.
 | `0x08010420` | `SELECT` | Read/write | `0x00000000` |
 | `0x08010424` | `STATUS` | Read-only | Installed-cartridge presence bits; bit 16 clear |
 
-`SELECT` retains the complete raw 32-bit selection word. A read returns that word, including bits 31:1. Only bit 0 participates in ordinary socket selection. The other bits remain stored and readable; they neither select additional sockets nor report cartridge properties.
+`SELECT` retains the complete 32-bit word written to it. Bit 0 selects the
+socket; bits 31:1 are retained and read back without affecting selection.
 
 | Register | Bits | Meaning |
 |---|---|---|
@@ -94,13 +95,41 @@ when the selected socket is empty.
 | `STATUS` | 16 | Ordinary selected socket: 0 for socket 0; 1 for socket 1. |
 | `STATUS` | 15:2, 31:17 | Read as zero. |
 
+### Accessing a card {#sec-cartridge-programming-route}
+
+For ordinary data access:
+
+1. Read STATUS to determine which sockets are occupied. Use the card's own
+   specification to determine its memory and devices.
+2. Write 0 or 1 to SELECT for the intended card.
+3. Access the required address within that card's ROM, RAM or MMIO window.
+
+For the two-RAM example in @fig-cartridge-selection, these are the complete
+selection and read operations. Both cards are assumed to contain at least
+20 bytes of RAM, with the illustrated words already stored at offset 16.
+
+```lua
+local card_word<const>: *word = 0x30000010
+mem[0x08010420] = 0
+local first = *card_word        -- 0x11111111 from socket 0.
+mem[0x08010420] = 1
+local second = *card_word       -- 0x22222222 from socket 1.
+```
+
+SELECT remains 1 after the second read. Any later ordinary cartridge access
+therefore uses socket 1 until SELECT is changed again. Code still executing
+from socket 0 must select socket 0 again before an ordinary data read of its
+own card.
+
 ### Selection and presence {#sec-cartridge-selection-and-presence}
 
 A `SELECT` write takes effect for subsequent ordinary cartridge accesses.
 Both cards retain their device state, interrupt latches and DMA-request levels
 across the selection change.
 
-An individual bus transaction may explicitly select a socket instead of using `SELECT`. Such an override does not modify the retained selection word. `STATUS` continues to report ordinary selection, not the socket chosen by that transaction.
+Instruction fetch and the explicit DMA socket selections bypass SELECT without
+changing it. STATUS bit 16 continues to report ordinary data selection, not
+the socket used by an instruction fetch or by a DMA endpoint.
 
 The presence bits are independent of selection. Selecting an empty socket
 changes STATUS bit 16 while leaving bits 1:0 unchanged. Reads from that socket
@@ -108,7 +137,12 @@ return zero and writes have no effect.
 
 ### Controller reset {#sec-cartridge-controller-reset}
 
-Controller reset clears the entire `SELECT` word, resets each present cartridge, and republishes DMA request lines for both sockets. Empty sockets contribute no asserted request lines. Reset does not change which sockets contain cartridges, so `STATUS` need not read as zero afterward. The controller itself neither raises nor clears an interrupt as part of this reset sequence; cartridge-specific reset behavior is defined separately.
+Controller reset clears the entire SELECT word and resets each present card.
+The DMA-request levels then reflect the reset state of those cards; empty
+sockets assert no requests. Occupancy is unchanged, so STATUS may still report
+present cards with socket 0 selected. Controller reset does not itself raise or
+acknowledge a central interrupt. The storage and mailbox reset effects are
+specified below.
 
 ## Card storage and MMIO access {#sec-cartridge-card-storage-and-mmio-access}
 
@@ -127,7 +161,11 @@ are not mirrored through the remaining window. ROM writes are ignored; a RAM
 write takes effect only when its complete width fits the installed memory.
 
 ROM and RAM scalar values are little-endian: the lowest-addressed byte occupies
-bits 7:0. For scalar ROM and RAM reads, the starting address selects the region. A multi-byte read remains a read of that selected region, including when fewer than the requested number of installed bytes remain. Available bytes occupy the low-order portion of the result; missing high-order bytes are zero. This differs from a byte sequence spanning address windows, where each byte is selected by its own address.
+bits 7:0. The starting address of a scalar read selects the region for the
+complete value. If fewer installed bytes remain than the requested width,
+available bytes occupy the low-order lanes and missing high-order lanes read
+as zero. A sequence of individual byte reads instead selects the region at
+each byte's address, so such a sequence can cross into the next window.
 
 | Operation | Width, capacity, tail, or reset behavior |
 | --- | --- |
@@ -135,20 +173,78 @@ bits 7:0. For scalar ROM and RAM reads, the starting address selects the region.
 | ROM/RAM 16-bit read | At a one-byte tail, returns that byte in bits 0–7 and zero in bits 8–15. Returns zero beyond capacity. |
 | ROM/RAM 32-bit read | Assembles remaining bytes into successive low-order byte lanes; unavailable high-order lanes are zero. Returns zero beyond capacity. |
 | RAM write | An 8-, 16-, or 32-bit write occurs only when its starting address selects RAM and its entire width fits installed RAM. A partial-width tail write changes nothing. |
-| MMIO 8-/16-bit write | Ignored, even when the MMIO attachment is present. |
-| MMIO 32-bit write | Delivers the word and the unchanged MMIO-relative byte offset to the attached unit; does nothing when that unit is absent. |
-| Logical card reset | Resets the attached MMIO unit, if present. Retains RAM contents and leaves ROM unchanged. |
+| MMIO 8-/16-bit write | Ignored, including on a card with a mapped device. |
+| MMIO 32-bit write | Writes the complete word at the exact MMIO-relative byte offset. Has no effect when no mapped device is present. |
+| Logical card reset | Resets the mapped device, if present. Retains RAM contents and leaves ROM unchanged. |
 
-MMIO reads return zero when no attachment is present. Otherwise, the register read uses the byte offset from `0x30f00000` without rounding that offset to a word boundary. An 8-bit read selects the returned word's byte lane using address bits 1–0. A 16-bit read selects its low or high half using address bit 1. A 32-bit read returns the complete word. These lane rules describe read results; they do not make narrower MMIO writes effective.
+MMIO reads return zero when no device is present. Otherwise, the device decodes
+the byte offset from `0x30f00000` without prior rounding to a word boundary.
+An 8-bit read selects the decoded word's byte lane using address bits 1:0.
+A 16-bit read selects its low or high half using address bit 1. A 32-bit read
+returns the complete word. Use the device's register map for the word selected
+by each offset; the mailbox's read decoding is given below. These read-lane
+rules do not enable byte or halfword stores.
 
 Card RAM initially contains zero. A logical card reset retains its contents.
 
+## Boot selection {#sec-cartridge-boot-selection}
+
+At startup, the BIOS examines socket 0, then socket 1, selecting each present
+card and reading its ROM header. It enters the first card whose ROM passes the
+startup checks. A RAM-only card, or a card whose ROM does not meet those
+requirements, is skipped. This entry establishes the execution socket as
+described under [Selection and execution](#sec-cartridge-selection-and-execution).
+
+[[Memory — Cartridge startup](../book1/memory.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “ROM header fields”]{.content-visible when-format="pdf"}
+specifies the ROM header, startup requirements and entry sequence.
+
 ## Cartridge mailbox {#sec-cartridge-cartridge-mailbox}
 
-The cartridge mailbox contains two retained 32-bit words, DATA and CONTROL, and a local interrupt-pending latch. STATUS exposes that latch. IRQ_ACK is a write action rather than a retained register. The mailbox base is `30F00000H` on the selected card. The four word ports are
-DATA `30F00000H`, CONTROL `30F00004H`, STATUS `30F00008H` and IRQ_ACK
-`30F0000CH`. Every register reads `00000000H` after mailbox reset.
-All offsets below are relative to that base.
+A mailbox adds a retained DATA word and separate controls for notification and
+DMA requests. Software can use DATA for a value defined by the card's own
+protocol. Writing it replaces the previous word; DATA is a single word, not a
+queue. CONTROL can request an interrupt from that socket or set the request
+levels that permit DMA transfers involving the card.
+
+Data and notification are separate operations. Writing DATA does not request an
+interrupt, and an interrupt request does not change DATA. A protocol that uses
+both can therefore write its value first, then request notification. The card's
+programming specification defines the value and what its recipient should do
+with it. A DMA completion reports the end of transport, not an application
+response from the card.
+
+The mailbox's **local pending latch** records whether its interrupt has been
+requested. Clearing this latch rearms the next interrupt edge. A separate
+pending bit in the installed interrupt controller records that edge for CPU
+delivery; servicing an interrupt requires both acknowledgements, as explained
+below. Mailbox transfers and interrupts are optional operations, not
+prerequisites for ordinary ROM or RAM access.
+
+The mailbox base is `30F00000H` on the selected card. It has two retained
+32-bit words, DATA and CONTROL; STATUS reads the local pending latch and
+IRQ_ACK provides its acknowledgement action. All offsets below are relative
+to the mailbox base.
+
+### Mailbox programming sequence {#sec-cartridge-mailbox-programming-sequence}
+
+For a protocol that publishes one DATA word and requests an interrupt:
+
+1. Select the card containing the mailbox. The following accesses use that
+   card's MMIO window.
+2. Starting with the local pending latch clear, write the word to DATA.
+3. Write CONTROL with IRQ_TRIGGER set, retaining any DREQ or other CONTROL
+   fields that must remain unchanged. This sets local pending and raises the
+   socket's central interrupt source.
+4. In the service routine, handle DATA according to the card protocol, clear
+   local pending through IRQ_ACK to rearm the edge, and acknowledge the
+   socket's central pending bit separately. Select the correct card before
+   accessing its mailbox.
+
+For DMA, program the required DREQ levels instead; both endpoint requests and
+the channel's address, count and control registers must be ready before START.
+The mailbox fields are defined next, and
+[DMA between sockets](#sec-cartridge-dma-between-sockets) shows how they
+connect to a transfer.
 
 ### Register map {#sec-cartridge-register-map}
 
@@ -159,7 +255,11 @@ All offsets below are relative to that base.
 | `30F00008H` | STATUS | R; writes ignored | Bit 0 IRQ_PENDING; bits 31:1 zero | `00000000H` |
 | `30F0000CH` | IRQ_ACK | R=0; W action | Any nonzero word clears local pending; zero has no effect | `00000000H` |
 
-Read decoding ignores the low two offset bits. Consequently, `+0x00` through `+0x03` read DATA, `+0x04` through `+0x07` read CONTROL, and `+0x08` through `+0x0B` read STATUS. Every other offset group reads zero, including `+0x0C` through `+0x0F`.
+Read decoding ignores the low two offset bits. Offsets `+0x00` through `+0x03`
+therefore select DATA, `+0x04` through `+0x07` select CONTROL, and `+0x08`
+through `+0x0B` select STATUS. The read width then selects the byte lanes as
+described under [Card storage and MMIO access](#sec-cartridge-card-storage-and-mmio-access).
+Every other offset group reads zero, including `+0x0C` through `+0x0F`.
 
 Use aligned word stores for the mailbox actions. Only `+0x00`, `+0x04`, and
 `+0x0C` perform an action. Writes to STATUS and other aligned offsets are ignored;
@@ -167,7 +267,8 @@ byte and halfword writes do not perform mailbox actions.
 
 ### DATA and CONTROL {#sec-cartridge-data-and-control}
 
-DATA holds the last word written to it. Writing DATA does not change CONTROL or the local interrupt-pending latch.
+DATA holds the last complete word written to it. Its read does not consume the
+word. A DATA write leaves CONTROL and the local pending latch unchanged.
 
 CONTROL has the following defined fields:
 
@@ -178,21 +279,35 @@ CONTROL has the following defined fields:
 | 2 | `0x00000004` | DREQ_WRITE | Sets the DREQ_WRITE level. |
 | 31:3 | `0xFFFFFFF8` | Unnamed | Retained exactly as written; no defined IRQ or DREQ contribution. |
 
-A CONTROL write replaces the retained word; it does not set or clear selected retained bits independently. Preserve any retained fields that must remain unchanged when constructing a new CONTROL value. CONTROL readback returns the retained word directly, including unnamed bits. The IRQ_TRIGGER action bit is excluded from the value retained by a CONTROL write, rather than appearing as a latched trigger request in readback.
+A CONTROL write replaces bits 31:1, including unnamed bits. Preserve any of
+those fields that must remain unchanged when constructing a new value.
+Bit 0 performs the IRQ_TRIGGER action and reads as zero; it is not stored in
+CONTROL. Setting this bit can request notification without a later
+trigger-clear write.
 
 ### Interrupt pending and acknowledgement {#sec-cartridge-interrupt-pending-and-acknowledgement}
 
-An IRQ_TRIGGER write sets local IRQ_PENDING. A new interrupt edge occurs only when this changes the local latch from clear to set. Repeated trigger writes while IRQ_PENDING is already set do not generate additional edges.
+An IRQ_TRIGGER write sets local IRQ_PENDING. Only its clear-to-set transition
+generates a new interrupt edge. Once pending is set, further trigger writes
+leave it set without generating additional edges.
 
-Writing CONTROL with IRQ_TRIGGER clear does not clear IRQ_PENDING. To rearm the local edge, write any nonzero word to IRQ_ACK. A subsequent trigger write can then generate another edge; no intervening trigger-clear CONTROL write is required. IRQ_ACK does not alter DATA or CONTROL. This local acknowledgement is distinct from acknowledgement at a central interrupt controller.
+To rearm the edge, write any nonzero word to IRQ_ACK. A subsequent IRQ_TRIGGER
+can then generate another edge. A zero IRQ_ACK write and a CONTROL write with
+IRQ_TRIGGER clear both leave local pending unchanged. IRQ_ACK changes neither
+DATA nor CONTROL. It acknowledges the mailbox latch, not the central
+interrupt-controller latch.
 
 ### DREQ levels and reset {#sec-cartridge-dreq-levels-and-reset}
 
-DREQ_READ and DREQ_WRITE independently follow retained CONTROL bits 1 and 2. Either, both, or neither may be asserted. Interrupt triggering and local acknowledgement do not substitute for programming these levels. Unnamed CONTROL bits do not affect them.
+DREQ_READ and DREQ_WRITE follow retained CONTROL bits 1 and 2 independently.
+Software may assert either level, both, or neither. The levels remain asserted
+until replaced by a CONTROL write or cleared by reset. IRQ_TRIGGER and IRQ_ACK
+do not replace this programming, and unnamed CONTROL bits do not affect DREQ.
 
-Reset clears DATA, CONTROL, and the local pending latch. DATA, CONTROL, and STATUS therefore read zero, and both DREQ levels are deasserted.
+Reset clears DATA, CONTROL and local pending. All four register ports then
+read zero and both DREQ levels are deasserted.
 
-## Interrupts: two latches, two acknowledgements {#sec-cartridge-interrupts-two-latches-two-acknowledgements}
+### Interrupts: two latches, two acknowledgements {#sec-cartridge-interrupts-two-latches-two-acknowledgements}
 
 Socket 0 raises central interrupt bit 9 (`00000200H`); socket 1 raises bit 10
 (`00000400H`). These are distinct from each card's local STATUS bit 0.
@@ -224,12 +339,19 @@ not rearm a mailbox edge. When handling both sockets, select the intended card
 before touching its local registers and acknowledge only the central bits owned
 by that handler. The complete CPU-enable, `irq(flags)` and predicate-wait route
 is in [[Interrupt controller](../book1/irq.md#sec-irq-cpu-delivery-and-waiting)]{.content-visible when-format="html"}[Book I, “Interrupt controller”, under “CPU delivery and waiting”]{.content-visible when-format="pdf"}.
-For a mailbox protocol, assign DATA and interrupt meanings in the card's own
-programming specification.
 
 ## DMA between sockets {#sec-cartridge-dma-between-sockets}
 
-A DMA channel can address both cartridge sockets in one transfer without changing the CPU’s cartridge selection. Each endpoint’s request field supplies its own socket override. `READ_REQUEST` controls the source endpoint; `WRITE_REQUEST` controls the destination endpoint. For either field, selectors 7–10 choose the following request and socket:
+To copy ROM data from socket 0 into RAM on socket 1, the DMA channel needs two
+addresses and two socket selections. Its read address chooses the source
+location in card ROM, while its write address chooses the destination in card
+RAM. The source and destination request fields supply their socket selections
+independently. The CPU's SELECT register need not change during the copy.
+
+Each request field has two effects: it selects a request condition that must be
+satisfied before a block starts, and, for a cartridge request, it selects that
+endpoint's socket. `READ_REQUEST` controls the source; `WRITE_REQUEST` controls
+the destination. In either field, selectors 7–10 mean:
 
 | Selector | Request condition | Endpoint socket override |
 | --- | --- | --- |
@@ -238,12 +360,39 @@ A DMA channel can address both cartridge sockets in one transfer without changin
 | 9 | Socket 1 `DREQ_WRITE` | Socket 1 |
 | 10 | Socket 1 `DREQ_READ` | Socket 1 |
 
-The two overrides are independent of one another and of `CART_SELECT`. Selecting a cartridge request does not constrain the endpoint to a particular cartridge address range: its address may target ROM, card RAM, or mailbox MMIO. The request selects when a block can start and which socket it accesses;
-the endpoint address selects the region within that socket.
+These selections are independent of one another and of SELECT. An endpoint
+with any of these four selectors may address ROM, card RAM or mailbox MMIO;
+the address selects the region within the chosen socket. In particular, the
+READ or WRITE name in a request condition does not itself restrict the
+endpoint's address range.
 
-Both programmed request conditions must be asserted before a block is admitted. `FORCE` (selector 0) is always asserted; `DISABLED` (selector 15) never is. Mailbox `CONTROL` bit 1 drives `DREQ_READ`, and bit 2 drives `DREQ_WRITE`. Both may be asserted together. These are request levels, not FIFO occupancy indications or a sequence of per-word requests. An absent card, or a card without a mailbox, supplies no asserted cartridge requests.
+### Request levels and block operation {#sec-cartridge-dma-block-operation}
 
-For example, a four-word copy from socket 0 to socket 1, incrementing both addresses, uses source selector 8 and destination selector 9:
+Both endpoint requests must be asserted for a block to start. Mailbox CONTROL
+bit 1 drives DREQ_READ and bit 2 drives DREQ_WRITE. Since the requests are
+levels, one CONTROL write can keep a condition asserted for successive blocks;
+there is no separate request pulse for each word. They do not report FIFO
+occupancy. An absent card, or one without a mailbox, asserts neither cartridge
+request. `FORCE` (selector 0) is always asserted and `DISABLED` (selector 15)
+is never asserted.
+
+At the start of a block, DMA captures its read and write addresses, remaining
+count, control and block length. The transfer cost elapses before the endpoint
+accesses occur. At completion, DMA reads each word and then writes it, then
+updates the channel's addresses and count. A remaining count of zero completes
+the channel. A request that drops after a block has started holds off the next
+block; it does not shorten the block already in progress.
+
+Selectors other than 7–10 supply no independent cartridge socket selection.
+A cartridge endpoint then uses SELECT **at the time of its access**, not the
+selection present at START. Changing SELECT during an active block can
+therefore redirect that endpoint. Keep selection unchanged until completion
+or use an explicit cartridge request selector.
+
+### Four-word control value {#sec-cartridge-dma-control-example}
+
+For the socket-0 ROM to socket-1 RAM copy, use source selector 8 and destination
+selector 9. Increment both addresses and choose a four-word block:
 
 | `CONTROL` field | Value | Contribution |
 | --- | --- | --- |
@@ -254,22 +403,16 @@ For example, a four-word copy from socket 0 to socket 1, incrementing both addre
 | Block words minus 1, bits 13:10 | 3 | `00000C00H` |
 | **Combined `CONTROL`** | | **`00000E63H`** |
 
-Each increment advances four bytes per word. This block requires socket 0 `DREQ_READ` and socket 1 `DREQ_WRITE`; the CPU’s current selection cannot reroute either endpoint.
+Each increment advances four bytes per word. The resulting `00000E63H`
+requires socket 0 DREQ_READ and socket 1 DREQ_WRITE. Once both levels permit
+the block to start, the CPU's current selection cannot reroute either endpoint.
 
-When both requests permit a block to start, DMA captures its addresses,
-remaining count, control and block length. The block's transfer cost elapses
-before endpoint accesses occur. At completion, each word is read and then
-written, after which the channel updates its addresses and count. A zero
-remaining count completes the channel. Once started, a block runs to completion;
-a request dropping low holds off the next block rather than shortening the
-current one.
+### Transfer timing {#sec-cartridge-dma-transfer-timing}
 
-With selectors other than 7–10, a cartridge endpoint uses `CART_SELECT` at
-the time of access. Changing SELECT during an active block can therefore
-redirect that endpoint. Keep selection unchanged until completion, or use an
-explicit cartridge request selector.
-
-The installed timing basis is 33,868,800 Hz. For a contiguous N-word endpoint span, cartridge service costs `8N + 4` cycles. This includes card RAM and mailbox MMIO: neither receives main-RAM pricing. Main RAM costs `N + 1` cycles. Two cartridge endpoints have additive costs, even when they select different sockets:
+DMA timing uses the 33,868,800 Hz system clock. A contiguous N-word cartridge
+span costs `8N + 4` cycles, whether it addresses card ROM, card RAM or mailbox
+MMIO. A main-RAM span costs `N + 1` cycles. Two cartridge endpoints have
+additive costs even when they select different sockets:
 
 | Transfer, wholly within each endpoint’s region | Cycles | Four words | Sixteen words |
 | --- | --- | --- | --- |
@@ -277,43 +420,25 @@ The installed timing basis is 33,868,800 Hz. For a contiguous N-word endpoint sp
 | Cartridge ↔ cartridge | `16N + 8` | 72 | 264 |
 | Cartridge ↔ installed I/O | `8N + 4` | 36 | 132 |
 
-The example ROM(socket 0) → RAM(socket 1) block takes 72 cycles once started.
+The four-word ROM(socket 0) → RAM(socket 1) block therefore takes
+`(8 × 4 + 4) + (8 × 4 + 4) = 72` cycles once started.
 Incrementing across a ROM, RAM or MMIO boundary starts another span and incurs
 setup again. Add request waiting, channel competition and CPU setup or polling
 to obtain the complete operation time. [[DMA](../book1/dma.md#sec-dma)]{.content-visible when-format="html"}[Book I, “Direct memory access”]{.content-visible when-format="pdf"} gives the general
 channel programming sequence.
 
-## Access faults {#sec-cartridge-access-faults}
+### Two-card programming example {#sec-cartridge-two-card-programming-example}
 
-CPU alignment checks precede the cartridge bus access. Ordinary
-halfword accesses require two-byte alignment and word accesses four-byte
-alignment. A misaligned ordinary load or store enters its address-error
-exception before reaching the bus. A new mapped fault during an ordinary load
-enters a data-bus-error exception before committing the read value; a new fault
-during an ordinary store enters the same exception. A bus-level zero return is
-not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Scalar memory accesses”]{.content-visible when-format="pdf"}.
-
-Installed I/O and cartridge MMIO have different mapped-access rules. The installed-I/O `CART_SELECT` and `CART_STATUS` registers use word-aligned slots. An unaligned mapped 32-bit access raises `UNALIGNED_IO` (2). An 8-bit read at an aligned register address returns its low byte; other byte lanes fault. All mapped 16-bit reads and all mapped 8-bit or 16-bit stores to installed I/O also fault. Faulting reads return zero and faulting stores are suppressed.
-
-A mapped 32-bit store to `CART_STATUS` raises `READ_ONLY` (3), leaving the register unchanged. This differs from storing to mailbox `STATUS`, which is ignored without that fault.
-
-Cartridge mapped accesses have no aperture-wide word-alignment gate; card decoding and byte lanes determine their effect. Mailbox 8-bit and 16-bit stores are ignored. Mailbox 32-bit stores decode the exact relative offset, so unaligned offsets are ignored rather than rounded to a register.
-
-The entire access must fit inside the cartridge aperture. The highest admitted addresses are `30FFFFFCH` for 32 bits, `30FFFFFEH` for 16 bits, and `30FFFFFFH` for 8 bits. Crossing that final boundary raises `UNMAPPED` (1), returning zero or suppressing the store. An absent selected card returns zero and ignores stores without a fault; ROM stores are likewise ignored.
-
-DMA uses these same mapped-access rules, but a fault does not abort its programmed read, write, and count progression. `DONE` therefore does not prove that endpoint addresses were valid. The first outstanding bus fault retains its code, address, and access; later faults do not replace it. See [[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Bus-fault status and CPU exceptions”]{.content-visible when-format="pdf"} for the fault registers and acknowledgement procedure.
-
-## Two-card programming example {#sec-cartridge-two-card-programming-example}
-
+The following sequence copies four ROM words from socket 0 to RAM on socket 1.
 Assume a bootable card in socket 0 with ROM and a mailbox, and a data card in
 socket 1 with at least 32 bytes of RAM and a mailbox. The sequence owns DMA0,
 both mailbox controls, socket-1 RAM bytes 16–31 and central DMA0 pending bit 0.
 No other writer changes these resources or the selected request levels.
-Interrupt delivery remains masked; completion is polled instead of using HALT
-without an enabled interrupt. No remote processor or automatic mailbox response
-is assumed.
+Completion is polled with interrupt delivery masked. The transfer only needs
+the two programmed mailbox request levels; it does not require an interrupt
+request from either card.
 
-Declare four words in socket 0's executable ROM, assert the read request on
+Declare four words in socket 0's ROM, assert the read request on
 socket 0 and the write request on socket 1, then program the idle channel:
 
 ```lua
@@ -354,8 +479,56 @@ mem[0x30f00004] = 0           -- Deassert socket-0 requests.
 mem[0x08000004] = 1
 ```
 
-The received words are `01234567H`, `89ABCDEFH`, `55AA33CCH`, `F00DCAFEH`;
-`first` and `last` select the first and fourth. This writes no socket-0 RAM.
-Logical card reset would retain the destination, so a warm rerun cannot assume
-that untouched card RAM is zero. The one block takes 72 system cycles, plus CPU setup, request waiting,
-polling and result reads.
+The destination words are `01234567H`, `89ABCDEFH`, `55AA33CCH` and
+`F00DCAFEH`; `first` and `last` read the first and fourth. Socket-0 RAM is
+unchanged. The destination survives a logical card reset, so a warm rerun
+must not assume that untouched card RAM has returned to zero. The block takes
+72 system cycles, plus CPU setup, request waiting, polling and result reads.
+
+## Access faults {#sec-cartridge-access-faults}
+
+CPU alignment checks precede the cartridge bus access. Ordinary
+halfword accesses require two-byte alignment and word accesses four-byte
+alignment. A misaligned ordinary load or store enters its address-error
+exception before reaching the bus. A new mapped fault during an ordinary load
+enters a data-bus-error exception before committing the read value; a new fault
+during an ordinary store enters the same exception. A bus-level zero return is
+not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Scalar memory accesses”]{.content-visible when-format="pdf"}.
+
+Installed I/O and cartridge MMIO have different mapped-access rules. The
+controller's SELECT and STATUS registers occupy installed-I/O word slots.
+For mapped accesses to these two registers:
+
+| Access | Result |
+| --- | --- |
+| Aligned 32-bit read | Reads the complete register word. |
+| 8-bit read at the aligned register address | Reads the low byte. |
+| Unaligned 32-bit access or 8-bit read at another byte lane | `UNALIGNED_IO` (2). |
+| 16-bit read, 8-bit store or 16-bit store | `UNALIGNED_IO` (2). |
+| Aligned 32-bit store to SELECT | Replaces the selection word. |
+| Aligned 32-bit store to STATUS | `READ_ONLY` (3); STATUS is unchanged. |
+
+Faulting mapped reads return zero and faulting stores are suppressed. In
+contrast to controller STATUS, a word store to mailbox STATUS is ignored
+without a READ_ONLY fault.
+
+At cartridge addresses, the mapped access uses the card's offset decoding and
+byte lanes rather than the installed-I/O alignment rule. Mailbox byte and
+halfword stores are ignored. Its word stores decode the exact relative offset;
+an unaligned mailbox store therefore changes no register. An ordinary CPU
+halfword or word instruction is still subject to the CPU alignment check
+described above.
+
+The entire access must fit inside the cartridge aperture. Its highest admitted
+starting addresses are `30FFFFFCH` for a word, `30FFFFFEH` for a halfword and
+`30FFFFFFH` for a byte. An access that crosses the final boundary raises
+`UNMAPPED` (1), returning zero or suppressing the store. Within the aperture,
+an absent card returns zero and ignores writes without a fault; ROM writes
+are also ignored.
+
+DMA uses these mapped-access rules, but continues its programmed reads, writes
+and count progression after a fault. Check for new bus faults as well as DONE
+before using the result. The first outstanding bus fault retains its code,
+address and access; later faults do not replace it. See
+[[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Bus-fault status and CPU exceptions”]{.content-visible when-format="pdf"}
+for the fault registers and acknowledgement procedure.

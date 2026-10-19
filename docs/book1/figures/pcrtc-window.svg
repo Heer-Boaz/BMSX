@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" role="img" aria-labelledby="window-title window-desc">
-  <title id="window-title">Circuit display window</title>
-  <desc id="window-desc">The circuit window begins at signal X and signal Y. Its horizontal endpoint is signal X plus horizontal extent plus one. Dimension arrows share the exact window boundaries and show horizontal extent plus one and vertical extent plus one.</desc>
+  <title id="window-title">The worked 256 by 192 display window</title>
+  <desc id="window-desc">The circuit window begins at signal X 680 and signal Y 37. Its exclusive horizontal endpoint is 1704, giving a span of 1024 signal units. With signal step 4 and X magnification 4, its 256 output columns read 256 source pixels beginning at source X 32. With noninterlaced output and Y magnification 1, its 192 output rows read source rows beginning at source Y 16. Dimension arrows share the exact window boundaries.</desc>
   <defs>
     <marker id="window-dimension-start" markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M 8 0 L 0 4 L 8 8 Z" fill="#000"/>
@@ -18,12 +18,14 @@
     <path d="M 572 72 V 184" marker-start="url(#window-dimension-start)" marker-end="url(#window-dimension-end)"/>
   </g>
   <g fill="#000" font-family="Arial, Helvetica, sans-serif" font-size="16">
-    <text x="180" y="29" text-anchor="middle">signal X</text>
-    <text x="540" y="29" text-anchor="middle">signal X + extent + 1</text>
-    <text x="134" y="77" text-anchor="end">signal Y</text>
-    <text x="360" y="134" text-anchor="middle">Circuit window</text>
-    <text x="360" y="211" text-anchor="middle">horizontal extent + 1</text>
-    <text x="592" y="123">vertical extent</text>
-    <text x="592" y="145">+ 1</text>
+    <text x="180" y="29" text-anchor="middle">signal X = 680</text>
+    <text x="540" y="29" text-anchor="middle">680 + 1024 = 1704</text>
+    <text x="134" y="77" text-anchor="end">signal Y = 37</text>
+    <text x="360" y="119" text-anchor="middle">256 × 192 output pixels</text>
+    <text x="360" y="146" text-anchor="middle">Source origin (32,16)</text>
+    <text x="360" y="173" text-anchor="middle">Step X = 4; magnification = (4,1)</text>
+    <text x="360" y="211" text-anchor="middle">span = 1023 + 1 = 1024 signal units</text>
+    <text x="592" y="123">height = 191 + 1</text>
+    <text x="592" y="145">= 192 rows</text>
   </g>
 </svg>

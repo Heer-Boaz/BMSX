@@ -44,6 +44,76 @@ The upper path selects and captures configuration. The lower path moves data
 at the service edge. Address/count writeback belongs to the serviced channel;
 CONTROL is not rewritten by block completion.
 
+## Follow a buffer through a transfer {#sec-dma-follow-a-buffer-through-a-transfer}
+
+Consider the twenty-word RAM copy used in the BLua example below. The source
+array `source` and destination array `copy0` each occupy 80 bytes of ordinary
+main RAM. They are four-byte aligned and do not overlap. Let S and D denote
+their first byte addresses.
+
+To copy the array in order, DMA must read successive source words and write
+successive destination words:
+
+| Word transferred | Source byte address | Destination byte address |
+|---|---|---|
+| First | S | D |
+| Second | S + 4 | D + 4 |
+| Sixteenth | S + 60 | D + 60 |
+| Seventeenth | S + 64 | D + 64 |
+| Twentieth | S + 76 | D + 76 |
+
+Program READ_ADDR=S and WRITE_ADDR=D, enable both increments, and program
+TRANSFER_COUNT=20. Addresses count **bytes**; the count records **words**.
+After the copy, the next addresses are S+80 and D+80, and the remaining count
+is zero. Programming a count of 80 would request 320 bytes, not this array.
+
+The **block length** controls how much of that transfer is served at once.
+With sixteen-word blocks, the controller first admits sixteen words, leaving
+four for a second block. After the first block, the addresses are S+64 and D+64
+and the remaining count is 4. The final block transfers those four words;
+software does not pad the array to sixteen more words. A smaller block changes
+the service and arbitration boundaries, not the address units or total count.
+
+### A device port is a fixed endpoint {#sec-dma-a-device-port-is-a-fixed-endpoint}
+
+A command stream differs from the RAM copy at its destination. Every command
+word goes to the **same GP0 port**, `0801023cH`; the GPU interprets the words
+as a stream. Enable the source increment to walk the command array, but disable
+the destination increment to keep writing GP0. Advancing this destination by
+four bytes would address GP1 instead of supplying the next word to GP0. The
+pixel coordinates within a command are not DMA destination addresses.
+
+The address and the request condition answer different questions. WRITE_ADDR
+identifies GP0; GX_WRITE says when the GPU can accept a DMA block. Selecting
+GX_WRITE does not fill in WRITE_ADDR, and writing GP0's address does not select
+GX_WRITE. For an ordinary RAM copy, FORCE on both sides permits admission
+without waiting for a device request. In either route, the shared transfer path
+must also be available, and the device's block and payload rules still apply.
+
+### Source reuse and result use {#sec-dma-source-reuse-and-result-use}
+
+Suppose software starts copying the source array, then replaces its final four
+words with data for the next frame before their block is served. DMA reads
+those new words, so the destination can contain sixteen words from the old
+array followed by four from the new one. Block admission captures the addresses
+and control settings, not a private copy of the source bytes.
+
+Keep the source unchanged through DMA completion, then reuse it. For an
+ordinary memory copy with successful bus accesses, completion also makes the
+whole destination available. The polling loops in
+[Copy words in BLua](#sec-dma-copy-words-in-blua) wait for BUSY to clear before
+the next copy uses `source`. The shared bus-fault report must also be checked;
+DONE is a count result, not proof of successful accesses.
+
+For a device route, receiving the words and finishing their work are separate
+events. A GPU command buffer can be released after DMA finishes reading it
+while the GPU is still processing the submitted commands. Publishing the
+target image at that point can expose unfinished drawing. First wait for DMA
+before reusing the source; then use the GPU's ordered completion protocol before
+using its rendering result, and the PCRTC publication edge before displaying
+it. [Send a command stream to GP0](#sec-dma-send-a-command-stream-to-gp0)
+places the DMA wait before its separate GPU-marker and GPU-idle waits.
+
 ## Program a transfer {#sec-dma-program-a-transfer}
 
 1. Reserve an idle channel for the transfer and prepare the source/destination
@@ -65,10 +135,10 @@ endpoints:
 | Memory → fixed GP0 port | 1 | 0 | FORCE | GX_WRITE |
 | GPUREAD port → memory | 0 | 1 | GX_READ | FORCE |
 
-A fixed address is used again for every word. An enabled increment adds four
-bytes after each read or write. Count is the number of words to transfer, not
-the final address, byte length, number of packets or number of blocks. Count 20
-with block length 16 admits a 16-word block and a four-word tail.
+A fixed address is used again for every word; an enabled increment adds four
+bytes after each read or write. For the twenty-word RAM example, select both
+increments, FORCE on both requests and a programmed block length of sixteen.
+Count remains 20, not an address, byte length, packet count or block count.
 
 Both selected requests must be asserted before a nonzero block is admitted.
 For a GP0 route, program GP0's address explicitly and select GX_WRITE on that
@@ -88,7 +158,10 @@ CONTROL = read_increment
         | ((block_length - 1) << 10)
 ```
 
-The following CONTROL words select the example routes:
+For that RAM copy, the request encodings are both zero, the two increment bits
+contribute 3, and `(16−1) << 10` contributes `00003c00H`. Their combination is
+`00003c03H`, used for the `source` → `copy0` sequence below. The following
+CONTROL words select this and the other example routes:
 
 | CONTROL | Operation |
 |---|---|
@@ -300,8 +373,9 @@ and the programmed 1–16 words.
 
 These captured values remain in force through service, including when software
 rewrites the programmed registers. Payload is read from the captured source
-address at service, so changing those bytes before service changes the words
-that will be delivered.
+address at service. This is the old/new-array hazard described under
+[Source reuse and result use](#sec-dma-source-reuse-and-result-use): admission
+captures the addresses, not the bytes stored at them.
 
 ### What happens at service {#sec-dma-what-happens-at-service}
 
@@ -317,7 +391,10 @@ CONTROL bit 0 enables a four-byte source step; bit 1 enables a four-byte destina
 
 Only after the entire block are the resulting read address, write address and remaining count written back to the channel registers. Register values are therefore not a per-word progress display. Destination writes occur during service, not at admission. When the transfer ends, the final address/count words are published before DONE, and DONE is published before the completion IRQ.
 
-Keep source contents unchanged until completion if the transfer must reproduce their original values. Admission alone does not release that requirement. Likewise, admission does not make destination contents final. These are consequences of the ordered reads and writes, not a separate buffer-lifetime mechanism.
+Keep source contents unchanged until completion if the transfer must reproduce
+their original values. Admission alone neither releases the source nor makes
+the destination final. Because each write precedes the next read, overlapping
+source and destination ranges have the additional effect shown next.
 
 ### Worked example: three-word forward overlap {#sec-dma-worked-example-three-word-forward-overlap}
 
@@ -378,7 +455,8 @@ Once admitted, a block retains its captured endpoints, count and CONTROL. A requ
 
 The last read and last write of each admitted block carry BLOCK_END. GPU DMA ingress processes its staged words at this boundary; APU batch scheduling and IMGDEC decode/request updates also use their applicable end-of-block paths. The boundary is not necessarily channel completion.
 
-Payload words are read at the block's service edge, not captured by START. Keep source contents available until their transfer has completed: changing a source buffer after START can change the transmitted words. A destination write can also affect a later source read when the ranges overlap. Capturing an address does not capture the data at that address.
+Source contents and overlapping ranges obey the ordered read/write behavior
+under [Programmed state and an admitted block](#sec-dma-programmed-state-and-an-admitted-block).
 
 ### CPU access while BUSY {#sec-dma-cpu-access-while-busy}
 

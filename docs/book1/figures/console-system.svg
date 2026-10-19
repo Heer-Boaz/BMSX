@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 750" role="img" aria-labelledby="console-system-title console-system-desc">
+  <title id="console-system-title">BMSX program control and storage paths</title>
+  <desc id="console-system-desc">The CPU reads system or cartridge ROM and accesses main RAM. GTE exchanges register operands and results with the CPU; GEO processes addressed memory records. DMA moves mapped words between storage and unit ports. The GPU writes its local memory, which PCRTC reads for video. APU transfer ports reach private sample RAM, from which playback produces stereo output; ROM can also supply playback. Dashed arrows denote CPU programming and observation. Solid arrows denote data access, not electrical buses. Software constructs GPU commands from geometry results.</desc>
+  <defs>
+    <marker id="console-system-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#111"/></marker>
+  </defs>
+  <g fill="#f3f3f3" stroke="#777" stroke-width="1.5">
+    <rect x="15" y="395" width="520" height="285"/>
+    <rect x="585" y="395" width="500" height="285"/>
+  </g>
+  <g fill="#fff" stroke="#111" stroke-width="2">
+    <rect x="20" y="25" width="270" height="75"/>
+    <rect x="415" y="25" width="270" height="75"/>
+    <rect x="810" y="25" width="270" height="75"/>
+    <rect x="20" y="170" width="270" height="85"/>
+    <rect x="415" y="170" width="270" height="85"/>
+    <rect x="810" y="170" width="270" height="85"/>
+    <rect x="35" y="435" width="135" height="70"/>
+    <rect x="215" y="435" width="295" height="70"/>
+    <rect x="215" y="565" width="145" height="70"/>
+    <rect x="405" y="565" width="105" height="70"/>
+    <rect x="605" y="435" width="170" height="70"/>
+    <rect x="820" y="435" width="245" height="70"/>
+    <rect x="820" y="565" width="245" height="70"/>
+    <rect x="605" y="565" width="170" height="70"/>
+  </g>
+  <g fill="none" stroke="#111" stroke-width="2" marker-end="url(#console-system-arrow)">
+    <path d="M290 62 H415"/>
+    <path d="M155 170 V140 H465 V100" marker-start="url(#console-system-arrow)"/>
+    <path d="M685 62 H810" marker-start="url(#console-system-arrow)"/>
+    <path d="M290 212 H415" marker-start="url(#console-system-arrow)"/>
+    <path d="M155 255 V300 H945 V255" marker-start="url(#console-system-arrow)"/>
+    <path d="M450 255 V345 H102 V435"/>
+    <path d="M650 255 V345 H690 V435"/>
+    <path d="M170 470 H215"/>
+    <path d="M287 505 V565"/>
+    <path d="M360 600 H405"/>
+    <path d="M775 470 H820"/>
+    <path d="M942 505 V565"/>
+    <path d="M820 600 H775"/>
+  </g>
+  <g fill="none" stroke="#111" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#console-system-arrow)">
+    <path d="M550 100 V170"/>
+    <path d="M685 80 H745 V212 H810"/>
+    <path d="M415 85 H340 V375 H275 V395"/>
+    <path d="M685 90 H720 V375 H850 V395"/>
+  </g>
+  <g fill="#111" font-family="serif" font-size="23" text-anchor="middle">
+    <text x="155" y="55">System / cartridge ROM</text>
+    <text x="155" y="84" font-size="19">Instructions and read-only data</text>
+    <text x="550" y="55">BLua32 CPU</text>
+    <text x="550" y="84" font-size="20">Game and BIOS execution</text>
+    <text x="945" y="55">GTE</text>
+    <text x="945" y="84" font-size="20">Register-fed arithmetic</text>
+    <text x="155" y="203">Main RAM: 4 MiB</text>
+    <text x="155" y="234" font-size="20">Writable records and buffers</text>
+    <text x="550" y="203">DMA: two channels</text>
+    <text x="550" y="234" font-size="20">Mapped-word transfers</text>
+    <text x="945" y="203">GEO</text>
+    <text x="945" y="234" font-size="20">Addressed geometry jobs</text>
+    <text x="352" y="50" font-size="18">Reads</text>
+    <text x="748" y="45" font-size="18">Registers</text>
+    <text x="374" y="198" font-size="18">Words</text>
+    <text x="810" y="289" font-size="20">GEO records / results</text>
+    <text x="183" y="337" font-size="20">GP0 words</text>
+    <text x="775" y="337" font-size="20">APU DATA words</text>
+    <text x="275" y="421" font-size="19">GRAPHICS</text>
+    <text x="835" y="421" font-size="19">SOUND</text>
+    <text x="102" y="465">GPU</text>
+    <text x="102" y="491" font-size="19">GP0</text>
+    <text x="362" y="465">Local memory: 2 MiB</text>
+    <text x="362" y="491" font-size="19">Pixels, textures and palettes</text>
+    <text x="287" y="606">PCRTC</text>
+    <text x="457" y="606">Video</text>
+    <text x="690" y="465">APU transfer</text>
+    <text x="690" y="491" font-size="19">Port and FIFO</text>
+    <text x="942" y="465">Sample RAM</text>
+    <text x="942" y="491" font-size="19">512 KiB</text>
+    <text x="942" y="595">APU: 16 slots</text>
+    <text x="942" y="621" font-size="19">Playback and mixing</text>
+    <text x="690" y="595">Stereo output</text>
+    <text x="690" y="621" font-size="19">44,100 frames/s</text>
+    <text x="393" y="544" font-size="19">Read selected image</text>
+    <text x="835" y="661" font-size="19">APU also reads system / cartridge ROM</text>
+    <text x="275" y="661" font-size="19">Drawing and display share local memory</text>
+    <text x="125" y="718" font-size="20">Data access</text>
+    <text x="495" y="718" font-size="20">CPU programming / observation</text>
+    <text x="785" y="741" font-size="19">Software constructs drawing packets from GTE / GEO results.</text>
+  </g>
+  <g fill="none" stroke="#111" stroke-width="2" marker-end="url(#console-system-arrow)">
+    <path d="M20 712 H60"/>
+    <path d="M270 712 H320" stroke-dasharray="7 5"/>
+  </g>
+</svg>

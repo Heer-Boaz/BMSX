@@ -33,11 +33,29 @@ Repository workflows belong in the separate [development companion](../programmi
 
 ## Writing and reviewing
 
-Write English for a professional cartridge programmer. Introduce the unit's
-purpose, resources and connections; explain data flow and programming; then give
-complete reference details. Distinguish explanation, instructions and lookup
-material. BIOS interfaces need signatures, arguments, units, results and errors,
-not artificial register descriptions.
+Write English for an experienced programmer who is new to BMSX. Build the
+concepts needed to understand the interface: what result the programmer wants,
+which operation produces it, and how its operands and settings are represented.
+Explain the meaning and units of a quantity before introducing its packed words
+or bit fields. Carry a small example through the explanation, figure, calculation
+and register sequence using the same names and values.
+
+Choose the exposition for the reading task rather than imposing one chapter
+template. A system overview gives a map of the units, memories and connections.
+Geometry explanation starts with spatial relationships and follows their
+calculation into programmable parameters. An operating procedure explains a
+concrete situation and the guarantee required before showing where the command
+belongs. A register or command entry is independently usable: identify its
+inputs, operation, results, affected state and timing, with a reference to the
+conceptual explanation instead of repeating the lesson. A specific card device
+can proceed directly from its purpose and essential conditions to its controls.
+BIOS entries use signatures, arguments, units, results and errors.
+
+Give each figure a definite explanatory job: a memory relationship, coordinate
+change, selection decision or timing boundary. Text, diagrams and formulas
+should explain the same operation, not require the reader to reconstruct their
+relationship. Functional reasons for an interface belong in this explanation;
+the history of its implementation does not.
 
 Give register addresses, access, bit ranges, reset, encodings, write effects and
 visibility edges. Include capacities, timing, transfer-route differences,
@@ -64,9 +82,15 @@ technical completeness. Recheck findings and affected interfaces, not every
 unchanged chapter after a local correction. A successful render is not a source
 review or a declaration that a manual is complete.
 
-Historical manufacturer manuals inform exposition, never BMSX facts. Sony's
+Historical manufacturer manuals inform exposition, never BMSX facts. SEGA's
+[Saturn Overview](https://antime.kapsi.fi/sega/files/ST-103-R1-040194.pdf)
+builds system orientation; Sony's
 [Fall 1996 GTE seminar](https://psx.arthus.net/sdk/Psy-Q/DOCS/TRAINING/FALL96/gte.pdf)
-is one example of coordinate/data-flow explanation before register use.
+connects spatial relationships to calculations; the
+[MSX Technical Data Book](https://download.file-hunter.com/Manuals/msx_technical_data_book.pdf)
+introduces the slot concept before specifying its interface. Use their different
+explanation methods for the appropriate task, not their addresses or a common
+chapter template.
 `docs/book1_text.pdf` is a style example only, not an authoring source or attachment.
 
 ## Native document structure
