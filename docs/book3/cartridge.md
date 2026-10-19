@@ -356,6 +356,126 @@ socket. Rebuilding a directory does not pin a source or complete an outstanding
 hardware operation. Preserve the selection and source lifetime required by the
 [DMA](../book1/dma.md) or [APU](../book1/apu.md) operation that uses the bytes.
 
+### Image metadata and atlas coordinates
+
+Image metadata separates the original image's dimensions from its location
+within a packed texture atlas. Atlas coordinates locate source pixels; they do
+not specify where the atlas resides in VRAM.
+
+| `imgmeta` fields | Meaning |
+|---|---|
+| `width`, `height` | Original image dimensions in pixels, not atlas dimensions. |
+| `texture_u`, `texture_v` | Image top-left in atlas pixels, not normalized UVs or page-local eight-bit coordinates. |
+| `gx_atlas_id` | Resource ID of the cartridge texture atlas. Its texture record supplies the compressed stream; the ID is neither a VRAM address nor a texture-page index. |
+| `gx_source_x`, `gx_source_y` | Fixed system-image source position in Direct16 VRAM, supplied instead of `gx_atlas_id`. |
+| `gx_page_tiles` | Optional source rectangles for an image split at 256 × 256-pixel atlas-page boundaries. |
+
+For system images, the supplied source position already combines the system
+atlas origin with `texture_u` and `texture_v`. Its horizontal coordinate counts
+16-bit VRAM words, with one Direct16 pixel per word; its vertical coordinate
+counts rows. Use those supplied fields rather than hardcoding the system atlas
+origin. These fields describe the system-image route, not a substitute for
+missing cartridge-atlas metadata.
+
+Each `gx_page_tiles` entry describes a source rectangle and its position within
+the original image:
+
+| Tile fields | Units and meaning |
+|---|---|
+| `u`, `v` | Source top-left in atlas pixels. |
+| `x`, `y` | Pixel offset within the original image. |
+| `w`, `h` | Rectangle dimensions in pixels. |
+
+Tiles are ordered row-then-column. Each rectangle ends at the next page edge
+or original-image edge. For an untransformed image, place its output at the
+image position plus the tile's
+`x` and `y`. Source coordinates can exceed 255: the packet uses their low eight
+bits together with separate texture-page selection. Do not confuse the complete
+atlas coordinate with a page-local UV byte. See [GPU: Locate texture texels and
+palette colors](../book1/gpu.md#locate-texture-texels-and-palette-colors).
+
+### Texture metadata and transfer counts
+
+The packed-atlas route supplies Palette4 (`mode = 0`) or Direct16 (`mode = 2`).
+These are format codes, not literal bits-per-pixel values. The GPU's Palette8
+mode (`1`) remains available through its raw texture interface; it is not an
+additional packed-atlas format supplied by this route.
+
+| `texturemeta` field | Representation and unit |
+|---|---|
+| `mode` | Palette4 or Direct16 format code. |
+| `word_width` | Horizontal upload extent in **16-bit VRAM words**. Direct16 stores one pixel per word; Palette4 stores four indices per word. |
+| `height` | Atlas upload rows, not the original image's height within that atlas. |
+| `texture_word_count` | Decoded texture payload in **32-bit words**, excluding GP0 headers and CLUT payload. |
+| `clut_word_count` | Decoded CLUT payload in **32-bit words**: zero for Direct16; eight for Palette4, supplying sixteen 16-bit colors. |
+
+For atlas pixel dimensions `W × H`, Direct16 uses `word_width = W`; Palette4
+uses `(W + 3) >> 2`. Palette4 rounds each row to a complete 16-bit word and leaves
+its unused final nibbles zero. The texture payload then pairs consecutive
+16-bit words into 32-bit words, low half first. Pairing continues across row
+boundaries: an odd-width row does not acquire a separate 32-bit padding word.
+
+Consequently, `texture_word_count = (word_width × H + 1) >> 1`. If the complete
+texture has an odd number of 16-bit words, the final payload word has zero in
+its unused high half. The CLUT begins after that complete 32-bit texture
+payload, not in its spare half. GP0 writes only the declared texture extent;
+the unused high half does not add another VRAM word.
+
+Keep the three stream lengths separate:
+
+| Quantity | Count in 32-bit words |
+|---|---|
+| Compressed input | `record.len >> 2`, including the IMGDEC stream header and compressed data. The emitted stream's byte length is a multiple of four. |
+| Decoded payload | `texture_word_count + clut_word_count`; excludes generated packet headers. |
+| Generated GP0 output | Texture payload plus three header words; if CLUT count is nonzero, add its payload and another three header words. |
+
+The stream header also contains the decoded texture and CLUT counts. A
+compressed-input count is not a replacement for either count. The separate
+texture size word is `word_width | (height << 16)`, not the original image's
+pixel width or a 32-bit payload count. IMGDEC generates a 16 × 1-word CLUT
+upload when the CLUT payload is present. See [IMGDEC: Generated GP0
+output](../book1/imgdec.md#generated-gp0-output) for the complete packet and
+count rules.
+
+VRAM placement is another operation. Reserve the texture rectangle and any
+CLUT without overlapping the [firmware reservation](../book1/memory.md#firmware-reservation-in-vram)
+or other live readers. The atlas helper reserves at least sixteen VRAM words
+of width and one additional row for Palette4, placing the CLUT just below the
+texture. Its horizontal alignment is 64 VRAM words for Palette4 and 256 for
+Direct16; both use 256-row vertical alignment. These choices preserve the atlas
+page grid. With another placement, account for the actual source positions
+when selecting pages and splitting rectangles. The helper's alignments are not
+extra GPU alignment rules or image dimensions. The upload still uses
+`word_width × height`.
+
+### Library upload boundary
+
+The `cartlib/gx/imgdec` operation is
+`upload(source, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination_word)`.
+
+| Arguments | Meaning |
+|---|---|
+| `source`, `source_word_count` | Compressed stream's mapped byte address and 32-bit input-word count. |
+| `texture_word_count`, `clut_word_count` | Decoded payload counts from texture metadata. |
+| `destination` | Texture origin: horizontal 16-bit VRAM-word coordinate in the low half, row in the high half. |
+| `size` | `word_width \| (height << 16)`. |
+| `clut_destination_word` | CLUT origin in the same word/row coordinate representation. |
+
+The helper first waits for earlier DMA0 and DMA1 work, then programs IMGDEC,
+arms DMA1 from fixed IMGDEC DATA to fixed GPU GP0, arms DMA0 from the
+incrementing source to fixed IMGDEC DATA, and issues START. It returns without
+waiting for the new upload. Its idle waits depend on the DMA library's
+completion callbacks; retain that dispatch route.
+
+Published atlas placement and prepared draw words do not establish that new
+texels have arrived. Keep source lifetime, both DMA completions, IMGDEC's
+terminal status and downstream GPU completion distinct. A decoder fault can
+leave an armed DMA channel waiting, while an upload's delivery does not itself
+acknowledge display publication. Follow the [IMGDEC completion and recovery
+rules](../book1/imgdec.md#interrupts-and-fault-recovery) and the [GPU stream
+handoff](../book1/gpu.md#hand-a-gp0-stream-between-cpu-and-dma) before reusing
+their resources or depending on the uploaded contents.
+
 ## Two-card programming example
 
 This example gives the bootable card in **socket 0** ROM, 256 bytes of RAM and a

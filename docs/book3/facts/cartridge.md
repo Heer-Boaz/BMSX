@@ -325,3 +325,78 @@ a TS/C++ runtime disagreement or an intended ASCII hardware restriction.
 ASCII token equivalence is unaffected. No runtime fix, fallback, new source-name
 restriction, all-input guarantee or malformed-name ABI is inferred. Hold the
 broader lookup-function reference; raw spans/record field meanings remain usable.
+
+### Image metadata and atlas coordinates
+
+- `ImgMeta`/tile field names are declared in
+  `toolchain/ts/rompack/assets.ts:40–60`. Original width/height count pixels;
+  texture_u/v count atlas pixels, not normalized or page-local UVs. Producers
+  `scripts/rompacker/atlasbuilder.ts:308–315`,
+  `scripts/rompacker/rombuilder.ts:365–374`; image crop consumer
+  `toolchain/ts/rompack/gx_texture_codec.ts:176–182`.
+- Cartridge gx_atlas_id names a texture resource, not VRAM placement. System
+  images instead emit gx_source_x/y = fixed Direct16 atlas origin + texture_u/v.
+  `scripts/rompacker/rombuilder.ts:379–384,982–997`;
+  `cartlib/gx/image.lua:195–205`, `cartlib/gx/atlas.lua:14–25,57–81,113–116`.
+  Fixed source x counts16bit words/Direct16 pixels, y rows. Numeric firmware
+  placement remains owned by the existing reservation reference, not hardcoded
+  in the new public source-format explanation.
+- Optional gx_page_tiles splits at256x256pixel boundaries, emitted rows then
+  columns. Tileu/v atlaspixels, x/y originalimage offsets, w/h pixel extents;
+  each ends at nextpage/originaledge. Producer
+  `scripts/rompacker/atlasbuilder.ts:44–65,316–324`, page size
+  `scripts/rompacker/texture_atlas_contract.ts:2–3`. Actual consumers
+  `cartlib/gx/image.lua:229–256`,
+  `cartlib/component/surface_component.lua:16–31`,
+  `cartlib/gx/command_list.lua:301–330` retain source coordinates and add tile
+  offsets to untransformed destinations. Packet UV low8 and separatepage:
+  `cartlib/gx/gp0.lua:48–69`.
+
+### Texture metadata, count units and upload boundary
+
+- TextureMeta fields mode/word_width/height/texture_word_count/clut_word_count
+  declared `toolchain/ts/rompack/assets.ts:63–69`; actual encoded stream and
+  copied metadata `scripts/rompacker/rombuilder.ts:982–997`.
+- Paired mode enum0Palette4/1Palette8/2Direct16:
+  `machine/ts/spec/gx/gp0.ts:50–52`, `machine/cpp/spec/gx/gp0.h:52–54`.
+  NativeGxTexture producer union and selection supply only Palette4/Direct16:
+  `toolchain/ts/rompack/gx_texture_codec.ts:14–28`,
+  `scripts/rompacker/rombuilder.ts:1247–1256`. This is packed-route coverage,
+  not removal of raw hardware Palette8, already canonical in GPU.
+- Encoder units/padding: `toolchain/ts/rompack/gx_texture_codec.ts:66–96,123–173`.
+  ForWpixels,Hrows, word_width16bitVRAMwords = Wdirect16 or(W+3)>>2Palette4.
+  Texturepayload32bitwords=(word_width*H+1)>>1, excluding headers/CLUT.
+  CLUT32bitwords=0direct16 or8Palette4 (16colors). Palette4 pads row nibbles
+  to16bit words. Both formats pair16bitwords low-first across rowboundaries;
+  only final unmatched highhalf is zero. CLUT follows padded texture32bitspan.
+  GPU writes declared16bitextent only: `machine/ts/machine/devices/gx/gpu.ts:1101–1112`,
+  `machine/ts/render/backend/gx_gpu_render_rules.ts:230–237`,
+  `machine/cpp/render/backend/gx_gpu_render_rules.h:234–241`,
+  paired software writes `machine/ts/render/backend/software/gx_gpu_commands.ts:75–99`
+  and `machine/cpp/render/backend/software/gx_gpu_commands.cpp:40–73`.
+- Stream record.len bytes converts via >>2 in `cartlib/gx/atlas.lua:62–81`;
+  emitted length is multiple4, with3headerwords and token/literal data:
+  `toolchain/ts/rompack/imgdec_codec.ts:148–183`. Decoded payload excludes GP0
+  headers, `:67–79,199–204,258–262`. Generatedoutput=texturecount+3 plus
+  CLUTcount+3 ifnonzero: `cartlib/gx/imgdec.lua:14–17`,
+  `machine/ts/machine/devices/imgdec/controller.ts:369–376`,
+  `machine/cpp/machine/devices/imgdec/controller.cpp:270–277`. CLUTheader fixed
+  16x1 (=00010010H): samecontrollers `:433–445`/`:338–350` and paired
+  `gp0.ts:35–37`/`gp0.h:37–39`; not256entryPalette8.
+- Atlas helper allocation choices: `cartlib/gx/atlas.lua:10–12,64–88,160–188`.
+  Palette4 width>=16VRAMwords, height+1 withCLUTbelowtexture, Xalignment64words;
+  Direct16 Xalignment256words. Uploadsize remains word_width|height<<16.
+  Both Yalignments256rows are actually passed by allocation/replacement paths
+  `cartlib/gx/atlas.lua:236–242,260–275`, with span256 from
+  `cartlib/gx/gp0.lua:109`. Aligned axes preserve the atlas256pixel pagegrid;
+  raw page/UV decoding remains canonical GPU behavior at other placements.
+  These are library placement policies, not extra GPU coordinate constraints.
+- Seven-argument upload form and order in `cartlib/gx/imgdec.lua:11–25`:
+  waitpreviousDMA0/1, programcounts/destinations/size, startDMA1output,
+  DMA0input, thenSTART; returns without waiting for newwork. Source pointer and
+  allcounts come from atlasconsumer `cartlib/gx/atlas.lua:181–188`.
+  Actualincrement/fixedendpoints `cartlib/dma.lua:19–26,91–105`;
+  IRQcompletionsequences and waits `:28–64`. Placement/drawwordpublication
+  precedesupload `cartlib/gx/atlas.lua:52–55,160–188,278–280`. Existing IMGDEC
+  completion/fault and GPU transport/render/publication references retain
+  their independent boundaries; no new synchronous-upload promise inferred.

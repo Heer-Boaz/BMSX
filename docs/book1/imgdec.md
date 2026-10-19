@@ -497,6 +497,10 @@ The expected output-word count is calculated as:
 
 The combined CLUT endpoint `T + C`, decoded count increments, and subtraction of decoded count from a stage endpoint also use modulo-`2^32` arithmetic. Count overflow is not saturated or rejected. Do not replace this arithmetic with an assumed nonwrapping image-size calculation.
 
+For packed ROM atlases, [Book III: Texture metadata and transfer
+counts](../book3/cartridge.md#texture-metadata-and-transfer-counts) maps the
+resource's byte length and decoded-payload metadata to these three counts.
+
 ### Size words and count mismatches
 
 The downstream GP0 size interpretation is distinct from IMGDEC's `T` and `C` counters:
