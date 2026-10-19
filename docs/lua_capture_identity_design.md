@@ -1,17 +1,8 @@
 # Lua capture identity and live slot retention
 
-## Boundary and scope
-
-Removing the title member from `nemesis_s/scenes/root.lua` used to compact
-`root_scene.register` from six captures to five. Its director slot would then
-read the old title cell. The rejection was necessary; removing the check or
-padding descriptors after optimization could not repair the compiled program.
-
-Live compilation now retains the six original slots before lowering. Source
-removal, Undo and reapplication run through ordinary Save & Hot Resume and
-`<init>`, preserving the live heap. This is the compiler prerequisite, **not**
-the Scene Editor Remove button or a general-purpose heap migration system.
-
+Live compilation preserves capture-cell identity through matched source bindings
+and installed slot order. This is a compiler/Hot Resume responsibility, not a
+Scene Editor command or a guest-heap migration mechanism.
 
 ## Production references
 
@@ -35,19 +26,17 @@ is not the desired BMSX semantics and is not an escape route around cell identit
 
 | Owner | TypeScript | C++ | Meaning |
 | --- | --- | --- | --- |
-| Capture classification | `CapturedLocalKind` | Same numeric enum in tooling | Local, parameter or implicit receiver; not spelling-based classification. |
-| Compiler | `CapturedLocalDebug` | No native compiler | Defining `functionId`, name, kind and declaration range; one record per captured binding. |
-| Compiler | `upvalueBindingsByProto` | No native compiler | Closure slot → compilation-local captured declaration index. Transit captures share the ultimate origin. |
+| Capture classification | `LexicalDeclarationKind` | Same numeric enum in tooling | Local, parameter or implicit receiver; not spelling-based classification. |
+| Compiler | `LexicalDeclarationDebug` | No native compiler | Defining function, name, kind, immutability and source range, shared by lexical scopes and physical capture routes. |
+| Compiler | `upvalueBindingsByProto` | No native compiler | Closure slot → compilation-local lexical declaration index. Transit captures share the ultimate origin. |
 | Compiler | `functionDefinitionsByProto` | No native compiler | Function syntax independent of its durable id; synthetic functions have no syntax. |
-| Linked symbols | `capturedLocals`, `upvalueBindingsByFunction`, `functionDefinitions` | Same fields in tooling symbols | Linker-owned indices and current defining syntax. A removed origin has `definition: null` / `std::nullopt`. |
+| Linked symbols | `lexicalDeclarations`, `upvalueBindingsByFunction`, `functionDefinitions` | Same fields in tooling symbols | Linker-owned indices and current defining syntax. A removed origin has `definition: null` / `std::nullopt`. |
 | Link result | `functionProtoIndices` | No native linker | Current object proto per linked slot, or `-1` for a retained tombstone. Build-only; not serialized hardware data. |
 | Physical function record | `UpvalueDesc { inStack, index }` | Existing upvalue words | Creation route through the current parent's register or closure slot. |
 | CPU | Existing cells and function-record addresses | Same physical representation | No source identities, padding, new flags, cell traversal or migration. |
 
-Debug symbols share one current mirrored structure without a schema version or
-legacy reader. The redundant capture debug-visibility `scope` is removed:
-actual immutable binder scopes, not debugger visibility ranges, now establish
-lexical correspondence. Normal local-debug slots retain their visibility ranges.
+Immutable binder scopes establish lexical correspondence. Normal local-debug
+slots separately retain debugger visibility ranges.
 
 ## Source matching and allocation
 
@@ -86,92 +75,17 @@ There is no new per-frame work or metadata access in `CLOSURE`, `GETUP`, `SETUP`
 cell closing, IRQ dispatch, GC, save state, rewind or render submission.
 
 Myers has O(ND) time complexity. The retained frontier is O(N+M); the path graph
-has a quadratic worst case. Large unrelated rewrites were not benchmarked; this
-is not a constant-time guarantee. No arbitrary query cap admits an unsafe map.
+has a quadratic worst case. Capture retention does not impose a query cap or
+substitute approximate source correspondence.
 
-## Validation — 2026-09-08
+## Scope boundaries
 
-Baseline: `0e4c7bf06`. Artifacts: `/tmp/bmsx-capture-retention/`.
+Capture retention matches current lexical declarations; it does not synthesize
+new cells for removed or reparented defining locals. Anonymous function identity
+comes from syntax correspondence, not reuse of a source coordinate. Generated
+source requires its corresponding authored documents before matching.
 
-- Lua: **922 pass**, one pre-existing skip (923 total). Fourteen retention tests
-  cover contraction, permutation, complete disuse, repeated undo, moved parent
-  registers, real closed cells, newly created closures, nested shared writers,
-  implicit receivers/parameters, O3 initializer retention through subsequent
-  undo, and physically relocated paused frames with open cells. Additional
-  tests cover repeated anonymous-source shifts, identical ranges across modules,
-  reserved ids, live tombstone origins and removed-origin rejection.
-- Source correspondence: exhaustive two-token sequences through length six
-  agree with an independent dynamic-programming LCS oracle. Tests include
-  CRLF/comments, separated edits, shadowing/redeclaration, added/removed scopes,
-  parameters, repeat conditions, anonymous body edits and missing/deleted syntax.
-- ROM tooling: **122 pass**. Native rebuilt CTest: **28/28 pass**. Codec tests
-  include nullable origin/function definitions and numeric capture kinds.
-  Actual BIOS and Nemesis full symbols pass **TS → C++ → TS** decoded equality.
-- Actual Studio browser workflows: **software, WebGL2 and WebGPU pass**. The new
-  test removes the real title field using the existing lexer-owned source edit,
-  then exercises Save & Hot Resume → source Undo → reapply → Undo. All four
-  installations retain the original six cell slots and the same living title
-  actor. Normal `<init>`, further property editing, explicit reboot, rewind,
-  breakpoint/fault repair, source Save and AEM workflows also pass.
-- All three final screenshots are byte-identical; the software result was
-  visually inspected. Expected negative-workflow errors and existing resource
-  404s remain in logs; no uncaught browser errors are accepted.
-- Lua and IDE typechecks pass. Tests-project typechecking has exactly the same
-  **52 baseline diagnostics**. Strict boundaries, core parity, indentation and
-  `git diff --check` pass. Builds and audits are not substitutes for the above
-  CPU and actual-host evidence.
-
-### Measured cost
-
-Cold BIOS and Nemesis executable images remain byte-for-byte identical:
-**294,780 B** and **634,580 B**. Existing metadata other than the changed capture
-schema and added function definitions also matches the baseline.
-
-| Tooling symbols | Before | After |
-| --- | ---: | ---: |
-| BIOS | 2,718,548 B | 2,723,734 B |
-| Nemesis | 11,102,830 B | 11,090,430 B |
-
-Node 22.23.1, actual 179-module Nemesis O3 compilation from retained parses,
-three warm-ups and seven forced-GC samples:
-
-| Compilation | Median time | Median retained compiled-result heap |
-| --- | ---: | ---: |
-| Baseline cold | 1,040.17 ms | 17,597,584 B |
-| Current cold | 1,020.12 ms | 17,603,504 B |
-| Current live, title-member removed | 996.72 ms | 17,538,008 B |
-
-These differences are not a speedup claim: the edit also removes source and
-sampling/JIT noise remains. They show no material regression in this targeted
-sample. They are not whole-build peak memory, native tooling memory, or a
-33 MHz guest performance measurement.
-
-## Remaining boundaries
-
-Immutable `require` roots (and their const aliases) now lower nested reads to
-the existing module export slot instead of an importing-local cell. Mutable
-aliases, member snapshots and a module's unpublished own root remain locals.
-This follows the compiler-owned import binding used by
-[Luau](https://github.com/luau-lang/luau/blob/master/Compiler/src/Compiler.cpp),
-without adding an opcode. A callback may therefore start using an imported
-component during Hot Resume without changing its closure layout. O0/O3 tests
-retain and repeatedly invoke the original closure; the real Studio actor
-experiment also accepted that edit through Save & Hot Resume. This does not
-synthesize genuinely new captured locals.
-
-- New cells and deleted/reparented defining locals are not synthesized. Unmatched
-  declaration renames or source-function syntax still reject; this is not a
-  universal Edit and Continue implementation.
-- The existing continuation-PC matcher is unchanged. Arbitrary multi-edit live
-  stack relocation is not proved by successful capture matching.
-- Source-mapped generated code needs its matching authored source documents;
-  absent sources cannot supply a correspondence. General generated-code live
-  regeneration is not established by the ordinary Lua/Scene workflow above.
-- A removed anonymous function does not recover an old identity merely by
-  reoccupying its coordinates. No general source-history identity service was
-  introduced.
-- The actual Remove button, pending-draft admission, post-removal focus and
-  visible-selection handling belong to the separate `IDE-SCENE-MEMBER-REMOVE-01`
-  UI slice. Its input-level proof now extends the source-only capture trial
-  described above; see the scene-authoring design. The compiler slice itself
-  introduced no button or compatibility feature flag.
+Continuation-PC mapping is a separate revision proof. Matching captures alone
+does not establish that a paused instruction can resume in a changed function.
+Scene commands, widget drafts, focus and visible selection belong to their
+source-authoring owners, not this compiler path.

@@ -1406,8 +1406,9 @@ The code pane owns search cleanup and model/view detachment. A non-code pane has
 no dependency on a previous code model to close its widgets or measure its own
 bounds. Shared workbench geometry excludes the code gutter. Pagehide captures
 accepted state without blurring a draft; normal shutdown detaches focus and then
-checkpoints the still-live inputs before destroying controllers. See
-[`workbench_session.md`](../docs/workbench_session.md) for references and gates.
+checkpoints the still-live inputs before destroying controllers. Session tests
+and the retained-checkpoint cost probe live in
+`tests/conformance/runtime_replay`, with the ordinary workspace storage tests.
 
 ### Working-copy save ownership
 
@@ -1590,7 +1591,8 @@ each match names its own interval, independently of sorted result position.
 unmarked ellipsis. Visible rows cache glyph advances by font/width and run
 geometry by query generation. Drawing submits those string spans through the
 existing overlay API, without substring allocation or a second query/matching
-pass. See `docs/quick_input_highlights.md` for evidence and limits.
+pass. Matchers and label tests cover source spans, case-fold expansion and
+query/font/width invalidation alongside their actual owners.
 
 `contrib/resources/quick_access.ts` produces display items referencing the
 source owner's exact `RuntimeResource` objects. The path is displayed once,

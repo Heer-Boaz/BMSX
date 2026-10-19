@@ -3,7 +3,7 @@
 Status: queryownership en commandmatching geïmplementeerd; het interactiecontract
 staat afzonderlijk in `quick_input_interaction.md`. Symbol-/locationkeuzes zijn
 gemigreerd volgens `source_quick_access.md`; matchpresentatie volgt
-`quick_input_highlights.md`. File/symbol-fuzzymatching blijft open A06-werk.
+de [workbench Quick Input owner](../ide/ARCHITECTURE.md#workbench-quick-input). File/symbol-fuzzymatching blijft open A06-werk.
 De providergrens alleen sluit die niet.
 
 ## Productievoorbeelden en live eigenaar

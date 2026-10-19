@@ -2,7 +2,7 @@
 
 Status: implemented and validated (2026-09-11). This slice replaces the old
 symbol/reference/definition popup. Fuzzy symbol matching remains separate A06
-work; match presentation follows `quick_input_highlights.md`. Neither changes
+work; match presentation follows the [workbench Quick Input owner](../ide/ARCHITECTURE.md#workbench-quick-input). Neither changes
 semantic resolution or graph edits.
 
 ## Production references
