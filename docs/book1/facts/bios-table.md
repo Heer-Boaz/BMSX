@@ -17,25 +17,20 @@ architecture document, reference PDF or stock-Lua behavior is input.
   **Protected calls and coroutines** owns error interception and retained
   earlier effects. **Memory** owns typed BSS, module layout and startup.
 
-## Publication stop: length is a producer contract, not a notation fix
+## Current length-producer disposition
 
-The generic SETT/rawset boundary-refill disagreement remains open at
-[CPU Table semantics](cpu-table-semantics.md), section 4, and
-[the actual CPU execution evidence](cpu-values-execution.md). TS general
-boundary refill scans across the hash portion
-(`machine/ts/machine/cpu/table.ts:801-812,1426-1440`); native generic SETT
-reaches the array-only scan
-(`machine/cpp/machine/cpu/cpu_dispatch.inl:152-161`,
-`machine/cpp/machine/cpu/table.h:36-43,172-184`). The same CPU program returns
-length5→1→5 versus5→1→4, both33 charged cycles; key5 remains50.
+The generic SETT/rawset boundary-refill disagreement was resolved by native
+owner fix `f13fad92f`. [CPU Table semantics](cpu-table-semantics.md), section 4,
+records the shared cross-array/hash refill scanner; [actual CPU execution
+evidence](cpu-values-execution.md#table-boundary-refill-historical-and-current-instruction-execution)
+now returns `5,1,5` in 33 charged cycles in both runtimes. The earlier
+`5,1,5` versus `5,1,4` rows and the linked supplements' length-STOP wording are
+historical for this specific producer difference.
 
-All six procedures can be described from their shared BIOS source, but naming
-their initial `#target` result L does not establish a complete common length
-contract. Default/relative intervals and post-mutation length retain this stop.
-Passing normal recipes, explicit tuple counts and supplemental vectors do not
-clear it. The chapter remains a DRAFT with affected coverage open. No runtime,
-BIOS or compiler repair is inferred; all seven earlier runtime-owner questions
-and the separate bios-base BZ01 source-producer question remain open.
+The six procedures consume the maintained length defined in the CPU chapter;
+they do not define a separate length rule. Only the inherited Table-length
+hold is closed here. Other CPU/compiler questions, historical execution-scope
+limits and final print acceptance are not closed by this owner fix.
 
 ## Bounded paired execution, separate from the ordinary cartridge
 

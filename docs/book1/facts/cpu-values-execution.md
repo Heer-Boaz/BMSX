@@ -1,6 +1,6 @@
 # CPU value supplement: bounded direct paired execution
 
-2026-10-17, baseline5a5a26e15; no runtime/formatter/table/POW edits. Root ran the
+Historical observations: 2026-10-17, baseline5a5a26e15; no runtime/formatter/table/POW edits in that extraction. Root ran the
 actual shared owners, not an ideal printf, host pow or foreign Lua oracle.
 Current native targets bmsx_cpu_supervisor_tests and bmsx_table_inspection_tests
 were rebuilt with no work needed before these observations.
@@ -68,9 +68,9 @@ claim is inferred from those24rows. The extractor's paired owner facts, not
 these tests alone, define the normative explanatory claims.
 
 
-### Stopped Table boundary refill: actual paired instruction execution
+### Table boundary refill: historical and current instruction execution
 
-The direct owner probes add six boundary rows. With array capacity4/hash8,
+The historical direct owner probes add six boundary rows. With array capacity4/hash8,
 fill numeric1..5, delete2 and refill2 with the generic setter: TS length5,
 native length4, while key5 still reads50 in both. The integer setter refill
 returns5 in both. Exactly one of the30 rows differs; do not describe the full
@@ -79,14 +79,29 @@ Table probe logs as byte-equal.
 Separate actual CPU programs `/tmp/bmsx-cpu-table-guest-probe.{ts,cpp}` use the
 central writeInstruction and existing test system-ROM linker. Function maxStack6,
 NEWT R0,4,8; SETT keys1..5 with values10..50; LEN R3; delete2 via SETT;
-LEN R4; restore2=20 via SETT; LEN R5; RET R3,3. Observed logs:
+LEN R4; restore2=20 via SETT; LEN R5; RET R3,3. Historical pre-fix logs:
 
 ```
 TS:     SETT-LEN 5 1 5 cycles 33
 native: SETT-LEN 5 1 4 cycles 33
 ```
 
-These are actual CPU instruction results, not merely a guessed reachable Table
-method difference. Both complete in33 charged cycles. No ordinary-cartridge
-reachability or intended common length is inferred. Exact conflicting source
-locations are retained in the Table fact sheet. No runtime repair performed.
+These were actual CPU instruction results, not merely a guessed reachable Table
+method difference. Both completed in33 charged cycles. The old logs are not
+current passing-parity evidence.
+
+After the native owner fix `f13fad92f`, the same actual instruction sequence
+was rerun against the current TS owner and a rebuilt native core. Both return:
+
+```text
+SETT-LEN 5 1 5 cycles 33
+```
+
+The rebuilt native probe is `/tmp/bmsx-cpu-table-guest-probe-native-fixed`.
+Maintained regressions are `tests/lua/table.test.ts:65-118` and
+`tests/cpp/table_inspection_test.cpp:55-91`: generic/encoded or numeric-fast,
+integer and integer-fast paths refill interior and capacity-boundary holes,
+retain false entries, extend through numeric hash keys and allocate no guest
+storage during the array refills. This closes the recorded Table producer
+difference only; the other CPU questions and unaudited Table scopes remain
+separate.

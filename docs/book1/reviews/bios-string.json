@@ -9,10 +9,8 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Codepoint selection/construction, ASCII mapping, exact substring and lead-driven UTF-8 reads; format field/sign/prefix/padding order, signed/U32 and fixed/scientific/general/quoted construction, default numeric-text dependency and actual installed two-result %c delivery. Pattern candidate/capture/backtracking/iterator and replacement branches; exact empty-match advancement; packet endian/alignment/X lookahead, integer-safe-range/read-order, fixed/terminated/prefixed text and explicit float equations.",
-			"open": [
-				"Accepted #Table branches and ordinary String helpers, including format construction, pattern capture/tuple/replacement/output collections and pack/unpack pieces/results, inherit the unresolved common SETT/rawset length producer. Procedural actual-length wording and passing examples do not close it."
-			]
+			"resolution": "Codepoint selection/construction, ASCII mapping, exact substring and lead-driven UTF-8 reads; format field/sign/prefix/padding order, signed/U32 and fixed/scientific/general/quoted construction, default numeric-text dependency and actual installed two-result %c delivery. Pattern candidate/capture/backtracking/iterator and replacement branches; exact empty-match advancement; packet endian/alignment/X lookahead, integer-safe-range/read-order, fixed/terminated/prefixed text and explicit float equations. The inherited SETT/rawset refill hold is resolved by f13fad92f; accepted Table operands and ordinary helper Tables consume the CPU-owned maintained-length contract.",
+			"open": []
 		},
 		"visibility": {
 			"resolution": "Ordinary ordered calls and mapped reads, String construction rather than a live byte view, caller-owned source stable during decoding and demonstrated reuse after return; no atomic snapshot or rollback promise.",
@@ -37,7 +35,7 @@
 		"programming": {
 			"resolution": "Complete base37+95 and formatting27+69 listings retained. Added pattern47+122 and packet42+117 ordinary BLua modules build with existing lint/type checks; 40/33 retained assertions and separate13/8 actual ordinary diagnostics pass. Independent bounded added-contract/program audits and source-aware exact public reconstruction pass. Current44-page DRAFT is covered by individually viewed added pages20-44/current1 and exact retained-page2-19 pixel evidence; no new framework/runtime/compiler/BIOS/publisher implementation. A later fresh public-only reader independently found no missing supplied-checkout understanding/assembly/build/observation step in the added pattern/packet routes; this is not execution or fresh-OS/whole-SDK acceptance.",
 			"open": [
-				"Required common Table-dependent input and helper contracts remain open; examples and bounded source audits do not clear the length STOP or the existing CPU7/BZ01 questions."
+				"Existing CPU7 questions remain separate; the resolved Table producer does not close those source/compiler questions."
 			]
 		}
 	},
@@ -51,7 +49,7 @@
 			"report": "docs/book1/reviews/bios-string-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-string-print.md"
 		}
 	}

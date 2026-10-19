@@ -49,7 +49,23 @@ JavaScript/Lua string-escape mistake. These were fixture errors, not runtime
 repairs. A further genuine source-producer difference is retained below instead
 of being discarded to obtain a green aggregate.
 
-## Separate source-producer finding: negative-zero constant
+## BZ01 — negative-zero constant: RESOLVED
+
+Resolved on 2026-10-19 by compiler commit `3d49ea3d5`. Constant interning now
+distinguishes negative and positive zero; direct constant emission and
+optimizer replacement route negative zero through LOADK instead of the
+positive-zero immediate encodings. Current owners:
+`toolchain/ts/lua/compiler.ts:538–547,3159–3165` and
+`toolchain/ts/lua/compiler/optimizer/values.ts:123–159`.
+
+`tests/lua/interpreter.test.ts:126–153` executes constant binding, direct loads,
+unary folding, reciprocals and control-flow joins at O0, O1, O2 and O3, preserving
+both zero signs. The neighboring compiler suite passed 168/168 and the compiler
+project typecheck passed. No formatter/runtime repair was needed. This closes
+the recorded constant-producer discrepancy, not every possible optimizer
+transformation or the separate CPU owner questions.
+
+### Historical source-producer observation — 2026-10-18
 
 BZ01. In the same source observation body, `tostring(-0)` records `-0` at O0
 and `0` at O3. At each level both TS and native agree on the same linked image.

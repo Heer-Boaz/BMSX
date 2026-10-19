@@ -4,8 +4,9 @@
 pattern/packing slice at b515e804e plus this documentation/example worktree.
 Current software is the authority; no architecture document or historical PDF
 supplies BMSX facts. All seventeen installed String exports now have authored
-coverage and complete ordinary examples below. This does not close the common
-Table-length STOP, certify all-input/native behavior, or finish the BIOS/manual.
+coverage and complete ordinary examples below. The inherited Table-length
+hold was subsequently resolved as recorded below; this does not certify
+all-input/native behavior or finish the BIOS/manual.
 Book II contains this software chapter.
 
 - [Base-operation facts](bios-string-reference.md): actual byte/char/len,
@@ -21,7 +22,7 @@ Book II contains this software chapter.
 - [Formatting example evidence](bios-string-format-example.md): complete27+69-line
   ordinary BLua program,18 retained assertions, separate call-result unit case
   and8 observed ordinary diagnostic lines. It does not supply native execution
-  or resolve the common Table-length stop.
+  or establish a separate String-specific Table-length rule.
 - [Pattern source facts](bios-string-pattern.md): all four interfaces, full
   grammar, reached errors, exact iterator/substitution advancement, current
   Table-only metatable lookup and caller/result boundaries. The separate
@@ -38,7 +39,7 @@ Book II contains this software chapter.
 - [Earlier text/byte boundary](memory-strings.md) and the public Memory chapter
   own typed storage, mapped addresses, String reference versus bytes, literal
   encoding, initialization and reservations. CPU owns Number/word conversion,
-  instructions, indexing, error delivery and the unresolved Table-length
+  instructions, indexing, error delivery and the maintained Table-length
   producer. Base/protected-call chapters own select/tostring/print/error/pcall;
   the table-library draft owns its actual captured helper procedures.
 
@@ -69,14 +70,17 @@ that image. The initial log/diagnostic is retained separately, and the owned
 fixture was corrected to consume the real compositor. No runtime fix, new
 public API or universal private-entry access rule was inferred from that error.
 
-## Existing questions are not cleared
+## Current length-producer disposition and remaining scope
 
-The seven earlier runtime-owner questions, generic SETT/rawset common-length
-STOP and separate bios-base BZ01 compiler/source-zero question remain open.
-This chapter must not claim that passing String recipes closes accepted
-non-String branches that depend on the stopped common Table-length producer.
-Any such required claim retains open coverage. The added pattern and binary-pack references retain these same open dependencies;
-ordinary String helper Tables are affected, not only accepted Table operands.
+Native owner fix `f13fad92f` closes the inherited generic SETT/rawset
+boundary-refill difference. [CPU Table semantics](cpu-table-semantics.md),
+section 4, records the shared scanner; [current actual instruction evidence](cpu-values-execution.md#table-boundary-refill-historical-and-current-instruction-execution)
+returns `5,1,5` in 33 cycles in both runtimes. This disposition supersedes only
+the linked historical supplements' Table-length STOP wording, including
+ordinary helper Tables in formatting, patterns and packet operations.
+Accepted Table operands and helper Tables use that CPU-owned maintained-length
+rule; they are not silently restricted to String inputs. No other CPU/compiler
+question, all-input execution claim or final print acceptance is closed here.
 
 
 ## Current independent review records

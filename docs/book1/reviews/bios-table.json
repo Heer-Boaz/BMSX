@@ -9,10 +9,8 @@
 			"open": []
 		},
 		"datapath": {
-			"resolution": "Source procedures cover counted tuple n, floor and positive/negative/zero normalization, inclusive nil-bearing intervals, inherited reads/direct writes, in-place mutation and ordinary/custom comparison.",
-			"open": [
-				"Existing generic SETT/rawset boundary-refill length disagreement stops a complete common L producer contract, default/relative ranges, sort extent and post-mutation length. Exact paired locations and 5\u21921\u21925 versus5\u21921\u21924 execution are retained in bios-table facts."
-			]
+			"resolution": "Source procedures cover counted tuple n, floor and positive/negative/zero normalization, inclusive nil-bearing intervals, inherited reads/direct writes, in-place mutation and ordinary/custom comparison. The inherited SETT/rawset refill hold is resolved by f13fad92f and the CPU-owned maintained-length contract; this creates no separate library length rule.",
+			"open": []
 		},
 		"visibility": {
 			"resolution": "Ordered direct writes and surviving earlier effects; retained removed value before shifts, final old-tail deletion and interrupted swaps. No transactional or deferred visibility promise.",
@@ -36,9 +34,7 @@
 		},
 		"programming": {
 			"resolution": "Complete31+73-line ordinary modules, all six APIs including default-length paths,30 retained assertions and14 separately observed ordinary diagnostic lines. Independent contract and complete-program source audits pass after quoted corrections. Bounded newcomer reading review closes prerequisite instructions (with its discovery-glob scope limitation disclosed). All11 actual final draft PDF pages individually inspected; pipe-bearing retained value corrected and visually confirmed. No new publisher/runtime/compiler/BIOS/shared-harness layer.",
-			"open": [
-				"The normal complete program and bounded paired vectors do not close the length-dependent common programming contract. Keep this chapter DRAFT pending its owning decision."
-			]
+			"open": []
 		}
 	},
 	"reviews": {
@@ -51,7 +47,7 @@
 			"report": "docs/book1/reviews/bios-table-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-table-print.md"
 		}
 	}

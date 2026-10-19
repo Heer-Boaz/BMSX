@@ -159,8 +159,9 @@ data matrix: u8[2][3] = {
   There is no inference source for `bss`, struct-field, inner-dimension, or local-view `[]`.
 - Static `string` initializers must be compile-time strings and are supported only in `rodata`, including string fields inside aggregates.
   A `string` initializer in `data` is rejected.
-- `f32` and `f64` support typed access, but their `data` and `rodata` initializers are unsupported, even when the initializer is integer-valued.
-  Use BSS and later scalar stores when writable floating-point storage is needed.
+- `f32` and `f64` initializers in `data` and `rodata` must be compile-time numbers.
+  They encode IEEE 754 binary32 or binary64 in little-endian order, including inside arrays and structs.
+  `f32` rounds the computed value to binary32; `f64` retains its binary64 value. Both preserve negative zero.
 
 ### Computing struct and array layouts
 
@@ -1001,6 +1002,8 @@ Hexadecimal literals begin with `0x` or `0X`. Their digits may use either case, 
 
 A literal whose parsed numeric value is non-finite is rejected. Unary `-` is a separate operator, so `-12` is an expression rather than one signed numeric token. Use `1.0` rather than `1.` for a decimal fraction. Digit separators, binary or octal prefixes, and numeric suffixes are not supplied by these literal forms.
 
+The expressions `-0` and `-0.0` produce negative zero. Constant binding and loading do not replace either expression with positive zero.
+
 Hexadecimal spelling does not create a distinct address or register-word literal type. It is another spelling of a Number literal; address and typed-storage use belongs to the [Memory reference](memory.md).
 
 ### Short Strings
@@ -1363,8 +1366,11 @@ A `repeat` loop writes the terminating condition after the body:
 local attempts = 0
 repeat
     attempts += 1
-until attempts >= 3
+    local finished<const> = attempts >= 3
+until finished
 ```
+
+The body executes before each condition test, including the first. Locals declared directly in the body remain visible in the `until` condition; their scope ends after that condition. Locals in a nested block keep that block's narrower scope.
 
 These are the source forms `while expression do block end` and `repeat block until expression`. Runtime condition behavior is defined in the [CPU reference](cpu.md).
 

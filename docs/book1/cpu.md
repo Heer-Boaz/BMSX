@@ -950,9 +950,9 @@ The Table length operation, `#t`, reads a stored length maintained by Table muta
 
 Let `L` denote the stored length. Deleting an array-eligible numeric key `k` shortens the length to `k - 1` when `k - 1 < L`. Otherwise that deletion does not shorten it. Entries above the new boundary remain mapped. Thus a Table can retain entries at keys greater than its reported length.
 
-When the next missing entry also lies within existing array capacity, filling the first hole at `L + 1` advances the length over consecutive non-nil entries up to that missing entry. A `false` entry participates in that advance. Other in-capacity non-nil writes do not advance the boundary merely because their key is large. Replacing an existing non-nil hash mapping does not itself recompute the stored length. Storage redistribution can rebuild length through reinsertion, so not every apparently unrelated insertion is guaranteed to leave an already path-dependent length unchanged.
+An in-capacity non-nil write at key `L + 1`, or a newly inserted hash entry for that array-eligible key, advances the length over consecutive non-nil own entries until the first missing numeric key. This scan continues into hash storage beyond array capacity. A `false` entry participates in that advance. Other in-capacity non-nil writes do not advance the boundary merely because their key is large. Replacing an existing non-nil hash mapping does not itself recompute the stored length. Storage redistribution can rebuild length through reinsertion, so not every apparently unrelated insertion is guaranteed to leave an already path-dependent length unchanged.
 
-Cross-capacity length transitions remain incomplete in this reference. With array capacity four and keys 1 through 5 populated, deleting key 2 and then restoring it has conflicting recorded length results: 4 and 5, while key 5 remains present in both cases. No common result is specified here. In particular, neither a universal contiguous-prefix definition nor a claim that every boundary refill searches hash storage is established.
+For example, with array capacity four and keys 1 through 5 populated, the initial length is 5. Deleting key 2 shortens it to 1 without removing key 5. Restoring key 2 advances the length to 5, including that hash-held entry.
 
 #### Metatables and indexed reads
 

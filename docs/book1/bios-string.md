@@ -640,7 +640,7 @@ Builds formatted text and, on normal completion, returns exactly one String. It 
 
 For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format. The main scan uses the initial format length; decimal width and precision parsing re-evaluate that length at each loop test.
 
-**Table-length boundary.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The common Table-length contract remains unresolved. This also affects ordinary String formats: general-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can construct temporary Tables and use their lengths. Their complete results cannot be specified unconditionally here. Do not assume every Table `format` argument fails at entry.
+**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. General-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can also construct temporary Tables. All use the [CPU's maintained-length rules](cpu.md#stored-length), not a separate String-specific length rule. Do not assume every Table `format` argument fails at entry.
 
 ### Conversion syntax and argument order
 
@@ -682,7 +682,7 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 
 ### Text, codepoint and quoted conversions
 
-**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction is subject to the Table-length boundary above.
+**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the maintained-length rule above.
 
 **`%c` — codepoints from integer and fraction.** The installed function passes both `math.modf` results to `string.char`, integer part first and fractional part second. It consumes one format value and returns one String, not two return values. Each Number is converted to an unsigned 32-bit word by truncation and wrapping. A resulting word greater than `10FFFFH` or within `D800H`–`DFFFH` raises the codepoint error; zero is String content, not a terminator. Number NaN and either infinity become word zero. Original non-Number arguments become Number NaNs through `modf`, rather than reaching `char` with their original category.
 
@@ -743,7 +743,7 @@ Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tos
 
 **General construction (`g`, `G`).** Precision defaults to six significant digits; explicit zero becomes one. Determine the decimal exponent from the unrounded magnitude, using exponent zero for zero. If the exponent is below −4 or at least the significant-digit precision, select scientific construction with precision one less than the significant-digit count. Otherwise select fixed construction with precision `significant − exponent − 1`. The choice is not repeated after rounding.
 
-Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing are subject to the Table-length boundary above.
+Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing use the maintained-length rule above.
 
 **Default numeric text dependency.** The whole, fraction and exponent text pieces above use `tostring`; precision does not substitute an arbitrary-length decimal writer. Under the installed default, Nil becomes `nil`, Booleans become `false` or `true`, Tables become `table`, Threads become `thread`, function values become `function`, and Strings retain their contents. Number specials become `nan`, `-inf` or `inf`.
 
@@ -782,8 +782,7 @@ The program covers width and precision argument order, signs and prefixes,
 zero integer precision, unsigned conversion, fixed/scientific/general output,
 quoted text, the installed `%c` pair, nonnumeric argument paths and two reached
 format errors. Its general conversion uses `#` to retain the point and bypass
-zero stripping. It does not settle the common Table-length boundary or impose
-a general output-size or execution-time limit.
+zero stripping. It does not impose a general output-size or execution-time limit.
 
 #### Formatting result storage
 
@@ -1035,7 +1034,7 @@ An opening `(` records the current source position. A closing `)` searches backw
 
 The form `()` is different: it records the numeric current position without consuming text. It is a position capture, not an empty text capture.
 
-**Capture-result boundary.** Capture bookkeeping and extraction use actual Table lengths. The common Table-length contract remains open. The capture rules in this section describe the matching procedure; they do not establish a universal guarantee of capture enumeration or returned value count.
+**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's maintained Table lengths](cpu.md#stored-length). Returned sequences also follow the ordinary caller's result adjustment.
 
 Outside sets, `%1` through `%9` refer to a previously recorded, finished text capture. A backreference compares that capture's codepoints at the current source position and, on success, advances by the captured length. A missing capture, an unfinished capture, or a position capture raises `invalid string pattern capture` when that reference is reached.
 
@@ -1080,15 +1079,11 @@ A terminal `%` has no dedicated rejection. Special-escape dispatch first reads a
 
 ## Pattern searches and substitutions
 
-**Shared result and assembly boundary.** Capture bookkeeping, result sequences,
-replacement arguments and output-piece assembly use actual Table lengths. The
-common Table-length contract remains open, including helper Tables created for
-ordinary String inputs. The procedures below describe which entries are
-selected using those lengths; they do not establish universal capture enumeration,
-returned value counts or assembled output for every input. Returned sequences
-also pass through the ordinary caller's result adjustment, defined in **CPU and
-BLua32 instruction reference**. The complete program demonstrates its particular
-calls; it does not settle the common Table contract.
+**Shared result and assembly dependency.** Capture bookkeeping, result sequences,
+replacement arguments and output-piece assembly use the [CPU's maintained Table
+lengths](cpu.md#stored-length), including helper Tables created for ordinary
+String inputs. Returned sequences also pass through the ordinary caller's
+result adjustment, defined in **CPU and BLua32 instruction reference**.
 
 ### `string.find`
 
@@ -1183,8 +1178,7 @@ between parts as `cart.lua`. There is no local matcher, codec or library import.
 The program uses literal and pattern search, text and position captures,
 generic iteration, greedy/minimal matching, balanced regions, frontiers and
 backreferences. It then contrasts text, Table and Function replacements and
-shows the installed empty-match and deferred-error behavior. These particular
-calls do not settle the common Table-length contract.
+shows the installed empty-match and deferred-error behavior.
 
 #### Pattern result storage
 
@@ -1461,12 +1455,11 @@ v1, v2, ..., next_pos = string.unpack(format, packet [, pos])
 - `packsize` returns one Number: the size of a fixed-size format, including its padding. A format containing `z` or `s` is variable-length and causes an error.
 - `unpack` returns one value for each integer, floating-point, or text field, followed by the next one-based source position. Controls and padding produce no values. An empty or control-only format normally returns only that position.
 
-**Shared Table boundary.** Temporary packet pieces and unpacked-result
-collections use actual Table lengths, including when every supplied format
-and operand is a String. The common Table-length contract remains open. The
-procedures below do not establish universal assembled output or result counts;
-accepted Table operands are also retained in the argument-category account.
-Ordinary caller result adjustment still applies.
+**Shared Table dependency.** Temporary packet pieces and unpacked-result
+collections use the [CPU's maintained Table lengths](cpu.md#stored-length),
+including when every supplied format and operand is a String. Accepted Table
+operands are retained in the argument-category account below. Ordinary caller
+result adjustment still applies.
 
 For example, these calls construct and read a fixed-width record without transferring it to mapped memory:
 
@@ -1733,7 +1726,7 @@ Some branches can therefore process a Table before reaching any operation requir
 
 </section>
 
-These accepted branches do not establish a common Table-prefix length rule. They must not be described as a blanket rejection of all non-String inputs, or generalized into an additional Table-length specification.
+These accepted branches use the CPU's maintained-length rule. They must not be described as a blanket rejection of all non-String inputs or generalized into a separate String-specific Table-length specification.
 
 The packing functions retain the `string.byte`, `string.char`, `string.sub`, `table.concat`, and `table.unpack` functions, and their float conversion functions, selected when the String library is initialized. Replacing those public Table entries afterward does not replace the retained functions.
 
@@ -2039,5 +2032,5 @@ Pack variable size	false	string.packsize format is variable-length.
 
 The final three lines are deliberate protected failures. The checked 1.25 and
 −2.5 fields are exact examples, not exhaustive floating-point interchange or
-rounding tests. These runs do not settle the common Table-length contract,
-prove native execution, or establish arbitrary-size completion or timing bounds.
+rounding tests. These runs do not prove native execution or establish
+arbitrary-size completion or timing bounds.

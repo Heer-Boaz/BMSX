@@ -51,8 +51,8 @@ behavior use paired CPU owners. There is no invented mirrored C++ source compile
   cartridge API.
 - [Variable-argument and label edges](blua-programs-scope-edges.md):
   current-call varargs, function-wide labels and jump-only scope crossings.
-  Its repeat binder/compiler disagreement is retained separately as
-  [OPEN LS01](blua-programs-repeat-scope.md), with an actual ordinary probe.
+  Its historical repeat binder/compiler disagreement and ordinary probe are
+  retained under [resolved LS01](blua-programs-repeat-scope.md).
 - [Numeric-loop control](blua-programs-numeric-loops.md): ordered cached header
   values, strict tests, body-visible counter mutation and explicit zero step.
   The [complete executed program](blua-programs-loops-program.md) supplies
@@ -77,16 +77,19 @@ executed source files; the two new programs have separate evidence records.
 Finite review passes remain separate from completeness. Normal boot does not
 automatically invoke an attributed function. The current vararg, goto and
 numeric-loop boundaries are now extracted rather than left as unnamed
-assumptions. The repeat-local disagreement remains OPEN LS01; it is not an
-intended scoping guarantee or an excuse to repair the compiler in this manual
-slice. **Publication stays blocked and the layout is a DRAFT.** No new gate
-or compiler/runtime change follows from these facts.
+assumptions. Compiler commit `3d49ea3d5` subsequently resolved
+[LS01](blua-programs-repeat-scope.md) and the
+[BZ01 signed-zero constant discrepancy](bios-base.md#bz01--negative-zero-constant-resolved).
+It also added typed floating DATA/RODATA initialization; the storage facts and
+public source/Memory chapters now reflect that owner change. Focused execution
+at O0–O3 and the neighboring compiler suite cover these changes; they do not
+establish whole-chapter or whole-manual acceptance.
 
 ## Remaining whole-manual scope
 
 Canonical CPU and Memory definitions remain the authority for values, arithmetic,
 calls/results, tables, byte storage, typed declarations and startup addresses.
-The common Table-length STOP, CPU7 and BZ01 questions remain open. Full math/os,
+The Table-length producer was also repaired by `f13fad92f`; CPU7 questions remain open. Full math/os,
 BIOS source-loading/compiler APIs, all lifecycle attributes, SDK quality-rule
 and installation/debugging coverage, Book III and whole-console newcomer
 acceptance are not closed by this chapter's presence.

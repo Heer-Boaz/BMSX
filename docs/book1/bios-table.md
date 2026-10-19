@@ -34,7 +34,7 @@ positions counted from the end. The relative-endpoint rule belongs only to
 In the following procedures, **L** means the Table's maintained length,
 `#target`, captured by that call. It is not the number of all mappings, the
 greatest numeric key, a count of metatable-supplied entries, or a tuple's `n`
-field. **CPU and BLua32 instruction reference** defines the maintained length
+field. [CPU — Stored length](cpu.md#stored-length) defines the maintained length
 and Table operations. A count stored by the cartridge is a separate value;
 use the explicit `pack`/`unpack` recipe when nil positions must be preserved.
 

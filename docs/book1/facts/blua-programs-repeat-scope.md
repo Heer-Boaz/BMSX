@@ -1,9 +1,31 @@
-# LS01 — repeat binder/compiler scope disagreement: OPEN
+# LS01 — repeat binder/compiler scope disagreement: RESOLVED
 
-2026-10-18, baseline `e43ee94f1`, current software authority. This is an editorial
+## Current disposition — 2026-10-19
+
+Resolved by compiler commit `3d49ea3d5`. `compileRepeat` now lowers the `until`
+condition before popping the body's lexical scope, matching the binder. The
+compiled local's debug scope also includes the condition. Current owner:
+`toolchain/ts/lua/compiler.ts:4481–4499`.
+
+Focused executed regressions at O0, O1, O2 and O3 cover a body `<const>` that
+shadows a true global, mutable locals in a compound condition, a closure
+created in the condition, break/scope exit, and a typed body-local pointer.
+The shadowing case returns three passes, not the historical one below.
+`tests/lua/interpreter.test.ts:59–124` and
+`tests/lua/compiler_source_map.test.ts:16–23` retain these checks. The complete
+eight-file neighboring compiler test run passed 168/168; compiler-project
+typecheck and `git diff --check` passed. This does not rerun the historical
+ordinary cartridge or certify the separate BIOS runtime compiler.
+
+The LS01 publication hold below is superseded. This compiler correction does
+not close unrelated CPU, Table, runtime-loading or whole-manual questions.
+
+## Historical investigation — 2026-10-18
+
+Baseline `e43ee94f1` was the software authority for the evidence below. This is an editorial
 software-state note and reproducible investigation, not a normative language
 repair, a recommended use pattern or a release exemption. No compiler/runtime
-implementation was changed. Source extraction is retained in
+implementation was changed during that investigation. Source extraction is retained in
 [scope-edge facts](blua-programs-scope-edges.md#r--repeat-body-local-referenced-in-its-until-expression).
 
 ## Conflicting directly connected owners
@@ -87,7 +109,7 @@ the probe; the endpoint is not a timing guarantee or output assertion. No native
 cartridge execution, O0/all-optimizer/all-compound/typed-expression/capture
 coverage, reset lifetime or separate BIOS runtime-parser claim follows.
 
-## Publication treatment
+## Historical publication treatment
 
 Keep LS01 explicit in the source-program coverage record and manual follow-up.
 Do not document binder acceptance as a working body-local `until` guarantee,

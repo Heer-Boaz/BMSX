@@ -486,11 +486,11 @@ In particular, `f64` has four-byte alignment, not eight-byte alignment.
 
 The `i8`, `i16` and `i32` names select the same unsigned memory-access kinds as their `u` counterparts. Do not assume signed-load or sign-extension rules from those names.
 
-#### Initialized numeric storage has a narrower contract
+#### Initialized numeric storage
 
-Static numeric initializers must be compile-time integers. Integer fields retain the low 8 bits for `U8`, 16 bits for `U16LE`, and 32 bits for `U32LE` and `Word`.
+Static integer-storage initializers must be compile-time integers. Integer fields retain the low 8 bits for `U8`, 16 bits for `U16LE`, and 32 bits for `U32LE` and `Word`.
 
-Although `f32` and `f64` have defined layouts and scalar access kinds, static initialization does not accept initialized floating storage. Their appearance in the type table is not permission to use a floating DATA or RODATA initializer. This restriction concerns static initialization, not later F32LE or F64LE memory accesses.
+Static `f32` and `f64` initializers in DATA and RODATA accept compile-time numbers, including array elements and struct fields. They encode IEEE 754 binary32 or binary64 in little-endian order. F32 rounds the computed value to binary32; F64 retains its binary64 value. Both preserve negative zero. The size and alignment rules in the table above still apply; F64 does not require eight-byte alignment.
 
 #### A stored string is a reference
 

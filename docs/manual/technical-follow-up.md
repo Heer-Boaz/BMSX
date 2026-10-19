@@ -28,6 +28,17 @@ attachment and output-precision questions remain recorded below. The bounded
 GEO docking scene and five real output plates are now accepted; complete
 memory/CPU/system foundations remain open.
 
+## Software corrections — 2026-10-19
+
+Table cross-capacity refill, repeat-body scope through `until`, negative-zero
+constants and typed float initializers are repaired at their producers. The
+GPU now retains unread USER readback and queued ingress across supervisor
+entry; the former RDB01 stall is reproduced as resolved. Ordinary BIOS radian
+trigonometry is repaired separately from the unchanged phase-word/Q16 primitive.
+The current fact dispositions supersede the dated OPEN observations below.
+CPU7, FSEL01, other identified owner issues and whole-manual acceptance remain
+open; updated chapter source/print checks are separate from these software fixes.
+
 ## Current technical-inventory routing — 2026-10-18
 
 This is a work index of bounded checks, not twelve whole-unit approvals or a
@@ -38,10 +49,10 @@ owners remain specification decisions, not numbers to invent.
 | Unit | Latest bounded evidence and next action |
 |---|---|
 | CPU | Resource/value/ISA/cost teaching is present, including inverse field assembly, function-record relocation versus image indices, CLOSURE address ranges and five exact byte examples for independent image construction. CPU7 and the recorded owner/producer disagreements remain separate; another instruction table is not the missing work. |
-| Memory | Consumed boot/image/table/record layouts, the full I/O-bank directory and retained-slot/decoder boundaries are explicit. Matching BIOS storage/link information is distinguished from compulsory placement. RDB01, FSEL01, image-text decoding and final whole-console acceptance remain open. |
-| SYSTEM | The prior paired control/phase/banking/reset/timing check remains bounded. RDB01 now reopens unread CPU-owned readback at synchronous-fault entry; [source and ordinary-ROM evidence](../book1/facts/system-readback-entry.md). Known yield/HALT precedence remains separate; arbitrary-state combinations are not approved. |
+| Memory | Consumed boot/image/table/record layouts, the full I/O-bank directory and retained-slot/decoder boundaries are explicit. Matching BIOS storage/link information is distinguished from compulsory placement. FSEL01, image-text decoding and final whole-console acceptance remain open; RDB01 is repaired. |
+| SYSTEM | The prior paired control/phase/banking/reset/timing check remains bounded. RDB01 is repaired by retaining unread USER readback and queued ingress; [source and ordinary-ROM evidence](../book1/facts/system-readback-entry.md). Known yield/HALT precedence remains separate; arbitrary-state combinations are not approved. |
 | GTE | Fresh bounded paired capacity/normal-and-PLUS interface/timing inventory found no new required quantitative paragraph; existing arithmetic/program/output lessons remain. No fresh exhaustive arithmetic or execution approval is implied. |
-| PCRTC | Recent paired capacity/clock/timing/latch check found no new missing numeric paragraph; shared Table-length decisions remain separate. |
+| PCRTC | Recent paired capacity/clock/timing/latch check found no new missing numeric paragraph; the shared Table-length disagreement is repaired separately. |
 | IRQ | Recent bounded controller check found no new missing quantitative paragraph; it was not a fresh CPU-exception audit. |
 | GPU | Startup pattern versus stream resets and firmware-owned storage are now clarified in one compact paragraph; [bounded source/reader evidence](../book1/reviews/gpu-source.md) is distinct from print. |
 | DMA | Current paired inventory confirms rates/routes/tails/contention; the false socket-selection denial is removed and the existing Book III route is linked. [Correction evidence](../book1/reviews/dma-source.md). |

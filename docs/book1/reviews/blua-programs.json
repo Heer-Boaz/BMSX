@@ -25,23 +25,21 @@
 			"open": []
 		},
 		"faults": {
-			"resolution": "Finite lexer/parser/compiler rejections for source spellings, binding, imports, export/static restrictions and duplicate/cyclic modules. Runtime argument/access/fault contracts stay canonical; load wrapper protection is not generalized to compile_syntax. Independently checked current-call/out-of-context varargs, function-wide labels and jump-only scope crossing, numeric-loop cached values/body mutation/explicit zero step. Conflicting repeat-local owners are not reconciled into a language guarantee. The extension delta specifies raw/typed access alignments, narrow I/O restrictions, address/bus exceptions, CP0 privilege, unsupported untyped dereference, direct RODATA versus alias provenance and closure-record prerequisites; no runtime/compiler repair is inferred.",
-			"open": [
-				"LS01: the binder keeps repeat-body locals visible through until, but the compiler removes their bindings before lowering the condition. An ordinary owned-global probe prints one pass rather than the lexical three-pass contrast. Current software is recorded separately; intended repeat-local visibility remains unresolved."
-			]
+			"resolution": "Finite lexer/parser/compiler rejections for source spellings, binding, imports, export/static restrictions and duplicate/cyclic modules. Runtime argument/access/fault contracts stay canonical; load wrapper protection is not generalized to compile_syntax. Independently checked current-call/out-of-context varargs, function-wide labels and jump-only scope crossing, numeric-loop cached values/body mutation/explicit zero step. LS01 is resolved by 3d49ea3d5: the repeat-body lexical scope includes its until condition. The extension delta specifies raw/typed access alignments, narrow I/O restrictions, address/bus exceptions, CP0 privilege, unsupported untyped dereference, direct RODATA versus alias provenance and closure-record prerequisites. The same compiler slice preserves negative-zero constants and encodes typed f32/f64 initializers at their producer.",
+			"open": []
 		},
 		"reset": {
 			"resolution": "Normal BIOS installation, fresh system reboot bank clearing and EXEC non-clearing are distinct. No per-image private environment, arbitrary reset/lifetime, heap reset or module-reload promise.",
 			"open": []
 		},
 		"programming": {
-			"resolution": "Original six-file modules/global program plus complete numeric-loop and generic-iterator programs are retained. The new extension-first route adds the unchanged complete32+30line static-record program, revalidated through ordinary quality checks and its retained-result integration case. Ten focused trace cases, eight init-function cases and19manual-tool tests pass separately. A fresh public-only reader reconstructs both sourcefiles byte-for-byte; closure producer/context and participant-trigger navigation findings are closed. Current44page DRAFT has source, reader and every-page visual acceptance. Ordinary-ROM trace selection is explicitly unavailable through the current CLI (BE01), not invented from derived integration emission. LS01 remains open; no wholeSDK/native/ordinarytracing/wholeconsole completeness claim.",
+			"resolution": "Original six-file modules/global program plus complete numeric-loop and generic-iterator programs are retained. The new extension-first route adds the unchanged complete32+30line static-record program, revalidated through ordinary quality checks and its retained-result integration case. Ten focused trace cases, eight init-function cases and19manual-tool tests pass separately. A fresh public-only reader reconstructs both sourcefiles byte-for-byte; closure producer/context and participant-trigger navigation findings are closed. Current44page DRAFT has source, reader and every-page visual acceptance. Ordinary-ROM trace selection is explicitly unavailable through the current CLI (BE01), not invented from derived integration emission. LS01 is resolved with focused O0/O1/O2/O3 execution; updated source and print acceptance are pending; no wholeSDK/native/ordinarytracing/wholeconsole completeness claim.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/blua-programs-source.md"
 		},
 		"figures": {

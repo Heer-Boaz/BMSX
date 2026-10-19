@@ -13,11 +13,9 @@
 			]
 		},
 		"datapath": {
-			"resolution": "Number versus Word conversion, bitwise/count semantics, predicates, variable result ranges, upvalue lifetime, key sources, instruction layouts and full-width branches. Complete finite default Number formatting, ordered POW special outcomes, Table key identity/nil deletion and table-only metatable read rules now extracted separately.",
+			"resolution": "Number versus Word conversion, bitwise/count semantics, predicates, variable result ranges, upvalue lifetime, key sources, instruction layouts and full-width branches. Complete finite default Number formatting, ordered POW special outcomes, Table key identity/nil deletion and table-only metatable read rules now extracted separately. Native shared Table setter fix f13fad92f resolves the cross-capacity refill producer; paired actual SETT/LEN execution now returns 5,1,5 in 33 cycles. Other CPU questions remain separate. BZ01 is separately resolved by compiler commit 3d49ea3d5; the formatter was unchanged.",
 			"open": [
-				"Top-of-address-space sequential/skip PC arithmetic differs; no universal modulo32 promise.",
-				"Generic SETT/rawset boundary refill length differs across array/hash capacity: actual paired CPU program returns5 versus4; cpu-table-semantics and cpu-values-execution. No universal hole-refill/prefix contract.",
-				"Separate compiler producer question: source tostring(-0) differs at O0/O3 while the owners agree per linked image; bios-base BZ01. Do not infer universal source-literal sign preservation or a formatter fault."
+				"Top-of-address-space sequential/skip PC arithmetic differs; no universal modulo32 promise."
 			]
 		},
 		"visibility": {
