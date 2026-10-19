@@ -45,22 +45,26 @@ later with LuaLaTeX. Install Quarto, then its supported TeX distribution with
 `quarto install tinytex`. On Ubuntu/WSL, SVG conversion and the publication fonts
 are supplied by `sudo apt-get install librsvg2-bin fonts-liberation fonts-dejavu-core`.
 
+From the repository root, build and publish locally with one command:
+
 ```sh
-npm run manual:build   # three PDFs + HTML with downloadable copies
-npm run manual:preview # searchable HTML with live reload
-npm run manual:html     # docs/_html/index.html
-npm run manual:pdf      # docs/_book-{i,ii,iii}/bmsx-book-*.pdf
+npm run manual:build
 ```
 
-The full build produces a self-contained `docs/_html/` site, including the three
-PDF downloads. HTML-only builds and previews need no TeX run; downloads appear
-after the PDFs have been built and HTML has been rendered again. HTML uses
-native MathML and system fonts, without a font or formula CDN.
+The PDFs are committed under `docs/pdf/` for direct viewing on GitHub:
 
-Each volume can also be rendered with `npm run manual:book-i` (or `book-ii`,
-`book-iii`). Standard Quarto profiles define the three books and combined HTML;
-there is no repository renderer or PDF postprocessing. See the
-[authoring guide](docs/manual/README.md) for source conventions.
+- [Book I — System and Hardware Reference](docs/pdf/bmsx-book-i.pdf)
+- [Book II — BLua32 and BIOS Reference](docs/pdf/bmsx-book-ii.pdf)
+- [Book III — Cartridge and Expansion Reference](docs/pdf/bmsx-book-iii.pdf)
+
+The complete generated publication is `dist/manual/`: `index.html` opens the
+HTML reference, and `pdf/` contains the same three volumes linked from its
+download menu. This directory stays outside Git and can be served or copied as
+a whole. Native MathML and system fonts avoid font/formula CDNs. No GitHub build
+or deployment is involved.
+
+For local browsing, `npm run manual:preview` serves the HTML with live reload.
+The [authoring guide](docs/manual/README.md) describes source conventions.
 
 ## Project Layout
 

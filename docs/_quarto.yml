@@ -18,6 +18,7 @@ format:
     theme: default
     html-math-method: mathml
     code-copy: true
+    css: manual/html.css
   pdf:
     pdf-engine: lualatex
     documentclass: scrbook
@@ -36,6 +37,8 @@ format:
     fig-pos: H
     toc: true
     toc-depth: 2
+    hyperrefoptions:
+      - bookmarksdepth=3
     include-in-header: manual/typography.tex
 
 number-depth: 3

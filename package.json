@@ -36,13 +36,13 @@
 		"yaml": "^2.9.1"
 	},
 	"scripts": {
-		"manual:build": "npm run manual:pdf && npm run manual:html",
+		"manual:build": "npm run manual:pdf && npm run manual:html && node -e \"const fs = require('node:fs'); fs.rmSync('dist/manual', { recursive: true, force: true }); fs.cpSync('docs/_html', 'dist/manual', { recursive: true });\"",
 		"manual:preview": "quarto preview docs --profile html",
 		"manual:html": "quarto render docs --profile html --to html",
 		"manual:book-i": "quarto render docs --profile book-i --to pdf",
 		"manual:book-ii": "quarto render docs --profile book-ii --to pdf",
 		"manual:book-iii": "quarto render docs --profile book-iii --to pdf",
-		"manual:pdf": "npm run manual:book-i && npm run manual:book-ii && npm run manual:book-iii",
+		"manual:pdf": "npm run manual:book-i && npm run manual:book-ii && npm run manual:book-iii && mkdir -p docs/pdf && cp docs/_book-i/*.pdf docs/_book-ii/*.pdf docs/_book-iii/*.pdf docs/pdf/",
 		"headless:game": "node dist/host_headless.debug.js --system-rom dist/system/bmsx-bios.debug.rom",
 		"headless:tooling": "node dist/host_headless_tooling.debug.js --system-rom dist/system/bmsx-bios.debug.rom",
 		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; shift 2; node dist/host_headless_tooling.debug.js --system-rom dist/system/bmsx-bios.debug.rom --test \"$test\" \"$rom\" \"$@\"' --",
