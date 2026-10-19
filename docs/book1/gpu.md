@@ -8,6 +8,26 @@ memory. It also fills, uploads, reads and copies raw local-memory images. Suppli
 colors and texture coordinates determine the source pixels; drawing state controls
 the drawing area, offsets, texturing, blending and stored mask bit.
 
+CPU writes enter a sixteen-word GP0 command FIFO. DMA reaches the same port
+through a separate sixteen-word ingress buffer: an admitted block is staged
+there before its end-of-block hand-off toward the command FIFO. These are not
+thirty-two interchangeable CPU FIFO slots or two drawing engines. Both routes
+feed the same ordered packet assembly and execution path. A DMA block boundary
+does not finish a packet, supply missing image words or terminate a polyline.
+GP1 controls are separate from this stream.
+
+Input readiness is not completion. CPU-store admission, DMA requests and GPU
+idle answer different questions. Accepted words can remain queued; a partially
+assembled packet still needs its remaining fields. Execution can wait behind
+preceding command work or an active readback. A completed command interval does
+not itself establish that local-memory readback is READY or that a new picture
+has reached the display latch.
+
+Budget CPU instruction issue, DMA transport and GPU command work separately.
+Command ticks do not include all packet preparation, readiness waits, payload
+supply or readout. CPU work can overlap GPU execution; neither FIFO capacity nor
+an operation's tick count specifies sustained pixel or byte throughput.
+
 Three-dimensional projection, lighting, near-plane clipping and depth-order
 selection precede primitive submission. Triangle interpolation has no depth or
 reciprocal-depth input. A quad is
@@ -17,6 +37,8 @@ the intended draw order and retains any geometry results needed to construct it.
 Stored pixels are not display output. PCRTC reads local memory using its selected
 source layout, display windows and output settings. The choice of display storage
 format does not change how GPU primitives address their raw destination words.
+For repeated pictures, use the [frame hand-off sequence](#render-successive-frames)
+and its separate completion and storage-lifetime conditions.
 
 <a id="gpu-specifications"></a>
 ## Technical specifications
@@ -925,6 +947,36 @@ The third read returns two pixels, low halfword first, rather than the freshly q
 Ownership is independent of READY. If DMA owns GP0's read port, a CPU read returns the current latch **without consuming** a ready image word; DMA reads can consume that stream. A query neither grants CPU ownership nor protects its answer from a later permitted read. GPUSTAT bit 27 reports READY, not a guarantee that an arbitrary CPU read will return a query answer. Use word reads: a byte read still invokes the full callback and can consume an entire packed image word.
 
 These queries report programmed drawing state. They do not acknowledge VBlank presentation or prove that a newly displayed picture has latched. Keep state inspection, image-data consumption and display acknowledgement separate.
+
+## Render successive frames
+
+Framebuffers are cartridge-chosen regions of shared GPU local memory, not
+private pixel banks allocated by the GPU. A PCRTC source switch selects other
+addresses; it does not copy or save the old picture. Keep drawing, transfer,
+display configuration and storage reuse as separate steps. The following is a
+software sequence for separately owned drawing and display regions, not a
+hardware allocation or surface-release service.
+
+| Step | Required work and completion |
+|---|---|
+| Choose storage | Keep the drawing destination separate from storage still needed by display, texture/CLUT reads, copies or readback. Preserve the [firmware VRAM reservation](memory.md#firmware-reservation-in-vram). Match the [raw drawing layout](#gpu-storage) to the PCRTC source layout. |
+| Submit the next picture | Complete every packet, upload payload and polyline terminator. Order changes to texture and palette storage with their uses; queued commands do not retain private copies of those pixels. |
+| Finish GPU-side work | Drain any readback result and finish its downstream DMA writes when used. Observe GPU IDLE separately from DMA DONE or a GP0 IRQ marker. None of these acknowledges display publication. |
+| Program the display source | Write the required PCRTC source/configuration words. They remain programmed words until the VBlank-entry latch; separate stores are not an atomic update. See [PCRTC, Section 2.6](pcrtc.md). |
+| Observe the new selection | Use a fresh-after-write VBlank observation, not an already-pending flag or immediate register readback. The [Memory display-switch contract](memory.md#a-display-switch-selects-storage-it-does-not-save-it) gives the IRQ/counter ownership assumptions and exact sequence. |
+
+IDLE reports the input and command-pipeline condition, not a check of a
+particular picture's pixels or ownership of its storage.
+
+Rebuild the old surface only after excluding its remaining uses. Switching one
+reading circuit does not prove that the other circuit, a texture, a CLUT, a copy
+or readback no longer needs that region. VBlank is neither an all-VRAM release
+nor an atomic pixel snapshot or a physical fetch deadline.
+
+The existing [prepare, publish and reuse example](memory.md#prepare-publish-and-reuse-two-surfaces)
+demonstrates A → B → rebuilt A with one enabled reading circuit, exclusive GP0
+and IRQ ownership, and no other uses of either surface. Reuse that complete
+route rather than treating the static picture above as a general frame driver.
 
 <a id="gpu-ingress-ownership"></a>
 ## Hand a GP0 stream between CPU and DMA

@@ -6,6 +6,20 @@ The Geometry Engine is a register-programmed integer arithmetic unit. It transfo
 
 Program vectors, matrices, coefficients, and colors, then write a command word. Normal results appear in the data registers and in the screen, depth, and color FIFOs. These FIFOs are register histories: arithmetic commands push results into them; they are not command queues. Software may also write their entries directly.
 
+The normal path and PLUS are not successive stages of one operation. They share
+GTE's mapped-word programming interface and reset, but have separate operands,
+results, flags and cycle words. PLUS does not consume the normal matrices,
+MAC/IR values or FIFOs, and its results do not enter them automatically. To pass
+a result between paths, software reads it and programs the other path's operands.
+
+During a PLUS VMAD3's five-system-cycle pending interval, software can still
+execute normal commands. Their results become visible when their command writes
+finish; normal accesses neither wait for PLUS nor publish its pending results.
+Normal CYCLES is a nominal count, not elapsed busy time. PLUS instead retains
+its previous published results and flags until completion publishes the new set.
+The overlap is normal work during a PLUS publication delay, not two timed
+command pipelines or a guarantee of parallel physical arithmetic or bus transfers.
+
 GTE is separate from GEO and GPU. A GTE command does not draw, write VRAM or a framebuffer, transfer GEO scratch memory, or submit a graphics packet. Software passes the arithmetic results onward as required.
 
 ![GTE register and arithmetic paths](figures/gte-overview.svg)

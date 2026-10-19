@@ -240,3 +240,6 @@ and calculated area from automatic rejection. Paired owners, actual mapped
 readback, ordinary guest/capture and both all-pixel image checks agree.
 Independent source/public-reader/print evidence and remaining scope limits are
 recorded separately; this finite illustration is not whole-console acceptance.
+
+2026-10-19: The normal/PLUS relationship and delayed-publication wording pass
+the paired-owner source check; no changed-contract findings.

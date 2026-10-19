@@ -358,3 +358,6 @@ was corrected in that consumer, not made into a language contract.
 
 This closes the finite coverage-output contrast, not arbitrary quad once-only
 coverage, native/accelerated parity, physical throughput, final print or Book I.
+
+2026-10-19: Ingress and successive-frame ordering pass the paired-owner source
+check, including staged display publication and conditional storage reuse.

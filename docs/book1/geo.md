@@ -11,6 +11,17 @@ The three commands serve different data formats and tasks:
 | 00000021H | SAT2_BATCH | Signed Q16.16 | Test one supplied convex-polygon pair |
 | 00000022H | OVERLAP2D_PASS | Binary32 | Test one candidate pair, or one full-pass outer instance |
 
+All three commands share one active-job slot and work-credit budget; they are
+not independently running engines. A transform followed by a collision test
+is two successive jobs, not an automatically chained pipeline. Do not submit
+another command while BUSY: the CMD write discards the running job and rejects
+the new one.
+
+The work-credit rate funds outer-record processing, one unit per outer record
+for any command. It is not a vertex, collision-pair, contact or byte throughput.
+One OVERLAP2D full-pass outer record can examine many pairs, so credit thresholds
+are not whole-job completion guarantees.
+
 GEO is not the GTE register arithmetic path and is not a rasterizer. Its RAM
 vertices and collision results are not GP0 packets or displayed pixels. Use the
 [GTE chapter](gte.md) for that unit's arithmetic and projection interface and
@@ -18,7 +29,7 @@ the [GPU chapter](gpu.md) when submitting drawing commands. In particular,
 OVERLAP2D's binary32 vertices cannot be substituted for the Q16.16 words read
 by XFORM2 or SAT2 merely because both occupy one word per component.
 
-## Installed resources
+## GEO specifications
 
 | Resource | Specification |
 |---|---|
