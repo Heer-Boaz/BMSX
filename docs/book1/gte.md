@@ -1994,20 +1994,23 @@ this sequence without a separate FIFO-clear sequence.
    RGB1=`0x00008000`, RGB2=`0x00400000`. Submit the three matching coordinates
    and colors as one six-word Gouraud triangle packet. No implicit GTE-to-GPU
    transfer performs this step.
-5. After the complete packet has been submitted, wait for GPU idle. Only then
-   program the finished buffer as the next display source.
-6. Sample the VBlank sequence **after** those display writes, then wait for a
-   different sequence value. The subsequent VBlank entry has latched the new
-   source before the old front buffer is reused. If an edge occurs between the
-   display writes and the sequence read, software can wait an extra refresh;
-   it does not infer that the earlier edge latched writes that had not happened.
+5. After the complete packet has been submitted, wait for GPU idle. Mask
+   interrupt delivery, then program the finished buffer as the next display
+   source.
+6. After the final display store, acknowledge stale controller VBlank bit 2,
+   sample the software sequence, then unmask VBlank and wait for a different
+   sequence value. A pending request
+   from before the stores cannot then masquerade as a new latch edge. An edge
+   discarded by that acknowledgement can cost an extra refresh; the observed
+   later edge has latched the source before the old front buffer is reused.
 7. Exchange the back-buffer index and start another iteration.
 
-Masking the system interrupt would not stop the PCRTC configuration-latch edge.
-This sequence instead waits for an observed later edge before reusing storage;
-it does not treat several display writes as an atomic transaction. It also does
-not infer GPU completion from GTE CYCLES, or display publication from GPU idle.
-These are separate ownership conditions.
+Masking the system interrupt does not stop the PCRTC configuration-latch edge.
+The mask prevents an old request from advancing the software sequence during
+the stores and acknowledgement; it does not make the display stores atomic.
+Wait for the later observed edge before reusing storage. GPU completion does
+not follow from GTE CYCLES, nor display publication from GPU idle. These are
+separate ownership conditions.
 
 ### Frame register and packet order
 
@@ -2045,11 +2048,13 @@ then issue NCCT `0x0008043f`. Submit the following complete six-word GP0 packet:
 | 5 | `D[22] & 0x00ffffff` |
 | 6 | Retained third screen word |
 
-Wait until GP1/status at `0x08010240` has bit 26 set. Write
-`0x000fa000 | (b << 6)` to DISPFB1_LOW at `0x0801035c`, then `0x0000ff21`
-to PMODE_LOW at `0x08010354`. Sample the software VBlank sequence after those
-writes and wait for it to change. Only then exchange `b` with `1-b`, increment
-the completed-iteration count and reuse the old displayed buffer.
+Wait until GP1/status at `0x08010240` has bit 26 set. Write zero to IRQ_MASK
+at `0x08000008`, then `0x000fa000 | (b << 6)` to DISPFB1_LOW at `0x0801035c`
+and `0x0000ff21` to PMODE_LOW at `0x08010354`. After that final display store,
+write `0x00000004` to IRQ_ACK at `0x08000004`, sample the software VBlank
+sequence, then write `0x00000004` to IRQ_MASK. Wait for the sequence to change.
+Only then exchange `b` with `1-b`, increment the completed-iteration count and
+reuse the old displayed buffer.
 
 <div class="keep-together">
 

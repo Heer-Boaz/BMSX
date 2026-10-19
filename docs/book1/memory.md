@@ -44,6 +44,8 @@ GPU VRAM is a separate **2 MiB** capacity and is not included in the 4 MiB main-
 
 The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
 
+### Lower register banks and reserved slots
+
 | First word address | Exclusive end | 32-bit word positions | Unit and subbank |
 |---|---|---|---|
 | `0x08000000` | `0x0800000c` | 3 | [IRQ](irq.md#register-reference) — pending flags, acknowledgement and mask |
@@ -60,6 +62,11 @@ The following directory covers the complete I/O aperture in address order. Each 
 | `0x08000200` | `0x08000204` | 1 | [APU](apu.md#register-reference) — sample sequence |
 | `0x08000204` | `0x08000208` | 1 | Reserved retained word |
 | `0x08000208` | `0x08010208` | 16384 | Reserved retained-slot range |
+
+### Upper register banks
+
+| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
+|---|---|---|---|
 | `0x08010208` | `0x08010218` | 4 | [Memory bus fault](#bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
 | `0x08010218` | `0x08010224` | 3 | [APU](apu.md#register-reference) — fault code, detail and acknowledgement |
 | `0x08010224` | `0x08010228` | 1 | [GEO](geo.md#register-reference) — fault acknowledgement |

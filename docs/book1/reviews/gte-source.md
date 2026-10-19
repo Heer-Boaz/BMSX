@@ -243,3 +243,13 @@ recorded separately; this finite illustration is not whole-console acceptance.
 
 2026-10-19: The normal/PLUS relationship and delayed-publication wording pass
 the paired-owner source check; no changed-contract findings.
+
+## Independent hardware frame sequence — 2026-10-19
+
+The public-only reader found a delayed-pending-VBlank race in buffer reuse.
+The corrected mask/store/ACK/sample/unmask/wait order passes that finding's
+paired IRQ-owner and reader recheck; [source locations](../facts/gte.md#independent-frame-loop-publication).
+No further reader-contract gap was found in the bounded geometry/color/output
+routes. Full paired-source approval of the replacement raw setup tables and
+GPU/PCRTC sequences remains pending; earlier library-program executions do not
+validate a replacement listing. The facts and print flags remain false.

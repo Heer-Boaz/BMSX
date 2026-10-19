@@ -223,3 +223,16 @@ The opening, source-route table, programming sequence and shared transfer-budget
 explanation pass the source check against paired audio owners and current
 cartridge-library calls. Existing examples and figures are unchanged; print
 review is deferred.
+
+## Independent hardware sequences — 2026-10-19
+
+The library program is no longer in the public chapter. Its replacement raw
+PCM/square tables agree with paired parameter, capture, execution and output
+owners; the [source-derived values](../facts/apu.md#independent-pcm-and-square-setup)
+are not claimed as a newly executed cartridge. Square levels now describe solo
+final output, not per-voice truncation before mixing. The public-only reader's
+one finding, fade-entry versus post-frame completion, is corrected against
+both owners and rechecked with no remaining contradiction. The separate
+output-boundary policy question stays on the engineering worklist. No other
+reader-contract gap was found in the bounded independent source routes;
+current print acceptance remains separate.

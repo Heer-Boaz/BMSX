@@ -173,9 +173,10 @@ square when PLAY executes. Check the fault words as well as the active bit.
 The PCM loop repeats sixteen source frames at 7040 frames/s, giving a 440 Hz
 waveform at one-half gain. The square uses 440 as its source rate, a one-frame
 loop and one-half duty; it is a continuous 440 Hz generator, not a sound lasting
-one output frame. Its quarter gain gives +8191 or −8192 per channel before
-mixing with other slots and output clipping. Leave the PCM ROM bytes intact
-for the voice's complete lifetime, including pauses.
+one output frame. Its quarter-gain contribution is mixed at Q12 precision;
+with no other contributing voices, the final channel levels are +8191 and
+−8192. Leave the PCM ROM bytes intact for the voice's complete lifetime,
+including pauses.
 
 To stop either voice without a fade, write its slot number to `08000148H`,
 zero to FADE_SAMPLES at `08000168H`, then `00000002H` to CMD. These are new
@@ -609,7 +610,9 @@ At render entry, an unlooped cursor outside [0, SOURCE_FRAME_COUNT×65536) ends 
 
 At source rate 44100 Hz and unity rate, a nonloop source of N frames played from zero emits frames 0 through N−1. At negative unity rate, start at N−1 to emit N−1 down through zero. Starting at N is already outside the interval. An in-range zero-rate voice does not naturally end by phase motion alone.
 
-A nonzero fade changes the post-sample completion rule; see “Stop and fade” below. Do not assume a fade will automatically stop at the normal source end.
+A nonzero fade bypasses only the post-sample check, not the entry check; see
+“Stop and fade” below. Do not assume either exact stopping at the normal source
+end or completion of the entire fade after its source runs out.
 
 <div class="keep-together">
 
@@ -708,7 +711,14 @@ Each frame uses the current gain before any fade adjustment. After phase advance
 
 At G0=4096 and N=4, the four frame gains are 4096,3072,2048,1024, then the voice stops. There is no fifth frame at zero gain. A live GAIN_Q12 write sets current gain immediately and replans this arithmetic over the remaining frame count, not the original duration.
 
-**A nonzero fade suppresses the normal post-frame source-end check.** A nonloop source may advance past its declared end during a fade longer than its remaining data. The fade is not automatically shortened to the source length, and no padding, clipping or recovery is promised. Keep the fade inside the remaining source data or provide a valid loop for its duration.
+**A nonzero fade suppresses the post-frame source-end check, but not the entry
+check.** If output processing starts with an unlooped cursor already outside
+the declared frame interval, the voice ends even when fade frames remain.
+During continuing output work, the skipped post-frame check can instead let
+the cursor advance past the source end. Neither exact source-end clamping nor
+completion of the entire fade is guaranteed in that case; no padding, clipping
+or recovery is promised. Keep the fade inside the remaining source data or
+provide a valid loop for its duration.
 
 Natural completion and fade completion end and clear the slot and produce the slot-ended notification described in the event section. An immediate explicit stop does not emit that notification.
 

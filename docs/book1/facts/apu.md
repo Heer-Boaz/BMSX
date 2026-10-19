@@ -569,8 +569,9 @@ filterOutput = saturateSigned16(y)
 - For retained signed gain G and nonzero duration N, configure signed quotient Q=trunc(G/N), signed remainder R=G−Q*N; set error=N−1, remaining=N, total=N.
 - Each rendered frame first uses the current G. After phase advancement, decrement remaining. At zero, end immediately; there is no further gain update on that last frame. Otherwise add |R| to error; when error>=N subtract N and use carry sign(R), else carry zero. New gain is WRAP32(G−Q−carry).
 - This produces N rendered frames from the configured gain toward zero, not an additional final zero-gain frame. For G=4096,N=4, the frame gains are 4096,3072,2048,1024, then stop.
-- During a nonzero fade the same per-frame branch does not run the post-frame natural-end test. The owner does not shorten a fade to remaining source length; a nonloop source can advance beyond its declared end during a longer fade. Do not promise automatic padding, clipping or recovery. Program the fade within remaining data or use a valid loop for the fade's duration.
+- During a nonzero fade the per-frame branch skips the post-frame natural-end test, but the render-batch entry range check still runs. A nonloop source may advance beyond its declared end within a batch, then end at a later batch entry with fade frames remaining. Neither exact source-end clamping nor completion of all fade frames is guaranteed after the source runs out. Do not promise automatic padding, clipping or recovery. Program the fade within remaining data or use a valid loop for its duration.
 - Sources: configure `machine/ts/machine/devices/audio/output.ts:505–511`; `machine/cpp/machine/devices/audio/output.cpp:435–442`; advancement/branch order `machine/ts/machine/devices/audio/output.ts:390–424`; `machine/cpp/machine/devices/audio/output.cpp:309–347`. The four-gain example is direct integer substitution in that recurrence, not a timing measurement.
+- Entry check: `machine/ts/machine/devices/audio/output.ts:346–352`; `machine/cpp/machine/devices/audio/output.cpp:260–267`. Batch-sensitive overrun is an implementation-policy issue for separate engineering work, not a new physical timing guarantee.
 
 ### APV30 — Gain retarget during a fade
 - A GAIN write replaces the current signed gain immediately after selected-slot synchronization, and if remaining fade count is nonzero, recomputes Q/R/error using that new gain and the remaining frame count. The fade's remaining duration is not restarted to its old original total.
@@ -717,6 +718,20 @@ sample-accurate waveform parity or every-browser proof. Pulse capture reported
 timestamp adjustments; its durations are not used as APU timing contracts.
 Ordinary ROM SHA256: `5b3f7036c65937d3506afbcb8e4823d88c3eb75125c4ef8385c0a4a5403682d9`;
 artifact `613e58e504bc82b71488c281724f8db6cb80e5f525a6fa8a8357901d539c1930`.
+
+## Independent PCM and square setup
+
+- The complete21-word raw configurations use APR02's parameter addresses and
+  defaults. PLAY capture/reset and execution/binding are APR06/APR08–09; zero-fade
+  stop is APV28. No library call supplies any part of this sequence.
+- The authored32 mono i16 samples occupy64bytes and repeat a16-frame period.
+  At sourceHz7040 and unityQ16 rate that period is440Hz. Square kind1 with
+  sourceHz440, loop[0,1), duty0800H and gain0400H produces isolated final levels
+  +8191/−8192: paired phase conversion `machine/ts/machine/devices/audio/playback.ts:13–48`,
+  `machine/cpp/machine/devices/audio/playback.cpp:7–10`; square and Q12 mix/shift
+  `machine/ts/machine/devices/audio/output.ts:358–362,390–392,440–446`,
+  `machine/cpp/machine/devices/audio/output.cpp:273–280,309–311,363–369`.
+- These are source-derived register sequences, not a newly executed cartridge.
 
 ## Library record-to-descriptor boundary
 
