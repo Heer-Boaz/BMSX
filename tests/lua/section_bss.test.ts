@@ -18,7 +18,7 @@ import {
 	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { materializeCpuCompletionValues } from './cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues } from './cpu_test_harness';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -618,6 +618,42 @@ return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 	const result = runColdCompiled(compiled);
 	const bytesAddress = result.image.header.rodataAddress;
 	assert.deepEqual(result.values, [1, 2, 3, 258, 772, bytesAddress, bytesAddress + 4]);
+});
+
+for (const section of ['data', 'rodata'] as const) {
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		test(`O${optLevel}: .${section} floating initializers preserve scalar, array and struct layouts`, () => {
+			const source = `
+struct floating_record
+	tag: u8
+	single: f32
+	double: f64
+end
+${section} scalar: f64 = -0
+${section} singles: f32[3] = { 1 / 3, -0, 1 }
+${section} doubles: f64[3] = { 1 / 3, -0, 1 }
+${section} record: floating_record = { tag = 7, single = -1.5, double = 2.25 }
+return *scalar, singles[0], singles[1], singles[2],
+	doubles[0], doubles[1], doubles[2], record.tag, record.single, record.double
+`;
+			const compiled = compileLuaSource(source, 'floating_storage.lua', optLevel);
+			const bytes = encodeCompiledProgramObject(compiled).sections[section].bytes;
+			assert.deepEqual(Array.from({ length: bytes.length / 4 }, (_, index) => readLE32(bytes, index * 4)), [
+				0, 0x80000000,
+				0x3eaaaaab, 0x80000000, 0x3f800000,
+				0x55555555, 0x3fd55555, 0, 0x80000000, 0, 0x3ff00000,
+				7, 0xbfc00000, 0, 0x40020000,
+			]);
+			assert.deepEqual(runColdCompiled(compiled).values,
+				[-0, Math.fround(1 / 3), -0, 1, 1 / 3, -0, 1, 7, -1.5, 2.25]);
+		});
+	}
+}
+
+test('integer storage initializers still reject fractional numbers', () => {
+	for (const section of ['data', 'rodata']) {
+		assert.throws(() => compileSource(`${section} value: word = 1.5`), /must be a compile-time integer/);
+	}
 });
 
 test('BLua static storage derives dimensions and initializer values from local constants', () => {

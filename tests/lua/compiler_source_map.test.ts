@@ -6,11 +6,21 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { compileLuaSource } from './cpu_test_harness';
 
 const ENTRY_PATH = 'entry';
 const GENERATED_PATH = 'bmsx/test_harness';
 const TEST_RANGE_PATH = 'tests/carts/example/example_assert';
 const TEST_DISPLAY_PATH = `${TEST_RANGE_PATH}.lua`;
+
+test('repeat body local debug scopes include the until condition but not the following statement', () => {
+	const source = 'local passes = 0\nrepeat\n passes += 1\n local ready = passes >= 3\nuntil ready\nreturn passes';
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		const compiled = compileLuaSource(source, ENTRY_PATH, optLevel);
+		const local = compiled.metadata.localSlotsByProto[compiled.entryProtoIndex].find(slot => slot.name === 'ready')!;
+		assert.deepEqual(local.scope.end, { line: 5, column: 11 });
+	}
+});
 
 function buildMappedModule(testSource: string) {
 	return composeLuaSource(GENERATED_PATH, [

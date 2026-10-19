@@ -56,6 +56,101 @@ return caller()
 	assert.equal(result[0], 41);
 });
 
+test('repeat conditions read their body locals instead of same-named globals', () => {
+	const source = `
+ready = true
+local passes = 0
+repeat
+	passes += 1
+	local ready<const> = passes >= 3
+until ready
+return passes, ready
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, true]);
+	}
+});
+
+test('repeat conditions keep mutable body locals available to compound expressions and closures', () => {
+	const source = `
+local passes = 0
+repeat
+	passes += 1
+	local current = passes
+until current >= 2 and (function()
+	current += 1
+	return current >= 4
+end)()
+return passes
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3]);
+	}
+});
+
+test('repeat scope ends after the condition and break exits without evaluating it', () => {
+	const source = `
+local ready = 17
+local passes = 0
+repeat
+	passes += 1
+	local ready = passes >= 2
+until ready
+repeat
+	local ready = false
+	passes += 1
+	if passes == 3 then break end
+until ready
+return passes, ready
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3, 17]);
+	}
+});
+
+test('repeat conditions retain typed body-local address views', () => {
+	const source = `
+data values: word[3] = { 1, 2, 3 }
+local passes = 0
+repeat
+	local current<const>: *word = &values[passes]
+	passes += 1
+until *current == 3
+return passes
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [3]);
+	}
+});
+
+test('constant loads and folded arithmetic preserve both signs of zero', () => {
+	const source = `
+local negative<const> = -0
+local positive<const> = 0
+return -0, 0, negative, positive, -negative, 1 / negative, 1 / positive
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel),
+			[-0, 0, -0, 0, 0, -Infinity, Infinity]);
+	}
+});
+
+test('constant propagation distinguishes signed zero at control-flow joins', () => {
+	const source = `
+local function reciprocal(negative)
+	local value
+	if negative then value = -0 else value = 0 end
+	return value, 1 / value
+end
+local negative, negative_reciprocal = reciprocal(true)
+local positive, positive_reciprocal = reciprocal(false)
+return negative, negative_reciprocal, positive, positive_reciprocal
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [-0, -Infinity, 0, Infinity]);
+	}
+});
+
 test('optimized code preserves a local snapshot across a closure mutation', () => {
 	const source = `
 local sequence = 0

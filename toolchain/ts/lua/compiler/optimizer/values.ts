@@ -120,7 +120,7 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 		case ConstValueKind.Number:
 			break;
 	}
-	if (Number.isInteger(constant.value)) {
+	if (Number.isInteger(constant.value) && !Object.is(constant.value, -0)) {
 		if (constant.value === 0) {
 			instruction.op = OpCode.K0;
 			instruction.a = target;

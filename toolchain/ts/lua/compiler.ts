@@ -124,7 +124,6 @@ import {
 } from './compiler/target_semantics';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { getMemoryAccessKindForName } from './memory_access_syntax';
-import { writeLE16, writeLE32 } from '../../../machine/ts/common/endian';
 import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { StructTypes, indexedStructType, type StructResolvedType } from './compiler/struct_types';
 import { buildStaticDebugScopes } from './compiler/static_debug';
@@ -446,10 +445,12 @@ const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
 
+const NEGATIVE_ZERO_CONSTANT = Symbol('negative-zero');
+
 class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
-	private readonly constSlotByValue: Map<ProgramConstant, number>;
+	private readonly constSlotByValue: Map<ProgramConstant | typeof NEGATIVE_ZERO_CONSTANT, number>;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
@@ -512,7 +513,7 @@ class ProgramBuilder {
 		this.optLevel = optLevel;
 		this.programDomain = programDomain;
 		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
-		this.constSlotByValue = new Map<ProgramConstant, number>();
+		this.constSlotByValue = new Map();
 		this.systemGlobalNameSet = new Set(PROGRAM_BOOT_GLOBAL_NAMES[programDomain]);
 		for (const name of this.systemGlobalNameSet) {
 			this.resolveSystemGlobalSlot(name);
@@ -535,13 +536,14 @@ class ProgramBuilder {
 	}
 
 	public constIndex(value: ProgramConstant): number {
-		const slot = this.constSlotByValue.get(value);
+		const key = Object.is(value, -0) ? NEGATIVE_ZERO_CONSTANT : value;
+		const slot = this.constSlotByValue.get(key);
 		if (slot) {
 			return slot - 1;
 		}
 		const index = this.constPool.length;
 		this.constPool.push(value);
-		this.constSlotByValue.set(value, index + 1);
+		this.constSlotByValue.set(key, index + 1);
 		return index;
 	}
 
@@ -3155,7 +3157,11 @@ class FunctionBuilder {
 			return;
 		}
 		if (value === 0) {
-			this.emitABC(OpCode.K0, target, 0, 0);
+			if (Object.is(value, -0)) {
+				this.emitABx(OpCode.LOADK, target, this.program.constIndex(value));
+			} else {
+				this.emitABC(OpCode.K0, target, 0, 0);
+			}
 			return;
 		}
 		if (value === 1) {
@@ -3729,11 +3735,11 @@ class FunctionBuilder {
 	private encodeStorageInitializer(type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): StaticStorageInitializer {
 		const bytes = new Uint8Array(type.size);
 		const rodataConstRelocs: ProgramRodataConstReloc[] = [];
-		this.writeStorageInitializer(bytes, rodataConstRelocs, 0, type, expression, sectionName);
+		this.writeStorageInitializer(new DataView(bytes.buffer), rodataConstRelocs, 0, type, expression, sectionName);
 		return { bytes, rodataConstRelocs };
 	}
 
-	private writeStorageInitializer(out: Uint8Array, rodataConstRelocs: ProgramRodataConstReloc[], byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
+	private writeStorageInitializer(out: DataView, rodataConstRelocs: ProgramRodataConstReloc[], byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
 		if (type.dimensions.length !== 0) {
 			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
 				throw new Error(`${sectionName} array '${type.name}' requires a table initializer.`);
@@ -3793,25 +3799,35 @@ class FunctionBuilder {
 				throw new Error('.rodata string initializer must be a compile-time string.');
 			}
 			const constIndex = this.program.constIndex(this.compileTimeValue);
-			writeLE32(out, byteOffset, constIndex);
+			out.setUint32(byteOffset, constIndex, true);
 			rodataConstRelocs.push({ byteOffset, constIndex });
 			return;
 		}
 		const value = this.evaluateCompileTimeNumber(expression);
-		if (value === undefined || !Number.isInteger(value)) {
+		if (value === undefined) {
+			throw new Error(`${sectionName} primitive initializer must be a compile-time number.`);
+		}
+		switch (type.access.memoryKind) {
+			case MemoryAccessKind.F32LE:
+				out.setFloat32(byteOffset, value, true);
+				return;
+			case MemoryAccessKind.F64LE:
+				out.setFloat64(byteOffset, value, true);
+				return;
+		}
+		if (!Number.isInteger(value)) {
 			throw new Error(`${sectionName} primitive initializer must be a compile-time integer.`);
 		}
-		const word = value;
 		switch (type.access.memoryKind) {
 			case MemoryAccessKind.U8:
-				out[byteOffset] = word & 0xff;
+				out.setUint8(byteOffset, value);
 				return;
 			case MemoryAccessKind.U16LE:
-				writeLE16(out, byteOffset, word);
+				out.setUint16(byteOffset, value, true);
 				return;
 			case MemoryAccessKind.U32LE:
 			case MemoryAccessKind.Word:
-				writeLE32(out, byteOffset, word);
+				out.setUint32(byteOffset, value, true);
 				return;
 			default:
 				throw new Error(`${sectionName} v1 does not support '${type.name}' initializers.`);
@@ -4466,15 +4482,15 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		this.pushScope(this.semantics.locations.range(statement.block.span));
+		this.pushScope(this.semantics.locations.range(statement.span));
 		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
-		this.popScope();
-		this.loopStack.pop();
 		const repeatJumps: number[] = [];
 		this.compileConditionJumps(statement.condition, false, repeatJumps);
+		this.popScope();
+		this.loopStack.pop();
 		for (let i = 0; i < repeatJumps.length; i += 1) {
 			this.patchJump(repeatJumps[i], loopStart);
 		}
