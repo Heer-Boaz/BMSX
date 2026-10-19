@@ -61,6 +61,7 @@
 		"test:codex-account": "node --import tsx --test tests/platform/codex_account.test.ts",
 		"pretest:codex-account": "npm run build:product:node-host-tools",
 		"test:terminal-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/terminal/run.ts",
+		"test:bios-float-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/bios_float/run.ts",
 		"test:pow-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/pow/run.ts",
 		"test:symbols-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
 		"test:host-shortcuts-parity": "tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",

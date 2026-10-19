@@ -1,6 +1,5 @@
 module<const>
 local positive_infinity<const> = 1 / 0
-local negative_infinity<const> = -1 / 0
 local f32_mantissa_bits<const> = 23
 local f32_exponent_bits<const> = 8
 local f32_byte_count<const> = 4
@@ -11,7 +10,7 @@ return function(value, byte_count)
 	local mantissa_bits<const> = byte_count == f32_byte_count and f32_mantissa_bits or f64_mantissa_bits
 	local exponent_bits<const> = byte_count == f32_byte_count and f32_exponent_bits or f64_exponent_bits
 	local sign = 0
-	if value < 0 then
+	if value < 0 or (value == 0 and 1 / value < 0) then
 		sign = 1
 		value = -value
 	end
@@ -23,7 +22,7 @@ return function(value, byte_count)
 	if value ~= value then
 		exponent = exponent_max
 		mantissa = 1
-	elseif value == positive_infinity or value == negative_infinity then
+	elseif value == positive_infinity then
 		exponent = exponent_max
 	elseif value ~= 0 then
 		while value >= 2 do
@@ -36,17 +35,23 @@ return function(value, byte_count)
 		end
 		exponent = exponent + exponent_bias
 		if exponent <= 0 then
-			mantissa = ((value / (2 ^ (1 - exponent - exponent_bias))) * mantissa_scale + 0.5) // 1
+			mantissa = (value / (2 ^ (1 - exponent))) * mantissa_scale
 			exponent = 0
 		elseif exponent >= exponent_max then
 			mantissa = 0
 			exponent = exponent_max
 		else
-			mantissa = ((value - 1) * mantissa_scale + 0.5) // 1
-			if mantissa >= mantissa_scale then
-				mantissa = 0
-				exponent = exponent + 1
-			end
+			mantissa = (value - 1) * mantissa_scale
+		end
+		local integral<const> = mantissa // 1
+		local fraction<const> = mantissa - integral
+		mantissa = integral
+		if fraction > 0.5 or (fraction == 0.5 and integral % 2 ~= 0) then
+			mantissa = mantissa + 1
+		end
+		if mantissa >= mantissa_scale then
+			mantissa = 0
+			exponent = exponent + 1
 		end
 	end
 	if mantissa_bits == f32_mantissa_bits then
