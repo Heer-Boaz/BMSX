@@ -53,7 +53,7 @@ later alleen via de echte cartlib-/cart-owner muteren; de host maakt geen
 schaduwwereld en leest geen private `World`-opslag. Deze slice introduceert geen
 Studio-cartridge, socketrol, mailboxprotocol of tweede runtime.
 Cartridge-expansie blijft het zelfstandige, generieke machinecontract uit
-[architecture.md](architecture.md#cartridge-expansion).
+[Cartridge and Expansion Reference](book3/cartridge.md).
 
 ## Professionele uitgangspunten
 
@@ -382,7 +382,7 @@ De machine heeft twee generieke sockets. Beide kunnen concrete `rom`, `ram` en
 `mailbox`-componenten dragen; geen socket heeft een Studio-rol. Zie
 [`machine/ts/spec/bmsx/cartridge.ts`](../machine/ts/spec/bmsx/cartridge.ts),
 [`machine/ts/rompack/manifest.ts`](../machine/ts/rompack/manifest.ts) en het
-[expansiecontract](architecture.md#cartridge-expansion).
+[expansiecontract](book3/cartridge.md).
 
 Studio-functionaliteit definieert geen kaart, socketselectie, mailboxpayload,
 board-id, capabilitybit, MMIO-register of DMA-route.
@@ -1176,7 +1176,7 @@ op buiten beide features.
 
 ## Browser en libretro
 
-Volgens [architecture.md](architecture.md#runtime-container-vocabulary) is
+Volgens [architecture.md](architecture.md#architectural-roles) is
 Studio een authoringproduct boven een host. De browser-Studio composition root
 voegt workbench, workspace, compiler en source tooling toe; playerhosts importeren
 Studio niet. Libretro heeft geen browser- of Studio-lifecycle.

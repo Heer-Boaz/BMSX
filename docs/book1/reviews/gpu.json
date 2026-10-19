@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "The complete BIOS-style BLua route precedes the register inventory: typed readonly direct image/palette/indices/packets, explicit BSS, fixed-port transfers, drawing/display setup, counted odd readback, two-latch IRQ handling and separate idle/publication. Actual rebuilt guest 20 probes/readback/witness/capture plus independent source/math/representation and whole-reader reviews pass. The static example does not promise a general frame-loop/buffer-reuse algorithm. The separate raw-image DMA program now supplies the complete 44-word RAM-to-GP0 upload and 41-word READY GPUREAD-to-RAM roundtrip; all returned words, ownership and completion observations pass ordinary guest execution and fresh byte-exact public-reader reconstruction. The separate 73-line dither cartridge adds the actual same-material polygon OFF/ON and rectangle-control output, forty checked GPUREAD words and byte-exact two-part printed source; bounded source/figure/reader checks remain distinct from final print approval. The separate coverage cartridge and exact three public changes now add normal-diagonal/overlap/polyline-joint output with 625 checked packed words; independent actual-source, math, image and public-reader checks pass.",
+			"resolution": "Compact packet, texture, transfer and synchronization sequences accompany complete command references, numerical raster examples and actual output plates.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/gpu-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/gpu-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/gpu-print.md"
 		}
 	}

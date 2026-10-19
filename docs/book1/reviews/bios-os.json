@@ -35,13 +35,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete18+110-line ordinary BLua programme, unchanged-quality final artifact241d7999,74 retained assertions and26 separate ordinary diagnostics plus newline continuation. Independent actual-program source comparison and fresh context-isolated public-only full-reference/project-route reconstruction pass. No native/all-input/calendar-accuracy, full SDK or whole-console guarantee.",
+			"resolution": "Short sampled-time and civil-date/formatting examples accompany units, conversion rules, wrap and error behavior.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-os-source.md"
 		},
 		"figures": {
@@ -49,7 +49,7 @@
 			"report": "docs/book1/reviews/bios-os-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-os-print.md"
 		}
 	}

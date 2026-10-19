@@ -14,7 +14,7 @@ completion of a graphics or audio command: the receiving unit defines its own
 work and completion conditions.
 
 The reference begins with execution resources, instruction encoding, cycle
-accounting and reset. Worked BLua programs accompany the operation reference.
+accounting and reset. Short BLua sequences accompany the operation reference.
 **Memory and program storage** defines the installed address map, reservations,
 section initialization and instruction
 addresses. **Interrupt controller** defines IRQ masks, acknowledgment and the
@@ -256,176 +256,60 @@ all RAM has been erased. The Memory chapter supplies the actual reset vector,
 BIOS cartridge selection and section-initialization route; SYSTEM defines the
 separate software reset request and device-context transitions.
 
-## A complete BLua computation program
+### Hard halt and instruction exceptions
 
-Start this cartridge through the installed BIOS. The program owns its result
-record in BSS; it does not guess an unused RAM address, change a device's
-configuration or create a raw CPU-register array. The **Memory and program
-storage** chapter supplies section initialization, typed-storage ownership and
-cartridge startup. Ordinary calls to the installed `print` global produce the
-three diagnostic lines shown below.
+A reserved opcode, a WIDE body that is itself WIDE, or failure to acquire a
+required function record hard-halts the CPU. EXEC also hard-halts when its
+record does not have STATIC set. Hard halt is distinct from HALT's interrupt
+wait: execution stops accepting interrupts and software cannot wake it with an
+IRQ; reset clears the condition.
 
-### Result-storage module
+Instruction-address alignment and mapped instruction-read faults instead enter
+the architectural exception route described above. Do not treat malformed
+instruction or function-record state as a BIOS compilation error or assume it
+will return a recoverable language error.
 
-Name this module `results` and make it available to the entry module. The array
-of five operands and the calculated numeric fields use `f64` storage. The
-`word` fields hold transferred words or flags; the single `f32` field exposes
-single-precision rounding. These are byte-storage declarations, not CPU value
-registers.
+## Worked computation: Numbers, words and stored bytes
 
-```lua
-module<const>
-
-struct cpu_manual_result
-	completed: word
-	operands: f64[5]
-	quotient: f64
-	floor_quotient: f64
-	mod_positive: f64
-	mod_negative: f64
-	number_sum: f64
-	word_sum: word
-	signed_word: f64
-	shift_right: f64
-	shift_32: f64
-	shift_negative: f64
-	truncated_word: f64
-	zero_is_true: word
-	comparison: word
-	read_u16: word[2]
-	read_u32: word
-	rounded: f32
-	rounded_readback: f64
-	call_sum: f64
-	counter: f64[2]
-end
-
-bss result: cpu_manual_result
-
-return { result = result }
-```
-
-### Entry module
-
-The first part writes operands to storage, reads them back, and calculates both
-ordinary Number results and word-based results. Division is not floor division,
-and arithmetic right shift is not a zero-fill shift.
+Start after normal BIOS entry, which has initialized the cartridge's DATA and
+BSS. The following operations require no device setup. The storage declarations
+provide linked addresses; they are not CPU register allocations.
 
 ```lua
 module<entry>
+rodata operands: f64[3] = { -7, 3, 2147483648 }
+rodata bytes: u8[4] = { 0x78, 0x56, 0x34, 0x12 }
+bss word_result: word
+bss rounded: f32
 
-local state<const> = require('results')
-local result<const>: *cpu_manual_result = state.result
-rodata little_endian_bytes: u8[4] = { 0x78, 0x56, 0x34, 0x12 }
-
--- Read operands back from real numeric storage, not just constant expressions.
-result.operands[0] = -7
-result.operands[1] = 3
-result.operands[2] = -1.75
-result.operands[3] = 2147483647
-result.operands[4] = 2147483648
-local numerator<const> = result.operands[0]
-local divisor<const> = result.operands[1]
-result.quotient = numerator / divisor
-result.floor_quotient = numerator // divisor
-result.mod_positive = numerator % divisor
-result.mod_negative = -numerator % -divisor
-
--- Arithmetic retains a Number; a word transfer and a bitwise result differ.
-result.number_sum = result.operands[3] + 1
-result.word_sum = result.number_sum
-result.signed_word = result.number_sum | 0
-result.shift_right = result.operands[4] >> 1
-result.shift_32 = 1 << 32
-result.shift_negative = 1 << -1
-result.truncated_word = result.operands[2] | 0
-
-local zero<const> = result.operands[1] - 3
-if zero then
-	result.zero_is_true = 1
-end
-result.comparison = numerator < divisor and 1 or 0
+local numbers<const>: *f64 = operands
+local halves<const>: *u16 = bytes
+local whole<const>: *u32 = bytes
+local quotient = numbers[0] / numbers[1]
+local floor_quotient = numbers[0] // numbers[1]
+*word_result = numbers[2]
+*rounded = numbers[2] + 1
 ```
 
-Continue the same entry module. The four bytes are numeric payload storage.
-The views read two halfwords or one word without copying that storage; they do
-not turn a string reference into an address. The returned closure retains its
-counter after `make_counter` returns.
-
-```lua
-
--- These are typed views of byte storage, not a cast of a string reference.
-local halves<const>: *u16 = little_endian_bytes
-local whole<const>: *u32 = little_endian_bytes
-result.read_u16[0] = halves[0]
-result.read_u16[1] = halves[1]
-result.read_u32 = *whole
-result.rounded = result.operands[4] + 1
-result.rounded_readback = result.rounded
-
-local add<const> = function(first, second)
-	return first + second
-end
-local make_counter<const> = function(value)
-	return function(delta)
-		value = value + delta
-		return value
-	end
-end
-result.call_sum = add(numerator, divisor)
-local advance<const> = make_counter(10)
-result.counter[0] = advance(2)
-result.counter[1] = advance(3)
-
-print('CPU: quotient', result.quotient, 'floor', result.floor_quotient)
-print('CPU: Number', result.number_sum, 'signed word', result.signed_word)
-print('CPU: counter', result.counter[0], result.counter[1])
-result.completed = 1
-while true do
-	halt_until_irq
-end
-```
-
-### Retained results
-
-<section class="keep-together">
-
-When `completed` becomes 1, the record contains:
-
-| Field | Value | Meaning |
-|---|---:|---|
-| `quotient` | −7/3, approximately −2.3333333333333335 | Ordinary division retains a fraction. |
+| Expression or stored result | Value | Reason |
+| --- | --- | --- |
+| `quotient` | −7/3, approximately −2.3333333333333335 | Number division retains a fraction. |
 | `floor_quotient` | −3 | Floor division rounds downward. |
-| `mod_positive`, `mod_negative` | 2, −2 | The nonzero remainder follows the divisor's sign. |
-| `number_sum` | 2147483648 | Addition does not wrap at the signed-word boundary. |
-| `word_sum` | `80000000H` | The stored raw word has the same low 32 bits. |
-| `signed_word` | −2147483648 | Bitwise output is the signed interpretation of those bits. |
-| `shift_right` | −1073741824 | `>>` preserves the sign bit. |
-| `shift_32`, `shift_negative` | 1, −2147483648 | Shift counts are masked to five bits. |
-| `truncated_word` | −1 | Word conversion truncates −1.75 toward zero. |
-| `zero_is_true`, `comparison` | 1, 1 | Zero is true; −7 is less than 3. |
-| `read_u16[0]`, `read_u16[1]` | `5678H`, `1234H` | Halfwords are little-endian. |
-| `read_u32` | `12345678H` | The four data bytes form one little-endian word. |
-| `rounded`, `rounded_readback` | 2147483648 | Storing 2147483649 through `f32` rounds it. |
-| `call_sum` | −4 | An ordinary two-argument call returns its result. |
-| `counter[0]`, `counter[1]` | 12, 15 | The same captured variable changes on successive calls. |
+| `numbers[0] % numbers[1]` | 2 | A nonzero remainder follows the divisor's sign. |
+| `-numbers[0] % -numbers[1]` | −2 | Reversing the signs changes the remainder's sign. |
+| `*word_result` | `80000000H`, read as 2147483648 | A word store retains raw low 32 bits. |
+| `numbers[2] \| 0` | −2147483648 | Bitwise output uses signed-word interpretation. |
+| `numbers[2] >> 1` | −1073741824 | Right shift preserves the sign bit. |
+| `1 << 32`, `1 << -1` | 1, −2147483648 | Shift counts retain their low five bits. |
+| `-1.75 \| 0` | −1 | Word conversion truncates toward zero. |
+| `halves[0]`, `halves[1]` | `5678H`, `1234H` | Halfword reads are little-endian. |
+| `*whole` | `12345678H` | The same four bytes form one word. |
+| `*rounded` | 2147483648 | The f32 store rounds 2147483649. |
 
-</section>
-
-
-The diagnostic output is:
-
-```text
-CPU: quotient	-2.33333	floor	-3
-CPU: Number	2.14748e+09	signed word	-2.14748e+09
-CPU: counter	12	15
-```
-
-The lines report the quotient and floor, Number and signed-word result, then
-the two counter results. Finite numeric text is formatted; the
-printed `2.14748e+09` is not the precise stored Number. The final wait does not
-render a picture. For actual geometry-to-picture work, use the GTE and GPU
-programming chapters rather than treating a CPU value as a drawing command.
+Arithmetic Number results do not wrap at the signed-word boundary. A stored
+word, a signed bitwise result and an f32 value are different representations.
+Finite printed Numbers are rounded text, not an exact substitute for those
+stored values. See the Number-to-text rules below.
 
 ## BLua operators and instruction costs
 
@@ -764,7 +648,7 @@ The notation boundary is therefore not merely a comparison of the original magni
 
 <section class="keep-together">
 
-#### Observed conversion examples
+#### Number-to-text examples
 
 Each row gives a Number input and its resulting text. The same conversion is obtained by using that input in `'' .. input`.
 
@@ -980,6 +864,41 @@ All four functions below require a Table as their first argument; otherwise they
 For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` does not supply an alternative length contract.
 
 
+#### Weak references and collection
+
+The collector reads a Table's metatable member `__mode` directly. A String
+containing lowercase `k` selects weak keys; lowercase `v` selects weak values;
+both select both. Other characters do not select a mode. A missing or non-String
+member selects ordinary strong entries. This lookup does not invoke `__index`.
+
+| Mode | Collection effect |
+| --- | --- |
+| Strong | Entries retain their keys and values. |
+| `k` | An entry's value is retained only when its key is alive independently; chains of such dependencies are followed to convergence. A value cannot keep its own otherwise unreachable weak key alive through that entry. |
+| `v` | Keys remain strong; values alone do not retain collectable objects. |
+| `kv` | Neither side alone retains collectable objects. |
+
+Collectable weak entries can refer to Tables, threads and dynamically captured
+closures. Numbers, booleans, builtin functions and canonical static closures do
+not disappear through weak-entry collection. Strings also remain in surviving
+weak entries; they are not removed merely because their weak position is their
+only reference. A static function with zero upvalues has the canonical closure
+identity described above, not the lifetime of a newly allocated captured closure.
+
+```lua
+local owners = {}
+setmetatable(owners, { __mode = 'k' })
+local key = {}
+owners[key] = { label = 'attached' }
+key = nil
+```
+
+The entry does not keep the former key alive. Once collection determines that
+key unreachable, the mapping is removed; this sequence does not specify an
+immediate collection or reclamation deadline. Collection removes mappings,
+not their inherited replacements, and can shorten a weak-value array's stored
+length when it clears an earlier element.
+
 ### Instruction reference
 
 The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name instruction fields, not additional language values. Opcode values use hexadecimal notation (`H`). All costs are base instruction cycles; see **Builtin call charges** below.
@@ -1038,240 +957,52 @@ The `CALL` instruction's base charge is 2 cycles. Calling a builtin additionally
 
 The symbolic faults named in this section identify failure reasons. They do not, by themselves, specify error text or which program context can catch a failure.
 
-## A complete value and table program
+## Worked values: signed zero and inherited fields
 
-This is a second, independent cartridge. Start it through the installed BIOS,
-with the result-storage module named `results`. It requires no device setup or
-raw address assignment. As in the first program, ordinary Tables use one-based
-list keys; typed byte-storage arrays use zero-based element indices. BSS starts
-zeroed, so the stored `zero` supplies an operand read from memory rather than a
-printed approximation. The program retains numeric results and comparison flags;
-Strings themselves are not stored as invented pointer words.
-
-### Result-storage module
+Use runtime operands when the distinction between Number values matters:
 
 ```lua
-module<const>
+local values = { -0, 3, -3, 0.5 }
+local negative_zero = values[1] ^ values[2]
+local positive_zero = values[1] ^ values[4]
+local reciprocal = 1 / negative_zero
 
-struct cpu_values_manual_result
-	completed: word
-	zero: f64
-	powers: f64[12]
-	reciprocals: f64[4]
-	format_match: word[18]
-	table_lengths: word[8]
-	table_values: word[9]
-	table_checks: word[7]
-	metatable_checks: word[10]
-end
-
-bss result: cpu_values_manual_result
-
-return { result = result }
+local parent = { answer = 42 }
+local child = {}
+setmetatable(child, { __index = parent })
+local inherited = child.answer
+child.answer = 9
+local own = child.answer
+child.answer = nil
+local inherited_again = child.answer
 ```
 
-### Entry module
+The first group produces negative zero, positive zero and negative infinity.
+The reciprocal exposes the sign that an equality comparison cannot distinguish.
+The POW reference above covers infinities, NaNs, represented exponent parity
+and subnormal results; these rules also apply to runtime operands.
 
-The first part supplies runtime Table operands to POW. Reciprocals make the
-result's zero sign observable: `1 / -0` is negative infinity, while `1 / +0`
-is positive infinity.
+Additional runtime-operand examples follow directly from the POW reference:
 
-```lua
-module<entry>
+| Expression | Result |
+| --- | --- |
+| `(-0)^3`, `(-0)^0.5` | Negative zero, positive zero |
+| `(-0)^(-3)` | Negative infinity |
+| `(-infinity)^0.5`, `(-infinity)^(-3)` | Positive infinity, negative zero |
+| `(-1)^infinity`, `(-2)^0.5` | NaN |
+| `NaN^0` | 1 |
+| `(-1)^9007199254740991` | −1 |
+| `(-1)^9007199254740992` | 1 |
+| `2^(-1074)` | Smallest positive subnormal Number |
+| `(-2)^(-1075)` | Negative zero |
 
-local state<const> = require('results')
-local result<const>: *cpu_values_manual_result = state.result
-local zero<const> = result.zero
-local negative_zero<const> = -zero
-local infinity<const> = 1 / zero
-local nan<const> = zero / zero
+Here infinity and NaN denote Number operands, not additional source keywords.
 
--- Parallel one-based tables supply runtime POW operands.
-local bases<const> = {
-	negative_zero, negative_zero, negative_zero, -infinity,
-	-infinity, -1, nan, -2, -1, -1, 2, -2,
-}
-local exponents<const> = {
-	3, 0.5, -3, 0.5, -3, infinity, zero, 0.5,
-	9007199254740991, 9007199254740992, -1074, -1075,
-}
-for index = 1, #bases do
-	result.powers[index - 1] = bases[index] ^ exponents[index]
-end
--- Reciprocal infinities distinguish the two signs of zero.
-result.reciprocals[0] = 1 / result.powers[0]
-result.reciprocals[1] = 1 / result.powers[1]
-result.reciprocals[2] = 1 / result.powers[4]
-result.reciprocals[3] = 1 / result.powers[11]
-
-```
-
-Continue the same entry module. Concatenation produces the exact text listed
-in `expected`; each matching comparison stores flag 1.
-
-```lua
--- Text stays in language values; only comparison flags go into byte storage.
-local inputs<const> = {
-	-7 / 3, 1.234565, 1.234575, 123456.5, 999999, 999999.5,
-	1000000, 0.0001, 0.00001, 0.00009999995, 2147483648,
-	5e-324, -infinity, infinity, nan, negative_zero, zero,
-	1.7976931348623157e308,
-}
-local expected<const> = {
-	'-2.33333', '1.23456', '1.23458', '123457', '999999', '1e+06',
-	'1e+06', '0.0001', '1e-05', '0.0001', '2.14748e+09',
-	'4.94066e-324', '-inf', 'inf', 'nan', '-0', '0', '1.79769e+308',
-}
-for index = 1, #inputs do
-	local text<const> = '' .. inputs[index]
-	result.format_match[index - 1] = text == expected[index] and 1 or 0
-	print('CPU format', index, text)
-end
-
-```
-
-Continue with own mappings. The simple hole/refill trace below is a bounded
-example, not a general cross-capacity length rule.
-
-```lua
-local values<const> = { 10, 20, 30 }
-result.table_lengths[0] = #values
-values[2] = nil
-result.table_lengths[1] = #values
-values[4] = 40
-result.table_lengths[2] = #values
-values[2] = 20
-result.table_lengths[3] = #values
-values[1] = nil
-result.table_lengths[4] = #values
-values[1] = 10
-result.table_lengths[5] = #values
-values[2] = false
-result.table_lengths[6] = #values
-
-values[0] = 90
-values[negative_zero] = 91
-values[-1] = 12
-values[1.5] = 15
-values['1'] = 16
-values[false] = 17
-values[true] = 18
-values[nan] = 21
-values[zero / zero] = 22
-values[infinity] = 23
-values[-infinity] = 24
-result.table_lengths[7] = #values
-result.table_values[0] = values[0]
-result.table_values[1] = values[-1]
-result.table_values[2] = values[1.5]
-result.table_values[3] = values['1']
-result.table_values[4] = values[false]
-result.table_values[5] = values[true]
-result.table_values[6] = values[nan]
-result.table_values[7] = values[infinity]
-result.table_values[8] = values[-infinity]
-result.table_checks[0] = values[99] == nil and 1 or 0
-result.table_checks[1] = values[1] == 10 and 1 or 0
-result.table_checks[2] = values[2] ~= nil and not values[2] and 1 or 0
-result.table_checks[3] = nan ~= nan and 1 or 0
-local first_key<const> = {}
-local other_key<const> = {}
-values[first_key] = 31
-result.table_checks[4] = values[first_key] == 31 and 1 or 0
-result.table_checks[5] = values[other_key] == nil and 1 or 0
-values[nan] = nil
-result.table_checks[6] = values[nan] == nil and 1 or 0
-
-```
-
-Finish the same entry module with actual BIOS metatable calls. Own entries
-and inherited entries are deliberately distinguished before the final wait.
-
-```lua
--- Table-only inheritance is separate from direct mappings and writes.
-local inherited<const> = { answer = 42 }
-local metatable<const> = { __index = inherited }
-local target<const> = {}
-result.metatable_checks[0] = setmetatable(target, metatable) == target and 1 or 0
-result.metatable_checks[1] = getmetatable(target) == metatable and 1 or 0
-result.metatable_checks[2] = target.answer == 42 and 1 or 0
-result.metatable_checks[3] = rawget(target, 'answer') == nil and 1 or 0
-target.answer = 7
-result.metatable_checks[4] = target.answer == 7 and inherited.answer == 42 and 1 or 0
-result.metatable_checks[5] = rawset(target, 'answer', 8) == target and 1 or 0
-rawset(target, 'answer', nil)
-result.metatable_checks[6] =
-	target.answer == 42 and rawget(target, 'answer') == nil and 1 or 0
-setmetatable(target, nil)
-result.metatable_checks[7] = getmetatable(target) == nil and 1 or 0
-result.metatable_checks[8] = target.answer == nil and 1 or 0
-setmetatable(target, { __index = function() return 99 end })
-result.metatable_checks[9] = target.answer == nil and 1 or 0
-
-print('CPU values: reciprocal signs', result.reciprocals[0], result.reciprocals[1])
-print('CPU values: table length', result.table_lengths[7])
-result.completed = 1
-while true do
-	halt_until_irq
-end
-```
-
-### Results and output
-
-The retained arrays have the following values after `completed` becomes 1.
-The indices in these tables are typed-storage indices, starting at zero.
-
-<section class="keep-together">
-
-| `powers` index | Expression represented by the runtime operands | Result |
-|---|---|---|
-| 0 | `(-0)^3` | `-0` |
-| 1 | `(-0)^0.5` | `+0` |
-| 2 | `(-0)^(-3)` | `-infinity` |
-| 3 | `(-infinity)^0.5` | `+infinity` |
-| 4 | `(-infinity)^(-3)` | `-0` |
-| 5 | `(-1)^infinity` | NaN |
-| 6 | `NaN^0` | `1` |
-| 7 | `(-2)^0.5` | NaN |
-| 8 | `(-1)^9007199254740991` | `-1` |
-| 9 | `(-1)^9007199254740992` | `1` |
-| 10 | `2^(-1074)` | Smallest positive subnormal Number |
-| 11 | `(-2)^(-1075)` | `-0` |
-
-</section>
-
-The four `reciprocals` are negative infinity, positive infinity, negative
-infinity and negative infinity. All eighteen `format_match` flags are 1;
-the program prints the eighteen corresponding Strings in `expected`, in order,
-prefixed by `CPU format` and the one-based input index. Thus printed `nan`,
-`inf`, `-inf` and `-0` are observable text, not an assumed diagnostic spelling.
-
-<section class="keep-together">
-
-| Result array | Retained values, in increasing index order |
-|---|---|
-| `table_lengths` | 3, 1, 1, 4, 0, 4, 4, 4 |
-| `table_values` | 91, 12, 15, 16, 17, 18, 22, 23, 24 |
-| `table_checks` | Seven flags, all 1 |
-| `metatable_checks` | Ten flags, all 1 |
-
-</section>
-
-The metatable flags show return identity, actual metatable retrieval, inherited
-42, absence of an own mapping, direct-write override without changing the parent,
-raw-write return identity, nil deletion exposing inheritance, metatable clearing,
-absence after clearing, and a function-valued indexer returning nil without a
-call. The closing diagnostic lines are:
-
-```text
-CPU values: reciprocal signs   -inf   inf
-CPU values: table length   4
-```
-
-The actual separators are tabs. The final `halt_until_irq` loop waits after
-completion; this program does not render a picture or promise an IRQ wakeup.
-
-<section class="keep-together">
+The second group produces `42`, `9`, then `42`. The inherited read does not
+create an own mapping. Assigning `nil` removes the own mapping and exposes the
+parent again. `rawget(child, 'answer')` is then `nil`. A function-valued
+`__index` is not called by this indexed-read datapath; consult the table
+reference above rather than assuming another Lua version's metatable behavior.
 
 ## Memory transfers
 
@@ -1483,95 +1214,49 @@ call frame is not the exception frame required by raw `RFE`. For the installed r
 
 ### Read CP0 in a cartridge IRQ
 
-This example reads CP0 legally inside a cartridge IRQ callback, then demonstrates that ordinary cartridge execution resumes. Use it from a fresh ordinary BIOS cartridge entry, with this callback as the sole direct VBlank IRQ callback and sole IRQ-mask owner. There must be no external supervisor request, context takeover, or competing writer. Keep the existing running beam; do not reset or reconfigure PCRTC.
-
-Ordinary entry begins in CPU user mode with current interrupt enable set. Delivery additionally requires an enabled, pending central IRQ source. An admitted IRQ selects the cartridge IRQ vector, saves the interrupted PC in EPC, and enters non-user mode with current interrupt enable clear. The `cop0` reads emit MFC0: their source syntax does not confer privilege. Executing those reads in user mode raises coprocessor-unusable; here they execute in the IRQ callback instead. Main never reads CP0.
-
-Supply the results module under the name `results`, then use the entry module below. The program defines `irq` before enabling delivery, masks delivery, acknowledges any pending VBlank, and enables VBlank. The callback selects VBlank from the supplied flags, masks further delivery, records CP0 and SYSTEM status, acknowledges VBlank, and increments the service count. It returns normally through its ordinary call frame. The generated IRQ vector performs RFE, restoring the saved CPU mode and returning to EPC; do not issue raw RFE from the callback. This example does not nest maskable IRQs or write STATUS or EPC.
-
-CPU privilege and SYSTEM device context are distinct. Accepting this IRQ does not activate or bank a SYSTEM supervisor device context. Under the stated conditions, SYSTEM status remains zero while the callback executes with CPU user mode clear.
-
-The retained flags are the full IRQ flags, not mask-filtered flags: they include VBlank and may include other masked pending sources. Masking delivery neither clears pending state nor changes CPU interrupt enable. Later VBlanks can become pending again, so no final zero-flags state is promised. EPC varies with the interrupted PC; it is not a function-record address or a literal to copy.
-
-After the callback returns, main records resumption, prints the two diagnostics shown below, and halts.
-
-```lua
-module<const>
-
-struct cpu_irq_manual_result
-	status: word
-	cause: word
-	epc: word
-	system_status: word
-	flags: word
-	services: word
-	resumed: word
-end
-
-bss result: cpu_irq_manual_result
-
-return { result = result }
-```
+Use this sequence after fresh BIOS cartridge entry, with the running beam
+unchanged and this program as the sole VBlank callback and IRQ-mask owner.
+There must be no supervisor request or device-context takeover. Entry is in
+user mode with interrupt enable set; main cannot read CP0 directly.
 
 ```lua
 module<entry>
-
-local state<const> = require('results')
-local result<const>: *cpu_irq_manual_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local system_status<const>: *word = 0x08010350
+bss saved_status: word
+bss saved_cause: word
+bss saved_epc: word
+bss services: word
 
 function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		*irq_mask = 0
-		result.status = cop0.status
-		result.cause = cop0.cause
-		result.epc = cop0.epc
-		result.system_status = *system_status
-		result.flags = flags
-		*irq_ack = 0x00000004
-		result.services = result.services + 1
-	end
+    if (flags & 4) ~= 0 then
+        mem[0x08000008] = 0
+        *saved_status = cop0.status
+        *saved_cause = cop0.cause
+        *saved_epc = cop0.epc
+        mem[0x08000004] = 4
+        *services = *services + 1
+    end
 end
 
--- Fresh BIOS cartridge entry; keep the running beam and own this IRQ route.
-*irq_mask = 0
-*irq_ack = 0x00000004
-*irq_mask = 0x00000004
-while result.services == 0 do
-	halt_until_irq
-end
-
--- The callback returns normally; its generated vector performs RFE.
-result.resumed = 1
-print(string.format(
-	'IRQ CP0 STATUS=%08X CAUSE=%08X', result.status, result.cause))
-print(string.format(
-	'SYSTEM CONTEXT=%08X SERVICES=%u RESUMED=%u',
-	result.system_status, result.services, result.resumed))
-
-while true do
-	halt_until_irq
+mem[0x08000008] = 0
+mem[0x08000004] = 4
+mem[0x08000008] = 4
+while *services == 0 do
+    halt_until_irq
 end
 ```
 
-| Retained field | Result |
-| --- | --- |
-| `status` | `0x0000000c` |
-| `cause` | `0x00000400` |
-| `epc` | Interrupted PC; variable |
-| `system_status` | `0` |
-| `flags` | Contains `0x00000004`; may contain other pending bits |
-| `services` | `1` |
-| `resumed` | `1` |
+Define the callback before enabling delivery. The initial mask and ACK discard
+old delivery and old pending VBlank; the final MASK write admits VBlank. In the
+callback, saved Status is `0000000CH`, Cause is `00000400H`, and EPC is the
+variable interrupted **instruction address**, not a function-record address.
+Full supplied flags contain VBlank and may contain other masked pending bits.
 
-```text
-IRQ CP0 STATUS=0000000C CAUSE=00000400
-SYSTEM CONTEXT=00000000 SERVICES=1 RESUMED=1
-```
-
-[Development companion — Read CP0 during an IRQ](../programming/getting-started.md#read-cp0-during-an-irq)
+The callback returns normally. Its generated IRQ vector performs RFE and main
+continues after the wait. Do not issue RFE from the callback's ordinary call
+frame. CPU supervisor privilege during IRQ does not by itself activate the
+SYSTEM supervisor device context; SYSTEM STATUS remains zero under these
+assumptions. Masking further delivery does not clear CPU interrupt enable or
+prevent later VBlank pending bits from being raised.
 
 ## Memory faults and saved PC
 

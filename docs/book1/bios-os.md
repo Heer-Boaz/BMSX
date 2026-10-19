@@ -2,9 +2,8 @@
 
 The installed `os` Table supplies four functions: sample time in seconds,
 convert a civil date to a timestamp, decompose or format a timestamp, and
-subtract whole-second values. These are ordinary BIOS calls, not additional
-clock-control registers. There is no filesystem or process interface among
-these four entries.
+subtract whole-second values. The `os` Table is installed before cartridge entry. It contains no filesystem
+or process interface.
 
 Use [System control and timing](system.md) for the underlying time word and
 machine timing, [CPU values and numeric instructions](cpu.md#values-and-numeric-instructions)
@@ -13,7 +12,7 @@ storage and startup. [BIOS Math](bios-math.md) defines `math.modf`;
 [BIOS String operations](bios-string.md) defines String slicing and codepoints.
 [Protected calls and coroutines](coroutines.md) defines error interception.
 The sampled counter and the civil timestamp convention are distinct: a
-calendar spelling does not make the counter a wall-clock or RTC service.
+sampled values measure system time rather than a wall-clock or RTC reading.
 
 | Call | Returned value | Operation |
 | --- | --- | --- |
@@ -21,6 +20,32 @@ calendar spelling does not make the counter a wall-clock or RTC service.
 | `os.time(date_table)` | One Number, whole seconds | With nil, sample time; otherwise normalize the supplied civil fields in place and return their timestamp. |
 | `os.date(format, timestamp)` | One String or new Table | Format or decompose the selected timestamp. |
 | `os.difftime(t2, t1)` | One Number, seconds | Check each argument against its integer component, then subtract. |
+
+<a id="complete-program-time-and-calendar-operations"></a>
+
+## Example: time and calendar operations
+
+Use an explicit timestamp for a stored calendar date. `os.time` normalizes the
+caller-owned Table, while `os.date('*t', ...)` creates a separate Table:
+
+```lua
+local date = { year = 2024, month = 2, day = 28, hour = 25, min = 2, sec = 3 }
+local timestamp = os.time(date)             -- 1709168523
+-- date is now 2024-02-29 at 01:02:03; wday = 5, yday = 60, isdst = false.
+local fields = os.date('*t', timestamp)
+local label = os.date('%F %T', timestamp)   -- '2024-02-29 01:02:03'
+local elapsed = os.difftime(timestamp, timestamp - 90) -- 90 seconds
+```
+
+Calendar-year and ISO-week-year fields can differ at a year boundary:
+
+| Call | Result |
+| --- | --- |
+| `os.date('%F %G-W%V-%u', 1609459200)` | `'2021-01-01 2020-W53-5'` |
+| `os.date('%F %G-W%V-%u', 1546214400)` | `'2018-12-31 2019-W01-1'` |
+| `os.date('%c', 0)` | `'Thu Jan 01 00:00:00 1970'` |
+| `os.date('%F %T', -1)` | `'1969-12-31 23:59:59'` |
+| `os.date('offset %z zone %Z %%', 0)` | `'offset +0000 zone BMSX %'` |
 
 ## `os.clock()` — sampled time in seconds
 
@@ -39,7 +64,7 @@ local elapsed = after - before
 
 The subtraction does not compensate for a wrap between the readings. Neither `os.clock()` nor `os.difftime()` supplies wrap compensation.
 
-Each call samples the word anew. This function performs one time-word read and a division; it does not construct a civil-date Table or maintain a separate accumulated clock. These operations do not establish a timing guarantee for the call.
+Each call samples the word anew. This function performs one time-word read and a division; it does not construct a civil-date Table or maintain a separate accumulated clock.
 
 ## `os.time([date_table])` — whole seconds or civil conversion
 
@@ -63,7 +88,7 @@ The civil-conversion formulas map timestamp 0 to the following fields:
 | `yday` | 1 |
 | `isdst` | false |
 
-This is a civil-conversion mapping. It does not establish a hardware epoch, a wall-clock or RTC service, a timezone, or the point from which the sampled clock counts.
+This origin belongs to civil-date conversion; it is independent of the running millisecond counter.
 
 For example:
 
@@ -133,7 +158,7 @@ After all six input validations and the combined timestamp check succeed, the fu
 
 **weekday index = ((days + 4) modulo 7) + 1.**
 
-`yday` is the one-based day within the resulting year. `isdst` is always written as false; this field is not evidence of a timezone or daylight-saving conversion.
+`yday` is the one-based day within the resulting year. `isdst` is always written as false; no daylight-saving adjustment is applied.
 
 The supplied Table is not replaced, and other fields are not cleared. Reads use ordinary field lookup, including Table-valued `__index` chains; function-valued `__index` entries are not called. The output stores go directly into the supplied Table and are not redirected through `__newindex`.
 
@@ -165,7 +190,7 @@ Ordinary indexing and assignment faults remain applicable. Their relevant messag
 
 ### Work involved
 
-The no-argument/nil form performs one time-word read and a division, without constructing a civil-date Table. Explicit-date conversion performs six field reads/checks, fixed calendar arithmetic and inverse decomposition, then nine stores into the existing Table. It does not advance through the intervening dates one by one. This describes the work structure, not a fixed execution-time or allocation-free guarantee: ordinary Table lookup and storage, function calls, errors, and faults retain their costs.
+The no-argument/nil form performs one time-word read and a division, without constructing a civil-date Table. Explicit-date conversion performs six field reads/checks, fixed calendar arithmetic and inverse decomposition, then nine stores into the existing Table. It does not advance through the intervening dates one by one. Ordinary Table lookup and storage, function calls, errors and faults retain their instruction costs.
 
 ## `os.difftime(t2, t1)` — subtract whole-second values
 
@@ -187,17 +212,17 @@ Fractions, NaN, missing/nil arguments, false, and other non-Number values fail t
 
 Unlike civil conversion, this function does not apply either the civil-field bounds or the ±9007199254740991 timestamp bounds. Numeric infinities compare equal to their integer parts and pass these checks; their subtraction can produce infinity or NaN. The result is ordinary Number subtraction, not arbitrary-precision integer arithmetic.
 
-`os.difftime()` does not sample the time word, invoke civil conversion, or repair the sampled word's wrap. In particular, subtracting `os.time()` readings across that wrap does not produce a wrap-adjusted elapsed duration. Its work consists of two integer-part calculations, the ordered equality checks, and one subtraction; this is not a call-duration guarantee.
+`os.difftime()` does not sample the time word, invoke civil conversion, or repair the sampled word's wrap. In particular, subtracting `os.time()` readings across that wrap does not produce a wrap-adjusted elapsed duration. Its work consists of two integer-part calculations, the ordered equality checks and one subtraction.
 
 ### Retained dependencies and call arguments
 
-The integer-part function used by the checks in `os.time()` and `os.difftime()` is retained when the OS module is initialized. Reassigning public `math`, or changing public `math.modf` afterward, does not rebind that retained function. Error calls, by contrast, use the public `error` name when reached; replacing it changes those calls and the rejection behavior described above.
+The integer-part function used by the checks in `os.time()` and `os.difftime()` is retained during BIOS installation. Reassigning public `math`, or changing public `math.modf` afterward, does not rebind that retained function. Error calls, by contrast, use the public `error` name when reached; replacing it changes those calls and the rejection behavior described above.
 
-These are fixed-parameter functions. Missing parameters are nil, and surplus arguments are ignored; there is no separate automatic argument-count error. Thus missing `date_table` selects the sampled-time form, whereas missing `t2` or `t1` is subject to the stated `os.difftime()` integer checks. These are reached-call rules, distinct from the [known-call argument diagnostics](blua-programs.md#known-call-argument-diagnostics) applied to cartridge source.
+These are fixed-parameter functions. Missing parameters are nil, and surplus arguments are ignored; there is no separate automatic argument-count error. Thus missing `date_table` selects the sampled-time form, whereas missing `t2` or `t1` is subject to the stated `os.difftime()` integer checks. See [known-call argument diagnostics](blua-programs.md#known-call-argument-diagnostics) for the corresponding direct-call source forms.
 
 ## Shared civil-day calculations
 
-The calendar formulas use `D(year, month, day)` for the forward civil-day calculation and `C(days)` for its civil inverse. These names and the assignments below are **documentary notation, not literal BLua or additional public functions**. All arithmetic is ordinary Number arithmetic; `//` and `%` are not word operations. The written calculation order is significant. These formulas do not promise exact unbounded integer arithmetic throughout the accepted timestamp range.
+The calendar formulas use `D(year, month, day)` for the forward civil-day calculation and `C(days)` for its civil inverse. These are explanatory names, not public BIOS functions; the blocks below are formula notation rather than BLua programs. All arithmetic is ordinary Number arithmetic; `//` and `%` are not word operations. The written calculation order is significant: intermediate values have Number precision, not unlimited integer precision.
 
 <div class="keep-together">
 
@@ -294,7 +319,7 @@ The order of operations is significant:
 
 An empty format therefore still selects or validates its timestamp before returning an empty String. An invalid conversion is not examined until after timestamp validation and calendar decomposition.
 
-`false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and faults with reason `LUA_FAULT_REASON_UNKNOWN`; it does not produce a date-specific argument error. A false timestamp is passed to the retained `math.modf` function rather than selecting the default timestamp. Its integer check invokes `error` with `time is not an integer`, before the bounds check.
+`false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and raises `Attempted to get length of an unsupported value.` (Lua reason 0); it does not produce a date-specific argument error. A false timestamp is passed to the retained `math.modf` function rather than selecting the default timestamp. Its integer check invokes `error` with `time is not an integer`, before the bounds check.
 
 ### Explicit timestamp checks
 
@@ -316,7 +341,7 @@ time is out-of-bound
 
 </div>
 
-The accepted integer is then used for decomposition. There is no separate date-specific type-dispatch or numeric-text parsing layer. The default timestamp read is not passed through these explicit-timestamp checks. These are the authored error message strings, not a specification of any surrounding exception presentation.
+The accepted integer is then used for decomposition. There is no separate date-specific type-dispatch or numeric-text parsing layer. The default timestamp read is not passed through these explicit-timestamp checks.
 
 ### Table result and calendar fields
 
@@ -349,7 +374,7 @@ yday           = days - D(year, 1, 1) + 1
 wday           = ((days + 4) % 7) + 1
 ```
 
-The Table and String forms use this same decomposition. Neither the leading `!` nor the fixed outputs described below establish any additional UTC, local-time, clock-origin, or daylight-saving behavior.
+The Table and String forms use this same decomposition, including after a leading `!`.
 
 ### Format grammar
 
@@ -476,7 +501,7 @@ invalid conversion specifier '%<modifier><code>'
 
 Here `<modifier>` is empty, `E`, or `O`, and `<code>` is the consumed codepoint. These angle-bracket terms describe assembly; they are not literal message text. With an unfinished conversion, the absent code is the empty String:
 
-| Format ending | Exact authored message |
+| Format ending | Error String |
 |---|---|
 | `%` | `invalid conversion specifier '%'` |
 | `%E` | `invalid conversion specifier '%E'` |
@@ -503,255 +528,16 @@ With the supplied `tostring`, numbers use the shared numeric-text conversion:
 
 </div>
 
-The formatter pads that result unchanged. `%Y`, `%G`, and `%C` therefore do **not** promise complete exact decimal integer text for arbitrarily large years or centuries. Nor does `%Y` promise exactly four decimal digits. The explicit timestamp acceptance bound does not by itself establish exact calendar arithmetic throughout that entire range.
+The formatter pads that result unchanged. `%Y`, `%G` and `%C` can therefore contain rounded scientific text for large years or centuries. `%Y` is padded to a minimum length of four, not constrained to four decimal digits. Calendar arithmetic uses Number operations, including at the extremes of the accepted timestamp range.
 
 ### Dependencies and amount of work
 
-During initialization, the OS library obtains the required String and Math tables. Its later calls retain the String table reference and the `math.modf` function obtained then. Later timestamp validation uses that retained function. Calls to `string.sub` look up the `sub` field on the retained String table each time: replacing the global `string` binding does not change that table reference, but changing that table's `sub` field changes the function used. Global `tostring` and `error` are looked up when needed, rather than captured at initialization. The behavior above describes the supplied dependencies.
+During BIOS installation, the OS library obtains the String and Math tables. Its later calls retain the String table reference and the `math.modf` function obtained then. Later timestamp validation uses that retained function. Calls to `string.sub` look up the `sub` field on the retained String table each time: replacing the global `string` binding does not change that table reference, but changing that table's `sub` field changes the function used. Global `tostring` and `error` are looked up when needed, rather than captured at initialization.
 
 The Table form performs one calendar decomposition and writes its fields. It skips format scanning, name output, week formatting, and padding. The String form performs one initial decomposition, then builds its result through growing concatenation. Each occurrence of `%G`, `%g`, `%V`, or the accepted `%OV` independently calculates the ISO year/week pair; the pair is not cached for the call.
 
 A literal advances the scanner by one codepoint, a plain conversion by two, and a modified conversion by three. Calendar conversion uses arithmetic and conditionals rather than traversing every intervening day or year. Padding prepends one character per iteration until the minimum text length is reached.
 
-The supplied codepoint lookup scans from the beginning of a String to the requested position, so repeated single-codepoint slices do not provide constant-time random access. Removing a leading `!` may also construct a tail slice; multi-codepoint slices use a temporary character collection and concatenation. No linear-time, allocation-free, maximum-length, or all-state termination guarantee is made here.
+The supplied codepoint lookup scans from the beginning of a String to the requested position, so repeated single-codepoint slices do not provide constant-time random access. Removing a leading `!` may also construct a tail slice; multi-codepoint slices use a temporary character collection and concatenation.
 
-The fixed `%z`, `%Z`, and `isdst` values and the removal of `!` are output rules only. They do not establish a clock source, reset origin, wrap policy, time-zone service, real daylight-saving calculation, or compatibility with an external date-formatting library.
-
-## Complete program: time and calendar operations
-
-This cartridge uses all four installed functions. It samples the counter,
-normalizes caller-owned date fields, decomposes explicit timestamps, formats
-dates around ISO-year boundaries, and observes protected errors. It does not
-set the counter, replace a BIOS function, or implement a calendar encoder.
-
-Save the first listing as `results.lua`. Concatenate entry parts 1–5, in order,
-as one `entry.lua`, with one `module<entry>` declaration. The
-[development companion](../programming/getting-started.md#build-and-inspect-time-and-calendar-operations)
-supplies the complete project tree, manifest and build/observation commands.
-The earlier formula blocks are documentary notation; the listings here are
-literal BLua.
-
-<div class="keep-together">
-
-### Results module
-
-Numeric observations occupy typed BSS. The exported `observations` Table holds
-dynamic Strings, returned date Tables, and protected-call results as ordinary
-language values.
-
-```lua
-struct bios_os_manual_result
-	completed: word
-	clock_sample: f64
-	time_sample: f64
-	nil_time_sample: f64
-	noon_timestamp: f64
-	carried_timestamp: f64
-	elapsed: f64
-	negative_difference: f64
-	large_difference: f64
-	infinite_difference: f64
-	indeterminate_difference: f64
-end
-
-bss result: bios_os_manual_result
-
--- Tables and dynamic strings remain guest values, not byte-memory encodings.
-return { result = result, observations = {} }
-```
-
-</div>
-
-### Entry part 1: sample time
-
-```lua
-module<entry>
-
-local storage<const> = require('results')
-local result<const>: *bios_os_manual_result = storage.result
-local observations<const> = storage.observations
-
--- Each call samples machine time separately. These are not civil-clock readings.
-result.clock_sample = os.clock()
-result.time_sample = os.time()
-result.nil_time_sample = os.time(nil)
-observations.current_date = os.date()
-observations.current_format = os.date('%F %T', nil)
-print('OS samples', result.clock_sample, result.time_sample, result.nil_time_sample)
-print('OS sampled dates', observations.current_date, observations.current_format)
-
-```
-
-### Entry part 2: normalize civil fields
-
-```lua
--- Missing hour means noon. Conversion normalizes this same caller Table.
-local noon<const> = {
-	year = 1970, month = 1, day = 1,
-	wday = 99, yday = 99, isdst = true, note = 'kept',
-}
-observations.noon = noon
-result.noon_timestamp = os.time(noon)
-print('OS noon', result.noon_timestamp, noon.year, noon.month, noon.day,
-	noon.hour, noon.min, noon.sec, noon.wday, noon.yday, noon.isdst, noon.note)
-
--- Outlying hour 25 carries into the following leap day.
-local carried<const> = {
-	year = 2024, month = 2, day = 28, hour = 25, min = 2, sec = 3,
-}
-observations.carried = carried
-result.carried_timestamp = os.time(carried)
-print('OS normalized', result.carried_timestamp, carried.year, carried.month,
-	carried.day, carried.hour, carried.min, carried.sec, carried.wday, carried.yday,
-	carried.isdst)
-
-```
-
-### Entry part 3: decompose and format timestamps
-
-```lua
-observations.epoch = os.date('*t', 0)
-observations.before_epoch = os.date('*t', -1)
-local epoch<const> = observations.epoch
-local before<const> = observations.before_epoch
-print('OS epoch fields', epoch.year, epoch.month, epoch.day, epoch.hour, epoch.min,
-	epoch.sec, epoch.wday, epoch.yday, epoch.isdst)
-print('OS negative fields', before.year, before.month, before.day, before.hour,
-	before.min, before.sec, before.wday, before.yday, before.isdst)
-
--- One fixed timestamp keeps the formatting examples independent of the samples.
-local stamp<const> = 1609506123
-observations.calendar = os.date('%Y %y %C | %m %d %e %j', stamp)
-observations.names = os.date('%a %A | %b %B %h', stamp)
-observations.clock = os.date('%H:%M:%S | %I %p | %R | %r | %T | %X', stamp)
-observations.composites = os.date('%F | %D | %x | %c', stamp)
-observations.weeks = os.date('%Y | %G %g-W%V | %U %W | %u %w', stamp)
-observations.next_iso_year = os.date('%F %G-W%V-%u', 1546214400)
-observations.zone = os.date('offset %z zone %Z %%', stamp)
-observations.separators = os.date('A%tB%nC', stamp)
-observations.default_format = os.date(nil, 0)
-print('OS calendar', observations.calendar)
-print('OS names', observations.names)
-print('OS clock fields', observations.clock)
-print('OS composites', observations.composites)
-print('OS weeks', observations.weeks)
-print('OS next ISO year', observations.next_iso_year)
-print('OS zone literals', observations.zone)
-print('OS separators', observations.separators)
-print('OS default format', observations.default_format)
-
-```
-
-### Entry part 4: modifiers and protected errors
-
-```lua
--- Accepted E/O modifiers use the same output as the corresponding plain code.
-observations.era_modifiers = os.date('%Ec | %EC %Ex %EX %Ey %EY', stamp)
-observations.alternate_modifiers = os.date(
-	'%Od %Oe %OH %OI %Om %OM %OS | %Ou %OU %OV %Ow %OW %Oy', stamp)
-print('OS E modifiers', observations.era_modifiers)
-print('OS O modifiers', observations.alternate_modifiers)
-
--- pcall exposes the BIOS-authored errors without replacing any library fields.
-observations.missing_ok, observations.missing_error =
-	pcall(os.time, { month = 1, day = 1 })
-observations.fraction_ok, observations.fraction_error =
-	pcall(os.time, { year = 2021, month = 1, day = 1, hour = 1.5 })
-observations.civil_range_ok, observations.civil_range_error =
-	pcall(os.time, { year = 2147485548, month = 1, day = 1 })
-observations.time_range_ok, observations.time_range_error =
-	pcall(os.date, '%F', 9007199254740992)
-observations.conversion_ok, observations.conversion_error = pcall(os.date, '%Q', 0)
-observations.modifier_ok, observations.modifier_error = pcall(os.date, '%Ea', 0)
-print('OS missing field', observations.missing_ok, observations.missing_error)
-print('OS fractional field', observations.fraction_ok, observations.fraction_error)
-print('OS civil range', observations.civil_range_ok, observations.civil_range_error)
-print('OS timestamp range', observations.time_range_ok, observations.time_range_error)
-print('OS invalid conversion', observations.conversion_ok,
-	observations.conversion_error)
-print('OS invalid modifier', observations.modifier_ok, observations.modifier_error)
-
-```
-
-### Entry part 5: differences and retained results
-
-```lua
--- difftime is integer-tested Number subtraction, not a wrapping-counter repair.
-result.elapsed = os.difftime(result.carried_timestamp,
-	result.carried_timestamp - 90)
-result.negative_difference = os.difftime(-1, 0)
-result.large_difference = os.difftime(9007199254740992, 0)
-result.infinite_difference = os.difftime(math.huge, 0)
-result.indeterminate_difference = os.difftime(math.huge, math.huge)
-print('OS differences', result.elapsed, result.negative_difference,
-	result.large_difference, result.infinite_difference,
-	result.indeterminate_difference)
-observations.t2_ok, observations.t2_error = pcall(os.difftime, 1.5, 0.5)
-observations.t1_ok, observations.t1_error = pcall(os.difftime, 1, 0.5)
-print('OS fractional t2', observations.t2_ok, observations.t2_error)
-print('OS fractional t1', observations.t1_ok, observations.t1_error)
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-### Ordinary observations
-
-The first two lines are one captured set of sampled readings, not fixed
-expected values. Each sample call reads independently. The remaining 24 `OS`
-diagnostics use explicit inputs. `print` separates arguments with tabs;
-`%n` makes `C` a separate continuation line after `OS separators`.
-Tab characters are shown as single spaces in this transcription, including
-the tab between `A` and `B`; other spaces are unchanged.
-
-```text
-OS samples 1.036 1 1
-OS sampled dates Thu Jan 01 00:00:01 1970 1970-01-01 00:00:01
-```
-
-```text
-OS noon 43200 1970 1 1 12 0 0 5 1 false kept
-OS normalized 1.70917e+09 2024 2 29 1 2 3 5 60 false
-OS epoch fields 1970 1 1 0 0 0 5 1 false
-OS negative fields 1969 12 31 23 59 59 4 365 false
-OS calendar 2021 21 20 | 01 01  1 001
-OS names Fri Friday | Jan January Jan
-OS clock fields 13:02:03 | 01 PM | 13:02 | 01:02:03 PM | 13:02:03 | 13:02:03
-OS composites 2021-01-01 | 01/01/21 | 01/01/21 | Fri Jan 01 13:02:03 2021
-OS weeks 2021 | 2020 20-W53 | 00 00 | 5 5
-OS next ISO year 2018-12-31 2019-W01-1
-OS zone literals offset +0000 zone BMSX %
-OS separators A B
-C
-OS default format Thu Jan 01 00:00:00 1970
-OS E modifiers Fri Jan 01 13:02:03 2021 | 20 01/01/21 13:02:03 21 2021
-OS O modifiers 01  1 13 01 01 02 03 | 5 00 53 5 00 21
-OS missing field false field 'year' missing in date table
-OS fractional field false field 'hour' is not an integer
-OS civil range false field 'year' is out-of-bound
-OS timestamp range false time is out-of-bound
-OS invalid conversion false invalid conversion specifier '%Q'
-OS invalid modifier false invalid conversion specifier '%Ea'
-OS differences 90 -1 9.0072e+15 inf nan
-OS fractional t2 false os.difftime t2 must be an integer.
-OS fractional t1 false os.difftime t1 must be an integer.
-```
-
-The normalized timestamp is exactly `1709168523`; its displayed Number text
-is `1.70917e+09`. Likewise, `9.0072e+15` is rounded text for the demonstrated
-`9007199254740992` difference, not that Number's full decimal expansion.
-
-The missing `hour` field produces noon; the explicit hour 25 carries into
-February 29, 2024. The same `noon` Table keeps its extra `note` field while its
-weekday, day-of-year and DST fields are replaced. The negative timestamp
-belongs to the preceding day at 23:59:59. The ISO examples show January 1, 2021
-in ISO year 2020 and December 31, 2018 in ISO year 2019. Fixed zone strings and
-accepted modifiers do not establish a timezone or locale service.
-
-The protected calls expose the authored error Strings without replacing the
-BIOS bindings. The two infinity subtractions distinguish `difftime`'s integer-
-equality check from finite-range validation. No counter-wrap adjustment is
-performed. These finite observations do not establish all-input numerical
-accuracy, exact large-range calendar arithmetic, reset origin or call duration.
+The fixed `%z`, `%Z` and `isdst` values are output conventions, not time-zone or daylight-saving calculations.

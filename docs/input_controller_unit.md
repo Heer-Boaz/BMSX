@@ -1,138 +1,30 @@
-# Input Controller Unit
+# Input software integration
 
-The Input Controller Unit (ICU) is a small MMIO hardware device. Its scope is a
-registerfile, a VBlank sample latch, a raw keyboard/pointer/gamepad snapshot,
-and an output (vibration) latch. It carries no action names, button-name string
-ids, mapping contexts, query language, consume state, repeat logic, or gameplay
-event FIFO.
+The console-facing controller specification is the
+[Input Controller reference](book1/input.md). Register access, sampling,
+reset, output effects and supervisor-request behavior are defined there, not
+in this internal integration note.
 
-## Register map (47 words)
+## Ownership
 
-All offsets below are word offsets from `sys_inp_ctrl` / `IO_INP_BASE`.
+The mirrored device implementation under
+`machine/{ts,cpp}/machine/devices/input` owns emulated controller state. Host
+input sources implement the device's input boundary; platform adapters own
+physical-device normalization, focus, assignment and lifecycle. The device
+does not parse browser key names or host controller chords.
 
-| Offset | Name | Dir | Type | Description |
-|---:|---|:---:|---|---|
-| +0 | `sys_inp_ctrl` | W | u32 | Command latch: `inp_ctrl_arm` arms the next VBlank sample; `inp_ctrl_reset` resets registers. |
-| +1 | `sys_inp_status` | R | u32 | Sample sequence. Incremented when an armed VBlank edge latches a snapshot. |
-| +2..+9 | `sys_inp_keys` | R | 8×u32 | Keyboard bitmap. Bit `usage & 31` of word `usage >> 5` is set when USB HID keyboard usage `usage` is held. |
-| +10 | `sys_inp_pointer_buttons` | R | u32 | Pointer button bitmap. Bits use `inp_pointer_*`. |
-| +11 | `sys_inp_pointer_x` | R | s16.16 | Latched pointer X coordinate in host pointer space. |
-| +12 | `sys_inp_pointer_y` | R | s16.16 | Latched pointer Y coordinate in host pointer space. |
-| +13 | `sys_inp_pointer_wheel` | R | s16.16 | Latched pointer wheel scalar. |
-| +14..+41 | `sys_inp_pads` | R | 4×7 u32 | Four pad snapshots. Each block is `buttons`, `lx`, `ly`, `rx`, `ry`, `lt`, `rt`. Axes are s16.16. |
-| +42 | `sys_inp_output_port` | W | u32 | Output port/pad select. The low two bits select pad 0..3. |
-| +43 | `sys_inp_output_intensity_q16` | W | u16.16 | Output effect intensity latch (1.0 = `inp_output_intensity_q16_one`). |
-| +44 | `sys_inp_output_duration_ms` | W | u32 | Output effect duration latch in milliseconds. |
-| +45 | `sys_inp_output_status` | R | u32 | Output support bitmap. Bit `n` means pad `n` has output hardware. |
-| +46 | `sys_inp_output_ctrl` | W | u32 | Output command: write `inp_output_ctrl_apply` to fire the effect. |
+`hosts/common/input` owns shared TypeScript host input. Browser/touch producers
+and native libretro/frontend adapters retain their own physical sources. Host
+menu shortcuts and gameplay routing consume those source owners separately;
+UI focus and host remapping are not a second emulated registerfile.
 
-## Keyboard bitmap
+The optional `cartlib` input framework runs as independent cartridge software.
+Its action maps, expressions, consume/repeat state and sampling policy are not
+hardware, BIOS or manufacturer API. Generic runtime/input tooling must not
+require that library's layouts.
 
-Keyboard bits are indexed by USB HID Keyboard/Keypad usage IDs from usage page
-`0x07`. The host translates browser/native key codes into this bitmap before the
-ICU latch. Lua cartlib keeps the same code-to-usage table in
-`cartlib/input/keys.lua`; bare-metal carts may use raw HID usage constants
-when they intentionally bypass cartlib.
-
-## Gamepad block
-
-Each pad block starts at `sys_inp_pads + pad * inp_pad_stride`.
-
-| Offset constant | Meaning |
-|---|---|
-| `inp_pad_buttons` | Button bitmap. Bits use `inp_btn_a`, `inp_btn_b`, `inp_btn_x`, `inp_btn_y`, `inp_btn_lb`, `inp_btn_rb`, `inp_btn_lt`, `inp_btn_rt`, `inp_btn_select`, `inp_btn_start`, `inp_btn_ls`, `inp_btn_rs`, `inp_btn_up`, `inp_btn_down`, `inp_btn_left`, `inp_btn_right`, `inp_btn_home`, `inp_btn_touch`. |
-| `inp_pad_lx`, `inp_pad_ly` | Left stick axes, s16.16. |
-| `inp_pad_rx`, `inp_pad_ry` | Right stick axes, s16.16. |
-| `inp_pad_lt`, `inp_pad_rt` | Trigger axes, s16.16. |
-
-## Pointer button bits
-
-| Constant | Bit |
-|---|:---:|
-| `inp_pointer_primary` | 0 |
-| `inp_pointer_aux` | 1 |
-| `inp_pointer_secondary` | 2 |
-| `inp_pointer_back` | 3 |
-| `inp_pointer_forward` | 4 |
-
-## Command constants
-
-| Constant | Value | Effect |
-|---|:---:|---|
-| `inp_ctrl_arm` | 1 | Arms the sample latch; next VBlank edge latches host input state. |
-| `inp_ctrl_reset` | 2 | Resets all registers to default state. |
-| `inp_output_ctrl_apply` | 1 | Applies the latched output effect to `sys_inp_output_port`. |
-
-## VBlank sample edge and system NMI line
-
-Cart code writes `inp_ctrl_arm` to `sys_inp_ctrl`, then waits for the VBlank
-IRQ. On the VBlank edge the ICU asks the host input owner to fill one raw
-`InputControllerSnapshot`. Host adapters have already normalized their physical
-inputs into the snapshot's raw bitmaps and signed 16.16 words. The ICU copies
-those source-port words into its latched registerfile and mirrors them to MMIO.
-Reads for the remainder of the frame return those stable raw words. There are
-no computed-on-read action queries.
-
-Independently of the cart-visible sample latch, every VBlank samples the
-retained supervisor-request line. Host adapters aggregate their physical
-supervisor controls before that line reaches the ICU; the device never
-decodes HID usages or controller chords. A low-to-high transition requests the
-CPU's non-maskable system interrupt. An unarmed VBlank does not request a raw
-snapshot or change any guest-visible ICU word; it only samples that line. The
-ICU saves the previous level so a held request cannot become a second edge
-after save-state restore. `inp_ctrl_reset` resets the guest register/sample
-latch, not that physical edge history.
-
-## High-level input owners
-
-Browser/IDE UI keeps its PlayerInput implementation in `hosts/common/input`.
-The browser owns onscreen-controller DOM, hit testing, CSS, and layout and
-publishes its retained state through the ordinary `GamepadDevice` input route.
-Native host adapters normalize frontend-specific IDs to BMSX numeric input
-records, while `hosts/libretro/input` retains fixed raw device state and the
-native quick-menu owner retains only its own edge/repeat state. These
-target-specific host facilities are not a file-for-file parity surface; the
-shared machine contract starts at the raw ICU snapshot and supervisor request
-line.
-
-Gameplay carts use `cartlib/input/input.lua` and
-`cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and
-owns explicitly configured players, mapping contexts, retained action/button
-state and MMIO sampling plans, consume state, guarded/repeat state, cached
-action-expression programs, and per-player bindings from compiled action
-indices directly to action records. Admission parses each expression once and
-uses firmware `load` to compile its short-circuiting evaluator. The update path
-therefore performs no AST traversal or node/modifier dispatch and allocates no
-scratch state.
-
-The Lua public surface is action-owned. `get_action_value(player, action)`
-returns the retained raw s16.16 scalar word, while `get_vector(player, action)`
-returns the retained raw s16.16 X and Y words as two Lua return values. Neither
-API allocates a result table or hides a consumed value; consumption filters the
-boolean `is_action_*` surface and action expressions unless they explicitly
-match consumed state. Digital bindings do not synthesize a scalar `1.0`. For
-each source/action pair, the highest-priority enabled context defining that
-action wins, with the latest pushed context
-winning equal priorities; bindings inside the winning context aggregate. The
-engine default mappings are construction state, not exported mutable mapping
-tables, and cartlib does not expose mutable raw button-state records or source
-indices. Code that needs the hardware-level values reads the documented ICU
-MMIO words directly.
-
-Bare-metal carts may intentionally read the raw MMIO layout directly. BIOS code
-stays low-level and does not own a gameplay PlayerInput framework.
-
-## Output latch
-
-Write `sys_inp_output_port`, `sys_inp_output_intensity_q16`, and
-`sys_inp_output_duration_ms`, then write `inp_output_ctrl_apply` to
-`sys_inp_output_ctrl`. The ICU decodes those latch words at the output datapath
-boundary and calls the host output hardware for the selected pad.
-
-## Save state
-
-The ICU save state contains the sample latch state, the previous system-NMI
-line level, and the raw registerfile: control, keyboard words, pointer words,
-pad words, output port, output latch words, and output support mirror. It does
-not serialize host PlayerInput state, Lua action contexts, action state, parsed
-AST/bound-expression caches, or retained sampling plans.
+Internal changes should verify the affected producer and consumer together,
+including source cancellation and held-input lifetime where relevant. Public
+controller behavior changes update the manual and actual device owners, not
+another register table in this note. See [software architecture](architecture.md)
+for the repository-wide dependency boundary.

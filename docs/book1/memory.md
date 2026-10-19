@@ -161,9 +161,8 @@ Each end in this table is exclusive and includes the section's alignment padding
 
 Choosing a static layout is not a hardware allocation service. Neither the
 installed RAM extent nor the end of cartridge BSS defines a free arena, stack
-reservation, or byte-addressed heap. The development companion explains how to
-obtain the [matching BIOS link information](../programming/getting-started.md#bios-link-information-for-independent-tools);
-that build information is distinct from an installed BIOS query or register.
+reservation, or byte-addressed heap. Use the actual installed system image
+when calculating firmware occupancy.
 
 <a id="firmware-reservation-in-vram"></a>
 
@@ -291,7 +290,7 @@ The machine boot reader requires a **60-byte ROM-backed prefix**, occupying offs
 
 For system domain −1, the ROM base is `0x00000000`. For cartridge domains 0 and 1, it is `0x10000000`, with the domain selecting the cartridge socket. The executable-image address is that ROM base plus the image-offset word. The three function-record addresses are already absolute: do **not** add the ROM base or image address to them, and do not use the image offset as an instruction PC.
 
-Boot resolution first binds all 60 bytes to installed ROM storage. An unbacked prefix or a zero image offset means no executable image; failure to resolve the system image is an error. This binding does not inspect the magic or header-size word, require a larger tool-specific header, or validate the declared image byte count. The BIOS adds the cartridge checks below. The exception-address field alone does not specify cartridge fault routing.
+Boot resolution first binds all 60 bytes to installed ROM storage. An unbacked prefix or a zero image offset means no executable image; failure to resolve the system image is an error. This binding does not inspect the magic or header-size word, require the optional diagnostic-directory word, or validate the declared image byte count. The BIOS adds the cartridge checks below. The exception-address field alone does not specify cartridge fault routing.
 
 ### BLua32 executable image
 
@@ -371,6 +370,85 @@ Upvalue descriptor `i` is read as a four-byte unsigned little-endian word at `up
 
 Function-record words are little-endian; [instruction words are big-endian](cpu.md#instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
+### Optional BIOS diagnostic directory
+
+The ROM word at byte offset `0x3c` supplies a **ROM-relative byte offset** to
+an optional diagnostic directory. Zero means absent. This word extends beyond
+the CPU's 60-byte boot prefix: it is consumed by BIOS source reporting and
+selected-frame evaluation, not by instruction execution or image activation.
+Without the directory, executable code and ordinary boot remain usable, but
+those BIOS services cannot recover its source locations or named frame scopes.
+
+All directory words are unsigned 32-bit little-endian. The header occupies
+**76 bytes**. Table offsets below are relative to the directory base; a
+count is a number of records, not a byte count.
+
+| Header byte offset | Field |
+| --- | --- |
+| `0x00`, `0x04` | Source-range count; range-table offset |
+| `0x08`, `0x0c` | File count; file-table offset |
+| `0x10`, `0x14` | Line-offset count; line-offset-table offset |
+| `0x18`, `0x1c` | Path-byte-table offset; path byte count |
+| `0x20`, `0x24` | Scope-function count; function-table offset |
+| `0x28`, `0x2c` | Scope-frame count; frame-table offset |
+| `0x30`, `0x34` | Binding count; binding-table offset |
+| `0x38`, `0x3c` | Interval count; interval-table offset |
+| `0x40`, `0x44` | Scope-name byte count; name-byte-table offset |
+| `0x48` | Static-global binding count; these occupy the first binding records |
+
+#### Source locations
+
+| Record | Bytes | Four-byte fields, in increasing byte-offset order |
+| --- | ---: | --- |
+| Range | 12 | Absolute PC start; packed line/file; column |
+| File | 20 | Directory-relative display-path offset; path byte count; ROM-relative source offset; source byte count; first line-offset index |
+| Line offset | 4 | UTF-8 byte offset from the file's source start |
+
+Range records are sorted by PC. Lookup selects the last record whose start is
+not greater than the PC. The packed location holds the one-based line in bits
+31:16 and the zero-based file index in bits 15:0; `FFFFFFFFH` marks no source.
+Column is one-based. Include a no-source record at PC zero and another at the
+text end so addresses outside mapped source do not inherit its final location.
+
+Each file's line-offset sequence starts at zero and includes an end-of-source
+sentinel. For line *L*, BIOS reads offsets at `first + L - 1` and `first + L`;
+it strips terminal CR/LF bytes from the displayed line. Paths and source spans
+use explicit byte counts, not NUL termination. Source bytes may occupy their
+ordinary ROM location; they need not be duplicated inside the directory.
+
+#### Named frame scopes
+
+Scope functions are sorted by their absolute function-record address. BIOS
+matches that address, computes instruction-word position
+`(PC - codeAddress) >> 2`, and selects a frame at the requested inline depth
+whose active interval contains that word. These are source scopes for BIOS
+evaluation, not additional CPU call frames or instruction-fetch bounds.
+
+| Record | Bytes | Four-byte fields, in increasing byte-offset order |
+| --- | ---: | --- |
+| Scope function | 16 | Absolute function-record address; absolute code address; first frame index; frame count |
+| Scope frame | 28 | Inline depth; directory-relative name offset; name byte count; first active-interval index; active-interval count; first binding index; binding count |
+| Binding | 32 | Directory-relative name offset; name byte count; flags; location; first visible-interval index; visible-interval count; first live-interval index; live-interval count |
+| Interval | 8 | First instruction-word position; exclusive end position |
+
+Interval lists are sorted nonoverlapping half-open ranges in instruction-word
+positions relative to the function's code address. Names use UTF-8 byte spans.
+A frame's visible bindings overlay the initial static-global bindings; later
+same-named bindings shadow earlier ones even when their value is unavailable.
+Visibility and availability are separate: the visible interval selects the
+name, while the live interval determines whether its stored value is available.
+
+Binding flags are bit 0 UPVALUE, bit 1 CONST, bit 2 ADDRESS and bit 3 TYPE.
+Without ADDRESS or TYPE, location identifies a register or, with UPVALUE, an
+upvalue slot. ADDRESS selects a raw static-storage address and remains available
+without a live interval. TYPE describes a type rather than a readable value.
+`FFFFFFFFH` is the no-location word. CONST marks a binding that evaluation must
+not reassign; it does not freeze a Table's fields.
+
+This directory is distinct from private development symbols or a cartridge
+resource directory. Neither is required to locate this BIOS-consumed format:
+its address comes directly from the ROM header word.
+
 ### BIOS cartridge selection
 
 The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:
@@ -407,7 +485,7 @@ These operations do not establish an all-zero-RAM cartridge-entry state or promi
 
 Ordinary BIOS boot hands over a running machine, not an untouched hardware-reset state. The BIOS has already used graphics and the display before `EXEC`. Register reset values therefore do not describe a complete cartridge-entry state. Preserve the existing display deliberately, or program the units you will use according to their chapters. For timing readouts, see [System control and timing — System time and frame timing](system.md#system-time-and-frame-timing); for CPU control fields, see [CPU — CP0 and execution control](cpu.md#cp0-and-execution-control).
 
-The BIOS writes zero to the central interrupt mask before handoff. This masks delivery; it does not clear pending flags or clear CPU interrupt enable, which is set at cartridge entry. Enabling a pending source can make it deliverable without another event. Choose one dispatch owner, install the first source's handler and prepare that source before enabling its delivery. Acknowledge local source state and central pending state as required by the unit; they are separate responsibilities. See [Interrupt controller — Choose one cartridge dispatch route](irq.md#choose-one-cartridge-dispatch-route) and [Acknowledge the source and the controller separately](irq.md#acknowledge-the-source-and-the-controller-separately). The complete experiment's [Starting conditions](irq.md#starting-conditions) show this ordering for its chosen configuration, not a universal device-reset recipe.
+The BIOS writes zero to the central interrupt mask before handoff. This masks delivery; it does not clear pending flags or clear CPU interrupt enable, which is set at cartridge entry. Enabling a pending source can make it deliverable without another event. Choose one dispatch owner, install the first source's handler and prepare that source before enabling its delivery. Acknowledge local source state and central pending state as required by the unit; they are separate responsibilities. See [Interrupt controller — Choose one cartridge dispatch route](irq.md#choose-one-cartridge-dispatch-route) and [Acknowledge the source and the controller separately](irq.md#acknowledge-the-source-and-the-controller-separately). The GPU marker example's [Starting conditions](irq.md#starting-conditions) show this ordering for its chosen configuration, not a universal device-reset recipe.
 
 Execution handoff also does not release the [Firmware reservation in VRAM](#firmware-reservation-in-vram); see [Handoff is not release](#handoff-is-not-release). Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [System control and timing — Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
 
@@ -684,164 +762,45 @@ A static `string` field occupies four bytes containing a constant reference. Loa
 
 The installed library is available through the shared `string` global. Treat both that global and its library table as shared resources: do not overwrite them while other code depends on them. Library availability does not mean a cartridge receives a private table to repurpose.
 
-### Complete BLua call and text program
+<a id="complete-blua-call-and-text-program"></a>
 
-Begin from fresh BIOS entry, with initialized cartridge BSS and the installed `string` and `select` facilities. This complete program owns one 140-byte result structure: 35 words, including its array elements. The exported result address is assigned when the cartridge is linked; no absolute address is assumed.
+### Worked values, byte storage and text
 
-`write_pair` takes plain parameter names. Its local `*word` view interprets the supplied numeric address; it allocates no destination buffer. The caller passes the actual address of its already declared `written` array. The function writes 17 and 25 there and returns 42 and 2. Missing arguments, an excess argument, varargs and a bare return leave separate observations in the result structure. `select('#', ...)` returns the number of following values, including `nil` values. The parenthesized call retains both results here: this is a cartridge-source example, not an on-console `load` example.
-
-The table alias changes the same table, without producing a mapped byte address. Its key 0 was never set. The counter's captured value survives the factory's return and advances from 10 to 12, then 15.
-
-The eight UTF-8 bytes decode to four codepoints: `0041H`, `00E9H`, `0000H` and `1F642H`. The zero codepoint does not end the text; the supplementary codepoint counts as one. By contrast, the literal `'\xc3\xa9'` contains two codepoints, `00C3H` and `00A9H`; it is not UTF-8 decoding.
-
-Keep the result-storage module `results` separate. The two entry listings are consecutive parts of **one** entry module: concatenate their contents in order, preserving every character and blank line. Do not concatenate the result-storage module with them.
-
-#### Result-storage module
+After normal BIOS entry, typed storage supplies the destination bytes; passing
+its address to a function does not allocate a new destination:
 
 ```lua
-module<const>
-
-struct language_manual_result
-	completed: word
-	written: word[2]
-	sum: word
-	written_count: word
-	argument_next: word[2]
-	missing_is_nil: word
-	second_with_extra: word
-	head: word
-	extra_count: word
-	extra: word[2]
-	bare_return_count: word
-	bare_return_is_nil: word
-	parenthesized: word[2]
-	table_alias_value: word
-	table_zero_is_nil: word
-	counter_values: word[2]
-	utf8_byte_count: word
-	text_length: word
-	codepoints: word[4]
-	constructed_matches: word
-	escape_length: word
-	escape_codepoints: word[2]
-	past_end_is_nil: word
-	zero_index_is_nil: word
-	system_origin: word
-	system_size: word
+bss written: word[2]
+local write_pair = function(address, first, second)
+    local destination<const>: *word = address
+    destination[0] = first
+    destination[1] = second
+    return first + second, 2
 end
-
-bss result: language_manual_result
-
-return { result = result }
+local sum, count = write_pair(written, 17, 25)
 ```
 
-#### Entry module: declarations and functions
+`sum` is 42, `count` is 2, and the two stored words are 17 and 25.
+The function's address view and the declared array select the same storage.
+Neither a Table nor a String can be substituted for its byte address.
+
+Text uses a different route:
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *language_manual_result = state.result
-
--- Device payloads are byte storage, not string references.
 rodata utf8_bytes: u8[8] = { 0x41, 0xc3, 0xa9, 0, 0xf0, 0x9f, 0x99, 0x82 }
-
--- Passing this address selects existing storage; it allocates no pointee bytes.
-local write_pair<const> = function(address, first, second)
-	local destination<const>: *word = address
-	destination[0] = first
-	destination[1] = second
-	return first + second, 2
-end
-
-local next_and_value<const> = function(first, value)
-	return first + 1, value
-end
-local tail<const> = function(head, ...)
-	return head, select('#', ...), ...
-end
-local empty<const> = function()
-	return
-end
-local pair<const> = function()
-	return 11, 22
-end
-local make_counter<const> = function(value)
-	return function(delta)
-		value = value + delta
-		return value
-	end
-end
-
+local text = string.from_utf8(utf8_bytes, #utf8_bytes)
+local count = #text
+local zero = string.byte(text, 3)
+local face = string.byte(text, 4)
 ```
 
-#### Entry module: execution and retained results
-
-```lua
-result.sum, result.written_count = write_pair(&result.written[0], 17, 25)
-local missing
-result.argument_next[0], missing = next_and_value(4)
-result.missing_is_nil = missing == nil and 1 or 0
-result.argument_next[1], result.second_with_extra = next_and_value(4, 2, 3)
-result.head, result.extra_count, result.extra[0], result.extra[1] = tail(7, 8, 9)
-result.bare_return_count = select('#', empty())
-result.bare_return_is_nil = empty() == nil and 1 or 0
--- Cartridge-source parentheses do not force this call to one result.
-result.parenthesized[0], result.parenthesized[1] = (pair())
-
-local values<const> = { 11, 22 }
-local alias<const> = values
-alias[1] = 33
-result.table_alias_value = values[1]
-result.table_zero_is_nil = values[0] == nil and 1 or 0
-local advance<const> = make_counter(10)
-result.counter_values[0] = advance(2)
-result.counter_values[1] = advance(3)
-
--- Decode a complete mapped UTF-8 span with the installed string library.
-local text<const> = string.from_utf8(utf8_bytes, #utf8_bytes)
-result.utf8_byte_count = #utf8_bytes
-result.text_length = #text
-for index = 0, 3 do
-	result.codepoints[index] = string.byte(text, index + 1)
-end
-result.constructed_matches = string.char(0x41, 0xe9, 0, 0x1f642) == text and 1 or 0
-local escaped<const> = '\xc3\xa9'
-result.escape_length = #escaped
-result.escape_codepoints[0] = string.byte(escaped, 1)
-result.escape_codepoints[1] = string.byte(escaped, 2)
-result.past_end_is_nil = string.byte(text, 5) == nil and 1 or 0
-result.zero_index_is_nil = string.byte(text, 0) == nil and 1 or 0
-
--- A linked BIOS call returns values; it is not a raw function-pointer cast.
-result.system_origin, result.system_size = system_vram_region()
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-#### Retained results
-
-| Observation | Result |
-|---|---|
-| `written`; `sum`; `written_count` | 17, 25; 42; 2 |
-| `argument_next`; `missing_is_nil`; `second_with_extra` | 5, 5; 1; 2 |
-| `head`; `extra_count`; `extra` | 7; 2; 8, 9 |
-| `bare_return_count`; `bare_return_is_nil` | 1; 1 |
-| `parenthesized` | 11, 22 |
-| `table_alias_value`; `table_zero_is_nil`; `counter_values` | 33; 1; 12, 15 |
-| `utf8_byte_count`; `text_length`; `codepoints` | 8; 4; `0041H`, `00E9H`, `0000H`, `1F642H` |
-| `constructed_matches`; `escape_length`; `escape_codepoints` | 1; 2; `00C3H`, `00A9H` |
-| `past_end_is_nil`; `zero_index_is_nil` | 1; 1 |
-| `system_origin`; `system_size` | `02D002C0H`; `00FC0140H` |
-| `completed` | 1 |
-
-The zero-argument linked BIOS call returns the two system-VRAM words shown above for the current BIOS reservation; they are not permanent constants. Finally, `completed` becomes 1 and the program enters its `halt_until_irq` loop. The retained structure is the program's result, not visible text output.
-
-For the build-and-check procedure, see [Check calls, values and text results](../programming/getting-started.md#check-calls-values-and-text-results).
+Eight bytes decode to four codepoints: `0041H`, `00E9H`, `0000H`, `1F642H`.
+`count` is 4, `zero` is 0 and `face` is `1F642H`. Embedded zero does not
+terminate the String; the supplementary codepoint counts as one. Conversely,
+`'\xc3\xa9'` contains two codepoints rather than decoding two UTF-8 bytes.
+Use [BIOS String operations](bios-string.md) for explicit text/byte conversion,
+and [CPU calls](cpu.md#calls-closures-globals-and-tables) for argument/result
+counts, captures and language-value identity.
 
 ## Execution addresses and instruction reads
 
@@ -1044,7 +1003,7 @@ The system exception entry calls the BIOS exception function, which enters the B
 
 ### Inspect an actual unmapped load
 
-The following is a complete cartridge program. Its Word view addresses `0x01000000`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
+This cartridge fragment deliberately accesses unmapped storage. Its Word view addresses `0x01000000`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
 
 ```lua
 module<entry>
@@ -1061,8 +1020,6 @@ end
 ```
 
 This load produces a data bus error, displayed as **DBE**. The CPU cause field is `0x0000001c` (code 7); the Memory fault CODE is instead `0x00000001` (unmapped). These are different reports, not two encodings to write to the same register. DBE does not establish a new CP0 bad-address value. Inspect the Memory ADDR word for this bus fault's address.
-
-For the complete fault probe and a step-by-step route to a readable monitor prompt, see [Run and inspect the fault probe](../programming/getting-started.md#run-and-inspect-the-fault-probe).
 
 At the BIOS monitor prompt, type the following command and press Enter. Its address is hexadecimal, and the count selects three consecutive 32-bit words:
 
@@ -1102,7 +1059,7 @@ CP0 reads and writes require non-user mode; attempting them from ordinary cartri
 
 ### Repair a word load and retry
 
-The preceding constant-address probe remains faulty after its report is cleared. This example instead makes the address a mutable local pointer, so you can repair the operand of the stopped read. Use a debug cartridge with installed source symbols. Frame evaluation needs the correct source scope and an available, mutable live binding; it cannot recover arbitrary optimized-out locals. The [Development companion — Repair and retry a word load](../programming/getting-started.md#repair-and-retry-a-word-load) provides the build and run procedure.
+The preceding constant-address probe remains faulty after its report is cleared. This example instead makes the address a mutable local pointer, so you can repair the operand of the stopped read. Include the [BIOS diagnostic directory](#optional-bios-diagnostic-directory) for source and frame-scope lookup. Frame evaluation needs the correct source scope and an available, mutable live binding; it cannot recover arbitrary optimized-out locals.
 
 ```lua
 module<entry>
@@ -1171,165 +1128,58 @@ FAULT 00000001 -> 00000000
 
 `REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [System control and timing — Reset requests](system.md#reset-requests).
 
-For a complete example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#cp0-in-cartridge-irq). The callback returns normally, allowing its generated IRQ vector to perform RFE and resume the interrupted cartridge code.
+For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#cp0-in-cartridge-irq). The callback returns normally, allowing its generated IRQ vector to perform RFE and resume the interrupted cartridge code.
 
 ## Worked example: prepare and copy two records
 
-This complete, memory-only program starts with two initialized input records,
-copies their scalar fields into an output array, and records what it observed
-before the copy. It prepares bytes; it does not draw an image or submit a device
-job.
-
-Build the two modules below together. Name the constant module `storage`, so that
-`require('storage')` resolves to it, and use the `module<entry>` module as the
-program entry. Generated DATA/BSS startup runs before the entry code. No numeric
-RAM base is needed: the storage declarations supply linked addresses.
-
-In this program, the top-level struct names `memory_sample` and `memory_status` declared in `storage` are available to the entry module’s unqualified typed views and `sizeof`. They do not need to appear in the address/count table returned by `storage`.
-
-### The storage module
-
-The one source constant, `input_count`, sets both array dimensions and supplies
-the exported record count. Here it is **2 records**, not 2 bytes. The returned
-exports provide that count and the addresses of the declared storage.
-
-```lua
-module<const>
-
-local input_count<const> = 2
-
-struct memory_sample
-	tag: u8
-	value: word
-	samples: u16[2]
-end
-
-struct memory_status
-	initial_counter: word
-	initial_output_or: word
-	completed: word
-end
-
-rodata inputs: memory_sample[input_count] = {
-	{ tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
-	{ tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
-}
-
-data counter: word = 0x12345678
-bss output: memory_sample[input_count]
-bss status: memory_status
-
-return {
-	inputs = inputs,
-	input_count = input_count,
-	counter = counter,
-	output = output,
-	status = status,
-}
-```
-
-<div class="keep-together">
-
-The input and output arrays have the same record layout:
-
-| Part of `memory_sample` | Byte offset | Size in bytes |
-| --- | ---: | ---: |
-| `tag` | 0 | 1 |
-| Alignment padding | 1–3 | 3 |
-| `value` | 4 | 4 |
-| `samples[0]` | 8 | 2 |
-| `samples[1]` | 10 | 2 |
-
-</div>
-
-A record has alignment **4** and size **12 bytes**. Two records occupy **24
-bytes**, or six words. The padding is part of the record's storage, but is not a
-field to copy.
-
-| Declaration | Storage | Size | Contents before the entry code writes them |
-| --- | --- | ---: | --- |
-| `inputs` | RODATA | 24 bytes | The two initialized records above, with zero padding |
-| `counter` | DATA | 4 bytes | `12345678H` |
-| `output` | BSS | 24 bytes | All zero |
-| `status` | BSS | 12 bytes | All zero |
-
-The three `memory_status` fields are words at byte offsets 0, 4, and 8,
-respectively. The entry code preserves the initial counter value and combines
-all six initial output words with bitwise OR before writing any output field.
-For this program, the observed initial counter was `12345678H` and that OR was
-`00000000H`.
-
-### The entry module
-
-The typed address views connect the exported addresses to their layouts:
-`inputs` and `output` address records, `counter` addresses a word, and `status`
-addresses the status record. `output_words` is a word view of the same output
-bytes, used only for the startup observation.
+This sequence prepares bytes without submitting a device job. Start after
+normal cartridge DATA/BSS initialization. The declared objects supply linked
+addresses; no guessed free RAM address is needed.
 
 ```lua
 module<entry>
-
-local storage<const> = require('storage')
-local inputs<const>: *memory_sample = storage.inputs
-local output<const>: *memory_sample = storage.output
-local counter<const>: *word = storage.counter
-local status<const>: *memory_status = storage.status
-local output_words<const>: *word = storage.output
-
--- Observe startup contents before writing the output records.
-status.initial_counter = *counter
-local initial_output_or = 0
-for index = 0, storage.input_count * sizeof(memory_sample) // sizeof(word) - 1 do
-	initial_output_or = initial_output_or | output_words[index]
+struct memory_sample
+    tag: u8
+    value: word
+    samples: u16[2]
 end
-status.initial_output_or = initial_output_or
+rodata inputs: memory_sample[2] = {
+    { tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
+    { tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
+}
+data counter: word = 0x12345678
+bss output: memory_sample[2]
+local source<const>: *memory_sample = inputs
+local destination<const>: *memory_sample = output
 
--- Typed arrays start at zero. Copy scalar fields, not whole records.
-for index = 0, storage.input_count - 1 do
-	output[index].tag = inputs[index].tag
-	output[index].value = inputs[index].value
-	output[index].samples[0] = inputs[index].samples[0]
-	output[index].samples[1] = inputs[index].samples[1]
+for index = 0, #inputs - 1 do
+    destination[index].tag = source[index].tag
+    destination[index].value = source[index].value
+    destination[index].samples[0] = source[index].samples[0]
+    destination[index].samples[1] = source[index].samples[1]
 end
-*counter = *counter + storage.input_count
-status.completed = 1
-
-while true do
-	halt_until_irq
-end
+*counter = *counter + #inputs
 ```
-
-The copy performs four scalar assignments per record: one `u8`, one word, and
-two `u16` fields. It is not a whole-record assignment. The output's three
-padding bytes per record remain zero from BSS startup.
 
 ### Record indexing is not byte arithmetic
 
-Typed array indices start at zero. `inputs[0]` is the first record and
-`inputs[1]` is the second; the second begins **12 bytes** after the first.
-Likewise, `output_words[index]` advances by **4 bytes** per index, so the startup
-loop visits words 0 through 5.
+| Part of `memory_sample` | Byte offset | Bytes |
+| --- | ---: | ---: |
+| `tag` | 0 | 1 |
+| Padding | 1 | 3 |
+| `value` | 4 | 4 |
+| `samples` | 8 | 4 |
 
-The offsets in the worked table are relative to `storage.inputs`, the storage address of the linked RODATA array `inputs`. That base is assigned in the linked image; it is not a universal hardcoded address.
+Record alignment is 4 and record size is 12 bytes. Each two-record array
+occupies 24 bytes. Typed indices start at zero: `&source[1]` is 12 bytes after
+`inputs`, `&source[0].value` is 4 bytes after it, and
+`&source[1].samples[1]` is 22 bytes after it. Advancing a byte view by one
+would instead select the next byte, here padding, not the next record.
 
-| Address operation | Byte address relative to base | What it selects |
-| --- | ---: | --- |
-| `&inputs[1]` | +12 | Second record |
-| `&inputs[0].value` | +4 | First record's word field |
-| `&inputs[0].samples[0]` | +8 | First record's first sample |
-| `&inputs[1].samples[1]` | +22 | Second record's second sample |
-| Add 1 to a byte pointer at base | +1 | A padding byte, not the second record |
+### Resulting bytes
 
-The corresponding output fields have the same offsets relative to
-`storage.output`. Choose a typed record index when selecting a record; adding
-a byte offset selects a byte position instead.
-
-### Results to inspect
-
-<div class="keep-together">
-
-After the copy, the output contains these six words in increasing address
-order. They equal the input's six words.
+BSS supplies initial zero output bytes. The copy writes scalar fields rather
+than assigning whole records, so their three padding bytes remain zero.
 
 | Output byte offset | Word | Contents |
 | ---: | --- | --- |
@@ -1340,26 +1190,10 @@ order. They equal the input's six words.
 | 16 | `9ABCDEF0H` | Second value |
 | 20 | `77885566H` | Second record's two samples |
 
-</div>
-
-| Final item | Value |
-| --- | --- |
-| `*counter` | `1234567AH` |
-| `status.initial_counter` | `12345678H` |
-| `status.initial_output_or` | `00000000H` |
-| `status.completed` | `00000001H` |
-
-The counter has advanced by the record count, **2**. After setting `completed`,
-the program remains in the `halt_until_irq` loop. That loop does not create a
-completion interrupt, and the program configures no interrupt source.
-
-These results establish the byte-storage preparation in this example, not a
-rendering or asynchronous device-buffer contract. A device-facing use still
-needs that device's address and layout requirements, count units, admission
-rules, and completion/lifetime contract.
-
-For the matching project layout, build and result-observation procedure, see
-[Build and inspect the memory example](../programming/getting-started.md).
+The final counter is `1234567AH`: `#inputs` counts **two records**, not bytes.
+No interrupt, rendering or buffer-release event follows this CPU copy. A
+hardware-facing use must still satisfy the receiving unit's address, layout,
+count, completion and lifetime rules.
 
 ## DMA buffer lifetime
 
@@ -1385,7 +1219,7 @@ If the old report must remain physically latched, do not clear it: saving its wo
 
    Leave the channel's programmed address/count/control words alone through completion. Writes to those words are not automatically rejected while BUSY: an already admitted block uses its captured configuration, and its later address/count writeback can overwrite changes made meanwhile. Reprogramming a busy channel is not a way to revise that admitted block safely.
 
-4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. The complete example uses IRQ-sequence predicates and HALT statements rather than an assumed transfer delay.
+4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. Wait for channel status or service its completion IRQ rather than assuming a transfer delay.
 
    **DONE is not a success certificate.** An unmapped read can report a bus fault and supply zero to the transfer; an unmapped or read-only destination write can report a fault without writing its target. DMA nevertheless advances its addresses and count rather than aborting on those faults. A write to an I/O port that is not ready can be discarded without retrying that word. Use the before-START attribution procedure above when assessing the bus-fault record, and use the correct request selectors; completion alone does not prove that all intended destination bytes were written.
 
@@ -1395,14 +1229,14 @@ If the old report must remain physically latched, do not clear it: saving its wo
 
 For backed RAM, reads observe the current four little-endian bytes and writes immediately update their destination bytes. There is no block-sized source snapshot or special overlap-copy behavior. For example, start with RAM words `[1, 2, 3, 4, 5]` and copy a four-word block from *base* to *base + 4*, with both addresses incrementing. The access order produces `[1, 1, 1, 1, 1]`: each write changes the next source word before it is read.
 
-### Complete example
+### DMA programming example
 
-The [DMA chapter's complete BLua program](dma.md#worked-blua-program) prepares 20 source words and performs two nonoverlapping RAM copies using linked storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
+The [DMA chapter's BLua sequence](dma.md#worked-blua-program) prepares 20 source words and performs two nonoverlapping RAM copies using linked storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
 
-The same program sends a five-word ROM stream to fixed GP0, then separately waits for a GPU marker and GPU idle. For this stream, its retained observations put DMA DONE before the marker/idle observations. That is a concrete distinction between DMA completion and device completion, not a universal ordering or lifetime rule for other units.
-
-For the matching project and result-observation commands, see
-[Check the DMA program’s results](../programming/getting-started.md#check-the-dma-programs-results).
+The following GP0 sequence sends a five-word ROM stream, waits for DMA DONE,
+then separately waits for a GPU marker and GPU idle. These are distinct
+completion conditions; the order of software reads does not establish a
+universal ordering of DMA and device completion.
 
 ## Device-specific buffer lifetimes
 
@@ -1440,7 +1274,7 @@ Do not poll DATA for freshness. An empty read returns the retained DATA latch, w
 
 A format fault stops processing but can leave queued partial output and words already delivered. CONTROL has no ABORT operation. A new START or IMGDEC reset discards queued internal output; it does not cancel a separately admitted DMA transfer or retract prior output. Restarting IMGDEC is therefore not an all-or-nothing recovery of an arbitrary partial output stream.
 
-Use the [IMGDEC chapter](imgdec.md) and its [complete BLua route](imgdec.md#programming-imgdec-in-blua) for stream layout and transfer programming.
+Use the [IMGDEC chapter](imgdec.md) and its [BLua programming sequence](imgdec.md#programming-imgdec-in-blua) for stream layout and transfer programming.
 
 ### APU sample storage and lifetime
 
@@ -1452,7 +1286,7 @@ Keep upload completion separate from playback lifetime. A DMA upload first deliv
 
 A paused voice retains a nonexclusive source reference. A looping voice continues reading; a voice STOP command is queued, not completed by its CMD write. A pending STOP fade does not immediately release the source. While fading, the normal post-frame source-boundary check is suppressed: keep the fade within the remaining nonlooping source data or provide a valid loop. An executed no-fade STOP clears that slot's resident voice without emitting SLOT_ENDED. SLOT_ENDED describes one ended slot, not every use of its bytes. Other voices, queued PLAY commands, and staged or planned uses can still require the same source. Account for all of them before overwriting shared samples; neither DMA DONE nor one SLOT_ENDED grants blanket reuse.
 
-Fault acknowledgment clears the fault report, not the voices or command and transfer queues. Reset is destructive: it clears playback, queues, and private sample RAM rather than completing or preserving their contents. See the [APU chapter](apu.md) for source binding and playback, and its [complete raw-port download](apu.md#apu-download-budget) for transfer completion and surplus-prefetch control. Use the supplied [buffer-program result procedures](../programming/getting-started.md#check-hardware-buffer-program-results) to observe each example's results.
+Fault acknowledgment clears the fault report, not the voices or command and transfer queues. Reset is destructive: it clears playback, queues, and private sample RAM rather than completing or preserving their contents. See the [APU chapter](apu.md) for source binding and playback, and its [complete raw-port download](apu.md#apu-download-budget) for transfer completion and surplus-prefetch control.
 
 ## Shared GPU storage and display publication
 
@@ -1487,9 +1321,9 @@ A fresh-after-write observation needs more than an already-pending VBlank flag. 
 
 ### Prepare, publish and reuse two surfaces
 
-This complete cartridge prepares two fixed surfaces, selects A, selects B, rebuilds A while B is selected, and selects A again. It uses ordinary fresh BIOS cartridge entry with CPU interrupts enabled. It is the sole GP0 producer and owns the VBlank handler, IRQ mask and callback counter; there is no earlier in-flight callback, supervisor/context takeover, or competing writer. Only circuit 1 is enabled, and no other texture, CLUT, copy or readback operation uses either region. These are the conditions of this example, not an allocation or general surface-release service.
+This programming sequence prepares two fixed surfaces, selects A, selects B, rebuilds A while B is selected, and selects A again. It uses ordinary fresh BIOS cartridge entry with CPU interrupts enabled. It is the sole GP0 producer and owns the VBlank handler, IRQ mask and callback counter; there is no earlier in-flight callback, supervisor/context takeover, or competing writer. Only circuit 1 is enabled, and no other texture, CLUT, copy or readback operation uses either region. These are the conditions of this example, not an allocation or general surface-release service.
 
-The callable BIOS function `gpu/system_vram_region` reports the installed system reservation. In this run it returns origin `02D002C0H`, or `(704,720)`, and size `00FC0140H`, or `(320,252)`: the bounding region `[704,1024) × [720,972)`. Both chosen surfaces exclude that reservation and each other. These are the current installed BIOS values, not immutable hardware dimensions or proof that every other address is free.
+The callable BIOS function `gpu/system_vram_region` reports the installed system reservation. For the reservation example above it returns origin `02D002C0H`, or `(704,720)`, and size `00FC0140H`, or `(320,252)`: the bounding region `[704,1024) × [720,972)`. Both chosen surfaces exclude that reservation and each other. These are the current installed BIOS values, not immutable hardware dimensions or proof that every other address is free.
 
 | Surface | GX16 source region | DISPFB1.low | Word base |
 |---|---|---|---|
@@ -1500,194 +1334,111 @@ The callable BIOS function `gpu/system_vram_region` reports the installed system
 
 The program resets PCRTC with CSR `00000200H`; that is not a VRAM clear. It holds PMODE at zero during preparation. `DISPLAY1.low = 01800000H` supplies zero signal origin and magnification 4 horizontally, 1 vertically; `DISPLAY1.high = 000BF3FFH` supplies a 1024 × 192 signal extent. With the reset horizontal signal step of 4 and progressive mode, the source footprint is exactly 256 × 192 at zero phase. PMODE `0000FF21H` then enables only circuit 1. Pitch, format, source offsets and geometry remain unchanged throughout the switches.
 
-#### Complete BLua program
+#### Prepare the storage and display route
 
-The `results` module reserves the retained observations and exports their linked address. Name this module `results`, matching the entry module's `require('results')`.
-
-```lua
-module<const>
-
-struct display_manual_result
-	completed_phase: word
-	vblank_sequence: word
-	system_origin: word
-	system_size: word
-	samples: word[4]
-	before_vblank: word[3]
-	after_vblank: word[3]
-	programmed_framebuffer: word[3]
-end
-
-bss result: display_manual_result
-
-return { result = result }
-```
-
-The cartridge entry module contains the complete preparation, interrupt callback, ordered readback and publication sequence. Its packet words are readonly data; each packet word is written to the fixed GP0 port. The next three listings are consecutive parts of one entry module; concatenate them in order.
-
-#### Entry, part 1 of 3 — ports, data and initialization.
+The following fragments form one ordered sequence under the ownership
+assumptions above. A final write to a display register is not a drawing fence.
+First define the VBlank callback and disable delivery during preparation:
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *display_manual_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_origin<const>: *word = 0x08010364
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
--- A: red at (0,0), white square at display (16,64).
--- B: blue at (0,256), white square at display (208,64).
-rodata initial_commands: word[] = {
-	0x020000ff, 0, 256 | (192 << 16),
-	0x02ffffff, 16 | (64 << 16), 32 | (32 << 16),
-	0x02ff0000, 256 << 16, 256 | (192 << 16),
-	0x02ffffff, 208 | (320 << 16), 32 | (32 << 16),
-}
-rodata reused_commands: word[] = {
-	0x0200ff00, 0, 256 | (192 << 16),
-	0x02ffffff, 112 | (80 << 16), 32 | (32 << 16),
-}
-rodata probe_positions: word[2] = { 0, 256 << 16 }
-
+bss vblank_sequence: word
 function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
+    if (flags & 4) ~= 0 then
+        *vblank_sequence = *vblank_sequence + 1
+    end
+    mem[0x08000004] = flags & 4
 end
-
--- This isolated example owns GP0, circuit 1 and the VBlank handler.
--- Its two fixed regions exclude the installed firmware region reported here.
-result.system_origin, result.system_size = system_vram_region()
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*display_origin = 0x01800000
-*display_extent = 0x000bf3ff
-*gp1 = 0x09000000
+mem[0x08000008] = 0
+mem[0x080103d4] = 0x00000200  -- PCRTC reset; not a VRAM clear
+mem[0x08010354] = 0           -- PMODE: no read circuit
+mem[0x0801035c] = 0x000fa000  -- DISPFB1 low: surface A
+mem[0x08010360] = 0           -- DISPFB1 high: zero source offsets
+mem[0x08010364] = 0x01800000  -- DISPLAY1 low
+mem[0x08010368] = 0x000bf3ff  -- DISPLAY1 high
+mem[0x08010240] = 0x09000000  -- Close the VRAM Y-address extension gate
 ```
 
-#### Entry, part 2 of 3 — prepare and select A, then select B.
+Send the following **four three-word GP0 fill commands**, in row order, to the
+fixed port `0801023CH`. Each cell is one raw word:
+
+| Fill | Command/color | Position | Extent |
+| --- | --- | --- | --- |
+| Red A | `020000FFH` | `00000000H` | `00C00100H` |
+| White marker on A | `02FFFFFFH` | `00400010H` | `00200020H` |
+| Blue B | `02FF0000H` | `01000000H` | `00C00100H` |
+| White marker on B | `02FFFFFFH` | `014000D0H` | `00200020H` |
+
+For example, the first command is exactly:
 
 ```lua
-
-for index = 0, #initial_commands - 1 do
-	*gp0 = initial_commands[index]
-end
-for index = 0, #probe_positions - 1 do
-	*gp0 = 0xc0000000
-	*gp0 = probe_positions[index]
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.samples[index] = *gp0
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-
--- Publish A. Discard stale VBlank pending only AFTER the final display write.
-*pmode = 0x0000ff21
-*irq_ack = 0x00000004
-local before_a<const> = result.vblank_sequence
-result.before_vblank[0] = before_a
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_a do
-	halt_until_irq
-end
-result.after_vblank[0] = result.vblank_sequence
-result.programmed_framebuffer[0] = *framebuffer
-result.completed_phase = 1
-
-local hold_a<const> = result.vblank_sequence
-while result.vblank_sequence - hold_a < 2 do
-	halt_until_irq
-end
-
--- Switch only FBP; GX16, pitch, offsets and display geometry stay unchanged.
-*irq_mask = 0
-*framebuffer = 0x000fa040
-*irq_ack = 0x00000004
-local before_b<const> = result.vblank_sequence
-result.before_vblank[1] = before_b
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_b do
-	halt_until_irq
-end
-result.after_vblank[1] = result.vblank_sequence
-result.programmed_framebuffer[1] = *framebuffer
-
+mem[0x0801023c] = 0x020000ff
+mem[0x0801023c] = 0x00000000
+mem[0x0801023c] = 0x00c00100
 ```
 
-#### Entry, part 3 of 3 — rebuild A and select it again.
+After all four fills, issue a one-pixel readback from each surface origin:
+GP0 words `C0000000H`, position (`00000000H` for A, `01000000H` for B),
+`00010001H`. For each request, wait until GPUSTAT at `08010240H` has
+`08000000H` set, then read one word from GPUREAD at `0801023CH`. The words
+are `0000001FH` and `00007C00H`. Drain each result before the next request;
+then wait separately for GPUSTAT IDLE, bit `04000000H`.
+
+#### Publish A, then B
+
+Enable circuit 1, discard stale VBlank pending **after** the final display
+write, and wait for a newly serviced callback:
 
 ```lua
--- B is selected. Rebuild only A, then read both regions through ordered C0.
-for index = 0, #reused_commands - 1 do
-	*gp0 = reused_commands[index]
-end
-for index = 0, #probe_positions - 1 do
-	*gp0 = 0xc0000000
-	*gp0 = probe_positions[index]
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.samples[index + 2] = *gp0
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-result.completed_phase = 2
-
-local hold_b<const> = result.vblank_sequence
-while result.vblank_sequence - hold_b < 2 do
-	halt_until_irq
-end
-
--- Select A again: the same storage now contains green, not its old red image.
-*irq_mask = 0
-*framebuffer = 0x000fa000
-*irq_ack = 0x00000004
-local before_reuse<const> = result.vblank_sequence
-result.before_vblank[2] = before_reuse
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_reuse do
-	halt_until_irq
-end
-result.after_vblank[2] = result.vblank_sequence
-result.programmed_framebuffer[2] = *framebuffer
-result.completed_phase = 3
-
-while true do
-	halt_until_irq
+mem[0x08010354] = 0x0000ff21
+mem[0x08000004] = 4
+local before = *vblank_sequence
+mem[0x08000008] = 4
+while *vblank_sequence == before do
+    halt_until_irq
 end
 ```
+
+A is now selected at the new publication edge. To publish B, use the same
+mask/write/ACK/sample/enable/wait order:
+
+```lua
+mem[0x08000008] = 0
+mem[0x0801035c] = 0x000fa040
+mem[0x08000004] = 4
+local before = *vblank_sequence
+mem[0x08000008] = 4
+while *vblank_sequence == before do
+    halt_until_irq
+end
+```
+
+With B selected, rebuild only A using GP0 triples
+`0200FF00H, 00000000H, 00C00100H` and
+`02FFFFFFH, 00500070H, 00200020H`. Read back both origins again and drain
+the results before waiting for GPU IDLE. Repeat the publication sequence with
+`DISPFB1.low = 000FA000H` to select A's new contents.
 
 #### What each phase establishes
 
-The initial fills prepare red A and blue B, each with a white 32 × 32 marker. Ordered C0 requests read one pixel from each surface origin. The program waits for GPUSTAT READY bit `08000000H`, then consumes one complete GPUREAD word for each one-pixel request. Its unpaired pixel occupies the low half; the high half is zero. After draining the requests, it waits separately for GPUSTAT IDLE bit `04000000H` before publishing the display selection. There is no DMA transfer in this program.
+GP0 readback follows the fills in command order. A one-pixel request consumes
+one whole GPUREAD word: the pixel is in the low half and the unused high half
+is zero. Waiting for IDLE after draining the readbacks is separate from
+waiting for VBlank publication. There is no DMA transfer in this sequence.
 
-For each publication, delivery is masked before the final display write. The post-write ACK discards stale pending VBlank, the counter is sampled while masked, and VBlank delivery is enabled. A changed callback counter therefore observes a fresh post-write system VBlank under the stated ownership conditions, not merely an old pending flag. The callback counts services and acknowledges only VBlank. The two holds wait for two further callback services, not a specified duration or an exact count of all beam events.
+Masking delivery before the display write and acknowledging afterward prevents
+an old pending VBlank from satisfying the callback-counter wait. Under the
+stated sole-owner conditions, the changed counter observes a fresh post-write
+VBlank. It does not measure exact pixel-fetch timing or a fixed latency.
 
-After B is selected, the next ordered fills rebuild only A as green with a new white marker. Further readbacks retain the following words:
+| Origin sampled | Initial preparation | After rebuilding A |
+| --- | --- | --- |
+| A `(0,0)` | `0000001FH` (red) | `000003E0H` (green) |
+| B `(0,256)` | `00007C00H` (blue) | `00007C00H` (unchanged blue) |
 
-| Result slot | Origin sampled | When | Retained word |
-|---|---|---|---|
-| `samples[0]` | A `(0,0)` | Initial preparation | `0000001FH` |
-| `samples[1]` | B `(0,256)` | Initial preparation | `00007C00H` |
-| `samples[2]` | A `(0,0)` | After rebuilding A | `000003E0H` |
-| `samples[3]` | B `(0,256)` | After rebuilding A | `00007C00H` |
-
-The retained programmed framebuffer words are A/B/A: `000FA000H`, `000FA040H`, `000FA000H`. For all three transitions, `after_vblank[i] > before_vblank[i]`. These are software callback observations, not numeric latency measurements or direct reads of PCRTC's retained bank. The final selection returns to A's current green contents, not a saved copy of its earlier red image. The final HALT loop leaves VBlank enabled: `completed_phase` remains 3 while `vblank_sequence` continues to advance.
+The framebuffer words select A/B/A: `000FA000H`, `000FA040H`,
+`000FA000H`. The final selection reads A's **current green contents**, not a
+saved copy of its earlier red image. It does not release other users of that
+storage or grant permission to overwrite the BIOS reservation.
 
 #### Ordinary playback pictures
 
@@ -1696,6 +1447,4 @@ The retained programmed framebuffer words are A/B/A: `000FA000H`, `000FA040H`, `
 | ![Red A with a white square at display coordinates 16,64](figures/memory-display-a-red.png) | ![Blue B with a white square at display coordinates 208,64](figures/memory-display-b-blue.png) | ![Green A with a white square at display coordinates 112,80](figures/memory-display-a-green.png) |
 | Red background; white marker `[16,48) × [64,96)`. | Blue background; white marker `[208,240) × [64,96)`. | Green background; white marker `[112,144) × [80,112)`. |
 
-These are the three unmodified 256 × 192 pictures from ordinary cartridge playback. Each contains 1024 white marker pixels and 48,128 background pixels. They demonstrate this controlled selection and reuse, not physical pixel-fetch timing, arbitrary alias safety, or ownership of other regions.
-
-For building the program and checking its retained observations, see [Check the display-surface program](../programming/getting-started.md#check-the-display-surface-program).
+The resulting 256 × 192 pictures are shown above. Each contains 1024 white marker pixels and 48,128 background pixels. They demonstrate this controlled selection and reuse, not physical pixel-fetch timing, arbitrary alias safety, or ownership of other regions.

@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Hardware register sequences retain geometry, matrix packing, lighting, cue/material comparison, near-plane construction, GPU handoff and two-surface publication. All actual output plates remain, with raw setup tables independent of external operand types. External-library listings and their build recipes are outside the BMSX series.",
+			"resolution": "A small typed-register projection example and worked transformation, lighting and depth calculations accompany normal and PLUS programming references.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/gte-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/gte-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/gte-print.md"
 		}
 	}

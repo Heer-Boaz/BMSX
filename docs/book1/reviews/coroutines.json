@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete18+117-line actual BLua program,40 retained assertions and17 ordinary BIOS output lines; all8 public coroutine members, actual aliases, original error Table/nil and surviving capture. Independent source/program/figure and public-only newcomer checks pass, including corrected Failed wrapper cleanup. All12 actual publication PDF pages independently pass after two existing keep-together layout corrections.",
+			"resolution": "Short protected-call and resume/yield examples explain result tuples, suspension, error propagation and completion.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/coroutines-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/coroutines-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/coroutines-print.md"
 		}
 	}

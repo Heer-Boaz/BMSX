@@ -134,10 +134,10 @@ are representable capacities, not rated maximum-resolution video modes.
 <a id="gpu-programming-example"></a>
 ## Program a complete picture in BLua
 
-This cartridge stores a sixteen-pixel texture and its fixed command stream in
-ROM. Two BSS words retain the raw image-readback result. Typed whole-word views
-supply scalar port accesses: each stream store addresses the same GP0 word,
-while indexing advances through the source data.
+This sequence prepares one static 256×192 picture, reads three stored texels
+back, and displays those same raw words in a small strip. Its texture and command
+words are fixed; two writable words retain the readback. Each scalar stream store
+addresses GP0 again, while indexing advances through the source data.
 
 The picture contains two enlarged copies of one 4×4 texture, a Gouraud triangle,
 additive rectangles and protected overlapping rectangles. A small unscaled
@@ -148,7 +148,7 @@ are already screen coordinates.
 
 ### Declare ports and authored data
 
-The following listings are consecutive parts of one cartridge. GP0/GP1 are the
+The following listings form one entry sequence. GP0/GP1 are the
 GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source, extent and PMODE
 formats are specified in the PCRTC chapter; they are not alternative GP1 controls.
 
@@ -165,7 +165,7 @@ local source<const>: *word = 0x08010360
 local display_extent<const>: *word = 0x08010368
 local pcrtc_csr<const>: *word = 0x080103d4
 
--- Sixteen raw RGB555/mask words, packed by the compiler into cartridge ROM.
+-- Sixteen raw RGB555/mask words, low halfword first on upload.
 rodata texels: u16[4][4] = {
 	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
 	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
@@ -178,7 +178,7 @@ rodata texels: u16[4][4] = {
 
 The halfword array is a sixteen-pixel image. Its last row deliberately includes
 both `8000H` and `0000H`: the former draws black; the latter leaves the background.
-The compiler packs each adjacent pair into one word for the upload loop.
+The upload sends two adjacent halfwords per command word, low half first.
 
 The packet array below contains **55 words**. Its first two packets are nine-word
 textured quads. T0 supplies U/V with CLUT zero; direct16 ignores that palette.
@@ -300,7 +300,7 @@ remains disabled while the GPU prepares this single, never-reused picture.
 ### Upload and issue the stream through one port
 
 A0 selects 4×4 raw pixels at `(640,0)`: exactly eight payload words follow its
-three-word header. The readonly word view exposes the compiler's packed image.
+three-word header. The word view reads two adjacent raw halfwords at a time.
 Both loops write to `*gp0` every iteration; indexing applies to the source only.
 The scalar-store admission mechanism supplies any necessary wait; DMA-ready
 bit 28 is not its admission test. A CPU word-sequence store advances the
@@ -408,7 +408,7 @@ end
 
 <div class="keep-together">
 
-### Check the result in raw words
+### Stored-word results
 
 These expected samples distinguish the controls without relying on display-color
 expansion. Mask bits remain part of each stored word.
@@ -1288,46 +1288,41 @@ The polygon vertex differences are 16 times those of the preceding numerical exa
 
 <div class="keep-together">
 
-#### Program changes
+#### Submit the coverage examples
 
-Start from the complete [dither comparison program](#gpu-dither-output). Make a separate cartridge and apply exactly these three changes:
-
-1. Replace the entire `drawing_commands` array with this 13-word array.
+Use the 256×192 drawing environment from the first programming sequence,
+with destination-mask checking and force-mask disabled. Set E1=`0420H` for
+additive blending, dither off and both row parities. Send these complete GP0
+packets to clear the picture and draw the two quads:
 
 </div>
 
 ```lua
 rodata drawing_commands: word[] = {
-	-- Black background; the two quads use the same additive material.
-	0x02000000, 0, 256 | (192 << 16),
-	-- Normal ordering: (0,1,2), then (2,1,3).
-	0x2a204060,
-	16 | (24 << 16), 112 | (24 << 16),
-	16 | (56 << 16), 112 | (56 << 16),
-	-- Move only vertex 3 inward. The second triangle overlaps the first.
-	0x2a204060,
-	144 | (24 << 16), 240 | (24 << 16),
-	144 | (56 << 16), 160 | (40 << 16),
+    0x02000000, 0, 256 | (192 << 16),
+    0x2a204060,
+    16 | (24 << 16), 112 | (24 << 16),
+    16 | (56 << 16), 112 | (56 << 16),
+    0x2a204060,
+    144 | (24 << 16), 240 | (24 << 16),
+    144 | (56 << 16), 160 | (40 << 16),
 }
-```
-
-2. Replace the initial `*gp0 = 0xe1000400` with `*gp0 = 0xe1000420`: additive blending, dither disabled, both field parities enabled.
-
-3. Immediately after the command-stream loop, before the final marker, insert this loop drawing the 24 polylines.
-
-```lua
+*gp0 = 0xe1000420
+for index = 0, #drawing_commands - 1 do
+    *gp0 = drawing_commands[index]
+end
 for y = 112, 135 do
-	*gp0 = 0x4a204060
-	*gp0 = 16 | (y << 16)
-	*gp0 = 64 | (y << 16)
-	*gp0 = 112 | (y << 16)
-	*gp0 = 0x50005000
+    *gp0 = 0x4a204060
+    *gp0 = 16 | (y << 16)
+    *gp0 = 64 | (y << 16)
+    *gp0 = 112 | (y << 16)
+    *gp0 = 0x50005000
 end
 ```
 
-Retain all other port declarations, the IRQ callback, startup, E2–E6 state, stream loop, and marker/acknowledgement/display tail unchanged.
-
-The [Development companion — GPU shared edges](../programming/getting-started.md#build-and-inspect-gpu-shared-edges) supplies the complete standalone cartridge and build/observation procedure.
+The last word terminates each polyline at its coordinate boundary. Complete
+the stream and wait for GPU idle before enabling its PCRTC source; use the
+separate display-publication sequence, not an extra drawing delay.
 
 <a id="gpu-interpolation"></a>
 ## Predict interpolated colors and texture coordinates
@@ -1791,97 +1786,42 @@ Without dither, modulation produces RGB5 `(6, 7, 16)`, stored as `40E6H`. The up
 
 These are stored RGB555 words, not displayed-picture RGB bytes. The dither offsets come from a `4 × 4` matrix indexed by destination coordinates. For these particular texture and color operands, quantization maps those offsets into the repeated `2 × 2` word pattern shown here. It does **not** make the GPU's dither matrix universally `2 × 2`.
 
-The following two listings form one complete cartridge program; concatenate them in the printed order. This is a separate cartridge, not an addition to the earlier GPU program. Use normal BIOS entry with this callback and interrupt mask as the sole owners. The [Development companion — GPU dithering](../programming/getting-started.md#build-and-inspect-gpu-dithering) supplies the build and observation procedure.
-
-<div class="keep-together">
-
-**Declarations and packets.**
+Use the GP0 port and 256×192 drawing environment from the first programming
+sequence, with mask controls cleared and E1=`0400H` initially. The complete
+packets below first fill the source texture uniformly, then draw all four
+panels. No image decoder or filtered sampler is involved.
 
 ```lua
-module<entry>
-
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
 rodata drawing_commands: word[] = {
-	-- Background, then a uniform 96 x 64 direct-color texture at (640,0).
-	0x02181008, 0, 256 | (192 << 16),
-	0x02684838, 640, 96 | (64 << 16),
-	-- Modulated quad, dither off. All four UVs select the same texel.
-	0x2ca0647c,
-	16 | (24 << 16), 0,
-	112 | (24 << 16), 0x010a << 16,
-	16 | (88 << 16), 0,
-	112 | (88 << 16), 0,
-	-- Same material and dimensions, with draw-mode bit 9 set.
-	0xe100070a,
-	0x2ca0647c,
-	144 | (24 << 16), 0,
-	240 | (24 << 16), 0x010a << 16,
-	144 | (88 << 16), 0,
-	240 | (88 << 16), 0,
-	-- Rectangle controls. UV advances across the uniform source patch.
-	0xe100050a,
-	0x64a0647c, 16 | (112 << 16), 0, 96 | (64 << 16),
-	0xe100070a,
-	0x64a0647c, 144 | (112 << 16), 0, 96 | (64 << 16),
+    0x02181008, 0, 256 | (192 << 16),
+    0x02684838, 640, 96 | (64 << 16),
+    -- Modulated quad, dither off; every UV selects the same texel.
+    0x2ca0647c,
+    16 | (24 << 16), 0,
+    112 | (24 << 16), 0x010a << 16,
+    16 | (88 << 16), 0,
+    112 | (88 << 16), 0,
+    -- The same quad with draw-mode bit 9 set.
+    0xe100070a,
+    0x2ca0647c,
+    144 | (24 << 16), 0,
+    240 | (24 << 16), 0x010a << 16,
+    144 | (88 << 16), 0,
+    240 | (88 << 16), 0,
+    -- Rectangle UVs advance across the uniform patch.
+    0xe100050a,
+    0x64a0647c, 16 | (112 << 16), 0, 96 | (64 << 16),
+    0xe100070a,
+    0x64a0647c, 144 | (112 << 16), 0, 96 | (64 << 16),
 }
-```
-
-</div>
-
-<div class="keep-together">
-
-**IRQ callback and entry.**
-
-```lua
-function irq(flags)
-	*irq_ack = flags
-end
-
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*display_extent = 0x000bf3ff
-*gp1 = 0x09000000
-
--- Explicit drawing state; allow both field parities and clear mask controls.
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-*gp0 = 0xe6000000
 for index = 0, #drawing_commands - 1 do
-	*gp0 = drawing_commands[index]
-end
-
--- Complete the command stream before enabling the display.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-*gp1 = 0x02000000
-*irq_ack = 0x00000040
-while (*gp1 & 0x04000000) == 0 do
-end
-*pmode = 0x0000ff21
-*irq_ack = 0xffffffff
-*irq_mask = 0x00000004
-while true do
-	halt_until_irq
+    *gp0 = drawing_commands[index]
 end
 ```
 
-</div>
+After submission, use the ordinary GPU-completion and PCRTC-publication
+sequence. The rectangle panels remain uniform despite the enabled dither bit;
+changing the texture page does not change which primitive classes apply dither.
 
 <a id="gpu-blending-mask"></a>
 ## Separate texture transparency, blending and destination protection
@@ -3968,8 +3908,8 @@ returns. **Its cost is 83 system cycles**, not 83 plus the fill's command interv
 CPU issue/polling and GPU work overlap.
 
 This budget specifies an instruction schedule. It is not a claim that every BLua
-spelling of the same procedure emits these instructions. The preceding executable
-cartridge shows BLua programming; the schedule here makes its own address setup,
+spelling of the same procedure emits these instructions. The preceding programming
+sequence shows BLua port accesses; the schedule here makes its own address setup,
 loads/stores, tests, taken branches and return explicit.
 
 ### Define the interval and initial state
@@ -4114,39 +4054,17 @@ This example owns DMA0 and the GPU ports, masks interrupts, and polls completion
 
 Both controls select up to 16 words per block. COUNT counts words, not pixels or bytes. Each admitted block captures its addresses, count, and control; requests are sampled at admission. Both request selectors must permit admission. FORCE permits it unconditionally.
 
-<section class="keep-together">
+### Upload, read back and release the ports
 
-### Complete BLua program
-
-Create `storage.lua` as the complete const module below. Its `data` image is
-initialized in RAM at startup; the DMA source is not cartridge ROM. The result
-array and status record are explicit BSS.
+Start with GPU idle, DMA0 inactive, no partial packet/readback, and exclusive
+ownership of both units. Mask interrupt delivery for this polling sequence.
+The source and destination below are RAM arrays; COUNT is in 32-bit words.
+The 81 source pixels have raw values 1 through 81. The last high half is not
+part of the image.
 
 ```lua
-module<const>
+module<entry>
 
-struct gpu_dma_status
-	phase: word
-	upload_status: word
-	upload_count: word
-	upload_source_end: word
-	upload_destination: word
-	upload_gpu_status: word
-	read_latch_before: word
-	read_ready_status: word
-	read_busy_status: word
-	read_owned_latch: word
-	read_status: word
-	read_count: word
-	read_source: word
-	read_destination_end: word
-	read_gpu_status: word
-	marker_status: word
-	idle_status: word
-	final_latch: word
-end
-
--- Initialized RAM, not a readonly cartridge-ROM DMA source.
 data upload: word[44] = {
 	0xa0000000, 0x00400060, 0x00090009, 0x00020001,
 	0x00040003, 0x00060005, 0x00080007, 0x000a0009,
@@ -4162,142 +4080,63 @@ data upload: word[44] = {
 }
 
 bss returned: word[41]
-bss status: gpu_dma_status
-
-return { upload = upload, returned = returned, status = status }
-```
-
-</section>
-
-<section class="keep-together">
-
-Create `cart.lua` by concatenating the following three parts in order. They
-form one entry module, not three functions or files. `#storage.upload` and
-`#storage.returned` refer to declared static arrays; a typed local address is
-not a dynamic buffer-capacity object.
-
-### Prepare storage and port ownership
-
-```lua
-module<entry>
-
-local storage<const> = require('storage')
-local upload<const>: *word[44] = storage.upload
-local returned<const>: *word[41] = storage.returned
-local result<const>: *gpu_dma_status = storage.status
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local dma_read<const>: *word = 0x0800000c
-local dma_write<const>: *word = 0x08000010
-local dma_count<const>: *word = 0x08000014
-local dma_control<const>: *word = 0x08000018
-local dma_status<const>: *word = 0x0800001c
-local dma_trigger<const>: *word = 0x08000020
+local dma<const>: *word = 0x0800000c
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
 
-function irq(flags)
-	*irq_ack = flags & 0x00000041
-end
-
--- Sole ownership of DMA0 and the GPU ports. Polling, not an IRQ wait.
 *irq_mask = 0
-while (*gp1 & 0x04000000) == 0 do
+*gp1 = 0x00000000                  -- Reset stream/register state, not VRAM
+*gp1 = 0x09000000                  -- Closed Y-address gate
+*gp0 = 0xe6000000                  -- No mask check or force-mask
+*gp1 = 0x04000002                  -- CPU-to-GP0 DMA request selection
+dma[0] = upload                   -- READ_ADDR
+dma[1] = 0x0801023c                -- WRITE_ADDR: fixed GP0
+dma[2] = 44                        -- TRANSFER_COUNT
+dma[3] = 0x00003c41                -- CONTROL: up to sixteen words/block
+dma[5] = 1                         -- TRIGGER
+while (dma[4] & 2) == 0 do         -- STATUS.DONE
 end
-*gp1 = 0x00000000
-*irq_ack = 0x00000041
-*gp1 = 0x09000000
-*gp0 = 0xe6000000
-
-```
-
-</section>
-
-### Submit the upload and request its readback
-
-```lua
--- RAM -> fixed GP0, GX_WRITE, blocks of up to sixteen words.
-*gp1 = 0x04000002
-*dma_read = upload
-*dma_write = 0x0801023c
-*dma_count = #storage.upload
-*dma_control = 0x00003c41
-*dma_trigger = 1
-while (*dma_status & 2) == 0 do
+while (*gp1 & 0x04000000) == 0 do  -- GPU completion is separate
 end
-result.upload_gpu_status = *gp1
-result.upload_status = *dma_status
-result.upload_count = *dma_count
-result.upload_source_end = *dma_read
-result.upload_destination = *dma_write
-result.phase = 1
 
--- DONE releases DMA's write ownership. Finish the GPU stream separately.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-*gp1 = 0x02000000
-*irq_ack = 0x00000040
-result.read_latch_before = *gp0
-
--- Three C0 header words; the following marker is NOT readback payload.
 *gp0 = 0xc0000000
 *gp0 = 96 | (64 << 16)
 *gp0 = 9 | (9 << 16)
-*gp0 = 0x1f000000
-while (*gp1 & 0x08000000) == 0 do
+*gp0 = 0x1f000000                  -- Marker waits behind the counted readback
+while (*gp1 & 0x08000000) == 0 do  -- READY, not idle
 end
-result.read_ready_status = *gp1
-
-```
-
-### Drain the readback and finish the stream
-
-```lua
--- Fixed GPUREAD -> RAM, GX_READ, forty-one packed words, not 81 reads.
 *gp1 = 0x04000003
-*dma_read = 0x0801023c
-*dma_write = returned
-*dma_count = #storage.returned
-*dma_control = 0x00003c0a
-*dma_trigger = 1
-result.read_busy_status = *dma_status
-result.read_owned_latch = *gp0
-while (*dma_status & 2) == 0 do
+dma[0] = 0x0801023c                -- Fixed GPUREAD
+dma[1] = returned                  -- Incrementing RAM destination
+dma[2] = 41
+dma[3] = 0x00003c0a
+dma[5] = 1
+while (dma[4] & 2) == 0 do
 end
-result.read_gpu_status = *gp1
-result.read_status = *dma_status
-result.read_count = *dma_count
-result.read_source = *dma_read
-result.read_destination_end = *dma_write
-result.phase = 2
-
--- Final read releases the barrier; marker and idle remain separate conditions.
-while (*gp1 & 0x01000000) == 0 do
+while (*gp1 & 0x01000000) == 0 do  -- Ordered marker
 end
-result.marker_status = *gp1
-while (*gp1 & 0x04000000) == 0 do
+*gp1 = 0x02000000                  -- GPU request latch
+*irq_ack = 0x00000040              -- Separate central pending latch
+while (*gp1 & 0x04000000) == 0 do  -- Marker interval must finish too
 end
-result.idle_status = *gp1
-result.final_latch = *gp0
-*gp1 = 0x02000000
-*irq_ack = 0x00000041
-*gp1 = 0x04000000
-result.phase = 3
-while true do
-	halt_until_irq
-end
+*gp1 = 0x04000000                  -- DMA request selection off
 ```
 
-### Inspect the returned words
+The upload contains **44 words**: three A0 header words and 41 payload words,
+176 bytes in all. Packing is continuous, low halfword first; it does not restart
+at a nine-pixel row boundary. Payload word 4 is `000A0009H`, whose two halves
+belong to different rows. The last source word is FFFF0051H; only 0051H is a
+pixel. The unused FFFFH neither writes a pixel nor begins a command.
 
-The upload source contains **44 words**: three A0 command words (`0xa0000000`, `0x00400060`, `0x00090009`) and 41 payload words. Its 81 sixteen-bit pixels are the raw values 1 through 81, packed continuously, low halfword first. Packing does not restart at each nine-pixel row. Consequently, payload word 4, counting from zero, is `0x000a0009`: its halves belong to different rows.
-
-The first payload word is `0x00020001`; the last is `0xffff0051`. Only its low halfword is a pixel. The unused `ffff` neither supplies another pixel nor begins another command. The upload source occupies 176 bytes.
-
-The C0 readback returns **41 words**, occupying 164 bytes, without command headers. The completed transfer returned first word `0x00020001`, word 4 `0x000a0009`, word 39 `0x0050004f`, and final word `0x00000051`. All first forty returned words matched the input payload; only the final high halfword changed. Readback zeroes that unused high halfword of the final odd pixel pair.
+Readback fills **41 words**, 164 bytes, without headers. Returned words 0, 4,
+39 and 40 are respectively `00020001H`, `000A0009H`, `0050004FH` and
+`00000051H`. The final unused halfword reads zero. At DONE, each DMA COUNT is
+zero; upload advanced its RAM source by 176 bytes and readback advanced its RAM
+destination by 164 bytes. The GP0/GPUREAD endpoint addresses did not advance.
+The final GPUREAD latch is 00000051H, and another CPU read with no READY stream
+returns that latch rather than an extra pixel.
 
 <section class="keep-together">
 
@@ -4318,24 +4157,12 @@ These are admitted DMA charges, not end-to-end measurements. They exclude CPU pr
 
 DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word staging buffer; block-end processing advances the pipeline. GP0 parsing consumes the counted A0 payload and emits the retained upload command. Neither channel DONE nor packet acceptance alone establishes command completion.
 
-An ordered GPU marker and GPU idle are polled separately after upload. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes pending deadlines, FIFO contents, partial packets, image transfers, polylines, and readback. GPU and controller acknowledgements remain separate.
+After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes pending deadlines, FIFO contents, partial packets, image transfers, polylines, and readback. GPU and controller acknowledgements remain separate.
 
 Wait for READY; accepting the C0 header and reaching its command deadline do not promise that pixels can be read. Draining its last word clears READY and its DMA request; parsing can then advance beyond the readback barrier to the queued marker. None of DONE, READY, drain, marker, or idle establishes PCRTC publication.
 
-DMA owns its selected endpoint throughout BUSY, even before admission. Do not interleave CPU GP0 writes or consume GPUREAD pixels as a second reader. The deliberate CPU GPUREAD access while DMA owns readback returns the retained latch, not the next pixel. Writing START while DMA is BUSY does not restart it.
+DMA owns its selected endpoint throughout BUSY, even before admission. Do not interleave CPU GP0 writes or consume GPUREAD pixels as a second reader. A CPU GPUREAD access while DMA owns readback returns the retained latch, not the next pixel. Writing START while DMA is BUSY does not restart it.
 
-### Retained completion observations
-
-| Observation | Completed transfer |
-|---|---|
-| Upload channel | STATUS `2`, COUNT `0`; source advanced 176 bytes; GP0 destination fixed |
-| Before read DMA | READY set; queued marker and idle clear |
-| First read-DMA observation | STATUS `1` (BUSY); CPU GPUREAD repeated the earlier latch |
-| Read channel completed | STATUS `2`, COUNT `0`; GPUREAD source fixed; RAM destination advanced 164 bytes |
-| After counted drain | READY clear; marker observed, then idle checked separately |
-| Final retained GPUREAD latch | `0x00000051`; no extra pixel was consumed |
-
-Use the returned storage words to check packing and transfer counts. These
-status samples do not resolve every intermediate edge or specify a fixed CPU
-issue-to-DONE interval. To display the image, program PCRTC and apply its
-publication sequence separately.
+No display setup occurs in this sequence. To show the uploaded rectangle,
+select a PCRTC source and use its VBlank-publication sequence separately.
+DONE, READY, counted drain, marker and idle are not display acknowledgements.

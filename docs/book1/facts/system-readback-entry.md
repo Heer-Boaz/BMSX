@@ -77,7 +77,7 @@ USER-bank roundtrip. The maintained C++ counterparts cover the same boundaries;
 both native GPU/SYSTEM suites and the CPU save-state replay suite pass after a fresh rebuild.
 
 The unchanged ordinary unread diagnostic source was rebuilt with the current
-BIOS and executed on the fresh v4 headless product. Its actual unmapped load at
+BIOS and executed on the fresh headless product. Its actual unmapped load at
 PC `1001AEFCH` now reaches ACTIVE, unholds the CPU and publishes sequence 1.
 Across subsequent bounded observations the active supervisor readback is IDLE,
 while USER remains READY, 1 by 1, cursor 0, exact red pixel bytes `1F 00`.

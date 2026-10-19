@@ -937,7 +937,7 @@ the operation that can produce the end, then wait on that predicate with
 `halt_until_irq`. The handler must service the APU source and advance that
 software sequence. Other IRQs may wake the caller without satisfying it.
 No fixed request-to-handler delay or one-callback-per-output-end guarantee is
-implied. The complete example below owns its slots and waits for one end at a time.
+implied. The service sequence must belong to that one outstanding end operation.
 
 ## Faults and reset
 
@@ -1016,127 +1016,59 @@ DMA DONE marks receipt of all requested destination words and raises the DMA int
 
 After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. These device-work timelines guarantee neither actual CPU instruction elapsed time nor polling or STOP latency; the STOP boundary names its access edge.
 
-<section class="keep-together">
+### Download words in BLua
 
-### Complete BLua download cartridge
-
-For project layout, building and checking, use the [Build and inspect APU downloads](../programming/getting-started.md#build-and-inspect-apu-downloads) development guide. No earlier example cartridge or audio asset is required. This program moves raw words; it does not start a voice.
-
-Create `results.lua` with these complete contents. `received[0..19]` retains the twenty-word download; `received[20..23]` retains the four-word download from byte offset 40H.
-
-```lua
-module<const>
-
-struct apu_download_result
-	completed_phase: word
-	received: word[24]
-	dma_status: word[2]
-	remaining: word[2]
-	pending: word[2]
-	apu_after_dma: word[2]
-	apu_after_stop: word[2]
-	mode_after_stop: word[2]
-end
-
-bss result: apu_download_result
-
-return { result = result }
-```
-
-</section>
-
-<section class="keep-together">
-
-Create `res/manifest/manifest.rommanifest` with these complete contents:
-
-```yaml
-title: APU Download Manual Example
-hardware:
-    - type: rom
-```
-
-</section>
-
-<section class="keep-together">
-
-### Entry module: preload, arm, receive and stop
-
-Create `cart.lua` with this complete entry module. It exclusively owns DMA0, the transfer ports and sample-RAM bytes 0–159. It polls DMA0 directly with interrupts masked; no interrupt callback owns the channel.
+Own DMA0, the interrupt mask, the sample-transfer ports and sample-RAM bytes
+0–159. Start with no voices using those bytes and no transfer in flight. This
+sequence writes recognizable raw words manually, downloads twenty words,
+then downloads four overlapping words from offset `40H`. It does not require
+an audio source format or start a voice.
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *apu_download_result = state.result
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local dma_read<const>: *word = 0x0800000c
-local dma_write<const>: *word = 0x08000010
-local dma_count<const>: *word = 0x08000014
-local dma_control<const>: *word = 0x08000018
-local dma_status<const>: *word = 0x0800001c
-local dma_trigger<const>: *word = 0x08000020
-local apu_status<const>: *word = 0x08000178
-local transfer_address<const>: *word = 0x080001e8
-local transfer_data<const>: *word = 0x080001ec
-local transfer_control<const>: *word = 0x080001f0
-
+bss received: word[24]
 rodata counts: word[2] = { 20, 4 }
 rodata offsets: word[2] = { 0, 0x40 }
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local dma0<const>: *word = 0x0800000c
+local address<const>: *word = 0x080001e8
+local data<const>: *word = 0x080001ec
+local control<const>: *word = 0x080001f0
 
--- Own DMA0, the APU transfer ports and sample-RAM bytes0..159. No voices.
--- Poll DMA directly; no interrupt callback owns this channel.
 *irq_mask = 0
-*transfer_control = 0
-*transfer_address = 0
-*transfer_control = 1
+*control = 0
+*address = 0
+*control = 1                -- MANUAL_WRITE: each CPU DATA write commits RAM.
 for index = 0, 39 do
-	*transfer_data = 0x5a000000 | index
+    *data = 0x5a000000 | index
 end
-
 for phase = 0, 1 do
-	*transfer_control = 0
-	*transfer_address = offsets[phase]
-	*irq_ack = 0x00000001
-	*dma_read = 0x080001ec
-	*dma_write = &result.received[phase * 20]
-	*dma_count = counts[phase]
-	-- Fixed APU_READ source, incrementing FORCE destination, block16.
-	*dma_control = 0x00003c12
-	*dma_trigger = 1
-	*transfer_control = 3
-	while (*dma_status & 0x00000001) ~= 0 do
-	end
-	result.apu_after_dma[phase] = *apu_status
-	result.dma_status[phase] = *dma_status
-	result.remaining[phase] = *dma_count
-	result.pending[phase] = *irq_flags & 0x00000001
-	-- Requested RAM receipt is complete. Do not wait for surplus prefetch.
-	*transfer_control = 0
-	result.apu_after_stop[phase] = *apu_status
-	result.mode_after_stop[phase] = *transfer_control
-	result.completed_phase = phase + 1
+    *control = 0
+    *address = offsets[phase]
+    *irq_ack = 1
+    dma0[0] = 0x080001ec
+    dma0[1] = &received[phase * 20]
+    dma0[2] = counts[phase]
+    dma0[3] = 0x00003c12    -- APU_READ/FORCE, fixed source, incrementing RAM.
+    dma0[5] = 1
+    *control = 3            -- DMA_READ: prefill before the first DMA block.
+    while (dma0[4] & 1) ~= 0 do
+    end
+    *control = 0            -- Requested receipt is complete; discard surplus.
 end
-
-while true do
-	halt_until_irq
-end
+*irq_ack = 1
 ```
 
-</section>
+After successful bus accesses, the results are:
 
-### Retained observations
-
-All 24 retained destination words match the programmed raw source words. The second download starts at byte offset 40H, so its four words repeat source indices 16–19 rather than source indices 0–3. No source words are rewritten between downloads; their unchanged return after STOP shows that STOP did not erase the overlapping source bytes. These markers have no voice or audio-format meaning.
-
-In both phases, DMA0 is DONE and not BUSY, its remaining count is zero, and its pending bit is one despite IRQ_MASK being zero. The APU status snapshots distinguish DMA completion from the remaining transfer activity: 420H is retained at the status read after DMA completion, followed by 20H and mode 0 after STOP. They do not establish STOP's exact timing, strict cancellation before a refill deadline, or an ideal elapsed CPU-cycle count.
-
-This cartridge owns DMA0 and the transfer ports and polls DMA0 directly. Do not allow another producer to reprogram either resource during the sequence.
-
-| Retained observation | Value |
+| Destination | Words |
 |---|---|
-| `received[0..19]` | `5A000000H OR 0..19` |
-| `received[20..23]`, offset 40H after STOP | `5A000010H..5A000013H` |
-| Both phases: DMA status / remaining / pending; IRQ_MASK | `2 / 0 / 1; 0` |
-| Both phases: APU status at read → after STOP; mode after STOP | `420H → 20H; 0` |
+| `received[0..19]` | `5a000000H OR 0..19` |
+| `received[20..23]`, from byte offset `40H` | `5a000010H`–`5a000013H` |
+
+The second receipt shows that STOP preserves the overlapping sample-RAM bytes.
+Both channel completions have count zero and STATUS=DONE, even with their
+interrupts masked. STOP clears the transfer FIFO and any not-yet-due prefetch;
+it does not clear the DMA status or copied destination. The timing tables
+above distinguish stopping before and exactly at a prefetch deadline. Polling
+instructions do not establish either exact STOP edge or an ideal cycle count.

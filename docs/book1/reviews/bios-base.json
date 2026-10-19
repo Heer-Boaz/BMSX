@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete40+103-line ordinary BLua modules, all12 base globals;37 retained assertions and17 actual ordinary diagnostic lines. Full assembly/manifest/timeline procedure is companion material. Independent source and public-only reader passes, including two source and two reader corrections. All13 final publication pages covered by individual-page review and exact unchanged-raster comparison plus changed-pages5/6/7 reinspection; no outstanding print defect.",
+			"resolution": "Short assertion, conversion, traversal and global-access examples accompany argument, returned-value and error reference.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-base-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/bios-base-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-base-print.md"
 		}
 	}

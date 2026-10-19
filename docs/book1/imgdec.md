@@ -70,12 +70,77 @@ processing is downstream. This is functional word flow, not a bus waveform.
    not input-memory pointers.
 3. Provide both an input producer and an output consumer. For the two-channel
    DMA route, arm the output transfer, arm the input transfer, then write
-   CONTROL with START set. The complete BLua program uses request-gated DMA
+   CONTROL with START set. The BLua programming sequence uses request-gated DMA
    for both sides; it does not wait for all output to be produced before draining it.
 4. Distinguish input DMA completion, output transfer and IMGDEC's terminal
    result. Inspect STATUS to separate DONE from FORMAT_FAULT and read exactly
    the expected output count. Completion is not a reason to make speculative
    extra DATA reads.
+
+## Programming IMGDEC in BLua
+
+### Decode the worked stream into RAM
+
+Start through ordinary BIOS cartridge entry with both DMA channels and IMGDEC
+idle. Own their ports and the interrupt mask exclusively. The following
+known-valid stream is the 19-word example in the stream reference below; it produces 26 output words,
+not 20. Input and output are armed before START so neither waits for the other
+to finish the entire stream. These fragments use consecutive hardware-word
+indices, not a RAM descriptor fetched by the units.
+
+```lua
+rodata stream: word[19] = {
+    0x31444d49, 12, 8, 1, 0x11112222, 0x33334444,
+    0x40000001, 0x55556666, 0x80001003, 0xc0000003,
+    7, 0, 0x03e0001f, 0x7fff7c00, 0x42104210,
+    0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
+}
+bss ram_output: word[26]
+local dma0<const>: *word = 0x0800000c
+local dma1<const>: *word = 0x080103e4
+local decoder<const>: *word = 0x080103fc
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+
+*irq_mask = 0
+*irq_ack = 0x00000181
+-- IMGDEC input count and raw GP0 texture/CLUT fields.
+decoder[0] = 19
+decoder[1] = 0x00400040
+decoder[2] = 0x00060004
+decoder[3] = 0x00800040
+-- Output: fixed DATA -> incrementing RAM, IMGDEC_READ/FORCE.
+dma1[0] = 0x08010414
+dma1[1] = ram_output
+dma1[2] = 26
+dma1[3] = 0x00003c1a
+dma1[5] = 1
+-- Input: incrementing ROM -> fixed DATA, FORCE/IMGDEC_WRITE.
+dma0[0] = stream
+dma0[1] = 0x08010414
+dma0[2] = 19
+dma0[3] = 0x00003d41
+dma0[5] = 1
+decoder[4] = 1
+while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do
+end
+while (decoder[5] & 1) ~= 0 do
+end
+*irq_ack = 0x00000181
+```
+
+After successful bus accesses, `ram_output` contains the 26 packet words in
+[the worked expansion](#worked-stream-19-input-words-26-output-words).
+IMGDEC STATUS is `02H`, INPUT_WORDS_RECEIVED is 19 and DECODED_WORD_COUNT is 20.
+Both DMA counts are zero and both DMA statuses are DONE. The three separate
+pending interrupt bits are raised even though delivery is masked.
+
+The DMA-first wait is for this known-valid stream. It is not a malformed-stream
+loader: FORMAT_FAULT withdraws IMGDEC requests and can leave a DMA channel
+BUSY indefinitely. Input completion, output receipt, decoder success and a
+bus-fault-free transfer are separate conditions. See
+[DMA, Completion and interrupts](dma.md#completion-and-interrupts) for a
+handler-owned service sequence instead of polling.
 
 <div class="keep-together">
 
@@ -267,14 +332,12 @@ An armed DMA channel can consequently remain BUSY waiting for a request;
 a decoder fault does not itself complete or reset that channel.
 CPU reads may remove retained output when DMA does not own the read port.
 
-**Caution — read exactly the known output count.**
-After a fully drained successful stream, a further CPU DATA read with no DMA read-port owner
-returns the retained last word and performs the successful-completion test again.
-It sets DONE again and raises the IMGDEC interrupt again, even if the previous interrupt was acknowledged.
-No FIFO word is removed and no new payload word is decoded by that empty read.
-This is not a one-shot interrupt guarantee.
-An empty read after FORMAT_FAULT does not by itself establish the successful-completion conditions.
-Use STATUS, progress and owned interrupt predicates rather than speculative DATA reads to poll completion.
+**Caution — read exactly the known output count.** After a drained successful
+stream, an extra CPU DATA read without a DMA read-port owner returns the last
+word and repeats the completion check. It can raise IRQ_IMGDEC again without
+producing or consuming a new word. Empty DATA reads are not a completion poll
+or a one-shot interrupt guarantee. After FORMAT_FAULT, an empty read does not
+by itself satisfy successful-completion conditions.
 
 ### Interrupts and fault recovery
 
@@ -343,7 +406,7 @@ If a batch of `N` words is scheduled at cycle `A`, its deadline is:
 
 `A + 2 × N`
 
-The entire batch is published together when serviced at or after that deadline;
+The entire batch is published together at its completion edge;
 words are not exposed individually at two-cycle intervals within the batch.
 An output header is always a three-word batch and requires three free FIFO slots.
 A payload batch contains the smallest of:
@@ -358,9 +421,8 @@ No batch is scheduled while the required header, token or repeat word is missing
 Input starvation therefore adds waiting time rather than a fixed parsing charge.
 A full output FIFO prevents a new batch; a header also waits if fewer than three
 slots are free. Draining the output can therefore be necessary for further work.
-If service occurs after a deadline, the completed batch is published then and
-any next batch is timed from that service cycle, not the previous deadline.
-Late service does not compress subsequent batches into the missed interval.
+Any next batch is timed from the preceding batch's completion edge. Input or
+output waiting does not create a backlog that later emits at a faster rate.
 
 ### Installed output-work rate
 
@@ -696,425 +758,137 @@ For each row, start a fresh stream, configure the input count to the exact liste
 | `0x31444d49`, `0x00000000`, `0x00000000` | Valid empty-payload stream. Its only output is `0xa0000000`, `D`, `S`. No token is required; `DONE` still requires output-read completion. |
 
 
-## Programming IMGDEC in BLua
+## Use the output packets
 
-The following complete program performs four jobs in order: decode into RAM, repeat the upload directly to GP0, inspect a deliberately malformed stream without DMA, and start a fresh valid stream after the fault. It then draws the successful upload as an indexed patch. Its mutable results remain in BSS after the last job.
+### Forward the same packets to GP0
 
-Supply the first listing as the const module named `results`, and the remaining seven listing parts, in order, as one entry module. Do not concatenate the const module and entry module into a single module. This is direct hardware programming; it does not require an IMGDEC firmware helper.
+Own GP0 as well as both DMA channels. There must be no partial packet or unread
+readback. Before starting, wait for GPUSTAT bit 26 (`04000000H`) at
+`08010240H`, write `e6000000H` to GP0 to disable both mask-protection modes,
+and write `04000002H` to GP1 to select CPU_TO_GP0 DMA direction. Wait for GPU
+idle again before arming the transfer.
 
-### Ownership and storage
+Repeat the configuration and start sequence above, changing only these output
+operands:
 
-Run the program from normal BIOS cartridge startup with DMA0, DMA1 and IMGDEC idle and exclusively owned by this program. It supplies its own `irq(flags)` handler; no other interrupt dispatcher shares these units. It also takes control of the central interrupt mask. The GP0 phase requires that no earlier packet or readback is in flight. The program replaces the interrupt mask and does not preserve an earlier DMA or GPU configuration.
+| Register | RAM receipt | Direct upload |
+|---|---|---|
+| DMA1 WRITE_ADDR, `080103e8H` | `ram_output` | `0801023cH` (GP0) |
+| DMA1 CONTROL, `080103f0H` | `00003c1aH` | `00003c58H` |
 
-The `word` fields in the two register structs describe consecutive hardware words. Typed pointers in the entry module address those register runs directly; no Lua register table is constructed. The four `rodata` declarations are typed ROM arrays: their braced initializers are compile-time words, not heap tables. DMA0 reads the address of one of these arrays, and `#stream` supplies its word count.
+The direct control word selects fixed DATA and GP0 addresses, IMGDEC_READ and
+GX_WRITE requests, and sixteen-word blocks. Keep count 26. It waits for both
+request lines; decoder output readiness alone cannot make GP0 ready. After
+both DMA completions and IMGDEC DONE, wait separately for GPU idle. Neither
+DMA completion nor decoder DONE means that GPU processing or display
+publication has finished.
 
-`bss result: imgdec_manual_result` provides mutable, explicitly typed storage. The entry module obtains its address from the const module and uses it as `*imgdec_manual_result`. The addresses `&result.ram_output[0]` and `&result.recovery_output[0]` are separate RAM output destinations, not MMIO addresses. Ordinary phase snapshots omit `DATA`, because a read can consume an output word.
+### Inspect a fault, then start a fresh stream
 
-### Const module: `results`
+Use CPU input with neither DMA channel armed. Leave the three destination/size
+words from the worked stream in place, and configure only the new input count.
+This first back-reference requests history that does not yet exist.
 
 ```lua
-module<const>
-
--- The two DMA channels expose the same six-word register run.
-struct imgdec_manual_dma_registers
-	read_address: word
-	write_address: word
-	count: word
-	control: word
-	status: word
-	trigger: word
+bss fault_header: word[3]
+rodata fault_stream: word[4] = { 0x31444d49, 3, 0, 0x80000000 }
+decoder[0] = 4
+decoder[4] = 1
+for index = 0, 3 do
+    decoder[6] = fault_stream[index]
 end
-
-struct imgdec_manual_registers
-	input_word_count: word
-	texture_destination: word
-	texture_size: word
-	clut_destination: word
-	control: word
-	status: word
-	data: word
-	input_words_received: word
-	decoded_word_count: word
+while (decoder[5] & 1) ~= 0 do
 end
-
--- Per-phase observations exclude DATA: reading DATA consumes output.
-struct imgdec_manual_phase_result
-	status: word
-	received: word
-	decoded: word
-	dma_count: word[2]
-	dma_status: word[2]
-	armed_status: word[2]
-	sequences: word[3]
+for index = 0, 2 do
+    fault_header[index] = decoder[6]
 end
-
-struct imgdec_manual_result
-	completed_phase: word
-	dma0_sequence: word
-	dma1_sequence: word
-	decoder_sequence: word
-	ram_output: word[26]
-	recovery_output: word[3]
-	phases: imgdec_manual_phase_result[4]
-	gpu_initial_status: word
-	gpu_idle_status: word
-	fault_header: word[3]
-	fault_retained_read: word
-	final_irq_flags: word
-end
-
-bss result: imgdec_manual_result
-
-return { result = result }
+*irq_ack = 0x00000080
 ```
 
-### Entry module, part 1: ports, streams and interrupt handler
+STATUS is `10H` (FORMAT_FAULT), received count is 4 and decoded count is zero.
+The three retained output words are `a0000000H`, `00400040H`, `00060004H`.
+They are a generated header, not a complete GPU packet: do not forward this
+prefix to GP0. A decoder fault neither cancels an admitted DMA block nor
+removes GP0 words already accepted downstream.
 
-The source stream uses all four token kinds and produces a texture packet followed by a CLUT packet. Its 19 input words describe 20 decoded payload words and 26 total output words, including the two three-word packet headers. The stream-format worked example gives the token-by-token expansion.
+A fresh START discards the faulted stream state. A minimum valid input is
+`31444d49H, 0, 0`: three header words with no token. Set INPUT_WORD_COUNT to 3,
+TEXTURE_DESTINATION to `00200020H` and TEXTURE_SIZE to zero, then START and
+supply those three words. Wait for OUTPUT_REQUEST and read exactly three DATA
+words into RAM. They are `a0000000H, 00200020H, 0`; their final read completes
+the stream with STATUS=`02H`, received count 3 and decoded count zero.
+Acknowledge bit `80H` separately. Keep this output in RAM: raw GP0 size zero
+means 1024 × 512, not an empty rectangle, so the header alone is not a complete
+GPU upload.
 
-The handler maintains separate completion sequences for DMA0, DMA1 and IMGDEC. It acknowledges only the owned bits, `0x00000181`; unrelated pending interrupt bits are not acknowledged. Before enabling those bits, the entry code clears their old pending state. See [Interrupts](irq.md) for the central FLAGS, ACK and MASK contract.
+### Display the uploaded indexed patch
+
+For the pictured result, use the successful direct-to-GP0 upload, not either
+fault/recovery prefix. Before that upload, prepare this disjoint framebuffer
+window with ordered word writes. CSR RESET supplies zero texture window and
+drawing offset; the following GP0 words select drawing state and fill the
+background. Wait for that fill to reach GPU idle before arming the upload.
+
+| Order | Port address | Words written in order |
+|---:|---|---|
+| 1 | PCRTC CSR, `080103d4H` | `00000200H` |
+| 2 | PCRTC PMODE, `08010354H` | `00000000H` (disable output) |
+| 3 | PCRTC DISPFB1, `0801035cH` | `000fa000H` |
+| 4 | PCRTC source origin, `08010360H` | `00000100H` |
+| 5 | PCRTC display extent, `08010368H` | `000bf3ffH` |
+| 6 | GP0, `0801023cH` | `e1000400H`, `e3000100H`, `e402fdffH`, `02181008H`, `00000100H`, `00c00100H` |
+
+The 256 × 192 source window begins at VRAM X=256. It is disjoint from the
+texture at (64,64) and CLUT at (64,128). After the upload and GPU-idle wait,
+send this purple underlay and palette4 textured quad:
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *imgdec_manual_result = state.result
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local dma0<const>: *imgdec_manual_dma_registers = 0x0800000c
-local dma1<const>: *imgdec_manual_dma_registers = 0x080103e4
-local decoder<const>: *imgdec_manual_registers = 0x080103fc
+rodata picture_commands: word[12] = {
+    0x60602040, 320 | (72 << 16), 120 | (40 << 16),
+    0x2d000000,
+    320 | (72 << 16), 0x20044000,
+    440 | (72 << 16), 0x0001400f,
+    320 | (112 << 16), 0x00004500,
+    440 | (112 << 16), 0x0000450f,
+}
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
 local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
--- Header: twelve texture words and eight CLUT words. Tokens: literal two,
--- repeat two, back-reference four at distance four, zero four, literal eight.
-rodata stream: word[19] = {
-	0x31444d49, 0x0000000c, 0x00000008,
-	0x00000001, 0x11112222, 0x33334444,
-	0x40000001, 0x55556666, 0x80001003, 0xc0000003,
-	0x00000007, 0x00000000, 0x03e0001f, 0x7fff7c00, 0x42104210,
-	0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
-}
--- The first payload token requests distance one before any history exists.
-rodata fault_stream: word[4] = { 0x31444d49, 3, 0, 0x80000000 }
-rodata recovery_stream: word[3] = { 0x31444d49, 0, 0 }
-
--- A purple destination makes fetched-zero transparency visible. The raw
--- palette4 quad samples only the texture and CLUT uploaded by phase 2.
-rodata picture_commands: word[12] = {
-	0x60602040, 320 | (72 << 16), 120 | (40 << 16),
-	0x2d000000,
-	320 | (72 << 16), 0x20044000,
-	440 | (72 << 16), 0x0001400f,
-	320 | (112 << 16), 0x00004500,
-	440 | (112 << 16), 0x0000450f,
-}
-
-function irq(flags)
-	if (flags & 0x00000001) ~= 0 then
-		result.dma0_sequence = result.dma0_sequence + 1
-	end
-	if (flags & 0x00000100) ~= 0 then
-		result.dma1_sequence = result.dma1_sequence + 1
-	end
-	if (flags & 0x00000080) ~= 0 then
-		result.decoder_sequence = result.decoder_sequence + 1
-	end
-	*irq_ack = flags & 0x00000181
-end
-```
-
-### Entry module, part 2: prepare the display window
-
-The 256 × 192 scanout window starts at VRAM X=256, disjoint from the texture and CLUT at X=64. CSR RESET clears the texture window and drawing offset. The selected drawing area receives a dark-blue background (`0x0c41`). The existing phase-2 GPU-idle wait waits for this fill before GP0 DMA is armed.
-
-```lua
--- Keep the display off while preparing a separate framebuffer window.
--- CSR RESET supplies zero texture window and drawing offset.
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0x00000100
-*display_extent = 0x000bf3ff
-*gp0 = 0xe1000400
-*gp0 = 0xe3000100
-*gp0 = 0xe402fdff
-*gp0 = 0x02181008
-*gp0 = 256
-*gp0 = 256 | (192 << 16)
-
--- Exclusive ownership: DMA0, DMA1 and IMGDEC; one interrupt handler.
--- The existing idle wait before phase 2 also orders this background fill.
-*irq_ack = 0x00000181
-*irq_mask = 0x00000181
-```
-
-### Entry module, part 3: decode into RAM
-
-Configure IMGDEC, arm output DMA1, arm input DMA0, then issue START. The output consumer is armed first so that a drain path is already available when IMGDEC asserts its output request. Output production alone is not device completion: the output must be read, and a full output FIFO prevents further output scheduling. Both channels are request-gated; arming them does not replace the IMGDEC request conditions.
-
-The control words select 16-word blocks: `0x00003d41` reads incrementing ROM into fixed IMGDEC DATA, while `0x00003c1a` reads fixed DATA into incrementing RAM. The output count is 26, not the decoded-payload count of 20. See [DMA](dma.md) for the full channel and block-transfer contract.
-
-The DMA-completion-first waits below are for this supplied known-valid stream, not a general malformed-stream loader. A format fault withdraws IMGDEC requests and can leave a DMA channel waiting. The deliberate fault job therefore uses CPU input with neither DMA channel armed.
-
-Each sequence baseline is captured before triggering work. The first predicate waits until both DMA sequences have changed; the second separately waits for IMGDEC's sequence. A wake-up is not itself a completion predicate, and the code does not assume an interrupt order. `halt_until_irq` also consumes an already accepted interrupt event, so completion accepted between checking the predicate and halting is not lost. The loop always rechecks the sequences.
-
-```lua
--- 1. Both DREQ-gated channels are armed before IMGDEC START. The output
--- endpoint increments through a separate BSS array, not through MMIO.
-local ram_dma0_sequence<const> = result.dma0_sequence
-local ram_dma1_sequence<const> = result.dma1_sequence
-local ram_decoder_sequence<const> = result.decoder_sequence
-decoder->input_word_count = #stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
-dma1->read_address = 0x08010414
-dma1->write_address = &result.ram_output[0]
-dma1->count = 26
-dma1->control = 0x00003c1a
-dma1->trigger = 1
-dma0->read_address = stream
-dma0->write_address = 0x08010414
-dma0->count = #stream
-dma0->control = 0x00003d41
-dma0->trigger = 1
-result.phases[0].armed_status[0] = dma0->status
-result.phases[0].armed_status[1] = dma1->status
-decoder->control = 1
-while result.dma0_sequence == ram_dma0_sequence
-	or result.dma1_sequence == ram_dma1_sequence do
-	halt_until_irq
-end
-while result.decoder_sequence == ram_decoder_sequence do
-	halt_until_irq
-end
-result.phases[0].status = decoder->status
-result.phases[0].received = decoder->input_words_received
-result.phases[0].decoded = decoder->decoded_word_count
-result.phases[0].dma_count[0] = dma0->count
-result.phases[0].dma_count[1] = dma1->count
-result.phases[0].dma_status[0] = dma0->status
-result.phases[0].dma_status[1] = dma1->status
-result.phases[0].sequences[0] = result.dma0_sequence
-result.phases[0].sequences[1] = result.dma1_sequence
-result.phases[0].sequences[2] = result.decoder_sequence
-result.completed_phase = 1
-```
-
-### Entry module, part 4: repeat directly to GP0
-
-The same ROM source is now decoded with DMA1's destination fixed at GP0. Its control word changes to `0x00003c58`, combining the IMGDEC output request with the GPU write request. IMGDEC still emits packet words; it does not write VRAM directly.
-
-Before the upload, the program waits for GPU command-idle, writes `0xe6000000` to disable both mask-protection modes, and selects CPU-to-GP0 DMA direction with `0x04000002`. After both DMA completions and IMGDEC completion, it again waits for GPU command-idle. The retained GPUSTAT samples describe that command boundary; they are not by themselves proof that pixel storage has been published. See [GPU](gpu.md) for packet acceptance, upload, masking, storage and readback completion rules.
-
-```lua
--- 2. Repeat the same readonly source, now with fixed GP0 as the output.
--- No previous GP0 packet/readback is in flight; E6 disables mask protection.
-while (*gp1 & 0x04000000) == 0 do
-end
-*gp0 = 0xe6000000
-*gp1 = 0x04000002
-while (*gp1 & 0x04000000) == 0 do
-end
-result.gpu_initial_status = *gp1
-local gpu_dma0_sequence<const> = result.dma0_sequence
-local gpu_dma1_sequence<const> = result.dma1_sequence
-local gpu_decoder_sequence<const> = result.decoder_sequence
-decoder->input_word_count = #stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
-dma1->read_address = 0x08010414
-dma1->write_address = 0x0801023c
-dma1->count = 26
-dma1->control = 0x00003c58
-dma1->trigger = 1
-dma0->read_address = stream
-dma0->write_address = 0x08010414
-dma0->count = #stream
-dma0->control = 0x00003d41
-dma0->trigger = 1
-result.phases[1].armed_status[0] = dma0->status
-result.phases[1].armed_status[1] = dma1->status
-decoder->control = 1
-while result.dma0_sequence == gpu_dma0_sequence
-	or result.dma1_sequence == gpu_dma1_sequence do
-	halt_until_irq
-end
-while result.decoder_sequence == gpu_decoder_sequence do
-	halt_until_irq
-end
-while (*gp1 & 0x04000000) == 0 do
-end
-result.gpu_idle_status = *gp1
-result.phases[1].status = decoder->status
-result.phases[1].received = decoder->input_words_received
-result.phases[1].decoded = decoder->decoded_word_count
-result.phases[1].dma_count[0] = dma0->count
-result.phases[1].dma_count[1] = dma1->count
-result.phases[1].dma_status[0] = dma0->status
-result.phases[1].dma_status[1] = dma1->status
-result.phases[1].sequences[0] = result.dma0_sequence
-result.phases[1].sequences[1] = result.dma1_sequence
-result.phases[1].sequences[2] = result.decoder_sequence
-result.completed_phase = 2
-```
-
-### Entry module, part 5: inspect a format fault without DMA
-
-This phase CPU-feeds a first back-reference whose distance is one while the fresh stream has no history. It waits only for the IMGDEC sequence: FORMAT_FAULT raises the decoder interrupt, but neither DMA channel was armed for this phase.
-
-That choice matters. The texture header is published before the invalid token is rejected, but the full packet cannot be produced. FORMAT_FAULT deasserts IMGDEC's DMA requests; the program must not leave an output DMA waiting for the rest of this malformed packet. Here the CPU can instead read the three queued header words after the fault. The extra empty `DATA` read retains the last word; it does not resume decoding or turn the fault into DONE.
-
-```lua
--- 3. CPU-only invalid back-reference: neither DMA channel is armed. In
--- particular, there is no output channel left waiting for an impossible DREQ.
-local fault_decoder_sequence<const> = result.decoder_sequence
-decoder->input_word_count = #fault_stream
-decoder->texture_destination = 0x00400040
-decoder->texture_size = 0x00060004
-decoder->clut_destination = 0x00800040
-decoder->control = 1
-for index = 0, #fault_stream - 1 do
-	decoder->data = fault_stream[index]
-end
-while result.decoder_sequence == fault_decoder_sequence do
-	halt_until_irq
-end
-result.phases[2].status = decoder->status
-result.phases[2].received = decoder->input_words_received
-result.phases[2].decoded = decoder->decoded_word_count
-result.phases[2].dma_count[0] = dma0->count
-result.phases[2].dma_count[1] = dma1->count
-result.phases[2].dma_status[0] = dma0->status
-result.phases[2].dma_status[1] = dma1->status
--- FORMAT_FAULT leaves the already-published A0 header readable. An empty
--- DATA read retains the last word; it does not restart or complete the stream.
-for index = 0, 2 do
-	result.fault_header[index] = decoder->data
-end
-result.fault_retained_read = decoder->data
-result.phases[2].sequences[0] = result.dma0_sequence
-result.phases[2].sequences[1] = result.dma1_sequence
-result.phases[2].sequences[2] = result.decoder_sequence
-result.completed_phase = 3
-```
-
-### Entry module, part 6: fresh START after the fault
-
-A fresh START replaces the faulted stream. The recovery source contains the magic and two zero payload counts, not zero input words. It is valid and still produces a three-word texture header. DMA1 drains that header into a distinct RAM array, allowing IMGDEC to reach DONE.
-
-Keep this recovery output in RAM. Zero compressed payload is not a zero-area GPU upload: the raw texture-size word `0` decodes under the GPU contract as 1024 by 512 storage samples, not an empty rectangle. Forwarding that header alone to GP0 would therefore not constitute a complete upload. This phase checks decoder recovery and header draining, not a GPU clear or an empty GPU command.
-
-After this job, the program disables the interrupt mask before drawing the retained upload. The final source part records pending flags, marks phase 4 complete and parks; it does not restore a previous interrupt configuration.
-
-```lua
--- 4. START replaces the faulted stream. A minimal valid stream still emits
--- its three-word texture header, into a distinct BSS destination.
-local recovery_dma0_sequence<const> = result.dma0_sequence
-local recovery_dma1_sequence<const> = result.dma1_sequence
-local recovery_decoder_sequence<const> = result.decoder_sequence
-decoder->input_word_count = #recovery_stream
-decoder->texture_destination = 0x00200020
-decoder->texture_size = 0
-decoder->clut_destination = 0
-dma1->read_address = 0x08010414
-dma1->write_address = &result.recovery_output[0]
-dma1->count = 3
-dma1->control = 0x00003c1a
-dma1->trigger = 1
-dma0->read_address = recovery_stream
-dma0->write_address = 0x08010414
-dma0->count = #recovery_stream
-dma0->control = 0x00003d41
-dma0->trigger = 1
-result.phases[3].armed_status[0] = dma0->status
-result.phases[3].armed_status[1] = dma1->status
-decoder->control = 1
-while result.dma0_sequence == recovery_dma0_sequence
-	or result.dma1_sequence == recovery_dma1_sequence do
-	halt_until_irq
-end
-while result.decoder_sequence == recovery_decoder_sequence do
-	halt_until_irq
-end
-result.phases[3].status = decoder->status
-result.phases[3].received = decoder->input_words_received
-result.phases[3].decoded = decoder->decoded_word_count
-result.phases[3].dma_count[0] = dma0->count
-result.phases[3].dma_count[1] = dma1->count
-result.phases[3].dma_status[0] = dma0->status
-result.phases[3].dma_status[1] = dma1->status
-result.phases[3].sequences[0] = result.dma0_sequence
-result.phases[3].sequences[1] = result.dma1_sequence
-result.phases[3].sequences[2] = result.decoder_sequence
-*irq_mask = 0
-```
-
-### Entry module, part 7: draw the decoded patch
-
-All four jobs remain; the fault and recovery jobs leave the uploaded texture and CLUT intact. The GPU selects palette4 and the CLUT, drawing the raw quad over a purple underlay. The marker request, GPU ACK, central IRQ ACK, GPU-idle wait and PCRTC display latch are separate boundaries. This static output uses `IRQMASK=0` and needs no VBlank callback.
-
-```lua
--- All four jobs are complete. The successful GP0 upload is still in VRAM;
--- the later fault and recovery jobs did not submit their headers to GP0.
 for index = 0, #picture_commands - 1 do
-	*gp0 = picture_commands[index]
-end
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
+    *gp0 = picture_commands[index]
 end
 *gp1 = 0x02000000
 *irq_ack = 0x00000040
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
 while (*gp1 & 0x04000000) == 0 do
 end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
 *pmode = 0x0000ff21
-result.final_irq_flags = *irq_flags
-result.completed_phase = 4
-while true do
-	halt_until_irq
-end
 ```
 
-### Retained results
+The marker, GPU idle and PCRTC display latch are separate boundaries. The
+PMODE write enables the prepared composition for display latching; it is not
+itself a displayed-frame acknowledgement.
 
-After the four jobs, the retained result words have the following values. Counts are decimal and status words are hexadecimal. Sequence columns are BSS counters, not interrupt timings.
+### Read back the uploaded words
 
-| Phase | Output destination and retained data | Input words received | Decoded payload words | IMGDEC STATUS | DMA0 / DMA1 / IMGDEC sequences |
-|---|---|---:|---:|---|---|
-| 1 | `ram_output`: the 26 generated packet words | 19 | 20 | `0x02` DONE | 1 / 1 / 1 |
-| 2 | Fixed GP0: the same 26 packet words submitted; command-idle observed | 19 | 20 | `0x02` DONE | 2 / 2 / 2 |
-| 3 | `fault_header`: three queued words read by the CPU | 4 | 0 | `0x10` FORMAT_FAULT | 2 / 2 / 3 |
-| 4 | `recovery_output`: three header words drained into RAM | 3 | 0 | `0x02` DONE | 3 / 3 / 4 |
+With exclusive GP0 ownership and no DMA read owner, send each following header
+as three ordered GP0 writes. Wait for GPUSTAT bit 27 (`08000000H`) before reading
+the transaction's data at `0801023cH`. Drain its full count before sending the
+next header.
 
-In every phase snapshot, DMA0 and DMA1 each have count `0` and STATUS `0x02` DONE. Phase 3 did not generate new DMA completions: those channel values are retained from phase 2, as the unchanged sequences show. The recorded armed-status pairs are `0x01 / 0x01` BUSY for phases 1, 2 and 4. Phase 3's `armed_status` fields remain their BSS zeros because no snapshot was recorded; those zeros are **not** observed DMA STATUS values.
-
-The fault header is `[0xa0000000, 0x00400040, 0x00060004]`; the following empty read retains `0x00060004`. Recovery produces `[0xa0000000, 0x00200020, 0x00000000]`. At termination, `completed_phase` is 4, the callback-owned pending bits `0x00000181` are clear, and MASK is zero. The display continuation separately clears the GPU marker's device request and central pending bit `0x00000040`. Pending bits outside these two owned sets remain preserved.
-
-### Check the uploaded words
-
-The texture packet describes 4 × 6 storage halfwords at (64, 64), requiring 12 payload words. The CLUT packet describes 16 × 1 at (64, 128), requiring 8. These are storage dimensions; they do not select a texture bit depth or place an image on the display.
-
-The complete listing draws the uploaded patch after its four jobs and then parks; it does not perform the additional storage check below. To add this check, insert the readback procedure before its final `while true` parking loop, retaining exclusive GP0 ownership with both DMA channels DONE. Compare each read directly with the indicated retained RAM word; no additional output buffer is required.
-
-Send each header as three ordered word writes to GP0 at `0x0801023c`. Wait for GPUSTAT bit 27 (`0x08000000`) at `0x08010240` before reading that transaction's data. Drain the stated count before issuing the next header; do not let a DMA channel own the GP0 read port during these CPU reads.
-
-| Storage | GP0 header words, in transmission order | Expected GP0 reads |
+| Storage | GP0 header words, in order | Expected DATA reads |
 |---|---|---|
-| Texture | `0xc0000000`, `0x00400040`, `0x00060004` | 12 words, equal to `ram_output[3]` through `[14]` |
-| CLUT | `0xc0000000`, `0x00800040`, `0x00010010` | 8 words, equal to `ram_output[18]` through `[25]` |
+| Texture | `c0000000H`, `00400040H`, `00060004H` | 12 words, equal to `ram_output[3..14]` |
+| CLUT | `c0000000H`, `00800040H`, `00010010H` | 8 words, equal to `ram_output[18..25]` |
 
-Each read returns two raw 16-bit storage samples, first in the low half and then in the high half. The last read of each transaction clears READY. The expected result is equality for all 12 texture words and all 8 CLUT words against the indicated retained payload. GPU command idle alone is not this storage check; wait for READY and read the exact count. The complete transfer, rendering and readback reference is in [GPU](gpu.md).
-
+Each returned word contains two raw storage halfwords, first in bits 15:0.
+The last read clears READY. This verifies storage, unlike observing GPU idle
+alone. It does not imply that the display has published those pixels.
+See [GPU](gpu.md) for complete upload, drawing and readback rules.
 
 <a id="imgdec-indexed-output"></a>
 

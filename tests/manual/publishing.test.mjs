@@ -264,9 +264,9 @@ test('shared volume titles identify every book in document and running titles', 
 test('current source-language, BIOS and coroutine chapters belong to software, not hardware', async () => {
 	const catalog = JSON.parse(await readFile(resolve(repositoryRoot, 'docs/manual/catalog.json'), 'utf8'));
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'II').map(([id]) => id),
-		['blua-programs', 'bios-base', 'bios-math', 'bios-os', 'bios-loader', 'bios-table', 'bios-string', 'coroutines']);
+		['cpu', 'blua-programs', 'bios-base', 'bios-math', 'bios-os', 'bios-loader', 'bios-table', 'bios-string', 'coroutines']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'I').map(([id]) => id),
-		['console', 'cpu', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
+		['console', 'memory', 'pcrtc', 'gte', 'gpu', 'irq', 'dma', 'apu', 'geo', 'imgdec', 'input', 'system']);
 	assert.deepEqual(Object.entries(catalog).filter(([, entry]) => entry.book === 'III').map(([id]) => id),
 		['cartridge']);
 });
@@ -479,10 +479,8 @@ test('layout errors prevent a PDF/receipt: overflow, oversized groups, and clipp
 	}
 });
 
-test('reviewed PCRTC uses the shared publisher with its hardware coverage closed', async t => {
+test('PCRTC uses the shared publisher independently of its current review status', async t => {
 	const chapter = await loadChapter(repositoryRoot, 'pcrtc');
-	assert.equal(Object.values(chapter.review.coverage).flatMap(topic => topic.open).length, 0);
-	assert.deepEqual(await publicationFailures(repositoryRoot, chapter), []);
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-pcrtc-preview-'));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const output = await renderChapter(chapter, 'preview', directory);
@@ -507,15 +505,23 @@ test('reviewed PCRTC uses the shared publisher with its hardware coverage closed
 	}
 });
 
-test('CLI checks/publishes reviewed PCRTC from a different working directory', () => {
+test('CLI applies current chapter publication decisions from a different working directory', async () => {
+	const chapter = await loadChapter(repositoryRoot, 'pcrtc');
+	const failures = await publicationFailures(repositoryRoot, chapter);
 	for (const mode of ['check', 'publish']) {
 		const result = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/manual/build.mjs'), mode, 'pcrtc'], {
 			cwd: tmpdir(), encoding: 'utf8',
 		});
-		assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.status, failures.length === 0 ? 0 : 1, result.stderr);
 		assert.match(result.stdout, /Fact sheet: docs\/book1\/facts\/pcrtc\.md/);
-		assert.doesNotMatch(result.stderr, /Publication blocked:/);
-		if (mode === 'publish') assert.match(result.stdout, /Published chapter:/);
+		if (failures.length === 0) {
+			assert.doesNotMatch(result.stderr, /Publication blocked:/);
+			if (mode === 'publish') assert.match(result.stdout, /Published chapter:/);
+		} else {
+			assert.match(result.stderr, /Publication blocked:/);
+			assert.doesNotMatch(result.stdout, /Published chapter:/);
+			for (const failure of failures) assert.ok(result.stderr.includes(failure));
+		}
 	}
 	const usage = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/manual/build.mjs')], { encoding: 'utf8' });
 	assert.equal(usage.status, 1);

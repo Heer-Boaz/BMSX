@@ -10,7 +10,8 @@ should not become the cart-facing hardware contract.
 The TypeScript implementation builds a JavaScript machine runtime plus browser
 and Node hosts. The C++ implementation mirrors the machine structure and supplies C++ machine and host artifacts.
 
-See `docs/architecture.md` for the machine/host boundary rules.
+The technical manuals specify the console. See `docs/architecture.md` only for
+internal software ownership, dependencies and host/tooling boundaries.
 
 ## Setup
 
@@ -21,15 +22,17 @@ See `docs/architecture.md` for the machine/host boundary rules.
 ## First cartridge and hardware reference
 
 Start with [Build and inspect example cartridges](docs/programming/getting-started.md)
-for a visible GPU picture, source layout and build commands. The working manual
+for a visible GPU picture, source layout and project-tool commands. That companion
+describes this repository, not a manufacturer-mandated SDK. The working manual
 series separates three scopes:
 
 - **Book I — System and Hardware Reference:** begin with the
   [System overview](docs/book1/console.md), then follow its links to the owning
   hardware chapters and [Memory and program storage](docs/book1/memory.md).
 - **Book II — BLua32 and BIOS Reference:** begin with
-  [BLua source programs and extensions](docs/book1/blua-programs.md), not an
-  assumption that cartridge examples are ordinary Lua.
+  [CPU and BLua32 instructions](docs/book1/cpu.md),
+  [BLua source programs and extensions](docs/book1/blua-programs.md), and BIOS
+  interfaces. Cartridge source is not assumed to be ordinary Lua.
 - **Book III — Cartridge and Expansion Reference:**
   [Cartridge sockets and mapped card devices](docs/book3/cartridge.md).
 
@@ -38,7 +41,6 @@ These are working drafts, not a complete or released console-reference series.
 ## Project Layout
 
 - `machine/ts/machine`: TypeScript CPU, memory, MMIO bus, device controllers, program loader, and runtime lifecycle
-- `machine/ts/core`: shared runtime coordination and system bootstrap
 - `machine/ts/common`: low-level shared helpers
 - `machine/ts/audio`: host-side audio playback/output code, not the machine audio device
 - `ide`: editor, terminal, workbench, and IDE runtime tooling
@@ -71,7 +73,8 @@ These are working drafts, not a complete or released console-reference series.
 
 BMSX can be playful at the product level, but the machine layer is not a service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `spec/bmsx/io`.
 
-The documentation is the hardware manual. Machine ABI values such as register
+The technical manuals are the hardware and BIOS product specification; internal
+architecture documentation is not another hardware reference. Machine ABI values such as register
 addresses, status bits, IRQ flags, packet fields, opcodes, fixed-point words,
 and device constants are numbers in that manual and in the owning TS/C++
 machine constants. They are not fantasy-console convenience globals injected by
@@ -101,34 +104,13 @@ Current artifact names encode that split:
 - `dist/host_headless.js` and `dist/host_cli.js`: IDE-free Node player modes with their statically linked runtime composition.
 - `dist/host_headless_tooling.js`: Node timelines, captures, scenario tests, IDE tests, and profiling.
 
-## Runtime Timing
+## Timing integration
 
-BMSX fixes the CPU at 33.8688 MHz (`44100 × 768`) and resets GX to 320×240 PAL.
-The PSX GP1 register set still owns raster/status state, including its native
-256, 320, 368, 512 and 640-column modes. The PS2-style PCRTC is the sole
-scanout clock and geometry owner: `SMODE1/2`, `SYNCH1/2` and `SYNCV` drive the
-physical beam, while `DISPFB1/2`, `DISPLAY1/2` and `PMODE` select and merge the
-visible rectangles.
-Cart manifests do not own refresh rate, render size, or a `vblank_cycles`
-override.
-
-The standard mode envelope reaches 1920×1080. Raw PCRTC programming covers the PSX
-240p/480i family, PS2 640×448i NTSC and 640×512i PAL, and the PS2 DTV outputs
-720×480p, 656×576p, 1280×720p and 1920×1080i. This envelope is not a register
-clamp: other representable words still flow through the PCRTC datapath. The
-cartlib exposes direct reset presets for 256/320/368/512/640×240,
-640×480i, 640×448i and 640×512i; bare-metal carts may instead program the raw
-registerfile. Libretro advertises 1920×1080 initially and raises its complete AV
-contract when raw dual-circuit composition exceeds that standard envelope, so
-startup does not reserve the theoretical maximum and metadata never becomes an
-implicit clamp on raw words.
-
-The GPU publishes composition words at VBlank. Physical timing writes take
-effect in the PCRTC beam owner, which supplies exact rational CPU-cycle
-deadlines to the scheduler. Carts own lower game cadence by counting VBLANK
-IRQs. They program GX through GP0/GP1 and PCRTC MMIO and may DMA native GP0
-streams directly from ROM/RAM; there is no VDP stream or manifest timing
-facade.
+Machine scheduling is independent of host pacing, UI pause and output transport.
+The device owners supply emulated deadlines; hosts admit execution and present
+completed output through their existing frame owners. Installed clocks, reset
+settings and programmable video timing belong in the [console](docs/book1/console.md)
+and [PCRTC](docs/book1/pcrtc.md) references, not a second table in this README.
 
 ## Common Commands
 

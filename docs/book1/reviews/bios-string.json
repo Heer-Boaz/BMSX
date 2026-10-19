@@ -1,7 +1,7 @@
 {
 	"coverage": {
 		"boundary": {
-			"resolution": "All seventeen installed String exports: nine base operations, formatting, four pattern searches/substitutions and three packet interfaces; String codepoints remain distinct from mapped encoded bytes. Book II software scope.",
+			"resolution": "All seventeen installed String exports plus the separate named floating-point decoder import: nine base operations, formatting, four pattern searches/substitutions and three packet interfaces; String codepoints remain distinct from mapped encoded bytes. Book II software scope.",
 			"open": []
 		},
 		"registers": {
@@ -33,7 +33,7 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete base37+95 and formatting27+69 listings retained. Added pattern47+122 and packet42+117 ordinary BLua modules build with existing lint/type checks; 40/33 retained assertions and separate13/8 actual ordinary diagnostics pass. Independent bounded added-contract/program audits and source-aware exact public reconstruction pass. Current44-page DRAFT is covered by individually viewed added pages20-44/current1 and exact retained-page2-19 pixel evidence; no new framework/runtime/compiler/BIOS/publisher implementation. A later fresh public-only reader independently found no missing supplied-checkout understanding/assembly/build/observation step in the added pattern/packet routes; this is not execution or fresh-OS/whole-SDK acceptance.",
+			"resolution": "Short formatting, pattern, binary-record and raw floating-point-word examples accompany codepoint/byte distinctions, packet layouts, results and errors.",
 			"open": [
 				"Existing CPU7 questions remain separate; the resolved Table producer does not close those source/compiler questions."
 			]
@@ -41,7 +41,7 @@
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-string-source.md"
 		},
 		"figures": {

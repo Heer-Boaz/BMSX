@@ -5,8 +5,9 @@
 
 Status: **design proposal, not an implemented contract**. Written 2026-09-22
 against `master` at `99cfe4ebf`, with a clean worktree before this document.
-The current behavior remains documented in [architecture.md](architecture.md).
-Implementation must update that contract alongside each accepted change; this
+The implemented test API is documented in [Guest testing](guest_testing.md);
+[architecture.md](architecture.md) describes internal ownership only.
+Implementation must update the owning test-system documentation alongside changes; this
 proposal must not be mistaken for proof that a runtime capability exists.
 
 ## 1. Decision and scope

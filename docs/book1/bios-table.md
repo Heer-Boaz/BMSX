@@ -4,7 +4,7 @@ The installed `table` global provides six operations on ordinary language
 Tables. No cartridge import is required. Use it to preserve argument tuples,
 edit indexed sequences, join values into text, expand indexed values into
 results, and sort a sequence in place. It is not a byte-storage interface or a
-device-register bank. Typed arrays in **Memory and program storage** are a
+device-register bank. Typed arrays in [Memory and program storage](memory.md) are a
 different representation; their storage index zero is not the first sequence
 key described here.
 
@@ -20,8 +20,8 @@ key described here.
 
 These result counts are part of the interface. An ordinary bare return or
 fallthrough produces one nil; that is not the zero-result tuple returned by an
-empty `unpack` interval. **BIOS base services** explains `select` and result
-adjustment. **Protected calls and coroutines** explains interception of an
+empty `unpack` interval. [BIOS base services](bios-base.md) explains `select` and result
+adjustment. [Protected calls and coroutines](coroutines.md) explains interception of an
 error value, including nil, without undoing earlier writes.
 
 ## Tables, lengths and visible effects
@@ -61,9 +61,7 @@ ordinary mutable bindings, not permanently reserved operations.
 
 The functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
-function call is not a single constant-cycle hardware operation. The CPU
-reference supplies instruction charges. These interfaces do not replace IRQ
-setup or an interrupt wait.
+function call is not a single constant-cycle hardware operation. The [CPU reference](cpu.md) supplies instruction charges.
 
 ## Packing and reading table ranges
 
@@ -163,7 +161,7 @@ The recursive join uses `(first + last) // 2` as its midpoint and combines the t
 | `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | One `nil` value. |
 | `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | One `nil` value. |
 
-Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The direct-call signature requires a second argument, but an indirect call such as `pcall(table.insert, target)` can reach the positional form with no trailing arguments; both selected arguments are then `nil`, so the position arithmetic produces NaN. With a separate value, an explicit `nil` position is still passed to `// 1`.
+Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` nevertheless reaches the positional form with no trailing arguments; both selected arguments are then `nil`, so the position arithmetic produces NaN. With a separate value, an explicit `nil` position is still passed to `// 1`.
 
 Use a finite numeric position. This arithmetic does not parse numeric Strings, and a nonnumeric position produces NaN rather than an upfront library argument error. With a NaN position, the descending shift loop has no comparison-driven exit: it can make earlier shift writes without reaching the final insertion. A reached fault or other interruption is separate from normal completion.
 
@@ -298,8 +296,8 @@ This table identifies shared error text, not an assertion that every wrong
 argument immediately raises one of these errors. In particular, mixed-category
 less-than and nonnumber arithmetic follow the CPU value rules described above.
 A comparator can raise an arbitrary original value, not just a String.
-**Protected calls and coroutines** defines the protected-call boundary;
-**System control and timing** defines hardware fault publication. Do not treat
+[Protected calls and coroutines](coroutines.md) defines the protected-call boundary;
+[System control and timing](system.md) defines hardware fault publication. Do not treat
 error interception as restoration of a modified Table.
 
 There is no table-library maximum endpoint, output size or comparator count
@@ -309,232 +307,71 @@ argument tuple and selects a suffix. The number of numeric stores in a pack is
 not a constant total-work or allocation budget. Large, nonfinite or inconsistent
 inputs do not acquire a termination or resource guarantee from these APIs.
 
-## Complete program: sequences and counted tuples
+## Programming examples
 
-This program uses the installed `table` global together with the already
-introduced `select`, `print`, `pcall` and `error` services. It first preserves a
-four-position tuple with two nil values, then edits and sorts an ordinary
-numeric sequence. Finally it catches a comparator error and observes the
-sequence left by the interrupted sort.
+### Preserve the tuple count
 
-The complete source consists of the result-storage module below and the three
-entry listings in order. The result module is named `results`; the entry
-imports its exported storage address. **Memory and program storage** explains
-these declarations and typed views. The `f64` fields retain actual numeric
-results. Word fields retain counts or the stated comparison observations;
-they are not encodings of general language values.
-
-### Result storage
+Use the `n` field created by `table.pack` as the explicit end when unpacking a
+tuple that may contain nil. Table length is not a substitute for this count.
 
 ```lua
-module<const>
-
-struct bios_table_manual_result
-	completed: word
-	packed_count: word
-	tuple_first: f64
-	tuple_third: f64
-	tuple_holes: word
-	tuple_count: word
-	packed_text_match: word
-	insert_count: word
-	removed: f64
-	sequence_length: word
-	sort_count: word
-	ascending: f64[4]
-	default_unpack_count: word
-	negative_text_match: word
-	zero_text_match: word
-	empty_concat_length: word
-	empty_unpack_count: word
-	descending: f64[4]
-	last_removed: f64
-	remaining_length: word
-	comparison_count: word
-	failure_identity: word
-	partial: f64[3]
-end
-
-bss result: bios_table_manual_result
-
-return { result = result }
+local packed = table.pack(10, nil, 30, nil)
+local first, gap, third, tail = table.unpack(packed, 1, packed.n)
+local count = select('#', table.unpack(packed, 1, packed.n))
+local text = table.concat(packed, '|', 1, packed.n)
+-- first = 10, gap = nil, third = 30, tail = nil.
+-- packed.n and count are 4; text is '10||30|'.
 ```
 
-### Entry, part 1: preserve the tuple count
+### Edit and read a sequence
 
-`table.pack` gives this tuple an explicit `n` of four. Use that field as the
-end index when unpacking: the interior and trailing nil positions must not be
-inferred from Table length. The two fixed numeric results go directly into
-typed storage; local variables receive the nil positions. `select('#', ...)`
-observes the actual expanded result count.
-
-The explicit concatenation range also contains all four positions. Nil
-contributes an empty field, but the separators remain, producing `10||30|`.
-The program does not substitute a length derived from populated mappings for
-`packed.n`.
+The following sequence has consecutive numeric keys starting at one. Append,
+sort and the omitted range endpoints use its maintained length.
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *bios_table_manual_result = state.result
-
--- The explicit count preserves nil positions, including the trailing nil.
-local packed<const> = table.pack(10, nil, 30, nil)
-result.packed_count = packed.n
-local gap, tail
-result.tuple_first, gap, result.tuple_third, tail =
-	table.unpack(packed, 1, packed.n)
-result.tuple_holes = gap == nil and tail == nil and 1 or 0
-result.tuple_count = select('#', table.unpack(packed, 1, packed.n))
-print('Packed tuple', result.tuple_first, gap, result.tuple_third, tail)
-print('Tuple counts', result.packed_count, result.tuple_count)
-local packed_text<const> = table.concat(packed, '|', 1, packed.n)
-result.packed_text_match = packed_text == '10||30|' and 1 or 0
-print('Packed concat', packed_text)
-
+local sequence = {9, 3, 7}
+table.insert(sequence, 2, 5.5)       -- 9, 5.5, 3, 7
+local removed = table.remove(sequence, 3) -- 3; sequence is 9, 5.5, 7
+table.insert(sequence, 8)           -- 9, 5.5, 7, 8
+table.sort(sequence)               -- 5.5, 7, 8, 9
+local first, second, third, fourth = table.unpack(sequence)
+local suffix = table.concat(sequence, ':', -3, -1) -- '7:8:9'
+local all = table.concat(sequence, ':', 0, 0)      -- '5.5:7:8:9'
+local empty = table.concat(sequence, ':', 3, 2)    -- ''
+local count = select('#', table.unpack(sequence, 3, 2)) -- 0
 ```
 
-### Entry, part 2: edit and read an ordinary sequence
+The observed length four belongs to this sequence. It does not define the
+length of a Table with holes or count a packed tuple's nil positions. A reversed
+range gives an empty String from concat but zero results from unpack.
 
-Starting with `9, 3, 7`, positional insertion produces `9, 5.5, 3, 7`.
-Removing position three returns `3`; the two-argument insert appends `8`.
-The default ascending sort then produces `5.5, 7, 8, 9`. The program observes
-one result from each counted insert and sort call: the ordinary source
-return is one nil, not a zero-result tuple.
-
-These are real default-length operations: append, sort, unpack and
-concatenation use the Table's maintained length. Default unpack returns the
-four sorted Numbers. Negative endpoints `-3, -1` select positions two through
-four here; zero endpoints select the default first and last positions.
-An explicit reversed range produces an empty String from `concat`, but no
-results from `unpack`. An empty String and an empty result tuple are different
-observations.
+Continue with a descending comparison and remove the final value:
 
 ```lua
--- Ordinary sequence operations use the Table's maintained length.
-local sequence<const> = { 9, 3, 7 }
-result.insert_count = select('#', table.insert(sequence, 2, 5.5))
-result.removed = table.remove(sequence, 3)
-table.insert(sequence, 8)
-result.sequence_length = #sequence
-result.sort_count = select('#', table.sort(sequence))
-result.ascending[0], result.ascending[1],
-	result.ascending[2], result.ascending[3] = table.unpack(sequence)
-result.default_unpack_count = select('#', table.unpack(sequence))
-print('Mutation', result.insert_count, result.removed, result.sequence_length)
-print('Ascending', result.sort_count, table.concat(sequence, ','))
-print('Default unpack', table.unpack(sequence))
-print('Default unpack count', result.default_unpack_count)
-
-local negative_text<const> = table.concat(sequence, ':', -3, -1)
-local zero_text<const> = table.concat(sequence, ':', 0, 0)
-local empty_text<const> = table.concat(sequence, ':', 3, 2)
-result.negative_text_match = negative_text == '7:8:9' and 1 or 0
-result.zero_text_match = zero_text == '5.5:7:8:9' and 1 or 0
-result.empty_concat_length = #empty_text
-result.empty_unpack_count = select('#', table.unpack(sequence, 3, 2))
-print('Negative range', negative_text)
-print('Zero range', zero_text)
-print('Empty ranges', empty_text, result.empty_unpack_count)
-
-```
-
-The observed length four belongs to this sequence and these operations.
-It is not a count of all Table mappings or a replacement for an explicit tuple
-count when nil positions matter.
-
-### Entry, part 3: a custom order and an interrupted sort
-
-The first comparator orders the same Numbers descending. Default removal then
-returns the last Number, `5.5`, leaving length three in this run.
-
-The second comparator deliberately raises the same Table object on its fifth
-call. The protected call returns false and that original object. An earlier
-swap remains visible: `3, 1, 2` has become `1, 3, 2`. Protection does not restore
-the original order. This exact comparison count and partial arrangement are
-observations of the shown call, not a promised comparator-visit schedule.
-The program records completion and remains in `halt_until_irq`.
-
-```lua
--- A comparator orders these same Numbers in descending order.
 table.sort(sequence, function(left, right) return left > right end)
-result.descending[0], result.descending[1],
-	result.descending[2], result.descending[3] = table.unpack(sequence)
-print('Descending', table.concat(sequence, ','))
-result.last_removed = table.remove(sequence)
-result.remaining_length = #sequence
-print('Removed last', result.last_removed, result.remaining_length)
-
--- Protection catches the error value; it does not undo earlier swaps.
-local partial<const> = { 3, 1, 2 }
-local failure<const> = { code = 72 }
-local ok<const>, caught<const> = pcall(table.sort, partial,
-	function(left, right)
-		result.comparison_count = result.comparison_count + 1
-		if result.comparison_count < 5 then
-			return left < right
-		end
-		error(failure)
-	end)
-result.failure_identity = not ok and caught == failure and 1 or 0
-result.partial[0], result.partial[1], result.partial[2] = table.unpack(partial)
-print('Comparator failure', ok, caught == failure, result.comparison_count)
-print('Partial sequence', table.concat(partial, ','))
-result.completed = 1
-while true do
-	halt_until_irq
-end
+-- sequence is now 9, 8, 7, 5.5.
+local last = table.remove(sequence) -- 5.5; sequence is now 9, 8, 7.
 ```
 
-### Retained observations
+### Handle an interrupted sort
 
-<section class="keep-together">
+An error does not undo earlier swaps. This short example shows both the error
+object's identity and the values left by one particular interrupted sort:
 
-The following table names every retained field. A comparison word of one
-means the condition written in the program was true. Array values below are
-listed in typed-storage index order, starting at index zero.
-
-| Field | Retained value |
-| --- | --- |
-| `completed` | `1` |
-| `packed_count`, `tuple_count` | `4`, `4` |
-| `tuple_first`, `tuple_third` | `10`, `30` |
-| `tuple_holes` | `1`: both received positions are nil |
-| `packed_text_match` | `1`: `10\|\|30\|` |
-| `insert_count`, `sort_count` | `1`, `1` |
-| `removed`, `sequence_length` | `3`, `4` |
-| `ascending` | `5.5`, `7`, `8`, `9` |
-| `default_unpack_count` | `4` |
-| `negative_text_match` | `1`: `7:8:9` |
-| `zero_text_match` | `1`: `5.5:7:8:9` |
-| `empty_concat_length`, `empty_unpack_count` | `0`, `0` |
-| `descending` | `9`, `8`, `7`, `5.5` |
-| `last_removed`, `remaining_length` | `5.5`, `3` |
-| `comparison_count`, `failure_identity` | `5`, `1` |
-| `partial` | `1`, `3`, `2` |
-
-</section>
-
-### Diagnostic output
-
-After the startup messages, the program emits these fourteen lines.
-Separators between printed arguments below are literal tabs. In the
-`Empty ranges` line, two adjacent tabs surround the empty String.
-
-```text
-Packed tuple	10	nil	30	nil
-Tuple counts	4	4
-Packed concat	10||30|
-Mutation	1	3	4
-Ascending	1	5.5,7,8,9
-Default unpack	5.5	7	8	9
-Default unpack count	4
-Negative range	7:8:9
-Zero range	5.5:7:8:9
-Empty ranges		0
-Descending	9,8,7,5.5
-Removed last	5.5	3
-Comparator failure	false	true	5
-Partial sequence	1,3,2
+```lua
+local values = {3, 1, 2}
+local failure = {code = 72}
+local comparisons = 0
+local ok, caught = pcall(table.sort, values, function(left, right)
+    comparisons = comparisons + 1
+    if comparisons == 5 then
+        error(failure)
+    end
+    return left < right
+end)
+-- ok is false; caught is the same Table as failure.
+-- values now has 1, 3, 2 at keys 1, 2, 3.
 ```
+
+The partial arrangement follows this input and this error point. Do not use
+it as a guarantee of the sequence or callback count after another failure.

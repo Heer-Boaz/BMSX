@@ -25,14 +25,36 @@ follow the rules in the corresponding sections below.
 
 The installed BIOS examines present sockets in order, socket 0 before socket 1, using SELECT while inspecting them. It chooses the first card that satisfies its ROM boot-readiness checks. A card can therefore occupy a socket without becoming a boot candidate, and the first occupied socket need not be the socket from which startup proceeds. These checks describe the installed BIOS boot policy, not a cartridge-discovery BIOS interface available to software.
 
-For the ROM header, startup requirements, and boot routes, see [Book I: Memory — Cartridge startup](../book1/memory.md#rom-header-fields). Those definitions remain authoritative; card composition alone does not replace their requirements.
+For the ROM header, startup requirements, and boot routes, see [Memory — Cartridge startup](../book1/memory.md#rom-header-fields). Those definitions remain authoritative; card composition alone does not replace their requirements.
 
 ## Selection and execution
 
 SELECT and the active instruction-fetch domain are distinct. Cartridge instruction fetching follows the socket bound to the active execution domain. Changing SELECT alone does not redirect active cartridge instruction fetching to the other socket, execute that socket, or initialize it.
 
-Software must therefore distinguish inspecting a selected card from entering cartridge execution. Refer to **Book I: Memory and CPU startup** for the execution-binding and startup rules rather than treating socket selection as an execution handoff.
+A cartridge-targeted `CP0.EXEC` samples the selected socket and replaces the
+instruction-fetch latch. Both sockets use the same cartridge addresses, so an
+image does not require relocation merely because it is inserted in the other
+socket. A closure retains a function-record address, not a socket: entering it
+uses the current execution-socket latch. See [Memory — EXEC and cartridge entry](../book1/memory.md#exec-and-cartridge-entry)
+and [CPU execution control](../book1/cpu.md#cp0-and-execution-control).
 
+
+## Programming route
+
+1. Establish the inserted card's composition and preserve any storage still in
+   use. STATUS reports occupancy, not RAM capacity or mailbox presence.
+2. Write SELECT for ordinary CPU accesses. Use aligned word stores for mailbox
+   commands; selecting a socket neither resets nor enters it.
+3. For mailbox interrupts, clear the local latch to rearm its next rising edge,
+   and acknowledge the owned pending bit at the central controller separately.
+4. For DMA, set both request levels, addresses, count and control before START.
+   Use explicit socket request selectors when a pending transfer must remain
+   independent of later CPU selection changes.
+5. Wait for the channel's terminal state and inspect faults before using its
+   output. Transport completion is not an application response from the card.
+
+The following reference defines the retained words, write effects, request
+levels and access restrictions used by that sequence.
 
 ## Cartridge controller
 
@@ -189,7 +211,7 @@ The third row demonstrates why acknowledging only the central controller does
 not rearm a mailbox edge. When handling both sockets, select the intended card
 before touching its local registers and acknowledge only the central bits owned
 by that handler. The complete CPU-enable, `irq(flags)` and predicate-wait route
-is in [Book I: Interrupt controller](../book1/irq.md#cpu-delivery-and-waiting).
+is in [Interrupt controller](../book1/irq.md#cpu-delivery-and-waiting).
 A card-local trigger or a central pending bit is not a remote-work completion
 protocol.
 
@@ -237,7 +259,7 @@ The installed timing basis is 33,868,800 Hz. For a contiguous N-word endpoint sp
 | Cartridge ↔ cartridge | `16N + 8` | 72 | 264 |
 | Cartridge ↔ installed I/O | `8N + 4` | 36 | 132 |
 
-Thus the example ROM(socket 0) → RAM(socket 1) block costs 72 cycles from admission. Incrementing across a cartridge ROM, RAM, or MMIO boundary starts a new span and incurs setup again. These figures are admitted-block service costs, not physical sustainable bandwidth or CPU-launch delay. Request waiting, channel competition, and software programming or polling are additional. See [Book I: DMA](../book1/dma.md) for the general channel programming sequence.
+Thus the example ROM(socket 0) → RAM(socket 1) block costs 72 cycles from admission. Incrementing across a cartridge ROM, RAM, or MMIO boundary starts a new span and incurs setup again. These figures are admitted-block service costs, not physical sustainable bandwidth or CPU-launch delay. Request waiting, channel competition, and software programming or polling are additional. See [DMA](../book1/dma.md) for the general channel programming sequence.
 
 ## Access faults
 
@@ -247,7 +269,7 @@ alignment. A misaligned ordinary load or store enters its address-error
 exception before reaching the bus. A new mapped fault during an ordinary load
 enters a data-bus-error exception before committing the read value; a new fault
 during an ordinary store enters the same exception. A bus-level zero return is
-not a successful ordinary CPU load of zero. See [Book I: Memory — Scalar memory
+not a successful ordinary CPU load of zero. See [Memory — Scalar memory
 accesses](../book1/memory.md#scalar-memory-accesses).
 
 Installed I/O and cartridge MMIO have different mapped-access rules. The installed-I/O `CART_SELECT` and `CART_STATUS` registers use word-aligned slots. An unaligned mapped 32-bit access raises `UNALIGNED_IO` (2). An 8-bit read at an aligned register address returns its low byte; other byte lanes fault. All mapped 16-bit reads and all mapped 8-bit or 16-bit stores to installed I/O also fault. Faulting reads return zero and faulting stores are suppressed.
@@ -258,262 +280,64 @@ Cartridge mapped accesses have no aperture-wide word-alignment gate; card decodi
 
 The entire access must fit inside the cartridge aperture. The highest admitted addresses are `30FFFFFCH` for 32 bits, `30FFFFFEH` for 16 bits, and `30FFFFFFH` for 8 bits. Crossing that final boundary raises `UNMAPPED` (1), returning zero or suppressing the store. An absent selected card returns zero and ignores stores without a fault; ROM stores are likewise ignored.
 
-DMA uses these same mapped-access rules, but a fault does not abort its programmed read, write, and count progression. `DONE` therefore does not prove that endpoint addresses were valid. The first outstanding bus fault retains its code, address, and access; later faults do not replace it. See [Book I: Memory — Bus faults](../book1/memory.md#bus-fault-status-and-cpu-exceptions) for the fault registers and acknowledgement procedure.
+DMA uses these same mapped-access rules, but a fault does not abort its programmed read, write, and count progression. `DONE` therefore does not prove that endpoint addresses were valid. The first outstanding bus fault retains its code, address, and access; later faults do not replace it. See [Memory — Bus faults](../book1/memory.md#bus-fault-status-and-cpu-exceptions) for the fault registers and acknowledgement procedure.
 
 
 ## Two-card programming example
 
-This example gives the bootable card in **socket 0** ROM, 256 bytes of RAM and a
-mailbox. A separate **socket 1** card supplies 256 bytes of RAM and a mailbox but
-no ROM. Their required hardware is listed below. This is not a card with two
-banked RAM pages: each physical socket retains its own RAM and mailbox state.
+Assume a bootable card in socket 0 with ROM and a mailbox, and a data card in
+socket 1 with at least 32 bytes of RAM and a mailbox. The sequence owns DMA0,
+both mailbox controls, socket-1 RAM bytes 16–31 and central DMA0 pending bit 0.
+No other writer changes these resources or the selected request levels.
+Interrupt delivery remains masked; completion is polled instead of using HALT
+without an enabled interrupt. No remote processor or automatic mailbox response
+is assumed.
 
-Start with fresh card RAM. The program owns DMA0, both mailboxes, central
-cartridge pending bits 9/10 and card-RAM bytes 0–31 in each socket. No other
-producer uses those resources during the sequence. Logical card reset retains
-RAM, so a warm rerun does not establish the initial zero-valued untouched words.
-The result record uses explicitly allocated BSS, not an assumed free address or
-storage borrowed from a reserved system range.
-
-The program deliberately keeps interrupt delivery masked and polls raw pending
-bits. It first proves selection/raw readback and independent RAM. For each
-mailbox it generates one edge, clears central pending, attempts a suppressed
-retrigger, then acknowledges the source and produces a new edge. It finally
-copies four readonly words from socket 0 ROM into socket 1 RAM while CPU data
-selection remains 1. Both DMA endpoints name their socket explicitly.
-
-For exact project locations, module names, both builds, physical socket placement
-and the retained-result check, see the development companion **Build and inspect
-example cartridges — Build and inspect two cartridge sockets**. That section is
-also available in the [public development guide](../programming/getting-started.md#build-and-inspect-two-cartridge-sockets).
-The earlier hardware examples are not prerequisites.
-
-### Required cards
-
-| Socket | ROM | RAM | Mailbox |
-|---:|---|---|---|
-| 0 | Bootable program and readonly source words | 256 bytes | Present |
-| 1 | Absent | 256 bytes | Present |
-
-The second card supplies data storage and ports, not an executable image.
-These are two independent cards, not two banks within one card. The development
-companion gives the supplied tooling's media files; those files are not a bus
-protocol or an additional boot-header requirement.
-
-### Result module
-
-The complete `results.lua` module supplies the typed result record. It has the
-project-relative module name `results`, used by the entry's static import.
+Declare four words in socket 0's executable ROM, assert the read request on
+socket 0 and the write request on socket 1, then program the idle channel:
 
 ```lua
-module<const>
-
-struct cartridge_manual_result
-	completed: word
-	boot_status: word
-	selection_word: word
-	selected_status: word
-	ram_words: word[2]
-	mail_data: word[2]
-	mail_control: word[2]
-	local_pending: word[2]
-	first_edge: word[2]
-	coalesced: word[2]
-	rearmed: word[2]
-	after_ack: word[2]
-	data_card_rom: word
-	seed_address: word
-	dma_selection: word
-	dma_control: word
-	dma_status: word
-	dma_count: word
-	dma_read_end: word
-	dma_write_end: word
-	dma_pending: word
-	requests: word[2]
-	received: word[4]
-	untouched: word[4]
-end
-
-bss result: cartridge_manual_result
-
-return { result = result }
-```
-
-<div class="keep-together">
-
-### Entry module
-
-The following consecutive listings are the complete `cart.lua` entry, in order.
-Do not omit its port declarations or substitute an ordinary Lua value table for
-the declared word ports and BSS.
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *cartridge_manual_result = state.result
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local dma_read<const>: *word = 0x0800000c
-local dma_write<const>: *word = 0x08000010
-local dma_count<const>: *word = 0x08000014
-local dma_control<const>: *word = 0x08000018
-local dma_status<const>: *word = 0x0800001c
-local dma_trigger<const>: *word = 0x08000020
-local cart_select<const>: *word = 0x08010420
-local cart_status<const>: *word = 0x08010424
-local card_rom<const>: *word = 0x10000000
-local card_ram<const>: *word = 0x30000000
-local mail_data<const>: *word = 0x30f00000
-local mail_control<const>: *word = 0x30f00004
-local mail_status<const>: *word = 0x30f00008
-local mail_ack<const>: *word = 0x30f0000c
-
 rodata seed: word[4] = {
-	0x01234567, 0x89abcdef, 0x55aa33cc, 0xf00dcafe,
+    0x01234567, 0x89abcdef, 0x55aa33cc, 0xf00dcafe,
 }
+mem[0x08000008] = 0           -- Mask delivery; retain pending source bits.
+mem[0x08000004] = 1           -- Acknowledge this owner's old DMA0 pending bit.
+mem[0x08010420] = 0
+mem[0x30f00004] = 2           -- Socket 0 DREQ_READ.
+mem[0x08010420] = 1
+mem[0x30f00004] = 4           -- Socket 1 DREQ_WRITE.
+mem[0x0800000c] = seed        -- DMA0 READ_ADDR: socket-0 ROM.
+mem[0x08000010] = 0x30000010  -- DMA0 WRITE_ADDR: socket-1 RAM.
+mem[0x08000014] = 4           -- Four words, not four bytes.
+mem[0x08000018] = 0x00000e63  -- Increment both; requests 8/9; four-word block.
+mem[0x08000020] = 1           -- START.
+while (mem[0x0800001c] & 1) ~= 0 do
+end
 ```
 
-</div>
+The explicit endpoint overrides keep the source on socket 0 and destination on
+socket 1 while ordinary CPU selection remains 1. After normal completion,
+DMA STATUS is 2 and COUNT is zero. READ_ADDR is `seed + 16`, WRITE_ADDR is
+`30000020H`, and the masked DMA0 pending bit is set. Before consuming the data,
+check for new bus faults using the [Memory fault-attribution procedure](../book1/memory.md#attribute-a-bus-fault-before-start);
+DMA DONE does not imply valid endpoint accesses.
 
-<div class="keep-together">
-
-Entry continued:
+Read socket 1's destination while it remains selected:
 
 ```lua
-
--- Own DMA0, both mailboxes and card-RAM bytes0..31 on both sockets.
--- Mask delivery and poll raw pending bits; do not install a DMA service.
-*irq_mask = 0
-*irq_ack = 0x00000601
-result.boot_status = *cart_status
-*cart_select = 0x80000001
-result.selection_word = *cart_select
-result.selected_status = *cart_status
-result.data_card_rom = card_rom[0]
-
-*cart_select = 0
-card_ram[0] = 0x10203040
-*cart_select = 1
-card_ram[0] = 0x50607080
-
-for slot = 0, 1 do
-	*cart_select = slot
-	result.ram_words[slot] = card_ram[0]
-	local source_bit<const> = 0x00000200 << slot
-	*mail_data = 0x6d61696c | slot
-	*mail_control = 0x80000001
-	result.mail_data[slot] = *mail_data
-	result.mail_control[slot] = *mail_control
-	result.local_pending[slot] = *mail_status
-	result.first_edge[slot] = *irq_flags & source_bit
-	-- Central ACK alone does not rearm the card's local edge latch.
-	*irq_ack = source_bit
-	*mail_control = 0x80000001
-	result.coalesced[slot] = *irq_flags & source_bit
-	*mail_ack = 1
-	*mail_control = 0x80000001
-	result.rearmed[slot] = *irq_flags & source_bit
-	*mail_ack = 1
-	*irq_ack = source_bit
-	result.after_ack[slot] = *mail_status
-end
+local destination<const>: *word = 0x30000010
+local first = destination[0]
+local last = destination[3]
+mem[0x30f00004] = 0           -- Deassert socket-1 requests after completion.
+mem[0x08010420] = 0
+mem[0x30f00004] = 0           -- Deassert socket-0 requests.
+mem[0x08000004] = 1
 ```
 
-</div>
-
-<div class="keep-together">
-
-Entry continued:
-
-```lua
-
--- Slot0 READ request, slot1 WRITE request. No FIFO is implied.
-*cart_select = 0
-*mail_control = 2
-result.requests[0] = *mail_control
-*cart_select = 1
-*mail_control = 4
-result.requests[1] = *mail_control
-result.seed_address = seed
-*dma_read = seed
-*dma_write = 0x30000010
-*dma_count = 4
--- Block4; READ_REQUEST8; WRITE_REQUEST9; increment both addresses.
-*dma_control = 0x00000e63
-*dma_trigger = 1
-while (*dma_status & 1) ~= 0 do
-end
-result.dma_selection = *cart_select
-result.dma_control = *dma_control
-result.dma_status = *dma_status
-result.dma_count = *dma_count
-result.dma_read_end = *dma_read
-result.dma_write_end = *dma_write
-result.dma_pending = *irq_flags & 1
-for index = 0, 3 do
-	result.received[index] = card_ram[4 + index]
-end
-*mail_control = 0
-*cart_select = 0
-*mail_control = 0
-for index = 0, 3 do
-	result.untouched[index] = card_ram[4 + index]
-end
-*irq_ack = 0x00000601
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-</div>
-
-<div class="keep-together">
-
-### Retained observations
-
-The completed run retains the following values in `result`. Numbers are
-hexadecimal unless a row states otherwise. The source address is linked from
-`seed`; its exact absolute value need not match between cartridge builds.
-
-| Selection and storage observation | Value |
-|---|---|
-| Boot STATUS | `00000003` |
-| Raw SELECT, then derived STATUS | `80000001`, `00010003` |
-| Data-card ROM word 0 | `00000000` |
-| Socket 0 and socket 1 RAM sentinels | `10203040`, `50607080` |
-| DATA, socket 0 / socket 1 | `6D61696C` / `6D61696D` |
-| CONTROL after IRQ_TRIGGER, each socket | `80000000` |
-| Local pending after trigger / final acknowledgement | `1` / `0` |
-| First edge, socket 0 / socket 1 | `00000200` / `00000400` |
-| Retrigger after central ACK only, each socket | `0` |
-| Retrigger after local ACK, socket 0 / socket 1 | `00000200` / `00000400` |
-
-</div>
-
-| DMA and result observation | Value |
-|---|---|
-| Programmed request controls, socket 0 / socket 1 | `2` / `4` |
-| CPU SELECT at DMA completion | `1` |
-| DMA CONTROL | `00000E63` |
-| DMA STATUS / remaining words | `2` / `0` |
-| Final read / write address | `seed + 16 bytes` / `30000020` |
-| Masked central DMA0 pending bit | `1` |
-| Received socket 1 words | `01234567`, `89ABCDEF`, `55AA33CC`, `F00DCAFE` |
-| Untouched socket 0 words at the same destination offsets | Four zero words |
-| `completed` | `1` |
-
-The received words, independent untouched words and endpoint addresses show
-which card each side accessed. The mailbox/central observations show that
-source rearming and central acknowledgement are different actions. An unchanged
-display or silence would not establish either result.
-
-The 72-cycle budget for this one admitted four-word DMA block is a conditional
-transfer calculation, not the elapsed time between two BLua statements. CPU
-setup, polling and result stores consume additional time. DONE and masked
-pending are observed after completion; they do not measure the exact admission
-edge or interrupt-entry latency.
+The received words are `01234567H`, `89ABCDEFH`, `55AA33CCH`, `F00DCAFEH`;
+`first` and `last` select the first and fourth. This writes no socket-0 RAM.
+Logical card reset would retain the destination, so a warm rerun cannot assume
+that untouched card RAM is zero. The one admitted block costs 72 system cycles
+under the timing rules above; CPU setup, request waiting, polling and loads are
+additional. This is not a statement-to-statement latency or interrupt-entry
+guarantee.

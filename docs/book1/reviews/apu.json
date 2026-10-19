@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Independent raw-register PCM and square configurations specify all21 staging words, authored readonly PCM, CMD-last capture, active/fault observations and queued zero-fade stop. The separate standalone raw-port download cartridge and complete source/decoder contracts remain. Prior external-library execution is not claimed as execution of a replacement program.",
+			"resolution": "Short sampled-voice, generator and sample-RAM transfer sequences explain source ownership, command submission, DMA completion and final sample commit.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/apu-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/apu-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/apu-print.md"
 		}
 	}

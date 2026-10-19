@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Real BIOS-style two-module BLua experiment uses explicit startup-zeroed BSS and typed word ports. Ordinary guest execution verifies all eight phases, full44 arguments, selective preservation of04 and two rearmed services; independent whole-reader review closes assumptions and assembly instructions.",
+			"resolution": "Compact enable, service, acknowledgement and wait sequences connect controller latches, device requests and CPU interrupt acceptance.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/irq-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/irq-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/irq-print.md"
 		}
 	}

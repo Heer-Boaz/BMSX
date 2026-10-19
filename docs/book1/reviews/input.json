@@ -37,13 +37,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete 25-line const and 62-line entry use real BLua with caller-owned BSS; executed derived integration case checks snapshot/keyboard held/released/pad transitions. Six TS owner cases and one native target containing three checks pass separately. A separate public-only reader accepts the complete raw-input route and exact project/manifest/build/result instructions; calculated transition table and actual retained assertions remain distinct.",
+			"resolution": "A direct sample/wait/read sequence and software-edge example accompany raw input/output formats and supervisor-request/reset distinctions.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/input-source.md"
 		},
 		"figures": {

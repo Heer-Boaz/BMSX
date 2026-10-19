@@ -9,7 +9,11 @@ circuits, and acknowledges the events it uses.
 
 Each reading circuit has its own framebuffer selection, source position, signal
 position, magnification, and window size. Output control selects the enabled circuits
-and their composition settings.
+and their composition settings. Both circuits read GPU local memory directly: PCRTC
+does not rasterize primitives, issue GP0 packets, copy a framebuffer or retain a
+second composed image. The GPU produces stored words; PCRTC selects, decodes and
+combines samples from those words. A GPU completion and a display-latch edge are
+therefore different synchronization points.
 
 ![PCRTC display data path and controls](figures/pcrtc-overview.svg)
 
@@ -434,6 +438,23 @@ Neither `SMODE2` word restarts the beam. Live beam timing is distinct from latch
 display timing: stopping the beam does not itself blank an already-latched display.
 PCRTC reset is the exception to waiting for VBlank entry: it installs the reset display
 settings immediately.
+
+#### Firmware use of the two circuits
+
+The standard BIOS convention assigns cartridge display to circuit 1. During
+supervisor service, the cartridge's displayed circuit-1 framebuffer and window
+become circuit 2's underlay, while firmware programs circuit 1 for its terminal.
+This changes source selection; it does not copy the cartridge image. Preserve
+the [firmware VRAM reservation](memory.md#firmware-reservation-in-vram).
+
+Both circuits remain directly programmable. Using circuit 2 in bare-metal code
+is not prohibited by MMIO protection, but supervisor entry preserves only the
+cartridge's displayed circuit-1 view as its underlay. The complete twelve-word
+composition banks, including circuit 2, are retained separately for programmed
+and displayed state and restored on leave. Timing words, CSR, IMR and the
+physical beam are global, not banked: supervisor changes to them persist.
+See [Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service)
+for entry, leave and shared-memory lifetime.
 
 ### 2.7. Beam timing
 
@@ -1206,221 +1227,90 @@ The following table gives retained register words and decoded geometry. Source o
 
 From A to B, write only `DISPFB1_HIGH`. The visible source selection changes inside the stationary window. From B to C, write only `DISPLAY1_LOW`. The selected cutout moves 32 output pixels right. Neither change alters its extent or the 256 × 192-pixel canvas.
 
-<section class="keep-together">
+### Prepare the source and publish the changes
 
-### Complete BLua cartridge
+Own GP0, both circuits, the VBlank handler and source rectangle
+`(0,0)…(255,191)`. Keep this storage unchanged through A, B and C, and keep
+other writers and supervisor entry outside the sequence. The rectangle must not
+overlap the firmware reservation; querying that reservation does not allocate
+the remaining memory.
 
-Create `results.lua` as this complete const module. The program retains
-three raw source probes, each stage's programmed source/window words and its
-fresh VBlank callback observations in explicit BSS.
-
-```lua
-module<const>
-
-struct pcrtc_window_result
-	completed_phase: word
-	vblank_sequence: word
-	system_origin: word
-	system_size: word
-	samples: word[3]
-	before_vblank: word[3]
-	after_vblank: word[3]
-	programmed_source: word[3]
-	programmed_window: word[3]
-end
-
-bss result: pcrtc_window_result
-
-return { result = result }
-```
-
-</section>
-
-### Read the retained source probes
-
-The three entries in `result.samples` retain individual source-pixel readbacks. Each C0 request covers 1 × 1 pixel. Read its one word after READY; the unused high half is zero. The low halves below are raw local-memory words, not composed display pixels. Their stored bit 15 is set because the E6 force-bit-15 setting is enabled.
-
-| Entry | Raw source pixel | Colour | Retained low half |
-|---|---|---|---|
-| `result.samples[0]` | (8, 8) | White | `FFFF` |
-| `result.samples[1]` | (96, 64) | Black | `8000` |
-| `result.samples[2]` | (144, 96) | Red | `801F` |
-
-These values verify the three selected source pixels, not the whole output. Read the three pictures separately to see the composed result.
-
-Likewise, `result.programmed_source` and `result.programmed_window` retain immediate programmed-word readbacks. They tell you which words were programmed; they do not by themselves establish display acceptance. Keep their interpretation separate from the before-and-after VBlank callback sequence observations and the actual output pictures.
-
-<section class="keep-together">
-
-Create `cart.lua` by concatenating the next four parts in order. They form one
-entry module, not four separate files or functions. The readonly scene contains
-whole GP0 command packets, not a table of register values. Every scalar GP0
-store addresses the same fixed port.
-
-### Declare ports and the readonly scene
+With interrupt delivery masked, write CSR RESET (`00000200H`), then PMODE=0.
+Program the eight framebuffer/window words in the stage-A table. To reproduce
+the source picture, send these complete GP0 packets after E1–E6 establish
+zero offset, drawing area `(0,0)…(255,191)`, both row parities, no dither and
+E6=1 (force stored bit 15, do not check old bit 15):
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *pcrtc_window_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
+rodata scene: word[] = {
+    0x600000ff, 0, 0x00400040,
+    0x6000ff00, 64, 0x00400040,
+    0x60ff0000, 128, 0x00400040,
+    0x6000ffff, 192, 0x00400040,
+    0x60ffff00, 64 << 16, 0x00400040,
+    0x60ff00ff, 64 | (64 << 16), 0x00400040,
+    0x60ffffff, 128 | (64 << 16), 0x00400040,
+    0x60202020, 192 | (64 << 16), 0x00400040,
+    0x600080ff, 128 << 16, 0x00400040,
+    0x60800080, 64 | (128 << 16), 0x00400040,
+    0x60808000, 128 | (128 << 16), 0x00400040,
+    0x60808080, 192 | (128 << 16), 0x00400040,
+    0x60ffffff, 8 | (8 << 16), 4 | (40 << 16),
+    0x60ffffff, 8 | (8 << 16), 40 | (4 << 16),
+    0x60000000, 96 | (64 << 16), 16 | (16 << 16),
+    0x600000ff, 144 | (96 << 16), 8 | (8 << 16),
+}
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer1<const>: *word = 0x0801035c
-local source1<const>: *word = 0x08010360
-local window1<const>: *word = 0x08010364
-local extent1<const>: *word = 0x08010368
-local framebuffer2<const>: *word = 0x0801036c
-local source2<const>: *word = 0x08010370
-local window2<const>: *word = 0x08010374
-local extent2<const>: *word = 0x08010378
-local pcrtc_csr<const>: *word = 0x080103d4
-
--- Twelve 64x64 cells, a white L, a black square and a small red square.
--- All packets are opaque, untextured rectangles; E6 forces stored bit 15.
-rodata scene: word[] = {
-	0x600000ff, 0, 0x00400040,
-	0x6000ff00, 64, 0x00400040,
-	0x60ff0000, 128, 0x00400040,
-	0x6000ffff, 192, 0x00400040,
-	0x60ffff00, 64 << 16, 0x00400040,
-	0x60ff00ff, 64 | (64 << 16), 0x00400040,
-	0x60ffffff, 128 | (64 << 16), 0x00400040,
-	0x60202020, 192 | (64 << 16), 0x00400040,
-	0x600080ff, 128 << 16, 0x00400040,
-	0x60800080, 64 | (128 << 16), 0x00400040,
-	0x60808000, 128 | (128 << 16), 0x00400040,
-	0x60808080, 192 | (128 << 16), 0x00400040,
-	0x60ffffff, 8 | (8 << 16), 4 | (40 << 16),
-	0x60ffffff, 8 | (8 << 16), 40 | (4 << 16),
-	0x60000000, 96 | (64 << 16), 16 | (16 << 16),
-	0x600000ff, 144 | (96 << 16), 8 | (8 << 16),
-}
-rodata probes: word[3] = { 8 | (8 << 16), 96 | (64 << 16), 144 | (96 << 16) }
-
-```
-
-</section>
-
-### Draw once and finish the source image
-
-```lua
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
-end
-
--- Sole ownership of GP0, both reading circuits and raw (0,0)..(255,191).
-result.system_origin, result.system_size = system_vram_region()
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer1 = 0x000fa000
-*source1 = 0
-*window1 = 0x018553a8
-*extent1 = 0x0005f1ff
-*framebuffer2 = 0x000fa000
-*source2 = 0
-*window2 = 0x018252a8
-*extent2 = 0x000bf3ff
-*gp1 = 0x09000000
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-*gp0 = 0xe6000001
 for index = 0, #scene - 1 do
-	*gp0 = scene[index]
-end
-for index = 0, #probes - 1 do
-	*gp0 = 0xc0000000
-	*gp0 = probes[index]
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.samples[index] = *gp0
+    *gp0 = scene[index]
 end
 while (*gp1 & 0x04000000) == 0 do
 end
-
 ```
 
-### Publish A, then change only the source for B
+The three marked source pixels `(8,8)`, `(96,64)` and `(144,96)` store
+FFFFH, 8000H and 801FH respectively. A 1×1 C0 read after READY returns that
+raw word in its low half and zero in its high half; it is not a read of the
+composed output.
+
+Use a VBlank sequence word shared by the entry code and its interrupt handler.
+This fragment owns the central interrupt mask and uses ordinary cartridge
+interrupt entry with CPU interrupt acceptance enabled:
 
 ```lua
--- A: source(0,0), cutout destination(64,48), fixed circuit-2 canvas.
+bss vblank_sequence: word
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local pmode<const>: *word = 0x08010354
+local source1<const>: *word = 0x08010360
+local window1<const>: *word = 0x08010364
+
+function irq(flags)
+    if (flags & 4) ~= 0 then
+        *vblank_sequence = *vblank_sequence + 1
+    end
+    *irq_ack = flags & 4
+end
+
+-- A: enable the prepared composition; observe a fresh latch edge.
+*irq_mask = 0
 *pmode = 0x0000ff23
-*irq_ack = 0x00000004
-local before_a<const> = result.vblank_sequence
-result.before_vblank[0] = before_a
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_a do
-	halt_until_irq
-end
-result.after_vblank[0] = result.vblank_sequence
-result.programmed_source[0] = *source1
-result.programmed_window[0] = *window1
-result.completed_phase = 1
-local hold_a<const> = result.vblank_sequence
-while result.vblank_sequence - hold_a < 2 do
-	halt_until_irq
-end
-
--- B: change only the circuit-1 source origin, not pixels or display geometry.
-*irq_mask = 0
-*source1 = 0x00008020
-*irq_ack = 0x00000004
-local before_b<const> = result.vblank_sequence
-result.before_vblank[1] = before_b
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_b do
-	halt_until_irq
-end
-result.after_vblank[1] = result.vblank_sequence
-result.programmed_source[1] = *source1
-result.programmed_window[1] = *window1
-result.completed_phase = 2
-local hold_b<const> = result.vblank_sequence
-while result.vblank_sequence - hold_b < 2 do
-	halt_until_irq
-end
-
-```
-
-### Keep the source and move its window for C
-
-```lua
--- C: keep the new source; move its window 32 output pixels to the right.
-*irq_mask = 0
-*window1 = 0x01855428
-*irq_ack = 0x00000004
-local before_c<const> = result.vblank_sequence
-result.before_vblank[2] = before_c
-*irq_mask = 0x00000004
-while result.vblank_sequence == before_c do
-	halt_until_irq
-end
-result.after_vblank[2] = result.vblank_sequence
-result.programmed_source[2] = *source1
-result.programmed_window[2] = *window1
-result.completed_phase = 3
-while true do
-	halt_until_irq
+*irq_ack = 4
+local before<const> = *vblank_sequence
+*irq_mask = 4
+while *vblank_sequence == before do
+    halt_until_irq
 end
 ```
 
-### Observe each stage after VBlank
-
-Programmed-word reads reflect writes immediately; normal display geometry uses the configuration latched at VBlank entry. For each stage, mask VBlank delivery, write the final display word, acknowledge stale controller VBlank bit 2, record the callback sequence, unmask bit 2, and wait for a new sequence. Display publication precedes VBlank interrupt delivery. This sequence does not make several register writes atomic, alter timing words, or restart the beam.
-
-The program owns GP0, both circuits, its direct VBlank handler, and the image rectangle (0, 0) through (255, 191). It assumes no other reader, writer, or supervisor takeover. Its chosen rectangle excludes the firmware region reported by the BIOS query; that does not establish that every address outside the reported region is free.
+For B, repeat the masked publication sequence with `*source1 = 0x00008020`
+in place of the PMODE store. For C, use `*window1 = 0x01855428` instead.
+Finish observing each stage before programming the next. An edge discarded by
+the stale-request acknowledgement can add a refresh; the later observed edge
+has latched the new setting. Masking delivery does not stop the latch or make
+several stores atomic. An immediate source/window read reports the programmed
+word, not display acceptance.
 
 <section class="keep-together">
 
@@ -1525,95 +1415,23 @@ These expanded RGB555 values are not raw GX16 words. Every sample has alpha `80H
 
 </section>
 
-### Complete BLua program
+### Upload and select the strip
 
-The program uploads the sixteen source pixels, recovers all eight packed words
-through GPUREAD, waits for GPU idle, and enables circuit 1. It owns GP0, circuit 1,
-the direct VBlank handler, and the raw source row X=32–47, Y=16; no other reader,
-writer or supervisor may take them over during the example. This fixed row is
-not a general local-memory allocation scheme.
-
-The display words use the normal VBlank-entry latch. After its last display
-write, the program acknowledges stale controller VBlank bit 2 and waits for a
-fresh callback sequence. The retained source words and immediate programmed-word
-reads do not by themselves verify the displayed selection; the separate output
-strip above shows that selection.
-
-<section class="keep-together">
-
-Create `results.lua` as the complete const module below. It retains the source
-readback, programmed words and before/after callback sequence.
+Start from reset timing with both circuits disabled and exclusive ownership of
+GP0, circuit 1, the VBlank handler and raw row 16, X=32…47. The following eight
+payload words store the sixteen consecutive GX16 samples. GP0 coordinates pack
+Y at bit 16; DISPFB source coordinates pack it at bit 11.
 
 ```lua
-module<const>
-
-struct pcrtc_sampling_result
-	completed: word
-	vblank_sequence: word
-	before_vblank: word
-	after_vblank: word
-	programmed_source: word
-	programmed_window: word
-	programmed_extent: word
-	source_words: word[8]
-end
-
-bss result: pcrtc_sampling_result
-
-return { result = result }
-```
-
-</section>
-
-<section class="keep-together">
-
-### Declare the source row and VBlank handler
-
-Create `cart.lua` by concatenating the following three blocks in order.
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *pcrtc_sampling_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
+rodata pixels: word[8] = {
+    0x80018000, 0x80038002, 0x80058004, 0x80078006,
+    0x80098008, 0x800b800a, 0x800d800c, 0x800f800e,
+}
 local framebuffer<const>: *word = 0x0801035c
 local source<const>: *word = 0x08010360
 local window<const>: *word = 0x08010364
 local extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
--- Sixteen adjacent GX16 source pixels: red levels 0..15, stored bit 15 set.
-rodata pixels: u16[16] = {
-	0x8000, 0x8001, 0x8002, 0x8003, 0x8004, 0x8005, 0x8006, 0x8007,
-	0x8008, 0x8009, 0x800a, 0x800b, 0x800c, 0x800d, 0x800e, 0x800f,
-}
-
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
-end
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Upload and recover the source pixels
-
-Continue in the same entry module; every GP0 access uses the same port address.
-
-```lua
--- Own GP0, circuit 1, the VBlank handler and raw row16, X32..47.
 *irq_mask = 0
-*pcrtc_csr = 0x00000200
 *pmode = 0
 *framebuffer = 0x000fa000
 *source = 0x00008020
@@ -1621,65 +1439,23 @@ Continue in the same entry module; every GP0 access uses the same port address.
 *extent = 0x0000001f
 *gp1 = 0x09000000
 *gp0 = 0xe6000000
-
--- GP0 packs Y at bit16; DISPFB above packs source Y at bit11.
 *gp0 = 0xa0000000
 *gp0 = 32 | (16 << 16)
 *gp0 = 16 | (1 << 16)
-local pixel_words<const>: *word = pixels
-for index = 0, sizeof(u16[16]) // 4 - 1 do
-	*gp0 = pixel_words[index]
-end
-*gp0 = 0xc0000000
-*gp0 = 32 | (16 << 16)
-*gp0 = 16 | (1 << 16)
 for index = 0, 7 do
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.source_words[index] = *gp0
+    *gp0 = pixels[index]
 end
 while (*gp1 & 0x04000000) == 0 do
 end
-
 ```
 
-</section>
-
-<section class="keep-together">
-
-### Enable the circuit and wait for its publication
-
-Finish the entry module with the display publication and retained observations.
-
-```lua
--- Publish the single circuit: 32 signal units become eight output pixels.
-*pmode = 0x0000ff21
-*irq_ack = 0x00000004
-local before<const> = result.vblank_sequence
-result.before_vblank = before
-*irq_mask = 0x00000004
-while result.vblank_sequence == before do
-	halt_until_irq
-end
-result.after_vblank = result.vblank_sequence
-result.programmed_source = *source
-result.programmed_window = *window
-result.programmed_extent = *extent
-result.completed = 1
-while true do
-	halt_until_irq
-end
-```
-
-</section>
-
-Create `res/manifest/manifest.rommanifest` with the following contents:
-
-```yaml
-title: PCRTC Source Sampling Manual Example
-hardware:
-    - type: rom
-```
+Use the ports and VBlank handler from the preceding example. Publish with
+PMODE=`0000FF21H`, acknowledge stale controller VBlank bit 2, sample the
+sequence while masked, unmask bit 2 and wait for a changed sequence. The
+32-signal-unit window becomes eight output pixels; the selected source words
+are exactly those in the sampling table. Keep the source row unchanged while
+it remains displayed. A C0 request for the original 16×1 row, if used, returns
+eight packed words; it does not return the eight-pixel composed strip.
 
 <section class="keep-together">
 
@@ -1730,143 +1506,27 @@ One program exclusively owns the ports, circuits, VBlank handler, and surfaces. 
 | ![B: blue left and red right](figures/pcrtc-mix-source.png) | ![C: green left and red right](figures/pcrtc-mix-background.png) |
 | *PMODE=8003H: source 1’s alpha split yields blue source 2 on the left and red source 1 on the right.* | *PMODE=8083H: SLBG substitutes green background for blue source 2; source 1’s right half stays red.* |
 
-<section class="keep-together">
+### Program the composition comparison
 
-### Complete BLua composition cartridge
+Use the mapped GP0/GP1 ports and VBlank handler above. Under exclusive ownership
+of both circuits and the two surfaces, mask delivery, request PCRTC RESET and
+keep PMODE zero. Program these framebuffer and window words; both source origins
+are zero:
 
-For project layout, building and checking this cartridge, use the [Build and inspect example cartridges](../programming/getting-started.md#build-and-inspect-pcrtc-composition) development guide — “Build and inspect PCRTC composition”. No earlier example cartridge is required.
+| Register | Address | Word |
+|---|---|---|
+| DISPFB1_LOW / HIGH | `0801035C` / `08010360` | `000FA000` / `00000000` |
+| DISPLAY1_LOW / HIGH | `08010364` / `08010368` | `018252A8` / `000BF3FF` |
+| DISPFB2_LOW / HIGH | `0801036C` / `08010370` | `000FA040` / `00000000` |
+| DISPLAY2_LOW / HIGH | `08010374` / `08010378` | `018252A8` / `000BF3FF` |
+| BGCOLOR_LOW | `0801037C` | `0000FF00` |
 
-Create `results.lua` as this complete const module. Explicit BSS retains raw source words and programmed-word/callback observations, not a composed-output readback port.
-
-```lua
-module<const>
-
-struct pcrtc_mix_result
-	completed_phase: word
-	vblank_sequence: word
-	system_origin: word
-	system_size: word
-	source_words: word[3]
-	before_vblank: word[4]
-	after_vblank: word[4]
-	programmed_pmode: word[4]
-end
-
-bss result: pcrtc_mix_result
-
-return { result = result }
-```
-
-</section>
-
-<section class="keep-together">
-
-Create `res/manifest/manifest.rommanifest` with these complete contents:
-
-```yaml
-title: PCRTC Composition Manual Example
-hardware:
-    - type: rom
-```
-
-</section>
-
-<section class="keep-together">
-
-### Declare the mapped ports
-
-Create `cart.lua` by concatenating the following five blocks in order.
+Close the GP1 Y-address gate with `09000000H`. Establish E1=`0400H`, E2=0,
+drawing area `(0,0)…(255,191)` and zero drawing offset, then prepare both raw
+sources using complete GP0 packets:
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local system_vram_region<const> = require('gpu/system_vram_region')
-local result<const>: *pcrtc_mix_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer1<const>: *word = 0x0801035c
-local source1<const>: *word = 0x08010360
-local window1<const>: *word = 0x08010364
-local extent1<const>: *word = 0x08010368
-local framebuffer2<const>: *word = 0x0801036c
-local source2<const>: *word = 0x08010370
-local window2<const>: *word = 0x08010374
-local extent2<const>: *word = 0x08010378
-local background<const>: *word = 0x0801037c
-local pcrtc_csr<const>: *word = 0x080103d4
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Supply the complete PMODE words and VBlank handler
-
-ALP remains 128 in all four words. Compare A/B for MMOD, B/C for SLBG and B/D for AMOD; moving from C to D also restores SLBG to zero.
-
-```lua
--- A: constant; B: source alpha; C: background; D: circuit-2 output alpha.
-rodata modes: word[4] = { 0x00008023, 0x00008003, 0x00008083, 0x00008043 }
-rodata probes: word[3] = {
-	64 | (96 << 16), 192 | (96 << 16), 64 | (352 << 16),
-}
-
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		result.vblank_sequence = result.vblank_sequence + 1
-	end
-	*irq_ack = flags & 0x00000004
-end
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Configure both reading circuits and the owned sources
-
-Both circuits select equal full-size windows. Their framebuffer bases differ; both relative source origins stay zero. The BIOS query reports firmware reservations, not a general allocator.
-
-```lua
--- Own both reading circuits, GPU ports, handler and both 256x192 sources.
-result.system_origin, result.system_size = system_vram_region()
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer1 = 0x000fa000
-*source1 = 0
-*window1 = 0x018252a8
-*extent1 = 0x000bf3ff
-*framebuffer2 = 0x000fa040
-*source2 = 0
-*window2 = 0x018252a8
-*extent2 = 0x000bf3ff
-*background = 0x0000ff00
-*gp1 = 0x09000000
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-
-```
-
-</section>
-
-<section class="keep-together">
-
-### Draw and recover the immutable source pixels
-
-The two circuit-1 halves have identical red RGB but different stored bit15. Circuit2 reads blue from the separate raw rows256–447. Drain the absolute C0 probes, then wait separately for GPU idle.
-
-```lua
--- Circuit 1 is red throughout, but its two halves have different stored bit15.
+-- Red, left half with bit15 clear; right half with bit15 set.
 *gp0 = 0xe6000000
 *gp0 = 0x600000ff
 *gp0 = 0
@@ -1876,61 +1536,35 @@ The two circuit-1 halves have identical red RGB but different stored bit15. Circ
 *gp0 = 128
 *gp0 = 128 | (192 << 16)
 
--- Circuit 2 is opaque blue at raw rows256..447, not a display source-Y shift.
-*gp0 = 0xe3000000 | (256 << 10)
-*gp0 = 0xe40000ff | (447 << 10)
-*gp0 = 0xe5000000 | (256 << 11)
+-- Blue with bit15 set, in the second framebuffer at raw rows 256..447.
+*gp0 = 0xe3040000
+*gp0 = 0xe406fcff
+*gp0 = 0xe5080000
 *gp0 = 0x60ff0000
 *gp0 = 0
 *gp0 = 256 | (192 << 16)
-
--- C0 takes absolute raw positions, independent of E5.
-for index = 0, 2 do
-	*gp0 = 0xc0000000
-	*gp0 = probes[index]
-	*gp0 = 0x00010001
-	while (*gp1 & 0x08000000) == 0 do
-	end
-	result.source_words[index] = *gp0
-end
 while (*gp1 & 0x04000000) == 0 do
 end
-
 ```
 
-</section>
+The red source words are 001FH and 801FH; the blue source word is FC00H.
+E5 affects these drawing coordinates, whereas a C0 read takes absolute raw
+coordinates. No source pixels change during the four comparisons.
 
-<section class="keep-together">
-
-### Publish each PMODE word and observe a fresh callback
-
-Source pixels and both source/window configurations remain unchanged throughout all four phases. Programmed-word readback is not proof of display-latch visibility. The two extra callback increments hold each early case for viewing; they are not fixed latency guarantees.
+To select any one phase, use its PMODE word from the table in the same
+masked publication sequence shown for stage A. For example, phase C is:
 
 ```lua
--- Source pixels and both source/window settings remain unchanged from here.
-for phase = 0, 3 do
-	*irq_mask = 0
-	*pmode = modes[phase]
-	result.programmed_pmode[phase] = *pmode
-	*irq_ack = 0x00000004
-	local before<const> = result.vblank_sequence
-	result.before_vblank[phase] = before
-	*irq_mask = 0x00000004
-	while result.vblank_sequence == before do
-		halt_until_irq
-	end
-	result.after_vblank[phase] = result.vblank_sequence
-	result.completed_phase = phase + 1
-	if phase < 3 then
-		local hold<const> = result.vblank_sequence
-		while result.vblank_sequence - hold < 2 do
-			halt_until_irq
-		end
-	end
-end
-while true do
-	halt_until_irq
+*irq_mask = 0
+*pmode = 0x00008083
+*irq_ack = 4
+local before<const> = *vblank_sequence
+*irq_mask = 4
+while *vblank_sequence == before do
+    halt_until_irq
 end
 ```
 
-</section>
+Observe that phase before selecting another. Immediate PMODE readback confirms
+the programmed word only. The output plates show RGB; compare the separate
+alpha results in the table when distinguishing phases B and D.

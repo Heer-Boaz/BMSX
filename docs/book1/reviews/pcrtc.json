@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Section 3 supplies ordered raw-word source/window and mask/acknowledge/unmask examples with explicit starting assumptions, derived values, latch visibility, output alpha, and the HSINT race. Hardware cautions are bounded by the sourced contracts. Section5 now supplies a complete154-line BLua/BIOS cartridge, exact raw stage words and source probes, and three actual output plates isolating source-origin versus output-window movement. Ordinary guest, independent source/image and byte-exact fresh-reader checks pass within the controlled ownership scope. Section6 adds a complete91-line executed BLua cartridge and actual8\u00d71 output strip, all-source-word guest assertions, exact RGB checks and byte-exact fresh public-only reconstruction. Section7 supplies a complete125-line BLua cartridge and three real RGB plates from four phases, unchanged source/window/background state, raw source probes and fresh VBlank observations; A/B, B/C and B/D isolate MMOD, SLBG and AMOD respectively.",
+			"resolution": "Compact timing/composition sequences and numerical sampling/output examples accompany complete register and field references.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/pcrtc-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/pcrtc-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/pcrtc-print.md"
 		}
 	}

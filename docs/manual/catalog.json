@@ -7,7 +7,7 @@
 		"review": "docs/book1/reviews/console.json"
 	},
 	"cpu": {
-		"book": "I",
+		"book": "II",
 		"label": "CPU",
 		"chapter": "docs/book1/cpu.md",
 		"facts": "docs/book1/facts/cpu.md",

@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete two-module BIOS-style BLua program uses typed ports, readonly operands and explicit BSS. Actual guest execution checks 60 RAM words, both BUSY channels, final words/endpoints, separate DMA/GPU waits and a real red pixel readback; exact printed listings and full-reader review pass.",
+			"resolution": "Direct register sequences and worked route/tail cycle calculations explain programming, shared-channel arbitration, completion and destination readiness.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/dma-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/dma-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/dma-print.md"
 		}
 	}

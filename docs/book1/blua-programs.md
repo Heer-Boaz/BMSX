@@ -373,8 +373,10 @@ The spellings are case-sensitive; an optional semicolon may follow the marker.
 | `module<entry>` | The program's entry chunk, entered after its ordinary dependencies are initialized. |
 | `module<const>` | A compile-time export namespace or root static function, not an allocated module table. |
 
-A cartridge program has exactly one `module<entry>` among its supplied modules.
-The marker selects a role, not a name. Duplicate paths are compile errors.
+A linked program has one entry chunk. `module<entry>` declares that role;
+it does not name the module. Module names are supplied literal paths using `/`,
+not numeric asset identifiers. Dots are not converted to slashes, and two
+supplied modules cannot share one path. The module marker does not choose a physical cartridge socket or enter it.
 
 ### Import a literal module path
 
@@ -413,6 +415,9 @@ expression reads its retained export rather than rerunning that code at the
 written import line. Successful initialization is recorded separately from the
 export, so exporting `nil` or `false` does not cause another initialization.
 This is not a promise about initialization across resets or replaced programs.
+An ordinary module with no final single-expression export supplies `true`;
+additional requested import results are nil. An earlier return does not select
+an alternative published export.
 
 Imports of an ordinary exported table read the same published root.
 Its fields remain runtime fields: replacing a function field changes what a later
@@ -511,10 +516,6 @@ participants are last, with declaration order retained within each module.
 This sequence does not rerun section initialization or entry, and it has no
 per-participant completion latch. `<init>` is therefore not a once-only constructor
 or a promise that each reset or program replacement will call the function.
-
-For explicit participant invocation during development, see the
-[development companion](../programming/getting-started.md#development-invocation-of-init).
-This does not change the normal-startup rule.
 
 ## Compiler-owned access forms and intrinsics
 
@@ -690,8 +691,6 @@ Instrumentation selection is a compilation choice: erase all trace statements, s
 or select a named set of channels. Erasure is the default. Argument-count and literal-channel
 requirements still apply to erased statements. An erased statement evaluates neither its subject nor
 its payload expressions. Do not put required program effects in those expressions.
-For the supplied build routes and their selection limits, see the
-[development companion](../programming/getting-started.md#trace-selection-in-the-supplied-build-routes).
 
 For a selected channel, `trace` evaluates the subject and reads its channel sink. If that sink is
 falsey, no payload expression is evaluated and no record is made. Otherwise it evaluates the payload
@@ -748,242 +747,19 @@ end
 The interrupt handler and sequence belong to the operation being awaited. An interrupt alone does
 not establish that the desired transfer or frame completed.
 
-## Complete example: static records and typed address views
-
-This complete two-module program copies two records from RODATA into BSS,
-records the initial storage contents, and advances a DATA counter. It produces
-no visible image and does not configure or submit a hardware job.
-For project setup, see [Getting started](../programming/getting-started.md).
-
-<div class="keep-together">
-
-### `storage.lua`
-
-The constant module declares the layouts and static storage. Its exports supply
-storage addresses and the record count, not newly allocated copies of the data.
-
-```lua
-module<const>
-
-local input_count<const> = 2
-
-struct memory_sample
-	tag: u8
-	value: word
-	samples: u16[2]
-end
-
-struct memory_status
-	initial_counter: word
-	initial_output_or: word
-	completed: word
-end
-
-rodata inputs: memory_sample[input_count] = {
-	{ tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
-	{ tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
-}
-
-data counter: word = 0x12345678
-bss output: memory_sample[input_count]
-bss status: memory_status
-
-return {
-	inputs = inputs,
-	input_count = input_count,
-	counter = counter,
-	output = output,
-	status = status,
-}
-```
-
-</div>
-
-<div class="keep-together">
-
-### `cart.lua`
-
-The entry module requires `storage` and gives its exported addresses typed
-views. DATA initialization and BSS clearing precede entry. The two views of
-`storage.output` address the same bytes: one selects records, the other words.
-
-```lua
-module<entry>
-
-local storage<const> = require('storage')
-local inputs<const>: *memory_sample = storage.inputs
-local output<const>: *memory_sample = storage.output
-local counter<const>: *word = storage.counter
-local status<const>: *memory_status = storage.status
-local output_words<const>: *word = storage.output
-
--- Observe startup contents before writing the output records.
-status.initial_counter = *counter
-local initial_output_or = 0
-for index = 0, storage.input_count * sizeof(memory_sample) // sizeof(word) - 1 do
-	initial_output_or = initial_output_or | output_words[index]
-end
-status.initial_output_or = initial_output_or
-
--- Typed arrays start at zero. Copy scalar fields, not whole records.
-for index = 0, storage.input_count - 1 do
-	output[index].tag = inputs[index].tag
-	output[index].value = inputs[index].value
-	output[index].samples[0] = inputs[index].samples[0]
-	output[index].samples[1] = inputs[index].samples[1]
-end
-*counter = *counter + storage.input_count
-status.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-</div>
-
-### Layout, addresses, and count units
-
-`input_count` is a count of records, not bytes or an address. Its single value,
-2, supplies both array dimensions and the exported count. The named constant
-also fits this constant-module export form; substituting `#inputs` directly
-in the export table is not accepted.
-
-| Part of `memory_sample` | Byte offset | Bytes |
-|---|---:|---:|
-| `tag` | 0 | 1 |
-| Alignment padding | 1 | 3 |
-| `value` | 4 | 4 |
-| `samples` | 8 | 4 |
-
-A record has alignment 4 and size 12 bytes; either two-record array occupies
-24 bytes. The status record occupies 12 bytes, with word fields at offsets
-0, 4, and 8. The declarations provide linked storage rather than chosen RAM
-base numbers.
-
-Typed arrays start at index zero. Relative to the input base, `&inputs[1]`
-is at byte offset 12, `&inputs[0].value` at 4,
-`&inputs[0].samples[0]` at 8, and `&inputs[1].samples[1]` at 22.
-The corresponding output selections have the same offsets. A byte view advanced
-by one addresses the next byte, not the next record: here that byte is padding.
-
-<div class="keep-together">
-
-### Completed contents
-
-Before copying, the program saves the initial counter, `0x12345678`, and ORs
-all six output words. The initial OR is zero. The copy writes four scalar
-fields per record; it is not a whole-record assignment. The three padding
-bytes in each output record remain zero.
-
-The output's six words, in increasing address order, are:
-
-```text
-00000011 12345678 33441122 00000022 9ABCDEF0 77885566
-```
-
-</div>
-
-These hexadecimal data words equal the input's six words. The final counter
-is `0x1234567a`; the status fields are `initial_counter = 0x12345678`,
-`initial_output_or = 0`, and `completed = 1`.
-
-Entry then loops on `halt_until_irq`. This does not create a completion
-interrupt. The example demonstrates memory contents, not rendering, device
-completion, asynchronous buffer reuse, or persistence. A hardware-facing
-buffer still needs its device's address, layout, count-unit, admission, and
-completion/lifetime contract.
-
-## Existing source forms and linked programs
-
-This chapter describes source programs built into a cartridge: spelling and
-statements, file-to-module names, literal imports, startup exports and the
-installed BIOS environment. It is not the contract of the separate BIOS
-runtime source compiler or firmware shell.
-
-The [CPU reference](cpu.md#calls-closures-globals-and-tables) defines values,
-ordinary calls, results, captures and global operations; its
-[operator reference](cpu.md#blua-operators-and-instruction-costs) defines their
-execution. [Memory](memory.md#typed-byte-storage-and-address-views) defines
-static storage, typed declarations, address views and initialization. These
-remain the companion definitions for the source forms below.
-
-Each complete program supplies every source file. Follow its
-separate development-companion route for the project tree, manifest, build
-commands and output observation:
-[modules and globals](../programming/getting-started.md#build-and-inspect-modules-and-globals),
-[numeric loops](../programming/getting-started.md#build-and-inspect-numeric-loops), or
-[generic iteration](../programming/getting-started.md#build-and-inspect-generic-iteration).
-
-## Source text and names
-
-This section describes the source forms accepted by the cartridge compiler. The module sections explain how source files participate in a linked cartridge. Source grammar and SDK build-quality policy are separate: a form accepted by the parser can still be subject to additional build rules.
-
-For runtime values, arithmetic, condition evaluation and call results, use the [CPU reference](cpu.md). For typed byte storage, pointers and mapped accesses, use the [Memory reference](memory.md).
-
-### Identifiers and keywords
-
-An identifier begins with a lowercase ASCII letter, `_` or `$`. Following characters may also be decimal digits. Uppercase ASCII letters are rejected anywhere in an identifier; non-ASCII letters are not identifier characters.
-
-| Accepted identifiers | Not identifier spellings |
-| --- | --- |
-| `position`, `frame2`, `_scratch`, `$state` | Names beginning with a digit, containing an uppercase letter, or using non-ASCII letters |
-
-<div class="keep-together">
-
-The reserved keywords are:
-
-```text
-and break do else elseif end false for function goto halt_until_irq
-if in local nil not or repeat return then true until while
-```
-
-</div>
-
-Other source features have context-sensitive spellings. For example, `const`, `entry`, `init`, `struct`, `bss`, `data`, `rodata`, `sizeof` and `offsetof` are not members of this lexical keyword list. Their use is defined by the relevant declaration, module or memory form.
-
-The compiler also reserves these names against declaration as locals or parameters:
-
-```text
-mem mem8 mem16le mem32le memf32le memf64le blua32 cop0
-```
-
-They name compiler-owned mapped-access or intrinsic forms, not ordinary replaceable local variables. Their detailed forms are covered by the [Memory reference](memory.md) and [CPU reference](cpu.md). This is not a complete catalogue of BIOS names or SDK naming policies.
-
-### Comments, whitespace and statement boundaries
-
-Spaces, horizontal tabs, carriage returns, vertical tabs and line feeds separate tokens. Comments are also skipped between significant tokens.
-
-```lua
--- a comment through the end of this line
-
---[[
-a long comment
-]]
-
---[=[
-a long comment that can contain ]]
-]=]
-```
-
-Long comments use matching bracket delimiters with the same number of `=` characters. They do not nest: the first matching closing delimiter ends the comment. An unterminated long comment is an error.
-
-Statements generally do not need semicolons. A semicolon on its own in a block is ignored.
-
-```lua
-local position = 0
-position += 2;
-;
-position += 3
-```
-
-Do not treat every newline as interchangeable with a space. A `*` that begins a new line is not consumed as a binary continuation of the preceding expression; this allows a dereference statement to start on that line. Keep a multiplication continuation's `*` on the preceding expression line. Surrounding the expression with parentheses does not remove this newline rule. This is a specific rule for `*`, not a general rule for every operator.
-
-`return` has its own boundary rules, described under [Return statements](#return-statements).
-
-## Literal expressions
-
-The literal expression forms are `nil`, `true`, `false`, Number literals and String literals. Their runtime representations and operations are specified in the [CPU reference](cpu.md), with storage details in the [Memory reference](memory.md).
+## Worked static storage
+
+A [record-copy example](memory.md#worked-example-prepare-and-copy-two-records)
+combines RODATA, DATA and BSS with zero-based typed record views. The layouts
+and address calculations there also apply to module exports: exporting a storage
+name exports its numeric address, not a copy of the bytes.
+
+## BLua source semantics
+
+This section records source conventions and behavior that must not be inferred
+from another Lua edition. General Lua syntax and introductory programming are
+outside this reference. Runtime values, arithmetic and instruction costs are
+specified by the [CPU reference](cpu.md).
 
 ### Number spellings
 
@@ -1006,373 +782,56 @@ The expressions `-0` and `-0.0` produce negative zero. Constant binding and load
 
 Hexadecimal spelling does not create a distinct address or register-word literal type. It is another spelling of a Number literal; address and typed-storage use belongs to the [Memory reference](memory.md).
 
-### Short Strings
-
-A short String uses matching single or double quotes. The other quote can appear without escaping.
-
-```lua
-local prompt = "pilot's name"
-local message = 'press "start"'
-local lines = "ready\nlaunch"
-```
-
-<div class="keep-together">
-
-A literal line feed before the closing quote is rejected, as is an unterminated short String. The supported escapes are:
-
-| Escape | Decoded character or action |
-| --- | --- |
-| `\a` | Alert |
-| `\b` | Backspace |
-| `\f` | Form feed |
-| `\n` | Line feed |
-| `\r` | Carriage return |
-| `\t` | Horizontal tab |
-| `\v` | Vertical tab |
-| `\\` | Backslash |
-| `\"` | Double quote |
-| `\'` | Single quote |
-| `\xHH` | Character selected by exactly two hexadecimal digits |
-| `\ddd` | Character selected by one to three decimal digits, with a value no greater than 255 |
-| `\z` | No character; discard the following contiguous whitespace |
-
-</div>
-
-Here `HH` and `ddd` are notation for digits, not literal suffixes. `\z` consumes spaces, horizontal tabs, carriage returns, line feeds, vertical tabs and form feeds until the next non-whitespace character.
-
-```lua
-local message = "prepare\z
-    for launch"
-```
-
-Unsupported escapes are rejected. There is no `\u{...}` escape or backslash-newline continuation. `\0` is the decimal escape for zero, not a separate escape family. Escape decoding does not by itself specify the resulting String's byte encoding; use the [CPU reference](cpu.md) and [Memory reference](memory.md) for that contract.
-
-### Long Strings
-
-Long Strings use matching bracket delimiters, with an optional matching run of `=` characters:
-
-```lua
-local briefing = [[
-reach the beacon
-then return to the dock
-]]
-
-local marker = [=[a literal ]] inside the text]=]
-```
-
-One initial carriage return, carriage-return/line-feed pair or line feed immediately after the opening delimiter is skipped. After that, content is copied literally until the matching close delimiter. Short-String escapes are not translated. The delimiters do not nest, and an unterminated long String is rejected.
-
-## Declarations and assignment
-
-### Local bindings
-
-An ordinary local declaration names one or more bindings, optionally followed by an expression list:
-
-```lua
-local position
-local left, right
-local x, y = 12, 24
-```
-
-An uninitialized ordinary local is initialized to `nil`. Expression-list adjustment is part of the [CPU call-and-result contract](cpu.md), not a separate rule introduced by declaration syntax.
-
-Each name may carry `<const>` immediately after it:
-
-```lua
-local stride<const> = 4
-local width<const>, height<const> = 32, 24
-```
-
-A const binding requires an initializer position under the compiler's expression-list rules. Later rebinding is rejected, including rebinding through a captured const name. This is constness of the binding, not recursive immutability of the value it names: assignment to a member or index is a different target category. The `<close>` attribute is unsupported, and other local attribute names are rejected.
-
-A typed-pointer annotation, when used, follows the attribute: `local cursor<const>:*type = expression`. Typed declarations and their storage contract are defined in the [Memory reference](memory.md).
-
-Ordinary initializer expressions are resolved before the new local names become visible. In the following fragment, the inner initializer reads the preceding visible `position`, not an uninitialized version of the new binding:
-
-```lua
-local position = 8
-do
-    local position = position + 4
-    position += 2
-end
-```
-
-<div class="keep-together">
-
-Two function forms make their local binding available to their own function body for recursion:
-
-- `local function name(parameters) ... end`;
-- a single-name, single-value declaration of the form `local name<const> = function(parameters) ... end`.
-
-Do not generalize this exception to other initializers or to multi-name declarations.
-
-</div>
-
-### Assignment targets
-
-Assignment without `local` writes to its targets:
-
-```lua
-position = next_position
-left, right = right, left
-settings.speed = 3
-samples[index] = value
-```
-
-For a bare name, assignment updates its resolved visible binding. A write with no lexical binding declares a global through the compiler's binding rules; there is no separate `global` declaration keyword. This does not mean that every unresolved read or misspelled name is accepted. Global namespace, storage and lifetime rules belong to the module material and [CPU reference](cpu.md).
-
-The assignable source forms are a bare identifier, a named member, an indexed expression and a unary dereference. A call or a numeric expression is not an assignment target. Dereference assignment additionally requires the typed-storage form accepted by the compiler; an untyped dereference assignment is rejected. See the [Memory reference](memory.md).
-
-The augmented forms are exactly:
-
-| Source form | Required shape |
-| --- | --- |
-| `target += expression` | One target and one expression |
-| `target -= expression` | One target and one expression |
-| `target *= expression` | One target and one expression |
-| `target /= expression` | One target and one expression |
-| `target %= expression` | One target and one expression |
-| `target ^= expression` | One target and one expression |
-
-There are no `//=`, `&=`, `|=`, shift-assignment or `..=` forms, and no increment/decrement statement forms. In particular, `--` begins a comment.
-
-An arbitrary expression is not a standalone statement. Apart from dedicated statement forms, a non-assignment expression statement must be a call.
-
-## Functions and calls
-
-<div class="keep-together">
-
-### Function declarations and expressions
-
-A local function declaration uses one bare name:
-
-```lua
-local function advance(position, velocity)
-    return position + velocity
-end
-```
-
-</div>
-
-A named function declaration can also use `function name(...) ... end` or a dotted target:
-
-```lua
-local motion = {}
-
-function motion.advance(position, velocity)
-    return position + velocity
-end
-```
-
-Further dotted path components are permitted. The declaration stores the function in that target; it does not create missing namespace tables. The local-function form does not accept a dotted or colon target.
-
-<div class="keep-together">
-
-A colon declaration adds an implicit first parameter named `self`:
-
-```lua
-local counter = { value = 0 }
-
-function counter:add(amount)
-    self.value += amount
-end
-
-counter:add(3)
-```
-
-</div>
-
-An anonymous function is an expression:
-
-```lua
-local advance<const> = function(position, velocity)
-    return position + velocity
-end
-```
-
-Written parameters are comma-separated identifiers. A final `...` is permitted, including as the entire parameter list; no parameter may follow it. Captures, frames, argument adjustment, vararg values and call results are specified by the [CPU reference](cpu.md).
-
-### `<init>` and normal startup
-
-The `<init>` attribute is permitted only on a local function declared directly at chunk or runtime-module top level, with the attribute between its name and parameter list: `local function name <init>()`. The function must have no parameters or varargs. It cannot be declared in a compile-time module, inside another function or a block (including `if`, loop, and `do` bodies), or as an ordinary global or method declaration. A non-entry module containing such a function must be in the [scheduled module set](#initialization-happens-before-entry); an otherwise unscheduled source file is rejected. The declaration creates an ordinary lexical closure; it does not execute the function body. **`<init>` does not call the function automatically during normal cartridge startup.** Normal startup initializes the data and zero-initialized sections, performs ordinary module top-level work, and then calls the entry function. Put ordinary boot initialization in module top-level code or the entry function; explicitly call a function there if its body must run at boot.
-
-<div class="keep-together">
-
-### Call spelling
-
-The following table shows call forms. `callee`, `receiver` and the argument names stand for values supplied by the program.
-
-| Form | Source spelling |
-| --- | --- |
-| No written arguments | `callee()` |
-| Expression list | `callee(first, second)` |
-| One literal Table argument | `callee { speed = 2 }` |
-| One literal String argument | `callee "ready"`, `callee 'ready'`, `callee [[ready]]` |
-| Method call | `receiver:advance(amount)` |
-| Method with literal Table argument | `receiver:configure { speed = 2 }` |
-| Method with literal String argument | `receiver:announce "ready"` |
-
-</div>
-
-Call, index and member suffixes may be chained. A colon member must be followed by call arguments; `receiver:advance` on its own is not a colon-property expression. Receiver handling and argument/result behavior are defined by the [CPU reference](cpu.md).
+### String literal differences
+
+Quoted Strings accept `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`,
+`\\`, `\"`, `\'`, `\xHH`, one-to-three-digit decimal `\ddd` (0–255),
+and `\z` followed by discarded whitespace. Exactly two hexadecimal digits
+follow `\x`. Unsupported escapes, `\u{...}`, backslash-newline continuation,
+a literal line feed and an unterminated quoted String are rejected.
+
+Escapes select codepoints, not UTF-8 input bytes. For example,
+`'\xc3\xa9'` contains two codepoints, U+00C3 and U+00A9. Decode mapped UTF-8
+bytes explicitly with the [String BIOS interface](bios-string.md).
+Long bracket Strings skip one initial CR, CR/LF pair or LF; subsequent content
+is literal through the matching delimiter. Bracket delimiters do not nest.
+
+### Local binding differences
+
+`<const>` makes the local binding immutable, including through captures, not the
+contents of a Table it names. It requires an initializer position. `<close>`
+and other local attributes are not supported. A typed address annotation
+follows the attribute: `local cursor<const>: *word = address`.
+
+Initializers normally resolve before the new locals become visible. Two forms
+make their own name available recursively: `local function name(...) ... end`
+and a single-name, single-value `local name<const> = function(...) ... end`.
+This exception does not extend to other or multi-name initializers.
 
 ### Known-call argument diagnostics
 
-The compiler can diagnose too few written arguments when it resolves a callee signature. This minimum check counts argument expressions as written: an explicit `nil` counts as one argument. Surplus expressions are not rejected by this check. The diagnostic concerns source use, not a runtime fault. If execution reaches a source-function call, missing fixed parameters are filled with `nil`; that runtime behavior does not make every source spelling acceptable to the compiler. This describes the known-call minimum check, not all callee analysis or cartridge quality rules. See [Calls, closures, globals and tables](cpu.md#calls-closures-globals-and-tables) for the reached-call contract.
+The compiler can diagnose too few written arguments when it resolves a callee signature. This minimum check counts argument expressions as written: an explicit `nil` counts as one argument. Surplus expressions are not rejected by this check. The diagnostic concerns source use, not a runtime fault. If execution reaches a source-function call, missing fixed parameters are filled with `nil`; that runtime behavior does not make every source spelling acceptable to the compiler. See [Calls, closures, globals and tables](cpu.md#calls-closures-globals-and-tables) for the reached-call contract.
 
 ### Variable arguments and result positions
 
 `...` reads the variable arguments available to the **current call**. A nested function does not inherit an enclosing call’s variable arguments.
 
-The current software accepts `...` as an expression even when the function’s written parameter list contains no `...`, and in the entry chunk. This does not make a bare `...` a statement. A function without `...` in its parameter list has **zero available variable arguments**, even if its caller supplies extra arguments; the entry chunk likewise has zero available variable arguments.
+BLua accepts `...` as an expression even when the function’s written parameter list contains no `...`, and in the entry chunk. This does not make a bare `...` a statement. A function without `...` in its parameter list has **zero available variable arguments**, even if its caller supplies extra arguments; the entry chunk likewise has zero available variable arguments.
 
 Zero available arguments are not the same as one `nil` result. With zero available variable arguments, an open-result use of `...` supplies zero values. When a context requests a fixed number of result positions, unavailable positions are filled with `nil`; selecting one result therefore gives `nil` in this case. For argument and result transfer at the machine-call boundary, see [CPU calls](cpu.md#calls-closures-globals-and-tables).
 
-<div class="keep-together">
+### Return boundaries and grouped results
 
-### Return statements
+A newline alone does not terminate `return`. An expressionless return is
+recognized only before `end`, `else`, `elseif`, `until`, or end of source;
+`return;` is not its accepted spelling. An expressionless source return supplies
+one nil, not zero results.
 
-A return expression list is written as:
+Grouping parentheses in linked BLua source do not force a call to one result.
+For example, `local a, b = (pair())` can receive both returned values. The BIOS
+runtime-loaded language has a distinct [result-count contract](bios-loader.md#calls-and-results).
 
-```lua
-return position, velocity
-```
-
-</div>
-
-A semicolon may follow that list:
-
-```lua
-return position, velocity;
-```
-
-<div class="keep-together">
-
-An expressionless `return` is recognized only when its next significant token is `end`, `else`, `elseif`, `until` or the end of the source. A newline alone does not terminate it. For example, this still supplies the expression `position`:
-
-```lua
-return
-    position
-```
-
-</div>
-
-`return;` is not an accepted spelling of an expressionless return. To return without a written expression, place `return` before one of the terminators listed above, as in:
-
-```lua
-local function stop()
-    return
-end
-```
-
-The absence of a written expression is not a specification of a zero-result call. Return values and result adjustment are defined in the [CPU reference](cpu.md).
-
-## Expressions
-
-### Parentheses, access and constructors
-
-Parentheses group an expression and preserve the enclosed expression. They are not a separate result-count operator; do not infer different call-result adjustment merely from writing `(callee())`. Use the [CPU reference](cpu.md) for result behavior.
-
-The member and index source forms are:
-
-| Form | Spelling |
-| --- | --- |
-| Indexed access | `base[index]` |
-| Named member | `base.name` |
-| Typed member form | `base->name` |
-
-Typed interpretations, direct memory forms and address views are defined by the [Memory reference](memory.md).
-
-<div class="keep-together">
-
-A Table constructor can contain list-value fields, named fields and expression-keyed fields in the same constructor:
-
-```lua
-local route = {
-    "dock",
-    "ridge";
-    active = true,
-    [4] = "gate",
-}
-```
-
-`{}` is the empty constructor. Commas and semicolons separate fields; one trailing separator is permitted. These forms describe constructor syntax, not a Table-length or inherited-read rule.
-
-</div>
-
-<div class="keep-together">
-
-### Operator precedence
-
-The table runs from lowest precedence to highest. Binary groups associate to the left unless marked otherwise.
-
-| Precedence | Operators | Association |
-| --- | --- | --- |
-| Lowest | `or` | Left |
-| | `and` | Left |
-| | `==` `~=` `<` `<=` `>` `>=` | Left |
-| | `\|` | Left |
-| | Binary `~` | Left |
-| | `&` | Left |
-| | `<<` `>>` | Left |
-| | `..` | Right |
-| | `+` `-` | Left |
-| | `*` `/` `//` `%` | Left |
-| | Unary forms | Prefix |
-| Highest | `^` | Right |
-
-</div>
-
-The unary spellings are `not`, `-`, `#`, `~`, `&` and `*`. The unary `&` and `*` forms have BMSX-specific String-id/address-view meanings; their typed uses are specified in the [Memory reference](memory.md). The presence of `#` in the grammar does not itself define a Table-length contract.
-
-Exponentiation binds more tightly than a leading unary minus. Thus `-2 ^ 2` groups as `-(2 ^ 2)`. A unary expression is accepted on the right of a power, so `2 ^ -2` is also valid source. These statements describe expression grouping, not arithmetic precision, rounding or range.
-
-For operation meanings, arithmetic and bitwise behavior, comparison, truth and [logical evaluation](cpu.md#logical-expressions), use the [CPU reference](cpu.md).
-
-## Control flow
-
-### Conditional branches
-
-```lua
-if position < limit then
-    position += stride
-elseif position > limit then
-    position -= stride
-else
-    position = origin
-end
-```
-
-There may be zero or more `elseif` branches and at most one `else` branch. Each branch has its own compiled lexical scope. Condition evaluation follows the [CPU reference](cpu.md).
-
-<div class="keep-together">
-
-### While and repeat loops
-
-A `while` loop writes its condition before the body:
-
-```lua
-local remaining = 3
-while remaining > 0 do
-    remaining -= 1
-end
-```
-
-</div>
-
-A `repeat` loop writes the terminating condition after the body:
-
-```lua
-local attempts = 0
-repeat
-    attempts += 1
-    local finished<const> = attempts >= 3
-until finished
-```
-
-The body executes before each condition test, including the first. Locals declared directly in the body remain visible in the `until` condition; their scope ends after that condition. Locals in a nested block keep that block's narrower scope.
-
-These are the source forms `while expression do block end` and `repeat block until expression`. Runtime condition behavior is defined in the [CPU reference](cpu.md).
+<a id="complete-program-numeric-loop-control"></a>
 
 ### Numeric `for`
 
@@ -1430,17 +889,14 @@ makes no counter progress. This does not make every zero-step loop empty or
 promise that every entered one runs forever: changing the loop variable can
 make the next test exit, and `break` can leave immediately.
 
-See the [complete numeric-loop control program](#complete-program-numeric-loop-control)
-for evaluated headers, retained limits and steps, forward and reverse body
-mutation, and finite zero-step examples. Its entered zero-step loops use
-explicit `break` statements.
-
 The control path uses ordinary [Number addition and comparison](cpu.md#values-and-numeric-instructions);
 header and body calls have the usual [call and result-adjustment costs](cpu.md#calls-closures-globals-and-tables).
 Use the [instruction-cost guide](cpu.md#blua-operators-and-instruction-costs) and
 [cycle-accounting boundaries](cpu.md#cycle-accounting-and-execution-boundaries)
 for the selected instructions and executed path, rather than assigning the
 source loop a fixed per-iteration cycle charge.
+
+<a id="complete-program-generic-iteration"></a>
 
 ### Generic `for`
 
@@ -1483,270 +939,19 @@ A reached `break` exits the nearest enclosing loop, skipping the remaining body 
 
 Iteration uses [ordinary calls](cpu.md#calls-closures-globals-and-tables), passing state and control unchanged. A non-callable iterator causes an error at the attempted call, not an empty loop. Other errors occur at the expression, call or body operation reached. The ordinary [execution costs and boundaries](cpu.md#cycle-accounting-and-execution-boundaries) apply to the loop operations, iterator calls and body.
 
-See [iteration routines](bios-base.md#traversal-argument-selection-globals-and-output) and the [complete generic-iteration program](#complete-program-generic-iteration).
-
-<div class="keep-together">
-
-### Blocks and break
-
-`do ... end` creates a nested lexical scope:
-
-```lua
-local position = 0
-do
-    local stride = 4
-    position += stride
-end
-```
-
-</div>
-
-`break` takes no argument and exits the innermost current loop. It is rejected outside a loop. A following semicolon is optional.
-
-```lua
-local total = 0
-for index = 1, 8 do
-    total += index
-    if total >= 10 then
-        break
-    end
-end
-```
-
-There is no `continue` statement keyword.
-
-<div class="keep-together">
+See the [BIOS iteration routines](bios-base.md#traversal-argument-selection-globals-and-output).
 
 ### Labels and goto
 
-A label is written `::name::`; a branch to it is written `goto name`.
-
-```lua
-local attempts = 0
-::retry::
-attempts += 1
-if attempts < 3 then
-    goto retry
-end
-```
-
-</div>
+Labels use `::name::` and branches use `goto name`.
 
 Label names have **function-wide scope**, not block scope. A `goto` can name a label written before or after it, including a label in another lexical block of the same function. A nested function has its own label names: a label in another function cannot satisfy the jump. Each chunk also has its own label scope.
 
 A second label with the same name in one function is rejected as `Duplicate label 'name'.`, even if the labels occupy different blocks. A target name not defined in that function is reported as `Missing label(s): ...`. A same-spelling label in a separate function is independent.
 
-The current software does not reject a jump merely because it crosses a local declaration or enters or leaves a lexical block. The jump must still have a defined target and an encodable displacement. These are not checks on local scope or initialization.
+BLua does not reject a jump merely because it crosses a local declaration or enters or leaves a lexical block. The jump must still have a defined target and an encodable displacement. These are not checks on local scope or initialization.
 
 Acceptance does **not** insert skipped initialization, local cleanup, or capture-close operations. A forward jump can skip initializers; a backward jump resumes at its earlier target. Neither crossing establishes a blanket value for a skipped local: in particular, it does not guarantee a fresh `nil` value or recreate locals on a backward jump. Keep required initialization on the executed path; a jump is not a block-entry initialization operation.
-
-### Waiting for an interrupt
-
-```lua
-halt_until_irq
-```
-
-`halt_until_irq` is a reserved statement with no parentheses or arguments. A following semicolon is optional. It lowers directly to the processor's halt instruction; it is not a BIOS function call. Interrupt enable, mask, pending and wakeup behavior belongs to the [CPU reference](cpu.md) and [interrupt reference](irq.md).
-
-## Source files and module names
-
-A BLua cartridge program consists of source modules. Each module has a path, may depend on other modules, and may publish one exported value. One module is the program entry.
-
-<div class="keep-together">
-
-A module attribute, when present, belongs at the beginning of the file, before its statements. The available headers are:
-
-| Header | Meaning |
-| --- | --- |
-| No header | An ordinary source module. |
-| `module<entry>` | The cartridge's entry module. |
-| `module<const>` | A compile-time export namespace or a root static function. |
-
-</div>
-
-A semicolon may follow the header. The header does not give the module its name, and these are alternative attributes, not a combined declaration. A cartridge must contain **exactly one** `module<entry>` among its supplied program modules. A missing entry or two entry modules is a build error.
-
-For example, an entry file begins with:
-
-```lua
-module<entry>
-```
-
-The module name comes from the source path. It is not the name of a local variable that imports the module, and it is not a numeric asset identifier. For cartridge sources beneath `carts/<cartridge>/`, that leading directory is removed; the final `.lua` extension is removed as well. A leading `res/` is also removed when it is the applicable source prefix. Backslashes become forward slashes.
-
-| Source path | Module path |
-| --- | --- |
-| `carts/example/lib/runtime_settings.lua` | `lib/runtime_settings` |
-| `carts/example/lib/runtime_settings.LUA` | `lib/runtime_settings` |
-| `carts/example/lib/display.lua` | `lib/display` |
-| `res/lib/runtime_settings.lua` | `lib/runtime_settings` |
-
-The remaining path text keeps its case. Dots within a name are not converted to slashes. Use the supplied module's literal path; do not infer a dotted-name search convention or relative-file search from the spelling of an import. Two source files cannot provide the same module path. There is no duplicate-path winner or namespace merge.
-
-## Imports and executable inclusion
-
-The built-in `require` names a module at compile time. Its argument must be exactly one string literal:
-
-```lua
-local settings = require('lib/runtime_settings')
-```
-
-The string-argument form is equivalent:
-
-```lua
-local settings = require 'lib/runtime_settings'
-```
-
-A computed path, a second argument, or a method-style call is not a built-in module import. The built-in is recognized when `require` is an unshadowed identifier. A local binding with that name is an ordinary binding, not another way to access the built-in. Keep the name unshadowed when using it for imports; do not alias it to construct an alternative import interface. Dependency discovery scans literal import forms syntactically; do not use shadowing as a way to remove a module dependency.
-
-The named module must be supplied to the program or be an installed named import. An unavailable module is a compilation error, not a missing-file exception raised while the cartridge runs. `require` does not open arbitrary source files during execution.
-
-Executable inclusion begins with the entry, any additional supplied module roots, and generated roots. It follows their literal import dependencies transitively. Supplying source text alone does not mean every otherwise-unreachable module becomes executable code. Library inclusion follows the same literal-dependency closure over the available library modules.
-
-An import written inside a function still contributes a dependency. Moving an import into a function is therefore not a way to defer inclusion or ordinary dependency initialization until that function is called.
-
-## Initialization happens before entry
-
-Ordinary source modules perform their top-level work during program startup. Dependencies are initialized before the modules that depend on them, and the scheduled ordinary module initializers run before the cartridge entry begins. Section initialization precedes those module initializers.
-
-<div class="keep-together">
-
-This is an eager dependency-initialization contract, not a loader that waits for the first evaluated `require` call. For example, in the following fragment, the ordinary dependency has already performed its top-level initialization before entry execution reaches the written import:
-
-```lua
-module<entry>
-
-local settings = require('lib/runtime_settings')
-```
-
-</div>
-
-The same applies when that import is written in a function body rather than directly in the entry's top-level statements. A `require` expression obtains the module's retained export; it does not execute the initializer anew at that line. A stand-alone import can be used when only the module's initialization is wanted:
-
-```lua
-require('lib/setup')
-```
-
-An ordinary dependency cycle is a compilation error. Do not arrange mutually dependent ordinary modules in the expectation that an incomplete export table will be supplied to break the cycle. Likewise, do not rely on filenames, asset identifiers, or a directory scan to order unrelated initializers. Express an initialization dependency with an import.
-
-Completion and the exported value are separate state. A successful initializer records completion even if it publishes `nil` or `false`; a later import does not repeat the initializer merely because its export is false-valued. This guarantee concerns the initialized program state. It does not define what survives a reset or replacement of that state.
-
-Recognized `module<const>` exports and installed static function imports have no ordinary source-module initializer to run at their import sites.
-
-<div class="keep-together">
-
-## Publishing an ordinary module value
-
-An ordinary module declares its export with a **final top-level `return` containing exactly one expression**:
-
-```lua
-return settings
-```
-
-</div>
-
-That expression supplies one module value. It may be a table, a function, a scalar, `false`, or `nil`.
-
-| End of the module | Import result |
-| --- | --- |
-| `return settings` | The value of `settings`. |
-| `return false` | `false`. |
-| `return nil` | `nil`. |
-| `return make_module()` | The first result of `make_module()`. |
-| No final single-expression export | `true`. |
-
-A factory call does not create several exports. With `return make_module()`, only the call's first result becomes the module value. Additional values returned by the factory are not available as extra results from `require`.
-
-Only the final top-level statement establishes this export contract. A return inside a function or another nested construct does not establish it. Neither a bare final `return` nor a final `return a, b` establishes it. An ordinary module without the contract still has its scheduled initializer, but an import expression supplies `true`. Additional result positions requested from an import receive `nil`, whether the module has a declared export or supplies the default `true`.
-
-For a module with a declared export, arrange its top-level flow to reach that final export. Do not use an earlier return as an alternative way to publish a different module value.
-
-### Exported objects remain ordinary objects
-
-An ordinary module's exported table is a runtime table, not an immutable namespace. Repeated imports obtain the same published root object. A field update through one reference is visible through another reference to that object.
-
-For example, these are two imports of the same ordinary module, not requests for two new instances:
-
-```lua
-local first = require('lib/actions')
-local second = require('lib/actions')
-
-first.perform = replacement
-second.perform()
-```
-
-The final expression looks up the table's current `perform` field and calls that value. It is not permanently bound to the function that occupied the field when the module was first compiled. Keeping a function in a separate local is a different operation from performing a later field lookup.
-
-Use an ordinary module when the API is an ordinary exported object or function, including an object whose fields will change during execution. A `module<const>` namespace has a different contract.
-
-## Compile-time modules
-
-`module<const>` publishes a compile-time namespace of named exports, or a root static function. It does not publish an ordinary allocated module table.
-
-<div class="keep-together">
-
-A small named namespace can be written as:
-
-```lua
-module<const>
-
-return {
-    limit = 12,
-    offset = {
-        x = -2,
-        y = 3,
-    },
-}
-```
-
-</div>
-
-Import such a namespace through a const local and select its named exports:
-
-```lua
-local settings<const> = require('lib/settings')
-
-local limit = settings.limit
-local offset_x = settings['offset'].x
-```
-
-Named fields and literal-string indexed fields select export paths. Namespace declarations use named table fields or literal string keys. Positional array entries and computed keys are not the named-export mechanism.
-
-Recognized constant leaves include `nil`, booleans, numbers, strings, and static-storage addresses. Numeric constant expressions and unary minus can be folded in these exports. Static functions may also occupy named export paths. A named leaf must be a supported compile-time constant or static function; an arbitrary runtime expression is not a constant export merely because it appears in a `module<const>` file. A scalar-only return is not a substitute for a named namespace or a root static function.
-
-<div class="keep-together">
-
-### A const local is not a const module
-
-These two declarations apply to different parts of a program:
-
-| Declaration | What it describes |
-| --- | --- |
-| `module<const>` | The exporting file and its compile-time export contract. |
-| `local settings<const> = require('lib/settings')` | The importing local binding; for a const namespace, this is the compile-time alias used to resolve exported paths. |
-
-</div>
-
-The local declaration does not turn an ordinary imported table into a compile-time namespace and does not freeze that table's fields. Conversely, import a compile-time namespace with the const-local form shown above, rather than assuming that a plain mutable local materializes a runtime namespace object.
-
-A compile-time namespace root cannot be used as a runtime table. Select an exported field instead. Do not pass the root as a value, return it as a table, or iterate it as though it were allocated module data.
-
-### Static function imports
-
-A const module may export a root function. Bind the import with a const local and call the bound name directly:
-
-```lua
-local operation<const> = require('lib/operation')
-local result = operation(value)
-```
-
-A named function inside a compile-time namespace is likewise a static call target. Static exported functions are not ordinary runtime function values: do not place one in a runtime table, pass one as an ordinary callback, or return one as a runtime function value. A constant data export, on the other hand, is data and cannot itself be called.
-
-Static function bodies operate within the static-code contract. They may perform scalar computation, use the supported typed static-memory operations, and call other static exports. They may not capture runtime outer locals or call a dynamically selected function. Runtime global reads and writes, table allocation and dispatch, object length, runtime closure creation, vararg dispatch, and dynamic string concatenation are also outside this contract.
-
-Ordinary string constants in a static function body are not permitted. This restriction does not mean that no string value can occur: an already interned constant selected through immutable typed read-only data is a distinct permitted case. A namespace's ability to export a constant string does not make ordinary runtime string operations available to its static functions.
-
-<div class="keep-together">
 
 ## Named BIOS function imports
 
@@ -1831,14 +1036,14 @@ Several other installed globals hold ordinary library Tables. The distinction ma
 | `table` | The Table library. See the [Table reference](bios-table.md) for its operations. |
 | `string` | The completed String library Table, also registered for String indexing. See the [String reference](bios-string.md) for indexing and library behavior. |
 | `coroutine` | The coroutine library Table. See [Protected calls and coroutines](coroutines.md). |
-| `math` | The mathematics library Table. Names include `abs`, `pi`, and `random`; these examples identify entry points, not their numeric or random-number contracts. |
-| `os` | A Table exposing `clock`, `time`, `date`, and `difftime`. These names alone do not establish desktop operating-system, filesystem, process, or civil-clock behavior. |
+| `math` | The [mathematics library](bios-math.md), including numeric domains, radian trigonometry and random-number state. |
+| `os` | The [time and date library](bios-os.md): cycle-derived elapsed time and deterministic civil-time conversion, not filesystem or process services. |
 | `lua_compiler` | A Table containing `compile_syntax`, `syntax_factory`, and `load`, for the BIOS runtime-compilation interface. |
 | `load` | Initially the same function value as `lua_compiler.load`; see the runtime-compilation boundary below. |
 
 </div>
 
-The `math` and `os` entries here are name navigation only. This chapter does not define their argument domains, precision, errors, random-number behavior, or timing conventions.
+Use those routine chapters for argument domains, precision, errors, random-number behavior and timing conventions.
 
 ### Public bindings and captured dependencies
 
@@ -1869,466 +1074,32 @@ The public `load` wrapper reports a protected compilation failure as `nil` follo
 
 The firmware shell also has a separate session environment Table and a session-specific loading wrapper. That Table is not a wholesale copy of the ordinary global bank, and the shell wrapper is not the public BIOS `load` interface. Neither the shell session nor runtime compilation defines the environment of a linked cartridge program.
 
-## Complete program: modules and ordinary globals
+<a id="complete-program-modules-and-ordinary-globals"></a>
 
-Start this cartridge through a fresh BIOS boot, not a second execution over a
-retained global environment. It uses six complete source files. It owns a typed BSS observation
-record and changes only its own `modules_manual_step` global. It does not replace
-a BIOS binding, guess a RAM address or construct a device-register Table.
-[Memory](memory.md#typed-byte-storage-and-address-views) defines the typed storage
-and its startup initialization; [CPU](cpu.md#calls-closures-globals-and-tables)
-defines ordinary values, calls, closures and globals.
+## Worked module linkage
 
-Save each listing under the name shown. The nested `lib/` names are literal
-module paths. The [build and observation route](../programming/getting-started.md#build-and-inspect-modules-and-globals)
-supplies the complete tree, manifest and exact commands.
-
-### Result-storage module: `results.lua`
+An ordinary module named `counter` can publish a mutable runtime object:
 
 ```lua
-module<const>
-
-struct modules_manual_result
-	completed: word
-	counter_loads: word
-	false_loads: word
-	nil_loads: word
-	nil_seen_from_false: word
-	entry_counter_loads: word
-	entry_false_loads: word
-	entry_nil_loads: word
-	same_module: word
-	first_value: word
-	second_value: word
-	false_exports: word
-	nil_exports: word
-	initial_global_nil: word
-	first_step: word
-	local_shadow: word
-	shadow_value: word
-	global_after_shadow: word
-	changed_global: word
-	final_value: word
+local counter = { value = 10 }
+function counter.advance(amount)
+    counter.value += amount
+    return counter.value
 end
-
-bss result: modules_manual_result
-
-return { result = result }
+return counter
 ```
 
-### Compile-time settings: `lib/settings.lua`
-
-```lua
-module<const>
-
-return { step = 3 }
-```
-
-### Stateful operation: `lib/counter.lua`
-
-```lua
-local state<const> = require('results')
-local result<const>: *modules_manual_result = state.result
-result.counter_loads = result.counter_loads + 1
-
-local value = 10
-local advance<const> = function(delta)
-	value = value + delta * modules_manual_step
-	return value
-end
-return { advance = advance }
-```
-
-### False export: `lib/false_export.lua`
-
-```lua
-require('lib/nil_export')
-local state<const> = require('results')
-local result<const>: *modules_manual_result = state.result
-result.false_loads = result.false_loads + 1
-result.nil_seen_from_false = result.nil_loads
-
-return false
-```
-
-### Nil export: `lib/nil_export.lua`
-
-```lua
-local state<const> = require('results')
-local result<const>: *modules_manual_result = state.result
-result.nil_loads = result.nil_loads + 1
-
-return nil
-```
-
-<div class="keep-together">
-
-### Entry module: `entry.lua`
-
-The first observations precede the entry's ordinary-module import assignments.
-The constructors have already run during startup. A second import selects the
-same retained export, including the shared counter closure or an explicit false
-or nil value; export truthiness is not an initialization flag.
-
-The counter's operation reads the ordinary global `modules_manual_step`, not
-the calling block's same-named local. Changing that ordinary global affects
-the operation's next call.
+Its importer begins after that top-level initialization:
 
 ```lua
 module<entry>
-
-local state<const> = require('results')
-local settings<const> = require('lib/settings')
-local result<const>: *modules_manual_result = state.result
-
--- Constructors run during startup, before these entry statements.
-result.entry_counter_loads = result.counter_loads
-result.entry_false_loads = result.false_loads
-result.entry_nil_loads = result.nil_loads
-
-local first<const> = require('lib/counter')
-local second<const> = require('lib/counter')
-result.same_module = first == second and 1 or 0
-result.initial_global_nil = modules_manual_step == nil and 1 or 0
-modules_manual_step = 2
-result.first_step = modules_manual_step
-result.first_value = first.advance(settings.step)
-modules_manual_step = 4
-result.second_value = second.advance(4)
-
-local false_first<const> = require('lib/false_export')
-local false_second<const> = require('lib/false_export')
-local nil_first<const> = require('lib/nil_export')
-local nil_second<const> = require('lib/nil_export')
-result.false_exports = false_first ~= nil and not false_first
-	and false_second ~= nil and not false_second and 1 or 0
-result.nil_exports = nil_first == nil and nil_second == nil and 1 or 0
-
-do
-	local modules_manual_step<const> = 99
-	result.local_shadow = modules_manual_step
-	result.shadow_value = first.advance(1)
-end
-result.global_after_shadow = modules_manual_step
-modules_manual_step = 5
-result.changed_global = modules_manual_step
-result.final_value = second.advance(2)
-
-print('Modules startup', result.entry_counter_loads,
-	result.entry_false_loads, result.entry_nil_loads)
-print('Modules dependency', result.nil_seen_from_false)
-print('Modules sharing', result.same_module, result.first_value,
-	result.second_value, result.counter_loads)
-print('Modules exports', result.false_exports, result.nil_exports,
-	result.false_loads, result.nil_loads)
-print('Modules globals', result.initial_global_nil, result.first_step,
-	result.local_shadow, result.shadow_value, result.global_after_shadow,
-	result.changed_global, result.final_value)
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
+local first = require('counter')
+local second = require('counter')
+local before = first.advance(2)
+local after = second.advance(3)
 ```
 
-</div>
-
-<div class="keep-together">
-
-### Observations
-
-After startup, the program prints the following five lines. Tabs separate
-distinct `print` arguments:
-
-```text
-Modules startup	1	1	1
-Modules dependency	1
-Modules sharing	1	16	32	1
-Modules exports	1	1	1	1
-Modules globals	1	2	99	36	4	5	46
-```
-
-| Observation | Meaning in this program |
-| --- | --- |
-| Startup `1, 1, 1` | The counter, false-export and nil-export constructors have each run once before the entry records those counts. |
-| Dependency `1` | The false-export constructor observes that its ordinary nil-export dependency has already run. |
-| Sharing `1, 16, 32, 1` | Both counter imports select the same export. Starting at 10, the first operation adds `3 × 2`, then the second adds `4 × 4`; the constructor count remains one. |
-| Exports `1, 1, 1, 1` | Both imports of the false module remain false and both imports of the nil module remain nil. Neither constructor repeats. |
-| Globals `1, 2, 99, 36, 4, 5, 46` | The owned global starts nil, then becomes 2. The block's local value is 99, but the operation still uses global 4 and advances 32 to 36. Outside the block the global remains 4; after changing it to 5, the final operation advances 36 to 46. |
-
-These observations demonstrate this program's initialization dependencies,
-shared ordinary export and lexical/global distinction. They do not specify a
-startup cycle budget or the behavior of the separate runtime source loader.
-
-</div>
-
-## Complete program: numeric loop control
-
-Use a separate `loops_manual` cartridge for this program. Do not combine its
-`results` module or entry with the preceding cartridge. The two complete files
-own typed BSS observations; no numeric RAM address or device-register Table is
-needed. [Memory](memory.md#typed-byte-storage-and-address-views) defines the
-storage and startup initialization. The [build and observation route](../programming/getting-started.md#build-and-inspect-numeric-loops)
-supplies the exact tree, manifest and commands.
-
-The program exercises seven finite loops. The two zero-step loops that enter
-their bodies end with the written `break` statements, not because the step
-advances the index. Its observations do not establish a general termination
-rule for arbitrary numerical inputs.
-
-### Result storage: `results.lua`
-
-```lua
-module<const>
-
-struct loops_manual_result
-	completed: word
-	header_calls: word
-	header_count: word
-	header_sum: word
-	cached_count: word
-	cached_sum: word
-	changed_limit: word
-	changed_step: word
-	forward_count: word
-	forward_sum: word
-	reverse_count: word
-	reverse_sum: word
-	zero_empty_count: word
-	zero_fixed_count: word
-	zero_fixed_sum: word
-	zero_equal_count: word
-	zero_equal_sum: word
-end
-
-bss result: loops_manual_result
-
-return { result = result }
-```
-
-Save the following three parts **in order as one `entry.lua`**. They are not
-three independently entered modules; only the first part declares the entry.
-
-### Entry part 1: retained header values
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *loops_manual_result = state.result
-
--- Three state-changing calls supply start, limit and step, in that order.
-local header_cursor = 0
-local advance_header<const> = function()
-	header_cursor += 1
-	return header_cursor
-end
-for index = advance_header(), advance_header() + 2, advance_header() - 2 do
-	result.header_count += 1
-	result.header_sum += index
-end
-result.header_calls = header_cursor
-
--- Changing the source locals does not replace the retained limit and step.
-local limit = 4
-local stride = 1
-for index = 1, limit, stride do
-	result.cached_count += 1
-	result.cached_sum += index
-	limit = 0
-	stride = 7
-end
-result.changed_limit = limit
-result.changed_step = stride
-
-```
-
-### Entry part 2: mutation and zero step
-
-```lua
--- Body writes affect the same variable used by the test and update.
-for index = 1, 5 do
-	result.forward_count += 1
-	result.forward_sum += index
-	index += 1
-end
-for index = 5, 1, -1 do
-	result.reverse_count += 1
-	result.reverse_sum += index
-	index -= 1
-end
-
--- Zero uses the non-positive test. The following body is not entered.
-for index = 1, 3, 0 do
-	result.zero_empty_count += 1
-end
-
--- These bodies deliberately end with break, not with progress from step 0.
-for index = 3, 1, 0 do
-	result.zero_fixed_count += 1
-	result.zero_fixed_sum += index
-	if result.zero_fixed_count == 3 then
-		break
-	end
-end
-for index = 2, 2, 0 do
-	result.zero_equal_count += 1
-	result.zero_equal_sum += index
-	if result.zero_equal_count == 2 then
-		break
-	end
-end
-
-```
-
-### Entry part 3: output and completion
-
-```lua
-print('Loops headers', result.header_calls, result.header_count,
-	result.header_sum)
-print('Loops cached', result.cached_count, result.cached_sum,
-	result.changed_limit, result.changed_step)
-print('Loops mutation', result.forward_count, result.forward_sum,
-	result.reverse_count, result.reverse_sum)
-print('Loops zero-empty', result.zero_empty_count)
-print('Loops zero-fixed', result.zero_fixed_count, result.zero_fixed_sum)
-print('Loops zero-equal', result.zero_equal_count, result.zero_equal_sum)
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-<div class="keep-together">
-
-### Numeric-loop observations
-
-After startup, the program prints six lines; tabs separate distinct `print`
-arguments:
-
-```text
-Loops headers	3	4	10
-Loops cached	4	10	0	7
-Loops mutation	3	9	3	9
-Loops zero-empty	0
-Loops zero-fixed	3	9
-Loops zero-equal	2	4
-```
-
-| Observation | Meaning in this program |
-| --- | --- |
-| Headers `3, 4, 10` | Three state-changing calls supply start 1, limit 4 and step 1. Four visits sum to 10; the header calls are not repeated per visit. |
-| Cached `4, 10, 0, 7` | Changing the source limit and step locals to 0 and 7 does not replace the retained 4 and 1. The body still visits 1 through 4. |
-| Mutation `3, 9, 3, 9` | The ascending loop visits 1, 3, 5; the descending loop visits 5, 3, 1. Body writes affect the variable subsequently tested and updated. |
-| Zero-empty `0` | With start 1, limit 3 and step 0, the body is not entered. |
-| Zero-fixed `3, 9` | With start 3, limit 1 and step 0, three visits retain index 3 until the explicit break. |
-| Zero-equal `2, 4` | With start and limit both 2 and step 0, two visits retain index 2 until the explicit break. |
-
-</div>
-
-## Complete program: generic iteration
-
-Use a separate `iterators_manual` cartridge. Its two complete files are not
-additional modules in either preceding example. The result module owns typed
-BSS under the [Memory storage contract](memory.md#typed-byte-storage-and-address-views).
-Follow the [build and observation route](../programming/getting-started.md#build-and-inspect-generic-iteration)
-for the exact project tree, manifest and commands.
-
-The iterator returns `false, 10`, then `2, 20`, then `nil, 999`. Three loop
-variables request a third result position. The body also writes the first
-visible variable, allowing its value to be distinguished from the retained
-iteration control.
-
-### Iterator result storage: `results.lua`
-
-```lua
-module<const>
-
-struct iterators_manual_result
-	completed: word
-	iterator_calls: word
-	body_count: word
-	payload_sum: word
-	false_key_count: word
-	missing_third_count: word
-	first_control: word
-	second_control_false: word
-	third_control: word
-	visible_after_write: word
-	stop_payload: word
-end
-
-bss result: iterators_manual_result
-
-return { result = result }
-```
-
-### Iterator entry: `entry.lua`
-
-```lua
-module<entry>
-
-local storage<const> = require('results')
-local result<const>: *iterators_manual_result = storage.result
-
-local context<const> = { calls = 0 }
-local iterator<const> = function(state, control)
-	state.calls += 1
-	if state.calls == 1 then
-		result.first_control = control
-		return false, 10
-	elseif state.calls == 2 then
-		result.second_control_false = control ~= nil and not control and 1 or 0
-		return 2, 20
-	end
-	result.third_control = control
-	result.stop_payload = 999
-	return nil, 999
-end
-
-for key, value, missing in iterator, context, 0 do
-	result.body_count += 1
-	result.payload_sum += value
-	if not key then
-		result.false_key_count += 1
-	end
-	if missing == nil then
-		result.missing_third_count += 1
-	end
-	key = 99
-	result.visible_after_write += key
-end
-result.iterator_calls = context.calls
-
-print('Iter calls', result.iterator_calls, result.body_count, result.payload_sum)
-print('Iter controls', result.first_control, result.second_control_false,
-	result.third_control)
-print('Iter values', result.false_key_count, result.missing_third_count,
-	result.visible_after_write, result.stop_payload)
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-<div class="keep-together">
-
-### Iterator observations
-
-After startup, the program prints:
-
-```text
-Iter calls	3	2	30
-Iter controls	0	1	2
-Iter values	1	2	198	999
-```
-
-| Observation | Meaning in this program |
-| --- | --- |
-| Calls `3, 2, 30` | Three calls produce two body visits. Payloads 10 and 20 sum to 30; first result `false` permits a visit, while `nil` stops before another visit. |
-| Controls `0, 1, 2` | The iterator sees Number 0, then `false` (flag 1), then Number 2. Writing the first visible variable to 99 does not change the next control. |
-| Values `1, 2, 198, 999` | One false-valued key reaches the body. The missing third result is nil on both visits. The body sees its written 99 twice, sum 198. Terminal payload 999 is produced with nil but never added to the payload sum. |
-
-</div>
+`before` is 12 and `after` is 15. Both imports select the same export, not two
+instances. Neither written import reruns the initializer. A dependency written
+inside a function is still initialized before entry; imports express dependency
+order rather than deferred loading.

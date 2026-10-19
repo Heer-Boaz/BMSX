@@ -164,6 +164,67 @@ treating those words as a fresh cartridge sample. See
 [SYSTEM, Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service),
 for the other units' preservation rules.
 
+<a id="complete-input-sampling-program"></a>
+
+## Sample input in BLua
+
+This sequence assumes ordinary BIOS cartridge entry, a running beam, and
+exclusive ownership of INPUT and the VBlank interrupt route. The handler
+acknowledges only VBlank. The retained sequence, not a wake-up or CTRL
+readback, tells the caller that a sample has completed.
+
+```lua
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local control<const>: *word = 0x08000064
+local status<const>: *word = 0x08000068
+local keys<const>: *word = 0x0800006c
+
+function irq(flags)
+    *irq_ack = flags & 0x00000004
+end
+
+*irq_mask = 0
+*irq_ack = 0x00000004
+*irq_mask = 0x00000004
+local previous_key = 0
+while true do
+    local before<const> = *status
+    *control = 1
+    while *status == before do
+        halt_until_irq
+    end
+    local current<const> = keys[0] & 0x00000010
+    local pressed<const> = current & ~previous_key
+    local released<const> = previous_key & ~current
+    -- Use the levels and software edges here; read any other snapshot words.
+    previous_key = current
+end
+```
+
+The program deliberately does not reset INPUT: BIOS boot has already sampled
+it, and its current sequence is the correct baseline. The accepted ARM is
+consumed before the caller reads the words. With no other sampling owner,
+that snapshot remains stable until the next iteration arms another capture.
+Read all required keyboard, pointer and pad words before that next ARM.
+The four pad bases and every snapshot word are listed below.
+
+### Worked KeyA transition sequence
+
+The KeyA mask is `00000010H`, not pad A's `00000001H`. With
+`previous_key` initially zero, four completed samples give:
+
+| Sample | KeyA level | Pressed mask | Released mask | Cumulative presses | Cumulative releases |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `0` | `0` | `0` | 0 | 0 |
+| 2 | `10H` | `10H` | `0` | 1 | 0 |
+| 3 | `10H` | `0` | `0` | 1 | 0 |
+| 4 | `0` | `0` | `10H` | 1 | 1 |
+
+Counts in this table are calculated software observations, not hardware
+counters. A later unchanged released sample has both edge masks zero. A press
+and release between captures cannot be reconstructed from these levels.
+
 ## Register map
 
 All addresses below are byte addresses. `R` denotes a read-only word; `R/W` denotes a readable word with write behavior. Command words must be written in full, rather than treated as independently writable control bits. Every listed word has reset value `00000000H`.
@@ -232,11 +293,21 @@ The following offsets apply to each record base.
 
 RESET takes effect on the control write. It clears any pending sample, sets `IO_INP_STATUS` to zero and zeroes the keyboard, pointer and pad words. It also zeroes the output port, intensity, duration and capability words. A console input-controller reset additionally sets `IO_INP_OUTPUT_CTRL` to zero.
 
+The RESET command does not clear the previously sampled supervisor-request
+level. Holding that wire high across this command therefore does not create
+a new rising edge. A whole-unit reset initializes its edge history to low.
+
 An accepted sample does not replace the output parameter words. ARM itself does not sample immediately, increment the sequence or clear the existing snapshot. Unrecognized control words cause no input-specific fault.
 
 ## VBlank ordering, interrupts and access faults
 
 Sampling occurs on the display timing controller's VBlank-begin edge, not its VBlank-end edge. At VBlank begin, display presentation is followed by input sampling, then the central VBlank interrupt is raised. An armed sample's data and new `IO_INP_STATUS` are therefore published before that edge raises `IRQ_VBLANK` (`00000004H`). This ordering does not specify a fixed delay before the cartridge's interrupt handler runs.
+
+Independently of ARM, the controller also observes the dedicated supervisor-request
+wire at each VBlank. A low-to-high transition is forwarded to SYSTEM; holding
+the wire high does not generate another transition. This wire is not a
+keyboard usage or a pad bit, and does not require a cartridge sample. See
+[SYSTEM, Privilege and supervisor entry](system.md#privilege-and-supervisor-entry).
 
 There is no separate input-complete interrupt. VBlank pending state is coalesced, not a count of completed samples, so test the sample sequence even when using VBlank interrupts. A cartridge that waits with HALT must first enable an owned VBlank interrupt route, and must recheck `IO_INP_STATUS` after waking. An interrupt source that is merely pending but masked does not guarantee a wakeup.
 
@@ -278,136 +349,3 @@ For example, the following ordered writes request pad 0 at half intensity for 10
 APPLY neither checks nor updates this word. A set capability bit is not an acknowledgement that a request was accepted or completed, and it is not a report that a motor is currently active. The output port provides no busy bit, completion bit, error result or output-complete interrupt.
 
 Input RESET zeroes the output parameters and capability word without issuing a stop or cancellation command for an earlier request. Do not use a register reset as an output-stop operation.
-
-## Complete input sampling program
-
-This complete program starts at a fresh cartridge entry through the installed BIOS. It assumes zero-initialized cartridge BSS and exclusive ownership of the raw input latch, the central VBlank interrupt handler and the central interrupt mask. It is not an initialization sequence for an arbitrary resumed cartridge or a cartridge sharing those resources.
-
-The constant module named `results` declares the cartridge's retained observations. It contains 51 words (204 bytes): ten observation/history words, eight keyboard words, four pointer words, 28 pad words and one rumble-support word. The module's BSS declaration owns this storage; no fixed storage address is assumed.
-
-### Retained result module
-
-```lua
-module<const>
-
-struct input_manual_result
-	completed_samples: word
-	previous_sequence: word
-	sample_sequence: word
-	key_a: word
-	key_pressed: word
-	key_released: word
-	press_count: word
-	release_count: word
-	last_press: word
-	last_release: word
-	keyboard: word[8]
-	pointer_buttons: word
-	pointer_x: word
-	pointer_y: word
-	pointer_wheel: word
-	pads: word[28]
-	rumble_support: word
-end
-
-bss result: input_manual_result
-
-return { result = result }
-```
-
-### Cartridge entry
-
-The next two parts are consecutive halves of one entry module. Join them without adding or deleting lines; they are not separate modules.
-
-#### Part 1 — Establish the owned interrupt route and wait for a sample
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *input_manual_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local control<const>: *word = 0x08000064
-local status<const>: *word = 0x08000068
-local keys<const>: *word = 0x0800006c
-local pointer<const>: *word = 0x0800008c
-local pads<const>: *word = 0x0800009c
-local output_status<const>: *word = 0x08000118
-
-function irq(flags)
-	*irq_ack = flags & 0x00000004
-end
-
--- This isolated cartridge owns the input latch and central VBlank IRQ route.
-*irq_mask = 0
-*control = 2
-*irq_ack = 0x00000004
-*irq_mask = 0x00000004
-local previous_key = 0
-
-while true do
-	local before<const> = *status
-	*control = 1
-	while *status == before do
-		halt_until_irq
-	end
-
-```
-
-#### Part 2 — Copy the retained snapshot and derive KeyA edges
-
-```lua
-	-- Do not re-arm until every word of this retained snapshot has been read.
-	for index = 0, 7 do
-		result.keyboard[index] = keys[index]
-	end
-	result.pointer_buttons = pointer[0]
-	result.pointer_x = pointer[1]
-	result.pointer_y = pointer[2]
-	result.pointer_wheel = pointer[3]
-	for index = 0, 27 do
-		result.pads[index] = pads[index]
-	end
-	result.rumble_support = *output_status
-	result.previous_sequence = before
-	result.sample_sequence = *status
-
-	-- HID usage 04H occupies bit 4 of keyboard word 0. These are software edges.
-	local current<const> = result.keyboard[0] & 0x00000010
-	result.key_a = current
-	result.key_pressed = current & ~previous_key
-	result.key_released = previous_key & ~current
-	if result.key_pressed ~= 0 then
-		result.press_count = result.press_count + 1
-		result.last_press = result.key_pressed
-	end
-	if result.key_released ~= 0 then
-		result.release_count = result.release_count + 1
-		result.last_release = result.key_released
-	end
-	previous_key = current
-	result.completed_samples = result.completed_samples + 1
-end
-```
-
-The handler acknowledges only its owned VBlank bit. Initialization masks central interrupts, resets INPUT with the full word `00000002H`, acknowledges a stale VBlank and then enables the VBlank mask. No direct coprocessor-register access is needed at this fresh BIOS entry.
-
-Each iteration saves the previous sample sequence, arms one sample and waits until the sequence changes. The interrupt permits the wait to resume; the changed sequence is the completion condition. The program does not use control-register readback as an armed or busy indication.
-
-After completion, the program copies every snapshot word before re-arming. Because this program is the only sampling owner and the arm has been consumed, no further armed latch can interleave the copy. It publishes the before/after sequence observations together after the copy. `completed_samples` increases only after the copy and the software-edge updates are complete. The loop continues indefinitely; it does not promise a fixed sample count or a physical input-latency bound.
-
-### Worked KeyA transition sequence
-
-The selected raw keyboard mask is `00000010H`, not the pad A mask `00000001H`. With `previous_key` initially zero, four completed samples with KeyA levels `0`, `10H`, `10H`, `0` produce:
-
-| Sample | KeyA level | Pressed mask | Released mask | Press count | Release count |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `0` | `0` | `0` | 0 | 0 |
-| 2 | `10H` | `10H` | `0` | 1 | 0 |
-| 3 | `10H` | `0` | `0` | 1 | 0 |
-| 4 | `0` | `0` | `10H` | 1 | 1 |
-
-After the fourth completed sample, `key_a` and `key_pressed` are zero, `key_released` is `10H`, both counters are 1, and both `last_press` and `last_release` retain `10H`. On a later unchanged released sample, the current edge masks become zero while those last-edge masks and counters remain retained. The raw arrays retain the words copied at the latest completed sample, and that completion's two sequence observations differ. These are calculated expectations for the stated sample levels, not a promise that all physical transitions will be observed.
-
-For the project layout, build commands and retained-result check, see [Check raw input and software edges](../programming/getting-started.md#check-raw-input-and-software-edges).

@@ -36,13 +36,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete23+137-line ordinary BLua cartridge,38 retained assertions and13 separate ordinary diagnostics; independent actual-programme/source comparison and fresh public-only full reference/project reconstruction pass, including new reset subsection delta. No native/all-input/GC/cache/reset execution or whole-SDK/console guarantee.",
+			"resolution": "Short text/syntax compilation, environment and closure examples explain invocation, result/error handling and retained compiled-code lifetime.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-loader-source.md"
 		},
 		"figures": {
@@ -50,7 +50,7 @@
 			"report": "docs/book1/reviews/bios-loader-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-loader-print.md"
 		}
 	}

@@ -155,6 +155,10 @@ The installed system-cycle timebase is 33.8688 MHz: 33,868,800 cycles per second
 One system cycle is approximately 29.525699 ns. This states the cycle unit, not a
 maximum interrupt rate or an electrical propagation delay.
 
+There is no delayed-enable instruction after a MASK write. An already-pending
+request is eligible at the next CPU execution boundary that satisfies both
+gates; an NMI or another CPU hold can still prevent maskable acceptance.
+
 ACK and MASK change controller state on their accepted word writes. A pending
 enabled bit can therefore assert the line as a result of a MASK write, without
 another source request. CPU acceptance also requires IEc; assertion of the
@@ -175,10 +179,10 @@ request-to-handler delay. During a HALT wait, device timing continues even thoug
 the parked instructions do not execute. Source timing, masking and service work
 must be considered separately when scheduling the cartridge.
 
-### Entry-sequence budget for the cartridge example
+### Worked IRQ entry cost
 
-The IRQ entry sequence used by the complete cartridge example compares FLAGS
-directly with a zero constant. Its own instruction-base charge is as follows:
+Consider an IRQ entry that reads FLAGS and compares it directly with an
+immediate zero constant. Its instruction-base charge is as follows:
 
 | Entry operation | Nonzero FLAGS path | Zero FLAGS path |
 |---|---|---|
@@ -192,9 +196,10 @@ directly with a zero constant. Its own instruction-base charge is as follows:
 | `RFE` | 1 | 1 |
 | **Entry-sequence total, cycles** | **9** | **6** |
 
-Callback execution, including the callback's own return instruction, is extra.
-The table describes this particular entry program, not every possible entry
-sequence or the delay from a source request to service. In particular, it does
+Handler execution, including its own return instruction, is extra. If the
+entry instead loads zero into a register before comparing, add one cycle to
+each path: 10 and 7 cycles. The actual entry instructions determine this
+budget; it is not a fixed interrupt-entry charge or a request-to-service delay. In particular, it does
 not include time spent pending behind a closed MASK or disabled IEc.
 
 ## Acknowledge the source and the controller separately
@@ -228,7 +233,7 @@ masked while following this sequence:
 The opposite partial acknowledgement is different: clearing only GPUSTAT24
 leaves controller bit 6 pending. A new marker can then raise bit 6 again, but
 OR-ing it into an already-set pending bit still leaves just one pending bit.
-The cartridge below demonstrates exactly that coalescence before enabling
+The programming example below demonstrates that coalescence before enabling
 delivery.
 
 These are GPU rules, not a universal acknowledgement sequence for every source.
@@ -254,9 +259,9 @@ that clear can coalesce with the first and be removed by the same clear.
 A request after the clear becomes pending again. No acknowledgement order can
 turn this one-bit latch into a count of all source events.
 
-Keep a software service count distinct from a source-event count. The example's
-two callback increments mean two controlled services after selected re-arming;
-they do not prove that arbitrary source traffic always has one callback per event.
+Keep a software service count distinct from a source-event count. Several
+requests can coalesce into one service; no software counter recovers arrivals
+already lost in the pending latch.
 
 ### Choose one cartridge dispatch route
 
@@ -266,8 +271,84 @@ word read by the IRQ entry sequence, not FLAGS AND MASK. If only GPU service is
 owned, clearing `flags & 00000040H` preserves other pending sources; clearing the
 entire argument does not.
 
-Prepare each source's service state before enabling its MASK bit. The complete
-example below defines its own global handler and owns controller acknowledgement.
+Prepare each source's service state before enabling its MASK bit. The programming example below defines its own global handler and owns controller acknowledgement.
+
+## Program and service a GPU marker
+
+### Starting conditions
+
+Use ordinary BIOS cartridge entry with the inherited beam running and CPU
+interrupt enable set. Own GP0, the GPU interrupt handler and MASK exclusively;
+no unfinished packet, readback or DMA transfer may remain. This example leaves
+VBlank pending but masked so that the full handler argument can be distinguished
+from the enabled subset.
+
+```lua
+bss gpu_services: word
+bss delivered_flags: word
+local irq_flags<const>: *word = 0x08000000
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+
+function irq(flags)
+    if (flags & 0x00000040) ~= 0 then
+        *delivered_flags = flags
+        *gp1 = 0x02000000
+        *irq_ack = 0x00000040
+        *gpu_services = *gpu_services + 1
+    end
+end
+
+*irq_mask = 0
+while (*gp1 & 0x04000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0xfffffffb       -- Clear stale requests except VBlank.
+while (*irq_flags & 4) == 0 do
+end
+
+*gp0 = 0x1f000000          -- First masked GPU request.
+while (*gp1 & 0x01000000) == 0 do
+end
+*gp1 = 0x02000000          -- Re-arm GPU; central pending is still set.
+*irq_ack = 0               -- No pending bit is cleared.
+*gp0 = 0x1f000000          -- A second request coalesces into bit 6.
+while (*gp1 & 0x01000000) == 0 do
+end
+
+*irq_mask = 0x00000040
+while *gpu_services == 0 do
+    halt_until_irq
+end
+*gp0 = 0x1f000000          -- The handler cleared both required latches.
+while *gpu_services == 1 do
+    halt_until_irq
+end
+*irq_mask = 0
+```
+
+Under the stated ownership conditions, the ordered states are as follows.
+GPU24 is shown as a masked word. Rows are operation boundaries, not
+equal-duration time slots or atomic multi-register samples.
+
+| Operation | FLAGS | MASK | GPU24 | Completed GPU services |
+|---|---|---|---|---:|
+| VBlank pending, before a marker | `04` | `00` | `00000000` | 0 |
+| First marker executes | `44` | `00` | `01000000` | 0 |
+| GPU-local clear only | `44` | `00` | `00000000` | 0 |
+| Second marker executes | `44` | `00` | `01000000` | 0 |
+| First handler, before acknowledgement | `44` | `40` | `01000000` | 0 |
+| First service complete | `04` | `40` | `00000000` | 1 |
+| Third marker serviced | `04` | `40` | `00000000` | 2 |
+| Delivery masked again | `04` | `00` | `00000000` | 2 |
+
+Both services receive `44H`, although the enabled subset is only `40H`.
+The handler clears GPU only, so disabled VBlank remains pending. ACK always
+reads zero. The two service increments count these controlled services after
+re-arming; they do not count all possible source arrivals or establish an
+interrupt-latency bound.
 
 ## Register reference
 
@@ -380,248 +461,3 @@ Reset clears pending and MASK and returns ACK readback to zero. Writing MASK=0
 alone does not reproduce reset: pending requests remain. Writing ACK with all
 ones alone does not reproduce reset either: the enable word remains unchanged.
 Source-unit reset and re-arming remain that unit's separate operations.
-
-## A complete cartridge experiment
-
-This experiment leaves a disabled VBlank request pending while it raises GPU
-requests. It demonstrates retention, selective acknowledgement, re-arming and
-coalescence without drawing a picture. It does not measure an interrupt latency.
-
-### Starting conditions
-
-Start through the standard boot firmware and retain its running beam timing.
-Do not stop or reprogram the beam during the experiment: the initial poll needs
-a VBlank entry to raise bit 2. CPU interrupt enable remains at cartridge-entry
-state; the program changes only the controller MASK, not CP0 STATUS.
-
-The program owns GP0 exclusively. There is no unfinished packet, readback or
-DMA transfer and no other active source producer apart from the retained
-periodic VBlank request. Preparation masks controller delivery, waits for GPU
-idle, clears its local request latch and clears controller bits other than
-VBlank. It then polls FLAGS bit 2 rather than executing HALT while that bit is
-masked.
-
-### Retained observations
-
-Build the first listing as the const module `results` (`results.lua`). Build
-all the subsequent listings, in order, as one entry module (`cart.lua`); they
-are consecutive parts of that program, not separate cartridge entries.
-
-The module named `results` owns one explicit BSS record. A phase records the
-full FLAGS word, the MASK word, GPUSTAT24 as a masked word, the software service
-count and ACK readback. The record occupies 180 bytes: five header words and
-eight five-word phase records. The const module exports the storage address;
-the record is not a Lua table standing in for registers.
-
-Startup zeroes the BSS words before entry. The initial service count is therefore
-zero, and the first handler writes handler-word slot 0. The handler and main
-program share that same retained record.
-
-```lua
-module<const>
-
-struct irq_manual_phase
-	flags: word
-	mask: word
-	gpu_local: word
-	services: word
-	ack: word
-end
-
-struct irq_manual_result
-	completed_phase: word
-	gpu_services: word
-	handler_flags: word[2]
-	ack_zero_flags: word
-	phases: irq_manual_phase[8]
-end
-
-bss result: irq_manual_result
-
-return { result = result }
-```
-
-### Ports and direct handler
-
-The entry module imports that address and programs actual word ports. The
-handler records its full argument before acknowledging only GPU. Phase 4 is
-recorded **inside the first handler, before service**, not by main code racing
-the newly enabled interrupt. No other code issues GP0 commands during service.
-
-#### Ports
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *irq_manual_result = state.result
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-```
-
-#### IRQ service
-
-```lua
-function irq(flags)
-	result.handler_flags[result.gpu_services] = flags
-	if (flags & 0x00000040) ~= 0 then
-		if result.gpu_services == 0 then
-			-- The vector supplied the complete pending word, not FLAGS & MASK.
-			result.phases[4].flags = flags
-			result.phases[4].mask = *irq_mask
-			result.phases[4].gpu_local = *gp1 & 0x01000000
-			result.phases[4].services = result.gpu_services
-			result.phases[4].ack = *irq_ack
-		end
-		*gp1 = 0x02000000
-		*irq_ack = 0x00000040
-		result.gpu_services = result.gpu_services + 1
-	end
-end
-```
-
-#### Prepare with delivery masked
-
-```lua
--- Keep the standard BIOS's running beam; this is not a display-reset demo.
-*irq_mask = 0
-while (*gp1 & 0x04000000) == 0 do
-end
-*gp1 = 0x02000000
--- Preparation clears stale boot requests but deliberately preserves VBlank.
-*irq_ack = 0xfffffffb
-while (*irq_flags & 0x00000004) == 0 do
-end
-result.phases[0].flags = *irq_flags
-result.phases[0].mask = *irq_mask
-result.phases[0].gpu_local = *gp1 & 0x01000000
-result.phases[0].services = result.gpu_services
-result.phases[0].ack = *irq_ack
-result.completed_phase = 0
-```
-
-#### First masked request
-
-```lua
--- First masked GPU request: the controller retains both pending sources.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-result.phases[1].flags = *irq_flags
-result.phases[1].mask = *irq_mask
-result.phases[1].gpu_local = *gp1 & 0x01000000
-result.phases[1].services = result.gpu_services
-result.phases[1].ack = *irq_ack
-result.completed_phase = 1
-```
-
-#### Clear only the GPU-local latch
-
-```lua
--- Clear only the source latch. The controller's pending bit is independent.
-*gp1 = 0x02000000
-while (*gp1 & 0x01000000) ~= 0 do
-end
-result.phases[2].flags = *irq_flags
-result.phases[2].mask = *irq_mask
-result.phases[2].gpu_local = *gp1 & 0x01000000
-result.phases[2].services = result.gpu_services
-result.phases[2].ack = *irq_ack
-result.completed_phase = 2
-*irq_ack = 0
-result.ack_zero_flags = *irq_flags
-```
-
-#### Second masked request
-
-```lua
--- A second independent request coalesces into the already-pending bit.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-result.phases[3].flags = *irq_flags
-result.phases[3].mask = *irq_mask
-result.phases[3].gpu_local = *gp1 & 0x01000000
-result.phases[3].services = result.gpu_services
-result.phases[3].ack = *irq_ack
-result.completed_phase = 3
-```
-
-#### Enable delivery and observe first service
-
-```lua
-*irq_mask = 0x00000040
-while result.gpu_services == 0 do
-	halt_until_irq
-end
-result.phases[5].flags = *irq_flags
-result.phases[5].mask = *irq_mask
-result.phases[5].gpu_local = *gp1 & 0x01000000
-result.phases[5].services = result.gpu_services
-result.phases[5].ack = *irq_ack
-result.completed_phase = 5
-```
-
-#### Re-arm and observe second service
-
-```lua
--- Both GPU latches were acknowledged; a fresh marker can request service.
-*gp0 = 0x1f000000
-while result.gpu_services == 1 do
-	halt_until_irq
-end
-result.phases[6].flags = *irq_flags
-result.phases[6].mask = *irq_mask
-result.phases[6].gpu_local = *gp1 & 0x01000000
-result.phases[6].services = result.gpu_services
-result.phases[6].ack = *irq_ack
-result.completed_phase = 6
-```
-
-#### Leave delivery masked
-
-```lua
-*irq_mask = 0
-result.phases[7].flags = *irq_flags
-result.phases[7].mask = *irq_mask
-result.phases[7].gpu_local = *gp1 & 0x01000000
-result.phases[7].services = result.gpu_services
-result.phases[7].ack = *irq_ack
-result.completed_phase = 7
-while true do
-	halt_until_irq
-end
-```
-
-### Reading the result
-
-The phase numbers identify retained observations, not equal-duration time slots.
-Words in the following table are hexadecimal; service counts are decimal.
-GPU24 is shown as its complete masked word, not shifted to bit 0.
-Phase 4's FLAGS column records the IRQ entry's delivered argument; the other
-rows read FLAGS directly. These observations do not constitute an atomic
-snapshot operation across the register ports.
-
-| Phase | Observation | FLAGS | MASK | GPU24 | Services |
-|---|---|---|---|---|---|
-| 0 | Masked VBlank retained | `04` | `00` | `00000000` | 0 |
-| 1 | First marker | `44` | `00` | `01000000` | 0 |
-| 2 | GPU-local clear only | `44` | `00` | `00000000` | 0 |
-| 3 | Second marker coalesced | `44` | `00` | `01000000` | 0 |
-| 4 | First handler, before service | `44` | `40` | `01000000` | 0 |
-| 5 | First service completed | `04` | `40` | `00000000` | 1 |
-| 6 | Third marker and second service completed | `04` | `40` | `00000000` | 2 |
-| 7 | Delivery masked again | `04` | `00` | `00000000` | 2 |
-
-Every retained ACK read is zero. The explicit ACK=0 between phases 2 and 3 leaves
-FLAGS=`44`. Both recorded handler arguments are `44`, although the enabled
-subset is only `40`. Clearing GPU alone in each handler leaves disabled VBlank
-pending. No handler is called merely to dispose of that disabled bit.
-
-This is a controlled diagnostic sequence, not a general interrupt dispatcher.
-The two handler-word slots match its two services. A cartridge with a different
-producer schedule must design its retained observations and service protocol
-for that schedule; these two slots are not hardware event storage.

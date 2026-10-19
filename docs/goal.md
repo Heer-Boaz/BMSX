@@ -1,79 +1,47 @@
-# BMSX Hardware-Emulation Goal
+# Emulator architecture work
 
-This file tracks the active architecture goal for the TypeScript and C++ BMSX
-machine cores. It is a work-order checklist; stable hardware contracts live in
-`docs/architecture.md` and the device-specific hardware documents.
+This is an internal engineering work-order guide for the TypeScript and C++
+implementations. The console's product specification lives in the technical
+manuals listed by [the catalog](manual/catalog.json), not here or in
+[internal software architecture](architecture.md).
 
 ## Target
 
-Both BMSX cores should be structured like real machine emulators: CPU-visible
-state enters through RAM, MMIO, command words, FIFOs, registerfiles, device
-memory, timing edges, and IRQ/status/fault paths. Host code may present output
-and inject input, but it must not own cart-observable behavior.
+Keep each emulated state and operation with its real CPU, memory, device or
+scheduler owner. Host applications compose execution and physical services;
+Studio and project tools remain consumers above those boundaries. Co-located
+source does not make a library, converter or build tool part of the console.
 
-MAME is the reference style: devices own live state; save-state is passive
-persistence of that live state, not a parallel object model.
+## Engineering constraints
 
-## Non-negotiable constraints
+- Keep mirrored machine responsibilities and representations coherent.
+- Preserve raw machine words and direct buffer/data paths; convert only at the
+  owner that interprets them.
+- Keep mutable state with its existing owner rather than adding shadow models,
+  facade layers, fallback state, compatibility readers or speculative validation.
+- Source compilation, source symbols, workspace state and UI policy remain
+  tooling responsibilities. `cartlib` remains independent cartridge software.
+- Persistence captures live state directly; no alternate revisioned state model
+  or repair pass is introduced.
+- Follow the public manuals for intended product behavior and verify relevant
+  spec leaves, owners and tests. Report conflicts rather than treating old
+  architecture prose or an old work order as authority.
 
-- Keep TypeScript and C++ core ownership mirrored by relative path and role.
-- Preserve hot-path performance and retained buffers; never break the direct
-  VRAM-to-GPU texture path for cosmetic architecture.
-- Do not add compatibility readers, legacy migration branches, defensive repair,
-  facade/provider/adapter layers, DTO validation, or wrapper-only APIs.
-- Use raw register words, integer fixed-point words, addresses, opcodes, slots,
-  surface ids, packet fields, and render commands directly at their hardware
-  boundaries.
-- Keep cart/gameplay Lua at intent level. Cart code may name documented numeric
-  ABI constants it uses; BIOS/system utilities may emit raw MMIO/RAM words, but
-  gameplay files must not invent helper layers that reinterpret the hardware
-  ABI.
+## Working on a slice
 
-## Completion criteria
+Start from the current branch/diff and the live owners. Treat historical plans
+as hypotheses. Identify the representation and affected callers before editing;
+for mirrored runtime work account for both implementations and hot paths.
 
-The goal is not complete until all of these are true in the current checkout:
+Choose validation for the actual changed surface: focused TS/native tests,
+build/typecheck, cross-runtime execution, real backend output or visible UI
+interaction. Use `npm run audit:core-parity` for mirrored accounting and finish
+with `git diff --check`. Passing a typecheck or parity inventory is not proof
+of ownership, speed or hardware correctness.
 
-1. `docs/architecture.md` describes the current machine/host boundary without
-   stale migration notes or duplicated work queues.
-2. Device docs that remain under `docs/` read as hardware contracts: register
-   maps, latches, FIFOs, registerfiles, datapaths, timing edges,
-   status/fault/IRQ behavior, save-state-visible state, and TS/C++ owners.
-3. `npm run audit:core-parity` passes and any exceptions are narrow and current.
-4. Scoped quality scans for touched machine/device files report zero issues.
-5. Mirrored runtime slices pass TS build/typecheck and native build/tests.
-6. Cart-visible behavior changes have focused tests that exercise RAM/MMIO or
-   public device edges, not only private helper calls.
-7. A slice-boundary reviewer returns no blockers for ownership, parity,
-   performance, defensive clutter, compatibility paths, or fake architecture.
-
-## Current remaining work
-
-1. Continue splitting monolithic device controllers along hardware-unit
-   boundaries: registerfiles, latches, FIFOs, datapaths, timing edges, and
-   service points.
-2. Keep ICU as the raw register, sample-latch, and output datapath described in
-   `docs/architecture.md`. Gameplay action maps, parsing, consume/repeat state,
-   and guarded presses belong to cartlib; device assignment and platform input
-   buffering belong to host input owners. Do not add an ICU action table or
-   high-level event FIFO.
-3. Keep GX GPU/APU/GEO contracts honest: device-visible state first, host queues and
-   renderer/audio backends only at output edges.
-4. Treat save-state as passive persistence of live machine state; do not create
-   parallel contracts when the live hardware owner already has the record shape.
-5. Promote aggregate persistence plumbing only when it can be done without
-   opening private hardware fields as fake public contracts.
-6. Delete or rewrite any remaining hardware document that cannot be maintained
-   as a current hardware contract.
-
-## Validation menu
-
-Use the smallest relevant set while iterating, then the broader set before a
-slice lands:
-
-- `ctest --test-dir build-cpp-tests --output-on-failure`
-- `focused `npx tsx --test --import ./tests/lua/test_setup.ts ...`
-- `npm run analyze:code-quality -- --root <touched TS/C++ roots>`
-- `npm run audit:core-parity`
-- `npm run headless:forcebuildallrun -- 2025`
-- `npm run libretro-wsl:forcebuildall -- 2025`
-- `npm run libretro-host:wsl:headless -- 2025`
+Update `architecture.md` only for actual software ownership/dependency changes.
+Update the appropriate manual for public hardware/BIOS behavior. Do not append
+register tables, format descriptions, successful test transcripts or completed
+migration history to the internal architecture document. Existing open work is
+tracked in [open architecture slices](open_architecture_slices.md); it is not a
+second specification or blanket authorization to implement its proposals.

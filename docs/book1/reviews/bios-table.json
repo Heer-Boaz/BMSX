@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete31+73-line ordinary modules, all six APIs including default-length paths,30 retained assertions and14 separately observed ordinary diagnostic lines. Independent contract and complete-program source audits pass after quoted corrections. Bounded newcomer reading review closes prerequisite instructions (with its discovery-glob scope limitation disclosed). All11 actual final draft PDF pages individually inspected; pipe-bearing retained value corrected and visually confirmed. No new publisher/runtime/compiler/BIOS/shared-harness layer.",
+			"resolution": "Short tuple, mutation, range and ordering examples accompany the six Table procedures and their maintained-length dependencies.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/bios-table-source.md"
 		},
 		"figures": {

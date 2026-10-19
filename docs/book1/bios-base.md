@@ -5,11 +5,12 @@ execution. They need no cartridge import. They check and convert language values
 traverse Tables, select argument tuples, access ordinary globals and produce
 diagnostic text. They are not a second set of device-register ports.
 
-**CPU and BLua32 instruction reference** defines language values, Number
-arithmetic and ordinary calls. **Memory and program storage** defines typed byte
-storage, module declarations and startup. **Protected calls and coroutines**
-defines `error`, `pcall`, `xpcall` and the `coroutine` interface. **System control
-and timing** defines the raw diagnostic interface and retained fault report.
+The [CPU reference](cpu.md) defines language values, Number arithmetic and
+ordinary calls. [Memory and program storage](memory.md) defines typed byte
+storage, module declarations and startup. [Protected calls and coroutines](coroutines.md)
+defines `error`, `pcall`, `xpcall` and the `coroutine` interface.
+[System control and timing](system.md) defines the diagnostic interface and
+retained fault report.
 The table/metatable raw-access globals are described in the CPU reference;
 other installed libraries are separate interfaces.
 
@@ -37,7 +38,7 @@ On success, `assert` returns the condition followed by every remaining argument,
 local condition, message, absent, code = assert(0, 'kept', nil, 7)
 ```
 
-This call succeeds and returns exactly four values: `0`, `'kept'`, `nil`, and `7`. For counting or selecting a multiple-result sequence, see **Traversal, argument selection, globals, and output**.
+This call succeeds and returns exactly four values: `0`, `'kept'`, `nil`, and `7`. For counting or selecting a multiple-result sequence, see [Traversal, argument selection, globals, and output](#traversal-argument-selection-globals-and-output).
 
 <section class="keep-together">
 
@@ -50,7 +51,7 @@ On failure, the presence of a tail argument determines the error value:
 
 </section>
 
-Consequently, `assert(false, nil)` raises `nil`, whereas `assert(false)` raises `assertion failed!`. A supplied `false`, Number, Table, or other non-String value is also raised as that value, not converted to a message. Later tail arguments are not additional error values. Error interception and propagation are described in **Protected calls and coroutines**.
+Consequently, `assert(false, nil)` raises `nil`, whereas `assert(false)` raises `assertion failed!`. A supplied `false`, Number, Table, or other non-String value is also raised as that value, not converted to a message. Later tail arguments are not additional error values. Error interception and propagation are described in [Protected calls and coroutines](coroutines.md).
 
 ### `rawequal(left, right)`
 
@@ -162,7 +163,7 @@ For a nonnil base, the installed function performs these operations in order:
 3. Require `integer_base` to be between `2` and `36`, inclusive. Otherwise, raise the exact String `bad argument #2 to tonumber (base out of range)`.
 4. Parse the String using that base, returning a Number or `nil`.
 
-The String-value check therefore precedes base arithmetic and range checking. There is no separate base-type check before `base // 1`: do not treat the three literal errors as an exhaustive diagnostic catalogue for every possible base value, or assume a String-to-Number coercion for the base. The function's `type` and explicit error operations resolve their ordinary globals when called; the contracts here describe those globals as installed. See **Protected calls and coroutines** for error handling.
+The String-value check therefore precedes base arithmetic and range checking. There is no separate base-type check before `base // 1`: do not treat the three literal errors as an exhaustive diagnostic catalogue for every possible base value, or assume a String-to-Number coercion for the base. The function's `type` and explicit error operations resolve their ordinary globals when called; the contracts here describe those globals as installed. See [Protected calls and coroutines](coroutines.md) for error handling.
 
 </section>
 
@@ -170,7 +171,7 @@ The String-value check therefore precedes base arithmetic and range checking. Th
 
 The explicit-base parser accumulates each digit as `value * base + digit`, using Number arithmetic. Decimal integer accumulation starts at `0` and processes digits left to right as `value = value * 10 + digit`. Fractional scanning starts with divisor `10`; each digit contributes `digit / divisor` to the current value, after which the divisor is multiplied by `10`. It does not collect all fractional digits for one final division. Exponent magnitude likewise starts at `0` and accumulates left to right as `exponent = exponent * 10 + digit`. Its signed magnitude controls repeated multiplication or division by ten, changing the exponent by one step each time. After scaling and successful trailing-whitespace/end validation, the decimal parser applies the leading sign as `sign * value`. These successive operations are not a single ideal decimal conversion: rounding and range behavior follow the arithmetic actually performed. Exponent scaling has no iteration cap or finite-value rejection. Very large parsed exponents do not carry a termination or bounded-running-time guarantee.
 
-There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. The direct `type` primitive adds one built-in cycle, separate from call costs. Its primitive metadata adds no per-argument or per-result charge; this does not establish a constant total cost for arbitrary calls or for the other functions in this section.
+There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. `type` adds one cycle, separate from call and return instruction costs, with no additional per-argument or per-result charge.
 
 ## Traversal, argument selection, globals, and output
 
@@ -234,320 +235,132 @@ The selected values are returned unchanged, including intervening or trailing ni
 
 `setglobal` requires the same uncoerced String name and uses the same argument fault for an omitted or non-String name. It writes its second argument unchanged to that ordinary global. Omitting the second argument writes nil; later arguments are unused. A previously unknown name receives an ordinary global slot, including when the value written is nil. The function itself returns **zero results**. A caller requesting one result nevertheless receives nil through normal result padding.
 
-These functions address actual ordinary globals. They do not look up or assign a local or an upvalue merely because it has the same spelling, and they do not access the separate system-global namespace described in **CPU and BLua32 instruction reference**. A stored Table remains that Table rather than a copied collection. A String passed to `getglobal` or `setglobal` does not redirect the operation to that separate namespace.
+These functions address actual ordinary globals. They do not look up or assign a local or an upvalue merely because it has the same spelling, and they do not access the separate system-global namespace described in [CPU reference](cpu.md). A stored Table remains that Table rather than a copied collection. A String passed to `getglobal` or `setglobal` does not redirect the operation to that separate namespace.
 
-The write takes effect when `setglobal` runs. An error later in the surrounding operation does not undo it. Protecting a call changes how a failure is received, not whether an earlier global write occurred; it is not a transaction around state changes. See **Protected calls and coroutines** for the failure-handling contract.
+The write takes effect when `setglobal` runs. An error later in the surrounding operation does not undo it. Protecting a call changes how a failure is received, not whether an earlier global write occurred; it is not a transaction around state changes. See [Protected calls and coroutines](coroutines.md) for the failure-handling contract.
 
 ### `print(...)`
 
 `print` writes one console field for every argument position, with one tab between adjacent positions and no leading or trailing separator. Nil arguments are counted and converted rather than omitted; a list consisting entirely of nils still has one field per argument. After the fields it ends the line. Calling `print` with no arguments also ends a line.
 
-The function uses the current ordinary global `select` to count and select arguments, and the current ordinary global `tostring` to convert one selected value at each position. These dependencies are mutable. The field-counting and conversion behavior above describes the installed functions; replacing either dependency can change what `print` does or cause it to fail. See **Value checks and conversion** for the installed `tostring` conversion rules. The console dependency itself is captured locally rather than obtained through either of those public globals.
+The function uses the current ordinary global `select` to count and select arguments, and the current ordinary global `tostring` to convert one selected value at each position. These dependencies are mutable. The field-counting and conversion behavior above describes the installed functions; replacing either dependency can change what `print` does or cause it to fail. See [Value checks and conversion](#value-checks-and-conversion) for the installed `tostring` conversion rules. The console dependency itself is captured locally rather than obtained through either of those public globals.
 
-Console writing sends character codes through the system-print interface. Separately, it retains one-byte history entries: codes through 255 are retained unchanged, and larger codes are recorded as 63. The original code still goes to the system-print interface. Writing a field does not itself append a newline. Ending the line records newline code 10 in that history and writes 1 to the system-print-flush register. The history has capacity for 8192 one-byte entries and is distinct from the SYSTEM diagnostic queue. This is console output, not a file-stream operation or a drawing call. See **System control and timing** for the transport and presentation boundaries; a `print` call does not by itself specify when a display is presented.
+Console writing sends character codes through the system-print interface. Separately, it retains one-byte history entries: codes through 255 are retained unchanged, and larger codes are recorded as 63. The original code still goes to the system-print interface. Writing a field does not itself append a newline. Ending the line records newline code 10 in that history and writes 1 to the system-print-flush register. The history has capacity for 8192 one-byte entries and is distinct from the SYSTEM diagnostic queue. This is console output, not a file-stream operation or a drawing call. See [System control and timing](system.md) for the transport and presentation boundaries; a `print` call does not by itself specify when a display is presented.
 
 On successful completion, `print` returns exactly **one nil**. Its ordinary function body falls through to the default one-nil return. This differs from the zero-result contract of `setglobal`, even though a single-result assignment receives nil from either call.
 
 ### Faults and incremental cycle charges
 
-Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.` and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See **Protected calls and coroutines** for receiving failures.
+Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.` and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md) for receiving failures.
 
-Each invocation of the direct primitive aliases `next`, `select`, `getglobal`, and `setglobal` adds **one builtin cycle**. This is an incremental primitive charge, not the total cost of a call or of the surrounding operation. Their primitive metadata adds no per-argument or per-result charge; scanning or copying multiple entries does not create an additional per-element metadata charge. `pairs`, `ipairs`, and `print` execute ordinary compiled code, including their calls, branches, indexing, conversion, and console work. Do not apply the aliases' one-cycle increment as a total cost for those functions. See **System control and timing** for the surrounding execution and timing model.
+Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one cycle**, with no additional per-argument or per-result charge. This increment is separate from call and return instructions and the surrounding operation. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [System control and timing](system.md) for the execution and timing model.
 
-## Program: base services in an ordinary cartridge
+## Programming examples
 
-This cartridge reads numeric text, totals a small inventory, distinguishes a
-sequence prefix from a tuple, and changes its own global counter. It uses all
-twelve base-service globals without importing a BIOS module. `pcall` and
-`error` follow **Protected calls and coroutines**; `coroutine.running` supplies
-a real Thread value for the type and text examples. No new coroutine is needed.
+The following sequences use the installed globals directly. They illustrate
+conversion, traversal, argument tuples and console output.
 
-Save the first listing as `results.lua` and concatenate the four entry listings
-in their printed order as `cart.lua`. These are the complete modules, not
-excerpts. The companion README supplies the exact file assembly and manifest.
+### Assertions and numeric text
 
-<section class="keep-together">
-
-### Result storage
-
-The `f64` members retain numeric results, including fractions and negative
-values. The `word` members retain counts or observations encoded as 0 and 1.
-A relation such as “the caught error was nil” is recorded as 1; nil itself is
-not converted into a made-up memory representation. **Memory and program
-storage** defines these typed fields, zeroed BSS, module declarations and
-zero-based typed-array indexing. Ordinary language Tables below still use the
-keys written in the source.
+A successful assertion preserves its full argument tuple. A failed assertion
+with an explicit nil message is still a failure: use the protected-call flag,
+not the error value, to distinguish it from success.
 
 ```lua
-module<const>
-
-struct bios_base_manual_result
-	completed: word
-	assert_first: f64
-	assert_last: f64
-	assert_count: word
-	assert_hole: word
-	assert_nil_error: word
-	assert_default_error: word
-	conversions: f64[6]
-	conversion_rejected: word
-	conversion_bad_base: word
-	type_names_match: word
-	object_labels_match: word
-	identity_same: word
-	identity_distinct: word
-	next_key: f64
-	next_value: f64
-	next_done_count: word
-	next_done_nil: word
-	pairs_count: word
-	pairs_sum: f64
-	ipairs_count: word
-	ipairs_sum: f64
-	ipairs_after_hole: f64
-	select_count: word
-	select_suffix_count: word
-	select_first_nil: word
-	select_last: f64
-	select_empty_count: word
-	global_values: f64[2]
-	global_error: word
-	global_cleared: word
-	print_count: word
-end
-
-bss result: bios_base_manual_result
-
-return { result = result }
+local first, label, gap, last = assert(0, 'kept', nil, 7)
+-- first = 0, label = 'kept', gap = nil, last = 7.
+local count = select('#', assert(0, 'kept', nil, 7)) -- 4
+local ok, value = pcall(assert, false, nil)         -- false, nil
+local default_ok, message = pcall(assert, false)
+-- default_ok = false; message = 'assertion failed!'.
 ```
 
-</section>
-
-<section class="keep-together">
-
-### Entry 1: assertions and numeric text
-
-Zero passes `assert`. Its four results preserve the interior nil. The second
-call counts that same successful tuple without packing it into a Table. A
-failed assertion with an explicit nil message raises nil; leaving the message
-out raises `assertion failed!`. Both are failures, so the program checks the
-protected-call flag rather than treating a nil payload as success.
-
-The six conversions exercise numeric passthrough, signed decimal exponent
-text, a decimal fraction, prefixed hexadecimal, base 2 and base 36. Text with
-trailing junk is rejected as nil; base 37 instead raises the caught error.
+Numeric text is accepted only when the entire numeral and permitted trailing
+whitespace are consumed. A malformed numeral returns nil; an invalid explicit
+base raises an error instead.
 
 ```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *bios_base_manual_result = state.result
-
--- Zero is true; a successful assertion preserves its whole argument tuple.
-local label, gap
-result.assert_first, label, gap, result.assert_last = assert(0, 'kept', nil, 7)
-result.assert_hole = gap == nil and 1 or 0
-result.assert_count = select('#', assert(0, 'kept', nil, 7))
-print('Assert values', result.assert_first, label, gap, result.assert_last)
-local nil_ok<const>, nil_error<const> = pcall(assert, false, nil)
-result.assert_nil_error = not nil_ok and nil_error == nil and 1 or 0
-print('Assert nil error', nil_ok, nil_error)
-local default_ok<const>, default_error<const> = pcall(assert, false)
-result.assert_default_error = not default_ok
-	and default_error == 'assertion failed!' and 1 or 0
-print('Assert default', default_ok, default_error)
-
--- Read numeric text through the installed converter, not a cartridge parser.
-result.conversions[0] = tonumber(12.5)
-result.conversions[1] = tonumber('  -12.5e1  ')
-result.conversions[2] = tonumber('.25')
-result.conversions[3] = tonumber('0x10')
-result.conversions[4] = tonumber('-101', 2)
-result.conversions[5] = tonumber('z', 36)
-local rejected<const> = tonumber('12x')
-result.conversion_rejected = rejected == nil and 1 or 0
-print('Conversions', result.conversions[0], result.conversions[1], result.conversions[2],
-	result.conversions[3], result.conversions[4], result.conversions[5], rejected)
-local base_ok<const>, base_error<const> = pcall(tonumber, '10', 37)
-result.conversion_bad_base = not base_ok
-	and base_error == 'bad argument #2 to tonumber (base out of range)' and 1 or 0
-print('Invalid base', base_ok, base_error)
+local unchanged = tonumber(12.5)      -- 12.5
+local decimal = tonumber(' -12.5e1 ') -- -125
+local fraction = tonumber('.25')     -- 0.25
+local hex = tonumber('0x10')          -- 16
+local binary = tonumber('-101', 2)    -- -5
+local base36 = tonumber('z', 36)      -- 35
+local rejected = tonumber('12x')     -- nil
+local ok, message = pcall(tonumber, '10', 37)
+-- false, 'bad argument #2 to tonumber (base out of range)'.
 ```
 
-</section>
+### Identity and traversal
 
-<section class="keep-together">
-
-### Entry 2: labels, identity and traversal
-
-The seven type names include `thread`, obtained from the running thread.
-`tostring` gives the object labels `table`, `function` and `thread`, not object
-addresses. `rawequal` distinguishes the same Table from a separate Table with
-the same contents.
-
-The singleton gives `next` an unambiguous pair. Advancing past it produces
-exactly one nil result. The inventory example uses only a count and sum, so
-its answer does not depend on the traversal order of named keys. The sequence
-example stops at its first nil even though key 4 remains present. Neither loop
-uses the Table-length operator to infer how many values were visited.
+Equal-looking Tables remain distinct objects. Their text labels describe the
+category, not their contents or identity.
 
 ```lua
-
-local shared<const> = { count = 3 }
-local other<const> = { count = 3 }
-local thread<const> = coroutine.running()
-local names<const> = type(nil) .. '/' .. type(false) .. '/' .. type(12) .. '/'
-	.. type('text') .. '/' .. type(shared) .. '/' .. type(assert) .. '/' .. type(thread)
-result.type_names_match =
-	names == 'nil/boolean/number/string/table/function/thread' and 1 or 0
-print('Type names', names)
-local labels<const> = tostring(shared) .. '/' .. tostring(assert) .. '/' .. tostring(thread)
-result.object_labels_match = labels == 'table/function/thread' and 1 or 0
-print('Object labels', labels)
-result.identity_same = rawequal(shared, shared) and 1 or 0
-result.identity_distinct = not rawequal(shared, other) and 1 or 0
-print('Identity', rawequal(shared, shared), rawequal(shared, other))
-
--- A singleton makes next's first pair unambiguous without ordering a hash table.
-local singleton<const> = { [4] = 41 }
-result.next_key, result.next_value = next(singleton)
-result.next_done_count = select('#', next(singleton, result.next_key))
-result.next_done_nil = next(singleton, result.next_key) == nil and 1 or 0
-print('Next', result.next_key, result.next_value, result.next_done_count)
-local inventory<const> = { apples = 11, pears = 22, plums = 33 }
-for _key, quantity in pairs(inventory) do
-	result.pairs_count = result.pairs_count + 1
-	result.pairs_sum = result.pairs_sum + quantity
+local inventory = {apples = 11, pears = 22, plums = 33}
+local same = inventory
+local other = {apples = 11, pears = 22, plums = 33}
+local shared = rawequal(inventory, same)   -- true
+local distinct = rawequal(inventory, other) -- false
+local category = type(inventory)          -- 'table'
+local label = tostring(inventory)         -- 'table'
+local total = 0
+for name, quantity in pairs(inventory) do
+    total = total + quantity
 end
-print('Inventory', result.pairs_count, result.pairs_sum)
-local sequence<const> = { 10, 20, nil, 90 }
-for _index, quantity in ipairs(sequence) do
-	result.ipairs_count = result.ipairs_count + 1
-	result.ipairs_sum = result.ipairs_sum + quantity
-end
-result.ipairs_after_hole = sequence[4]
-print('Sequence prefix', result.ipairs_count, result.ipairs_sum, result.ipairs_after_hole)
+-- total is 66, independently of the order of named keys.
 ```
 
-</section>
-
-<section class="keep-together">
-
-### Entry 3: tuples and an owned global
-
-`select('#', ...)` includes nil positions. Selecting the suffix at position 2
-preserves nil followed by 9; selecting position 4 of a three-value tuple gives
-zero results. This empty tuple is different from `next`'s exhausted one-nil
-tuple.
-
-The program owns only `bios_base_manual_counter`. `setglobal` first writes 11;
-an ordinary global-name read sees it. Inside protection, ordinary assignment
-changes it to 22 before raising an error. `getglobal` still reads 22 afterward:
-this protected call did not undo that write. The program finally clears its
-own global by assigning nil with `setglobal`. It does not save and restore
-some other program's state or replace a builtin function.
+`ipairs` stops at the first nil read; it does not search ahead for another
+populated key. `next` instead visits stored mappings and returns one nil when
+exhausted.
 
 ```lua
+local sequence = {10, 20, nil, 90}
+local total = 0
+for index, quantity in ipairs(sequence) do
+    total = total + quantity
+end
+-- total is 30; sequence[4] remains 90.
+local singleton = {[4] = 41}
+local key, value = next(singleton)       -- 4, 41
+local finished = next(singleton, key)    -- nil
+local result_count = select('#', next(singleton, key)) -- 1
+```
 
--- Count the tuple, not table entries: nil is a position, not an end marker.
-result.select_count = select('#', 'skip', nil, 9)
-local suffix_first<const>, suffix_last<const> = select(2, 'skip', nil, 9)
-result.select_first_nil = suffix_first == nil and 1 or 0
-result.select_last = suffix_last
-result.select_suffix_count = select('#', select(2, 'skip', nil, 9))
-result.select_empty_count = select('#', select(4, 'skip', nil, 9))
-print('Select suffix', suffix_first, suffix_last)
-print('Tuple counts', result.assert_count, result.select_count,
-	result.select_suffix_count, result.select_empty_count)
+### Tuples and globals
 
--- This cartridge owns this one global; protection is not a transaction.
-setglobal('bios_base_manual_counter', 11)
-result.global_values[0] = bios_base_manual_counter
-local changed_ok<const>, changed_error<const> = pcall(function()
-	bios_base_manual_counter = 22
-	error('counter changed')
+Count tuple positions with `select`, not Table length. An empty selected suffix
+has no results; a suffix beginning with nil still contains that position.
+
+```lua
+local count = select('#', 'skip', nil, 9)             -- 3
+local first, last = select(2, 'skip', nil, 9)           -- nil, 9
+local suffix_count = select('#', select(2, 'skip', nil, 9)) -- 2
+local empty_count = select('#', select(4, 'skip', nil, 9))  -- 0
+```
+
+For a global owned by the cartridge, both a global-name expression and
+`getglobal` see writes made with `setglobal`. Protection does not reverse an
+earlier write.
+
+```lua
+setglobal('score_counter', 11)
+local before = score_counter -- 11
+local ok, message = pcall(function()
+    score_counter = 22
+    error('counter changed')
 end)
-result.global_values[1] = getglobal('bios_base_manual_counter')
-result.global_error = not changed_ok and changed_error == 'counter changed' and 1 or 0
-print('Global writes', result.global_values[0], result.global_values[1],
-	changed_ok, changed_error)
-setglobal('bios_base_manual_counter', nil)
-result.global_cleared = getglobal('bios_base_manual_counter') == nil and 1 or 0
-print('Global cleared', getglobal('bios_base_manual_counter'))
+local after = getglobal('score_counter') -- 22, despite the error
+setglobal('score_counter', nil)
 ```
 
-</section>
-
-<section class="keep-together">
-
-### Entry 4: output and completion
-
-`print` includes the nil argument, separates arguments with tabs and ends the
-line. This installed ordinary function falls through with one nil result;
-the surrounding `select` records its count as 1. The completion field is set
-only after all observations. The final loop waits for interrupts rather than
-returning from the entry module.
+### Console output
 
 ```lua
-
--- print separates arguments with tabs, including nil; its fallthrough returns one nil.
-result.print_count = select('#', print('Print tuple', nil, 7))
-print('Print result count', result.print_count)
-result.completed = 1
-while true do
-	halt_until_irq
-end
+print('Score', nil, 7)
 ```
 
-</section>
-
-<section class="keep-together">
-
-### Retained results
-
-After `completed` becomes 1, inspect these fields through the typed result
-view. Every listed relation word is 1; counts and numeric values keep their
-actual values.
-
-| Fields | Retained result |
-|---|---|
-| `assert_first`, `assert_last`, `assert_count` | 0, 7, 4 |
-| `assert_hole`, `assert_nil_error`, `assert_default_error` | 1 each: interior nil; failed assertion raises nil; omitted message raises the default text |
-| `conversions[0]` through `[5]` | 12.5, -125, 0.25, 16, -5, 35 |
-| `conversion_rejected`, `conversion_bad_base` | 1 each: rejected text is nil; base 37 raises the shown error |
-| `type_names_match`, `object_labels_match` | 1 each: the exact name and label strings shown below |
-| `identity_same`, `identity_distinct` | 1 each: shared Table equal to itself, separate equal-shaped Table unequal |
-| `next_key`, `next_value`, `next_done_count`, `next_done_nil` | 4, 41, 1, 1 |
-| `pairs_count`, `pairs_sum` | 3, 66 |
-| `ipairs_count`, `ipairs_sum`, `ipairs_after_hole` | 2, 30, 90 |
-| `select_count`, `select_suffix_count`, `select_first_nil`, `select_last`, `select_empty_count` | 3, 2, 1, 9, 0 |
-| `global_values[0]`, `[1]`, `global_error`, `global_cleared` | 11, 22, 1, 1 |
-| `print_count`, `completed` | 1, 1 |
-
-</section>
-
-### Output
-
-Assemble and run the ordinary cartridge using the companion README's diagnostic
-procedure. After the startup messages, its output is exactly the following
-17 lines; separators are tabs:
-
-```text
-Assert values	0	kept	nil	7
-Assert nil error	false	nil
-Assert default	false	assertion failed!
-Conversions	12.5	-125	0.25	16	-5	35	nil
-Invalid base	false	bad argument #2 to tonumber (base out of range)
-Type names	nil/boolean/number/string/table/function/thread
-Object labels	table/function/thread
-Identity	true	false
-Next	4	41	1
-Inventory	3	66
-Sequence prefix	2	30	90
-Select suffix	nil	9
-Tuple counts	4	3	2	0
-Global writes	11	22	false	counter changed
-Global cleared	nil
-Print tuple	nil	7
-Print result count	1
-```
+This produces three fields, `Score`, `nil` and `7`, separated by tabs, then ends
+the line. `select('#', print())` ends an empty line and returns 1: the successful
+`print` result is one nil, not an empty tuple.

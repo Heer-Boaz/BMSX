@@ -92,6 +92,38 @@ costs from 5 through 44, but do not impose an equivalent elapsed-time delay or
 charge those counts to the CPU. Use the following timing rules when budgeting a
 program rather than deriving a normal-command rate from CYCLES.
 
+## A first projection in BLua
+
+This sequence owns GTE and starts from reset-zero state. It selects an identity
+rotation, zero translation, projection numerator H=256 and screen origin
+(128,96), then projects V0=(64,32,512). The register windows are addressed in
+32-bit words; each packed coordinate half retains its signed component bits.
+
+```lua
+local data<const>: *word = 0x08010244
+local control<const>: *word = 0x080102c4
+local command<const>: *word = 0x08010344
+control[0] = 0x00001000             -- C[0]: m00=4096, m01=0
+control[2] = 0x00001000             -- C[2]: m11=4096, m12=0
+control[4] = 0x00001000             -- C[4]: m22=4096
+control[24] = 128 << 16
+control[25] = 96 << 16
+control[26] = 256
+data[0] = 0x00200040
+data[1] = 512
+*command = 0x00080001                 -- RTPS, SF=1, LM=0
+local flags<const> = control[31]
+local screen<const> = data[14]        -- SXY2 = 0x007000a0: (160,112)
+local depth<const> = data[19]         -- SZ3 = 512
+```
+
+The projection factor is 256/512=1/2, so `(128+32,96+16)=(160,112)`.
+FLAG is zero. The normal command's results are already available when its store
+completes; do not poll normal CYCLES as a busy flag. Reading these words does
+not draw a pixel. To draw, place the screen word in a GPU packet; to display,
+select the resulting VRAM area through PCRTC. Retain FLAG and any needed results
+before a later command replaces them.
+
 ## Programming geometry
 
 A useful geometry sequence starts with three questions: what coordinate units does the cartridge use, which transform converts those coordinates into projection coordinates, and where should the projected origin appear on the screen? Program those choices before submitting vertices. GTE retains them across commands, so a group of vertices can share one transform and projection setup.
@@ -5004,8 +5036,8 @@ Every subsequent memory operation uses the scalar `LOAD_MEM_D` or
 ROM position word 26 is one displaced load from r0; its destination D[0] is
 one displaced store through r2. The address addition belongs to that instruction;
 there is no hidden separate ADD in this specified sequence. Conversely, these
-counts must not be applied to compiled code that actually emits more address
-arithmetic, loop tests, spills, or helper calls.
+counts must not be applied to an instruction sequence with additional address
+arithmetic, loop tests, spills, or calls.
 
 ### Count the complete accepted-triangle path
 
@@ -5058,8 +5090,7 @@ each, and RET at two cycles: `200+12+7+2 = 221`. The resulting six RAM words are
 ```
 
 The three retained FLAG words are zero and the retained doubled area is 4096.
-Thus the timing measurement corresponds to the intended geometry/color packet,
-not merely a loop that happened to consume 221 cycles.
+Thus the 221-cycle schedule prepares the stated geometry/color packet, including its retained arithmetic results.
 
 RTPT, NCLIP and NCCT report nominal command counts 23, 8 and 39. Their sum, 70,
 is **not** an additional wait to add to 221. Normal commands complete their arithmetic during the issuing
@@ -5090,9 +5121,9 @@ Separate the following when making a frame budget:
   constant that can be inferred from this GTE work unit.
 
 Report charged CPU work and elapsed device/scheduler waits separately, then
-construct the actual timeline if their overlap matters. The cartridge's compiled
+construct the actual timeline if their overlap matters. The cartridge's actual
 loops, changing translation, GP0 traffic and frame-publication path require their
-own trace; **221 is not their full-frame BLua budget**. This cold work unit also
+own accounting; **221 is not their full-frame BLua budget**. This cold work unit also
 includes control setup that a cartridge can retain across many triangles or
 frames. Reuse changes the work interval and its count; it does not retroactively
 turn a lower-bound transfer estimate into a measured program budget.
@@ -5991,60 +6022,48 @@ loads immediately after the new issue can therefore cross its publication
 deadline. Copying before the next issue avoids relying on such a narrow window.
 
 A direct-store interlock also is not an instruction that advances an abstract
-five-cycle arithmetic counter for free. In a separate CPU sequence with operands
-already prepared, two constant/address loads took two cycles, the first command
-was accepted at cycle 4, and the immediately following command-store attempt
-blocked at cycle 6. Completion at cycle 9 released it; the retried store accepted
-the second command at cycle 11. The second deadline was cycle 16. The executed
-blocked attempt, wait and retry are distinct from the unit's five-cycle interval.
+five-cycle arithmetic counter for free. For example, with operands already
+prepared, consider two one-cycle constant/address loads followed by consecutive two-cycle command stores. The
+first command is accepted at cycle 4; the next store reaches the busy port at
+cycle 6. The cycle-9 completion releases the waiting instruction, and its
+resumed two-cycle store accepts the second command at cycle 11, with deadline
+16. Instruction issue and the intervening wait are distinct from the five-cycle
+arithmetic interval.
 
 ### Budget preparation and readout, not just arithmetic
 
 <div class="keep-together">
 
-For the three displayed work items, one deliberately straightforward CPU
-instruction sequence preloaded all operand words, addresses, command word and
-poll threshold. It then used the read-before-next-issue order above and copied
-each result triple to RAM. All accesses below were direct word operations.
+A schedule for the three displayed work items can retain the next inputs while
+the previous job is pending, but must copy the previous output before issuing
+the next command. With five scalar operand stores per item, preparation alone
+costs ten base CPU cycles, already longer than VMAD3's five-cycle interval.
+Only the final item then needs an explicit completion wait.
 
-| Phase | Observed system-cycle position |
-|---|---|
-| Initial CPU value/address preparation | Finished at 19 |
-| Work 1's five operand stores | Finished at 29 |
-| Work 1 command accepted | 31; completion due at 36 |
-| Work 2's operand stores | Completed at 33, 35, 37, 39 and 41 |
-| Work 1 result/flag loads and RAM copies | Cycles 41–53 |
-| Work 2 command accepted | 55; completion due at 60 |
-| Work 3's operand stores | Completed at 57, 59, 61, 63 and 65 |
-| Work 2 result/flag loads and RAM copies | Cycles 65–77 |
-| Work 3 command accepted | 79; completion due at 84 |
-| Final CYCLES reads | Busy at 81; ready at 85 |
-| Work 3 result/flag loads and RAM copies | Cycles 86–98 |
-| CPU return completed | 100 |
-
+| CPU work in a specified three-item schedule | Charged cycles |
+|---|---:|
+| Nineteen constant/address loads | 19 |
+| Fifteen operand stores | 30 |
+| Three command stores | 6 |
+| Nine result/flag loads | 18 |
+| Nine RAM result stores | 18 |
+| Final CYCLES polling, tests and branches | 7 |
+| Return | 2 |
+| **Total** | **100** |
 
 </div>
 
-The first two stores preparing work 2 occur while work 1 is pending, yet work 1
-still produces `(132,−40,240)`. In this schedule the next PLUS access after its
-cycle-36 deadline occurs at cycle 37 and observes its completion. The same
-pattern applies to work 2 at cycles 60 and 61. Because five operand stores cost
-ten CPU cycles here, those preparations already cover the pending intervals;
-only the final item needs the explicit completion poll.
+For this schedule, commands are accepted at cycles 31, 55 and 79, with result
+publication due at 36, 60 and 84. Next-item operand stores occupy 33…41 and
+57…65; previous result loads and copies occupy 41…53 and 65…77. Final CYCLES
+reads finish at 81 (busy) and 85 (ready), result copying ends at 98 and return
+at 100. The retained words are the three result/flag triples listed above.
 
-The executed sequence's 100 cycles comprise 19 constant/address-load cycles,
-30 operand-store cycles, 6 command-store cycles, 18 result-load cycles,
-18 RAM-copy-store cycles, 7 final polling/test/branch cycles and 2 return cycles.
-The nine retained RAM words are exactly the three result triples listed above.
-This is a measured instruction sequence, not a claim that every source-language
-loop has this lowering or that this is the fastest possible schedule. Computing
-operands, loading them from other storage, preserving fewer outputs, reusing
-constants or doing useful independent work changes the budget.
-
-Five cycles remains the arithmetic interval for one three-lane job. It is not
-a measured sustained rate for preparing, issuing, preserving and using a stream
-of vectors. Count the actual hand-offs required by the program, and keep the
-published result's lifetime separate from the next command's readiness.
+These are charges for the stated instruction schedule, not a guaranteed cost
+for every BLua loop or a sustained vector rate. Operand calculation, different
+storage, unchanged-input reuse and useful independent work change the budget.
+Five cycles remains the interval for one accepted three-lane operation, separate
+from preparation, issue, readout and use.
 
 <section class="keep-together">
 
@@ -6158,10 +6177,7 @@ word. After all readbacks, separately wait for GP1/status bit 26 (GPU idle).
 
 Enable the first image with PMODE_LOW=`0x0000ff21`. Acknowledge stale VBlank
 bit 2 at `0x08000004` after that store, sample the software callback sequence,
-unmask bit 2 at `0x08000008`, and wait for the sequence to change. The capture
-keeps the first image selected for two further callback increments before
-preparing the material comparison. That viewing interval is not a minimum
-presentation-latency guarantee.
+unmask bit 2 at `0x08000008`, and wait for the sequence to change. Keep the first image selected while inspecting it, then prepare the material comparison in the other surface. A chosen viewing interval is not a minimum presentation-latency guarantee.
 
 <section class="keep-together">
 

@@ -1,213 +1,81 @@
-# Developer-manual series: organization review
+# Developer-manual series organization
 
-2026-10-18; source research at BMSX baseline `e21e2d5d9`, followed by adoption of
-the working volume map below. **Classification is not publication approval or
-whole-manual completion.** Reference books supply organization and presentation only.
-They supply no BMSX address, encoding, capacity, timing or behavior. No
-architecture document was used. Do not supply these PDFs to chapter authors.
-
-## Finding
-
-The previous pairing of `BOOK I · HARDWARE REFERENCE` with **Protected calls and
-coroutines** is a classification error, not a missing ornamental heading.
-Moving the chapter later in the same undifferentiated hardware volume would
-not fix it. Its subject is a software interface. Its existing chapter title
-can remain; the containing volume and running title must describe that subject.
-
-The originals do not prescribe one universal sequence of numbered volumes.
-They distinguish device programming, processor instruction reference, software
-libraries, general development guidance and end-user operation in different
-ways. A book number is not evidence of a document's purpose. In particular,
-the supplied MSX files are not five examples of one hardware-manual genre.
-
-## What the actual exemplars show
-
-Page references are **one-based physical PDF pages**, unless a printed folio
-is explicitly identified. A contents entry establishes organization, not that
-the whole referenced chapter was read. Original scans and later reworked
-editions are distinguished below.
-
-| Exemplar and inspected evidence | Organization and presentation evidence |
-| --- | --- |
-| `docs/examples/V9938-programmers-guide.pdf`: cover 1, editor's note 3, preface 5, contents 7–8, section openers 13 and 63 | A device-scoped technical/programming guide: access procedures, register functions, display modes, commands, sprites and special functions form six sections. Procedures and reference tables coexist. **The supplied edition was reworked in 2010/2011**; its exact typography and page-count footer are not evidence of untouched 1985 typesetting. |
-| `docs/examples/z80cpu_um.pdf`: cover 1, contents 3–4, objectives/organization 15–16, openers 19/45/59/93, instruction entry 273 | ZiLOG's CPU user manual explicitly has four chapters. Architecture, hardware/software examples and systematic instruction reference coexist in a processor-scoped manual. Separate instruction/figure/table lists and consistent entry fields support lookup as well as sequential reading. Running identification names the document and current subject. |
-| `docs/examples/HB-75 computer.pdf`: cover 1, contents 2/26, operation example 37 | Sony's HB-55P/75P/75B **consumer instruction manual**, not service documentation or a complete developer reference. Language blocks contain startup, connections, saving/loading programs, keyboard use and a short specification section. Its user-operation instructions are not a precedent for classifying BIOS APIs as hardware. |
-| `docs/examples/s3527datasheetenglish.pdf`: 1, 6, 10, 23, 30, with heading survey | Yamaha component data sheet: features/pins/functions, register material, integration circuits and electrical/mechanical information. Product identification and subject headings organize the pages; no multi-book hierarchy is established. Do not invent comparable BMSX electrical ratings merely to copy this genre. |
-| `docs/examples/z8400.pdf`: 1–3 and 16, with heading survey | SGS component data sheet with register/instruction summaries, timing and electrical/order information. Later PDF pages are scanned spreads; PDF page number is not a printed leaf number. Repeated product identification and continuation headings are not volume titles. |
-| Nintendo [SNES Book I](https://archive.org/download/SNESDevManual/book1.pdf): contents 1–4; form 11 and preface 12. [Book II](https://archive.org/download/SNESDevManual/book2.pdf): cover/copyright 1–2, contents 3–4 | A broad development-manual set, not a verified hardware-only subtitle. The first book groups submission procedure and graphics/sound/processor material; the second groups expansion systems and accessories. Hardware-facing programming appears under historically broader terminology. The Book I scan starts at contents and lacks its cover/edition declaration; Book II copyright lists 1993/1994/1995. No body running-heading claim is made from front matter. |
-| Sony [PlayStation Hardware](https://psx.arthus.net/sdk/Psy-Q/DOCS/Devrefs/Hardware.pdf), August 1998: contents 3–4; scope/series 5, printed v | Hardware overview and subsystem chapters are one named member of a larger developer-reference series. The series distinguishes hardware, operating-system material, library orientation and an API reference. The visible footer identifies the actual document. This is not a claim that this overview alone teaches all programming. |
-| Sony [Run-Time Library Reference](https://psx.arthus.net/sdk/Psy-Q/DOCS/Devrefs/Libref.pdf), January 1999/release 4.4: contents 3, scope 5, series 6, entry 17/printed 1-9 | A separate software-reference volume groups entries by library. The inspected entry has a callable signature with parameter descriptions, explanation, returned result and related calls; its running identification is the software document, not the hardware volume. The hardware and library exemplars are different releases, not one asserted edition. |
-| Nintendo [N64 Programming Manual](https://ultra64.ca/files/documentation/nintendo/Nintendo_64_Programming_Manual_NU6-06-0030-001G_HQ.pdf), mirror filename identifies NU6-06-0030-001G: contents 1–2/printed i–ii and 4/printed iv; original [general index](https://ultra64.ca/files/documentation/online-manuals/man/index.htm) and [function-reference home](https://ultra64.ca/files/documentation/online-manuals/man/n64man/home.html) | A general programming title supports setup, system overview and operating-system parts. Hardware and runtime software have separate chapters within the overview; a part is not another physical book. The original online collection separately exposes function-reference categories. Neither arrangement implies that every software topic belongs beneath a hardware-only running title. |
-
-**NES/Famicom source gap:** no attributable original manufacturer developer
-manual with inspectable title, contents and representative headings was
-verified in this bounded search. Community documentation and old discussions
-are not substitutes, nor proof that an original scan is unavailable today.
-Do not claim a verified NES precedent or mark the all-exemplar comparison
-complete on that basis. This does not invalidate the other primary evidence.
-
-## Consequences for BMSX — editorial conclusions, not borrowed specifications
-
-1. **Separate purpose before assigning numbers.** A technical overview answers
-   what is installed and its stated capacities/formats/timing. Hardware
-   programming explains data flow, registers, ordered programming, visibility,
-   synchronization and faults. A language/BIOS reference defines source forms,
-   calls, values, results and errors. A development guide explains making and
-   inspecting a program. None replaces the others.
-2. **Do not create an empty specifications volume for the Roman numeral.** The
-   source-research baseline had per-device specifications but lacked a global
-   specification/orientation opening. The bounded [System overview](../book1/console.md)
-   now supplies that opening, not a complete whole-machine specification.
-   Retain it first in the hardware material; make specifications a separate
-   physical volume only if the actual sourced contents justify one. This is
-   the adopted working choice, not a rule established by a historical manual.
-3. **Use real navigation, not decorative retro styling.** State each volume's
-   scope, prerequisites and companion references. Identify the actual volume,
-   chapter/subject and page consistently. Provide book-level contents and
-   appropriate register/command/instruction/API lookup. This does not require
-   a chapter-local contents list or a new publishing framework.
-4. **Keep the teaching and reference routes.** Ordered procedures, complete
-   BLua examples and actual output belong beside the operations they teach;
-   uniform entry tables provide lookup. Hardware examples may call a real BIOS
-   helper without turning the chapter into a general library reference. A
-   software API may discuss an exception boundary without becoming a device.
-5. **Preserve one technical source of truth.** Summaries and companion books
-   point to canonical definitions rather than copying partial tables until
-   they disagree. Source/owner review still proves every BMSX claim. Reference
-   typography, C prototypes, foreign registers and historical terminology do
-   not become BMSX language or hardware rules.
+The books describe the product presented to independent BMSX developers.
+Historical manufacturer publications inform organization and exposition only;
+they do not supply BMSX facts or dictate another console's chapter order.
 
 ## Adopted working series and current chapter map
 
-This is the adopted **working series**, applied to the catalog and publisher.
-It chooses a specifications opening part rather than an unfilled standalone
-specifications book. If a distinct specifications volume is later justified,
-renumber the complete series consistently; do not mix the two schemes.
+| Volume | Scope |
+|---|---|
+| **Book I — System and Hardware Reference** | Console overview, installed resources, memory/address ownership and programmable hardware units. Explain data flow and operating procedures before the full device references. |
+| **Book II — BLua32 and BIOS Reference** | Processor architecture and instruction set, BLua extensions and installed BIOS interfaces. Keep signatures, representations, units, results and errors beside the operations they define. |
+| **Book III — Cartridge and Expansion Reference** | Cartridge connections, mapped devices and expansion protocols. Link shared address/startup definitions instead of copying them. |
+| **Repository development companion** | Optional supplied builders, converters, examples and checkout-specific workflows. Outside the manufacturer reference books and not a prescribed SDK. |
 
-| Volume/companion | Reader purpose and material |
-| --- | --- |
-| **Book I — System and Hardware Reference** | Begin with console orientation and a sourced whole-machine specification summary. Follow with CPU execution/ISA/control, memory/address/ownership and installed-unit operation/reference. Keep the per-device specifications and genuine programming examples. |
-| **Book II — BLua32 and BIOS Reference** | The source-program onramp followed by the seven BIOS/coroutine chapters, including Math, the time/calendar draft and the runtime-compilation draft. The onramp covers linked-cartridge source forms, module startup/exports and the installed environment, with a complete six-file module program and separate numeric-loop and generic-iteration programs; it is not the separate runtime-compilation or still-incomplete SDK reference. It cross-references the canonical CPU/Memory foundations below rather than redefining values, calls, storage or the ISA. The hardware-facing named VRAM import is covered; the two low-level numeric exports retain the specific BH01 API-authority hold, not a generic unwritten firmware chapter. |
-| **Book III — Cartridge and Expansion Reference** | Separately scoped sockets, cartridges, cards and expansion-device protocols. Existing cartridge address windows/startup are not a complete reference for these devices. The first [cartridge chapter](../book3/cartridge.md) now covers two sockets, optional ROM/RAM/mailbox, source IRQ rearming and independent DMA endpoints with a complete two-card program. The current owners implement no additional expansion protocol. Undefined physical guarantees remain separate specification decisions; the old provisional Book II label must not silently erase this scope. |
-| **Getting started / development companion** | Keep the [existing first-build route](../programming/getting-started.md) separate from the installed-machine reference, with exact source/manifest/build/observation instructions. Extend its real installation/debugging coverage; do not rename a chapter list into a complete SDK guide. |
+[volumes.json](volumes.json) owns titles; [catalog.json](catalog.json) owns
+membership. CPU/BLua32 architecture belongs in II. Memory remains in I and is
+cross-referenced where source storage or image construction needs it. The
+`docs/book1/` source directory does not classify its contents as Book I.
 
-The [current catalog](catalog.json) inventory is **22 entries: thirteen in I,
-eight in II and one in III**. The added System overview is an opening orientation, not another
-device or a claim of complete whole-machine programming coverage. The
-source-research baseline had all sixteen provisionally in I.
-The content map is based on public chapter headings, not a fresh semantic audit:
+`cartlib` and project packers/converters are independent studio software.
+Their APIs and formats are not part of the official console or BIOS reference.
+A programmer should be able to implement competing tools from the actual public
+instruction, image, device and firmware specifications.
 
-| Current material | Assignment |
-| --- | --- |
-| PCRTC, GTE, GPU, IRQ, DMA, APU, GEO, IMGDEC, INPUT, SYSTEM: ten primarily hardware chapters | Hardware volume, with the overview/specification route before detailed devices. Presence of BLua examples is not grounds for moving the device reference to software. |
-| CPU and BLua32 instruction reference | Book I, including the canonical value, arithmetic, call and control foundations. Software readers follow the section-level links below; do not move or duplicate definitions based only on the filename. |
-| Memory and program storage | Book I, including the canonical typed-declaration, startup, address, reservation and ownership foundations. The software route links to these definitions rather than copying partial address/lifetime rules. |
-| BLua source programs, BIOS base services, BIOS math library, BIOS time and calendar services, BIOS runtime compilation, BIOS table library, BIOS String operations, Protected calls and coroutines: eight software chapters | Software volume. Keep the factual chapter titles and protected-call material discoverable; do not classify the whole group as hardware. |
-| Global specification opening | The [System overview](../book1/console.md) now supplies independently extracted memory/transfer, control and graphics/audio orientation. Its bounded source, figure, print and public-reader checks pass and are recorded separately; its presence does not complete the volume. |
-| Runtime-compiler publication dependencies, BH01 API authority and full SDK onboarding/debugging | Concrete engineering and reader-delivery work remains. The installed cartridge/card protocol and hardware-facing VRAM import are already authored; generic future-device or private-firmware placeholders are not additional chapters. |
+## Explanation, programming and reference
 
-CPU and Memory remain coherent canonical references, not pending whole-file
-moves. Their software-facing foundations are intentionally shared by cross-reference.
-Stable chapter identities and links remain unchanged.
+A system overview establishes the machine and its resources. A device chapter
+explains what a unit does, shows its datapath and relationships, teaches the
+necessary programming/synchronization sequence, then supplies complete lookup
+material. Registers alone do not teach a unit; a long diagnostic program does
+not replace a programming explanation.
 
-### Canonical foundations and the software reader route
+A language/BIOS reference has a different shape: source form or signature,
+arguments and units, returned values, effects, errors and a useful example.
+General Lua instruction is not the priority. Cover BLua-specific forms explicitly
+and link canonical numeric, memory and call definitions rather than duplicating
+them. Useful hardware examples stay with the hardware chapter even though they
+are written in BLua.
 
-These are section assignments and navigation, not another semantic approval.
-The existing BIOS base and coroutine introductions already direct readers to
-CPU for values/ordinary calls and Memory for typed storage/modules/startup.
-Retain that route. The [BLua source-program chapter](../book1/blua-programs.md)
-now supplies the linked-cartridge spelling/module/environment onramp. The
-separate [BIOS runtime-compilation draft](../book1/bios-loader.md) now covers
-loading, syntax construction and code lifetime with a complete ordinary program;
-its source/publication dependencies and the full SDK route remain open.
+## Historical manufacturer references
 
-**Next software-writing priority (2026-10-18):** the
-[BLua-specific extension/difference route](technical-follow-up.md#next-priority-explain-blua-itself-not-another-lua-library-catalogue)
-needs coherent BLua-specific treatment, not limited to hardware-related
-extensions. Mentioning source forms and linking to CPU/Memory is not sufficient
-teaching. The user's follow-up defers general Lua explanation: refer readers to the official Lua
-documentation rather than expanding a tutorial or exhaustive comparison.
-Retain the existing general-language and BIOS references; hardware operation
-and the BIOS interfaces needed for it take precedence over further library
-coverage across the series; this does not exclude non-hardware BLua extensions
-from the language reference. This is a writing priority, not a fixed promise
-about future BLua/Lua language evolution.
+Use originals with known provenance, and distinguish later editions and
+consumer operation manuals from developer references. Do not attach a large
+foreign hardware PDF to chapter-writing prompts. Supply a short style brief and
+verified BMSX facts instead.
 
-The [extension-first route](../book1/blua-programs.md#blua-extensions) is now a
-reviewed DRAFT with complete source forms, a real storage program and separate
-source/reader/print evidence. It does not remove existing reference material or
-make the series complete.
+| Reference | Editorial lesson |
+|---|---|
+| Sony [GTE & Advanced Graphics, Fall 1996](https://psx.arthus.net/sdk/Psy-Q/DOCS/TRAINING/FALL96/gte.pdf), opening hardware and mathematics sections | Explain the unit's purpose, coordinate spaces, processing stages and worked transformation before low-level programming. This is period developer training, not a BMSX specification. |
+| Nintendo [SNES Book I](https://archive.org/download/SNESDevManual/book1.pdf) and [Book II](https://archive.org/download/SNESDevManual/book2.pdf) | Separate system topics and expansion material, with operation diagrams, procedures and reference detail. Historical book numbering is not a universal taxonomy. |
+| Sony [PlayStation Hardware, August 1998](https://psx.arthus.net/sdk/Psy-Q/DOCS/Devrefs/Hardware.pdf) and [Run-Time Library Reference, January 1999](https://psx.arthus.net/sdk/Psy-Q/DOCS/Devrefs/Libref.pdf) | Hardware overview and software API reference are distinct publications. Later editions are useful comparison material but must not be described as 1994–1996 originals. |
+| Supplied `V9938-programmers-guide.pdf` and `z80cpu_um.pdf` | Device access procedures and systematic instruction/register entries complement conceptual explanation. The supplied V9938 edition was reworked in 2010/2011; do not mistake its typography for an untouched original. |
+| Supplied `s3527datasheetenglish.pdf`, `z8400.pdf` and `HB-75 computer.pdf` | Component data sheets and consumer instructions serve different readers. Neither justifies inventing BMSX electrical ratings or treating user operation as a developer API reference. |
 
-| Canonical Book I material | Book II reader route |
-| --- | --- |
-| CPU: instruction words/resources, cycle boundaries, reset/replacement, memory transfers, branches, CP0 and faults | Link source forms to their execution, privilege, access and timing definitions; do not reproduce another ISA or fault contract. |
-| CPU: [BLua operators and instruction costs](../book1/cpu.md#blua-operators-and-instruction-costs), [Values and numeric instructions](../book1/cpu.md#values-and-numeric-instructions) and [Calls, closures, globals, and tables](../book1/cpu.md#calls-closures-globals-and-tables) | Keep these value/word, arithmetic, call, capture, global and table definitions canonical in I, including the current raw table/metatable BIOS entries and builtin charges. The separate Table-length publication stop remains open. |
-| CPU: [BLua control syntax](../book1/cpu.md#blua-control-syntax) and the two complete computation/value-table programs | Keep source-control bridges with their instruction/privilege context and examples beside the operations demonstrated. II links to them; examples alone do not make a hardware reference a software volume. |
-| Memory: address sizes/windows/reservations, ROM/RAM sections, startup, instruction reads, scalar access and fault/monitor response | II links module/storage/startup teaching to these address, allocation and fault contracts. Existing cartridge windows/startup are also prerequisites for III, not its complete device reference. |
-| Memory: [Typed byte storage and address views](../book1/memory.md#typed-byte-storage-and-address-views) and [Language execution storage and byte RAM](../book1/memory.md#language-execution-storage-and-byte-ram) | Retain declarations/layout/access and values/calls/text-versus-bytes together in I. II teaches source use while pointing to these canonical boundaries, including their complete call/text program. |
-| Memory: worked record copy, DMA/device-buffer lifetimes and shared GPU/display publication | Retain their complete programs and observations with the owning allocation/access/lifetime definitions; II must not invent independent device-buffer rules. |
-| [Development companion](../programming/getting-started.md), including [call/value/text checks](../programming/getting-started.md#check-calls-values-and-text-results) | Preserve its existing links into Memory and back for build and observation instructions. It is not yet a complete SDK/debugging guide or another numbered reference volume. |
+The supplied files are under `docs/examples`. The historical comparison supports
+editorial choices; it is not proof of BMSX technical accuracy, completeness or
+print quality. No verified original NES developer manual is assumed.
 
-## Applied publication representation and remaining work
+## Canonical cross-unit definitions
 
-- [volumes.json](volumes.json) owns each book's title; [catalog.json](catalog.json)
-  owns chapter membership. `loadChapter` resolves the title once and the shared
-  renderer consumes it in the document and running titles. The eight software
-  entries are II; the twelve existing machine chapters and new overview are I.
-  No per-chapter CSS, guessed labels
-  or compatibility wrappers hide the classification.
-- Keep the existing publisher. Updating the central title/membership data does
-  not call for another schema, validation framework, helper layer or review
-  harness. Stable source paths, chapter IDs and companion links are retained.
-- A changed running title is a changed printed artifact. Render affected
-  chapters and inspect the affected pages; old PDF hashes do not approve new
-  headers automatically. Classification approval and visual rendering are
-  separate from factual accuracy and completeness.
-- The technical overview is authored from bounded current-owner facts.
-  Do not introduce
-  physical/electrical claims because another component data sheet has them,
-  or present conditional execution budgets as unspecified electrical ratings.
+- [CPU and BLua32](../book1/cpu.md): instructions, values, calls, arithmetic,
+  execution control and processor faults.
+- [Memory and program storage](../book1/memory.md): addresses, reservations,
+  storage layouts, executable images and startup placement.
+- [BLua source](../book1/blua-programs.md): language extensions and source use.
+- Device/BIOS chapters: their own commands, data formats, synchronization,
+  results and errors, linking the shared foundations where necessary.
 
-## Acceptance remains open
+Avoid duplicated partial definitions, repository-based assumptions and examples
+that require reverse-engineering an external library. Preserve useful diagrams,
+short sequences, numerical calculations and actual output plates.
 
-This review changes the next organization task; it does not finish the manual.
-All seven runtime-owner questions, the common Table-length publication stop,
-the separate BZ01 compiler question, remaining BIOS/environment and graphics
-work, cartridge/expansion coverage and whole-console newcomer acceptance stay
-open. Book I/II/III are adopted scopes, not newly completed or published volumes.
-The NES primary-source comparison also remains unverified.
+## Publication
 
-**Concrete navigation follow-up, 2026-10-18:** the merged Math DRAFT PDF
-(`decdaf811aa69249a1114a0f8e36ac72d0651f640b121be12bb615395275b7d0`,
-21 pages) has 37 outline entries but zero page annotations on every page,
-independently enumerated with PDFium. Its visible companion/CPU/Memory
-references are therefore not clickable PDF links in this inspected artifact.
-Book-level navigation acceptance must check actual cross-reference destinations
-in the delivered series, not just Markdown links, outline presence or corrected
-running titles. This bounded observation is not an audit of every PDF or a
-publisher implementation change; retain it with the unfinished navigation work.
-
-
-Independent bounded exemplar-source and current-content/reader-map reviews
-found no remaining unsupported organization or inventory claim. Their scope is
-the inspected source pages and current chapter categories above, not every
-page of the exemplars, BMSX technical correctness, printed-artifact approval or
-whole-manual completion. The NES limitation remains explicit.
-
-### Navigation revalidation — 2026-10-18
-
-The current Memory DRAFT (`fadeebc6…`,37 pages / 84 outline entries) and Cartridge
-publication (`f364c227…`,12 pages / 22 outlines) each have zero annotations, links
-and named destinations on every actual page. The current Math control has
-22 pages / 37 outlines and the same absence. This confirms the earlier navigation
-issue on current artifacts; outlines are not cross-reference link evidence.
-
-All 23 Memory/Cartridge source links resolve to existing Markdown, but the
-shared generated HTML retains source-relative `.md` paths that are wrong from
-`build/manual`. Heading IDs are also absent except authored anchors.
-A bounded Chromium control shows that real same-document anchors and absolute
-HTTPS links print, while unresolved relative paths and missing anchors do not.
-Fixing only `about:blank` would leave artifact mapping and cross-file target
-export unresolved. Evidence: `/tmp/bmsx-manual-navigation-current-audit.md` and
-`/tmp/bmsx-manual-navigation-pdf-evidence.json`. No publisher/dependency or
-workstation-URL patch was made; portable book-level delivery remains open.
+Complete content before detailed chapter review and print polishing. Apply the
+six reader-quality criteria in the [authoring guide](README.md), in addition to
+source checking. A correct catalog entry, a successful render or a page count
+is not publication approval. Retain the existing publisher and review records;
+no per-chapter pipeline, extra status-document hierarchy or new approval schema
+is needed. Source and final print acceptance remain separate.

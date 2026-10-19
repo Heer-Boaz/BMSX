@@ -1,6 +1,6 @@
 # BIOS math library
 
-The installed `math` Table contains twenty-five callable entries and four numeric constants. This chapter separates function contracts from the finite observations of a complete cartridge.
+The BIOS math library supplies numeric operations, angular functions and a shared pseudorandom generator. Its `math` Table contains twenty-five callable entries and four numeric constants. Numbers use binary64 arithmetic; a function preserves the input scale unless its definition states a unit or representation conversion.
 
 ## Availability and dependencies
 
@@ -9,10 +9,6 @@ The BIOS initializes `base`, then `os`, and installs the returned math module as
 `math` is an ordinary table. Its entries contain function values or numeric constants. Several functions call private functions retained by the module: `fmod` and `modf` use private truncation; `tointeger` uses private truncation and the retained infinity constant; `math.type` uses the retained `tointeger` function. Changing `math.tointeger`, for example, does not change the function called by `math.type`.
 
 The bodies of `tointeger` and `math.type` look up the public global `type`. The bodies of `min` and `max` look up the public globals `select` and `error`. Their behavior below assumes the initialized BIOS definitions of those globals; rebinding them is not a math-local operation. See [BIOS Base](bios-base.md) for those public dependencies.
-
-### Math source use
-
-The installed `math.floor` closure returns `value // 1`, but cartridge source policy rejects recognized references to `math.floor` regardless of the argument or arithmetic purpose. Use `value // 1` directly for unit flooring in cartridge source. The [known-call minimum check](blua-programs.md#known-call-argument-diagnostics) rejects direct `math.abs()` with `math.abs expects 1 argument, but 0 were provided.` Missing-parameter behavior applies only when execution reaches a call: `pcall(math.abs)` reaches the call without forwarded arguments and returns `true, nil`.
 
 ## Numbers, arguments, and formulas
 
@@ -229,10 +225,9 @@ logarithms. All eleven interfaces return exactly one Number.
 
 These are fixed-parameter interfaces, not varargs. Missing fixed parameters
 have value `nil`; surplus parameters are not retained. The signatures show all
-fixed parameters, rather than promising acceptance of every shortened call
-spelling. An explicit `nil` selects the alternate forms `math.atan(y, nil)` and
-`math.log(value, nil)`; the complete program also demonstrates accepted
-one-argument calls. No other parameter has a default.
+fixed parameters. An explicit `nil` selects the alternate forms `math.atan(y, nil)` and
+`math.log(value, nil)`; omitting the final parameter also supplies `nil`.
+No other parameter has a default.
 
 The formulas below use the Number arithmetic and `D` and `T` notation defined
 earlier. For word conversion, bit masks and signed right shifts, see
@@ -250,7 +245,7 @@ Names introduced below for private approximations are explanatory notation,
 not additional callable interfaces.
 
 The text blocks in this reference section are explanatory formulas and
-pseudocode, not BLua source listings. The complete program below is literal
+pseudocode, not BLua source listings. The programming examples below use
 BLua source.
 
 ### Converting angular units
@@ -608,361 +603,43 @@ Each generation step reads the old word and computes:
 
 It stores the result in the word, reads the stored unsigned word back, and divides it by `4294967296.0` to obtain the unit sample. Seeding replaces that same word. This describes shared state, not separate per-caller streams or a reset/persistence contract.
 
-## Complete program: Math operations
+<a id="complete-program-math-operations"></a>
 
-This is a separate `bios_math_manual` cartridge. Save the storage listing as
-`results.lua` and concatenate the five entry parts, in order, as `entry.lua`.
-The [development companion](../programming/getting-started.md#build-and-inspect-math-operations)
-supplies the complete tree, manifest and commands. Do not combine this entry
-or `results` module with an earlier example.
+## Programming examples
 
-The program calls all twenty-four Math functions other than `math.floor`,
-reads the four constant fields, and uses `// 1` for unit flooring as required
-by cartridge source policy. The `math.floor` closure itself is not called.
-These are ordinary installed BIOS calls, not a cartridge math implementation.
-Typed result storage follows [Memory](memory.md#typed-byte-storage-and-address-views).
+### Convert an angle and form an offset
 
-### Result storage: `results.lua`
+The angular functions take radians. To place a point on a circle with radius
+64 position units, convert the authored degree angle once and scale its sine
+and cosine:
 
 ```lua
-module<const>
-
-struct bios_math_manual_result
-	completed: word
-	absolute: f64
-	rounding: f64[6]
-	fmod_value: f64
-	modulo_value: f64
-	integer_part: f64
-	fraction_part: f64
-	minimum: f64
-	maximum: f64
-	text_minimum: word
-	abs_identity: word
-	abs_text: word
-	abs_missing: word
-	arithmetic_nan: f64
-	large_integer: f64
-	fraction_rejected: word
-	text_rejected: word
-	classifications: word
-	unsigned_wrap: word
-	unsigned_fraction: word
-	unsigned_equal: word
-	signs: f64[3]
-	abs_negative_zero: word
-	floor_negative_zero: word
-	ceil_negative_zero: word
-	round_positive_zero: word
-	modf_integer_negative_zero: word
-	modf_fraction_positive_zero: word
-	fmod_positive_zero: word
-	min_error: word
-	max_error: word
-	trig: f64[6]
-	angles: f64[6]
-	square_root: f64
-	root_negative_zero: word
-	root_nan: f64
-	exponentials: f64[3]
-	exp_edges: f64[2]
-	logarithms: f64[4]
-	log_nan: f64
-	trig_nonnumeric: f64[3]
-	atan_false: f64
-	random_seed_count: word
-	random_seed_nil: word
-	random_unit: f64
-	random_single: f64
-	random_interval: f64
-	random_truncated: f64
-	random_repeated: f64
-	random_error: word
-	random_after_error: f64
-	random_two_error: word
-	random_two_after_error: f64
-	random_false_seed: f64
-	random_false_value: f64
-	random_nil_upper: f64
-	integer_bounds: f64[2]
-	pi: f64
-	huge: f64
-end
-
-bss result: bios_math_manual_result
-
-return { result = result }
+local angle<const> = math.rad(30)
+local dx<const> = 64 * math.cos(angle)
+local dy<const> = 64 * math.sin(angle)
+local pixel_x<const> = math.round(dx)
+local pixel_y<const> = math.round(dy)
 ```
 
-Only the first entry part declares `module<entry>`. Continue the same file
-through part five, preserving statement order.
+The offsets are approximately `(55.4256,32)` position units; rounding selects
+`(55,32)`. Floating results need not equal ideal decimal fractions exactly.
+Choose rounding or truncation deliberately when converting a calculated
+position to whole pixels. These functions do not produce GTE coefficients or
+GPU packet fields; use the destination unit's documented representation.
 
-### Entry 1: rounding, selection and supplied values
+### Repeat a pseudorandom sequence
+
+Seed the shared generator when starting a sequence. Reusing the seed repeats
+its subsequent updates:
 
 ```lua
-module<entry>
-
-local storage<const> = require('results')
-local result<const>: *bios_math_manual_result = storage.result
-
--- Cartridge source uses // 1 for unit flooring; math.floor is not permitted.
-result.absolute = math.abs(-12.5)
-result.rounding[0] = 1.75 // 1
-result.rounding[1] = math.ceil(1.25)
-result.rounding[2] = -1.25 // 1
-result.rounding[3] = math.ceil(-1.75)
-result.rounding[4] = math.round(1.5)
-result.rounding[5] = math.round(-1.5)
-print('Math rounding', result.absolute, result.rounding[0], result.rounding[1],
-	result.rounding[2], result.rounding[3], result.rounding[4], result.rounding[5])
-
-result.fmod_value = math.fmod(-7.5, 2)
-result.modulo_value = -7.5 % 2
-result.integer_part, result.fraction_part = math.modf(-3.75)
-print('Math fractions', result.fmod_value, result.modulo_value,
-	result.integer_part, result.fraction_part)
-
--- A nil tail position counts but does not replace a numeric minimum/maximum.
-result.minimum = math.min(8, nil, -3, 5)
-result.maximum = math.max(8, nil, -3, 5)
-result.text_minimum = math.min('pear', 'apple', 'plum') == 'apple' and 1 or 0
-local token<const> = { marker = 7 }
-result.abs_identity = math.abs(token) == token and 1 or 0
-result.abs_text = math.abs('12.5') == '12.5' and 1 or 0
-local missing_ok<const>, missing_value<const> = pcall(math.abs)
-result.abs_missing = missing_ok and missing_value == nil and 1 or 0
-result.arithmetic_nan = '12.5' // 1
-print('Math selection', result.minimum, result.maximum, result.text_minimum)
-print('Math supplied values', result.abs_identity, result.abs_text,
-	result.abs_missing, result.arithmetic_nan ~= result.arithmetic_nan)
-print('Math missing', missing_ok, missing_value)
-
+math.randomseed(1)
+local first<const> = math.random()
+local die<const> = math.random(6)
+math.randomseed(1)
+local replay<const> = math.random()
 ```
 
-### Entry 2: classification, zero signs and errors
-
-```lua
-result.large_integer = math.tointeger(math.maxinteger + 1)
-result.fraction_rejected = math.tointeger(3.75) == nil and 1 or 0
-result.text_rejected = math.tointeger('3') == nil and 1 or 0
-result.classifications = math.type(3) == 'integer' and math.type(3.75) == 'float'
-	and math.type(math.huge) == 'float' and math.type('3') == nil and 1 or 0
-result.unsigned_wrap = math.ult(-1, 1) and 1 or 0
-result.unsigned_fraction = math.ult(0.5, 1) and 1 or 0
-result.unsigned_equal = math.ult(4294967296, 0) and 1 or 0
-result.signs[0] = math.sign(-3)
-result.signs[1] = math.sign(0)
-result.signs[2] = math.sign(3)
-print('Math classification', result.large_integer, result.fraction_rejected,
-	result.text_rejected, result.classifications)
-print('Math unsigned', result.unsigned_wrap, result.unsigned_fraction,
-	result.unsigned_equal)
-print('Math signs', result.signs[0], result.signs[1], result.signs[2])
-
--- Reciprocals distinguish zero signs even when printed text does not.
-local negative_zero<const> = -1 / math.huge
-result.abs_negative_zero = 1 / math.abs(negative_zero) == -math.huge and 1 or 0
-result.floor_negative_zero = 1 / (negative_zero // 1) == -math.huge and 1 or 0
-result.ceil_negative_zero = 1 / math.ceil(negative_zero) == -math.huge and 1 or 0
-result.round_positive_zero = 1 / math.round(negative_zero) == math.huge and 1 or 0
-local zero_integer<const>, zero_fraction<const> = math.modf(negative_zero)
-result.modf_integer_negative_zero = 1 / zero_integer == -math.huge and 1 or 0
-result.modf_fraction_positive_zero = 1 / zero_fraction == math.huge and 1 or 0
-result.fmod_positive_zero = 1 / math.fmod(negative_zero, 2) == math.huge and 1 or 0
-print('Math modf zero reciprocals', 1 / zero_integer, 1 / zero_fraction)
-print('Math zero signs', result.abs_negative_zero, result.floor_negative_zero,
-	result.ceil_negative_zero, result.round_positive_zero,
-	result.modf_integer_negative_zero, result.modf_fraction_positive_zero,
-	result.fmod_positive_zero)
-
-local min_ok<const>, min_error<const> = pcall(math.min, nil, 2)
-local max_ok<const>, max_error<const> = pcall(math.max)
-result.min_error = not min_ok and min_error == 'min expects at least one argument.'
-	and 1 or 0
-result.max_error = not max_ok and max_error == 'max expects at least one argument.'
-	and 1 or 0
-print('Math min error', min_ok, min_error)
-print('Math max error', max_ok, max_error)
-
-```
-
-### Entry 3: angles, roots, exponentials and logarithms
-
-```lua
--- Angles are ordinary radians; the BIOS owns binary64 argument reduction.
-result.trig[0] = math.sin(0)
-result.trig[1] = math.cos(0)
-result.trig[2] = math.tan(0)
-result.trig[3] = math.sin(math.rad(30))
-result.trig[4] = math.cos(math.rad(60))
-result.trig[5] = math.tan(math.rad(45))
-result.angles[0] = math.rad(180)
-result.angles[1] = math.deg(math.pi)
-result.angles[2] = math.atan(1)
-result.angles[3] = math.atan(1, -1)
-result.angles[4] = math.asin(1)
-result.angles[5] = math.acos(1)
-print('Math trigonometry', result.trig[0], result.trig[1], result.trig[2],
-	result.trig[3], result.trig[4], result.trig[5])
-print('Math angles', result.angles[0], result.angles[1], result.angles[2],
-	result.angles[3], result.angles[4], result.angles[5])
-
-result.square_root = math.sqrt(9)
-result.root_negative_zero = 1 / math.sqrt(negative_zero) == -math.huge and 1 or 0
-result.root_nan = math.sqrt(-1)
-result.exponentials[0] = math.exp(0)
-result.exponentials[1] = math.exp(1)
-result.exponentials[2] = math.exp(-1)
-result.exp_edges[0] = math.exp(710)
-result.exp_edges[1] = math.exp(-746)
-result.logarithms[0] = math.log(1)
-result.logarithms[1] = math.log(8, 2)
-result.logarithms[2] = math.log(100, 10)
-result.logarithms[3] = math.log(0)
-result.log_nan = math.log(-1)
-print('Math root', result.square_root, result.root_negative_zero,
-	result.root_nan ~= result.root_nan)
-print('Math exponentials', result.exponentials[0], result.exponentials[1],
-	result.exponentials[2], result.exp_edges[0], result.exp_edges[1])
-print('Math logarithms', result.logarithms[0], result.logarithms[1],
-	result.logarithms[2], result.logarithms[3], result.log_nan ~= result.log_nan)
-
--- Nonnumeric arithmetic does not enter the phase-word/Q16 primitive.
-result.trig_nonnumeric[0] = math.sin('text')
-result.trig_nonnumeric[1] = math.cos('text')
-result.trig_nonnumeric[2] = math.tan('text')
-result.atan_false = math.atan(1, false)
-print('Math nonnumeric angles', result.trig_nonnumeric[0], result.trig_nonnumeric[1],
-	result.trig_nonnumeric[2], result.atan_false)
-
-```
-
-### Entry 4: shared random state and rejected bounds
-
-```lua
--- Explicit seeds make this sequence independent of the clock default.
-result.random_seed_count = select('#', math.randomseed(1))
-result.random_unit = math.random()
-result.random_single = math.random(6)
-result.random_interval = math.random(-2, 2)
-result.random_truncated = math.random(8.9, 8.1)
-print('Math random modes', result.random_seed_count, result.random_unit,
-	result.random_single, result.random_interval, result.random_truncated)
-result.random_seed_nil = math.randomseed(1) == nil and 1 or 0
-result.random_repeated = math.random()
-print('Math random replay', result.random_seed_nil, result.random_repeated,
-	result.random_repeated == result.random_unit)
-
--- Failed bounds consume the next draw before the protected error is returned.
-local bound_ok<const>, bound_error<const> = pcall(math.random, 0)
-result.random_error = not bound_ok
-	and bound_error == 'random upper bound must be positive.' and 1 or 0
-result.random_after_error = math.random()
-print('Math random error', bound_ok, bound_error, result.random_after_error)
-local interval_ok<const>, interval_error<const> = pcall(math.random, 5, 3)
-result.random_two_error = not interval_ok
-	and interval_error ==
-		'random upper bound must be greater than or equal to lower bound.'
-	and 1 or 0
-result.random_two_after_error = math.random()
-print('Math random interval error', interval_ok, interval_error,
-	result.random_two_after_error)
-
--- False is a supplied seed/bound; only nil selects the missing-bound branch.
-math.randomseed(false)
-result.random_false_seed = math.random()
-result.random_false_value = math.random(false)
-result.random_nil_upper = math.random(nil, false)
-print('Math random false', result.random_false_seed,
-	result.random_false_value ~= result.random_false_value, result.random_nil_upper)
-
-```
-
-### Entry 5: constants and completion
-
-```lua
-result.integer_bounds[0] = math.mininteger
-result.integer_bounds[1] = math.maxinteger
-result.pi = math.pi
-result.huge = math.huge
-print('Math constants', result.integer_bounds[0], result.integer_bounds[1],
-	result.pi, result.huge)
-result.completed = 1
-
-while true do
-	halt_until_irq
-end
-```
-
-<div class="keep-together">
-
-### Ordinary observations
-
-After normal startup, compare these twenty-four lines. Tabs separate distinct
-`print` arguments; the printed Numbers use the installed text conversion.
-
-```text
-Math rounding	12.5	1	2	-2	-1	2	-2
-Math fractions	-1.5	0.5	-3	-0.75
-Math selection	-3	8	1
-Math supplied values	1	1	1	true
-Math missing	true	nil
-Math classification	9.0072e+15	1	1	1
-Math unsigned	0	1	0
-Math signs	-1	0	1
-Math modf zero reciprocals	-inf	inf
-Math zero signs	1	1	1	1	1	1	1
-Math min error	false	min expects at least one argument.
-Math max error	false	max expects at least one argument.
-Math trigonometry	0	1	0	0.5	0.5	1
-Math angles	3.14159	180	0.785398	2.35619	1.5708	0
-Math root	3	1	true
-Math exponentials	1	2.71828	0.367879	inf	0
-Math logarithms	0	3	2	-inf	true
-Math nonnumeric angles	nan	nan	nan	1.5708
-Math random modes	1	0.236456	3	0	8
-Math random replay	1	0.236456	true
-```
-
-</div>
-
-The next two lines are shown by `print` argument so that the full error text
-remains readable. Each row is one output line; a tab separates adjacent
-arguments, just as in the blocks above and below.
-
-| Argument 1 | Argument 2 | Argument 3 | Argument 4 |
-| --- | --- | --- | --- |
-| `Math random error` | `false` | `random upper bound must be positive.` | `0.504242` |
-| `Math random interval error` | `false` | `random upper bound must be greater than or equal to lower bound.` | `0.0505436` |
-
-The final two lines follow those two error diagnostics:
-
-```text
-Math random false	0.236068	true	0.819534
-Math constants	-9.0072e+15	9.0072e+15	3.14159	inf
-```
-
-| Group | What this program establishes |
-| --- | --- |
-| Rounding and fractions | Unit floors use `// 1`; `ceil` and `round` use their BIOS functions. Negative `fmod` gives `-1.5`, whereas `%` gives `0.5`. `modf(-3.75)` returns `-3` then `-0.75`. |
-| Selection and supplied values | Nil tail positions do not replace the numeric minimum/maximum. `abs` preserves the supplied object or String. The protected call with no forwarded argument returns `true, nil`; a numeric-looking String in arithmetic produces NaN instead of being parsed. |
-| Classification and zero signs | `tointeger` accepts the represented value `9007199254740992`, beyond `maxinteger`. Rejected fractions/Strings and the four classifications have separate flags. The reciprocal observations distinguish signed zero; all seven zero-sign flags are one. |
-| Text and constants | Default text prints `9.0072e+15` and `3.14159`; this is not a full-precision dump. The f64 fields retain the Number values, including exact integer constants and the larger accepted integer. |
-
-| Group | What this program establishes |
-| --- | --- |
-| Trigonometry | `sin(0)`, `cos(0)` and `tan(0)` give `0,1,0`. The stored `sin(rad(30))` is approximately `0.49999999999999994`; `cos(rad(60))` is approximately `0.5000000000000001`. Both print as `0.5`; neither result is quantized to a Q16 output step. These values are finite observations, not a general error bound. |
-| Angle choices | Conversion gives radians for 180 degrees and degrees for pi radians. One- and two-argument atan choose different quadrants; asin and acos are also exercised. |
-| Roots and exponentials | The root is three, its negative-zero input is preserved, and the negative root input produces NaN. Exponential samples include zero, positive and negative inputs plus the explicit overflow/underflow branches. |
-| Logarithm options | Natural log of one, base-two log of eight and base-ten log of one hundred print `0,3,2`. Log of zero gives negative infinity; a negative input gives NaN. |
-| Nonnumeric angles | The three String inputs reach the actual conversion paths and give `0,0,0`; `atan(1,false)` follows its axis branch. These are not String parsing or argument-type errors. |
-
-| Group | What this program establishes |
-| --- | --- |
-| Seed and replay | The supplied-seed call returns one result. Reseeding with one returns nil and repeats the first unit sample. No clock-default seed is used. |
-| Rejected bounds | Each protected bound error has consumed a draw. After replaying word one, the first rejection consumes word two and the next unit uses word three; the interval rejection consumes word four and the next unit uses word five. |
-| False versus nil | False is a supplied seed and stores zero. A false bound then yields NaN after advancing, while a nil lower bound ignores its false upper bound and returns the next unit sample. |
-
-The retained checks and ordinary playback are separate executions. Their
-finite observations do not establish all-input accuracy, termination,
-statistical quality, reset/persistence or a fixed cycle budget.
+`first` and `replay` are equal, approximately `0.236456`; `die` is `3`.
+All users of the library share this state, so an intervening call advances the
+same sequence. A rejected bound also consumes an update, as specified above.

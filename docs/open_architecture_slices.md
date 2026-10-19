@@ -1,8 +1,11 @@
 # Openstaande architectuur-slices
 
-Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
-[`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
-horen niet in deze lijst.
+Dit bestand is een interne werkvoorraad, geen productspecificatie. De
+technische handleidingen in [de catalogus](manual/catalog.json) specificeren de
+console. [`architecture.md`](architecture.md) beschrijft uitsluitend actuele
+softwareverantwoordelijkheden en afhankelijkheden. Historische taakteksten of
+acceptatievoorstellen hieronder zijn geen hardwarewaarheid; controleer ze tegen
+de manuals en live owners voordat er werk uit volgt.
 
 ## Overnamepunt
 
@@ -44,7 +47,7 @@ De huidige machine-, BIOS- en cartlibgrenzen zijn:
   het `irqFunctionAddress` van het actieve execution-image; synchrone faults en
   NMI blijven op het BIOS-`exception()`-adres en daarmee op de supervisor
   monitor;
-- `cartlib` is first-party cart-ROM-engine, geen firmware. De rompacker bundelt
+- `cartlib` is onafhankelijke cartridge-software, geen firmware of fabrikant-SDK. De rompacker bundelt
   `./cartlib` als cart-library root. BIOS-Lua doet geen `require('cartlib/...')`.
   Bare-metal carts mogen de engine weglaten en GP0/GP1/GTE/DMA/IRQ zelf
   programmeren;

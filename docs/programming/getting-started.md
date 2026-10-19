@@ -1,14 +1,17 @@
 # Build and inspect example cartridges
 
+This is a repository-tooling companion, outside the three BMSX reference books.
+Its builders, examples and tests are optional project software, not console or
+BIOS requirements. Independent toolchains implement the interfaces in the books.
+
 Begin with a visible result: build and run the supplied GPU cartridge below.
 It draws a static scene from ordinary BLua source; an assertion suite is not
 required to see it. Then use the hardware-operation links to choose what to
 program next.
 
-The later storage route uses the two listings in the
-[worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records):
-build `memory_manual`, check its storage result, then run ordinary headless
-playback separately. Other sections cover the named cartridges, including
+The later storage route builds the supplied `memory_manual` project and checks
+its result. The [worked storage example](../book1/memory.md#worked-example-prepare-and-copy-two-records)
+explains the mechanism; it is not a replacement for that project's source files. Other sections cover the named cartridges, including
 [modules and globals](#build-and-inspect-modules-and-globals). These examples
 are independent, not a sequence of prerequisite builds. This guide describes
 the supplied checkout; it is not a complete SDK installation or debugging guide.
@@ -124,7 +127,7 @@ its chapter's register reference for individual fields.
 | Transform 2D shapes and test contacts | Follow [An authored sprite and its collision hull](../book1/geo.md#an-authored-sprite-and-its-collision-hull), then [Launching and observing a job](../book1/geo.md#launching-and-observing-a-job). |
 | Transfer data and observe completion | Follow [Program a transfer](../book1/dma.md#program-a-transfer) together with [Completion and interrupts](../book1/dma.md#completion-and-interrupts). |
 | Play sound and manage sample storage | Start with the APU [Programming sequence](../book1/apu.md#programming-sequence), then [Voice sources and their lifetime](../book1/apu.md#voice-sources-and-their-lifetime) and [Sample RAM transfer](../book1/apu.md#sample-ram-transfer). |
-| Read input and service interrupts | Follow the [Complete input sampling program](../book1/input.md#complete-input-sampling-program), [Choose one cartridge dispatch route](../book1/irq.md#choose-one-cartridge-dispatch-route), and [Acknowledge the source and the controller separately](../book1/irq.md#acknowledge-the-source-and-the-controller-separately). |
+| Read input and service interrupts | Follow the [input sampling sequence](../book1/input.md#complete-input-sampling-program), [Choose one cartridge dispatch route](../book1/irq.md#choose-one-cartridge-dispatch-route), and [Acknowledge the source and the controller separately](../book1/irq.md#acknowledge-the-source-and-the-controller-separately). |
 
 The [System overview](../book1/console.md) relates the units and storage. For
 source notation, read the [BLua extensions](../book1/blua-programs.md#blua-extensions)
@@ -132,7 +135,7 @@ rather than treating the hardware examples as ordinary Lua.
 
 ## Put the files in their roles
 
-The following storage route uses the separate `memory_manual` project. The repository supplies these example files, including the assertion suite. If recreating the worked storage example's two program listings, put the storage listing in `storage.lua` and the entry listing in `cart.lua` at these exact locations:
+The following storage route uses the separate `memory_manual` project. The repository supplies the following example files and assertion suite. Use those source files rather than treating the manual's compact mechanism example as a complete project:
 
 ```text
 carts/
@@ -284,7 +287,7 @@ Both suites compile derived integration images containing the ordinary program e
 
 ### GEO
 
-Use the [complete GEO program](../book1/geo.md#complete-blua-program):
+Use the [GEO transform/SAT example](../book1/geo.md#transform-two-squares-and-pass-them-to-sat2):
 
 ```sh
 npm run build:toolchain:cart -- geo_manual --debug
@@ -301,7 +304,7 @@ This checks eight vertices, two AABBs, SAT words, two float contacts and summari
 
 ### IMGDEC
 
-Use the [complete IMGDEC program](../book1/imgdec.md#programming-imgdec-in-blua):
+Use the [IMGDEC programming sequence](../book1/imgdec.md#programming-imgdec-in-blua):
 
 ```sh
 npm run build:toolchain:cart -- imgdec_manual --debug
@@ -339,7 +342,7 @@ accelerated-backend parity, physical throughput or fixed IRQ latency follows.
 
 ## Check the display-surface program
 
-Use the memory chapter's complete `results` and cartridge entry modules. After the existing tooling build, build the ordinary cartridge and run its result check:
+Use the supplied `display_manual` project's result and cartridge entry modules. After the existing tooling build, build the ordinary cartridge and run its result check:
 
 ```sh
 npm run build:toolchain:cart -- display_manual --debug
@@ -364,9 +367,9 @@ It captures presentation frames 1, 4 and 7 as `frame_00001.png`, `frame_00004.pn
 
 ## Check calls, values and text results
 
-Use the complete [BLua call and text program](../book1/memory.md#complete-blua-call-and-text-program). Its two modules retain 35 word observations in a 140-byte result structure; they do not print a transcript.
+The [values, storage and text example](../book1/memory.md#complete-blua-call-and-text-program) explains the mechanism. The supplied `language_manual` project's two modules retain 35 word observations in a 140-byte result structure; they do not print a transcript.
 
-If recreating the listings, put the result-storage listing in `carts/language_manual/results.lua` and concatenate the two entry parts in order into `carts/language_manual/cart.lua`. The supplied manifest at `carts/language_manual/res/manifest/manifest.rommanifest` contains:
+Use the supplied `carts/language_manual/results.lua` and `carts/language_manual/cart.lua` source files; the shortened reference examples are not a replacement for these project files. The supplied manifest at `carts/language_manual/res/manifest/manifest.rommanifest` contains:
 
 ```yaml
 title: BLua Values and Byte Storage Manual
@@ -393,13 +396,13 @@ The build prepares the matching BIOS automatically. The expected case-result lin
 [test] calls_values_and_utf8_storage: passed
 ```
 
-The case waits for `completed` to become 1, checks the structure size, and checks all 35 retained word observations against the chapter's result table. It runs on a fresh target with initialized BSS and installed library globals. It compiles a **derived integration image** containing the complete ordinary entry and the assertion fixture; it is not byte-for-byte playback of the ordinary cartridge ROM. Absolute linked addresses can therefore differ between those images.
+The case waits for `completed` to become 1, checks the structure size, and checks all 35 retained word observations against the supplied fixture's expected values. It runs on a fresh target with initialized BSS and installed library globals. It compiles a **derived integration image** containing the complete ordinary entry and the assertion fixture; it is not byte-for-byte playback of the ordinary cartridge ROM. Absolute linked addresses can therefore differ between those images.
 
 These commands and the reported result were checked on the current checkout. The system-VRAM result words describe its installed BIOS reservation, not a permanent layout promise. This check establishes the retained results for this headless execution; it does not establish native/backend parity, visible output, arbitrary dynamic-loader equivalence or a complete language-fault recovery contract.
 
 ## Check raw input and software edges
 
-The [complete input sampling program](../book1/input.md#complete-input-sampling-program) is supplied as these project files:
+The [input sampling sequence](../book1/input.md#complete-input-sampling-program) is supplied as these project files:
 
 - `carts/input_manual/results.lua` — complete 25-line constant result module;
 - `carts/input_manual/cart.lua` — complete 62-line cartridge entry;
@@ -441,7 +444,7 @@ This checks the specified keyboard/pad levels and software edges. It does not in
 
 ## Build and inspect the GEO docking scene
 
-The [complete docking-scene program](../book1/geo.md#complete-blua-docking-scene-program) is a **separate cartridge**, not an addition to the earlier numeric `geo_manual` entry. Its three complete listings belong in:
+The supplied docking-scene cartridge illustrates [an authored sprite and its collision hull](../book1/geo.md#an-authored-sprite-and-its-collision-hull). It is separate from the numeric `geo_manual` entry. Its source files are:
 
 ```text
 carts/geo_scene_manual/
@@ -451,7 +454,7 @@ carts/geo_scene_manual/
   res/manifest/manifest.rommanifest
 ```
 
-Concatenate each module's printed parts in order into its own file. `results.lua` supplies the typed layouts and BSS; `assets.lua` supplies the complete indexed artwork, palette, hull and records; `cart.lua` declares the sole `module<entry>`. The manifest is:
+Use the supplied modules, not the reference's compact fragments. `results.lua` supplies the typed layouts and BSS; `assets.lua` supplies the complete indexed artwork, palette, hull and records; `cart.lua` declares the sole `module<entry>`. The manifest is:
 
 ```yaml
 title: GEO Docking Scene Manual
@@ -496,9 +499,7 @@ Those are observed capture points in this ordinary playback, not guest callback-
 
 ## Build and inspect formatted text
 
-The [complete formatting program](../book1/bios-string.md#complete-program-formatted-text)
-is a separate cartridge, not an addition to the earlier codepoint/UTF-8 entry.
-Create:
+The supplied `bios_format_manual` cartridge illustrates [formatted text](../book1/bios-string.md#complete-program-formatted-text). Use its separate source files:
 
 ```text
 carts/bios_format_manual/
@@ -507,12 +508,8 @@ carts/bios_format_manual/
   res/manifest/manifest.rommanifest
 ```
 
-Save **Formatting result storage** as `results.lua`. Concatenate **Formatting
-entry, part 1**, **part 2** and **part 3** in that order as `cart.lua`, separating
-adjacent parts with one blank line and adding no other module declaration.
-These are the complete 27-line result module
-and 69-line entry; `require('results')` resolves the former. Use this entire
-manifest:
+Use the project's supplied result and entry modules; the reference examples
+are not a complete diagnostic cartridge. Its manifest is:
 
 ```yaml
 title: BIOS String Formatting Manual
@@ -568,8 +565,8 @@ npm run headless:tooling -- --debug --input-timeline tests/carts/bios_format_man
 
 The command explicitly selects the debug cartridge built above and uses the
 script’s debug BIOS.
-After startup, compare the eight `Format ...` lines with the chapter's
-**Formatting observations** output. Brackets expose padding spaces, and the
+After startup, compare the eight `Format ...` lines with the supplied program
+and fixture's expected output. Brackets expose padding spaces, and the
 quoted result contains visible escapes. The `%c` observation is printed as
 numeric length 2 and codepoints 0,0, not an invisible display claim. The timeline’s
 `frame: 4` is the chosen zero-based presentation offset, not an elapsed-frame,
@@ -580,9 +577,7 @@ limits.
 
 ## Build and inspect pattern searches
 
-The [complete pattern program](../book1/bios-string.md#complete-program-patterns-and-substitutions)
-is a separate cartridge, not an addition to the base or formatting entries.
-Create:
+The supplied `bios_pattern_manual` cartridge illustrates [patterns and substitutions](../book1/bios-string.md#complete-program-patterns-and-substitutions). Its separate source files are:
 
 ```text
 carts/bios_pattern_manual/
@@ -591,11 +586,8 @@ carts/bios_pattern_manual/
   res/manifest/manifest.rommanifest
 ```
 
-Save **Pattern result storage** as `results.lua`. Join the five **Pattern entry**
-parts in order as `cart.lua`, with one blank line between adjacent parts. The
-complete result module has 47 lines; the complete entry has 122. Only that entry
-starts with `module<entry>`; `require('results')` resolves the result module.
-The complete manifest is:
+Use the supplied modules. Only the entry starts with `module<entry>`;
+`require('results')` resolves the result module. The manifest is:
 
 ```yaml
 title: BIOS String Patterns Manual
@@ -639,7 +631,7 @@ npm run headless:tooling -- --debug --input-timeline tests/carts/bios_pattern_ma
 ```
 
 The command selects the debug cartridge and BIOS. Compare all 13 diagnostic
-lines with **Pattern observations** in the chapter, including the final
+lines with the supplied program and fixture's expected output, including the final
 standalone replacement-error payload. The timeline only chooses an observation
 endpoint; it does not itself assert the printed values. Its `frame: 4` is a
 zero-based presentation offset, not an elapsed-frame, startup-time or cycle
@@ -648,9 +640,7 @@ open despite these successful examples.
 
 ## Build and inspect packed records
 
-The [complete packing program](../book1/bios-string.md#complete-program-a-packed-record)
-is another separate cartridge. Do not combine its entry or its independently
-named result layout with the earlier examples. Create:
+The supplied `bios_pack_manual` cartridge illustrates [packed records](../book1/bios-string.md#complete-program-a-packed-record). Do not combine its entry or result layout with the earlier projects. Its files are:
 
 ```text
 carts/bios_pack_manual/
@@ -659,10 +649,7 @@ carts/bios_pack_manual/
   res/manifest/manifest.rommanifest
 ```
 
-Save **Packing result storage** as `results.lua`. Join the five **Packing entry**
-parts in order as `cart.lua`, placing one blank line between adjacent parts.
-These are the complete 42-line result module and 117-line entry, with no omitted
-library implementation or setup prelude. Use this complete manifest:
+Use the supplied result and entry modules. The manifest is:
 
 ```yaml
 title: BIOS Binary Packing Manual
@@ -713,8 +700,7 @@ open.
 
 ## Build and inspect modules and globals
 
-The [complete modular program](../book1/blua-programs.md#complete-program-modules-and-ordinary-globals)
-is a separate cartridge. Save the six complete listings at these exact paths:
+The supplied `modules_manual` cartridge illustrates [modules and globals](../book1/blua-programs.md#complete-program-modules-and-ordinary-globals). Its source files are:
 
 ```text
 carts/modules_manual/
@@ -776,7 +762,7 @@ Run:
 npm run headless:tooling -- --debug --input-timeline tests/carts/modules_manual/ordinary_timeline.json modules_manual
 ```
 
-Compare all five `Modules ...` lines with **Observations** in the chapter.
+Compare all five `Modules ...` lines with the supplied program and fixture's expected values.
 The timeline selects zero-based presentation offset 4, not an elapsed startup,
 frame or cycle guarantee, and does not assert the printed values. The retained
 checks and ordinary diagnostics are separate TS executions, not native proof,
@@ -785,10 +771,7 @@ validation of the separate BIOS runtime source compiler.
 
 ## Build and inspect numeric loops
 
-The [complete numeric-loop program](../book1/blua-programs.md#complete-program-numeric-loop-control)
-is its own cartridge, not an extra entry in `modules_manual`. Save the storage
-listing as `results.lua` and concatenate the three entry parts in order as
-`entry.lua` at these exact paths:
+The supplied `loops_manual` cartridge illustrates [numeric-loop control](../book1/blua-programs.md#complete-program-numeric-loop-control). It is not an extra entry in `modules_manual`. Use its source files:
 
 ```text
 carts/loops_manual/
@@ -847,9 +830,7 @@ BIOS runtime-parser contract, or whole-SDK/whole-console acceptance.
 
 ## Build and inspect generic iteration
 
-The [complete generic-iteration program](../book1/blua-programs.md#complete-program-generic-iteration)
-is a separate cartridge. Save its two complete listings at these exact paths;
-do not combine its entry or `results` module with the other examples:
+The supplied `iterators_manual` cartridge illustrates [generic iteration](../book1/blua-programs.md#complete-program-generic-iteration). Use its source files, separate from the other examples:
 
 ```text
 carts/iterators_manual/
@@ -907,10 +888,7 @@ BZ01 and the repeat-scope issue remain open.
 
 ## Build and inspect Math operations
 
-The [complete Math program](../book1/bios-math.md#complete-program-math-operations)
-is a separate `bios_math_manual` cartridge. Its results listing and five entry
-parts supply two complete source files. Save `results.lua` and concatenate
-entry parts 1–5, in order, as one `entry.lua` at these exact paths:
+The [Math programming examples](../book1/bios-math.md#complete-program-math-operations) explain individual operations. The separate `bios_math_manual` diagnostic cartridge uses these supplied files:
 
 ```text
 carts/bios_math_manual/
@@ -928,9 +906,9 @@ hardware:
 ```
 
 No earlier example cartridge is a prerequisite. The program uses the
-installed library without replacing its fields, uses explicit seeds rather
-than the clock default, and uses `//1` instead of the cart-forbidden
-`math.floor` reference. See the source-program chapter's
+installed library without replacing its fields and uses explicit seeds rather
+than the clock default. This project's source lint policy chooses `//1` instead
+of `math.floor`; that is not a BIOS or BLua restriction. See the source-program chapter's
 [known-call argument diagnostics](../book1/blua-programs.md#known-call-argument-diagnostics)
 for source minimums versus reached-call behavior.
 
@@ -965,7 +943,7 @@ Run:
 npm run headless:tooling -- --debug --input-timeline tests/carts/bios_math_manual/ordinary_timeline.json bios_math_manual
 ```
 
-Compare all 24 `Math ...` lines in **Ordinary observations**. Rounded Number
+Compare the `Math ...` diagnostics with the supplied program and fixture's expected values. Rounded Number
 text is not a substitute for the exact retained f64 checks. The timeline
 selects zero-based presentation offset 4, not an output assertion or a
 startup/frame/cycle guarantee. Retained and ordinary results are separate TS
@@ -976,9 +954,7 @@ CPU7, Table length, BZ01 and LS01 remain open.
 
 ## Build and inspect time and calendar operations
 
-The [complete time/calendar program](../book1/bios-os.md#complete-program-time-and-calendar-operations)
-is a separate `bios_os_manual` cartridge. Save the results listing as
-`results.lua` and concatenate entry parts 1–5, in order, as one `entry.lua`:
+The supplied `bios_os_manual` cartridge illustrates [time and calendar operations](../book1/bios-os.md#complete-program-time-and-calendar-operations). Use its source files:
 
 ```text
 carts/bios_os_manual/
@@ -1032,7 +1008,7 @@ Run:
 npm run headless:tooling -- --debug --input-timeline tests/carts/bios_os_manual/ordinary_timeline.json bios_os_manual
 ```
 
-Compare all 26 `OS ...` diagnostics in **Ordinary observations**. The first two
+Compare the `OS ...` diagnostics with the supplied program and fixture's expected values. The first two
 lines are a recorded sample, not exact replay values: each default-time call
 samples independently. The other 24 diagnostics use explicit inputs; the
 `%n` example additionally prints the continuation line `C`. The exact retained
@@ -1087,9 +1063,7 @@ no undocumented flag or replacement build wrapper is required here.
 
 ## Build and inspect runtime compilation
 
-The [complete runtime-compilation program](../book1/bios-loader.md#complete-program-runtime-compilation)
-is a separate `bios_loader_manual` cartridge. Save its results listing as
-`results.lua` and concatenate entry parts 1–4 as one `entry.lua`:
+The supplied `bios_loader_manual` cartridge illustrates [runtime compilation](../book1/bios-loader.md#complete-program-runtime-compilation). Use its source files:
 
 ```text
 carts/bios_loader_manual/
@@ -1142,9 +1116,8 @@ Run:
 npm run headless:tooling -- --debug --input-timeline tests/carts/bios_loader_manual/ordinary_timeline.json bios_loader_manual
 ```
 
-Compare all 13 `Load ...` diagnostics in **Observed results**, then timeline
-completion. Raw `print` separators are tabs; the public chapter renders each
-as one space. Offset 8 is a zero-based presentation endpoint, not an assertion
+Compare the `Load ...` diagnostics with the supplied program and fixture's
+expected values, then timeline completion. Raw `print` separators are tabs. Offset 8 is a zero-based presentation endpoint, not an assertion
 or a compilation/startup/frame/cycle guarantee. The self-owned external scope
 is not a fabricated selected-frame descriptor. No forced collection, code
 reuse/exhaustion, reset/snapshot, native/all-input/optimizer, fresh installation,
@@ -1232,8 +1205,7 @@ and physical throughput are not established by these routes.
 
 ## Build and inspect PCRTC composition
 
-Use the complete [composition program](../book1/pcrtc.md#pcrtc-composition-output).
-Put its two modules in `carts/pcrtc_mix_manual/cart.lua` and
+The [composition example](../book1/pcrtc.md#pcrtc-composition-output) explains the controls. Use the supplied project modules in `carts/pcrtc_mix_manual/cart.lua` and
 `carts/pcrtc_mix_manual/results.lua`, and its manifest in
 `carts/pcrtc_mix_manual/res/manifest/manifest.rommanifest`. Keep the supplied
 assertion and timeline in `tests/carts/pcrtc_mix_manual/` before the debug build.
@@ -1273,8 +1245,7 @@ installation.
 
 ## Build and inspect APU downloads
 
-Use the complete [APU download program](../book1/apu.md#apu-download-budget).
-Put its two modules in `carts/apu_download_manual/cart.lua` and
+The [APU download sequence](../book1/apu.md#apu-download-budget) explains transport. Use the supplied project modules in `carts/apu_download_manual/cart.lua` and
 `carts/apu_download_manual/results.lua`, and its manifest in
 `carts/apu_download_manual/res/manifest/manifest.rommanifest`. Keep the supplied
 assertion at `tests/carts/apu_download_manual/apu_download_manual_assert.lua`
@@ -1306,9 +1277,9 @@ installation.
 
 ## Build and inspect two cartridge sockets
 
-Use the complete two-module program in **Book III, Cartridge sockets and mapped
-card devices — Two-card programming example**. This is a separate raw polling
-example, not a prerequisite for earlier examples. Its source files are
+The supplied `cartridge_manual` project illustrates the two-card procedure in
+**Book III, Cartridge sockets and mapped card devices**. This raw polling
+project is independent of earlier examples. Its source files are
 `carts/cartridge_manual/results.lua` and `carts/cartridge_manual/cart.lua`.
 The project-relative module name `results` supplies the entry's typed BSS
 record; `module<entry>` selects the entry. The supplied assertion is
@@ -1504,7 +1475,7 @@ Currently, `FRAMES` does not expose inline names or depth choices, and `HELP LUA
 
 Use this example to read CP0 inside a cartridge IRQ callback and confirm normal return to main code. Follow the common [prerequisites](#prerequisites) and [tooling/debug BIOS build](#build-and-check-the-storage-result). No additional asset or library module is required.
 
-The [complete CPU program](../book1/cpu.md#cp0-in-cartridge-irq) supplies the results module, `carts/cpu_irq_manual/results.lua`, and entry module, `carts/cpu_irq_manual/cart.lua`. Its manifest, `carts/cpu_irq_manual/res/manifest/manifest.rommanifest`, is:
+The supplied project illustrates [CP0 in a cartridge IRQ](../book1/cpu.md#cp0-in-cartridge-irq). It uses the results module, `carts/cpu_irq_manual/results.lua`, and entry module, `carts/cpu_irq_manual/cart.lua`. Its manifest, `carts/cpu_irq_manual/res/manifest/manifest.rommanifest`, is:
 
 ```yaml
 title: CPU IRQ Privilege Manual

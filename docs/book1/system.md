@@ -22,6 +22,32 @@ Use aligned 32-bit accesses to the registers below. `CONTROL` is a command port,
 | Supervisor fault report | Six raw words, 24 bytes including its publication sequence |
 | Diagnostic output queue | 8192 bytes, shared by completed unread text and the current partial line |
 
+## Measure elapsed console time
+
+This polling example needs no interrupt source: TIME_MS advances with system
+cycles, not with timer interrupts. It leaves the inherited display and
+interrupt configuration unchanged. The interval must be shorter than one
+complete 2^32-millisecond wrap.
+
+```lua
+local time_ms<const>: *word = 0x08010228
+local start<const> = *time_ms
+while ((*time_ms - start) % 0x100000000) < 100 do
+end
+local finish<const> = *time_ms
+local elapsed<const> = (finish - start) % 0x100000000
+```
+
+`elapsed` is at least 100 milliseconds, not necessarily exactly 100.
+For `start = fffffff0H` and `finish = 00000054H`, the wrapping distance is
+100 milliseconds. BIOS `os.clock()` instead expresses a fresh TIME_MS read
+in seconds; `os.time()` without arguments returns whole seconds. Neither
+supplies a civil clock. A HALT-based wait additionally needs an owned interrupt
+route and must recheck its time predicate after each wake-up; advancing
+TIME_MS alone cannot wake HALT.
+
+## Control register reference
+
 | Register | Address | Access | Reset value |
 |---|---|---|---|
 | `CONTROL` | `0x0801034c` | Command write; reads return `0` | `0x00000000` |
@@ -219,7 +245,7 @@ Continuing the monitor is a retry, not a repair. For an invocation that owns the
 
 RESET is available in either CPU mode. It latches one pending request and asks the CPU to yield; repeated RESET writes coalesce until the request is consumed. CONTROL still reads zero, and STATUS has no reset-pending flag. Reading either word neither consumes the request nor proves that reboot has occurred. Other admitted command bits in the same write are still processed in the defined order.
 
-A pending request is consumed at an execution-update or instruction-step boundary before scheduled execution, or after a CPU execution slice in the ordinary update path. Consumption performs a system reboot: it clears I/O and bus faults, resets hardware and CPU execution state, and starts firmware again. There is no fixed request-to-reboot cycle latency. This is not a local device reset or a bus-fault acknowledgement, and it is not a promise that all RAM or every device buffer is zeroed.
+A pending request is serviced at a CPU execution boundary. Servicing it performs a system reboot: it clears I/O and bus faults, resets hardware and CPU execution state, and starts firmware again. There is no fixed request-to-reboot cycle latency. This is not a local device reset or a bus-fault acknowledgement, and it is not a promise that all RAM or every device buffer is zeroed.
 
 At SYSTEM reset, CONTROL, STATUS and all six fault words are zero; no supervisor transition, exit request or resumable context remains. These are the reset values of this unit, not a substitute for the reset and acknowledgement rules of other devices. Automatic zero readback after a CONTROL write is command-port behavior, not an acknowledgement of a bus fault or completion of a machine reboot.
 
@@ -276,214 +302,36 @@ BIOS `print(...)` converts each argument with `tostring`, separates arguments wi
 
 Direct writes to `PRINT_CHAR` and `PRINT_FLUSH` do not add BIOS-history entries or draw glyphs. The BIOS console display is updated separately from its retained history. Diagnostic publication, retained console text, and visible console drawing are distinct events.
 
-## A complete timer and diagnostic program
+## Send a diagnostic line
 
-This program collects four timed observations, compares the ordinary BIOS clock calls with raw SYSTEM reads, and sends a short Unicode diagnostic line. It retains its observations in typed cartridge storage rather than relying on the appearance of text on the screen. The result module and entry program are printed in full below; the entry program is divided into consecutive parts.
-
-Run it as a fresh, ordinary BIOS cartridge startup, with the main program in current user mode. It owns the VBlank handler and interrupt mask, enables no other interrupt source, and assumes no other diagnostic writer. Keep the inherited beam running: the program deliberately leaves PCRTC alone. These are starting conditions for this example, not promises about an arbitrary interrupted or resumed cartridge. In particular, fresh cartridge entry does not mean that the machine millisecond counter starts at zero.
-
-The separate chapter companion supplies the cartridge materials, build
-instructions and the ordinary-run procedure for observing diagnostic output
-and entering the monitor.
-
-<section class="keep-together">
-
-### Reserve the observations
-
-The result module declares one six-word sample and the complete retained result:
+Assume no other diagnostic writer and enough queue space for the line. These
+writes send four codepoints, then publish the line. A zero FLUSH word is still
+a flush command.
 
 ```lua
-module<const>
-
-struct system_manual_sample
-	before_ms: word
-	after_ms: word
-	elapsed_ms: word
-	frame_ms_q16: word
-	cycles_per_frame: word
-	status: word
-end
-
-struct system_manual_result
-	completed_samples: word
-	vblanks: word
-	ignored_control: word
-	ignored_status: word
-	faults: word[6]
-	clock_before_ms: word
-	clock_after_ms: word
-	clock_seconds: f64
-	time_before_ms: word
-	time_after_ms: word
-	time_seconds: word
-	char_readback: word
-	flush_readback: word
-	samples: system_manual_sample[4]
-end
-
-bss result: system_manual_result
-
-return { result = result }
-```
-
-</section>
-
-Each sample occupies 24 bytes. The complete BSS object occupies **172 bytes**, including its four samples, six initial fault words, clock-call brackets, diagnostic readbacks, and progress fields. The eight-byte `f64` member has four-byte alignment in this layout. BSS supplies the initial zero values; the program uses the named typed object, not a guessed RAM address.
-
-<section class="keep-together">
-
-### Bind the ports and arrange the wake-up source
-
-The entry program begins with its result-module reference and explicit word-port bindings:
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *system_manual_result = state.result
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local time_ms<const>: *word = 0x08010228
-local frame_ms_q16<const>: *word = 0x0801022c
 local print_char<const>: *word = 0x08010230
 local print_flush<const>: *word = 0x08010234
-local cycles_per_frame<const>: *word = 0x08010238
-local control<const>: *word = 0x0801034c
-local status<const>: *word = 0x08010350
-local fault_words<const>: *word = 0x08010428
-```
 
-</section>
-
-Dereferencing a port pointer performs that port access. The result pointer instead names the BSS object. `os.clock`, `os.time`, and `print`, used below, are ordinary globals supplied by the BIOS; they need no additional module import.
-
-<section class="keep-together">
-
-The next part provides the cartridge's interrupt routine and enables only VBlank:
-
-```lua
-
-function irq(flags)
-	if (flags & 0x00000004) ~= 0 then
-		*irq_ack = 0x00000004
-		result.vblanks = result.vblanks + 1
-	end
-end
-
--- Fresh BIOS entry, current user mode, exclusive VBlank handler and mask.
--- Keep the inherited running beam; do not reprogram PCRTC in this example.
-*irq_mask = 0
-*irq_ack = 0x00000004
-*irq_mask = 0x00000004
-
--- All four supervisor commands are ignored in current user mode. No RESET.
-*control = 0x0000001e
-result.ignored_control = *control
-result.ignored_status = *status
-for index = 0, 5 do
-	result.faults[index] = fault_words[index]
-end
-```
-
-</section>
-
-The routine acknowledges and counts VBlank only when bit `0x00000004` is present. The main program first masks all interrupt sources, acknowledges VBlank, and then enables that source. With the running beam and normal startup interrupt admission, this gives the later `halt_until_irq` instructions a wake-up route. Advancing `TIME_MS` alone is not a wake-up event.
-
-The `CONTROL` write selects all four supervisor command bits but excludes `RESET`. It occurs in the main program's current user mode, so those commands are ignored. For these starting conditions, `ignored_control`, `ignored_status`, and all six saved fault words are zero. The six words are retained in address order: sequence, cause, EPC, bad address, Lua reason, and domain.
-
-This is an observation of the user-mode command gate, **not a monitor-entry API**. Privilege follows the CPU's current mode, not the cartridge containing an instruction; an interrupt routine runs in exception context. Moving the same control write into that routine would not demonstrate the same gate.
-
-<section class="keep-together">
-
-### Compare BIOS seconds with raw milliseconds
-
-The next consecutive part brackets each BIOS clock call with two raw reads:
-
-```lua
-
--- BIOS functions are ordinary globals. These are separate clock reads.
-result.clock_before_ms = *time_ms
-result.clock_seconds = os.clock()
-result.clock_after_ms = *time_ms
-result.time_before_ms = *time_ms
-result.time_seconds = os.time()
-result.time_after_ms = *time_ms
 print('SYSTEM timer experiment')
-```
-
-</section>
-
-`TIME_MS` is an unsigned 32-bit millisecond word. Fractional milliseconds are discarded, and the word wraps after `2^32` milliseconds. The no-argument `os.clock()` returns this machine time divided by 1000 as floating-point seconds; `os.time()` returns its integer quotient by 1000. Neither is a nonwrapping calendar clock, and `os.clock()` does not count only the instructions executed by this program.
-
-Each BIOS call makes its own time read. The words before and after it bracket that call; they are not a single shared reading. Likewise, a rollover between readings is a rollover of the word, not evidence that time ran backward. The brackets let the reader interpret the BIOS values without requiring all three reads to happen in the same millisecond.
-
-<section class="keep-together">
-
-### Wait for a predicate, then retain the raw timing words
-
-The four observations follow immediately:
-
-```lua
-
-for index = 0, 3 do
-	local sample<const>: *system_manual_sample = &result.samples[index]
-	sample.before_ms = *time_ms
-	while ((*time_ms - sample.before_ms) % 0x100000000) < 100 do
-		halt_until_irq
-	end
-	sample.after_ms = *time_ms
-	sample.elapsed_ms = (sample.after_ms - sample.before_ms) % 0x100000000
-	sample.frame_ms_q16 = *frame_ms_q16
-	sample.cycles_per_frame = *cycles_per_frame
-	sample.status = *status
-	result.completed_samples = index + 1
-end
-```
-
-</section>
-
-`&result.samples[index]` takes the address of the selected typed sample. The program records a start word and repeatedly asks whether the unsigned elapsed distance is still less than 100 milliseconds. The modulo operation reduces the sample difference to the range 0 through 2^32−1. This calculation requires the actual interval to be shorter than one full `TIME_MS` period; it does not extend the counter or count missed wraps.
-
-After each interrupt wake-up, the program checks the predicate again. The resulting `elapsed_ms` is **at least 100**, not necessarily exactly 100. VBlank delivery and the instructions between the reads can make it larger; this is not an exact 100-millisecond cadence or an instruction-active-only measurement. The start for each observation is taken anew.
-
-`after_ms`, `frame_ms_q16`, `cycles_per_frame`, and `status` are separate accesses, not an atomic multiword snapshot. The frame word remains raw Q16 milliseconds; `0x00010000` represents one millisecond. The cycles word is the current whole VBlank-period budget, not the number of cycles spent in the wait. Their values belong to the running timing configuration; no fixed frame duration is assumed here.
-
-`completed_samples` advances only after all fields of that sample have been written. On completion it is 4, each saved elapsed distance is the wrapping distance from its two saved time words and is at least 100, and each saved status is zero under the stated conditions. The VBlank count is at least 4 and continues to grow during the final idle loop.
-
-<section class="keep-together">
-
-### Send codepoints, then complete the line
-
-The final consecutive part sends four raw codepoints, records port readback, prints the completion message, and idles:
-
-```lua
-
--- Raw codepoints, not UTF-8 bytes: S, é, a supplementary character, invalid.
 *print_char = 0x00000053
 *print_char = 0x000000e9
 *print_char = 0x0001f600
 *print_char = 0xffffffff
-result.char_readback = *print_char
+local char_readback<const> = *print_char
 *print_flush = 0
-result.flush_readback = *print_flush
+local flush_readback<const> = *print_flush
 print('SYSTEM samples complete')
-
-while true do
-	halt_until_irq
-end
 ```
 
-</section>
-
-`CHAR` accepts one Unicode codepoint per write, not a UTF-8 byte, string address, or packed group of characters. These writes request `S`, `é`, U+1F600, and an out-of-range word. The last is encoded as `?`, but the saved raw `CHAR` readback is still `0xffffffff`.
-
-A `CHAR` write does not publish the partial line. **Any `FLUSH` write, including zero**, appends a line feed and publishes the line when there is room. Its value is not a length or enable bit. With room for this line and no interleaved writer, the raw bytes are:
+CHAR readback is `ffffffffH`, even though the invalid codepoint emits `?`.
+FLUSH readback is zero. Both are last-written words, not receiver-ready or
+completion flags. The raw middle line is encoded as:
 
 ```text
 53 C3 A9 F0 9F 98 80 3F 0A
 ```
 
-The diagnostic text, including the two BIOS print calls, is therefore:
+The diagnostic text is:
 
 ```text
 SYSTEM timer experiment
@@ -491,10 +339,8 @@ Sé😀?
 SYSTEM samples complete
 ```
 
-The saved `flush_readback` is zero. Both readbacks are recorded before the final BIOS `print`, which performs further diagnostic-port writes of its own. They record the words written, not receiver readiness or confirmation that the line has been drained.
-
-The two output routes have different console consequences. BIOS `print` sends diagnostic output **and** retains text in BIOS console history, but does not itself flush that history to the display. Direct `CHAR` and `FLUSH` writes send only diagnostic output: they neither add console-history entries nor draw glyphs. Thus the two BIOS print lines can appear in the later monitor display, while the raw `Sé😀?` line is not in that history. The final idle loop leaves the VBlank handler enabled; completion does not mean the machine's time or beam has stopped.
-
+Only the two BIOS `print` calls also add text to the BIOS console history.
+The direct codepoint line neither enters that history nor draws glyphs.
 
 ![BIOS console after the timer experiment](figures/system-console.png)
 

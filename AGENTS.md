@@ -1,5 +1,33 @@
 # Repository agent instructions
 
+## Product specification and documentation boundaries
+
+- The technical manuals are the authoritative product specification of the
+  physical BMSX console: Book I covers system/hardware, Book II covers BLua32
+  and BIOS, Book III covers cartridge/expansion interfaces. Start at
+  `docs/manual/catalog.json` and `docs/book1/console.md`.
+- `docs/architecture.md` describes internal software ownership and dependencies
+  only. Never use it, remembered excerpts or historical handovers as hardware,
+  instruction, ROM-format or public BIOS authority.
+- Verify product facts against the relevant numeric specification leaves,
+  actual TS/C++ owners and BIOS consumers (and the BLua frontend for
+  language/linkage contracts). Report disagreements; do not assume
+  architecture prose or one implementation settles the intended behavior.
+- Hardware knowledge belongs in the manuals, not another internal spec mirror.
+  Internal documents link to the relevant public chapter instead of copying
+  register maps, formats, timing or public call contracts.
+- Repository location does not determine product ownership. `cartlib`, packers,
+  asset converters and project build tools are independent studio software,
+  not BMSX hardware, BIOS or a manufacturer-mandated SDK.
+- Write public chapters as self-contained manufacturer documentation for a
+  cartridge programmer. Explain purpose and data flow, teach concise real
+  programming sequences, then give complete reference details. No source paths,
+  emulator internals, tests, history or tool-specific requirements in the books.
+- Complete known chapter content before its detailed review; evaluate
+  authenticity, independence, explanation, relevance, product boundaries and
+  technical completeness as well as factual accuracy. Content precedes print
+  polishing. Use existing documentation/tooling; do not add status-file layers.
+
 ## Implementation rules
 
 - Before implementing anything, study best-practice reference implementations

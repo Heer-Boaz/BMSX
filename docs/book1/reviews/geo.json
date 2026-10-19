@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete actual two-module BLua cartridge uses typed ports/records, readonly integer operands, explicit BSS/F32 staging and sequence-predicate waits. Full build/type validation and ordinary six-phase execution pass, all11 printed blocks reconstruct both modules, and independent complete-reader review passes. The separate three-module docking scene prints all 577 lines exactly and teaches actual sprites, authored/transformed hulls, touch/overlap/contact validity, raw drawing/video setup and reproducible build/result/capture routes; independent source/public-reader/image checks pass.",
+			"resolution": "Short transform/SAT sequences and an authored sprite/hull example accompany command records, results, timing and actual scene illustrations.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/geo-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book1/reviews/geo-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book1/reviews/geo-print.md"
 		}
 	}

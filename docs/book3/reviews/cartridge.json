@@ -33,13 +33,13 @@
 			"open": []
 		},
 		"programming": {
-			"resolution": "Complete two-card raw-port BLua example retains socket selection, independent RAM/mailbox state, DMA override and IRQ acknowledgement. Resource-directory APIs and library/asset-packaging conventions are not cartridge hardware requirements and have been removed from this chapter.",
+			"resolution": "A compact two-socket sequence accompanies selection, execution binding, mapped card access, DMA and interrupt operation.",
 			"open": []
 		}
 	},
 	"reviews": {
 		"facts": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book3/reviews/cartridge-source.md"
 		},
 		"figures": {
@@ -47,7 +47,7 @@
 			"report": "docs/book3/reviews/cartridge-source.md"
 		},
 		"print": {
-			"passed": true,
+			"passed": false,
 			"report": "docs/book3/reviews/cartridge-print.md"
 		}
 	}

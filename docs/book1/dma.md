@@ -92,6 +92,109 @@ START written while BUSY is ignored: it is not queued, does not restart the
 channel and does not cancel an admitted block. A write with START clear also
 does not start anything. TRIGGER reads zero after either kind of write.
 
+<a id="worked-blua-program"></a>
+
+## Copy words in BLua
+
+These fragments assume ordinary BIOS cartridge entry, exclusive ownership of
+both idle DMA channels, and separate nonoverlapping buffers. They poll DMA
+status with interrupt delivery masked. Completion still raises pending IRQ
+bits; the caller acknowledges those bits explicitly. Array indices below
+address the six consecutive registers in each channel, not a DMA descriptor
+in RAM.
+
+```lua
+rodata seed: word[20] = {
+    0, 1, 2, 3, 0x12345678, 0x87654321, 0x80000000, 0xffffffff,
+    0xaaaaaaaa, 0x55555555, 0x0000ffff, 0xffff0000,
+    0x01020304, 0x10203040, 0x11223344, 0x55667788,
+    0xdeadbeef, 0xcafebabe, 0x7fffffff, 0x80000001,
+}
+bss source: word[20]
+bss copy0: word[20]
+bss copy1: word[20]
+local dma0<const>: *word = 0x0800000c
+local dma1<const>: *word = 0x080103e4
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+
+*irq_mask = 0
+*irq_ack = 0x00000101
+-- Cartridge ROM -> RAM, both endpoints increment, sixteen-word blocks.
+dma0[0] = seed
+dma0[1] = source
+dma0[2] = 20
+dma0[3] = 0x00003c03
+dma0[5] = 1
+while (dma0[4] & 1) ~= 0 do
+end
+
+-- Prepare both RAM copies before starting either channel.
+dma0[0] = source
+dma0[1] = copy0
+dma0[2] = 20
+dma0[3] = 0x00003c03
+dma1[0] = source
+dma1[1] = copy1
+dma1[2] = 20
+dma1[3] = 0x00000c03
+dma0[5] = 1
+dma1[5] = 1
+while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do
+end
+*irq_ack = 0x00000101
+```
+
+After successful bus accesses, `source`, `copy0` and `copy1` contain all twenty
+seed words, including the high-bit patterns without conversion. Each completed
+channel has count zero, STATUS=`00000002H` and TRIGGER zero. Its incrementing
+addresses have advanced 80 bytes. Check the shared bus-fault report as well:
+DONE alone does not certify successful accesses.
+
+The ROM-to-RAM transfer costs 168 admitted DMA cycles. For the two RAM copies,
+the [round-robin trace](#worked-block-round-robin-trace) gives the 94-cycle
+schedule when channel 1 starts before channel 0's first block completes.
+Those costs exclude programming instructions, arbitration waits and interrupt
+service; sequential START stores are not an atomic simultaneous launch.
+
+### Send a command stream to GP0
+
+Retain `dma0` and `irq_ack` from above. Own GP0 exclusively, with no partial
+packet or unread readback. This five-word stream sets mask mode, fills a red
+64 × 64 rectangle at (0,0), then requests an in-order GPU interrupt.
+
+```lua
+rodata gpu_commands: word[5] = {
+    0xe6000000, 0x020000ff, 0x00000000, 0x00400040, 0x1f000000,
+}
+local gp1<const>: *word = 0x08010240
+while (*gp1 & 0x04000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000041
+*gp1 = 0x04000002           -- CPU_TO_GP0 direction; enable GX_WRITE.
+dma0[0] = gpu_commands
+dma0[1] = 0x0801023c
+dma0[2] = 5
+dma0[3] = 0x00003c41
+dma0[5] = 1
+while (dma0[4] & 1) ~= 0 do
+end
+while (*gp1 & 0x01000000) == 0 do
+end
+while (*gp1 & 0x04000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000041
+```
+
+DMA holds GP0 fixed and advances its ROM source by 20 bytes; its one short
+block costs 44 cycles. The DMA wait releases the command-stream source; the
+following waits separately observe the GPU marker and GPU idle. The local
+fill's RGB555 result is `001fH`, but observing those status bits is not a pixel
+readback. The sequence neither programs a display mode nor publishes a new
+scanout source. Display latching remains a [PCRTC](pcrtc.md) operation.
+
 ## Register reference
 
 Use whole-word accesses at the addresses below. Each reset word is zero.
@@ -269,6 +372,17 @@ CPU writes to GP0 require no DMA write owner, empty DMA ingress, command-FIFO ro
 
 A refused CPU store waits before writing and retries the instruction after release. DMA ownership release requires the same blocked address and no remaining read or write owner there; release itself does not deposit a word. Reads are different: GP0 and IMGDEC CPU reads while DMA read-owned return their retained data latches rather than consuming DMA's data. APU CPU reads return its data latch. Do not use these reads as evidence that the DMA source FIFO is empty or that a transfer has stopped.
 
+### Supervisor boundaries
+
+A supervisor request first closes new TRIGGER admission. Existing channels
+can continue until producer quiescence, after which a second gate prevents
+another block from being admitted. The already admitted block completes;
+a BUSY channel waiting indefinitely for a request does not prevent this
+boundary. The cartridge channel registers and arbitration turn are then
+retained while supervisor channels start clear. Leave restores them and
+resumes arbitration; it does not restore overwritten payload RAM. See
+[SYSTEM, Device boundaries during supervisor service](system.md#device-boundaries-during-supervisor-service).
+
 ## Faults and recovery
 
 DMA bus faults and DMA completion are separate reports. An unmapped source read records UNMAPPED and supplies zero; an unmapped destination write records UNMAPPED without writing. An unaligned I/O read records UNALIGNED_IO and supplies zero; an unaligned I/O write records it without writing. A write to read-only STATUS records READ_ONLY without changing that register. Program DMA registers with whole-word writes.
@@ -308,7 +422,7 @@ DMA DONE means that the programmed word slots have been processed. It does
 not certify that every bus access succeeded, nor that downstream work has
 finished. For a GP0 command stream, transfer completion, execution of an
 in-order GPU marker, GPU idle and publication of a displayed picture are
-different conditions. The worked program waits for DMA and GPU separately;
+different conditions. The programming example waits for DMA and GPU separately;
 the [PCRTC chapter](pcrtc.md) covers display latching.
 
 ## Transfer timing and sharing the bus
@@ -359,7 +473,11 @@ Block charge = max(1, sum of all span charges)
 
 </div>
 
-“Both” refers to region kind, not matching addresses or cartridge slots. System-ROM-to-system-ROM uses the maximum rule, not addition. The one-cycle minimum applies once to the **whole block**, not to each word or each span. Consequently an all-I/O block costs one cycle regardless of its admitted word count. The cartridge charge applies throughout the classified cartridge aperture, not only to physical ROM storage.
+“Both” refers to region kind, not matching addresses or cartridge slots. System-ROM-to-system-ROM uses the maximum rule, not addition. The one-cycle minimum applies once to the **whole block**, not to each word or each span. Consequently an all-I/O block costs one cycle regardless of its admitted word count. The cartridge charge applies throughout the cartridge aperture, including
+cartridge RAM and MMIO, not only ROM storage. Both sockets share the external
+transfer path: cartridge-to-cartridge costs add even when different socket
+request selectors choose its source and destination. Separate chip selects
+do not provide a second transfer bus.
 
 ### Single-channel examples
 
@@ -399,6 +517,7 @@ The table uses decimal millions: Mword/s is 1,000,000 words/s and MB/s is
 | RAM → RAM | 34 | 15.938 | 63.753 |
 | System ROM → RAM | 17 | 31.877 | 127.506 |
 | Cartridge ROM → RAM | 132 | 4.105 | 16.421 |
+| Cartridge region → cartridge region | 264 | 2.053 | 8.211 |
 | RAM → fixed I/O | 17 | 31.877 | 127.506 |
 | System ROM → fixed I/O | 16 | 33.869 | 135.475 |
 | Cartridge ROM → fixed I/O | 132 | 4.105 | 16.421 |
@@ -509,275 +628,3 @@ For other GPU work, use the command ordering and completion protocol in the
 [GPU chapter](gpu.md). Neither DMA DONE, GPU idle nor a GPU IRQ marker certifies
 that new pixels have reached the display latch; display publication belongs to
 [PCRTC](pcrtc.md).
-
-## Worked BLua program
-
-This program performs three operations: seed a RAM buffer from cartridge ROM,
-copy it through both channels, and submit a ROM command stream to GP0. It owns
-both DMA channels, their completion IRQs and GP0 for the duration. Begin under
-ordinary cartridge startup, with zero-initialized BSS, CPU interrupt acceptance
-enabled and no outstanding cartridge DMA. GP0 must not have an unfinished
-packet or an unconsumed readback. Waiting for idle does not repair such a stream.
-
-Create a const module named `results`. Concatenate all following **Entry module**
-parts, in their printed order, into one entry module; they continue one program.
-Requiring `results` supplies the record types and the address of its BSS record. It does not allocate a register table. `seed` and `gpu_commands` are
-fixed typed ROM data; their braces are compile-time initializers. The three RAM
-arrays and the interrupt-visible sequences live in explicit BSS.
-
-The retained channel records are observations, not descriptors fetched by DMA.
-Each operation still writes the five real source, destination, count, CONTROL
-and START words. The listing exposes each of those register transactions. The same raw payload words, including `80000000H` and
-`ffffffffH`, pass through all three memory copies.
-
-### Read the three phases
-
-1. **Cartridge ROM → RAM.** Channel 0 transfers 20 words to `source` using
-   CONTROL=`00003c03H`. The sequence is sampled before START. After completion,
-   both addresses have advanced 80 bytes, count is zero, STATUS is DONE and
-   TRIGGER reads zero. The retained `rom_copy` words preserve that observation
-   before channel 0 is reprogrammed.
-2. **Two RAM copies.** Both channels are configured before either START.
-   Channel 0 uses 16-word blocks and channel 1 four-word blocks. Both read the
-   same unchanged source into separate 20-word destinations. The predicate
-   waits until both channel sequences have changed; either IRQ alone is not
-   enough. `parallel_status` records the two reads made after START. These are
-   separate software observations, not an atomic view or an arbitration trace.
-3. **Cartridge ROM → fixed GP0.** GP1 command `04000002H` selects CPU_TO_GP0
-   request operation. Channel 0 increments the ROM address, holds GP0 at
-   `0801023cH`, and selects FORCE/GX_WRITE with CONTROL=`00003c41H`. Its five
-   words set mask mode, fill a red 64×64 area at (0,0), and append an in-order
-   GPU IRQ marker. DMA completion returns the source buffer to the caller; the
-   following waits separately observe the marker and GPU idle.
-
-Only DMA0 and DMA1 delivery are enabled by MASK=`00000101H`. The handler
-advances the matching sequences and acknowledges only those two controller
-bits, even if `flags` also contains a masked source. The GPU source stays masked
-and is polled explicitly. Its local request is cleared with GP1(02), while
-controller ACK clears bit 6 separately. Disabled VBlank pending is preserved;
-the final FLAGS word need not be zero.
-
-The 20-word ROM transfer has 168 cycles of admitted DMA work. The two RAM
-copies have the 94-cycle schedule under the assumptions in the preceding
-trace. The five-word ROM-to-GP0 block costs 44 DMA cycles. These budgets exclude
-CPU configuration, IRQ delivery, handler execution, request waiting and GPU
-command work. Do not time a DMA block by the caller's return from HALT.
-
-### Const module: retained storage
-
-```lua
-module<const>
-
-struct dma_manual_channel
-  read_address: word
-  write_address: word
-  count: word
-  control: word
-  status: word
-  trigger: word
-end
-
-struct dma_manual_result
-  completed_phase: word
-  dma0_sequence: word
-  dma1_sequence: word
-  seed_address: word
-  gpu_stream_address: word
-  source: word[20]
-  copies: word[2][20]
-  rom_copy: dma_manual_channel
-  parallel: dma_manual_channel[2]
-  parallel_status: word[2]
-  gpu_copy: dma_manual_channel
-  gpu_at_dma_done: word
-  gpu_at_marker: word
-  irq_at_marker: word
-  gpu_at_idle: word
-  final_irq_flags: word
-end
-
-bss result: dma_manual_result
-
-return { result = result }
-```
-
-### Entry module: ports and fixed operands
-
-```lua
-module<entry>
-
-local state<const> = require('results')
-local result<const>: *dma_manual_result = state.result
-local irq_flags<const>: *word = 0x08000000
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local dma0_read<const>: *word = 0x0800000c
-local dma0_write<const>: *word = 0x08000010
-local dma0_count<const>: *word = 0x08000014
-local dma0_control<const>: *word = 0x08000018
-local dma0_status<const>: *word = 0x0800001c
-local dma0_trigger<const>: *word = 0x08000020
-local dma1_read<const>: *word = 0x080103e4
-local dma1_write<const>: *word = 0x080103e8
-local dma1_count<const>: *word = 0x080103ec
-local dma1_control<const>: *word = 0x080103f0
-local dma1_status<const>: *word = 0x080103f4
-local dma1_trigger<const>: *word = 0x080103f8
-local gp1<const>: *word = 0x08010240
-
-rodata seed: word[20] = {
-  0x00000000, 0x00000001, 0x00000002, 0x00000003,
-  0x12345678, 0x87654321, 0x80000000, 0xffffffff,
-  0xaaaaaaaa, 0x55555555, 0x0000ffff, 0xffff0000,
-  0x01020304, 0x10203040, 0x11223344, 0x55667788,
-  0xdeadbeef, 0xcafebabe, 0x7fffffff, 0x80000001,
-}
-
--- E6, a red 64 x 64 fill at (0,0), then the in-order GPU IRQ marker.
-rodata gpu_commands: word[5] = {
-  0xe6000000, 0x020000ff, 0x00000000, 0x00400040, 0x1f000000,
-}
-```
-
-### Entry module: IRQ service and initial ownership
-
-```lua
-function irq(flags)
-  if (flags & 0x00000001) ~= 0 then
-    result.dma0_sequence = result.dma0_sequence + 1
-  end
-  if (flags & 0x00000100) ~= 0 then
-    result.dma1_sequence = result.dma1_sequence + 1
-  end
-  *irq_ack = flags & 0x00000101
-end
-
--- The cartridge owns both channels and GP0. Preserve disabled VBlank pending.
-*irq_mask = 0
-while (*gp1 & 0x04000000) == 0 do
-end
-*gp1 = 0x02000000
-*irq_ack = 0x00000141
-*irq_mask = 0x00000101
-```
-
-### Entry module: seed RAM from ROM
-
-```lua
--- 1. Cartridge ROM -> RAM: two incrementing endpoints, block length sixteen.
-result.seed_address = seed
-local seed_sequence<const> = result.dma0_sequence
-*dma0_read = seed
-*dma0_write = &result.source[0]
-*dma0_count = #seed
-*dma0_control = 0x00003c03
-*dma0_trigger = 1
-while result.dma0_sequence == seed_sequence do
-  halt_until_irq
-end
-result.rom_copy.read_address = *dma0_read
-result.rom_copy.write_address = *dma0_write
-result.rom_copy.count = *dma0_count
-result.rom_copy.control = *dma0_control
-result.rom_copy.status = *dma0_status
-result.rom_copy.trigger = *dma0_trigger
-result.completed_phase = 1
-```
-
-### Entry module: both RAM copies
-
-```lua
--- 2. Prepare both channels BEFORE either START. RAM -> RAM, different blocks.
-local copy0_sequence<const> = result.dma0_sequence
-local copy1_sequence<const> = result.dma1_sequence
-*dma0_read = &result.source[0]
-*dma0_write = &result.copies[0][0]
-*dma0_count = 20
-*dma0_control = 0x00003c03
-*dma1_read = &result.source[0]
-*dma1_write = &result.copies[1][0]
-*dma1_count = 20
-*dma1_control = 0x00000c03
-*dma0_trigger = 1
-*dma1_trigger = 1
-result.parallel_status[0] = *dma0_status
-result.parallel_status[1] = *dma1_status
-while result.dma0_sequence == copy0_sequence or result.dma1_sequence == copy1_sequence do
-  halt_until_irq
-end
-result.parallel[0].read_address = *dma0_read
-result.parallel[0].write_address = *dma0_write
-result.parallel[0].count = *dma0_count
-result.parallel[0].control = *dma0_control
-result.parallel[0].status = *dma0_status
-result.parallel[0].trigger = *dma0_trigger
-result.parallel[1].read_address = *dma1_read
-result.parallel[1].write_address = *dma1_write
-result.parallel[1].count = *dma1_count
-result.parallel[1].control = *dma1_control
-result.parallel[1].status = *dma1_status
-result.parallel[1].trigger = *dma1_trigger
-result.completed_phase = 2
-```
-
-### Entry module: submit GP0, then fence GPU work
-
-```lua
--- 3. ROM -> fixed GP0. GP1 direction 2 supplies the GX_WRITE request gate.
-*gp1 = 0x04000002
-result.gpu_stream_address = gpu_commands
-local gpu_sequence<const> = result.dma0_sequence
-*dma0_read = gpu_commands
-*dma0_write = 0x0801023c
-*dma0_count = #gpu_commands
-*dma0_control = 0x00003c41
-*dma0_trigger = 1
-while result.dma0_sequence == gpu_sequence do
-  halt_until_irq
-end
--- DMA submission ends before this fill's marker and GPU-idle edge.
-result.gpu_at_dma_done = *gp1
-result.gpu_copy.read_address = *dma0_read
-result.gpu_copy.write_address = *dma0_write
-result.gpu_copy.count = *dma0_count
-result.gpu_copy.control = *dma0_control
-result.gpu_copy.status = *dma0_status
-result.gpu_copy.trigger = *dma0_trigger
-while (*gp1 & 0x01000000) == 0 do
-end
-result.gpu_at_marker = *gp1
-result.irq_at_marker = *irq_flags
-while (*gp1 & 0x04000000) == 0 do
-end
-result.gpu_at_idle = *gp1
-*gp1 = 0x02000000
-*irq_ack = 0x00000040
-*irq_mask = 0
-result.final_irq_flags = *irq_flags
-result.completed_phase = 3
-while true do
-  halt_until_irq
-end
-```
-
-### Interpret the retained observations
-
-With the supplied program, the three RAM arrays contain the same 20 words,
-DMA0's sequence reaches 3, and DMA1's sequence reaches 1. Each completed channel
-record has count zero, STATUS=`00000002H` and TRIGGER zero. Incrementing memory
-endpoints advance 80 bytes; GP0 remains fixed, while its five-word ROM source
-advances 20 bytes.
-
-For this fill workload, `gpu_at_dma_done` is sampled before the later GPU
-marker and idle conditions: bits 24 and 26 are clear. Later
-`gpu_at_marker` has bit 24 set and `irq_at_marker` has controller bit 6 set;
-`gpu_at_idle` also has bit 26 set. This illustrates two completion domains, not
-a rule that every shorter GPU stream must still be busy when a DMA handler
-returns. The local fill result at (0,0) is RGB555 word `001fH`; a marker or idle
-bit alone is not a pixel readback.
-
-After phase 3 the program deliberately masks delivery and parks. Its final
-controller acknowledgement has cleared the owned DMA/GPU bits, not every other
-pending source. The example does not program a display mode or select a new
-scanout source. A buffer submitted to GP0, finished GPU work and a newly
-published display configuration remain different things.
