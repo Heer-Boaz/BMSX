@@ -1675,13 +1675,11 @@ export class GxGpu {
 		this.clearGp0IngressState();
 		this.flushImageLoadToVram(nowCycles);
 		this.commandBuffer.abortReadbackAndQueuedCommands();
-		// GP1(01h) completes accepted raster/upload work, but not a C0 removed above.
-		if (this.pendingCommandTargetCount > this.commandBuffer.executedCommandCount
-			&& this.pendingCommandTargetCount <= this.commandBuffer.commandCount) {
-			this.commandBuffer.completeCommandExecution(this.pendingCommandTargetCount);
+		// Cancel a removed readback, not the remaining time of retained finite work.
+		if (this.pendingCommandTargetCount > this.commandBuffer.commandCount) {
+			this.pendingCommandCompletionCycle = 0;
+			this.pendingCommandTargetCount = 0;
 		}
-		this.pendingCommandCompletionCycle = 0;
-		this.pendingCommandTargetCount = 0;
 		this.gp0CommandWords.fill(0);
 		this.gp0CommandWordCount = 0;
 		this.gp0CommandTargetWordCount = 0;

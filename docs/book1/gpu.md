@@ -441,21 +441,26 @@ status constant for that read.
 
 Clear the GP0 FIFO, separate DMA ingress FIFO, incomplete fixed-packet/image
 header and polyline continuation state. Terminate any readback, discard its
-unread result and reset its pixel position and DMA request. Drawing, display and
+unread result and reset its pixel position and DMA request. This also cancels a
+readback command before its execution interval completes. Drawing, display and
 DMA-direction registers are not reset. Neither GPUSTAT's interrupt-request
 latch nor the system IRQ pending latch is acknowledged.
 
 If an A0 upload has already consumed at least one payload word, the clear ends
-that upload using its consumed prefix and the current upload mask/address
-state. A header-only upload is discarded. Words still queued in the cleared
-FIFOs do not extend the consumed prefix, and missing payload pixels are not
+assembly and retains that prefix under the current upload mask/address state. The
+prefix takes the normal one command tick, or one system cycle, starting at the
+clear; the clear does not complete it immediately. A header-only upload is
+discarded. Words still queued in the cleared FIFOs do not extend the consumed
+prefix, and missing payload pixels are not
 supplied. Subsequent GP0 words begin a new stream; do not resume the abandoned
 payload as though its header were still active.
 
 This is not a general cancellation of accepted drawing or a local-memory undo.
-Already-performed writes remain, and accepted drawing or upload work can still
-change local memory. Abandoning readback is not equivalent to consuming its
-remaining image words. Choose GP1(00h) only when the GPU register defaults are
+An executing draw, fill, copy or upload retains its original completion time;
+the clear neither completes it early nor restarts its interval. Already-performed
+writes remain, and retained work can still change local memory. Abandoning
+readback is not equivalent to consuming its remaining image words. Choose
+GP1(00h) only when the GPU register defaults are
 also wanted.
 
 ### GP1(02h) — acknowledge the GPU request latch {#sec-gpu-gp102h-acknowledge-the-gpu-request-latch}
@@ -3081,7 +3086,7 @@ Payload word 5 crosses the logical row boundary: its low half targets (0,511), w
 
 ### An interrupted upload retains only its consumed prefix {#sec-gpu-an-interrupted-upload-retains-only-its-consumed-prefix}
 
-GP1(01h) clears the stream, not every earlier accepted pixel operation. If upload assembly has consumed at least one payload word, the clear flushes that partial payload; a header-only upload is discarded. Only up to `min(W×H,2×consumedPayloadWords)` pixels are represented. It does not manufacture the missing rectangle pixels, and words still merely queued in the cleared FIFOs are not promised as part of that prefix.
+GP1(01h) clears the stream, not every earlier accepted pixel operation. If upload assembly has consumed at least one payload word, the clear seals that partial payload; a header-only upload is discarded. Only up to `min(W×H,2×consumedPayloadWords)` pixels are represented. It does not manufacture the missing rectangle pixels, and words still merely queued in the cleared FIFOs are not part of that prefix.
 
 As a separate trial from the same old-memory table, suppose only payload words 4 and 5 have been consumed before the GP1 clear. The retained prefix represents **four pixels**, not one complete row or two rows. After its masked writes, indices 0,1,3 have the table's new values; index 2 remains protected; indices 4…8 retain their **Before** values. Subsequent GP0 words start a new stream: do not send the abandoned remainder as though its old header were active. GP1(00h) performs the same stream-clear operation before restoring register defaults; it is not a local-memory rollback. See [GP1 control commands](#sec-gpu-gp1-control-commands) for the complete clear/reset and readback distinctions.
 

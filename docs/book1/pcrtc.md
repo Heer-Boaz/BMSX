@@ -478,12 +478,15 @@ action bits are one.
 Both actions discard queued DMA ingress and GP0 FIFO input, along with partial
 command and polyline input state. Both terminate readback and handle a partial
 image upload as described below. **Neither action is a general cancel or undo
-of accepted drawing.** Already-performed local-memory writes remain effective,
-and accepted raster or upload work can still change local memory. Wait for GPU
-idle before the action when the program requires all drawing to be complete.
+of accepted drawing.** An executing draw, fill, copy or upload retains its
+original completion time; neither action completes it early or restarts its
+interval. Already-performed local-memory writes remain effective, and retained
+work can still change local memory. Wait for GPU idle before the action when
+the program requires all drawing to be complete.
 
 Input queued after an active readback is discarded, not executed past that
-readback. The readback port returns to idle, loses its dimensions and cursor,
+readback. A readback command is cancelled even before its execution interval
+completes. The readback port returns to idle, loses its dimensions and cursor,
 and drops its DMA request. The terminated readback does not later become ready
 again.
 
@@ -493,7 +496,7 @@ A partial CPU-to-local-memory image upload is treated according to the words alr
 |---|---|
 | No upload words | No upload action |
 | Three-word header only | Discard the header |
-| Header and at least one retained payload word | Retain an upload of that payload prefix |
+| Header and at least one retained payload word | Seal an upload of that payload prefix; one command tick, or one system cycle, starting at the action |
 
 If `n` payload words have been consumed by image assembly and retained, the prefix contains
 `min(width × height, 2 × n)` pixels. They are processed in row order under the accepted
@@ -1142,9 +1145,10 @@ Only HSINT and VSINT are normally generated. SIGNAL, FINISH, and EDWINT remain r
 W1C and maskable positions, not hardwired-zero fields; see @sec-pcrtc-28-events-and-interrupts. CSR writes do
 not assign the unnamed positions.
 
-RESET takes priority over FLUSH. Both clear queued input and terminate readback; they
-can retain accepted drawing and commit a partial image upload. RESET restores PCRTC
-registers and installs reset display settings immediately; its GPU register effects
+RESET takes priority over FLUSH. Both clear queued input and terminate readback;
+executing drawing retains its original completion time, and a consumed upload prefix
+incurs its normal command cost. RESET restores PCRTC registers and installs
+reset display settings immediately; its GPU register effects
 are bounded as listed in @sec-pcrtc-29-reset-and-flush. FLUSH does not reset the display. @sec-pcrtc-29-reset-and-flush also
 gives the accepted-work and upload rules.
 

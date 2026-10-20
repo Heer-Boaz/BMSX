@@ -1126,13 +1126,10 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 	clearGp0IngressState();
 	flushImageLoadToVram(nowCycles);
 	m_commandBuffer.abortReadbackAndQueuedCommands();
-	// GP1(01h) completes accepted raster/upload work, but not a C0 removed above.
-	if (m_pendingCommandTargetCount > m_commandBuffer.executedCommandCount
-		&& m_pendingCommandTargetCount <= m_commandBuffer.commandCount) {
-		m_commandBuffer.completeCommandExecution(m_pendingCommandTargetCount);
+	if (m_pendingCommandTargetCount > m_commandBuffer.commandCount) {
+		m_pendingCommandCompletionCycle = 0;
+		m_pendingCommandTargetCount = 0u;
 	}
-	m_pendingCommandCompletionCycle = 0;
-	m_pendingCommandTargetCount = 0u;
 	m_gp0CommandWords.fill(0u);
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;
