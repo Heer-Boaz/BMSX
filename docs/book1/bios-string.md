@@ -15,7 +15,7 @@ in ROM or RAM.
 Use `string.from_utf8(address, byte_count)` to construct text from mapped
 UTF-8 bytes. The address selects actual byte storage and the count measures
 encoded bytes. [BLua storage declarations](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)
-define those ranges; [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} gives their physical mapping and
+define those ranges; [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} gives their physical mapping and
 reservations. [CPU value rules](cpu.md#sec-cpu) specify indexing and Number
 conversion, and [protected calls](coroutines.md#sec-coroutines) describe language-error
 handling.
@@ -180,6 +180,31 @@ Use this interface when the input already exists as mapped UTF-8 bytes.
 of **encoded bytes**, not the number of codepoints. Supply both arguments.
 A String value, or the address of a field holding a String constant index, is
 not the address of its encoded text.
+
+#### Text, codepoints and UTF-8 bytes {#sec-memory-text-codepoints-and-utf-8-bytes}
+
+A static `string` field stores an image constant reference. Its byte address
+locates that reference, not inline UTF-8. Similarly, `string.pack` produces a
+String value rather than an addressed hardware buffer. Use explicit byte
+storage for a device payload; the decoded String is not a retained DMA buffer.
+
+This eight-byte span includes both a zero byte and a four-byte sequence:
+
+```lua
+rodata utf8_bytes: u8[8] = { 0x41, 0xc3, 0xa9, 0, 0xf0, 0x9f, 0x99, 0x82 }
+local text = string.from_utf8(utf8_bytes, #utf8_bytes)
+local count = #text
+local zero = string.byte(text, 3)
+local face = string.byte(text, 4)
+```
+
+Eight bytes decode to four codepoints: `0041H`, `00E9H`, `0000H`, `1F642H`.
+`count` is 4, `zero` is 0 and `face` is `1F642H`. Embedded zero does not
+terminate the String, and the supplementary codepoint counts as one. The
+declaration's `#utf8_bytes` counts byte-array elements; `#text` counts
+codepoints. These are different units even when both are expressed as Numbers.
+
+#### Input lifetime and sequence reads {#sec-bios-string-input-lifetime-and-sequence-reads}
 
 The caller must provide backed storage containing complete, well-formed
 UTF-8 sequences and keep those bytes valid and stable while decoding reads

@@ -8,7 +8,7 @@ separate from cartridge module declarations and linked startup.
 
 Use [BLua source programs](blua-programs.md#sec-blua-programs) for BLua program source and
 modules, [CPU values and calls](cpu.md#sec-cpu-calls-closures-globals-and-tables) for
-ordinary call/capture behavior, [[Memory and program storage](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} for
+ordinary call/capture behavior, [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} for
 value storage and reserved addresses, and [Protected calls and coroutines](coroutines.md#sec-coroutines)
 for the error boundary. The source forms below apply to runtime-compiled text;
 they are not the complete BLua program language.
@@ -771,7 +771,7 @@ constant Table while the code remains in use.
 | Allocation contents | All functions, capture metadata, and instruction streams from one compilation share one block. Constant-pool tables and closures use the separate guest-object heap. |
 | Final arena-exhaustion error | `runtime compiler memory exhausted` |
 
-The arena belongs to the [[firmware RAM reservation](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
+The arena belongs to the [[firmware RAM reservation](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
 The capacity above is shared by live compilations; use the separate language
 allocation budget for Tables, closures and other language objects.
 

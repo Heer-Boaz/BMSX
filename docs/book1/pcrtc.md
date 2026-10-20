@@ -20,6 +20,30 @@ registers establish the beam sequence and its display-event interrupts.
 
 ![PCRTC display data path and controls](figures/pcrtc-overview.svg){#fig-pcrtc-overview}
 
+## Technical specifications {#sec-pcrtc-11-technical-specifications}
+
+PCRTC supplies two reading circuits and one output-composition path. Local
+memory stores sixteen-bit words; PCRTC registers are programmed with
+thirty-two-bit words. The table gives the installed resources and field ranges.
+
+| Resource or interface | Specification |
+|---|---|
+| Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
+| Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
+| Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
+| Register map | 26 thirty-two-bit slots in separate 12-word and 14-word address ranges |
+| Configuration storage | 22 programmed words and a separate 22-word display latch |
+| Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
+| Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
+| Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
+| Beam-timing reference | 13,500,000 Hz |
+| Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
+| Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
+
+Use the signal-step conversion in @sec-pcrtc-21-framebuffer-reading-and-display-windows to calculate horizontal output
+boundaries. @sec-pcrtc-33-select-a-display-geometry-and-its-timing gives complete example configurations. Both reading
+circuits are disabled at reset.
+
 ## Selecting and displaying an image {#sec-pcrtc-2-function}
 
 ### Framebuffer reading and display windows {#sec-pcrtc-21-framebuffer-reading-and-display-windows}
@@ -148,7 +172,7 @@ Read back the three programmed words to check the settings. The display uses the
 VBlank entry when the latch takes the new configuration, as shown in @sec-pcrtc-26-programmed-words-and-displayed-settings.
 
 For a complete two-surface cartridge and its observed output, see
-[Prepare, publish and reuse two surfaces](memory.md#sec-memory-prepare-publish-and-reuse-two-surfaces).
+[Prepare, publish and reuse two surfaces](gpu.md#sec-memory-prepare-publish-and-reuse-two-surfaces).
 
 ### Programmed words and displayed settings {#sec-pcrtc-26-programmed-words-and-displayed-settings}
 
@@ -157,7 +181,7 @@ GPU drawing before publishing the completed image's source and window settings.
 GPU completion establishes that the drawing work has finished; it does not
 select the PCRTC framebuffer. Likewise, a display-selection change does not
 copy the pixels into private PCRTC storage. Preserve the source image while it
-is still in use; [Memory — A display switch selects storage; it does not save it](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
+is still in use; [GPU Drawing Engine — A display switch selects storage; it does not save it](gpu.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
 explains the storage lifetime when changing surfaces.
 
 Configuration registers retain complete written words. Readback returns the
@@ -186,7 +210,7 @@ Complete the configuration before its intended VBlank entry. An edge between
 separate store instructions takes the values written up to that point, including
 an intermediate configuration. To establish that new settings have been
 displayed, observe a fresh VBlank entry after their final write, not merely an
-already-pending request. The [display-switch sequence](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
+already-pending request. The [display-switch sequence](gpu.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it)
 gives this observation with unchanged timing. Use
 @sec-pcrtc-34-program-the-complete-configuration-before-restarting-the-beam
 when replacing the global timing configuration itself.
@@ -295,133 +319,12 @@ the output window starts on an even row. `INT` alone does not make FIELD alterna
 the VSync rule in @sec-pcrtc-27-beam-timing still applies. FIELD is live state, not one of the
 22 latched configuration words; a later read reports its value at that read.
 
-### Local-memory samples {#sec-pcrtc-23-local-memory-samples}
-
-Local memory holds `00200000H` bytes, or `00100000H` sixteen-bit words. Within each word,
-the low byte comes first. The storage selector determines both pixel packing and the
-address layout in @sec-pcrtc-24-local-memory-address-layout.
-
-In the table, `L` is the word at the mapped pixel address and `H` is the following
-word. RGB and alpha samples are eight-bit values.
-
-| Selector | Format | Circuits | RGB packing | Sample alpha |
-|---:|---|---|---|---|
-| 0 | CT32 | 1, 2 | R = L[7:0]; G = L[15:8]; B = H[7:0] | H[15:8] |
-| 1 | CT24 | 1, 2 | Same RGB placement as CT32; H[15:8] is ignored | 128 |
-| 2 | CT16 | 1, 2 | R = L[4:0]; G = L[9:5]; B = L[14:10]; expand each component | 128 if L[15] = 1; otherwise 0 |
-| 10 | CT16S | 1, 2 | Same packing as CT16; different address layout | 128 if L[15] = 1; otherwise 0 |
-| 18 | GPU24 | 1 only | Three packed bytes per pixel; see below | 128 |
-| 31 | GX16 | 1, 2 | Same packing as CT16; linear address layout | 128 if L[15] = 1; otherwise 0 |
-
-Expand each five-bit RGB component `c` as follows:
-
-```text
-Eight-bit component = (c << 3) | (c >> 2)
-```
-
-GPU24 obtains two words through the CT16 address layout. For framebuffer coordinate
-`(x, y)`, fetch `L` at `((3 × x) >> 1, y)` and `H` at
-`(((3 × x) >> 1) + 1, y)`:
-
-| Pixel X | R | G | B |
-|---|---|---|---|
-| Even | L[7:0] | L[15:8] | H[7:0] |
-| Odd | L[15:8] | H[7:0] | H[15:8] |
-
-Every unlisted selector, and selector 18 on circuit 2, supplies **zero RGBA samples**.
-It neither disables the circuit nor raises a format fault. The circuit still performs
-its selected PMODE operation inside its window. For example, copying zero RGB blacks
-that area, whereas blending with zero source alpha preserves the prior RGB. Alpha
-selection still applies as specified in @sec-pcrtc-25-output-composition.
-
-### Local-memory address layout {#sec-pcrtc-24-local-memory-address-layout}
-
-The following formulas map framebuffer sample coordinates `(x, y)`, including the
-programmed source origin, to local-memory word addresses. They do not produce CPU byte
-addresses. All arithmetic is integer arithmetic; `&`, `|`, `<<`, and `>>` denote bitwise
-AND, OR, left shift, and unsigned right shift. The coordinates are nonnegative.
-
-```text
-B = FBP << 12
-P = FBW
-W = P × 64
-M = 000FFFFFH
-```
-
-Every word fetch wraps with mask `M`, including CT32/CT24's second word. The base and
-pixel offset are added before this wrap. All nine FBP bits remain representable; a
-base beyond one installed-memory period aliases through the same mask.
-
-#### CT32 and CT24 {#sec-pcrtc-ct32-and-ct24}
-
-These formats use 64 × 32-pixel pages:
-
-```text
-page   = (y >> 5) × P + (x >> 6)
-px     = x & 63
-py     = y & 31
-bx     = px >> 3
-by     = py >> 3
-
-block  = (bx & 1) | ((by & 1) << 1)
-       | ((bx & 2) << 1) | ((by & 2) << 2) | ((bx & 4) << 2)
-column = (px & 1) | ((py & 1) << 1)
-       | ((px & 6) << 1) | ((py & 6) << 3)
-
-A = (B + (page << 12) + (block << 7) + (column << 1)) & M
-```
-
-Fetch `L` at `A` and `H` at `(A + 1) & M`.
-
-#### CT16 and CT16S {#sec-pcrtc-ct16-and-ct16s}
-
-These formats use 64 × 64-pixel pages and share their column calculation:
-
-```text
-page   = (y >> 6) × P + (x >> 6)
-px     = x & 63
-py     = y & 63
-bx     = px >> 4
-by     = py >> 3
-
-column = ((px & 1) << 1) | ((px & 2) << 2)
-       | ((px & 4) << 2) | ((px & 8) >> 3)
-       | ((py & 1) << 2) | ((py & 2) << 4) | ((py & 4) << 4)
-```
-
-Select the block calculation for the programmed format:
-
-```text
-CT16:
-block = ((bx & 1) << 1) | (by & 1) | ((bx & 2) << 2)
-      | ((by & 2) << 1) | ((by & 4) << 2)
-
-CT16S:
-block = (by & 1) | ((bx & 1) << 1) | (by & 4)
-      | ((by & 2) << 2) | ((bx & 2) << 3)
-
-A = (B + (page << 12) + (block << 7) + column) & M
-```
-
-#### GX16 and GPU24 {#sec-pcrtc-gx16-and-gpu24}
-
-GX16 uses linear word addressing:
-
-```text
-A = (B + y × W + x) & M
-```
-
-GPU24 uses the CT16 calculation twice, at the two word coordinates in @sec-pcrtc-23-local-memory-samples.
-
-**Zero-width setting:** FBW = 0 is not a disable setting. It supplies a zero row stride
-for GX16 and zero pages per row for the page-based formats. The remaining coordinate
-terms and address wrap still operate; no width fault is raised.
-
 ### Output composition {#sec-pcrtc-25-output-composition}
 
 Composition begins with the background, applies circuit 2, then applies circuit 1.
 Background R, G, and B come from `BGCOLOR_LOW[7:0]`, `[15:8]`, and `[23:16]`; background
 alpha is zero. A disabled circuit performs no operation.
+The format-specific RGB and alpha samples are listed in @sec-pcrtc-23-local-memory-samples.
 
 **Window limits:** each table below applies only inside that enabled circuit's display
 window and selected field rows. Outside its window, the circuit leaves the prior values
@@ -468,30 +371,6 @@ supplies full source RGB, but AMOD = 0 still selects alpha **128**, not 255. Thi
 to CT24, GPU24, and sixteen-bit samples whose bit 15 is set. With AMOD = 1, a pixel can
 receive circuit-1 RGB while retaining background alpha zero if circuit 2 supplies no
 alpha there.
-
-### TECHNICAL SPECIFICATIONS {#sec-pcrtc-11-technical-specifications}
-
-PCRTC supplies two reading circuits and one output-composition path. Local
-memory stores sixteen-bit words; PCRTC registers are programmed with
-thirty-two-bit words. The table gives the installed resources and field ranges.
-
-| Resource or interface | Specification |
-|---|---|
-| Installed main RAM | 4 MiB; separate from GPU local memory and PCRTC registers |
-| Shared GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
-| Reading circuits | Two, independently enabled, with separate framebuffer, source and display-window settings |
-| Register map | 26 thirty-two-bit slots in separate 12-word and 14-word address ranges |
-| Configuration storage | 22 programmed words and a separate 22-word display latch |
-| Programming access | Aligned thirty-two-bit register-word loads and stores; four-byte alignment |
-| Configuration admission | No PCRTC write-ready wait, command FIFO or CYCLES register |
-| Installed CPU/system-cycle frequency | 33,868,800 Hz; approximately 29.526 ns per system cycle |
-| Beam-timing reference | 13,500,000 Hz |
-| Horizontal signal step | 0–15 signal units per output pixel; a latched zero prevents pixel output |
-| Per-circuit window fields | Horizontal span 1–4096 signal units; vertical height 1–2048; magnification X=1–16, Y=1–4 |
-
-Use the signal-step conversion in @sec-pcrtc-21-framebuffer-reading-and-display-windows to calculate horizontal output
-boundaries. @sec-pcrtc-33-select-a-display-geometry-and-its-timing gives complete example configurations. Both reading
-circuits are disabled at reset.
 
 ### Beam timing {#sec-pcrtc-27-beam-timing}
 
@@ -832,7 +711,7 @@ For an ordinary buffer switch with unchanged timing, use @sec-pcrtc-26-programme
 Holding the live beam is not a request to blank the previously latched picture.
 The new configuration becomes displayed at VBlank entry. Existing pending
 interrupt flags are not acknowledged by this sequence; use a fresh VBlank
-observation as in the [display-switch sequence](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it).
+observation as in the [display-switch sequence](gpu.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it).
 
 These writes configure PCRTC. GP1 display-mode and range words are separate
 GPU state: writing them does not substitute for this timing and window setup.
@@ -1316,6 +1195,130 @@ bits 13–14 always read one; bits 31–15 and 7–0 read zero. Reset masks all 
 A mask write does not acknowledge CSR. Check pending-event handling when unmasking: any
 already pending event whose mask becomes zero can request the interrupt immediately. Use
 the mask–acknowledge–unmask sequence in @sec-pcrtc-32-acknowledge-stale-hsint-and-unmask-only-hsint when enabling HSINT.
+
+## Local-memory format reference {#sec-pcrtc-local-memory-format-reference}
+
+### Local-memory samples {#sec-pcrtc-23-local-memory-samples}
+
+Local memory holds `00200000H` bytes, or `00100000H` sixteen-bit words. Within each word,
+the low byte comes first. The storage selector determines both pixel packing and the
+address layout in @sec-pcrtc-24-local-memory-address-layout.
+
+In the table, `L` is the word at the mapped pixel address and `H` is the following
+word. RGB and alpha samples are eight-bit values.
+
+| Selector | Format | Circuits | RGB packing | Sample alpha |
+|---:|---|---|---|---|
+| 0 | CT32 | 1, 2 | R = L[7:0]; G = L[15:8]; B = H[7:0] | H[15:8] |
+| 1 | CT24 | 1, 2 | Same RGB placement as CT32; H[15:8] is ignored | 128 |
+| 2 | CT16 | 1, 2 | R = L[4:0]; G = L[9:5]; B = L[14:10]; expand each component | 128 if L[15] = 1; otherwise 0 |
+| 10 | CT16S | 1, 2 | Same packing as CT16; different address layout | 128 if L[15] = 1; otherwise 0 |
+| 18 | GPU24 | 1 only | Three packed bytes per pixel; see below | 128 |
+| 31 | GX16 | 1, 2 | Same packing as CT16; linear address layout | 128 if L[15] = 1; otherwise 0 |
+
+Expand each five-bit RGB component `c` as follows:
+
+```text
+Eight-bit component = (c << 3) | (c >> 2)
+```
+
+GPU24 obtains two words through the CT16 address layout. For framebuffer coordinate
+`(x, y)`, fetch `L` at `((3 × x) >> 1, y)` and `H` at
+`(((3 × x) >> 1) + 1, y)`:
+
+| Pixel X | R | G | B |
+|---|---|---|---|
+| Even | L[7:0] | L[15:8] | H[7:0] |
+| Odd | L[15:8] | H[7:0] | H[15:8] |
+
+Every unlisted selector, and selector 18 on circuit 2, supplies **zero RGBA samples**.
+It neither disables the circuit nor raises a format fault. The circuit still performs
+its selected PMODE operation inside its window. For example, copying zero RGB blacks
+that area, whereas blending with zero source alpha preserves the prior RGB. Alpha
+selection still applies as specified in @sec-pcrtc-25-output-composition.
+
+### Local-memory address layout {#sec-pcrtc-24-local-memory-address-layout}
+
+The following formulas map framebuffer sample coordinates `(x, y)`, including the
+programmed source origin, to local-memory word addresses. They do not produce CPU byte
+addresses. All arithmetic is integer arithmetic; `&`, `|`, `<<`, and `>>` denote bitwise
+AND, OR, left shift, and unsigned right shift. The coordinates are nonnegative.
+
+```text
+B = FBP << 12
+P = FBW
+W = P × 64
+M = 000FFFFFH
+```
+
+Every word fetch wraps with mask `M`, including CT32/CT24's second word. The base and
+pixel offset are added before this wrap. All nine FBP bits remain representable; a
+base beyond one installed-memory period aliases through the same mask.
+
+#### CT32 and CT24 {#sec-pcrtc-ct32-and-ct24}
+
+These formats use 64 × 32-pixel pages:
+
+```text
+page   = (y >> 5) × P + (x >> 6)
+px     = x & 63
+py     = y & 31
+bx     = px >> 3
+by     = py >> 3
+
+block  = (bx & 1) | ((by & 1) << 1)
+       | ((bx & 2) << 1) | ((by & 2) << 2) | ((bx & 4) << 2)
+column = (px & 1) | ((py & 1) << 1)
+       | ((px & 6) << 1) | ((py & 6) << 3)
+
+A = (B + (page << 12) + (block << 7) + (column << 1)) & M
+```
+
+Fetch `L` at `A` and `H` at `(A + 1) & M`.
+
+#### CT16 and CT16S {#sec-pcrtc-ct16-and-ct16s}
+
+These formats use 64 × 64-pixel pages and share their column calculation:
+
+```text
+page   = (y >> 6) × P + (x >> 6)
+px     = x & 63
+py     = y & 63
+bx     = px >> 4
+by     = py >> 3
+
+column = ((px & 1) << 1) | ((px & 2) << 2)
+       | ((px & 4) << 2) | ((px & 8) >> 3)
+       | ((py & 1) << 2) | ((py & 2) << 4) | ((py & 4) << 4)
+```
+
+Select the block calculation for the programmed format:
+
+```text
+CT16:
+block = ((bx & 1) << 1) | (by & 1) | ((bx & 2) << 2)
+      | ((by & 2) << 1) | ((by & 4) << 2)
+
+CT16S:
+block = (by & 1) | ((bx & 1) << 1) | (by & 4)
+      | ((by & 2) << 2) | ((bx & 2) << 3)
+
+A = (B + (page << 12) + (block << 7) + column) & M
+```
+
+#### GX16 and GPU24 {#sec-pcrtc-gx16-and-gpu24}
+
+GX16 uses linear word addressing:
+
+```text
+A = (B + y × W + x) & M
+```
+
+GPU24 uses the CT16 calculation twice, at the two word coordinates in @sec-pcrtc-23-local-memory-samples.
+
+**Zero-width setting:** FBW = 0 is not a disable setting. It supplies a zero row stride
+for GX16 and zero pages per row for the page-based formats. The remaining coordinate
+terms and address wrap still operate; no width fault is raised.
 
 ## SOURCE ORIGIN AND DISPLAY-WINDOW POSITION {#sec-pcrtc-5-source-origin-and-display-window-position}
 

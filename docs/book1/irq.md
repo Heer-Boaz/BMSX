@@ -110,33 +110,22 @@ Neither exception entry nor ordinary interrupt return acknowledges a source. Sof
 
 ### CPU state on entry and return {#sec-irq-cpu-state-on-entry-and-return}
 
-The relevant CP0 registers are `STATUS` (register 12), `CAUSE` (13), and `EPC` (14). In `STATUS`, bit 0 is current interrupt enable and bit 1 selects current user mode. Cartridge entry begins with `STATUS = 00000003H`: user mode, interrupts enabled. System entry uses `00000001H`: non-user mode, interrupts enabled.
+An accepted IRQ enters supervisor mode with maskable interrupt acceptance
+disabled. Ordinary cartridge entry starts in user mode with acceptance enabled;
+the handler's different privilege is part of exception entry, not a grant of
+priority-based interrupt nesting.
 
-On accepted IRQ entry, the CPU records the interrupted PC in `EPC`, writes `00000400H` to `CAUSE`, and shifts the six low mode-stack bits left by two:
+In `irq(flags)`, service the selected devices, acknowledge their requests and
+return normally. The standard BLua entry performs the CPU exception return.
+Do not execute RFE from the callback's ordinary call frame. A separately authored
+IRQ entry must instead complete its own dispatch and execute RFE from its
+exception frame.
 
-```text
-STATUS := (STATUS & ~0000003fH) | ((STATUS << 2) & 0000003fH)
-```
-
-Both current bits become zero. The handler therefore executes in non-user mode with maskable interrupts disabled; entry does not establish automatic priority-based nesting.
-
-For a cartridge beginning at `00000003H`, the complete worked sequence is:
-
-```text
-Before IRQ:       STATUS = 00000003H  user mode; IEc = 1
-After IRQ entry:  STATUS = 0000000cH  non-user mode; IEc = 0
-After RFE:        STATUS = 00000003H  user mode; IEc = 1
-```
-
-`RFE` returns to the address in `EPC` and restores the low four status bits as follows:
-
-```text
-STATUS := (STATUS & ~0000000fH) | ((STATUS >> 2) & 0000000fH)
-```
-
-`RFE` is an exception-return instruction, not a general procedure return. It requires non-user mode and an exception to return from. User-mode execution takes the coprocessor-unusable exception; execution without an exception to return from hard-halts.
-
-Privilege also matters for CP0 access. In user mode, `MFC0` and `MTC0` take the coprocessor-unusable exception. In non-user mode, `MFC0` can read these three registers; `MTC0` replaces `STATUS` or `EPC`, but does not change `CAUSE`. Writing `STATUS` replaces the whole word, not just `IEc`.
+CP0 register numbers, saved Cause and EPC, mode-stack transitions, privileged
+access and RFE effects are specified under
+[[CPU execution control](cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “CP0 and execution control”]{.content-visible when-format="pdf"}.
+Controller pending bits and device-local requests still require their own
+acknowledgements; CPU exception return clears neither.
 
 ### Wait for service, not merely for a wake-up {#sec-irq-wait-for-service-not-merely-for-a-wake-up}
 

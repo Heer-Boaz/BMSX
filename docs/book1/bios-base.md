@@ -4,9 +4,8 @@ The BIOS supplies functions for value checks, numeric and text conversion,
 Table traversal, argument selection, global-name access and console output.
 Use the installed global names directly after normal BIOS startup.
 
-This chapter covers twelve base functions. The [Table and metatable
-interface](cpu.md#sec-cpu-bios-interface) specifies `rawget`, `rawset`,
-`getmetatable` and `setmetatable`. [Protected calls and coroutines](coroutines.md#sec-coroutines)
+This chapter covers sixteen base functions, including direct Table access and
+metatable selection. [Protected calls and coroutines](coroutines.md#sec-coroutines)
 specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
 words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}.
 
@@ -20,13 +19,60 @@ Choose the operation according to the representation being used:
 | Traverse a numeric sequence | `ipairs(target)` | Starts at key 1 and stops at nil; use an explicit count when nil is part of a tuple. |
 | Count or select call arguments | `select(selector, ...)` | Supplied nil positions still count. [Table packing](bios-table.md#sec-bios-table-tablepack) preserves that count in a Table. |
 | Access a global by a computed name | `getglobal(name)`, `setglobal(name, value)` | These select ordinary global bindings, not keys in a global-environment Table. |
-| Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see the [Table BIOS interface](cpu.md#sec-cpu-bios-interface). |
-| Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#sec-cpu-bios-interface). |
+| Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see [Table and metatable access](#sec-bios-base-table-and-metatable-access). |
+| Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#sec-cpu-metatables-and-indexed-reads). |
 
-The descriptions apply to the installed BIOS functions. Public names are
-ordinary global bindings: assignment replaces the function found through that
-name. Saved function references continue to select their original values;
-entries below identify dependencies that instead read a current global.
+## Installed program environment {#sec-bios-base-installed-program-environment}
+
+Before normal cartridge entry, the BIOS installs the base functions and publishes the library names `table`, `string`, `coroutine`, `lua_compiler`, `load`, `os`, and `math`. A cartridge entering through this path can use those installed bindings without installing the libraries itself.
+
+These are ordinary public bindings. A program can change them; their initial presence does not make their values immutable. Nor does installation provide a private copy of the global environment for each cartridge.
+
+The BIOS does not install `_G` or `_ENV` as global-environment Tables. Use
+`getglobal` and `setglobal` for name-based access to the ordinary global bank;
+this is separate from the environments accepted by
+[runtime compilation](bios-loader.md#sec-bios-loader-name-binding-and-retained-dependencies).
+
+### Installed names and library Tables {#sec-bios-base-installed-names-and-library-tables}
+
+The base installation provides these public names:
+
+- `next`, `type`, `setmetatable`, `getmetatable`, `rawget`, `rawset`;
+- `getglobal`, `setglobal`, `select`;
+- `error`, `pcall`, `xpcall`, `assert`;
+- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`.
+
+This is the base installation inventory, not a restriction on names that a program or module may introduce. The entries below give the base-function contracts; [name-based global access](#sec-bios-base-getglobalname-and-setglobalname-value) selects bindings during execution.
+
+
+Several other installed globals hold ordinary library Tables. The distinction matters: `string` is a global binding, while the library Table initially held by that binding is a separate value.
+
+| Installed name | Interface navigation |
+| --- | --- |
+| `table` | The Table library. See the [Table reference](bios-table.md#sec-bios-table) for its operations. |
+| `string` | The completed String library Table, also registered for String indexing. See the [String reference](bios-string.md#sec-bios-string) for indexing and library behavior. |
+| `coroutine` | The coroutine library Table. See [Protected calls and coroutines](coroutines.md#sec-coroutines). |
+| `math` | The [mathematics library](bios-math.md#sec-bios-math), including numeric domains, radian trigonometry and random-number state. |
+| `os` | The [time and date library](bios-os.md#sec-bios-os): cycle-derived elapsed time and deterministic civil-time conversion, not filesystem or process services. |
+| `lua_compiler` | A Table containing `compile_syntax`, `syntax_factory`, and `load`, for the BIOS runtime-compilation interface. |
+| `load` | Initially the same function value as `lua_compiler.load`; see [runtime compilation](bios-loader.md#sec-bios-loader). |
+
+
+Use those routine chapters for argument domains, precision, errors, random-number behavior and timing conventions.
+
+### Public bindings and library references {#sec-bios-base-public-bindings-and-library-references}
+
+Public library bindings can be reassigned. A saved Table or function reference
+continues to refer to its original value after the global name changes.
+The BIOS also retains some dependencies at installation: `assert` keeps its
+selection and error operations, `print` keeps its console destination, and
+String operations retain their listed helper functions. `pairs` instead
+reads the current global `next`; `print` reads current `select` and `tostring`;
+`tonumber` reads current `type` and `error`.
+
+String method lookup uses the installed String-index Table. Reassigning the
+`string` global leaves that method Table in place. The routine references
+describe any further dependency relevant to replacing an installed binding.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 
@@ -190,6 +236,26 @@ The explicit-base parser accumulates each digit as `value * base + digit`, using
 
 There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or `tonumber`: their executed operations, result handling, conversions, and parsing work contribute to the cost. `type` adds one cycle, separate from call and return instruction costs, with no additional per-argument or per-result charge.
 
+## Table and metatable access {#sec-bios-base-table-and-metatable-access}
+
+Use raw access to inspect or change a Table's own mapping, or metatable access
+to inspect or replace its associated metatable. The [CPU Table rules](cpu.md#sec-cpu-metatables-and-indexed-reads)
+define inherited reads, direct writes and [weak references](cpu.md#sec-cpu-weak-references-and-collection).
+
+All four functions below require a Table as their first argument; otherwise they raise `INVALID_ARGUMENT` (10). Ordinary BLua source must supply every listed argument. Pass explicit nil to delete a mapping or clear a metatable.
+
+| Signature | Operation and result |
+| --- | --- |
+| `setmetatable(t, mt)` | Sets the metatable to Table `mt`; nil clears it. Returns `t`. Any other `mt` raises `INVALID_ARGUMENT` (10). |
+| `getmetatable(t)` | Returns the actual metatable Table, or nil. No protected-metatable substitution is performed. |
+| `rawget(t, key)` | Returns only the own mapping, or nil when missing. Ignores the metatable. |
+| `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
+
+
+For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` uses the
+ordinary [stored-length mutation rules](cpu.md#sec-cpu-stored-length).
+
+
 ## Traversal, argument selection, globals, and output {#sec-bios-base-traversal-argument-selection-globals-and-output}
 
 Choose entry traversal for all own Table mappings, or indexed iteration for
@@ -264,6 +330,10 @@ variables with nil through ordinary result adjustment.
 `getglobal` requires a String name without coercion. An omitted name or a non-String name faults with `Invalid argument.` It returns exactly one value: the current value of the named ordinary global, or nil if the name is unknown. Arguments after the name are unused. This is a live read, not a captured copy of a global's value from an earlier point in execution.
 
 `setglobal` requires the same uncoerced String name and uses the same argument fault for an omitted or non-String name. It writes its second argument unchanged to that ordinary global. Omitting the second argument writes nil; later arguments are unused. A previously unknown name receives an ordinary global slot, including when the value written is nil. The function itself returns **zero results**. A caller requesting one result nevertheless receives nil through normal result padding.
+
+Use an explicit nil as the second argument to `setglobal` in BLua source to
+meet the [known-call minimum](blua-programs.md#sec-blua-programs-known-call-argument-diagnostics).
+Writing nil changes that one binding; it does not clear the global bank.
 
 These calls select the ordinary global bank. Lexical locals and captured
 variables with the same spelling remain separate, as does the

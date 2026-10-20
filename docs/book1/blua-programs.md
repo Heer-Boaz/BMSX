@@ -27,7 +27,7 @@ specified below.
 | Module roles and static linkage | `module<entry>`, `module<const>`, literal `require`, static exports, `<init>` | Module modes, static imports, and `<init>` below |
 | Static storage and layouts | `struct`, `bss`, `data`, `rodata`, typed arrays | [Typed storage, layouts, and address views](#sec-blua-programs-typed-storage-layouts-and-address-views) |
 | Typed address selection | `local p: *type`, `*p`, fields, indices, unary `&`, `sizeof`, `offsetof`, static-array `#` | [Views, selection, and byte addresses](#sec-blua-programs-views-selection-and-byte-addresses) |
-| Six raw mapped-access forms | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} and mapped access below |
+| Six raw mapped-access forms | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} and mapped access below |
 | Six control fields | `cop0.bad_address`, `cop0.lua_fault_reason`, `cop0.status`, `cop0.cause`, `cop0.epc`, `cop0.exec` | [CPU](cpu.md#sec-cpu) and control access below |
 | Three intrinsic operations | `blua32.closure`, `blua32.trace`, `blua32.trace_sink` | Intrinsic operations below |
 | Interrupt wait statement | `halt_until_irq` | [CPU](cpu.md#sec-cpu) and interrupt wait below |
@@ -91,7 +91,7 @@ Locate writable program sections outside the installed firmware's RAM
 reservation. The standard placement puts program DATA after firmware BSS,
 then program BSS after DATA. Access declarations by their resolved addresses;
 fixed offsets from the start of RAM can overwrite firmware state. See
-[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}
+[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}
 for the firmware footprint and placement rules.
 
 Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
@@ -433,9 +433,10 @@ The spellings are case-sensitive; an optional semicolon may follow the marker.
 
 A program has one entry chunk. `module<entry>` declares that role. Each
 module also has a distinct path using `/`; dots remain literal path
-characters. Use that path in imports. Physical cartridge selection and
-startup are specified separately in [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} and
-[[Cartridge interfaces](../book3/cartridge.md#sec-cartridge)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”]{.content-visible when-format="pdf"}.
+characters. Use that path in imports. The [[physical memory map](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
+and [[cartridge socket selection](../book3/cartridge.md#sec-cartridge-selection-and-execution)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Selection and execution”]{.content-visible when-format="pdf"}
+are separate from module naming. [Program images and startup](program-images.md#sec-program-images)
+specifies program entry and initialization.
 
 ### Import a literal module path {#sec-blua-programs-import-a-literal-module-path}
 
@@ -749,6 +750,13 @@ interrupt enable and bit 1 is current user mode. Writing `cop0.exec` requests ex
 supplied function-record address; it is not an ordinary field update or a substitute for a normal
 function call. The execution-transfer and exception contracts belong to the [CPU reference](cpu.md#sec-cpu).
 
+#### Source access and control instructions {#sec-cpu-blua-control-syntax}
+
+A permitted read emits `MFC0`; an assignment emits `MTC0`. Source access
+restrictions differ from the raw privileged instructions: the latter ignore
+writes to read-only fields and read zero from EXEC. The source restrictions do
+not introduce another hardware permission fault.
+
 A supervisor-only source fragment can read exception state and set a resume address:
 
 ```lua
@@ -761,6 +769,21 @@ cop0.status = status | 1
 Compound assignment to `status` or `epc` evaluates the right-hand expression, then reads the control
 register, applies the operation, and writes the result. These are separate control-register
 operations, not an atomic update.
+
+The installed monitor can save `cop0.epc` in a local and restore it before
+exception return. This requires supervisor context; ordinary user-mode entry
+cannot read CP0. At boot, BIOS writes `cop0.exec = startup`, where `startup`
+is the static function-record address supplied by the
+[ROM header](program-images.md#sec-memory-rom-header-fields), not an instruction
+address or an ordinary function value.
+
+The standard BLua IRQ entry reads FLAGS, calls `irq(flags)` when it is nonzero,
+and executes RFE. The standard exception entry calls `exception(error_value)`
+and executes RFE after the callback returns. Return normally from either
+callback so its entry routine can perform exception return. A custom entry
+routine must implement its own dispatch and issue RFE from its exception frame.
+The [CPU control reference](cpu.md#sec-cpu-exception-entry-and-cartridge-dispatch)
+defines saved state and entry privilege.
 
 ### Intrinsic calls: `blua32` {#sec-blua-programs-intrinsic-calls-blua32}
 
@@ -864,10 +887,175 @@ not establish that the desired transfer or frame completed.
 
 ## Worked static storage {#sec-blua-programs-worked-static-storage}
 
-A [[record-copy example](memory.md#sec-memory-worked-example-prepare-and-copy-two-records)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Worked example: prepare and copy two records”]{.content-visible when-format="pdf"}
-combines RODATA, DATA and BSS with zero-based typed record views. The layouts
-and address calculations there also apply to module exports: exporting a storage
-name exports its numeric address, not a copy of the bytes.
+RODATA, DATA and BSS supply addressed objects with different initialization
+rules. The following example follows two records through their typed layout
+and shows the resulting bytes. Exporting a storage name likewise exports its
+numeric address, not a copy of its bytes.
+
+### Typed byte storage and address views {#sec-memory-typed-byte-storage-and-address-views}
+
+Use byte-addressed storage for the records, command words and sample bytes that
+hardware consumes. BLua's `bss`, `data` and `rodata` declarations define
+addressed storage objects; a local typed view supplies an access layout for an
+existing address. Neither a local value nor an ordinary Table is a device buffer.
+
+The [typed-storage reference](#sec-blua-programs-typed-storage-layouts-and-address-views)
+defines declarations, initializers, sizes, alignment, arrays and structs,
+including `sizeof`, `offsetof`, address-of and zero-based indexing.
+[[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
+defines what happens when the resulting address reaches RAM, ROM or an I/O port.
+
+For example, a word view of an existing DMA register bank accesses consecutive
+four-byte ports. It does not reserve a DMA channel or alter the port layout:
+
+```lua
+local dma0<const>: *word = 0x0800000c
+local remaining = dma0[2]
+```
+
+The read reaches TRANSFER_COUNT at `08000014H`. By contrast, `dma0 + 2` is the
+byte address `0800000EH`, not that third port. Use an indexed typed access or an
+explicit byte offset that preserves the device's required alignment.
+
+A storage address still carries the region's ownership and lifetime rules.
+Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
+read-only byte source, and keep a device's input bytes unchanged until its
+completion condition releases them. The [record-copy example](#sec-memory-worked-example-prepare-and-copy-two-records)
+below applies typed layouts to exact bytes; [[DMA buffer lifetime](memory.md#sec-memory-dma-buffer-lifetime)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “DMA buffer lifetime”]{.content-visible when-format="pdf"}
+and the unit references cover asynchronous use.
+
+### Worked example: prepare and copy two records {#sec-memory-worked-example-prepare-and-copy-two-records}
+
+This sequence prepares bytes without submitting a device job. Start after
+normal cartridge DATA/BSS initialization. The declared objects supply the source and destination addresses.
+
+```lua
+module<entry>
+struct memory_sample
+    tag: u8
+    value: word
+    samples: u16[2]
+end
+rodata inputs: memory_sample[2] = {
+    { tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
+    { tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
+}
+data counter: word = 0x12345678
+bss output: memory_sample[2]
+local source<const>: *memory_sample = inputs
+local destination<const>: *memory_sample = output
+
+for index = 0, #inputs - 1 do
+    destination[index].tag = source[index].tag
+    destination[index].value = source[index].value
+    destination[index].samples[0] = source[index].samples[0]
+    destination[index].samples[1] = source[index].samples[1]
+end
+*counter = *counter + #inputs
+```
+
+#### Record indexing is not byte arithmetic {#sec-memory-record-indexing-is-not-byte-arithmetic}
+
+| Part of `memory_sample` | Byte offset | Bytes |
+| --- | ---: | ---: |
+| `tag` | 0 | 1 |
+| Padding | 1 | 3 |
+| `value` | 4 | 4 |
+| `samples` | 8 | 4 |
+
+Record alignment is 4 and record size is 12 bytes. Each two-record array
+occupies 24 bytes. Typed indices start at zero: `&source[1]` is 12 bytes after
+`inputs`, `&source[0].value` is 4 bytes after it, and
+`&source[1].samples[1]` is 22 bytes after it. Advancing a byte view by one
+would instead select the next byte, here padding, not the next record.
+
+#### Resulting bytes {#sec-memory-resulting-bytes}
+
+BSS supplies initial zero output bytes. The copy writes scalar fields rather
+than assigning whole records, so their three padding bytes remain zero.
+
+| Output byte offset | Word | Contents |
+| ---: | --- | --- |
+| 0 | `00000011H` | First tag and three zero padding bytes |
+| 4 | `12345678H` | First value |
+| 8 | `33441122H` | First record's two samples |
+| 12 | `00000022H` | Second tag and three zero padding bytes |
+| 16 | `9ABCDEF0H` | Second value |
+| 20 | `77885566H` | Second record's two samples |
+
+The final counter is `1234567AH`: `#inputs` counts **two records**, not bytes.
+No interrupt, rendering or buffer-release event follows this CPU copy. A
+hardware-facing use must still satisfy the receiving unit's address, layout,
+count, completion and lifetime rules.
+
+### Language execution storage and byte RAM {#sec-memory-language-execution-storage-and-byte-ram}
+
+The record-copy example's `output` is twenty-four addressed RAM bytes. A Table
+used to organize two records is a language value with its own identity; it is
+not that byte array. A local variable holding an address also differs from the
+storage reached through the address. Keep these roles separate when supplying
+hardware operands or budgeting writable storage.
+
+Calls use the [CPU's frame value slots](cpu.md#sec-cpu-calling-and-returning-values),
+not a cartridge-addressable byte stack. The function record's maximum stack
+counts value slots rather than bytes.
+
+Language values use a shared allocation budget, described under
+[CPU — Language allocation and lifetime](cpu.md#sec-cpu-language-allocation-and-lifetime).
+That budget does not describe a mapped byte-RAM heap or report free RAM bytes.
+Mapped DATA/BSS placement and the language budget are separate constraints:
+placing a static byte buffer neither allocates a language Table nor yields a
+byte address for the CPU's value slots.
+
+#### Values are not byte buffers {#sec-memory-values-are-not-byte-buffers}
+
+A language value can hold a Number, text, a Table, a function or a Thread.
+Copying a Table or function value preserves its identity; it does not copy its
+contents into main RAM. A device needs the numeric address of storage containing
+its prescribed bytes, not the Table that the program uses to organize them.
+
+Use typed static storage and scalar writes to construct that byte layout.
+Loads return numeric scalars under the selected access format; they do not
+reconstruct arbitrary language values from words. Integer stores retain the
+specified low bits, while floating stores encode floating-point bits. The
+[[scalar memory rules](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Scalar memory accesses”]{.content-visible when-format="pdf"} give the alignment, conversion
+and partial-access behavior.
+
+#### Function arguments, results and BIOS calls {#sec-memory-function-arguments-results-and-bios-calls}
+
+Passing an address to a function passes its numeric value. It neither copies
+the pointed-to bytes nor extends their lifetime. A callee can establish a typed
+view of that address before accessing it, as in the example below. Ordinary
+calls use value slots, not a cartridge-addressable byte stack.
+
+Use [Calling and returning values](cpu.md#sec-cpu-calling-and-returning-values)
+for argument/result placement and closure capture, and
+[BLua source semantics](#sec-blua-programs-blua-source-semantics) for source-level
+varargs and result expansion. Named static BIOS targets and installed global
+library values are distinct call routes; see
+[Named BIOS function imports](#sec-blua-programs-named-bios-function-imports).
+Calling either kind of BIOS function is an ordinary call, not EXEC or a
+privilege transition. Its documented memory and device requirements still apply.
+
+#### Passing an address to a function {#sec-memory-worked-values-byte-storage-and-text}
+
+After normal BIOS entry, typed storage supplies the destination bytes; passing
+its address to a function does not allocate a new destination:
+
+```lua
+bss written: word[2]
+local write_pair = function(address, first, second)
+    local destination<const>: *word = address
+    destination[0] = first
+    destination[1] = second
+    return first + second, 2
+end
+local sum, count = write_pair(written, 17, 25)
+```
+
+`sum` is 42, `count` is 2, and the two stored words are 17 and 25.
+The function's address view and the declared array select the same storage.
+Neither a Table nor a String can be substituted for its byte address.
 
 ## BLua source semantics {#sec-blua-programs-blua-source-semantics}
 
@@ -895,7 +1083,11 @@ A literal whose parsed numeric value is non-finite is rejected. Unary `-` is a s
 
 The expressions `-0` and `-0.0` produce negative zero. Constant binding and loading do not replace either expression with positive zero.
 
-Hexadecimal spelling does not create a distinct address or register-word literal type. It is another spelling of a Number literal; address and typed-storage use belongs to the [[Memory reference](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"}.
+Hexadecimal spelling does not create a distinct address or register-word
+literal type. It is another spelling of a Number literal. The
+[typed-storage reference](#sec-blua-programs-typed-storage-layouts-and-address-views)
+defines declarations and address views; [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
+in Book I defines what happens when the resulting address reaches the bus.
 
 ### String literal differences {#sec-blua-programs-string-literal-differences}
 
@@ -1081,7 +1273,7 @@ The named BIOS function imports are:
 | --- | --- | --- | --- |
 | 0 | `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
 | 1 | `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
-| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"} |
+| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"} |
 
 
 
@@ -1108,47 +1300,16 @@ static call target; it leaves ordinary program-module initialization
 unchanged. A program module cannot redefine one of these paths. Other BIOS
 libraries use their installed globals unless a named import is listed.
 
-### Locating BIOS call targets {#sec-blua-programs-locating-bios-call-targets}
+The [program-image reference](program-images.md#sec-blua-programs-locating-bios-call-targets)
+specifies the published slots and the ROM fields used to locate these function
+records. The source import selects that public target; it does not supply a
+private copy of the BIOS or its global bindings.
 
-The module names above bind to fixed, zero-based slots in the system
-executable's function table. The ROM header at system address zero supplies
-the executable's offset at `0x20`. Its executable header supplies the absolute
-function-table address at offset `0x10`. Each function record occupies
-32 bytes, so slot `s` has function-record address `table_address + 32*s`.
-These addresses select function records, not their instruction bytes.
+## Global names and source resolution {#sec-blua-programs-ordinary-globals-are-a-name-bank}
 
-An independent linker resolves the published names through these fields and
-slots. It uses that function-record address for a CLOSURE operand, with the
-address divided by sixteen as specified in the
-[instruction reference](cpu.md#sec-cpu-calls-closures-globals-and-tables).
-Only the three published slots bind these named imports. Startup, vector and
-preparation entry points are identified separately by their header fields;
-other table positions do not themselves define additional BIOS interfaces.
-
-The same lookup is available to a running program. This sequence calls slot
-zero without a named import:
-
-```lua
-local image<const> = mem32le[0x20]
-local function_table<const> = mem32le[image + 0x10]
-local sin_turn32<const> = blua32.closure(function_table)
-local sine = sin_turn32(0x40000000) -- 65536
-```
-
-Use the installed system ROM's own fields, rather than assuming a fixed
-instruction address or substituting a record from the cartridge image.
-For static RAM placement, the system executable's BSS address at `0x4c`
-plus its padded byte count at `0x50` gives the first byte after firmware
-static storage. The full section and record formats are in
-[[Memory and program storage](memory.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “BLua32 executable image”]{.content-visible when-format="pdf"}.
-
-## The installed program environment {#sec-blua-programs-the-installed-program-environment}
-
-Before normal cartridge entry, the BIOS installs the base functions and publishes the library names `table`, `string`, `coroutine`, `lua_compiler`, `load`, `os`, and `math`. A cartridge entering through this path can use those installed bindings without installing the libraries itself.
-
-These are ordinary public bindings. A program can change them; their initial presence does not make their values immutable. Nor does installation provide a private copy of the global environment for each cartridge.
-
-### Ordinary globals are a name bank {#sec-blua-programs-ordinary-globals-are-a-name-bank}
+The [BIOS base reference](bios-base.md#sec-bios-base-installed-program-environment)
+defines the installed functions and library Tables. The rules here describe
+how a source name selects a shared ordinary-global binding.
 
 Ordinary global values belong to a shared bank indexed by String names. This bank is separate from the system-global bank. It is not an ordinary Table, and accessing it is not Table indexing.
 
@@ -1162,71 +1323,11 @@ A String argument to `setglobal` writes the bank without declaring a source iden
 
 A previously unseen ordinary name begins with `nil`. When another program image registers the same ordinary name, it uses the existing shared binding; registering the name does not clear its value. Do not assume that moving between program images gives every name a new `nil` value.
 
-The BIOS installers described here do not install `_G` or `_ENV` as global-environment Tables. The installed environment therefore does not supply `_G[name]` or replacement of `_ENV` as its name-based access interface. This is an installation statement, not an additional source-identifier or loader-environment rule.
-
-
-### Accessing a global by name {#sec-blua-programs-accessing-a-global-by-name}
-
-Use the installed functions `getglobal` and `setglobal` to access the ordinary global bank by name.
-
-| Call | Arguments | Results |
-| --- | --- | --- |
-| `getglobal(name)` | `name` must be a String. | One value: the current ordinary global value, or `nil` if the name is absent. |
-| `setglobal(name, value)` | `name` must be a String. A reached call with an absent value writes `nil`; BLua source supplies an explicit `nil` to meet the known-call minimum. | No result values. |
-
-
-`setglobal` writes the named binding, creating it when necessary. Writing `nil` is a write of `nil`; it is not a request to clear the whole bank. Both functions address the ordinary global bank directly, rather than a caller-supplied environment Table.
-
-For example, `setglobal("score", 100)` makes `getglobal("score")` return `100`. A subsequent `setglobal("score", nil)` writes `nil`, so `getglobal("score")` then returns `nil`.
-
-### Installed names and library Tables {#sec-blua-programs-installed-names-and-library-tables}
-
-The base installation provides these public names:
-
-- `next`, `type`, `setmetatable`, `getmetatable`, `rawget`, `rawset`;
-- `getglobal`, `setglobal`, `select`;
-- `error`, `pcall`, `xpcall`, `assert`;
-- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`.
-
-This is the base installation inventory, not a restriction on names that a program or module may introduce. Consult the [base reference](bios-base.md#sec-bios-base) for detailed function behavior; the two name-based global operations are specified above.
-
-
-Several other installed globals hold ordinary library Tables. The distinction matters: `string` is a global binding, while the library Table initially held by that binding is a separate value.
-
-| Installed name | Interface navigation |
-| --- | --- |
-| `table` | The Table library. See the [Table reference](bios-table.md#sec-bios-table) for its operations. |
-| `string` | The completed String library Table, also registered for String indexing. See the [String reference](bios-string.md#sec-bios-string) for indexing and library behavior. |
-| `coroutine` | The coroutine library Table. See [Protected calls and coroutines](coroutines.md#sec-coroutines). |
-| `math` | The [mathematics library](bios-math.md#sec-bios-math), including numeric domains, radian trigonometry and random-number state. |
-| `os` | The [time and date library](bios-os.md#sec-bios-os): cycle-derived elapsed time and deterministic civil-time conversion, not filesystem or process services. |
-| `lua_compiler` | A Table containing `compile_syntax`, `syntax_factory`, and `load`, for the BIOS runtime-compilation interface. |
-| `load` | Initially the same function value as `lua_compiler.load`; see the runtime-compilation boundary below. |
-
-
-Use those routine chapters for argument domains, precision, errors, random-number behavior and timing conventions.
-
-### Public bindings and library references {#sec-blua-programs-public-bindings-and-library-references}
-
-Public library bindings can be reassigned. A saved Table or function reference
-continues to refer to its original value after the global name changes.
-The BIOS also retains some dependencies at installation: `assert` keeps its
-selection and error operations, `print` keeps its console destination, and
-String operations retain their listed helper functions. `pairs` instead
-reads the current global `next`; `print` reads current `select` and `tostring`;
-`tonumber` reads current `type` and `error`.
-
-String method lookup uses the installed String-index Table. Reassigning the
-`string` global leaves that method Table in place. The routine references
-describe any further dependency relevant to replacing an installed binding.
-
-### Fresh system boot and execution transfer {#sec-blua-programs-fresh-system-boot-and-execution-transfer}
-
-Fresh system boot clears both global-name banks, then installs the BIOS
-environment before normal program entry. `EXEC` keeps the existing banks
-and BIOS bindings while replacing execution. Initialize program-owned globals
-explicitly when transferring between programs. See [CPU execution
-control](cpu.md#sec-cpu-exec) for the complete transfer behavior.
+For names chosen during execution, use the [BIOS `getglobal` and
+`setglobal` calls](bios-base.md#sec-bios-base-getglobalname-and-setglobalname-value).
+A computed name does not declare a bare source identifier. The
+[program startup reference](program-images.md#sec-blua-programs-fresh-system-boot-and-execution-transfer)
+describes which global bindings survive execution transfer.
 
 ### Runtime compilation {#sec-blua-programs-runtime-compilation}
 

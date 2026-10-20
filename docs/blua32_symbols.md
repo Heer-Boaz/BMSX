@@ -12,7 +12,7 @@ see [Named BIOS function imports](book1/blua-programs.md#sec-blua-programs-named
 The public BIOS diagnostic directory supplies the console monitor's names,
 source locations and binding availability without a host debugger. Its
 product interface is specified by
-[BIOS diagnostic directory](book1/memory.md#sec-memory-optional-bios-diagnostic-directory).
+[BIOS diagnostic directory](book1/bios-monitor.md#sec-memory-optional-bios-diagnostic-directory).
 The private tooling graph supplies the richer source and live-compilation
 information used by host tools. The BIOS does not decode that graph.
 

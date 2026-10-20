@@ -275,7 +275,7 @@ circuit-1 source and display words into circuit 2, copies its presented backgrou
 color, and maps its circuit-1 enable into circuit-2 enable. This reuses source
 addresses; it does not copy framebuffer pixels. The firmware can then prepare
 its own display. Respect the firmware surface and system-texture reservation
-explained under **Memory and program storage**; a retained cartridge GPU context
+explained under **Memory and bus access**; a retained cartridge GPU context
 does not grant ownership of those VRAM bytes.
 
 LEAVE crosses the DMA and GPU boundaries for the supervisor's work before

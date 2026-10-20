@@ -670,16 +670,177 @@ chosen by the program; a source switch changes the addresses being read.
 | Submit the next picture | Complete every packet, upload payload and polyline terminator. Order changes to texture and palette storage with their uses; queued commands do not retain private copies of those pixels. |
 | Finish GPU-side work | Drain any readback result and finish its downstream DMA writes when used. Observe GPU IDLE separately from DMA DONE or a GP0 IRQ marker. None of these acknowledges display publication. |
 | Program the display source | Write the required PCRTC source/configuration words. They remain programmed words until the VBlank-entry latch; separate stores are not an atomic update. See @sec-pcrtc-26-programmed-words-and-displayed-settings. |
-| Observe the new selection | Use a fresh-after-write VBlank observation. The [Memory display-switch sequence](memory.md#sec-memory-a-display-switch-selects-storage-it-does-not-save-it) gives the IRQ/counter setup and exact order. |
+| Observe the new selection | Use a fresh-after-write VBlank observation. The [display-switch sequence below](#sec-memory-a-display-switch-selects-storage-it-does-not-save-it) gives the IRQ/counter setup and exact order. |
 
 Before rebuilding a former display region, also finish its other uses: the
 second reading circuit, texture or palette sampling, copy sources and readback
 can still refer to it. Keep the pixels intact until all those uses have ended.
 
-The [two-surface example](memory.md#sec-memory-prepare-publish-and-reuse-two-surfaces)
+The [two-surface example below](#sec-memory-prepare-publish-and-reuse-two-surfaces)
 demonstrates A → B → rebuilt A with one reading circuit and a VBlank counter.
 It gives the interrupt masking, acknowledgement and fresh-edge sequence used
 to establish each display hand-off.
+
+### Shared GPU storage and display publication {#sec-memory-shared-gpu-storage-and-display-publication}
+
+Treat RAM staging, GP0 command words, shared GPU local memory, and the PCRTC display selection as different lifetimes. Uploading a picture does not allocate a texture, and selecting a framebuffer does not copy its pixels. Textures, palettes, drawing destinations, copy sources, and display sources can address the same storage. The cartridge must choose regions and order their uses; neither GP0 port readiness nor a VBlank event locks or releases those regions.
+
+| Data or role | What is retained or accessed | Relevant boundary |
+|---|---|---|
+| RAM staging source | DMA reads RAM words as the transfer progresses; GP0 receives copied words. | Completion of the RAM reads ends that source use, not later GPU or display uses. |
+| Upload payload | The upload retains payload words consumed by image assembly. | The upload uses those words, not a later reread of the original RAM source. |
+| Texture, CLUT, copy source | Commands read shared VRAM when their ordered memory operation executes. | Queueing a command does not preserve a private copy of these pixels. |
+| Drawing destination | Writes update shared VRAM; masking and blending can read its current contents. | Destination addresses do not establish exclusive ownership. |
+| PCRTC source | Retained display configuration selects addresses in shared VRAM. | Configuration publication is not a selected-surface pixel snapshot. |
+| Readback result | READY readback holds copied result pixels. | GP0 reads drain that result; the final read returns the readback port to IDLE. |
+
+### Command order is not resource allocation {#sec-memory-command-order-is-not-resource-allocation}
+
+A queued drawing command retains its packet and drawing-context words, not texture or CLUT bytes. A VRAM-to-VRAM copy likewise reads its source from shared memory when executed. Preserve the contents required by earlier uses in the ordered command stream. A later, correctly ordered upload can change the contents for later uses; queue-time capture does not give earlier commands their own texture image. This ordering is not a promise that arbitrary source/destination aliasing or texture feedback is safe.
+
+DMA completion, a GP0 interrupt marker, GPU IDLE, and readback readiness answer different questions. DMA DONE follows the channel's mapped accesses; it does not itself establish successful GPU delivery, completed drawing, or display publication. The GP0 interrupt marker raises its retained request when reached in command order, but is not a display fence. GPU IDLE requires empty input, no incomplete command or upload, no pending command timing, and an idle readback port. It does not certify a particular frame's pixels or display publication.
+
+Readback becomes active at its ordered command boundary and blocks further GP0 parsing until drained. READY means its pixels have been copied into readback storage, not that a DMA destination in RAM has already been filled. Draining GP0 and finishing any downstream DMA RAM writes are separate steps. See the [GP0 command-stream reference](#sec-gpu-frame-the-gp0-command-stream) and [DMA](dma.md#sec-dma) for their command and transfer interfaces.
+
+### A display switch selects storage; it does not save it {#sec-memory-a-display-switch-selects-storage-it-does-not-save-it}
+
+PCRTC has programmed and retained presentation configuration, not two private pixel banks. Ordinary display configuration writes stage new words. At VBlank begin, presentation configuration is latched and the frame's command boundary is selected before the system VBlank interrupt is raised. The separate PCRTC VSINT interrupt is not this publication acknowledgement. Beam-timing writes can restart live timing immediately; do not treat them as ordinary deferred display-source switches.
+
+Before composing the selected source, commands through the published boundary are processed. Normally that boundary is the executed-command count; an active readback instead supplies its fence boundary. This is not an exact historical pixel version: later commands already applied to shared memory are not undone. Neither the boundary nor VBlank supplies an all-VRAM release, an atomic framebuffer snapshot, or a physical pixel-fetch deadline.
+
+With a fixed format, pitch, geometry, and source offsets, switching to a disjoint region changes the selected addresses. It does not prove that every other reader has stopped using the old region. If the old region is later selected again, it supplies its then-current contents, not pixels saved by the earlier switch. See [PCRTC](pcrtc.md#sec-pcrtc) for source-address selection.
+
+A fresh-after-write observation needs more than an already-pending VBlank flag. Under a sole cartridge IRQ/counter owner, no earlier in-flight callback, and no other configuration, mask, or counter writer: set IRQ MASK to 0 before the final display write; after that write, write ACK = 4 and capture the VBlank callback counter while still masked; set MASK to 4 and wait for the counter to change. The accepted event then follows the final write. This does not make multiple register writes atomic or free any resource. Reset and context operations are additional configuration-publication boundaries, not ordinary VBlank switches.
+
+### Prepare, publish and reuse two surfaces {#sec-memory-prepare-publish-and-reuse-two-surfaces}
+
+This programming sequence prepares two fixed surfaces, selects A, selects B, rebuilds A while B is selected, and selects A again. It uses ordinary fresh BIOS cartridge entry with CPU interrupts enabled. It is the sole GP0 producer and owns the VBlank handler, IRQ mask and callback counter; there is no earlier in-flight callback, supervisor/context takeover, or competing writer. Only circuit 1 is enabled, and no other texture, CLUT, copy or readback operation uses either region. These are the conditions of this example, not an allocation or general surface-release service.
+
+The callable BIOS function `gpu/system_vram_region` reports the installed system reservation. For the [firmware reservation example](memory.md#sec-memory-firmware-reservation-in-vram), it returns origin `02D002C0H`, or `(704,720)`, and size `00FC0140H`, or `(320,252)`: the bounding region `[704,1024) × [720,972)`. Both chosen surfaces exclude that reservation and each other. These are the current installed BIOS values, not immutable hardware dimensions or proof that every other address is free.
+
+| Surface | GX16 source region | DISPFB1.low | Word base |
+|---|---|---|---|
+| A | `[0,256) × [0,192)` | `000FA000H` | `00000H` |
+| B | `[0,256) × [256,448)` | `000FA040H` | `40000H` |
+
+`DISPFB1.high` stays zero. Both low words select GX16, PSM 31, and FBW 16: a row stride of 1024 sixteen-bit words, or 2048 bytes. Each surface contains 49,152 source words, or 98,304 bytes of pixels, across those rows; it is not one contiguous CPU allocation. Changing FBP from `00H` to `40H` changes the word base from zero to `40000H`, equivalent to `(0,256)` in this layout.
+
+The program resets PCRTC with CSR `00000200H`; that is not a VRAM clear. It holds PMODE at zero during preparation. `DISPLAY1.low = 01800000H` supplies zero signal origin and magnification 4 horizontally, 1 vertically; `DISPLAY1.high = 000BF3FFH` supplies a 1024 × 192 signal extent. With the reset horizontal signal step of 4 and progressive mode, the source footprint is exactly 256 × 192 at zero phase. PMODE `0000FF21H` then enables only circuit 1. Pitch, format, source offsets and geometry remain unchanged throughout the switches.
+
+#### Prepare the storage and display route {#sec-memory-prepare-the-storage-and-display-route}
+
+The following fragments form one ordered sequence under the ownership
+assumptions above. A final write to a display register is not a drawing fence.
+First define the VBlank callback and disable delivery during preparation:
+
+```lua
+bss vblank_sequence: word
+function irq(flags)
+    if (flags & 4) ~= 0 then
+        *vblank_sequence = *vblank_sequence + 1
+    end
+    mem[0x08000004] = flags & 4
+end
+mem[0x08000008] = 0
+mem[0x080103d4] = 0x00000200  -- PCRTC reset; not a VRAM clear
+mem[0x08010354] = 0           -- PMODE: no read circuit
+mem[0x0801035c] = 0x000fa000  -- DISPFB1 low: surface A
+mem[0x08010360] = 0           -- DISPFB1 high: zero source offsets
+mem[0x08010364] = 0x01800000  -- DISPLAY1 low
+mem[0x08010368] = 0x000bf3ff  -- DISPLAY1 high
+mem[0x08010240] = 0x09000000  -- Close the VRAM Y-address extension gate
+```
+
+Send the following **four three-word GP0 fill commands**, in row order, to the
+fixed port `0801023CH`. Each cell is one raw word:
+
+| Fill | Command/color | Position | Extent |
+| --- | --- | --- | --- |
+| Red A | `020000FFH` | `00000000H` | `00C00100H` |
+| White marker on A | `02FFFFFFH` | `00400010H` | `00200020H` |
+| Blue B | `02FF0000H` | `01000000H` | `00C00100H` |
+| White marker on B | `02FFFFFFH` | `014000D0H` | `00200020H` |
+
+For example, the first command is exactly:
+
+```lua
+mem[0x0801023c] = 0x020000ff
+mem[0x0801023c] = 0x00000000
+mem[0x0801023c] = 0x00c00100
+```
+
+After all four fills, issue a one-pixel readback from each surface origin:
+GP0 words `C0000000H`, position (`00000000H` for A, `01000000H` for B),
+`00010001H`. For each request, wait until GPUSTAT at `08010240H` has
+`08000000H` set, then read one word from GPUREAD at `0801023CH`. The words
+are `0000001FH` and `00007C00H`. Drain each result before the next request;
+then wait separately for GPUSTAT IDLE, bit `04000000H`.
+
+#### Publish A, then B {#sec-memory-publish-a-then-b}
+
+Enable circuit 1, discard stale VBlank pending **after** the final display
+write, and wait for a newly serviced callback:
+
+```lua
+mem[0x08010354] = 0x0000ff21
+mem[0x08000004] = 4
+local before = *vblank_sequence
+mem[0x08000008] = 4
+while *vblank_sequence == before do
+    halt_until_irq
+end
+```
+
+A is now selected at the new publication edge. To publish B, use the same
+mask/write/ACK/sample/enable/wait order:
+
+```lua
+mem[0x08000008] = 0
+mem[0x0801035c] = 0x000fa040
+mem[0x08000004] = 4
+local before = *vblank_sequence
+mem[0x08000008] = 4
+while *vblank_sequence == before do
+    halt_until_irq
+end
+```
+
+With B selected, rebuild only A using GP0 triples
+`0200FF00H, 00000000H, 00C00100H` and
+`02FFFFFFH, 00500070H, 00200020H`. Read back both origins again and drain
+the results before waiting for GPU IDLE. Repeat the publication sequence with
+`DISPFB1.low = 000FA000H` to select A's new contents.
+
+#### What each phase establishes {#sec-memory-what-each-phase-establishes}
+
+GP0 readback follows the fills in command order. A one-pixel request consumes
+one whole GPUREAD word: the pixel is in the low half and the unused high half
+is zero. Waiting for IDLE after draining the readbacks is separate from
+waiting for VBlank publication. There is no DMA transfer in this sequence.
+
+Masking delivery before the display write and acknowledging afterward prevents
+an old pending VBlank from satisfying the callback-counter wait. Under the
+stated sole-owner conditions, the changed counter observes a fresh post-write
+VBlank. It does not measure exact pixel-fetch timing or a fixed latency.
+
+| Origin sampled | Initial preparation | After rebuilding A |
+| --- | --- | --- |
+| A `(0,0)` | `0000001FH` (red) | `000003E0H` (green) |
+| B `(0,256)` | `00007C00H` (blue) | `00007C00H` (unchanged blue) |
+
+The framebuffer words select A/B/A: `000FA000H`, `000FA040H`,
+`000FA000H`. The final selection reads A's **current green contents**, not a
+saved copy of its earlier red image. It does not release other users of that
+storage or grant permission to overwrite the BIOS reservation.
+
+#### Ordinary playback pictures {#sec-memory-ordinary-playback-pictures}
+
+| A prepared and selected | B selected | A rebuilt and selected again |
+|---|---|---|
+| ![Red A with a white square at display coordinates 16,64](figures/memory-display-a-red.png){#fig-memory-display-a-red} | ![Blue B with a white square at display coordinates 208,64](figures/memory-display-b-blue.png){#fig-memory-display-b-blue} | ![Green A with a white square at display coordinates 112,80](figures/memory-display-a-green.png){#fig-memory-display-a-green} |
+| Red background; white marker `[16,48) × [64,96)`. | Blue background; white marker `[208,240) × [64,96)`. | Green background; white marker `[112,144) × [80,112)`. |
+
+The resulting 256 × 192 pictures are shown above. Each contains 1024 white marker pixels and 48,128 background pixels. They demonstrate this controlled selection and reuse, not physical pixel-fetch timing, arbitrary alias safety, or ownership of other regions.
 
 ## Hand a GP0 stream between CPU and DMA {#sec-gpu-hand-a-gp0-stream-between-cpu-and-dma}
 

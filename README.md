@@ -28,11 +28,13 @@ series separates three scopes:
 
 - **Book I — System and Hardware Reference:** begin with the
   [System overview](docs/book1/console.md), then follow its links to the owning
-  hardware chapters and [Memory and program storage](docs/book1/memory.md).
+  hardware chapters and [Memory and bus access](docs/book1/memory.md).
 - **Book II — BLua32 and BIOS Reference:** begin with
   [CPU and BLua32 instructions](docs/book1/cpu.md),
-  [BLua source programs and extensions](docs/book1/blua-programs.md), and BIOS
-  interfaces. Cartridge source is not assumed to be ordinary Lua.
+  [BLua source programs and extensions](docs/book1/blua-programs.md), and
+  [Program images and startup](docs/book1/program-images.md). BIOS services
+  include [monitor diagnostics](docs/book1/bios-monitor.md). Cartridge source
+  is not assumed to be ordinary Lua.
 - **Book III — Cartridge and Expansion Reference:**
   [Cartridge sockets and mapped card devices](docs/book3/cartridge.md).
 

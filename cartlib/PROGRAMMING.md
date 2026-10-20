@@ -72,7 +72,7 @@ The **60-byte boot prefix** occupies `0x00` through `0x3b`. It is distinct from 
 
 Function-record addresses are absolute machine addresses, not image offsets or instruction PCs. The exception-address field alone does not specify cartridge fault routing. Package DATA is the physical payload, not writable program DATA; its length is not the program DATA section size.
 
-The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the separate [machine EXEC handoff](../docs/book1/memory.md#sec-memory-exec-and-cartridge-entry) for the startup sequence.
+The ROM builder and linker emit the header and token words. An embedded BLua32 image has a separate 96-byte header; that header is not part of these 72 bytes. See the separate [machine EXEC handoff](../docs/book1/program-images.md#sec-memory-exec-and-cartridge-entry) for the startup sequence.
 
 <a id="resource-integration"></a>
 

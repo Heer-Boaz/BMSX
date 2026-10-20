@@ -8,9 +8,11 @@ book:
     - index.md
     - book1/cpu.md
     - book1/blua-programs.md
+    - book1/program-images.md
     - book1/coroutines.md
     - book1/bios-base.md
     - book1/bios-loader.md
+    - book1/bios-monitor.md
     - book1/bios-math.md
     - book1/bios-os.md
     - book1/bios-string.md

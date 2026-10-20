@@ -63,10 +63,9 @@ its working storage and selects an executable cartridge. Cartridge ROM supplies
 the game's program and read-only data; main RAM supplies writable data and
 buffers. System-ROM routines remain available through the BIOS interfaces.
 The startup and storage requirements are described in
-[Memory and program storage](memory.md#sec-memory-reset-and-cartridge-startup).
+[[Program images and startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “Reset and cartridge startup”]{.content-visible when-format="pdf"}.
 
-BLua32 uses four-byte instruction words; a WIDE prefix extends an instruction to
-eight bytes. Device registers are reached through memory-mapped ports. A word
+The CPU controls the units through memory-mapped ports. A word
 write can set a parameter, supply data or issue a command, depending on the port;
 a read can return status, retained configuration or a result. The device's
 programming sequence establishes which values must be prepared before its start
@@ -132,12 +131,13 @@ subtracting firmware and cartridge static storage; it is not a free-memory
 figure. Reserve both complete areas even where no register is decoded. Place
 cartridge data and buffers outside the firmware's complete DATA/BSS extent.
 The [Memory chapter](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)
-specifies the register aperture, section layout and startup initialization.
+specifies the register aperture, reserved storage and RAM placement.
+[[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, “Program images and startup”]{.content-visible when-format="pdf"} in Book II
+describes section initialization and cartridge entry.
 
 Firmware also retains part of GPU local memory for its terminal and system
-texture. Preserve the complete rectangle returned by BIOS
-`gpu/system_vram_region`, including after cartridge entry. The query and its
-coordinate units are given under
+texture. Keep this area separate from game graphics, including after cartridge
+entry. The reservation and its BIOS query are described under
 [Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram).
 
 ## From cartridge data to a displayed picture {#sec-console-from-cartridge-data-to-a-displayed-picture}
@@ -169,18 +169,15 @@ and perspective calculations for this route, as well as lighting and color
 arithmetic. Software writes operands and controls into its registers, issues
 the appropriate command, then reads the results for its drawing packets.
 
-GEO instead operates on memory records. A program supplies record addresses,
-counts, strides and parameters for a batch. XFORM2 transforms two-dimensional
-vertices and can produce bounds; SAT2 tests convex-polygon pairs; OVERLAP2D
-produces translated-shape contacts. Results are written to addressed RAM for
-the program to use. For example, a character's transformed collision hull can
-be tested separately from the polygons or sprite used to draw it.
+GEO instead processes batches of addressed geometry records and writes its
+results to RAM. It transforms two-dimensional shapes, calculates bounds and
+tests convex shapes for contact. A character's collision hull can therefore
+be processed separately from the polygons or sprite used to draw it.
 
 The choice is therefore between register-fed arithmetic and addressed record
 processing, according to the task. The [GTE](gte.md#sec-gte) and
 [GEO](geo.md#sec-geo) chapters explain the coordinate systems, numeric formats,
-commands and result handling. GEO's work budget is expressed in outer-record
-service units, not a fixed number of vertices or collision pairs per second.
+commands and result handling.
 
 ### Image decoding {#sec-console-image-decoding}
 
@@ -208,12 +205,10 @@ either from CPU stores or DMA. The GPU executes the packets in order and
 updates local memory. A texture upload followed by a textured drawing command
 therefore puts the image data before the draw that uses it.
 
-The 2 MiB local memory contains 1,048,576 sixteen-bit words. Drawing addresses
-use periods of 1024 words horizontally and 1024 rows vertically; these are
-storage coordinates, not a screen-resolution specification. Drawing regions,
-texture regions and display regions all occupy this same memory. The program
-must place them so that drawing or uploading one does not overwrite data still
-needed by another.
+Drawing destinations, textures and display sources occupy the same 2 MiB
+local memory. The program assigns regions to these uses and arranges their
+lifetimes so that drawing or uploading one picture does not overwrite data
+still needed by another.
 
 The [GPU chapter](gpu.md#sec-gpu) gives the packet formats, drawing environment,
 storage mappings and execution costs. Its capabilities describe supported
@@ -234,12 +229,10 @@ of the stored picture; moving the display window places that selection at
 another output position. The [PCRTC chapter](pcrtc.md#sec-pcrtc) illustrates this
 distinction and specifies the supported storage interpretations.
 
-Display configuration is latched at VBlank entry. The program can prepare a
-new source selection, then observe the edge at which it becomes the displayed
-selection. Beam timing has separate immediate write effects. The programmed
-SMODE, SYNCH and SYNCV words determine beam timing; the enabled display windows
-and signal step determine output extent. BMSX therefore has programmable display
-dimensions and refresh rather than a single fixed screen mode.
+Display-source changes are latched at VBlank entry. This boundary lets the
+program arrange which stored picture will be displayed next. Display dimensions
+and refresh are programmable; the PCRTC chapter separates source selection,
+window placement and beam-timing controls.
 
 ![GPU command supply, shared local memory and two-circuit PCRTC reading](figures/console-video.svg){#fig-console-video}
 
@@ -262,16 +255,13 @@ sample RAM. This distinction matters for generated or modified sounds: writing
 a main-RAM buffer prepares the source of an upload, not a buffer that PLAY can
 read directly.
 
-The upload path is main RAM, DMA, APU DATA and its transfer FIFO, then sample
-RAM. Downloads use the reverse sample-memory transfer direction. For an upload,
-DMA completion establishes that the words have reached the FIFO; the APU must
-finish its sample-RAM transfer before playback uses them. Sample-memory service
-has a budget of 1,058,400 thirty-two-bit words per second. The source bus and
-request waits also contribute to upload time.
+DMA can carry sample words from main RAM to the APU transfer port. The APU
+then commits those words to sample RAM, from which the voices read them.
+Delivery to the port and completion of the sample-memory transfer are distinct
+steps. The APU chapter gives their completion indications and transfer rates.
 
 During playback the APU continues to read the selected source. Preserve its
-bytes for the voice's use. Cartridge-ROM playback retains the socket selected
-when PLAY executes. The [APU chapter](apu.md#sec-apu) gives the source formats,
+bytes for the voice's use. The [APU chapter](apu.md#sec-apu) gives the source formats,
 slot controls, transfer modes and completion procedures.
 
 ![ROM and private sample-RAM playback sources, with a separate CPU or DMA upload path](figures/console-audio.svg){#fig-console-audio}
@@ -284,12 +274,10 @@ DMA channel moves that sequence to the fixed GP0 address, while the GPU uses
 the header to determine where its local-memory writes belong. DMA does not
 need a CPU-linear VRAM address for this transfer.
 
-Each of the two channels has source and destination byte addresses, a word
-count, address increments, request selectors and a block length of 1–16 words.
-For a RAM-to-GP0 transfer, increment the RAM address and keep the GP0 address
-fixed. Both channels can have outstanding work, but the shared transfer path
-services one block at a time, selecting ready channels round-robin at block
-boundaries.
+A channel describes the source, destination and amount of data to move.
+The two channels can have outstanding work together, but share the transfer
+path. Device requests pace transfers so that a receiving port can accept the
+next words. The DMA chapter explains channel programming and arbitration.
 
 The endpoint regions determine the transfer charge. Main RAM, system ROM and
 the cartridge bus have different charges; cartridge RAM and mapped card devices
@@ -324,8 +312,8 @@ This division permits overlap: the CPU can prepare another command buffer while
 the GPU draws, and sound playback can continue during both. The requirement is
 to keep each producer's writes separate from storage still being read. The
 [Memory chapter](memory.md#sec-memory-device-specific-buffer-lifetimes) gives
-buffer lifetimes, and its
-[two-surface sequence](memory.md#sec-memory-prepare-publish-and-reuse-two-surfaces)
+buffer lifetimes. The GPU's
+[two-surface sequence](gpu.md#sec-memory-prepare-publish-and-reuse-two-surfaces)
 follows preparation, display publication and reuse.
 
 ## Timing and input capture {#sec-console-timing-and-input-capture}
@@ -336,11 +324,10 @@ report the programmed PCRTC period in fractional milliseconds and whole system
 cycles. These readouts measure intervals. VBlank interrupts provide the event
 used to synchronize with the display.
 
-INPUT ARM requests one capture at the next VBlank-begin edge. The controller
-latches the raw key, button and axis states, increments the sample sequence and
-consumes the request. Those values remain available while the game processes
-them; another capture requires another ARM. The keyboard bitmap covers 256 HID
-usage bits. Pointer state and four pad records provide buttons and axes.
+The input controller captures keyboard, pointer and pad states at a requested
+display boundary. This produces a stable set of controls for the game to
+process. Software requests later captures as it needs new input; the INPUT
+chapter specifies the request and snapshot-reading sequence.
 
 The [INPUT chapter](input.md#sec-input) explains raw representations and sampling.
 [SYSTEM](system.md#sec-system-system-time-and-frame-timing) explains the time
@@ -366,9 +353,8 @@ they are not application input mappings. The
 [SYSTEM chapter](system.md#sec-system) specifies privilege, device boundaries
 and fault capture.
 
-A SYSTEM reset command requests a reboot at a CPU execution boundary. The
-command write finishes before the reboot, so software must allow for a variable
-request-to-reboot interval. See
+A reset returns execution to system-ROM startup and the BIOS cartridge
+selection process. See
 [Reset requests](system.md#sec-system-reset-requests) and
-[Reset and cartridge startup](memory.md#sec-memory-reset-and-cartridge-startup)
+[[Reset and cartridge startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “Reset and cartridge startup”]{.content-visible when-format="pdf"}
 for the reset and subsequent firmware sequence.

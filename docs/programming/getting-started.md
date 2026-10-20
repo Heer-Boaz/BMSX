@@ -113,7 +113,7 @@ its chapter's register reference for individual fields.
 
 | What you want to do | Where to continue |
 |---|---|
-| Establish memory ownership and startup | Read [ROM contents, RAM sections, and startup](../book1/memory.md#sec-memory-rom-contents-ram-sections-and-startup), then [Taking ownership after the BIOS](../book1/memory.md#sec-memory-taking-ownership-after-the-bios) before assigning storage. |
+| Establish memory ownership and startup | Start with [main-RAM reservations](../book1/memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram), then [ROM sections and startup](../book1/program-images.md#sec-memory-rom-contents-ram-sections-and-startup) and [Taking ownership after the BIOS](../book1/program-images.md#sec-memory-taking-ownership-after-the-bios). |
 | Draw, upload pixels, or use textures | Extend [Program a complete picture in BLua](../book1/gpu.md#sec-gpu-program-a-complete-picture-in-blua) through [Upload and issue the stream](../book1/gpu.md#sec-gpu-upload-and-issue-the-stream-through-one-port) and [Locate texture texels and palette colors](../book1/gpu.md#sec-gpu-locate-texture-texels-and-palette-colors). |
 | Control display timing and source windows | Read [Beam timing](../book1/pcrtc.md#sec-pcrtc-27-beam-timing), then [Program the fixed canvas and initial cutout](../book1/pcrtc.md#sec-pcrtc-program-the-fixed-canvas-and-initial-cutout) for the source-selection route. |
 | Transform and project 3D geometry | Begin with [Constructing and packing a transform](../book1/gte.md#sec-gte-constructing-and-packing-a-transform); continue through [Perspective and geometric decisions](../book1/gte.md#sec-gte-perspective-and-geometric-decisions) to [a visible image](../book1/gte.md#sec-gte-from-projected-vertices-to-a-visible-image). |
@@ -215,7 +215,7 @@ npm run headless:test -- cartridge_manual tests/carts/cartridge_manual/cartridge
 
 `memory_fault_manual` deliberately enters the monitor on an unmapped load.
 `memory_recovery_manual` supplies a mutable pointer that can be repaired there.
-Use the [Memory chapter's monitor procedure](../book1/memory.md#sec-memory-repair-a-word-load-and-retry)
+Use the [BIOS monitor procedure](../book1/bios-monitor.md#sec-memory-repair-a-word-load-and-retry)
 for inspection, assignment and retry. Do not treat clearing a report as repairing
 the faulting operand.
 
@@ -310,6 +310,6 @@ are not additional entries in this static-function import list.
 
 A custom layout must still preserve firmware reservations, initialize its own
 DATA and BSS through startup instructions, and place the actual addresses in
-its records and code. The [Memory reference](../book1/memory.md#sec-memory-rom-header-fields)
+its records and code. The [Program images and startup reference](../book1/program-images.md#sec-memory-rom-header-fields)
 defines the machine's boot and executable-image formats. A tool's choice to
 pack static sections consecutively is not an additional hardware requirement.

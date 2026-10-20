@@ -60,7 +60,7 @@ A cartridge-targeted `CP0.EXEC` samples SELECT and establishes the execution
 socket for the new entry. Since cartridge addresses are identical in both
 sockets, insertion in the other socket does not by itself require relocation.
 A cartridge-function closure contains a function-record address, not a socket
-selection; calling it uses the current execution socket. See [[Memory — EXEC and cartridge entry](../book1/memory.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “EXEC and cartridge entry”]{.content-visible when-format="pdf"}
+selection; calling it uses the current execution socket. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “EXEC and cartridge entry”]{.content-visible when-format="pdf"}
 and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “CP0 and execution control”]{.content-visible when-format="pdf"}.
 
 DMA also distinguishes the address from the socket. Its source and destination
@@ -195,7 +195,7 @@ startup checks. A RAM-only card, or a card whose ROM does not meet those
 requirements, is skipped. This entry establishes the execution socket as
 described under [Selection and execution](#sec-cartridge-selection-and-execution).
 
-[[Memory — Cartridge startup](../book1/memory.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “ROM header fields”]{.content-visible when-format="pdf"}
+[[Program images and startup — Cartridge startup](../book1/program-images.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “ROM header fields”]{.content-visible when-format="pdf"}
 specifies the ROM header, startup requirements and entry sequence.
 
 ## Cartridge mailbox {#sec-cartridge-cartridge-mailbox}
@@ -464,7 +464,7 @@ The explicit endpoint overrides keep the source on socket 0 and destination on
 socket 1 while ordinary CPU selection remains 1. After normal completion,
 DMA STATUS is 2 and COUNT is zero. READ_ADDR is `seed + 16`, WRITE_ADDR is
 `30000020H`, and the masked DMA0 pending bit is set. Before consuming the data,
-check for new bus faults using the [[Memory fault-attribution procedure](../book1/memory.md#sec-memory-attribute-a-bus-fault-before-start)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Attribute a bus fault before START”]{.content-visible when-format="pdf"};
+check for new bus faults using the [[Memory fault-attribution procedure](../book1/memory.md#sec-memory-attribute-a-bus-fault-before-start)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Attribute a bus fault before START”]{.content-visible when-format="pdf"};
 DMA DONE does not imply valid endpoint accesses.
 
 Read socket 1's destination while it remains selected:
@@ -493,7 +493,7 @@ alignment. A misaligned ordinary load or store enters its address-error
 exception before reaching the bus. A new mapped fault during an ordinary load
 enters a data-bus-error exception before committing the read value; a new fault
 during an ordinary store enters the same exception. A bus-level zero return is
-not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Scalar memory accesses”]{.content-visible when-format="pdf"}.
+not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Scalar memory accesses”]{.content-visible when-format="pdf"}.
 
 Installed I/O and cartridge MMIO have different mapped-access rules. The
 controller's SELECT and STATUS registers occupy installed-I/O word slots.
@@ -530,5 +530,5 @@ DMA uses these mapped-access rules, but continues its programmed reads, writes
 and count progression after a fault. Check for new bus faults as well as DONE
 before using the result. The first outstanding bus fault retains its code,
 address and access; later faults do not replace it. See
-[[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Bus-fault status and CPU exceptions”]{.content-visible when-format="pdf"}
+[[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Bus-fault status and CPU exceptions”]{.content-visible when-format="pdf"}
 for the fault registers and acknowledgement procedure.

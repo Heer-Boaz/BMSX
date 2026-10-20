@@ -8,11 +8,11 @@ book:
     - index.md
     - book1/console.md
     - book1/memory.md
+    - book1/irq.md
+    - book1/dma.md
     - book1/pcrtc.md
     - book1/gte.md
     - book1/gpu.md
-    - book1/irq.md
-    - book1/dma.md
     - book1/apu.md
     - book1/geo.md
     - book1/imgdec.md

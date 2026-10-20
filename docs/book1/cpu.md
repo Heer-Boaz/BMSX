@@ -7,7 +7,8 @@ byte-addressed storage. Function calls, closures and language error handling
 are part of the processor's execution architecture.
 
 This chapter defines instruction encoding, operand values, execution timing
-and CP0 control. [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"} defines the address map and program records;
+and CP0 control. [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} defines the address map;
+[Program images and startup](program-images.md#sec-program-images) defines program records;
 [[IRQ](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} defines interrupt-source service; [[SYSTEM](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} defines
 supervisor device contexts. Device commands and their result formats are
 defined in the corresponding Book I chapters.
@@ -38,7 +39,7 @@ lifetime.
 To control a device, prepare its addressed payload and operands, then write its
 command port. The receiving unit supplies a status or interrupt condition for
 its subsequent completion. Wait for that condition before reusing live input or
-output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Device-specific buffer lifetimes”]{.content-visible when-format="pdf"} describes
+output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Device-specific buffer lifetimes”]{.content-visible when-format="pdf"} describes
 these lifetimes across DMA, geometry, drawing and sound.
 
 ### From stored bytes to a frame value {#sec-cpu-from-stored-bytes-to-a-frame-value}
@@ -137,7 +138,7 @@ LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
 Language allocations have value identity rather than cartridge-visible byte
 addresses. Plan DATA/BSS and hardware buffers using the separate byte-storage
-reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
+reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
 Use addressed byte storage for exact device records and payloads.
 
 
@@ -280,7 +281,42 @@ extend the active range, while result placement and open varargs have the
 specific top rules in the call reference. Do not treat the instruction's
 maximum field value as available scratch storage in every function.
 
+### Execution addresses and instruction reads {#sec-memory-execution-addresses-and-instruction-reads}
+
+#### Function records and instruction addresses {#sec-memory-function-records-and-instruction-addresses}
+
+A function address points to a **function record**, not to the first
+instruction. The record's `CODE_ADDRESS` word supplies the instruction
+address. These two addresses are not interchangeable.
+
+The record and the instructions also use different byte orders:
+
+| Item | Representation |
+| --- | --- |
+| Function record's `CODE_ADDRESS` word | 32-bit little-endian |
+| Instruction word | Four bytes, big-endian |
+
+Reading a function record therefore does not use the byte order used to
+decode its instructions.
+
+#### Execution domains and cartridge sockets {#sec-memory-execution-domains-and-cartridge-sockets}
+
+BMSX has three execution domains:
+
+| Domain ID | Execution image |
+| --- | --- |
+| −1 | System |
+| 0 | Cartridge socket 0 |
+| 1 | Cartridge socket 1 |
+
+For cartridge execution, the active image binds instruction reads to its
+cartridge socket. Domain identifiers are not RAM addresses and do not
+allocate isolated RAM.
+
+
 ### Fetch and conditional skip {#sec-cpu-fetch-and-conditional-skip}
+
+#### Instruction alignment and read faults {#sec-memory-instruction-alignment-and-read-faults}
 
 Instruction PC is an unsigned 32-bit byte address and must be four-byte aligned.
 Sequential advancement, WIDE-body addresses, branch targets and conditional
@@ -323,6 +359,26 @@ Use device status and interrupt protocols for synchronization, rather than
 assuming that a device request interrupts a partially executed instruction.
 Instruction costs do not specify one universal request-to-handler delay.
 
+### Selected instruction base charges {#sec-memory-selected-instruction-base-charges}
+
+The CPU/system timebase is **33,868,800 cycles per second**. The following
+are selected instruction base charges, not a complete timing table:
+
+| Instruction | Base charge |
+| --- | --- |
+| Scalar `LOAD_MEM` and `STORE_MEM` | 2 cycles |
+| Scalar displaced forms `LOAD_MEM_D` and `STORE_MEM_D` | 2 cycles |
+| `ADD`, `SUB`, `MUL` | 1 cycle |
+| `WIDE` prefix | 0 cycles |
+
+A `WIDE` instruction uses its body's base charge; the prefix does not add
+another base charge. These charges do not specify the cost of a source
+expression, total program execution time, or sustained memory bandwidth.
+
+The accounting rules above define admission, retries and additional work; the
+[memory instruction reference](#sec-cpu-memory-instruction-reference) gives the complete
+transfer-instruction table. [[DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, “Direct memory access”, under “Transfer timing and sharing the bus”]{.content-visible when-format="pdf"} supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
+
 ### Additional work and waiting {#sec-cpu-additional-work-and-waiting}
 
 
@@ -363,8 +419,8 @@ The first PC comes from that startup function's record, not an assumed
 instruction address zero. Reset is not the same edge as `EXEC`: the latter
 replaces execution with a selected static function and sets the entry Status
 according to that function's execution domain. Neither statement implies that
-all RAM has been erased. The Memory chapter supplies the actual reset vector,
-BIOS cartridge selection and section-initialization route; SYSTEM defines the
+all RAM has been erased. The [program startup reference](program-images.md#sec-memory-reset-and-cartridge-startup)
+supplies the reset vector, BIOS cartridge selection and section-initialization route; SYSTEM defines the
 separate software reset request and device-context transitions.
 
 ### Hard halt and instruction exceptions {#sec-cpu-hard-halt-and-instruction-exceptions}
@@ -809,6 +865,8 @@ Unless a dedicated rule below says otherwise, writing a register raises `top` to
 
 ### Calling and returning values {#sec-cpu-calling-and-returning-values}
 
+Function calls use language value slots. A frame's register area follows its variable-argument area in the active thread's slot stack. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
+
 `CALL A,B,C` takes its callee from `R(A)`. Arguments occupy consecutive registers starting at `R(A+1)`, and returned values replace consecutive registers starting at `R(A)`.
 
 Only closure and builtin-function values are callable. A number is not callable merely because its numeric value is a function-record address. Calling any other value category raises `CALL_NON_FUNCTION`.
@@ -926,20 +984,9 @@ An absent or non-Table `__index` terminates the read with nil. Function-valued i
 Writes always modify the named target Table directly. They do not redirect through `__newindex` and do not invoke a function stored there. Deleting an own mapping may therefore expose an inherited mapping on a later ordinary read.
 
 
-#### BIOS interface {#sec-cpu-bios-interface}
-
-All four functions below require a Table as their first argument; otherwise they raise `INVALID_ARGUMENT` (10). Ordinary BLua source must supply every listed argument. Pass explicit nil to delete a mapping or clear a metatable.
-
-| Signature | Operation and result |
-| --- | --- |
-| `setmetatable(t, mt)` | Sets the metatable to Table `mt`; nil clears it. Returns `t`. Any other `mt` raises `INVALID_ARGUMENT` (10). |
-| `getmetatable(t)` | Returns the actual metatable Table, or nil. No protected-metatable substitution is performed. |
-| `rawget(t, key)` | Returns only the own mapping, or nil when missing. Ignores the metatable. |
-| `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
-
-
-For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` does not supply an alternative length contract.
-
+The [BIOS Table and metatable interface](bios-base.md#sec-bios-base-table-and-metatable-access)
+specifies `rawget`, `rawset`, `getmetatable` and `setmetatable`. Raw reads bypass
+the inherited lookup above; raw writes use the same maintained Table length.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 
@@ -1243,45 +1290,24 @@ Returning from an NMI-marked exception frame also restores the retained pre-NMI 
 `HALT` is available in user mode as well as supervisor mode. If an interrupt event is already retained, it consumes that event without creating a HALT condition. Otherwise it records the active thread and current frame depth; the HALT condition matches only while both still match. This is an IRQ-wait latch, not a program busy loop or a request for a fixed elapsed duration. Interrupt acceptance and wake scheduling follow the interrupt rules.
 
 
-### BLua control syntax {#sec-cpu-blua-control-syntax}
+### Exception entry and cartridge dispatch {#sec-cpu-exception-entry-and-cartridge-dispatch}
 
-`halt_until_irq` is the BLua statement for `HALT`, as used in the complete
-program above. CP0 access instead uses reserved intrinsic member syntax:
-
-| BLua form | Source access | CP0 field |
-|---|---|---:|
-| `cop0.bad_address` | Read | 8 |
-| `cop0.lua_fault_reason` | Read | 9 |
-| `cop0.status` | Read or assign | 12 |
-| `cop0.cause` | Read | 13 |
-| `cop0.epc` | Read or assign | 14 |
-| `cop0.exec` | Assign only | 15 |
-
-
-A read emits `MFC0`; an assignment emits `MTC0`. These forms do not grant
-supervisor mode. The source interface rejects writes to its read-only members
-and a read of `cop0.exec`, even though the raw privileged opcode behaviors
-include ignored writes and an EXEC read of zero. Do not confuse source access
-restrictions with a new hardware permission fault.
-
-The installed monitor uses `local saved_epc<const> = cop0.epc` and later
-`cop0.epc = saved_epc`. Those are supervisor-context patterns, not an instruction
-to read CP0 from ordinary user-mode entry. The BIOS boot handoff uses
-`cop0.exec = startup`, where `startup` is the discovered static-function record
-address described in **Memory and program storage**, not a generic language
-function value or an arbitrary instruction address.
+On an accepted maskable interrupt, Cause is `00000400H` and EPC is the
+interrupted instruction address. Entry shifts the low six Status bits left by
+two within that six-bit field, retaining higher Status bits. Current interrupt
+enable and current user mode are consequently clear. In word notation, the
+new Status is `(Status & ~0x3f) | ((Status << 2) & 0x3f)`.
 
 The CPU enters the function selected by the ROM's IRQ or exception address as
 an exception frame with no supplied arguments. Lua-trap entry additionally
 places the error value in R0; other exception entries leave R0 nil.
 
-The standard BLua IRQ entry reads FLAGS, calls `irq(flags)` when it is nonzero,
-and executes RFE. The standard exception entry calls `exception(error_value)`
-and executes RFE after the callback returns. Return normally from either
-callback so its entry routine can perform exception return. A custom entry
-routine must implement its own dispatch and issue RFE from its exception frame.
-For BIOS memory-fault service, see
-[[Memory — Installed response to a memory exception](memory.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Installed response to a memory exception”]{.content-visible when-format="pdf"}.
+The [BLua control interface](blua-programs.md#sec-cpu-blua-control-syntax)
+defines source access and the standard `irq` and `exception` callbacks. An
+ordinary callback returns to its entry routine, which issues RFE from the
+exception frame. A custom entry routine must provide its own dispatch and
+exception return. The [BIOS monitor](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)
+defines installed memory-fault service.
 
 ### Control instruction reference {#sec-cpu-control-instruction-reference}
 

@@ -21,11 +21,11 @@ book:
       chapters:
         - book1/console.md
         - book1/memory.md
+        - book1/irq.md
+        - book1/dma.md
         - book1/pcrtc.md
         - book1/gte.md
         - book1/gpu.md
-        - book1/irq.md
-        - book1/dma.md
         - book1/apu.md
         - book1/geo.md
         - book1/imgdec.md
@@ -35,9 +35,11 @@ book:
       chapters:
         - book1/cpu.md
         - book1/blua-programs.md
+        - book1/program-images.md
         - book1/coroutines.md
         - book1/bios-base.md
         - book1/bios-loader.md
+        - book1/bios-monitor.md
         - book1/bios-math.md
         - book1/bios-os.md
         - book1/bios-string.md

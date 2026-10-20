@@ -115,7 +115,7 @@ volumes, print references name the book, chapter and section; the combined HTML
 can link directly. Use Quarto's standard conditional spans when both are needed:
 
 ```markdown
-[[CPU programming model](../book1/cpu.md#sec-cpu-programming-model)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Programming model”]{.content-visible when-format="pdf"}
+[CPU programming model](../book1/cpu.md#sec-cpu-programming-model)
 ```
 
 Do not build a cross-PDF resolver or rewrite PDF objects afterward. The native

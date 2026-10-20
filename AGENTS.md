@@ -29,6 +29,11 @@
   appropriate to the task (system map, geometric explanation, operating procedure
   or independent reference entry), not a universal chapter template. Keep names
   and example values consistent across prose, figures, equations and code.
+- Keep the system overview at machine level: structure, resources, capabilities
+  and the relationships between operations. Put complete procedures and encodings
+  in their owning references. Book I owns physical memory mapping and bus access;
+  Book II owns program-image records, startup and BIOS diagnostic interfaces.
+  Summaries may explain a shared boundary without duplicating its full contract.
 - A cartridge is a physical card, not a compiled or linked program. Distinguish
   the card's ROM/RAM/devices from program formats and byte contents. Explain
   execution formats where the interface requires them, not through elementary
