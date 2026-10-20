@@ -685,6 +685,32 @@ test('scheduled bounded execution resumes a backend fence with the accepted host
 	assert.equal(scheduler.lastTickBudgetGranted, grantedBudget);
 });
 
+test('backend completion at VBlank clears suspension without executing another bounded tick', () => {
+	const { runtime: baseline } = createTickRuntime();
+	assert.equal(baseline.frameScheduler.runToNextLogicalTick(), true);
+	const edge = baseline.machine.scheduler.nowCycles;
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runScheduledToNextLogicalTick((edge - 1) / runtime.timing.cpuCyclesPerMillisecond), false);
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0x00010001);
+	assert.equal(gpu.captureState().pendingCommandCycles, 1);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1 / runtime.timing.cpuCyclesPerMillisecond), true);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), true);
+	scheduler.synchronizeBackendService();
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1000 / runtime.timing.cpuCyclesPerMillisecond), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, edge, 'submitted backend work remains suspended');
+	readback.completeReadback(readback.token);
+	scheduler.synchronizeBackendService();
+	assert.equal(runtime.machine.scheduler.nowCycles, edge, 'completion acknowledgment executes nothing');
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(1000 / runtime.timing.cpuCyclesPerMillisecond), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, edge + 1000, 'a new grant is independent of the completed fence');
+});
+
 test('scheduled bounded execution produces the same machine second at common host rates', () => {
 	const rates = [60, 120, 144] as const;
 	let expectedTickSequence = -1;

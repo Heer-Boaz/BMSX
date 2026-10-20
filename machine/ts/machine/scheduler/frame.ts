@@ -97,10 +97,9 @@ export class FrameSchedulerState {
 		return true;
 	}
 
-	private endScheduledExecution(): void {
-		if (this.runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-			this.backendServiceSuspended = true;
-		}
+	/** Reconcile backend suspension without executing or admitting another tick. */
+	public synchronizeBackendService(): void {
+		this.backendServiceSuspended = this.runtime.machine.gxGpu.backendServiceBlocksMachine();
 	}
 
 	private beginScheduledFrame(budget: number, carry: number): void {
@@ -191,7 +190,7 @@ export class FrameSchedulerState {
 				break;
 			}
 		}
-		this.endScheduledExecution();
+		this.synchronizeBackendService();
 	}
 
 	public runToNextLogicalTick(cycleGrant: number = this.runtime.timing.cycleBudgetPerFrame): boolean {
@@ -228,7 +227,7 @@ export class FrameSchedulerState {
 				break;
 			}
 		}
-		this.endScheduledExecution();
+		this.synchronizeBackendService();
 		if (this.lastTickSequence !== targetSequence) {
 			return false;
 		}
@@ -249,7 +248,7 @@ export class FrameSchedulerState {
 				break;
 			}
 		}
-		this.endScheduledExecution();
+		this.synchronizeBackendService();
 		return this.lastTickSequence === targetSequence;
 	}
 
@@ -261,7 +260,7 @@ export class FrameSchedulerState {
 		const result = this.canRunScheduledUpdate()
 			? this.runtime.frameLoop.tickInstruction()
 			: InstructionStepResult.Blocked;
-		this.endScheduledExecution();
+		this.synchronizeBackendService();
 		return result;
 	}
 

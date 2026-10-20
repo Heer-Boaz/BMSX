@@ -48,6 +48,8 @@ public:
 	bool runToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	bool runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs);
 	InstructionStepResult stepInstruction(Runtime& runtime, f64 hostDeltaMs);
+	// Reconcile backend suspension without executing or admitting another tick.
+	void synchronizeBackendService(Runtime& runtime);
 
 	i64 lastTickSequence = 0;
 	i64 lastTickBudgetGranted = 0;
@@ -60,7 +62,6 @@ public:
 
 private:
 	bool beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs);
-	void endScheduledExecution(Runtime& runtime);
 	void beginScheduledFrame(Runtime& runtime, i64 budget, i64 carry);
 	void accumulateHostTime(f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;

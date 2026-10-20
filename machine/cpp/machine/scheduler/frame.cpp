@@ -48,10 +48,8 @@ bool FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDelt
 	return true;
 }
 
-void FrameSchedulerState::endScheduledExecution(Runtime& runtime) {
-	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
-		m_backendServiceSuspended = true;
-	}
+void FrameSchedulerState::synchronizeBackendService(Runtime& runtime) {
+	m_backendServiceSuspended = runtime.machine.gxGpu.backendServiceBlocksMachine();
 }
 
 void FrameSchedulerState::clearQueuedTime() {
@@ -190,7 +188,7 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 			break;
 		}
 	}
-	endScheduledExecution(runtime);
+	synchronizeBackendService(runtime);
 }
 
 bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
@@ -230,7 +228,7 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant)
 			break;
 		}
 	}
-	endScheduledExecution(runtime);
+	synchronizeBackendService(runtime);
 	if (lastTickSequence != targetSequence) {
 		return false;
 	}
@@ -250,7 +248,7 @@ bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 ho
 			break;
 		}
 	}
-	endScheduledExecution(runtime);
+	synchronizeBackendService(runtime);
 	return lastTickSequence == targetSequence;
 }
 
@@ -262,7 +260,7 @@ InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64
 	const InstructionStepResult result = canRunScheduledUpdate(runtime)
 		? runtime.frameLoop.tickInstruction(runtime)
 		: InstructionStepResult::Blocked;
-	endScheduledExecution(runtime);
+	synchronizeBackendService(runtime);
 	return result;
 }
 

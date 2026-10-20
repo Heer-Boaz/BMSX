@@ -25,6 +25,7 @@ function serviceNextGxBackendRequest(
 	} else {
 		presenter.backend.executeGxGpuReadback(gxGpu);
 	}
+	runtime.frameScheduler.synchronizeBackendService();
 }
 
 export function executeHostUpdate(
@@ -82,23 +83,6 @@ export function executeHostLogicalTick(
 		screen,
 		previousTickSequence,
 	);
-	return completed;
-}
-
-/** Advances at most one host-time-backed logical tick and services its backend fences. */
-export function advanceHostScheduledLogicalTick(
-	runtime: Runtime,
-	presenter: VideoPresenter,
-	hostDeltaMs: number,
-): boolean {
-	let completed = runtime.frameScheduler.runScheduledToNextLogicalTick(hostDeltaMs);
-	const gxGpu = runtime.machine.gxGpu;
-	while (gxGpu.backendServicePending()) {
-		serviceNextGxBackendRequest(runtime, presenter);
-		if (!completed) {
-			completed = runtime.frameScheduler.runScheduledToNextLogicalTick(0);
-		}
-	}
 	return completed;
 }
 

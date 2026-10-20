@@ -147,6 +147,7 @@ void HostRewind::service(bool collect) {
 	while (gpu.backendServicePending()) {
 		if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 		else backend.executeGxGpuReadback(gpu);
+		runtime.frameScheduler.synchronizeBackendService(runtime);
 	}
 	if (gpu.backendServiceBlocksMachine()) return;
 	switch (request) {
@@ -203,6 +204,7 @@ void HostRewind::service(bool collect) {
 			while (gpu.backendServicePending()) {
 				if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 				else backend.executeGxGpuReadback(gpu);
+				runtime.frameScheduler.synchronizeBackendService(runtime);
 			}
 			if (stepTargetTick != 0 && runtime.frameScheduler.lastTickSequence == stepTargetTick) {
 				history.cancelSeek(); history.targetCycles = requestedCycles;
@@ -248,6 +250,7 @@ void HostRewind::runPlayback(f64 hostDeltaMs) {
 	while (gpu.backendServicePending()) {
 		if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 		else backend.executeGxGpuReadback(gpu);
+		runtime.frameScheduler.synchronizeBackendService(runtime);
 		history.advancePlayback(0);
 	}
 	presentation.syncAfterRuntimeUpdate(runtime, previousTick);

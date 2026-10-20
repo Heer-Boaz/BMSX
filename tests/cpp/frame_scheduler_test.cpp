@@ -290,6 +290,33 @@ void testScheduledBoundedTickResumesBackendFenceWithAcceptedHostGrant() {
 	);
 }
 
+void testBackendCompletionAtVblankDoesNotExecuteAnotherTick() {
+	TickRuntimeFixture baseline;
+	require(baseline.runtime.frameScheduler.runToNextLogicalTick(baseline.runtime), "baseline reaches VBlank");
+	const auto edge = baseline.runtime.machine.scheduler.nowCycles();
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	require(!scheduler.runScheduledToNextLogicalTick(runtime, (edge - 1) / runtime.timing.cpuCyclesPerMillisecond), "partial grant stops before VBlank");
+	auto& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(0x00010001u);
+	require(gpu.captureState().pendingCommandCycles == 1, "readback has a one-cycle command deadline");
+	require(scheduler.runScheduledToNextLogicalTick(runtime, 1.0 / runtime.timing.cpuCyclesPerMillisecond), "readback and VBlank share a deadline");
+	auto& readback = gpu.readDeviceOutput().readbackPort;
+	require(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), "backend claims the request");
+	scheduler.synchronizeBackendService(runtime);
+	require(!scheduler.runScheduledToNextLogicalTick(runtime, 1000.0 / runtime.timing.cpuCyclesPerMillisecond), "submitted work remains suspended");
+	require(runtime.machine.scheduler.nowCycles() == edge, "submitted backend work consumes no machine time");
+	readback.completeReadback(readback.token());
+	scheduler.synchronizeBackendService(runtime);
+	require(runtime.machine.scheduler.nowCycles() == edge, "completion acknowledgment executes nothing");
+	require(scheduler.lastTickSequence == 1, "completion acknowledgment cannot cross another tick");
+	require(!scheduler.runScheduledToNextLogicalTick(runtime, 1000.0 / runtime.timing.cpuCyclesPerMillisecond), "next grant stops before another tick");
+	require(runtime.machine.scheduler.nowCycles() == edge + 1000, "next grant is independent of the completed fence");
+}
+
 void testScheduledBoundedTickMatchesCommonHostRates() {
 	constexpr std::array<int, 3> HOST_RATES = {60, 120, 144};
 	bmsx::i64 expectedTickSequence = -1;
@@ -904,6 +931,7 @@ int main() {
 	testScheduledBoundedTickRetainsPartialMachineProgress();
 	testScheduledBoundedTickExposesEveryCatchUpBoundary();
 	testScheduledBoundedTickResumesBackendFenceWithAcceptedHostGrant();
+	testBackendCompletionAtVblankDoesNotExecuteAnotherTick();
 	testScheduledBoundedTickMatchesCommonHostRates();
 	testBoundedLogicalTickExtendsExhaustedRetainedGrant();
 	testBoundedLogicalTickDoesNotReportResetAsTargetEdge();

@@ -191,6 +191,7 @@ export class HostRewind {
 		while (gpu.backendServicePending()) {
 			if (gpu.backendCommandDrainPending()) this.presenter.backend.executeGxGpuCommandDrain(gpu);
 			else this.presenter.backend.executeGxGpuReadback(gpu);
+			runtime.frameScheduler.synchronizeBackendService();
 		}
 		if (gpu.backendServiceBlocksMachine()) return;
 		switch (this.request) {
@@ -251,6 +252,7 @@ export class HostRewind {
 				while (gpu.backendServicePending()) {
 					if (gpu.backendCommandDrainPending()) this.presenter.backend.executeGxGpuCommandDrain(gpu);
 					else this.presenter.backend.executeGxGpuReadback(gpu);
+					runtime.frameScheduler.synchronizeBackendService();
 				}
 				if (this.stepTargetTick !== 0 && runtime.frameScheduler.lastTickSequence === this.stepTargetTick) {
 					history.cancelSeek();
@@ -299,6 +301,7 @@ export class HostRewind {
 		while (gpu.backendServicePending()) {
 			if (gpu.backendCommandDrainPending()) this.presenter.backend.executeGxGpuCommandDrain(gpu);
 			else this.presenter.backend.executeGxGpuReadback(gpu);
+			runtime.frameScheduler.synchronizeBackendService();
 			history.advancePlayback(0);
 		}
 		this.presentation.syncAfterRuntimeUpdate(runtime, previousTick);

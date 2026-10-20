@@ -56,6 +56,7 @@ LibretroFrameResult runLibretroFrame(
 			} else {
 				presenter.backend().executeGxGpuReadback(gxGpu);
 			}
+			runtime.frameScheduler.synchronizeBackendService(runtime);
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);

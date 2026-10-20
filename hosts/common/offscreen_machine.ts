@@ -50,16 +50,23 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 
 	public serviceBackend(): void {
 		const gpu = this.runtime.machine.gxGpu;
+		if (!gpu.backendServicePending()) return;
 		if (gpu.backendCommandDrainPending()) this.backend.executeGxGpuCommandDrain(gpu);
-		else if (gpu.backendServicePending()) this.backend.executeGxGpuReadback(gpu);
+		else this.backend.executeGxGpuReadback(gpu);
+		this.runtime.frameScheduler.synchronizeBackendService();
 	}
 
 	public advanceGame(cycles: number): boolean {
 		const runtime = this.runtime;
 		this.serviceBackend();
 		const before = runtime.frameScheduler.lastTickSequence;
-		const completed = runtime.frameScheduler.runScheduledToNextLogicalTick(cycles / runtime.timing.cpuCyclesPerMillisecond);
-		this.serviceBackend();
+		let completed = runtime.frameScheduler.runScheduledToNextLogicalTick(cycles / runtime.timing.cpuCyclesPerMillisecond);
+		while (runtime.machine.gxGpu.backendServicePending()) {
+			this.serviceBackend();
+			if (!completed) {
+				completed = runtime.frameScheduler.runScheduledToNextLogicalTick(0);
+			}
+		}
 		this.presentation.syncAfterRuntimeUpdate(runtime, before);
 		runtime.machine.audioController.synchronizeOutput().clear();
 		return completed;
