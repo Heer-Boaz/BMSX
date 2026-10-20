@@ -1,5 +1,6 @@
 import type { GamepadDevice, InputEventSink } from '../common/input/contracts';
 import type { HostClock } from '../common/clock';
+import type { BrowserVibration } from './vibration';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import { contactIntersectsCircle, contactIntersectsRoundedCircularArc, pointDistanceToRoundedCircularArc,
@@ -92,9 +93,9 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 
 	public constructor(
 		private readonly clock: HostClock,
-		private readonly vibrate: ((durationMs: number) => void) | null = null,
+		private readonly vibration: BrowserVibration | null = null,
 	) {
-		this.supportsVibration = vibrate !== null;
+		this.supportsVibration = vibration !== null;
 	}
 
 	public get buttons(): number { return this.activeButtons; }
@@ -152,13 +153,14 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	}
 
 	public setVibration(durationMs: number, intensity: number): void {
-		this.vibrate?.(durationMs * intensity);
+		this.vibration?.setVibration(durationMs, intensity);
 	}
 
 	public subscribe(sink: InputEventSink): () => void {
 		this.sink = sink;
 		return () => {
 			this.cancelContacts();
+			this.vibration?.setVibration(0, 0);
 			this.sink = null;
 		};
 	}

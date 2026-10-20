@@ -6,7 +6,7 @@ import {
 	type InputEventSink,
 	type InputSource,
 } from '../common/input/contracts';
-import { type HostClock } from '../common/clock';
+import { type HostClock, type TimerHandle } from '../common/clock';
 import { GAMEPAD_BUTTON_IDS } from '../common/input/gamepad_buttons';
 import type { BrowserOnscreenGamepad } from './onscreen_gamepad';
 import type { BrowserOnscreenKeyboard } from './onscreen_keyboard';
@@ -20,6 +20,7 @@ import { sonyGamepadProductId } from './sony_gamepad_hid';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
+const MAX_GAMEPAD_EFFECT_MS = 5000;
 // Pointer Events report 1x1 when contact geometry is unavailable. This authored
 // 28px touch envelope bridges adjacent gamepad buttons without enlarging mouse/pen input.
 const ESTIMATED_TOUCH_HALF_SIZE = 14;
@@ -46,15 +47,29 @@ class GamepadDevice implements HostGamepadDevice {
 		weakMagnitude: 0,
 	};
 	readonly vibrationInitialization: GamepadHaptics | null;
-	private readonly browserVibration = navigator.vibrate != null;
 	private vibrationActuator: GamepadHapticActuator;
+	private vibrationDeadline = 0;
+	private vibrationTimer: TimerHandle = null;
+	private readonly continueVibration = (now: number): void => {
+		this.vibrationTimer = null;
+		const remaining = this.vibrationDeadline - now;
+		if (remaining <= 0) {
+			void this.vibrationActuator.reset();
+			return;
+		}
+		this.vibrationEffect.duration = Math.min(remaining, MAX_GAMEPAD_EFFECT_MS);
+		void this.vibrationActuator.playEffect('dual-rumble', this.vibrationEffect);
+		if (remaining > MAX_GAMEPAD_EFFECT_MS) {
+			this.vibrationTimer = this.clock.scheduleOnce(MAX_GAMEPAD_EFFECT_MS, this.continueVibration);
+		}
+	};
 	private nextPressId = 1;
 	private leftAxisX = 0;
 	private leftAxisY = 0;
 	private rightAxisX = 0;
 	private rightAxisY = 0;
 
-	constructor(source: Gamepad, clock: HostClock) {
+	constructor(source: Gamepad, private readonly clock: HostClock) {
 		this.gamepadIndex = source.index;
 		this.id = 'gamepad:' + this.gamepadIndex;
 		this.label = `GAMEPAD ${this.gamepadIndex + 1}`;
@@ -78,35 +93,51 @@ class GamepadDevice implements HostGamepadDevice {
 
 	get supportsVibration(): boolean {
 		return this.vibrationActuator != null
-			|| (this.vibrationInitialization != null && this.vibrationInitialization.connected)
-			|| this.browserVibration;
+			|| (this.vibrationInitialization != null && this.vibrationInitialization.connected);
 	}
 
 	setVibration(durationMs: number, intensity: number): void {
-		intensity = Math.min(intensity, 1);
+		this.vibrationTimer?.cancel();
+		this.vibrationTimer = null;
 		const actuator = this.vibrationActuator;
 		if (actuator) {
-			this.vibrationEffect.duration = durationMs;
+			if (durationMs === 0 || intensity === 0) {
+				void actuator.reset();
+				return;
+			}
+			intensity = Math.min(intensity, 1);
 			this.vibrationEffect.strongMagnitude = intensity;
 			this.vibrationEffect.weakMagnitude = intensity;
-			void actuator.playEffect('dual-rumble', this.vibrationEffect);
+			const now = this.clock.now();
+			this.vibrationDeadline = now + durationMs;
+			this.continueVibration(now);
 			return;
 		}
 		if (this.vibrationInitialization != null && this.vibrationInitialization.connected) {
 			this.vibrationInitialization.setVibration(durationMs, intensity);
 			return;
 		}
-		navigator.vibrate(durationMs * intensity);
 	}
 
 	disconnect(): void {
+		this.vibrationTimer?.cancel();
+		this.vibrationTimer = null;
+		if (this.vibrationActuator) void this.vibrationActuator.reset();
 		if (this.vibrationInitialization != null) {
 			this.vibrationInitialization.disconnect();
 		}
 	}
 
 	poll(pad: Gamepad, time: number, sink: InputEventSink): void {
-		this.vibrationActuator = pad.vibrationActuator;
+		if (this.vibrationActuator !== pad.vibrationActuator) {
+			this.vibrationTimer?.cancel();
+			this.vibrationTimer = null;
+			if (this.vibrationActuator) void this.vibrationActuator.reset();
+			if (pad.vibrationActuator && this.vibrationInitialization?.connected) {
+				this.vibrationInitialization.setVibration(0, 0);
+			}
+			this.vibrationActuator = pad.vibrationActuator;
+		}
 		const timestamp = pad.timestamp;
 		if (timestamp === this.lastTimestamp) return;
 		this.lastTimestamp = timestamp;

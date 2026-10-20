@@ -3,6 +3,7 @@ import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Input } from '../common/input/manager';
+import { BrowserVibration } from './vibration';
 import { HOST_SUPERVISOR_KEY_CODE } from '../common/input/shortcuts';
 import { WorkerStreamingAudioSink } from './worker_audio';
 import { BrowserInputHub } from './input';
@@ -72,7 +73,7 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	const clock = new BrowserHostClock();
 	const frames = new BrowserFrameLoop();
 	const onscreenGamepad = enableOnscreenGamepad
-		? new BrowserOnscreenGamepad(clock, navigator.vibrate ? navigator.vibrate.bind(navigator) : null)
+		? new BrowserOnscreenGamepad(clock, navigator.vibrate ? new BrowserVibration(clock, navigator) : null)
 		: null;
 	const controlView = onscreenGamepad
 		? new BrowserOnscreenGamepadView(gamescreen.ownerDocument, window, onscreenGamepad)

@@ -12,11 +12,21 @@ export class BrowserHostClock implements HostClock {
 
 	scheduleOnce(delayMs: number, cb: (t: number) => void) {
 		let active = true;
-		const id = window.setTimeout(() => {
+		const deadline = this.now() + delayMs;
+		const tick = () => {
 			if (!active) return;
+			const now = this.now();
+			const remaining = deadline - now;
+			if (remaining > 0) {
+				id = window.setTimeout(tick, Math.min(remaining, 0x7fffffff));
+				return;
+			}
 			active = false;
-			cb(this.now());
-		}, delayMs);
+			cb(now);
+		};
+		// Browser timers use signed 32-bit delays; the monotonic deadline retains
+		// the full requested delay across timer-sized waits.
+		let id = window.setTimeout(tick, Math.min(delayMs, 0x7fffffff));
 		return {
 			cancel: () => {
 				if (!active) return;

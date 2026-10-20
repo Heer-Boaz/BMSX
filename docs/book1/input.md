@@ -311,6 +311,10 @@ physical response depends on the attached pad.
 millisecond count. The complete word is retained unchanged throughout the effect;
 readback gives the programmed duration, not remaining time.
 
+APPLY replaces the preceding effect request for the selected pad. A zero
+duration or zero intensity requests an immediate stop. Duration specifies time,
+independently of the requested intensity.
+
 For example, the following ordered writes request pad 0 at half intensity for 100 milliseconds. The last write is the command; the preceding writes only prepare its operands.
 
 | Order | Register | Written word |

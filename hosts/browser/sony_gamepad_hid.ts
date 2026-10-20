@@ -86,32 +86,29 @@ export class SonyGamepadHID {
 
 	public setVibration(durationMs: number, intensity: number): void {
 		this.cancelStop();
-		const strong = intensity > 0.5 ? (intensity * 255) | 0 : 0;
-		const weak = intensity <= 0.5 ? (intensity * 255) | 0 : 0;
+		const strength = durationMs === 0 ? 0 : (Math.min(intensity, 1) * 255) | 0;
 		switch (this.kind) {
 			case 'ds5_usb':
-				this.reportPayload[2] = weak;
-				this.reportPayload[3] = strong;
+				this.reportPayload[2] = strength;
+				this.reportPayload[3] = strength;
 				break;
 			case 'ds5_bt':
-				this.reportPayload[3] = weak;
-				this.reportPayload[4] = strong;
+				this.reportPayload[3] = strength;
+				this.reportPayload[4] = strength;
 				this.writeBluetoothCrc();
 				break;
 			case 'ds4_usb':
-				this.reportPayload[3] = weak;
-				this.reportPayload[4] = strong;
-				durationMs *= 2;
+				this.reportPayload[3] = strength;
+				this.reportPayload[4] = strength;
 				break;
 			case 'ds4_bt':
-				this.reportPayload[5] = weak;
-				this.reportPayload[6] = strong;
+				this.reportPayload[5] = strength;
+				this.reportPayload[6] = strength;
 				this.writeBluetoothCrc();
-				durationMs *= 2;
 				break;
 		}
 		void this.device.sendReport(this.reportId, this.reportPayload);
-		if (durationMs > 0) {
+		if (strength !== 0) {
 			this.scheduleStop(durationMs);
 		}
 	}

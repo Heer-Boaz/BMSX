@@ -18,6 +18,17 @@ std::array<i16, 11> mouse{};
 std::array<u16, INPUT_CONTROLLER_PAD_COUNT> joypads{};
 size_t pressedQueries = 0;
 size_t coordinateQueries = 0;
+struct RumbleSample {
+	unsigned port;
+	retro_rumble_effect motor;
+	u16 strength;
+};
+std::vector<RumbleSample> rumbleSamples;
+
+bool rumble(unsigned port, retro_rumble_effect motor, u16 strength) {
+	rumbleSamples.push_back({port, motor, strength});
+	return true;
+}
 
 void poll() {}
 bool RETRO_CALLCONV supervisor() { return false; }
@@ -634,6 +645,54 @@ void testMouseButtonsDoNotRequirePriorMotion() {
 	fixture.tick();
 	require(!fixture.input.mouseButtonPressed(INP_POINTER_BUTTON_PRIMARY), "physical mouse release clears its own button");
 }
+
+void testVibrationReplacesStopsAndRetainsUnsignedDuration() {
+	InputFixture fixture;
+	fixture.input.installRumbleInterface({rumble});
+	rumbleSamples.clear();
+	fixture.tickAt(0);
+	fixture.input.applyInputControllerVibrationEffect(2, 100, 0.25);
+	require(rumbleSamples.size() == 2 && rumbleSamples[0].port == 2
+		&& rumbleSamples[0].motor == RETRO_RUMBLE_STRONG
+		&& rumbleSamples[1].motor == RETRO_RUMBLE_WEAK
+		&& rumbleSamples[0].strength == 16383 && rumbleSamples[1].strength == 16383,
+		"one intensity programs both motors of the selected physical pad");
+	fixture.tickAt(40);
+	fixture.input.applyInputControllerVibrationEffect(2, 200, static_cast<f64>(0xffffffffu) / 65536.0);
+	require(rumbleSamples[2].strength == 65535 && rumbleSamples[3].strength == 65535,
+		"the physical adapter saturates full unsigned U16.16 intensity");
+	fixture.tickAt(100);
+	fixture.tickAt(239);
+	require(rumbleSamples.size() == 4, "the replaced effect's deadline cannot stop its replacement");
+	fixture.tickAt(240);
+	require(rumbleSamples.size() == 6 && rumbleSamples[4].strength == 0 && rumbleSamples[5].strength == 0,
+		"replacement expires after its own exact unscaled duration");
+
+	fixture.input.applyInputControllerVibrationEffect(2, 100, 1);
+	fixture.input.applyInputControllerVibrationEffect(2, 0, 1);
+	require(rumbleSamples[8].strength == 0 && rumbleSamples[9].strength == 0,
+		"zero duration immediately stops both motors even with nonzero intensity");
+	fixture.tickAt(1000);
+	require(rumbleSamples.size() == 10, "zero duration cancels the previous deadline");
+	fixture.input.applyInputControllerVibrationEffect(2, 100, 1);
+	fixture.input.applyInputControllerVibrationEffect(2, 500, 0);
+	fixture.tickAt(2000);
+	require(rumbleSamples.size() == 14 && rumbleSamples[12].strength == 0 && rumbleSamples[13].strength == 0,
+		"zero intensity stops and cancels rather than leaving an effect deadline");
+
+	fixture.input.applyInputControllerVibrationEffect(2, 4294967295.0, 1);
+	fixture.tickAt(2000.0 + 4294967294.0);
+	require(rumbleSamples.size() == 16, "full unsigned duration does not wrap or end early");
+	fixture.tickAt(2000.0 + 4294967295.0);
+	require(rumbleSamples.size() == 18 && rumbleSamples[16].strength == 0 && rumbleSamples[17].strength == 0,
+		"full unsigned duration expires at the same requested deadline");
+	fixture.input.applyInputControllerVibrationEffect(2, 100, 1);
+	fixture.input.reset();
+	const size_t afterReset = rumbleSamples.size();
+	fixture.tickAt(2000.0 + 4294968295.0);
+	require(rumbleSamples.size() == afterReset && rumbleSamples[afterReset - 1].strength == 0,
+		"host reset stops active motors and cancels later deadline writes");
+}
 } // namespace
 
 int main() {
@@ -655,5 +714,6 @@ int main() {
 	testContactCountIsNotArtificiallyCapped();
 	testMouseAndAbsoluteSnapshotsStayIndependent();
 	testMouseButtonsDoNotRequirePriorMotion();
+	testVibrationReplacesStopsAndRetainsUnsignedDuration();
 	std::cout << "libretro input tests passed\n";
 }
