@@ -19,6 +19,13 @@ instruction reference. Program images and startup have their own chapter,
 separate from physical memory mapping. BIOS diagnostics describes console
 output, source and frame inspection, and the optional records that support them.
 
+For BLua source programming, begin with the language-extensions chapter and
+use the CPU chapter for the underlying operations and timing. For instruction
+encoding or independent code generation, begin with the CPU and program-image
+references. The startup chapter explains the state established before
+application entry; the BIOS chapters specify callable services available to
+that application.
+
 **Book III — Cartridge and Expansion Reference** describes cartridge sockets
 and mapped card devices, including their memory and interrupt interfaces.
 

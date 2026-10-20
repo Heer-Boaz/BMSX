@@ -1,9 +1,9 @@
 # Program images and startup {#sec-program-images}
 
-Program execution depends on both stored bytes and their addresses. A ROM
-header identifies the program image and entry functions; the image describes
-its instructions, constants, names and static storage. A function address
-selects a function record, whose code address identifies the instructions.
+The ROM boot header identifies the console's entry functions and the BLua32
+program header. The program header locates the constants, names and sections
+used by the program. Each function has a separate record describing its code,
+parameters, frame capacity and captured variables.
 
 Startup establishes writable static contents before calling the application.
 An ordinary function call, an EXEC transfer and a fresh startup therefore have
@@ -11,6 +11,40 @@ different effects. This chapter follows those effects from reset to cartridge
 entry, then specifies the ROM records and BIOS call-target lookup.
 [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} in Book I supplies the physical
 address map and the storage reservations that every placement must respect.
+
+## Addresses used to enter a program {#sec-program-images-entry-addresses}
+
+The boot header connects three kinds of information. The **program header**
+describes the image shared by its functions. A **function record** describes
+one callable function. That record's **code address** selects the instruction
+bytes at which the function begins. Selecting the image establishes its
+constant and name tables; entering a function establishes a frame and begins
+fetching its instructions.
+
+For example, consider these address fields in a cartridge's ROM. The chosen
+record and code locations are illustrative; the field offsets are those
+specified in the reference below.
+
+| Read or calculation | Example value | Meaning |
+|---|---|---|
+| ROM base | `10000000H` | Start of the selected socket's ROM window |
+| Word at ROM base + `20H` | `00000100H` | Program-header offset relative to ROM base |
+| ROM base + program-header offset | `10000100H` | Absolute program-header address |
+| Word at ROM base + `28H` | `10001230H` | Absolute startup-function-record address |
+| Word at function record + `00H` | `10002000H` | Absolute initial instruction address |
+| Word at program header + `18H` | `10000300H` | Absolute constant-table address |
+
+For a startup record with STATIC set, EXEC receives `10001230H`, reads the
+record and starts its code at `10002000H`. It does not add the program-header
+address to either value. The constant table belongs to the selected image and
+is located independently of the function's code. Its entries are selected by
+constant indices in the instructions.
+
+The same distinction applies to ordinary calls. CLOSURE constructs a callable
+value from a function-record address, and CALL invokes that value with
+arguments. EXEC instead replaces the active call chain. The
+[CPU linkage examples](cpu.md#sec-cpu-linkage-operands-and-encoding-examples)
+use the same `10001230H` record address to show the instruction encoding.
 
 ## ROM contents, RAM sections, and startup {#sec-memory-rom-contents-ram-sections-and-startup}
 
@@ -70,12 +104,11 @@ application code. The standard BLua startup sequence is:
 | 1 | Copy the complete DATA section from its ROM load address to its RAM run address. |
 | 2 | Write zero throughout the BSS section in RAM. |
 | 3 | Run static module initialization. |
-| 4 | Call the program's entry function. |
+| 4 | Call the program's entry function with no arguments. |
 
 The DATA copy and BSS clear use four-byte word accesses over their complete
 padded byte counts. System startup initializes the firmware sections; cartridge
-startup initializes the cartridge program's sections. System startup also
-removes the temporary boot-primitive bindings after module initialization.
+startup initializes the cartridge program's sections.
 
 EXEC starts the addressed function. DATA initialization and BSS clearing occur
 only when the instructions performing them execute. Therefore the ROM startup
@@ -121,19 +154,20 @@ delivery, and writes the selected startup-function address to CP0 EXEC.
 
 A startup function address identifies a **function record**, not the address of its first instruction. EXEC reads the target record and requires its STATIC flag. An unreadable record or one without that flag causes a hard halt.
 
-Successful EXEC clears the active call stack, selects the target executable image and execution domain, establishes its entry status, clears CPU halt, wait, blocked-write and yield state, and pushes the selected static function with no arguments. A successful `EXEC` of a cartridge image sets CPU status to IE and user mode (bits 0 and 1) before starting the selected static function—not at a later entry-function call. The BIOS's zero IRQ-mask write must not be confused with clearing the CPU interrupt-enable bit.
+Successful EXEC replaces the active call chain, selects the target image and
+execution domain, and starts the selected static function with no arguments.
+For a cartridge image, CPU Status has interrupt enable and user mode set
+(bits 0 and 1) from that function's first instruction. This privilege change
+occurs before the later application-entry call. The BIOS's zero IRQ-mask write
+masks source delivery without clearing CPU interrupt enable. The full
+[EXEC reference](cpu.md#sec-cpu-exec) specifies execution-state changes.
 
-The standard cartridge startup routine then performs:
-
-1. Copy the cartridge image's DATA initializer bytes from their load address to their RAM run address.
-2. Zero the cartridge image's BSS.
-3. Run static module initialization.
-4. Call the cartridge entry function with no arguments.
-
-EXEC enters exactly the selected static function. Choose the startup routine
-when section initialization is required; entering another function skips that
-sequence. Re-entering startup repeats the DATA copy and BSS clear. Initialize
-all cartridge-owned storage whose contents the program requires.
+The selected cartridge startup routine performs the DATA copy, BSS clear,
+module initialization and entry call described under
+[When initialization occurs](#sec-memory-when-initialization-occurs). Those
+instructions establish the cartridge's writable sections. Selecting another
+static function enters that function directly, leaving DATA and BSS as they
+stand; selecting startup again repeats initialization.
 
 ### Fresh system boot and execution transfer {#sec-blua-programs-fresh-system-boot-and-execution-transfer}
 
@@ -153,7 +187,13 @@ applies to reset, while its inherited boot state follows the rules here.
 readouts, and [CPU control](cpu.md#sec-cpu-cp0-and-execution-control) describes entry
 privilege and interrupt enable.
 
-The BIOS writes zero to the central interrupt mask before handoff. This masks delivery; it does not clear pending flags or clear CPU interrupt enable, which is set at cartridge entry. Enabling a pending source can make it deliverable without another event. Choose one dispatch owner, install the first source's handler and prepare that source before enabling its delivery. Acknowledge local source state and central pending state as required by the unit; they are separate responsibilities. See [[Interrupt controller — Choose one cartridge dispatch route](irq.md#sec-irq-install-the-cartridge-handler)]{.content-visible when-format="html"}[Book I, “Interrupt controller”, under “Install the cartridge handler”]{.content-visible when-format="pdf"} and [[Acknowledge the source and the controller separately](irq.md#sec-irq-acknowledge-the-source-and-the-controller-separately)]{.content-visible when-format="html"}[Book I, “Interrupt controller”, under “Acknowledge the source and the controller separately”]{.content-visible when-format="pdf"}. The GPU marker example's [[Starting conditions](irq.md#sec-irq-starting-conditions)]{.content-visible when-format="html"}[Book I, “Interrupt controller”, under “Starting conditions”]{.content-visible when-format="pdf"} show this ordering for its chosen configuration, not a universal device-reset recipe.
+The BIOS masks central IRQ delivery before handoff. Pending flags remain, and
+CPU interrupt enable is set at cartridge entry. Before enabling a source,
+install its handler and prepare the device: a previously pending source can
+become deliverable immediately. Service the device's local condition and the
+controller's pending bit separately. The complete dispatch and acknowledgement
+sequence is given in
+[[Book I, Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"}.
 
 Execution handoff also does not release the [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"}; see [[Handoff is not release](memory.md#sec-memory-handoff-is-not-release)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Handoff is not release”]{.content-visible when-format="pdf"}. Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [[System control and timing — Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “Device boundaries during supervisor service”]{.content-visible when-format="pdf"}.
 
@@ -202,7 +242,7 @@ identification and startup fields when selecting a cartridge.
 | `0x28` | Startup function | Absolute function-record address. | Requires a nonzero word; supplies the EXEC target unchanged. |
 | `0x2c` | IRQ function | Absolute function-record address. | Not read. |
 | `0x30` | Exception function | Absolute function-record address. | Not read. |
-| `0x34`, `0x38` | Declared static-layout token words | Not read. | Not read. |
+| `0x34`, `0x38` | Unused by the boot interface | Not read. | Not read. |
 
 System ROM begins at `00000000H` and has execution-domain ID −1. Either
 cartridge socket uses ROM base `10000000H`, with domain ID 0 or 1 selecting the
@@ -216,6 +256,10 @@ must supply the reset program. CPU selection uses the fields shown in its
 column; identification checks belong to BIOS cartridge selection. The exception
 address's use follows the exception-routing rules, including the system route
 for synchronous cartridge faults.
+
+The boot interface assigns no interpretation to the unused prefix words.
+Their contents do not select a program, change startup initialization or
+establish a memory reservation.
 
 The next ROM-header word, at byte offset `0x3c`, is a ROM-relative offset to
 optional BIOS diagnostic records; zero means absent. It is outside the CPU's

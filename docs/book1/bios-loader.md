@@ -1,32 +1,32 @@
 # BIOS runtime compilation {#sec-bios-loader}
 
-`load` compiles a text chunk into a closure during program execution.
-`lua_compiler.compile_syntax` accepts an owned syntax tree instead of text;
-`lua_compiler.syntax_factory` supplies its constructors and syntax constants.
-Neither compilation route invokes the generated chunk. This interface is
-separate from cartridge module declarations and linked startup.
+The BIOS compiles procedures during program execution. Supply a text block or
+construct its syntax with the installed factory, then retain the returned
+closure and call it when the procedure is needed. The same closure can be
+called repeatedly, and the procedure can create child closures of its own.
 
-Use [BLua source programs](blua-programs.md#sec-blua-programs) for BLua program source and
-modules, [CPU values and calls](cpu.md#sec-cpu-calls-closures-globals-and-tables) for
-ordinary call/capture behavior, [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} for
-value storage and reserved addresses, and [Protected calls and coroutines](coroutines.md#sec-coroutines)
-for the error boundary. The source forms below apply to runtime-compiled text;
-they are not the complete BLua program language.
+Choose the input representation according to how the procedure is supplied:
 
-Choose text loading when the input is text authored during execution. Choose
-syntax compilation when a program constructs an expression or procedure from
-known operations and bindings; it avoids formatting and reparsing source text.
-Both routes produce ordinary closures with the same processor call interface.
-Neither route adds cartridge module linkage, static storage declarations or a
-private copy of the installed BIOS environment.
+| Input | BIOS interface | Preparation |
+|---|---|---|
+| Source text | `load` or `lua_compiler.load` | Supply a String containing the runtime source language. The BIOS parses and compiles it. |
+| Constructed syntax | `lua_compiler.compile_syntax` | Build a chunk with `lua_compiler.syntax_factory`. The BIOS compiles its supplied operations and bindings directly. |
 
-An environment can supply Tables, functions and hardware access routines to
-the compiled chunk. The runtime text language itself has no Table constructor,
-typed storage declaration or raw mapped-memory source form. Pass the required
-values through its environment or external bindings rather than assuming all
-linked BLua extensions are accepted by `load`.
+Both routes produce ordinary callable closures. Compilation determines the
+code and name-access routes; invocation performs the procedure's statements.
+An environment or external binding can supply the values that its unresolved
+names will access. Keeping the closure alive retains its generated code.
 
-## Compile first, invoke explicitly {#sec-bios-loader-compile-first-invoke-explicitly}
+Runtime source has the [language forms specified below](#sec-bios-loader-runtime-loaded-source-language).
+It supports executable blocks rather than cartridge module and storage
+declarations. To use existing Tables, functions or hardware access routines,
+supply them through an environment or external bindings. The
+[BLua program reference](blua-programs.md#sec-blua-programs) defines program-image
+source and module declarations separately.
+
+## Programming runtime compilation {#sec-bios-loader-programming-runtime-compilation}
+
+### Compile first, invoke explicitly {#sec-bios-loader-compile-first-invoke-explicitly}
 
 The installed environment supplies `load`. Compiling the first chunk below
 leaves `environment.total` at zero; only its invocations change the field.
@@ -48,6 +48,147 @@ compilation did not copy its fields. Compare the first result with `nil` to
 recognize failure: the second result can be any error payload, including nil.
 Calling the closure is a separate operation with its own error boundary.
 
+
+### Construct syntax without parsing text {#sec-bios-loader-construct-syntax-without-parsing-text}
+
+The expression `6 * 7` has two Number operands and a multiplication
+operation. To return its value, place that expression in a return statement,
+place the statement in a block, and make that block the chunk's body. The
+constructors describe these operations; they do not execute the multiplication.
+
+Use the installed factory so each syntax occurrence has its own node:
+
+```lua
+local factory = lua_compiler.syntax_factory
+local syntax = factory.syntax
+local chunk = lua_compiler.compile_syntax(
+    factory.chunk(factory.block({
+        factory.return_statement({
+            factory.binary_expression(syntax.binary_multiply,
+                factory.number_literal(6), factory.number_literal(7)),
+        }),
+    })), 'syntax')
+local result = chunk()
+```
+
+`result` is 42. `compile_syntax` has no load-style returned-error wrapper; use
+`pcall(lua_compiler.compile_syntax, ...)` when a protected result is required.
+A generated symbol can be shared as a key, but its declarations and each use
+must be separate syntax nodes. Compilation annotates those occurrences in
+place, so construct a fresh tree for each attempt. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
+specifies constructors, node ownership, result counts and diagnostics.
+
+### Names, environments and captured bindings {#sec-bios-loader-name-binding-and-retained-dependencies}
+
+Local, parameter, and upvalue bindings take precedence. For a name not resolved
+there, compilation selects external-scope metadata first, then the environment
+route when `environment ~= nil`, otherwise the global-name route.
+
+Environment-name accesses use the supplied value when the procedure runs,
+so an environment Table remains shared with its caller. Captures instead
+refer to bindings in the compiled procedure's enclosing functions.
+
+A name's spelling and the lifetime of its value are separate questions:
+
+| Name route | What the compiled procedure uses when invoked |
+|---|---|
+| Local or parameter | Its current invocation's value slot |
+| Captured enclosing local or parameter | The binding retained by the child closure |
+| External name | The selected descriptor and its retained read/write callback |
+| Environment name | An indexed read or write on the supplied environment value |
+| Ordinary global | A name-based read or write through the retained global accessor |
+
+The enclosing bindings here belong to the procedure being compiled. They are
+not arbitrary locals in the BLua function that calls the compiler. The first
+example supplies `total` and `step` through its environment, so changing
+`environment.step` changes the next invocation's read.
+
+#### Bind an external location {#sec-bios-loader-bind-an-external-location}
+
+An external descriptor takes precedence over an environment field of the same
+name. Its callbacks access the supplied location rather than a captured copy:
+
+```lua
+local binding = { available = true, is_type = false, is_const = false,
+    value = 10 }
+local environment = { external_value = 1000, step = 2 }
+local chunk, message = load(
+    'external_value = external_value + step return external_value',
+    'external', 't', environment, {
+        names = { external_value = binding },
+        read = function(location) return location.value end,
+        write = function(location, value) location.value = value end,
+    })
+if chunk == nil then
+    error(message)
+end
+local first, second = chunk(), chunk()
+```
+
+
+The calls return 12 and 14; `binding.value` becomes 14 while
+`environment.external_value` remains 1000. `step` has no external descriptor
+and uses the environment. These descriptors own ordinary storage. Accessors
+borrowing a selected frame instead expire when that evaluation scope closes,
+even if a returned closure retains its code.
+
+### Runtime-compiled code: storage, ownership and lifetime {#sec-bios-loader-runtime-compiled-code-storage-ownership-and-lifetime}
+
+Runtime-compiled procedures occupy the BIOS code arena in main RAM. One
+compilation places its root procedure, nested procedures, capture descriptors
+and instructions in one block. Closures retain the block and its associated
+constant Table while the code remains in use.
+
+#### What keeps compiled code alive {#sec-bios-loader-what-keeps-compiled-code-alive}
+
+The root closure retains the compilation's constant-pool table, which owns the code allocation. That reference remains valid after the loader returns.
+
+Every child closure also retains the allocation owner, in addition to its required captures. An escaping child therefore keeps the entire compilation's code block alive, even if the root closure is no longer reachable or the child needs only some of the compilation's constants. Individual functions within that block are not reclaimed separately.
+
+Keep a closure reachable while its compiled code is needed. Once all
+references retaining that compilation become unreachable, collection makes
+its block reusable. A raw function address does not retain the block. Release
+language references rather than attempting to free a code block explicitly;
+reclamation occurs during collection, not at the assignment that drops a
+reference.
+
+#### Retain an escaping child {#sec-bios-loader-retain-an-escaping-child}
+
+```lua
+local environment = { offset = 10 }
+local factory, message = load(
+    'return function(value) return value + offset end',
+    'capture', 't', environment)
+if factory == nil then
+    error(message)
+end
+local child = factory()
+factory = nil
+local first = child(5)
+environment.offset = 20
+local second = child(5)
+```
+
+The results are 15 and 25. Keeping the child retains the compilation's code
+allocation after the factory reference is dropped. It does not freeze the
+environment or promise when an unreachable allocation will be reclaimed.
+
+#### Environments and borrowed bindings {#sec-bios-loader-environments-and-borrowed-bindings}
+
+When a compiled identifier requires an environment lookup, the constant pool retains the actual supplied environment value and the key. This is not a private copy of the environment. Supplying an environment that is never added to the constant pool does not guarantee that compilation will retain it.
+
+An external binding retains its location and read/write accessors, not a copied binding value. Keeping those accessors alive does not extend the lifetime of a borrowed frame.
+
+For [evaluation against a selected BIOS monitor frame](bios-monitor.md#sec-memory-repair-a-word-load-and-retry),
+the binding accessors borrow that frame. The evaluator closes the binding scope
+before returning its result, including when the result contains an escaping
+closure. A later read or write through a retired accessor raises:
+
+```
+Selected frame evaluation has ended.
+```
+
+Closing a coroutine also retires its borrowed frame scopes. Code retention and binding validity are separate: a surviving closure can retain its compiled code while access to a borrowed binding has already ended.
 
 ## Runtime compilation interface {#sec-bios-loader-runtime-compilation-interface}
 
@@ -71,7 +212,7 @@ compiled chunk.
 | 1 | `source` | Missing fixed argument becomes `nil`; no source default is supplied. | Text input passed to the parser. |
 | 2 | `chunk_name` | `nil` or `false` selects `"=(load)"`. | Chunk label passed to parsing and compilation. Other values, including `""` and `0`, remain supplied values. |
 | 3 | `mode` | Only `nil` bypasses the mode scan and accepts text. | A supplied String must contain lowercase `t`. |
-| 4 | `environment` | `nil` selects ordinary global-name routing. | A non-`nil` guest value supplies the environment-name route. |
+| 4 | `environment` | `nil` selects ordinary global-name routing. | A non-`nil` language value supplies the environment-name route. |
 | 5 | `external_scope` | An omitted argument becomes `nil`. | Forwarded to compilation for external-name binding. |
 
 
@@ -105,7 +246,7 @@ stack-trace format.
 | Failure returned through the protected boundary | Two values: `nil, errorValue`. |
 
 `load` retains only the protected call's first result after its success flag.
-It does not normalize every failure into a String. An explicitly thrown guest
+It does not normalize every failure into a String. An explicitly thrown language
 value is preserved, so `errorValue` can itself be `false` or `nil`. Classified
 execution and out-of-memory failures supply a reason String. Use the first
 result to distinguish a closure from failure; do not require the error value to
@@ -128,13 +269,9 @@ Program in this order:
 4. Otherwise, invoke the returned closure explicitly when execution is wanted.
 
 
-### Name binding and retained dependencies {#sec-bios-loader-name-binding-and-retained-dependencies}
+### Retained loader dependencies {#sec-bios-loader-retained-loader-dependencies}
 
-Local, parameter, and upvalue bindings take precedence. For a name not resolved
-there, compilation selects external-scope metadata first, then the environment
-route when `environment ~= nil`, otherwise the global-name route.
-
-Generated environment-name accesses retain the supplied guest value, not a
+Generated environment-name accesses retain the supplied language value, not a
 copied set of globals. Environment-name reads and writes perform indexed operations
 directly against that value. `false` is a supplied environment, not an omission:
 it selects this route too. The loader does not add an environment-type check.
@@ -417,34 +554,6 @@ lua_compiler.compile_syntax(chunk, chunk_name, environment, external_scope)
 
 Successful compilation returns **one root callable closure**. It does not call that closure. The root has no syntax parameters. Compilation binds and compiles every nested function and links the resulting program; it skips text parsing, not the remaining compilation work. There is no `mode` argument on this entry point. Compilation errors raise directly: this is not an interface returning `nil, message` on failure.
 
-### Construct syntax without parsing text {#sec-bios-loader-construct-syntax-without-parsing-text}
-
-The expression `6 * 7` has two Number operands and a multiplication
-operation. To return its value, place that expression in a return statement,
-place the statement in a block, and make that block the chunk's body. The
-constructors describe these operations; they do not execute the multiplication.
-
-Use the installed factory so each syntax occurrence has its own node:
-
-```lua
-local factory = lua_compiler.syntax_factory
-local syntax = factory.syntax
-local chunk = lua_compiler.compile_syntax(
-    factory.chunk(factory.block({
-        factory.return_statement({
-            factory.binary_expression(syntax.binary_multiply,
-                factory.number_literal(6), factory.number_literal(7)),
-        }),
-    })), 'syntax')
-local result = chunk()
-```
-
-`result` is 42. `compile_syntax` has no load-style returned-error wrapper; use
-`pcall(lua_compiler.compile_syntax, ...)` when a protected result is required.
-A generated symbol can be shared as a key, but its declarations and each use
-must be separate syntax nodes. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
-specifies constructors, node ownership, result counts and diagnostics.
-
 ### Node ownership, lists, and locations {#sec-bios-loader-node-ownership-lists-and-locations}
 
 Each constructor or helper returns one value. Constructors store the supplied children, lists, values, and symbol keys directly; they do not clone them or supply default arguments.
@@ -455,7 +564,7 @@ A node is an **owned syntax occurrence**. Construct a fresh node for every decla
 
 Binding and compilation annotate nodes in place. Do not recompile an already annotated tree, retain its nodes for another tree, or retry a failed compilation with the same tree. Failure can occur after annotations have been written. Construct a fresh tree for each compilation attempt.
 
-All lists in this interface are ordinary consecutive, 1-based guest Tables. They are consumed through `#list` and `list[index]`; a packed table's `.n` field has no role. Pass `{}` for an empty statement, parameter, argument, return-expression, or clause list. There are no default empty lists or hole-filling rules.
+All lists in this interface are ordinary consecutive, 1-based Tables. They are consumed through `#list` and `list[index]`; a packed table's `.n` field has no role. Pass `{}` for an empty statement, parameter, argument, return-expression, or clause list. There are no default empty lists or hole-filling rules.
 
 
 ### Chunk, blocks, names, and literals {#sec-bios-loader-chunk-blocks-names-and-literals}
@@ -483,7 +592,7 @@ The names below are members of `lua_compiler.syntax_factory`.
 | `nil_literal()` | `kind = s.nil_literal_expression`; no value field. |
 | `literal(value)` | Selects the number, string, or boolean constructor according to `type(value)`. |
 
-Supply the corresponding guest value to each literal constructor. Number and string values become program constants or compiler-selected numeric immediates. Boolean emission uses the guest truth value of the stored value. `literal(nil)` is **not** equivalent to `nil_literal()`: the dispatch has no nil entry and raises during construction. Tables and functions are also outside `literal`'s dispatch. Use `nil_literal()` to construct nil.
+Supply the corresponding language value to each literal constructor. Number and string values become program constants or compiler-selected numeric immediates. Boolean emission uses the value’s truth of the stored value. `literal(nil)` is **not** equivalent to `nil_literal()`: the dispatch has no nil entry and raises during construction. Tables and functions are also outside `literal`'s dispatch. Use `nil_literal()` to construct nil.
 
 ### Paths, calls, operators, and functions {#sec-bios-loader-paths-calls-operators-and-functions}
 
@@ -695,7 +804,7 @@ All constants below are members of `f.syntax`. Node kinds and operators occupy o
 
 The exported tables are ordinary tables, but changing compiler constants is not a supported customization mechanism.
 
-### Errors and compiler-owned fields {#sec-bios-loader-errors-and-compiler-owned-fields}
+### Syntax diagnostics and reserved annotations {#sec-bios-loader-errors-and-compiler-owned-fields}
 
 
 Semantic diagnostics use this form:
@@ -740,7 +849,9 @@ the call-statement and String operand restrictions. Incorrect node shapes
 can fail at a later binding or emission operation rather than at construction.
 
 
-Supply constructor inputs rather than precomputed compilation annotations. Compiler-owned fields include:
+Supply the constructor inputs listed above. The following fields are reserved
+for annotations written by BIOS compilation; do not supply precomputed values
+for them:
 
 | Area | Fields written by compilation |
 |---|---|
@@ -750,14 +861,16 @@ Supply constructor inputs rather than precomputed compilation annotations. Compi
 | Functions | `semantic_state`, `local_count`, `function_address_constant_index`. |
 
 
-Those annotations are another reason to keep syntax occurrences private to one compilation and construct a new tree after any success or failure.
+Compilation changes the owned syntax occurrences through these annotations.
+Construct a fresh tree for every attempt, including after failure.
 
-## Runtime-compiled code: storage, ownership and lifetime {#sec-bios-loader-runtime-compiled-code-storage-ownership-and-lifetime}
+## Code-arena capacity and allocation {#sec-bios-loader-code-arena-capacity-and-allocation}
 
-Runtime-compiled procedures occupy the BIOS code arena in main RAM. One
-compilation places its root procedure, nested procedures, capture descriptors
-and instructions in one block. Closures retain the block and its associated
-constant Table while the code remains in use.
+Code allocation and language values use separate capacities. The following
+limits describe the BIOS arena containing generated function records and
+instructions. Keep returned closures reachable for as long as their code is
+required; [closure lifetime](#sec-bios-loader-what-keeps-compiled-code-alive)
+defines when an allocation can be reused.
 
 ### Storage limits {#sec-bios-loader-storage-limits}
 
@@ -768,7 +881,7 @@ constant Table while the code remains in use.
 | Allocation header | 16 bytes per allocation. |
 | Allocation size | Header plus linked payload, rounded upward to a multiple of 16 bytes. An unsplittable remainder is consumed by the allocation. |
 | Minimum split remainder | 32 bytes: one header plus one alignment unit. Smaller remainders do not become separate free blocks. |
-| Allocation contents | All functions, capture metadata, and instruction streams from one compilation share one block. Constant-pool tables and closures use the separate guest-object heap. |
+| Allocation contents | All functions, capture metadata, and instruction streams from one compilation share one block. Constant-pool tables and closures use the separate language-allocation budget. |
 | Final arena-exhaustion error | `runtime compiler memory exhausted` |
 
 The arena belongs to the [[firmware RAM reservation](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
@@ -798,33 +911,6 @@ Each generated function has a ceiling of **16,384 total register slots**. This t
 ```
 
 
-### What keeps compiled code alive {#sec-bios-loader-what-keeps-compiled-code-alive}
-
-The root closure retains the compilation's constant-pool table, which owns the code allocation. That reference remains valid after the loader returns.
-
-Every child closure also retains the allocation owner, in addition to its required captures. An escaping child therefore keeps the entire compilation's code block alive, even if the root closure is no longer reachable or the child needs only some of the compilation's constants. Individual functions within that block are not reclaimed separately.
-
-Keep a closure reachable while its compiled code is needed. Once all
-references retaining that compilation become unreachable, collection makes
-its block reusable. A raw function address does not retain the block. Release
-language references rather than attempting to free a code block explicitly;
-reclamation occurs during collection, not at the assignment that drops a
-reference.
-
-### Environments and borrowed bindings {#sec-bios-loader-environments-and-borrowed-bindings}
-
-When a compiled identifier requires an environment lookup, the constant pool retains the actual supplied environment value and the key. This is not a private copy of the environment. Supplying an environment that is never added to the constant pool does not guarantee that compilation will retain it.
-
-An external binding retains its location and read/write accessors, not a copied binding value. Keeping those accessors alive does not extend the lifetime of a borrowed frame.
-
-For evaluation against a selected console frame, the binding accessors borrow that frame. The evaluator closes the binding scope before returning its result, including when the result contains an escaping closure. A later read or write through a retired accessor raises:
-
-```
-Selected frame evaluation has ended.
-```
-
-Closing a coroutine also retires its borrowed frame scopes. Code retention and binding validity are separate: a surviving closure can retain its compiled code while access to a borrowed binding has already ended.
-
 ### Allocation, collection, and failure {#sec-bios-loader-allocation-collection-and-failure}
 
 Allocation first tries the current candidate block. If that cannot satisfy the request, it scans the arena and combines adjacent reusable blocks, stopping at the first sufficiently large run. If that search fails, allocation performs synchronous garbage collection and makes one further scan with coalescing. Failure of that retry raises `runtime compiler memory exhausted`.
@@ -848,56 +934,3 @@ A system reboot clears the execution environment and starts BIOS
 initialization again. A CPU-only restart or a transfer with `EXEC` has a
 different state boundary; see [CPU execution control](cpu.md#sec-cpu-exec) and
 [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}. System reboot begins a new runtime-compilation lifetime.
-
-
-## Programming runtime compilation {#sec-bios-loader-programming-runtime-compilation}
-
-### Bind an external location {#sec-bios-loader-bind-an-external-location}
-
-An external descriptor takes precedence over an environment field of the same
-name. Its callbacks access the supplied location rather than a captured copy:
-
-```lua
-local binding = { available = true, is_type = false, is_const = false,
-    value = 10 }
-local environment = { external_value = 1000, step = 2 }
-local chunk, message = load(
-    'external_value = external_value + step return external_value',
-    'external', 't', environment, {
-        names = { external_value = binding },
-        read = function(location) return location.value end,
-        write = function(location, value) location.value = value end,
-    })
-if chunk == nil then
-    error(message)
-end
-local first, second = chunk(), chunk()
-```
-
-
-The calls return 12 and 14; `binding.value` becomes 14 while
-`environment.external_value` remains 1000. `step` has no external descriptor
-and uses the environment. These descriptors own ordinary storage. Accessors
-borrowing a selected frame instead expire when that evaluation scope closes,
-even if a returned closure retains its code.
-
-### Retain an escaping child {#sec-bios-loader-retain-an-escaping-child}
-
-```lua
-local environment = { offset = 10 }
-local factory, message = load(
-    'return function(value) return value + offset end',
-    'capture', 't', environment)
-if factory == nil then
-    error(message)
-end
-local child = factory()
-factory = nil
-local first = child(5)
-environment.offset = 20
-local second = child(5)
-```
-
-The results are 15 and 25. Keeping the child retains the compilation's code
-allocation after the factory reference is dropped. It does not freeze the
-environment or promise when an unreachable allocation will be reclaimed.

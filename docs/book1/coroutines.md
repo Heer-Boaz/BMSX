@@ -127,6 +127,39 @@ thread leaves it suspended; an accepted `resume` starts or continues it.
 Yield, final return or an unhandled language error transfers control back to
 its resumer. At each point only one language thread is active.
 
+### Argument and result transfer {#sec-coroutines-argument-and-result-transfer}
+
+The figure follows one producer from its first resume to its final return. `resume` and
+`yield` abbreviate `coroutine.resume` and `coroutine.yield`. Arrows show language
+control and value transfers; vertical distance is not elapsed machine time.
+
+![The producer yields values to its parent, then receives the next resume arguments as yield results.](figures/coroutines-transfer.svg){#fig-coroutines-transfer}
+
+
+#### Yield and resume {#sec-coroutines-yield-and-resume}
+
+This producer follows the transfers in the figure. Its first arguments are
+entry arguments; the next resume supplies the results of its suspended yield.
+
+```lua
+local producer = coroutine.create(function(a, b)
+    local x, y, z = coroutine.yield(a + b, nil, 'ready')
+    return x + z, nil, b
+end)
+-- coroutine.status(producer) is 'suspended'.
+local first_ok, first, gap, label = coroutine.resume(producer, 10, 3)
+-- true, 13, nil, 'ready'; producer is suspended again.
+local final_ok, final, middle, original =
+    coroutine.resume(producer, 17, nil, 23)
+-- true, 40, nil, 3; producer is now dead.
+local dead_ok, message = coroutine.resume(producer)
+-- false, 'cannot resume non-suspended coroutine'.
+```
+
+While the producer runs, `coroutine.running()` returns its Thread with false
+as the second result. Its resumer has status `normal`; when the producer yields
+or returns, the resumer becomes `running` again.
+
 ### Creating and identifying threads {#sec-coroutines-creating-and-identifying-threads}
 
 **`coroutine.create(fn) → thread`** returns exactly one thread value. The entry `fn` must be a language function closure. A built-in function value is not accepted merely because it is callable. Omitting `fn`, passing nil, or passing another value raises `Invalid argument.` Creation leaves the thread unstarted and publicly `"suspended"`.
@@ -156,7 +189,7 @@ Attempting to resume a running, normal, completed, closed, or failed thread retu
 
 **`coroutine.yield(...) → ...`**, when later resumed, returns the next resume's arguments. Yield first suspends the active coroutine and returns its supplied values to the resumer, after the resumer's true prefix. Later, the values after `thread` in the next resume become the results of that suspended yield call. They do not restart the entry function and do not become another set of entry arguments. Calling yield where yielding is forbidden raises `Invalid argument.`; yield does not return a false prefix.
 
-The exchange carries a value tuple, not an automatically packed table. Its count and nil positions are preserved. In the producer example below, the first resume supplies 10 and 3; the child yields 13, nil, and `"ready"`. The caller receives true followed by all three values. The next resume supplies 17, nil, and 23; these are the three results of the child's yield call. The child finally returns 40, nil, and 3, so the caller receives true followed by those three values.
+The exchange carries a value tuple, not an automatically packed table. Its count and nil positions are preserved. In [Yield and resume](#sec-coroutines-yield-and-resume), the first resume supplies 10 and 3; the child yields 13, nil, and `"ready"`. The caller receives true followed by all three values. The next resume supplies 17, nil, and 23; these are the three results of the child's yield call. The child finally returns 40, nil, and 3, so the caller receives true followed by those three values.
 
 Ordinary call-result adjustment still applies. A fixed number of receiving variables truncates excess results or supplies nil for missing results. An expanding result position carries the actual tuple count. Preserve that count when nil values matter; nil is not an end marker. An explicit bare `return`, and an ordinary BLua function that reaches its end without a return value, each return **one nil value**, not a zero-result tuple. Accepting all results of a successful resume of that function therefore gives `true, nil`.
 
@@ -240,15 +273,6 @@ caller. [CPU reference](cpu.md#sec-cpu) and [[System control and timing](system.
 describe CPU startup and the system-wide reset request separately.
 
 
-## Argument and result transfer {#sec-coroutines-argument-and-result-transfer}
-
-The figure shows the producer in the yield-and-resume example below. `resume` and
-`yield` abbreviate `coroutine.resume` and `coroutine.yield`. Arrows show language
-control and value transfers; vertical distance is not elapsed machine time.
-
-![The producer yields values to its parent, then receives the next resume arguments as yield results.](figures/coroutines-transfer.svg){#fig-coroutines-transfer}
-
-
 ## Programming examples {#sec-coroutines-programming-examples}
 
 ### Protected results and errors {#sec-coroutines-protected-results-and-errors}
@@ -287,30 +311,6 @@ local handled, message = xpcall(function() error('body') end,
 -- false, 'error in error handling'.
 ```
 
-
-### Yield and resume {#sec-coroutines-yield-and-resume}
-
-This producer follows the transfers in the figure. Its first arguments are
-entry arguments; the next resume supplies the results of its suspended yield.
-
-```lua
-local producer = coroutine.create(function(a, b)
-    local x, y, z = coroutine.yield(a + b, nil, 'ready')
-    return x + z, nil, b
-end)
--- coroutine.status(producer) is 'suspended'.
-local first_ok, first, gap, label = coroutine.resume(producer, 10, 3)
--- true, 13, nil, 'ready'; producer is suspended again.
-local final_ok, final, middle, original =
-    coroutine.resume(producer, 17, nil, 23)
--- true, 40, nil, 3; producer is now dead.
-local dead_ok, message = coroutine.resume(producer)
--- false, 'cannot resume non-suspended coroutine'.
-```
-
-While the producer runs, `coroutine.running()` returns its Thread with false
-as the second result. Its resumer has status `normal`; when the producer yields
-or returns, the resumer becomes `running` again.
 
 ### Failure and explicit close {#sec-coroutines-failure-and-explicit-close}
 
