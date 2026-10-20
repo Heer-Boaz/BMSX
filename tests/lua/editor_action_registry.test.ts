@@ -9,7 +9,7 @@ import {
 	EDITOR_COMMAND_KEYBINDING_LABELS,
 	resolveEditorCommandKeybinding,
 } from '../../ide/input/keyboard/command_keybindings';
-import { KeyModifier } from '../../hosts/common/input/player';
+import { KeyModifier } from '../../hosts/common/input/text';
 import {
 	createWorkbenchActionBar,
 	layoutWorkbenchActionBar,

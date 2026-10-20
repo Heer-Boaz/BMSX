@@ -1,11 +1,11 @@
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { closeActiveTab, cycleTab } from '../../ui/tabs';
 
 /** Workbench tab commands remain available independently of the active view. */
 export function handleWorkbenchTabInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	editorPanes: EditorPanes,
 ): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput))) {

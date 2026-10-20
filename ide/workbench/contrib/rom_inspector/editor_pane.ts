@@ -1,9 +1,10 @@
-import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
@@ -11,8 +12,8 @@ import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_v
 import { resetBlink } from '../../../editor/render/caret';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -240,9 +241,9 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		this.presentation.update(input, layoutChanged, contentActionsChanged);
 		input.horizontal.layout(input.horizontalTrack, this.presentation.contentWidth, input.bytes.bounds.right - input.bytes.bounds.left, input.horizontal.getScroll());
 	}
-	private navigateBytes(player: PlayerInput): boolean {
+	private navigateBytes(player: KeyInputEvent): boolean {
 		for (const key of HORIZONTAL_NAVIGATION) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player); this.horizontal.cancelPointer();
 			const bar = this.input.horizontal;
 			bar.setScroll(bar.getScroll() + (key === 'ArrowLeft' ? -1 : 1) * this.input.layout.rowHeight * 3);
@@ -250,10 +251,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 		return false;
 	}
-	private navigate(player: PlayerInput): boolean {
+	private navigate(player: KeyInputEvent): boolean {
 		const input = this.input, model = input.model;
 		for (const key of NAVIGATION) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
 			if (model.rows.length === 0) return true;
 			const page = Math.max(1, Math.trunc(input.list.height / (input.layout.rowHeight * 2 + 4)));
@@ -270,8 +271,8 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 		return false;
 	}
-	public handleKeyboard(player: PlayerInput): void { this.navigate(player); }
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	public handleKeyboard(player: KeyInputEvent): void { this.navigate(player); }
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot) || this.contentActions.handlePointer(snapshot)) return true;
 		const map = this.input.mapBounds;
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, map)) {
@@ -312,10 +313,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
 		if (pointer === null) return;
 		const delta = direction * steps * this.input.layout.rowHeight * 3;
-		if (this.input.showingImage && this.image.handleWheel(pointer, delta, -direction * steps, input.getModifiers())) {
+		if (this.input.showingImage && this.image.handleWheel(pointer, delta, -direction * steps, input.modifiers)) {
 			input.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
 		}
-		if (!this.input.showingImage && (input.getModifiers() & KeyModifier.shift) !== 0 && pointer.valid && pointer.insideViewport
+		if (!this.input.showingImage && (input.modifiers & KeyModifier.shift) !== 0 && pointer.valid && pointer.insideViewport
 			&& (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.bytes.bounds) || point_in_rect(pointer.viewportX, pointer.viewportY, this.input.horizontalTrack))) {
 			this.horizontal.cancelPointer();
 			this.input.horizontal.setScroll(this.input.horizontal.getScroll() + delta);

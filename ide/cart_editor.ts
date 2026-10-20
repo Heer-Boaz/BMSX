@@ -1,3 +1,6 @@
+import { type PointerInputEvent } from '../hosts/common/input/pointer_event';
+import type { PointerInputSnapshot } from './common/models';
+import { projectEditorPointerEvent } from './input/pointer/frame';
 import type { InputRecipient } from '../hosts/common/input/channel';
 import { AnimationEditorController } from './workbench/contrib/animation/controller';
 import { AnimationEditorPane } from './workbench/contrib/animation/editor_pane';
@@ -102,6 +105,7 @@ import { editorCaretState } from './editor/ui/view/caret/state';
 import { updateBlink } from './editor/ui/inline/text_field';
 import { bindQuickInputFields } from './quick_input/fields';
 import { inputFocus } from './input/focus';
+import type { KeyInputEvent, TextInputHost, TextInputTarget } from '../hosts/common/input/text';
 import { pointerHover } from './input/pointer/hover';
 import { pointerCapture } from './input/pointer/capture';
 import { Scrollbar } from './workbench/ui/scrollbar';
@@ -190,7 +194,7 @@ type RenderRuntimeFaultOverlayOptions = {
 const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
-export type CartEditor = {
+export type CartEditor = TextInputHost & {
 	readonly events: RuntimeEventHistory;
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
@@ -241,6 +245,7 @@ export type CartEditor = {
 	activate: () => void;
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
+	dispatchPointer: (event: PointerInputEvent) => void;
 	tickInput: () => void;
 	update: (deltaSeconds: number) => void;
 	draw: () => void;
@@ -263,6 +268,8 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly runtimeTimeline: RuntimeTimelineControl;
 	public readonly gamePanel: GamePanel;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
+	private readonly pointerSnapshot: PointerInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false };
 	public get guestInputRecipient(): InputRecipient | null {
 		if (!this.isActive) return this.input;
 		const viewport = inputFocus.target?.guestInput;
@@ -555,11 +562,49 @@ export class RuntimeCartEditor implements CartEditor {
 		};
 		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);
 		publishDiagnostics();
+		this.input.setEditingInput(this);
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
 	public get clipboardTarget(): ClipboardTarget | undefined {
 		return this.isActive ? inputFocus.target?.clipboard : undefined;
+	}
+	public get textTarget(): TextInputTarget | undefined {
+		return this.isActive ? inputFocus.target?.textInput : undefined;
+	}
+	public onDidChangeTarget(listener: () => void): () => void {
+		const focus = inputFocus.onDidChangeTarget(listener);
+		const active = this.onDidChangeActive(listener);
+		return () => { focus(); active(); };
+	}
+	public dispatchKey(event: KeyInputEvent): boolean {
+		if (!this.isActive) return false;
+		this.pointerSnapshot.modifiers = event.modifiers;
+		editorRuntimeState.currentTimeMs = this.clock.now();
+		if (this.actionPrompt.visible) this.actionPrompt.focusTarget.handleKeyboard(event);
+		else handleEditorInput(event, this);
+		return event.consumed;
+	}
+	public dispatchPointer(event: PointerInputEvent): void {
+		if (!this.isActive) return;
+		editorRuntimeState.currentTimeMs = event.timestamp;
+		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
+		if (event.cancelledButtons !== 0) pointerCapture.cancelButtons(event.cancelledButtons);
+		handleTextEditorPointerInput(this.pointerSnapshot, event.timestamp, this);
+		// Selection and native focus must be published before this trusted gesture returns.
+		if ((event.buttons | event.pressedButtons | event.releasedButtons) !== 0) inputFocus.notifyTargetChanged();
+	}
+
+	public cancelInput(): void {
+		pointerCapture.cancel();
+		clearEditorPointerSelectionState();
+		editorPointerState.lastPointerSnapshot = null;
+		this.pointerSnapshot.valid = false;
+		this.pointerSnapshot.pressedButtons = 0;
+		this.pointerSnapshot.justPressedButtons = 0;
+		this.pointerSnapshot.justReleasedButtons = 0;
+		pointerHover.clear();
+		inputFocus.cancelKeyboard();
 	}
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
@@ -668,19 +713,10 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!modalInput) {
 			handleEditorWheelInput(this, playerInput);
 		}
-		handleTextEditorPointerInput(
-			this.display,
-			playerInput,
-			editorRuntimeState.currentTimeMs,
-			this,
-		);
-		if (this.actionPrompt.visible) {
-			this.actionPrompt.focusTarget.handleKeyboard(playerInput);
-			return;
-		}
+		if (this.actionPrompt.visible) return;
 		// A dialog closed by this pointer batch must not dispatch its keys to the restored control.
 		if (modalInput) return;
-		handleEditorInput(playerInput, this);
+		inputFocus.handleGamepad(playerInput);
 		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
@@ -740,6 +776,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.input.setEditingInput(undefined);
 		this.assistant.dispose();
 		this.observedConversation.dispose();
 		this.tools.dispose();

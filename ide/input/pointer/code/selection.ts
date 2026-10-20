@@ -1,8 +1,8 @@
-import { PointerButton } from '../buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { ensureSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
-import { handlePointerAutoScroll, resolvePointerTextPosition } from '../../../editor/ui/view/view';
+import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from '../state';
@@ -13,7 +13,6 @@ export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot, bounds
 		return;
 	}
 	clearGotoHoverHighlight();
-	handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY, bounds);
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;

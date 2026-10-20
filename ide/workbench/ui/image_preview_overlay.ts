@@ -6,7 +6,7 @@ import { measureTextRange } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { inputFocus, type InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { api } from '../../runtime/overlay_api';
 import { drawImagePreview, type ImagePreviewCache } from './image_preview';
 

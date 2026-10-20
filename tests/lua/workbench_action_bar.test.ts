@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -7,7 +8,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
@@ -41,10 +42,11 @@ function fixture(t: TestContext) {
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const player = input.getPlayerInput(1);
 	let pressId = 0;
-	const frame = () => { clock.advance(20); input.pollInput(); focus.handleKeyboard(player); };
+	const frame = () => { clock.advance(20); input.pollInput(); };
 	const key = (code: string, down: boolean) => {
 		input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
 		frame();
+		focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pointer = (index: number, pressed = 0, down = 0, up = 0, blocked = false) => {
@@ -165,7 +167,7 @@ test('Enter, NumpadEnter and Space pair down/up once; holding does not repeat', 
 test('keyboard navigation, blur, Escape, input replacement and disable revoke a trigger', t => {
 	const f = fixture(t);
 	for (const cancel of [
-		() => f.press('ArrowRight'), () => f.press('Escape'), () => f.content.focus(),
+		() => f.press('ArrowRight'), () => f.press('Escape'), () => f.focus.cancelKeyboard(), () => f.content.focus(),
 		() => { f.enabled.clear(); f.bar.update(); },
 		() => { f.bar.clearInput(); f.bar.setInput(f.state, f.content); },
 	]) {

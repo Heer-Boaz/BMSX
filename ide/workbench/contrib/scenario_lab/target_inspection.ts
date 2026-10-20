@@ -2,7 +2,7 @@ import type { IdeCommandController } from '../../../commands/controller';
 import type { TestStopInspection } from '../../../testing/stop_inspection';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../../common/models';
 import type { EditorCommandId } from '../../../common/commands';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
@@ -109,7 +109,7 @@ export class ScenarioTargetInspection {
 			canOpenSource: () => false, openSource: () => {} });
 	}
 
-	private keyboard(input: PlayerInput): boolean {
+	private keyboard(input: KeyInputEvent): boolean {
 		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.hide(); return true; }
 		return handleScenarioLabKeyboardInput(input, command => {
 			const model = this.model!, tree = model.tree;

@@ -1,3 +1,4 @@
+import { KeyModifier } from './text';
 import { ButtonRepeat } from './button_repeat';
 import { makeButtonState } from './manager';
 import {
@@ -11,15 +12,6 @@ import type { KeyboardInput } from './keyboard';
 import type { PointerInput } from './pointer';
 
 type ControlInputSource = 'keyboard' | 'gamepad';
-
-/** Bitwise flags representing keyboard modifier keys. */
-export enum KeyModifier {
-	none = 0,
-	shift = 1 << 0,
-	ctrl = 1 << 1,
-	alt = 1 << 2,
-	meta = 1 << 3,
-}
 
 /**
  * Host-side per-player input view. The machine ICU reads a raw snapshot directly
@@ -60,7 +52,7 @@ export class PlayerInput {
 		}
 	}
 
-	public getModifiers(): KeyModifier {
+	public get modifiers(): KeyModifier {
 		const keyboard = this.inputHandlers['keyboard'];
 		if (!keyboard) {
 			return KeyModifier.none;

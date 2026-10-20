@@ -35,6 +35,8 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 import type { InputControllerPlayback } from './controller_playback';
 import type { InputRecipient } from './channel';
+import { KeyInputEvent, KeyModifier, type TextInputHost } from './text';
+import { CHARACTER_MAP } from './character_map';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 
@@ -129,6 +131,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
 	private readonly deviceBindingList: DeviceBinding[] = [];
 	private readonly keyboardInput: KeyboardInput;
+	private editingInput: TextInputHost | undefined;
 	private readonly inputControllerPointerHandlers: PointerInput[] = [];
 	public readonly connectedGamepads: GamepadInput[] = [];
 	public controllerPortRevision = 0;
@@ -155,10 +158,14 @@ export class Input implements InputControllerInputSource, InputEventSink {
 				this.globalShortcuts.cancelControlShortcutSource(binding.assignedPlayer,
 					binding.source === 'keyboard' ? ControlSource.Keyboard : ControlSource.Gamepad);
 			}
-			if (binding.source === 'keyboard') binding.handler.disconnectSource(binding.deviceId);
+			if (binding.source === 'keyboard') {
+				this.editingInput?.cancelInput();
+				binding.handler.disconnectSource(binding.deviceId);
+			}
 			else binding.handler.reset();
 			return;
 		}
+		this.editingInput?.cancelInput();
 		this.globalShortcuts.reset();
 		this.hostSupervisorRequestLine = false;
 		this.controlSupervisorRequestLine = false;
@@ -330,6 +337,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 * Disposes the input system by removing player inputs and event subscriptions.
 	 */
 	public dispose(): void {
+		this.editingInput = undefined;
 		this.guestInputRecipient = null;
 		this.globalShortcuts.reset();
 		// Remove all player inputs
@@ -380,9 +388,35 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.routeButtonEvent(binding, code, down, value, timestamp, pressId);
 	}
 
-	/** Publishes one host-owned virtual keyboard source through PlayerInput and the ICU snapshot. */
+	/** Studio editing is an optional host recipient, independent of sampled guest keys. */
+	public setEditingInput(host: TextInputHost | undefined): void {
+		this.editingInput = host;
+	}
+
+	/** Publishes a virtual key transition without changing its guest sampling lifetime. */
 	public setVirtualKeyboardKey(code: string, down: boolean): void {
 		this.keyboardInput.setVirtualKey(code, down);
+		this.dispatchEditingKey(code, down);
+	}
+
+	/** Another contact can activate a key already held by an independent source. */
+	public activateVirtualKeyboardKey(code: string): void {
+		this.dispatchEditingKey(code, true);
+	}
+
+	/** Authored key-code producers supply editing actions separately from raw button samples. */
+	public dispatchEditingKey(code: string, down: boolean): void {
+		const host = this.editingInput;
+		if (host === undefined) return;
+		const modifiers = this.keyboardInput.liveModifiers;
+		const event = new KeyInputEvent(code, modifiers, false, down);
+		if (host.dispatchKey(event) || !down || (modifiers & (KeyModifier.ctrl | KeyModifier.alt | KeyModifier.meta)) !== 0) return;
+		const target = host.textTarget;
+		const character = CHARACTER_MAP[code];
+		if (target === undefined || target.readOnly || character === undefined) return;
+		const text = (modifiers & KeyModifier.shift) !== 0 ? character.shift : character.normal;
+		const state = target.readText();
+		target.replaceText(state.offset + state.selectionStart, state.offset + state.selectionEnd, text);
 	}
 
 	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {

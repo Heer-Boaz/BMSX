@@ -3,7 +3,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import type { InlineInputOptions } from '../../../common/models';
 import type { InputEdit, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { resetBlink } from '../../render/caret';
 import { TextField } from './text_field_model';
 import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from './text_field';
@@ -96,7 +96,7 @@ export class ValueInput<Value> implements InputEdit {
 		if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetBlink();
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input);
 			this.cancel();

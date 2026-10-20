@@ -1,5 +1,5 @@
 import { pointerHover } from './hover';
-import { PointerButton } from './buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel, setProblemsPanelHeightFromViewportY } from '../../workbench/contrib/problems/panel/controller';

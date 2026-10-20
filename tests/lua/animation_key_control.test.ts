@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -10,7 +11,7 @@ import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animat
 import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_edits';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -116,7 +117,7 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 	const press = (code: string) => {
 		for (const down of [true, false]) {
 			keyboard.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
-			clock.advance(20); keyboard.pollInput(); inputFocus.handleKeyboard(keyboard.getPlayerInput(1));
+			clock.advance(20); keyboard.pollInput(); inputFocus.handleKeyboard(new KeyInputEvent(code, keyboard.getPlayerInput(1).modifiers, false, down));
 		}
 	};
 	for (const unit of ['frame', 'time_ms'] as const) {

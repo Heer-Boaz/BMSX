@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
 import { InputFocusService } from '../../../ide/input/focus';
-import { PointerButton } from '../../../ide/input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../../ide/input/pointer/capture';
 import type { PointerSnapshot } from '../../../ide/common/models';
 import { WorkbenchGraphControl } from '../../../ide/workbench/ui/graph/control';

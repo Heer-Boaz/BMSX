@@ -1,4 +1,4 @@
-import { PointerButton } from './buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../common/models';
 import * as constants from '../../common/constants';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';

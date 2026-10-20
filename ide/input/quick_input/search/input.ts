@@ -1,11 +1,11 @@
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, isKeyDown } from '../../keyboard/key_input';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
 type SearchSelectionOptions = {
 	preview?: boolean;
@@ -47,7 +47,7 @@ function stepSearchSelectionFromInput(
 }
 
 export function handleSearchInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {
@@ -89,22 +89,22 @@ export function handleSearchInput(
 		return;
 	}
 	if (hasResults) {
-		if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+		if (isKeyDown('ArrowUp', playerInput)) {
 			consumeIdeKey('ArrowUp', playerInput);
 			stepSearchSelectionFromInput(editor, sources, -1, { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+		if (isKeyDown('ArrowDown', playerInput)) {
 			consumeIdeKey('ArrowDown', playerInput);
 			stepSearchSelectionFromInput(editor, sources, 1, { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+		if (isKeyDown('PageUp', playerInput)) {
 			consumeIdeKey('PageUp', playerInput);
 			stepSearchSelectionFromInput(editor, sources, -searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+		if (isKeyDown('PageDown', playerInput)) {
 			consumeIdeKey('PageDown', playerInput);
 			stepSearchSelectionFromInput(editor, sources, searchPageSize(), { preview: previewLocal });
 			return;

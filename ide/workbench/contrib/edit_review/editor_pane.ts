@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import { truncateMeasuredText } from '../../../common/text';
@@ -111,7 +111,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		api.blit_text_inline_with_font('Tab: actions | Up/Down, Page Up/Down: scroll | Ctrl+W: close',
 			bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		return this.actions.handlePointer(snapshot) || this.scroll.handlePointer(snapshot);
 	}
 	public handleKeyboard(): void {}

@@ -1,6 +1,7 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -11,8 +12,8 @@ import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../../editor/ui/inli
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -124,17 +125,17 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		if (index >= 0) revealWorkbenchListSelection(this.input.tree);
 		if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
 	}
-	public handleKeyboard(input: PlayerInput): void {
-		for (const [code, command] of NAVIGATION) if (shouldRepeatKeyFromPlayer(code, input)) {
+	public handleKeyboard(input: KeyInputEvent): void {
+		for (const [code, command] of NAVIGATION) if (isKeyDown(code, input)) {
 			consumeIdeKey(code, input);
 			if (navigateWorkbenchTree(this.input.tree, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.tree.selectionIndex);
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.gridFocus.focus(); }
 	}
-	private handleGridKeyboard(input: PlayerInput): void {
+	private handleGridKeyboard(input: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.select(-1, true); return; }
-		for (const [code, dx, dy] of MOVES) if (shouldRepeatKeyFromPlayer(code, input)) {
+		for (const [code, dx, dy] of MOVES) if (isKeyDown(code, input)) {
 			consumeIdeKey(code, input); projectCartMap(this.input);
 			const item = this.input.selected;
 			if (item !== undefined && !this.input.workingCopy.readOnly) {
@@ -147,7 +148,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			return;
 		}
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
 		for (let axis = 0; axis < this.controls.length; axis++) {
 			const control = this.controls[axis], bounds = this.input.fieldBounds[axis];

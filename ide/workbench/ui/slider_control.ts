@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
 import type { WorkbenchSlider } from './slider';
 
@@ -68,11 +68,11 @@ export class WorkbenchSliderControl implements PointerCaptureTarget {
 		input.value = value;
 		this.changed(value);
 	}
-	private handleKeyboard(player: PlayerInput): void {
+	private handleKeyboard(player: KeyInputEvent): void {
 		const input = this.input!;
 		if (!input.interactive) return;
 		for (const key of KEYS) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
 			this.change(key === 'Home' ? input.minimum : key === 'End' ? input.maximum
 				: input.snap(input.value + (key === 'ArrowLeft' ? -input.step : input.step)), false);

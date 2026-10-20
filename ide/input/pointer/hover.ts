@@ -12,6 +12,8 @@ export class PointerHoverService {
 	};
 	private readonly leaveTarget = (_dispatchId: number, target: PointerHoverTarget): void => this.release(target);
 
+	public has(target: PointerHoverTarget): boolean { return this.targets.has(target); }
+
 	public beginDispatch(): void { this.dispatchId += 1; }
 
 	/** Called by a control only after the normal input route accepts its hit. */

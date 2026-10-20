@@ -1,4 +1,4 @@
-import { PointerButton } from './buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../common/models';
 
 export type PointerCaptureScope = symbol;
@@ -33,6 +33,10 @@ export class PointerCaptureService {
 		const target = this.target;
 		this.target = null;
 		if (target !== null) target.cancelPointer();
+	}
+
+	public cancelButtons(buttons: number): void {
+		if ((buttons & this.button) !== 0) this.cancel();
 	}
 
 	/** Blocking ends capture; it never postpones a drag until the popup closes. */

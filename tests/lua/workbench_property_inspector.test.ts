@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -7,7 +8,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
 import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/property_inspector';
@@ -37,12 +38,12 @@ function fixture(t: TestContext) {
 	let pressId = 0;
 	const key = (code: string, down: boolean) => {
 		input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
-		clock.advance(20); input.pollInput(); focus.handleKeyboard(input.getPlayerInput(1));
+		clock.advance(20); input.pollInput(); focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pad = (code: string, down: boolean) => {
 		input.inputButton('gamepad:0', code, down, down ? 1 : 0, clock.now() + 1, ++pressId);
-		clock.advance(20); input.pollInput(); focus.handleKeyboard(input.getPlayerInput(1));
+		clock.advance(20); input.pollInput(); focus.handleGamepad(input.getPlayerInput(1));
 	};
 	show(); layout();
 	t.after(() => inspector.dispose());

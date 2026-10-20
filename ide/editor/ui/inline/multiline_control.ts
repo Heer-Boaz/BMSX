@@ -1,10 +1,10 @@
 import { resetBlink } from '../../render/caret';
 import type { ClipboardImage } from '../../../../hosts/common/clipboard';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
-import { consumeIdeKey, isCtrlDown, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isCtrlDown, isMetaDown, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { applyInlineFieldEditing, clearSelection, getCursorOffset, insertValue, moveCursor, setCursorFromOffset, setSelectionAnchorFromOffset } from './text_field';
 import type { TextField } from './text_field_model';
@@ -29,11 +29,11 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 		if (this.input !== undefined) this.input.field.pasteImages = undefined;
 		this.input?.field.focusTarget.release(); this.input = undefined; this.verticalOffset = -1;
 	}
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		const { field, view } = this.input!;
 		for (const code of ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'] as const) {
 			if ((code === 'Home' || code === 'End') && (isCtrlDown(input) || isMetaDown(input))) continue;
-			if (!shouldRepeatKeyFromPlayer(code, input)) continue;
+			if (!isKeyDown(code, input)) continue;
 			consumeIdeKey(code, input);
 			if (code === 'Enter') { insertValue(field, '\n'); this.verticalOffset = -1; }
 			else {

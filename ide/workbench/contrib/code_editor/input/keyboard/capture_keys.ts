@@ -1,4 +1,4 @@
-import { CHARACTER_CODES } from '../../../../../common/character_map';
+import { CHARACTER_CODES } from '../../../../../../hosts/common/input/character_map';
 import { ESCAPE_KEY } from '../../../../../common/constants';
 
 export const captureKeys: string[] = [...new Set([

@@ -1,5 +1,5 @@
 import { PointerHoverService } from '../../ide/input/pointer/hover';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';

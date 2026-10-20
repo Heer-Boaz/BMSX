@@ -15,7 +15,7 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
 import { createTestEditorPanes } from '../helpers/editor_panes';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 
 const diagnostic: EditorDiagnostic = { row: 0, startColumn: 0, endColumn: 1,
 	message: 'The authored source contains an undefined name and remains editable.', severity: 'error',

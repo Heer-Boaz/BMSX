@@ -1,6 +1,6 @@
 import { MultilineFieldControl } from '../../ide/editor/ui/inline/multiline_control';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../ide/input/focus';
 import assert from 'node:assert/strict';
 import test from 'node:test';

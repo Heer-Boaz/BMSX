@@ -20,7 +20,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { ANIMATION_TRACK_TEMPLATES } from '../../ide/workbench/contrib/animation/track_templates';
 import { inputFocus } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 
 const resource = { domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";

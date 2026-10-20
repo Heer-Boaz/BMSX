@@ -23,7 +23,7 @@ import {
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { resourceIdentityKey } from '../../../../common/resource';
 import * as constants from '../../../../common/constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, isKeyDown } from '../../../../input/keyboard/key_input';
 import { getLuaTextContext, LuaTextContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
@@ -40,7 +40,7 @@ import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/se
 import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
@@ -380,7 +380,7 @@ export class CompletionController {
 		this.refreshParameterHint();
 	}
 
-	public handleKeybindings(playerInput: PlayerInput): boolean {
+	public handleKeybindings(playerInput: KeyInputEvent): boolean {
 		if (!this.isCompletionContextActive()) {
 			this.closeSession();
 			this.cancelPendingCompletion();
@@ -877,7 +877,7 @@ export class CompletionController {
 		this.ensureCompletionSelectionVisible(session);
 	}
 
-	private handleNavigationKeys(playerInput: PlayerInput, session: CompletionSession, allowHomeEnd: boolean): boolean {
+	private handleNavigationKeys(playerInput: KeyInputEvent, session: CompletionSession, allowHomeEnd: boolean): boolean {
 		let moved = false;
 		if (this.navigationActive(playerInput, 'ArrowDown')) {
 			consumeIdeKey('ArrowDown', playerInput);
@@ -920,8 +920,8 @@ export class CompletionController {
 		return moved;
 	}
 
-	private navigationActive(playerInput: PlayerInput, code: string): boolean {
-		return shouldRepeatKeyFromPlayer(code, playerInput);
+	private navigationActive(playerInput: KeyInputEvent, code: string): boolean {
+		return isKeyDown(code, playerInput);
 	}
 
 	private ensureCompletionSelectionVisible(session: CompletionSession): void {

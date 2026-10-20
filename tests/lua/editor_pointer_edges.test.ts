@@ -6,7 +6,8 @@ import { PointerInput } from '../../hosts/common/input/pointer';
 import { PlayerInput } from '../../hosts/common/input/player';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { clearEditorPointerSelectionState, editorPointerState } from '../../ide/input/pointer/state';
-import { readEditorPointerButtons, PointerButton, type PointerButtons } from '../../ide/input/pointer/buttons';
+import { readEditorPointerButtons } from '../../ide/input/pointer/buttons';
+import { PointerButton, type PointerButtons } from '../../hosts/common/input/pointer_event';
 
 test('editor button edges belong to the pointer producer, not view activation or gesture cancellation', () => {
 	const pointer = new PointerInput(new VirtualHeadlessClock());

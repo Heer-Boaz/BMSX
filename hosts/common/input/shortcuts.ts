@@ -1,5 +1,6 @@
 import type { Input } from './manager';
-import { KeyModifier, type PlayerInput } from './player';
+import type { PlayerInput } from './player';
+import { KeyModifier } from './text';
 import type { BGamepadButton, ButtonState, InputHandler } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
 
@@ -196,7 +197,7 @@ export class GlobalShortcutRegistry {
 		if (keyboardEntries && keyboard) {
 			for (let i = 0; i < keyboardEntries.length; i++) {
 				const entry = keyboardEntries[i];
-				const modifiers = player.getModifiers();
+				const modifiers = player.modifiers;
 				if ((modifiers & entry.modifiers) !== entry.modifiers) {
 					this.release(entry.latchKey);
 					continue;

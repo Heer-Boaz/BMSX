@@ -1,10 +1,11 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -47,7 +48,7 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		super.clearInput();
 	}
 
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (handleEditorScrollbarPointer(snapshot, VIEWER_SCROLLBARS)) return true;
 		if (justPressed) this.focus();
 		return false;
@@ -58,7 +59,7 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		drawResourceViewer(resource);
 	}
 
-	public handleKeyboard(playerInput: PlayerInput): void {
+	public handleKeyboard(playerInput: KeyInputEvent): void {
 		const resource = this.input.view;
 		handleResourceViewerInput(playerInput, resource);
 	}

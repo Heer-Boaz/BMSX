@@ -1,31 +1,17 @@
 import type { Input } from '../../../../../../hosts/common/input/manager';
-import { insertText } from '../../../../../editor/editing/text_editing_and_selection';
 import { handleEditorBreakpointInput } from '../../../../../input/keyboard/debug_input';
 import { handleEditorNavigationKeys } from './navigation_input';
 import { handleEditorEditingKeys } from './editing_input';
-import { handleEditorCharacterInput } from './character_input';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from '../../../../../input/keyboard/key_input';
 import type { CartEditor } from '../../../../../cart_editor';
-import type { PlayerInput } from '../../../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../../../hosts/common/input/text';
 
 export class InputController {
-	public handleEditorInput(playerInput: PlayerInput, editor: CartEditor): void {
+	public handleEditorInput(playerInput: KeyInputEvent, editor: CartEditor): void {
 		if (handleEditorBreakpointInput(playerInput, editor.breakpoints)) {
 			return;
 		}
 		handleEditorNavigationKeys(playerInput);
 		handleEditorEditingKeys(playerInput);
-		const ctrlDown = isCtrlDown(playerInput);
-		const metaDown = isMetaDown(playerInput);
-		const altDown = isAltDown(playerInput);
-		if (ctrlDown || metaDown || altDown) {
-			return;
-		}
-		handleEditorCharacterInput(playerInput);
-		if (isKeyJustPressed('Space', playerInput)) {
-			insertText(' ');
-			consumeIdeKey('Space', playerInput);
-		}
 	}
 
 	public applyOverrides(input: Input, active: boolean, captureKeys: readonly string[]): void {

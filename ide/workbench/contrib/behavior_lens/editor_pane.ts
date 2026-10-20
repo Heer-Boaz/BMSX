@@ -1,3 +1,4 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -13,7 +14,7 @@ import { scrollWorkbenchList } from '../../ui/list_view';
 import { acceptBehaviorGraphSelection } from './graph_navigation';
 import { acceptStateGraphSelection } from './state_graph_navigation';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -61,6 +62,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly pointer = new BehaviorLensPointer(pointerHover);
 	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
+	private readonly unbindGraphGamepad = this.graph.focusTarget.bindGamepad(input => this.handleGamepad(input));
 	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
 	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -238,7 +240,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.actionBar.dispose();
 		this.sourceEditReview.dispose();
 		this.inspector.dispose();
-		this.graph.dispose();
+		this.graph.dispose(); this.unbindGraphGamepad();
 		this.unbindPointerBlur();
 		super.dispose();
 	}
@@ -279,9 +281,16 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		if (this.propertyEdit.active) this.propertyEdit.draw();
 	}
 
-	public handleKeyboard(playerInput: PlayerInput): void {
-		if (handleBehaviorLensKeyboardInput(this.input.view, playerInput, this.controller)
-			|| handleBehaviorLensGamepadInput(this.input.view, playerInput, this.controller)) {
+	public handleKeyboard(event: KeyInputEvent): void {
+		if (handleBehaviorLensKeyboardInput(this.input.view, event, this.controller)) {
+			this.pointer.cancel();
+			this.properties.cancel();
+			this.graph.cancelPointer();
+		}
+	}
+
+	public override handleGamepad(input: PlayerInput): void {
+		if (handleBehaviorLensGamepadInput(this.input.view, input, this.controller)) {
 			this.pointer.cancel();
 			this.properties.cancel();
 			this.graph.cancelPointer();
@@ -289,10 +298,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	protected override handleViewPointer(
-		snapshot: PointerSnapshot,
+		snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		now: number,
-		playerInput: PlayerInput,
 	): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.propertyEdit.handlePointer(snapshot)) return true;
@@ -318,7 +326,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			return result !== WorkbenchPropertyPointerResult.Outside;
 		}
 		if (view.presentation.kind !== 'outline') {
-			const result = this.graph.handlePointer(snapshot, now, playerInput.getRawButtonState('Space', 'keyboard').pressed);
+			const result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
 			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
 				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
 				else acceptStateGraphSelection(view, view.presentation);

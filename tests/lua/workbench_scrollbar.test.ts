@@ -4,7 +4,7 @@ import test from 'node:test';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { ScrollbarPointerControl } from '../../ide/workbench/ui/scrollbar_pointer';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../ide/common/models';
 
 for (const orientation of ['horizontal', 'vertical'] as const) {

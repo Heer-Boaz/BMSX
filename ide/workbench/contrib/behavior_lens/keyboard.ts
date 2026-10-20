@@ -1,50 +1,51 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown, isShiftDown } from '../../../input/keyboard/key_input';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensViewState } from './view_model';
 import { inputFocus } from '../../../input/focus';
 
 export function handleBehaviorLensKeyboardInput(
 	view: BehaviorLensViewState,
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	controller: BehaviorLensController,
 ): boolean {
-	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+	if (isKeyDown('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
 		controller.executeNavigation(view, view.presentation.kind === 'state-graph' && !isShiftDown(playerInput) ? 'previous' : 'up');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+	if (isKeyDown('ArrowDown', playerInput)) {
 		consumeIdeKey('ArrowDown', playerInput);
 		controller.executeNavigation(view, view.presentation.kind === 'state-graph' && !isShiftDown(playerInput) ? 'next' : 'down');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {
+	if (isKeyDown('ArrowLeft', playerInput)) {
 		consumeIdeKey('ArrowLeft', playerInput);
 		controller.executeNavigation(view, 'left');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowRight', playerInput)) {
+	if (isKeyDown('ArrowRight', playerInput)) {
 		consumeIdeKey('ArrowRight', playerInput);
 		controller.executeNavigation(view, 'right');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+	if (isKeyDown('PageUp', playerInput)) {
 		consumeIdeKey('PageUp', playerInput);
 		controller.executeNavigation(view, 'page-up');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+	if (isKeyDown('PageDown', playerInput)) {
 		consumeIdeKey('PageDown', playerInput);
 		controller.executeNavigation(view, 'page-down');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('Home', playerInput)) {
+	if (isKeyDown('Home', playerInput)) {
 		consumeIdeKey('Home', playerInput);
 		controller.executeNavigation(view, 'home');
 		return true;
 	}
-	if (shouldRepeatKeyFromPlayer('End', playerInput)) {
+	if (isKeyDown('End', playerInput)) {
 		consumeIdeKey('End', playerInput);
 		controller.executeNavigation(view, 'end');
 		return true;

@@ -1,10 +1,10 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
 import type { EditorCommandId, EditorCommandRunner } from '../../common/commands';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard/key_input';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
 import type { WorkbenchActionBarState } from './action_bar';
@@ -28,7 +28,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null) {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== undefined;
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), this.cancelPress);
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
 			this.input!.hasFocus = true;
 			this.update();
@@ -150,9 +150,9 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		state.focusedIndex = -1;
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		this.update();
-		if (input.getModifiers() !== KeyModifier.none) {
+		if (input.modifiers !== KeyModifier.none) {
 			if (this.triggerKey !== undefined) this.cancelPointer();
 			return;
 		}
@@ -163,30 +163,23 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			return;
 		}
 		const state = this.input!;
-		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.cancelPointer();
 			this.moveFocus(key === 'ArrowLeft' || key === 'End' ? -1 : 1,
 				key === 'Home' ? -1 : key === 'End' ? 0 : state.focusedIndex);
 			return;
 		}
-		for (const key of TRIGGER_KEYS) {
-			const button = input.inputHandlers.keyboard.getKeyState(key);
-			if (button.consumed) continue;
-			if (button.justpressed && this.triggerKey === undefined && state.focusedIndex >= 0) {
-				this.cancelPointer();
-				this.triggerKey = key;
-				state.pressedCommand = state.items[state.focusedIndex].command;
-			}
-			if (button.pressed || button.justpressed || button.justreleased) consumeIdeKey(key, input);
-			if (key !== this.triggerKey) continue;
-			const command = state.pressedCommand!;
-			if (button.justreleased) {
-				this.cancelPointer();
-				if (this.commands.isEnabled(command, this.focusTarget)) this.commands.execute(command, this.focusTarget.commandContext);
-				return;
-			}
-			if (!button.pressed) this.cancelPointer(); // Lost input is not a release.
+		if (!TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) || input.consumed) return;
+		if (input.down && !input.repeat && this.triggerKey === undefined && state.focusedIndex >= 0) {
+			this.cancelPointer();
+			this.triggerKey = input.code;
+			state.pressedCommand = state.items[state.focusedIndex].command;
 		}
+		consumeIdeKey(input.code, input);
+		if (input.code !== this.triggerKey || input.down) return;
+		const command = state.pressedCommand!;
+		this.cancelPointer();
+		if (this.commands.isEnabled(command, this.focusTarget)) this.commands.execute(command, this.focusTarget.commandContext);
 	}
 }

@@ -10,7 +10,7 @@ import { activeCodeEditor } from '../../code_editor_state';
 import { editorViewState } from '../state';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { ModifierState } from '../../../../../hosts/common/input/text';
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
@@ -183,7 +183,7 @@ export function moveWordRight(): void {
 /**
  * Move cursor left by character or word
  */
-export function moveCursorLeft(playerInput: PlayerInput): void {
+export function moveCursorLeft(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	const byWord = isCtrlDown(playerInput);
 	if (select) {
@@ -208,7 +208,7 @@ export function moveCursorLeft(playerInput: PlayerInput): void {
 /**
  * Move cursor right by character or word
  */
-export function moveCursorRight(playerInput: PlayerInput): void {
+export function moveCursorRight(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	const byWord = isCtrlDown(playerInput);
 
@@ -234,7 +234,7 @@ export function moveCursorRight(playerInput: PlayerInput): void {
 /**
  * Move cursor up one line
  */
-export function moveCursorUp(playerInput: PlayerInput): void {
+export function moveCursorUp(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
@@ -254,7 +254,7 @@ export function moveCursorUp(playerInput: PlayerInput): void {
 /**
  * Move cursor down one line
  */
-export function moveCursorDown(playerInput: PlayerInput): void {
+export function moveCursorDown(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
@@ -274,7 +274,7 @@ export function moveCursorDown(playerInput: PlayerInput): void {
 /**
  * Move cursor to start of line or document
  */
-export function moveCursorHome(playerInput: PlayerInput): void {
+export function moveCursorHome(playerInput: ModifierState): void {
 	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	caretNavigation.clear();
 	const buffer = activeCodeEditor.model.buffer;
@@ -311,7 +311,7 @@ export function moveCursorHome(playerInput: PlayerInput): void {
 /**
  * Move cursor to end of line or document
  */
-export function moveCursorEnd(playerInput: PlayerInput): void {
+export function moveCursorEnd(playerInput: ModifierState): void {
 	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	caretNavigation.clear();
 	const buffer = activeCodeEditor.model.buffer;
@@ -349,7 +349,7 @@ export function moveCursorEnd(playerInput: PlayerInput): void {
 /**
  * Move cursor up one page
  */
-export function pageUp(playerInput: PlayerInput): void {
+export function pageUp(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
@@ -369,7 +369,7 @@ export function pageUp(playerInput: PlayerInput): void {
 /**
  * Move cursor down one page
  */
-export function pageDown(playerInput: PlayerInput): void {
+export function pageDown(playerInput: ModifierState): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);

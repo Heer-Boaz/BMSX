@@ -1,9 +1,9 @@
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService } from '../../input/pointer/capture';
 import type { WorkbenchScrollViewport } from './scroll_viewport';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
@@ -17,14 +17,14 @@ export class WorkbenchScrollControl {
 	private readonly unbindKeyboard: () => void;
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget,
-		keyboard?: (input: PlayerInput) => boolean, scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {
+		keyboard?: (input: KeyInputEvent) => boolean, scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE, cancelKeyboard?: () => void) {
 		this.pointer = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== null;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (keyboard?.(input)) return;
 			this.handleKeyboard(input);
-		});
+		}, cancelKeyboard);
 	}
 
 	public setInput(input: WorkbenchScrollViewport): void {
@@ -63,10 +63,10 @@ export class WorkbenchScrollControl {
 		return true;
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		const view = this.input!;
 		for (const code of SCROLL_KEYS) {
-			if (!shouldRepeatKeyFromPlayer(code, input)) continue;
+			if (!isKeyDown(code, input)) continue;
 			consumeIdeKey(code, input);
 			this.cancelPointer();
 			switch (code) {

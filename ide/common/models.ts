@@ -1,4 +1,5 @@
-import type { PointerButtons } from '../input/pointer/buttons';
+import type { PointerButtons } from '../../hosts/common/input/pointer_event';
+import type { KeyModifier } from '../../hosts/common/input/text';
 import type {
 	LuaDefinitionLocation,
 } from '../../toolchain/ts/lua/semantic_contracts';
@@ -217,6 +218,9 @@ export type PointerSnapshot = PointerButtons & {
 	insideViewport: boolean;
 	valid: boolean;
 };
+
+/** Event-time editing context; ordinary controls only need PointerSnapshot geometry. */
+export type PointerInputSnapshot = PointerSnapshot & { modifiers: KeyModifier; spaceDown: boolean };
 
 export type InlineInputOptions = {
 	allowSpace: boolean;

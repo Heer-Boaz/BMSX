@@ -1,9 +1,9 @@
-import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import { ActionPromptView, type ActionPromptAction, type ActionPromptChoice } from './action_prompt_view';
 
@@ -27,7 +27,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService) {
 		this.focusTarget = focus.createTarget();
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.close());
 	}
 
@@ -90,42 +90,31 @@ export class ActionPrompt implements PointerCaptureTarget {
 		return -1;
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		// Escape owns its down/up pair even if modifiers change before release.
-		const escape = input.inputHandlers.keyboard.getKeyState('Escape');
-		if (!escape.consumed) {
-			if (escape.justpressed) { this.cancelPointer(); this.triggerKey = 'Escape'; }
-			if (escape.pressed || escape.justpressed || escape.justreleased) consumeIdeKey('Escape', input);
-			if (this.triggerKey === 'Escape') {
-				if (escape.justreleased) this.close();
-				else if (!escape.pressed) this.cancelPointer();
-				return;
-			}
+		if (input.code === 'Escape' && !input.consumed) {
+			if (input.down && !input.repeat) { this.cancelPointer(); this.triggerKey = 'Escape'; }
+			consumeIdeKey('Escape', input);
+			if (this.triggerKey === 'Escape' && !input.down) this.close();
+			return;
 		}
-		const modifiers = input.getModifiers();
+		if (this.triggerKey === 'Escape') return;
+		const modifiers = input.modifiers;
 		if (modifiers !== KeyModifier.none && modifiers !== KeyModifier.shift) { this.cancelPointer(); return; }
-		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.cancelPointer();
 			const backward = key === 'ArrowLeft' || key === 'ArrowUp' || key === 'Tab' && modifiers === KeyModifier.shift;
 			this.focused = (this.focused + (backward ? -1 : 1) + this.view.buttons.length) % this.view.buttons.length;
 			return;
 		}
-		for (const key of TRIGGER_KEYS) {
-			const button = input.inputHandlers.keyboard.getKeyState(key);
-			if (button.consumed) continue;
-			if (button.justpressed && this.triggerKey === undefined) {
-				this.cancelPointer();
-				this.triggerKey = key;
-			}
-			if (button.pressed || button.justpressed || button.justreleased) consumeIdeKey(key, input);
-			if (key !== this.triggerKey) continue;
-			if (button.justreleased) {
-				this.close(this.view.buttons[this.focused].choice);
-				return;
-			}
-			if (!button.pressed) this.cancelPointer();
+		if (!TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) || input.consumed) return;
+		if (input.down && !input.repeat && this.triggerKey === undefined) {
+			this.cancelPointer();
+			this.triggerKey = input.code;
 		}
+		consumeIdeKey(input.code, input);
+		if (input.code === this.triggerKey && !input.down) this.close(this.view.buttons[this.focused].choice);
 	}
 
 	public update(): void {

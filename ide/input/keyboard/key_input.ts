@@ -1,31 +1,29 @@
-import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent, type ModifierState } from '../../../hosts/common/input/text';
 
-export function isKeyJustPressed(code: string, playerInput: PlayerInput): boolean {
-	const keyboard = playerInput.inputHandlers.keyboard;
-	const state = keyboard.getKeyState(code);
-	return state.justpressed && !state.consumed;
+export function isKeyJustPressed(code: string, event: KeyInputEvent): boolean {
+	return event.code === code && event.down && !event.repeat && !event.consumed;
 }
 
-export function shouldRepeatKeyFromPlayer(code: string, playerInput: PlayerInput): boolean {
-	return playerInput.buttonRepeatEdge(code, 'keyboard');
+export function isKeyDown(code: string, event: KeyInputEvent): boolean {
+	return event.code === code && event.down && !event.consumed;
 }
 
-export function consumeIdeKey(code: string, playerInput: PlayerInput): void {
-	playerInput.inputHandlers.keyboard?.consumeKey(code);
+export function consumeIdeKey(code: string, event: KeyInputEvent): void {
+	if (event.code === code) event.consumed = true;
 }
 
-export function isCtrlDown(playerInput: PlayerInput): boolean {
-	return (playerInput.getModifiers() & KeyModifier.ctrl) !== 0;
+export function isCtrlDown(input: ModifierState): boolean {
+	return (input.modifiers & KeyModifier.ctrl) !== 0;
 }
 
-export function isShiftDown(playerInput: PlayerInput): boolean {
-	return (playerInput.getModifiers() & KeyModifier.shift) !== 0;
+export function isShiftDown(input: ModifierState): boolean {
+	return (input.modifiers & KeyModifier.shift) !== 0;
 }
 
-export function isAltDown(playerInput: PlayerInput): boolean {
-	return (playerInput.getModifiers() & KeyModifier.alt) !== 0;
+export function isAltDown(input: ModifierState): boolean {
+	return (input.modifiers & KeyModifier.alt) !== 0;
 }
 
-export function isMetaDown(playerInput: PlayerInput): boolean {
-	return (playerInput.getModifiers() & KeyModifier.meta) !== 0;
+export function isMetaDown(input: ModifierState): boolean {
+	return (input.modifiers & KeyModifier.meta) !== 0;
 }

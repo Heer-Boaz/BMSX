@@ -1,12 +1,12 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { measureTextRange } from '../../../editor/common/text/layout';
 import { measureStyledText } from '../../../editor/render/markdown';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
@@ -65,11 +65,11 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		return this.preview.handlePointer(snapshot) || this.transcriptView.handleSelection(snapshot) || this.transcriptView.scroll.handlePointer(snapshot)
 			|| snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
-	public handleKeyboard(_input: PlayerInput): void {} // The transcript focus target owns selection and scroll keys.
+	public handleKeyboard(_input: KeyInputEvent): void {} // The transcript focus target owns selection and scroll keys.
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
 		if (!this.preview.visible && pointer !== null) this.transcriptView.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
 	}

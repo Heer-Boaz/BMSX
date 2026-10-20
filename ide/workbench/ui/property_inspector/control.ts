@@ -1,13 +1,14 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
-import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandId } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { PointerCaptureService } from '../../../input/pointer/capture';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
@@ -37,6 +38,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private readonly scroll: WorkbenchScrollControl;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindBlur: () => void;
+	private readonly unbindGamepad: () => void;
 	private input: PropertyInspection<Element> | undefined;
 	private lifetime: DisposableStore | undefined;
 	private layoutDirty = true;
@@ -46,8 +48,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
-		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input) || this.handleGamepad(input));
+		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input), undefined,
+			() => { this.triggerKey = undefined; this.padPressed = false; });
 		this.focusTarget = this.scroll.focusTarget;
+		this.unbindGamepad = this.focusTarget.bindGamepad(input => { this.handleGamepad(input); });
 		this.focusTarget.clipboard = { readOnly: true, copy: () => {
 			const selected = this.model.selectionIndex;
 			return selected < 0 ? null : this.model.rows[selected].element.value;
@@ -143,7 +147,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		}
 	}
 
-	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); }
+	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); this.unbindGamepad(); }
 
 	public update(): void {
 		if (!this.visible) return;
@@ -210,10 +214,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean { return this.scroll.handleWheel(snapshot, delta); }
 
-	private handleKeyboard(input: PlayerInput): boolean {
-		if (input.getModifiers() !== KeyModifier.none) { this.triggerKey = undefined; return false; }
+	private handleKeyboard(input: KeyInputEvent): boolean {
+		if (input.modifiers !== KeyModifier.none) { this.triggerKey = undefined; return false; }
 		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.close(); return true; }
-		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.triggerKey = undefined;
 			this.padPressed = false;
@@ -221,14 +225,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 				: this.model.selectionIndex + (key === 'ArrowUp' ? -1 : 1));
 			return true;
 		}
-		for (const key of TRIGGER_KEYS) {
-			const button = input.inputHandlers.keyboard.getKeyState(key);
-			if (button.consumed) continue;
-			if (button.justpressed && this.triggerKey === undefined) this.triggerKey = key;
-			if (button.pressed || button.justpressed || button.justreleased) consumeIdeKey(key, input);
-			if (this.triggerKey !== key) continue;
-			if (button.justreleased) { this.triggerKey = undefined; this.openSource(); }
-			else if (!button.pressed) this.triggerKey = undefined;
+		if (TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) && !input.consumed) {
+			if (input.down && !input.repeat && this.triggerKey === undefined) this.triggerKey = input.code;
+			consumeIdeKey(input.code, input);
+			if (input.code === this.triggerKey && !input.down) { this.triggerKey = undefined; this.openSource(); }
 			return true;
 		}
 		return false;

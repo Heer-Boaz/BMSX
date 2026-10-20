@@ -3,7 +3,7 @@ import type { PointerSnapshot } from '../../../common/models';
 import type { EditorTabId } from './id';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { editorChromeState } from '../chrome_state';
 import { resetPointerClickTracking } from '../../../input/pointer/state';
 import { dragScrollSpeed } from '../drag_scroll';

@@ -1,5 +1,5 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { PointerButton } from '../buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';

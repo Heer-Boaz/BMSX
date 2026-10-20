@@ -1,5 +1,5 @@
 import { clipboardAction, ClipboardAccessError, type Clipboard, type ClipboardAction, type ClipboardTarget } from '../../hosts/common/clipboard';
-import type { PlayerInput } from '../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../hosts/common/input/text';
 import * as constants from '../common/constants';
 import { showEditorMessage } from '../common/feedback_state';
 import { inputFocus } from './focus';
@@ -49,7 +49,7 @@ async function pasteClipboard(clipboard: Clipboard, target: ClipboardTarget): Pr
 }
 
 /** Native browser gestures bypass polling; other hosts dispatch the same focused target. */
-export function handleClipboardBindings(input: PlayerInput, clipboard: Clipboard, target: ClipboardTarget | undefined): boolean {
+export function handleClipboardBindings(input: KeyInputEvent, clipboard: Clipboard, target: ClipboardTarget | undefined): boolean {
 	if (target === undefined) return false;
 	for (const code of CLIPBOARD_KEYS) {
 		if (!isKeyJustPressed(code, input)) continue;

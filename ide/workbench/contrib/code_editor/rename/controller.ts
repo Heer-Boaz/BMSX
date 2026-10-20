@@ -1,3 +1,4 @@
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../../../../editor/contrib/references/lookup';
 import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
@@ -16,7 +17,6 @@ import { EditorWorkspaceEditConflict } from '../../../../editor/model/undo_redo_
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
 import type { CrossFileRenameManager } from './operations';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { WorkspaceEditReviewInput } from '../../edit_review/editor_input';
@@ -90,7 +90,7 @@ export class RenameController {
 	}
 
 	public handleInput(
-		playerInput: PlayerInput,
+		playerInput: KeyInputEvent,
 		crossFileRename: CrossFileRenameManager,
 	): void {
 		if (!this.isActive()) {
@@ -171,7 +171,7 @@ export class RenameController {
 		this.field.focusTarget.release();
 	}
 
-	public applyFieldEditing(playerInput: PlayerInput): void {
+	public applyFieldEditing(playerInput: KeyInputEvent): void {
 		applyInlineFieldEditing(playerInput, this.field);
 	}
 

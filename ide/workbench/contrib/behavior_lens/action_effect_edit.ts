@@ -5,7 +5,7 @@ import type { PointerSnapshot } from '../../../common/models';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
 import type { InputFocusTarget } from '../../../input/focus';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { BehaviorLensInput } from './editor_input';

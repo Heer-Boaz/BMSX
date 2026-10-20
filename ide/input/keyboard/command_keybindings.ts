@@ -2,7 +2,7 @@ import type {
 	EditorCommandEnablement,
 	EditorCommandId,
 } from '../../common/commands';
-import { KeyModifier } from '../../../hosts/common/input/player';
+import { KeyModifier } from '../../../hosts/common/input/text';
 import { inputFocus } from '../focus';
 
 export type EditorModifierConstraint = {

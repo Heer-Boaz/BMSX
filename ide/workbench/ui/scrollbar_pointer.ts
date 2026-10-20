@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { PointerButton } from '../../input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { Scrollbar, ScrollbarDragStart } from './scrollbar';
 

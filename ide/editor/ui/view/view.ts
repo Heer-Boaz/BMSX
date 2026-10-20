@@ -3,11 +3,8 @@ import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/commo
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { HostClock } from '../../../../hosts/common/clock';
-import type { EditorDisplay, Viewport } from '../../../common/viewport';
-import {
-	DisplayPointMappingResult,
-	mapDisplayPointToViewport,
-} from '../../../../machine/ts/render/video_output';
+import type { Viewport } from '../../../common/viewport';
+
 import * as constants from '../../../common/constants';
 import { CodeLayout } from '../code/layout';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -103,26 +100,6 @@ export function refreshViewportLayout(): void {
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
-}
-
-export function mapScreenPointToViewport(
-	display: EditorDisplay,
-	screenX: number,
-	screenY: number,
-): { x: number; y: number; inside: boolean; valid: boolean } {
-	const rect = display.measureDisplay();
-	const mapped = { x: 0, y: 0, inside: false, valid: false };
-	const result = mapDisplayPointToViewport(
-		rect,
-		editorViewState.viewportWidth,
-		editorViewState.viewportHeight,
-		screenX,
-		screenY,
-		mapped,
-	);
-	mapped.inside = result === DisplayPointMappingResult.Inside;
-	mapped.valid = result !== DisplayPointMappingResult.Invalid;
-	return mapped;
 }
 
 export function codeViewportTop(): number {

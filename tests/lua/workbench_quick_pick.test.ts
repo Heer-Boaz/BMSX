@@ -3,7 +3,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { QuickPickHighlight } from '../../ide/workbench/services/quick_input/provider';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';

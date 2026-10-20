@@ -1,7 +1,5 @@
 import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
-import { PointerButton } from '../../../input/pointer/buttons';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot } from '../../../common/models';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
@@ -21,11 +19,13 @@ export abstract class WorkbenchViewEditorPane<
 > extends EditorPane<TInput> {
 	protected readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard: () => void;
+	private readonly unbindGamepad: () => void;
 
 	public constructor() {
 		super();
 		this.focusTarget.canFocus = () => this.hasInput;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindGamepad = this.focusTarget.bindGamepad(input => this.handleGamepad(input));
 	}
 
 	public focus(): void {
@@ -34,31 +34,25 @@ export abstract class WorkbenchViewEditorPane<
 
 	public dispose(): void {
 		this.unbindKeyboard();
+		this.unbindGamepad();
 	}
 
 	public handlePointer(
-		snapshot: PointerSnapshot,
+		snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		_pointerSecondaryJustPressed: boolean,
-		playerInput: PlayerInput,
 		now: number,
 		_gotoModifierActive: boolean,
 	): void {
-		const handled = this.handleViewPointer(snapshot, justPressed, now, playerInput);
-		if (handled) {
-			if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
-			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) playerInput.inputHandlers.pointer?.consumeButton('pointer_secondary');
-			if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0) playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
-		}
+		this.handleViewPointer(snapshot, justPressed, now);
 		clearEditorPointerSelectionState();
 		editorPointerState.lastPointerRowResolution = null;
 	}
 
 	protected handleViewPointer(
-		_snapshot: PointerSnapshot,
+		_snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		_now: number,
-		_playerInput: PlayerInput,
 	): boolean {
 		if (justPressed) this.focusTarget.focus();
 		return false;

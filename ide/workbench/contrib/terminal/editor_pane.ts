@@ -1,7 +1,6 @@
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -53,8 +52,8 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font('BIOS', bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number, player: PlayerInput): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
-		return super.handleViewPointer(snapshot, justPressed, now, player);
+		return super.handleViewPointer(snapshot, justPressed, now);
 	}
 }

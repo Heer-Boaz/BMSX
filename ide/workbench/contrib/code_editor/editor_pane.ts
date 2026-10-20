@@ -1,21 +1,27 @@
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { handleCodeAreaSelectionPointer } from '../../../input/pointer/code/selection';
+import { inputFocus } from '../../../input/focus';
+import { isCtrlDown, isMetaDown } from '../../../input/keyboard/key_input';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
 import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
 import { pointerHover } from '../../../input/pointer/hover';
-import { codeAreaHover } from '../../../input/pointer/code/feedback';
+import { codeAreaHover, updateCodeAreaPointerFeedback } from '../../../input/pointer/code/feedback';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { CodeEditorTextInput } from './native_text_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, scrollRows, refreshViewportLayout } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, scrollRows, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -54,6 +60,7 @@ import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state'
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+	private readonly nativeText = new CodeEditorTextInput();
 	public override getSelection(): CodeEditorNavigationSelection {
 		return new CodeEditorNavigationSelection(this.input);
 	}
@@ -106,6 +113,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		activateCodeEditorTab(this.input);
+		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
 			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
@@ -123,6 +131,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		activeCodeEditor.focusTarget.release();
+		activeCodeEditor.focusTarget.textInput = undefined;
 		this.editor.search.closeSearch(false);
 		closeLineJump(false);
 		pointerHover.release(codeAreaHover);
@@ -142,6 +152,20 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 
 	public override update(deltaSeconds: number): void {
 		this.editor.completion.processPending(deltaSeconds);
+		const pointer = editorPointerState.lastPointerSnapshot;
+		const blocked = this.editor.actionPrompt.visible || this.editor.quickInput.visible || this.editor.contextMenu.visible || editorChromeState.openMenuId !== null;
+		if (pointer !== null && !blocked) {
+			const bounds = getCodeAreaBounds();
+			if (editorPointerState.pointerSelecting && (pointer.pressedButtons & PointerButton.Primary) !== 0) {
+				const view = activeCodeEditor.view;
+				const row = view.cursorRow, column = view.cursorColumn;
+				handlePointerAutoScroll(pointer.viewportX, pointer.viewportY, bounds);
+				handleCodeAreaSelectionPointer(pointer, bounds);
+				if (view.cursorRow !== row || view.cursorColumn !== column) inputFocus.notifyTargetChanged();
+			}
+			if (pointerHover.has(codeAreaHover)) updateCodeAreaPointerFeedback(this.sources, this.guest, this.fault, this.runtime, pointer,
+				true, isCtrlDown(pointer) || isMetaDown(pointer), editorPointerState.pointerSelecting, this.input.context, bounds);
+		} else pointerHover.release(codeAreaHover);
 		const semanticError = editorViewState.layout.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 			showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
@@ -169,7 +193,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		);
 	}
 
-	public handleKeyboard(playerInput: PlayerInput): void {
+	public handleKeyboard(playerInput: KeyInputEvent): void {
 		if (handleEditorPromptBindings(playerInput, this.editor)) {
 			return;
 		}
@@ -189,10 +213,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public handlePointer(
-		snapshot: PointerSnapshot,
+		snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		pointerSecondaryJustPressed: boolean,
-		playerInput: PlayerInput,
 		now: number,
 		gotoModifierActive: boolean,
 	): void {
@@ -203,15 +226,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		handleCodeAreaPointerInput(
 			this.editor,
 			this.sources,
-			this.guest,
-			this.fault,
-			this.runtime,
 			snapshot,
 			justPressed,
 			gotoModifierActive,
-			this.input.context,
 			pointerSecondaryJustPressed,
-			playerInput,
 			now,
 			this.clipboard,
 		);

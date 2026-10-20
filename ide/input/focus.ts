@@ -1,6 +1,7 @@
 import type { ClipboardTarget } from '../../hosts/common/clipboard';
 import type { EditorCommandId } from '../common/commands';
 import type { PlayerInput } from '../../hosts/common/input/player';
+import type { KeyInputEvent, TextInputTarget } from '../../hosts/common/input/text';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { InputRecipient } from '../../hosts/common/input/channel';
 
@@ -32,7 +33,10 @@ export class InputFocusTarget {
 	private readonly blurListeners = new Set<() => void>();
 	private readonly focusListeners = new Set<() => void>();
 	public clipboard: ClipboardTarget | undefined;
-	private keyboardHandler: ((input: PlayerInput) => void) | undefined;
+	public textInput: TextInputTarget | undefined;
+	private keyboardHandler: ((input: KeyInputEvent) => void) | undefined;
+	private keyboardCancellation: (() => void) | undefined;
+	private gamepadHandler: ((input: PlayerInput) => void) | undefined;
 
 	public constructor(
 		private readonly owner: InputFocusService,
@@ -74,9 +78,17 @@ export class InputFocusTarget {
 	}
 
 	/** The control owner binds its input handler before making it focusable. */
-	public bindKeyboard(handler: (input: PlayerInput) => void): () => void {
+	public bindKeyboard(handler: (input: KeyInputEvent) => void, cancel?: () => void): () => void {
 		this.keyboardHandler = handler;
-		return () => { this.keyboardHandler = undefined; };
+		this.keyboardCancellation = cancel;
+		return () => { this.keyboardHandler = undefined; this.keyboardCancellation = undefined; };
+	}
+
+	public cancelKeyboard(): void { this.keyboardCancellation?.(); }
+
+	public bindGamepad(handler: (input: PlayerInput) => void): () => void {
+		this.gamepadHandler = handler;
+		return () => { this.gamepadHandler = undefined; };
 	}
 
 	public bindClipboard(target: ClipboardTarget): () => void {
@@ -84,8 +96,12 @@ export class InputFocusTarget {
 		return () => { this.clipboard = undefined; };
 	}
 
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		this.keyboardHandler!(input);
+	}
+
+	public handleGamepad(input: PlayerInput): void {
+		this.gamepadHandler?.(input);
 	}
 
 	public didBlur(): void {
@@ -100,6 +116,17 @@ export class InputFocusTarget {
 /** Single canvas focus owner. Menus preserve the invoking control's command context. */
 export class InputFocusService {
 	private targetValue: InputFocusTarget | null = null;
+	private readonly changeListeners = new Set<() => void>();
+
+	public onDidChangeTarget(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
+	}
+
+	/** Native text owners synchronize only after an actual control interaction. */
+	public notifyTargetChanged(): void {
+		for (const listener of this.changeListeners) listener();
+	}
 
 	public createTarget(parent: InputFocusTarget | null = null): InputFocusTarget {
 		return new InputFocusTarget(this, parent);
@@ -112,12 +139,13 @@ export class InputFocusService {
 	public setTarget(target: InputFocusTarget | null): void {
 		target = this.resolveTarget(target);
 		const previous = this.targetValue;
-		if (previous === target) return;
+		if (previous === target) { this.notifyTargetChanged(); return; }
 		// Like Godot's Viewport, detach before notifying the departing control.
 		this.targetValue = null;
 		if (previous !== null) previous.didBlur();
 		this.targetValue = target;
 		if (target !== null) target.didFocus();
+		this.notifyTargetChanged();
 	}
 
 	/** A retired inline control returns to its containing focus scope. */
@@ -137,9 +165,15 @@ export class InputFocusService {
 		}
 	}
 
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		if (this.targetValue !== null) this.targetValue.handleKeyboard(input);
 	}
+
+	public handleGamepad(input: PlayerInput): void {
+		if (this.targetValue !== null) this.targetValue.handleGamepad(input);
+	}
+
+	public cancelKeyboard(): void { this.targetValue?.cancelKeyboard(); }
 
 	/** The containing view programs its focus order, excluding disabled controls. */
 	public moveFocus(backward: boolean): boolean {

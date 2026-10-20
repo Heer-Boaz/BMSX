@@ -1,3 +1,9 @@
+import type { PointerInputSnapshot } from '../../../ide/common/models';
+import type { PointerInputEvent } from '../../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../../hosts/common/input/text';
+import { RemoteInput } from '../../../hosts/common/input/remote';
+import { BrowserTextInput } from '../../../hosts/browser/text_input';
+import { type TextInputHost } from '../../../hosts/common/input/text';
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { Input } from '../../../hosts/common/input/manager';
@@ -18,8 +24,8 @@ import { VideoPresenter } from '../../../machine/ts/render/video_presenter';
 import { OverlayRenderer } from '../../../ide/runtime/overlay_renderer';
 import { api } from '../../../ide/runtime/overlay_api';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { PointerButton } from '../../../ide/input/pointer/buttons';
-import { readEditorPointerSnapshot } from '../../../ide/input/pointer/frame';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
+import { projectEditorPointerEvent } from '../../../ide/input/pointer/frame';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { createWorkbenchGraphNode, createWorkbenchGraphEdge, createWorkbenchGraphModel, type WorkbenchGraphModel } from '../../../ide/workbench/ui/graph/model';
@@ -82,7 +88,17 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	}, true);
 	canvas.addEventListener('lostpointercapture', () => { nativePointer.captureLosses += 1; }, true);
 	const clock = new VirtualHeadlessClock();
-	const input = new Input(clock, new BrowserInputHub(canvas, canvas, clock, null, 'F12'), -1);
+	const hub = new BrowserInputHub(canvas, canvas, clock, null, 'F12');
+	const input = new Input(clock, hub, -1);
+	const editing: TextInputHost = {
+		get textTarget() { return inputFocus.target?.textInput; },
+		dispatchKey(event) { inputFocus.handleKeyboard(event); return event.consumed; },
+		cancelInput() { pointerCapture.cancel(); inputFocus.cancelKeyboard(); },
+		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
+	};
+	const nativeText = new BrowserTextInput(canvas, editing);
+	hub.setNativeKeyHandler(nativeText.handleKey);
+	input.setEditingInput(editing);
 	const player = input.getPlayerInput(1);
 	// A reset, non-executing machine supplies real GX output. No ROM packer or cart fixture.
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes), input, PSX_MACHINE_SPEC);
@@ -111,7 +127,17 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const { panes, pane, inputs, group } = createGraphFixturePanes([{ view }, { view: second },
 		{ view: connection.view, dragSource: connection.interaction }]);
 	panes.openEditor(inputs[0]);
-	let pressId = 0;
+	const pointer: PointerInputSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
+	const dispatchPointer = (event: PointerInputEvent) => {
+		projectEditorPointerEvent(display, event, pointer);
+		if (!pointerCapture.dispatch(pointer, false, clock.now())) {
+			panes.activePane.handlePointer(pointer, (pointer.justPressedButtons & PointerButton.Primary) !== 0, false, clock.now(), false);
+			if (pointer.justReleasedButtons !== 0) pointerCapture.dispatch(pointer, false, clock.now());
+		}
+	};
+	hub.setNativePointerHandler(dispatchPointer);
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input), dispatchPointer);
 	const draw = () => {
 		renderer.beginFrame(presenter);
 		api.beginFrame(renderer);
@@ -127,20 +153,14 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		clock.advance(20);
 		input.pollInput();
 		panes.activePane.update(0.02);
-		const snapshot = readEditorPointerSnapshot(display, player);
-		if (!pointerCapture.dispatch(snapshot, false, clock.now())) {
-			panes.activePane.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0, false, player, clock.now(), false);
-			if (snapshot.justReleasedButtons !== 0) pointerCapture.dispatch(snapshot, false, clock.now());
-		}
-		inputFocus.handleKeyboard(player);
 		draw();
 	};
 	const move = (x: number, y: number) => {
 		const rect = display.measureDisplay();
-		input.inputAxis2('pointer:0', 'pointer_position', rect.left + x * rect.width / WIDTH, rect.top + y * rect.height / HEIGHT, clock.now());
+		remote.apply([{ type: 'pointer', x: rect.left + x * rect.width / WIDTH, y: rect.top + y * rect.height / HEIGHT }]);
 	};
-	const button = (down: boolean) => input.inputButton('pointer:0', 'pointer_primary', down, down ? 1 : 0, clock.now(), ++pressId);
-	const key = (code: string, down: boolean) => input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
+	const button = (down: boolean) => remote.apply([{ type: 'button', button: 'primary', down }]);
+	const key = (code: string, down: boolean) => remote.apply([{ type: 'key', code, down }]);
 	const exercise = () => {
 		move(150, 110); step(); button(true); step();
 		check(view.selection === middle, 'physical click selects retained node');
@@ -159,8 +179,8 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		view.scrollX = view.scrollY = 0;
 		move(150, 110); step(); button(true); step(); button(false); step();
 		const held = model.nodes;
-		input.inputButton('keyboard:0', 'ArrowRight', true, 1, clock.now(), ++pressId); step();
-		input.inputButton('keyboard:0', 'ArrowRight', false, 0, clock.now(), ++pressId); step();
+		key('ArrowRight', true); step();
+		key('ArrowRight', false); step();
 		check(view.scrollX === 16 && view.model.nodes === held, 'focus-local keyboard pans without laying out again');
 		view.scrollX = view.scrollY = 0;
 		for (let index = 0; index < 30; index += 1) step();

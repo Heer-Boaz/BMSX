@@ -19,7 +19,7 @@ import {
 } from './layout';
 import { drawProblemsPanelSurface } from './render';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './pointer';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
@@ -186,7 +186,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		return handleProblemsPanelWheelInput(this, direction, steps);
 	}
 
-	public handleKeyboard(playerInput: PlayerInput, editorPanes: EditorPanes): void {
+	public handleKeyboard(playerInput: KeyInputEvent, editorPanes: EditorPanes): void {
 		handleProblemsPanelKeyboardInput(playerInput, this, editorPanes);
 	}
 

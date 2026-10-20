@@ -1,3 +1,4 @@
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -6,7 +7,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
@@ -51,7 +52,7 @@ function fixture(t: TestContext) {
 	const press = (code: string) => {
 		for (const down of [true, false]) {
 			input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
-			clock.advance(20); input.pollInput(); focus.handleKeyboard(input.getPlayerInput(1));
+			clock.advance(20); input.pollInput(); focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 		}
 	};
 	t.after(() => menu.dispose());
@@ -82,6 +83,10 @@ test('keyboard skips separators/disabled commands, preserves selection without p
 	f.press('ArrowUp'); assert.equal(f.menu.model.selectedIndex, 3);
 	f.press('Home'); assert.equal(f.menu.model.selectedIndex, 0);
 	f.press('End'); assert.equal(f.menu.model.selectedIndex, 3);
+	f.focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	f.focus.cancelKeyboard();
+	f.focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.deepEqual(f.executed, [], 'host cancellation revokes the armed command without accepting it');
 	f.press('Enter'); assert.deepEqual(f.executed, ['save']);
 	f.show(ITEMS, true); f.press('Escape'); assert.equal(f.focus.target, f.origin);
 	f.show(ITEMS, true); f.press('Tab'); assert.equal(f.menu.visible, false);

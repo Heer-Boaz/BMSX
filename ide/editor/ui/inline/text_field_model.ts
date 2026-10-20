@@ -1,9 +1,11 @@
 import type { InlineInputOptions, Position } from '../../../common/models';
 import type { ClipboardContents, ClipboardImage, ClipboardTarget } from '../../../../hosts/common/clipboard';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
-import { deleteSelection, pasteFieldText, selectedText } from './text_field';
+import { deleteSelection, pasteFieldText, selectedText, getCursorOffset, selectionAnchorOffset,
+	setCursorFromOffset, setSelectionAnchorFromOffset, clearSelection } from './text_field';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { COLOR_STATUS_WARNING } from '../../../common/constants';
+import type { TextInputTarget, TextInputState } from '../../../../hosts/common/input/text';
 
 export type TextFieldAnnotation<T = unknown> = { from: number; to: number; data: T };
 
@@ -17,7 +19,9 @@ type TextFieldRevision<T> = {
 };
 
 /** Small input-control history, independent of resource-owned document history. */
-export class TextField<T = unknown> implements ClipboardTarget {
+export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget {
+	public revision = 0;
+	public readonly nativeCaret = { x: 0, y: 0, width: 0, height: 0 };
 	public annotations: readonly TextFieldAnnotation<T>[] = [];
 	public readOnly = false;
 	public text = '';
@@ -40,6 +44,7 @@ export class TextField<T = unknown> implements ClipboardTarget {
 	public constructor(parent: InputFocusTarget | null = null, public readonly options: InlineInputOptions = { allowSpace: true }) {
 		this.focusTarget = inputFocus.createTarget(parent);
 		this.focusTarget.clipboard = this;
+		this.focusTarget.textInput = this;
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => this.canUndo,
 			run: () => this.undo(),
@@ -50,6 +55,28 @@ export class TextField<T = unknown> implements ClipboardTarget {
 		});
 		this.focusTarget.onDidBlur(() => { this.pointerSelecting = false; });
 	}
+
+	public readText(): TextInputState {
+		const cursor = getCursorOffset(this), anchor = selectionAnchorOffset(this) ?? cursor;
+		return { text: this.text, selectionStart: Math.min(cursor, anchor), selectionEnd: Math.max(cursor, anchor), offset: 0 };
+	}
+
+	public setSelection(from: number, to: number): void {
+		if (getCursorOffset(this) === to && (selectionAnchorOffset(this) ?? to) === from) return;
+		clearSelection(this);
+		setCursorFromOffset(this, to);
+		if (from !== to) setSelectionAnchorFromOffset(this, from);
+	}
+
+	public replaceText(from: number, to: number, text: string): boolean {
+		if (this.readOnly) return false;
+		this.setSelection(from, to);
+		if (text.length !== 0) return pasteFieldText(this, text);
+		deleteSelection(this);
+		return true;
+	}
+
+	public caretRect(): typeof this.nativeCaret { return this.nativeCaret; }
 
 	public copy(): string | null { return selectedText(this); }
 	public cut(): void { deleteSelection(this); }
@@ -84,6 +111,7 @@ export class TextField<T = unknown> implements ClipboardTarget {
 	}
 
 	public didChangeText(change?: { from: number; to: number; insertedLength: number }, inserted?: TextFieldAnnotation<T>): void {
+		this.revision += 1;
 		if (change && this.annotations.length > 0) {
 			const shift = change.insertedLength - (change.to - change.from);
 			const mapped: TextFieldAnnotation<T>[] = [];

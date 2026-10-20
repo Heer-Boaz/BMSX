@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, PointerCaptureService, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
@@ -33,7 +34,7 @@ function fixture(t: TestContext) {
 	};
 	const key = (code: string, down: boolean) => {
 		input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now() + 1, ++pressId);
-		clock.advance(20); input.pollInput(); inputFocus.handleKeyboard(input.getPlayerInput(1));
+		clock.advance(20); input.pollInput(); inputFocus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	open();

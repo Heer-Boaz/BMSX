@@ -1,3 +1,4 @@
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
@@ -15,7 +16,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { PlayerInput } from '../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
@@ -85,15 +86,14 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.drawCount += 1;
 	}
 
-	public handleKeyboard(_playerInput: PlayerInput): void {
+	public handleKeyboard(_event: KeyInputEvent): void {
 		this.keyboardCount += 1;
 	}
 
 	public handlePointer(
-		_snapshot: PointerSnapshot,
+		_snapshot: PointerInputSnapshot,
 		_justPressed: boolean,
 		_pointerSecondaryJustPressed: boolean,
-		_playerInput: PlayerInput,
 		_now: number,
 		_gotoModifierActive: boolean,
 	): void {
@@ -323,8 +323,8 @@ test('editor pane hot paths dispatch directly to the retained active pane', () =
 	const activePane = harness.editorPanes.activePane;
 	activePane.update(0.02);
 	activePane.draw();
-	activePane.handleKeyboard(playerInput);
-	activePane.handlePointer(snapshot, true, false, playerInput, 42, false);
+	activePane.handleKeyboard(new KeyInputEvent('KeyA', KeyModifier.none));
+	activePane.handlePointer({ ...snapshot, modifiers: KeyModifier.none, spaceDown: false }, true, false, 42, false);
 	activePane.handleWheel(1, 3, snapshot, playerInput);
 	activePane.drawStatusBar({ left: 14, top: 280, right: 384, bottom: 288 }, 0xffffffff);
 

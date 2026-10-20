@@ -1,3 +1,5 @@
+import { KeyModifier } from '../common/input/text';
+import type { PointerInputEvent } from '../common/input/pointer_event';
 import { mapDisplayPointToViewport } from '../../machine/ts/render/video_output';
 import { clipboardAction, type ClipboardAction } from '../common/clipboard';
 import {
@@ -196,6 +198,11 @@ export class BrowserInputHub implements InputSource {
 	private onscreenKeyboard: BrowserOnscreenKeyboard | undefined;
 	private hostControls: BrowserHostControls | undefined;
 	private keyboardCapture: ((code: string) => boolean) = null;
+	private nativeKeyHandler: ((event: KeyboardEvent) => boolean) | undefined;
+	private nativePointerHandler: ((event: PointerInputEvent) => void) | undefined;
+	private canvasButtons = 0;
+	private readonly nativePointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	private foregroundPointerCapture: ((x: number, y: number) => boolean) | null = null;
 	private nativeClipboardEnabled: ((action: ClipboardAction) => boolean) | undefined;
 	private readonly nativeClipboardKeys = new Set<string>();
@@ -376,6 +383,15 @@ export class BrowserInputHub implements InputSource {
 		this.keyboardCapture = handler;
 	}
 
+	/** Native editor commands run in event order; physical key state retains its ordinary owner. */
+	setNativeKeyHandler(handler: ((event: KeyboardEvent) => boolean) | undefined): void {
+		this.nativeKeyHandler = handler;
+	}
+
+	setNativePointerHandler(handler: (event: PointerInputEvent) => void): void {
+		this.nativePointerHandler = handler;
+	}
+
 	/** Foreground host UI owns new contacts inside its actual displayed surface. */
 	setForegroundPointerCapture(handler: (x: number, y: number) => boolean): void {
 		this.foregroundPointerCapture = handler;
@@ -405,9 +421,10 @@ export class BrowserInputHub implements InputSource {
 			this.nativeClipboardKeys.add(event.code);
 			return; // Exactly one native action, never a duplicate polled editor/guest key.
 		}
+		const native = this.nativeKeyHandler?.(event);
 		const captured = event.code === this.supervisorRequestKeyCode
-			|| (this.keyboardCapture && this.keyboardCapture(event.code));
-		if (captured || this.shouldBlockBrowserShortcut(event)) {
+			|| !native && this.keyboardCapture && this.keyboardCapture(event.code);
+		if (captured || !native && this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
@@ -428,9 +445,10 @@ export class BrowserInputHub implements InputSource {
 
 	private onKeyUp = (event: KeyboardEvent) => {
 		if (this.nativeClipboardKeys.delete(event.code)) return;
+		const native = this.nativeKeyHandler?.(event);
 		const captured = event.code === this.supervisorRequestKeyCode
-			|| (this.keyboardCapture && this.keyboardCapture(event.code));
-		if (captured || this.shouldBlockBrowserShortcut(event)) {
+			|| !native && this.keyboardCapture && this.keyboardCapture(event.code);
+		if (captured || !native && this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
@@ -466,6 +484,7 @@ export class BrowserInputHub implements InputSource {
 		}
 		this.activePointerCount = 0;
 		this.pointerButtonCounts.fill(0);
+		this.canvasButtons = 0;
 		if (supervisorRequestLineHigh) this.sink.setSupervisorRequestLine(false);
 		this.sink.resetInput();
 	};
@@ -512,8 +531,10 @@ export class BrowserInputHub implements InputSource {
 		this.activePointerButtonMasks[index] = buttons;
 		this.surface.setPointerCapture(event.pointerId);
 		const now = this.clock.now();
+		const previousButtons = this.canvasButtons;
 		this.updateCanvasButtons(0, buttons, now, false);
 		this.publishPointerPosition(event, now);
+		this.publishNativePointer(event, now, previousButtons);
 	};
 
 	private readonly onPointerUp = (event: PointerEvent): void => {
@@ -565,6 +586,7 @@ export class BrowserInputHub implements InputSource {
 			if ((buttons & mask) !== 0) {
 				this.pointerButtonCounts[bit] += 1;
 				if (this.pointerButtonCounts[bit] === 1) {
+					this.canvasButtons |= mask;
 					const pressId = this.nextPressId++;
 					this.pointerPressIds[bit] = pressId;
 					this.sink.inputButton('pointer:0', POINTER_BUTTON_CODES[bit], true, 1, now, pressId);
@@ -572,6 +594,7 @@ export class BrowserInputHub implements InputSource {
 			} else {
 				this.pointerButtonCounts[bit] -= 1;
 				if (this.pointerButtonCounts[bit] === 0) {
+					this.canvasButtons &= ~mask;
 					if (cancelled) cancelledButtons |= 1 << bit;
 					else this.sink.inputButton('pointer:0', POINTER_BUTTON_CODES[bit], false, 0, now, this.pointerPressIds[bit]);
 				}
@@ -593,11 +616,13 @@ export class BrowserInputHub implements InputSource {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		const now = this.clock.now();
+		const previousButtons = this.canvasButtons;
 		this.updateCanvasButtons(this.activePointerButtonMasks[index], 0, now, cancelled);
 		const last = --this.activePointerCount;
 		this.activePointerIds[index] = this.activePointerIds[last];
 		this.activePointerButtonMasks[index] = this.activePointerButtonMasks[last];
 		if (!cancelled) this.publishPointerPosition(event, now);
+		this.publishNativePointer(event, now, previousButtons, cancelled ? previousButtons & ~this.canvasButtons : 0);
 	}
 
 	private readonly onPointerMove = (event: PointerEvent): void => {
@@ -630,15 +655,35 @@ export class BrowserInputHub implements InputSource {
 			event.stopImmediatePropagation();
 			const now = this.clock.now();
 			const buttons = event.pointerType === 'touch' ? 1 : event.buttons;
+			const previousButtons = this.canvasButtons;
 			this.updateCanvasButtons(this.activePointerButtonMasks[index], buttons, now, false);
 			this.activePointerButtonMasks[index] = buttons;
 			this.publishPointerPosition(event, now);
+			this.publishNativePointer(event, now, previousButtons);
 			return;
 		}
 		if (event.pointerType !== 'touch' && event.buttons === 0 && this.surface.contains(event.target as Node)) {
-			this.publishPointerPosition(event, this.clock.now());
+			const now = this.clock.now();
+			this.publishPointerPosition(event, now);
+			this.publishNativePointer(event, now, this.canvasButtons);
 		}
 	};
+
+	private publishNativePointer(event: PointerEvent, now: number, previousButtons: number, cancelledButtons = 0): void {
+		if (this.nativePointerHandler === undefined) return;
+		const pointer = this.nativePointer;
+		pointer.x = this.pointerClientX;
+		pointer.y = this.pointerClientY;
+		pointer.buttons = this.canvasButtons;
+		pointer.pressedButtons = this.canvasButtons & ~previousButtons;
+		pointer.releasedButtons = previousButtons & ~this.canvasButtons & ~cancelledButtons;
+		pointer.cancelledButtons = cancelledButtons;
+		pointer.modifiers = (event.shiftKey ? KeyModifier.shift : 0) | (event.ctrlKey ? KeyModifier.ctrl : 0)
+			| (event.altKey ? KeyModifier.alt : 0) | (event.metaKey ? KeyModifier.meta : 0);
+		pointer.spaceDown = this.activeKeyPressIds.has('Space');
+		pointer.timestamp = now;
+		this.nativePointerHandler(pointer);
+	}
 
 	private publishPointerPosition(event: PointerEvent, now: number): void {
 		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
@@ -670,6 +715,7 @@ export class BrowserInputHub implements InputSource {
 		if (event.buttons !== 0 && this.activePointerIndex(event.pointerId) < 0) return;
 		const now = this.clock.now();
 		this.publishPointerPosition(event, now);
+		this.publishNativePointer(event, now, this.canvasButtons);
 	};
 
 	private scanInitialGamepads(): void {

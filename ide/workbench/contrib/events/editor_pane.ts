@@ -1,17 +1,17 @@
-import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
 import * as colors from '../../../common/constants';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
 import { formatValueSnapshot } from '../../../runtime/value_snapshot';
@@ -229,7 +229,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input;
@@ -245,11 +245,11 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		}
 		return this.scroll.handlePointer(snapshot);
 	}
-	private navigate(input: PlayerInput): boolean {
-		if (input.getModifiers() !== KeyModifier.none) return false;
+	private navigate(input: KeyInputEvent): boolean {
+		if (input.modifiers !== KeyModifier.none) return false;
 		const view = this.input;
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute('events.details'); return true; }
-		for (const key of NAVIGATION) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const key of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			const count = view.projection.rows.length, page = Math.max(1, Math.trunc(view.viewport.height / view.layout.rowHeight));
 			view.selected = Math.max(-1, Math.min(count - 1, key === 'Home' ? 0 : key === 'End' ? count - 1
@@ -259,7 +259,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		}
 		return false;
 	}
-	public handleKeyboard(input: PlayerInput): void { this.navigate(input); }
+	public handleKeyboard(input: KeyInputEvent): void { this.navigate(input); }
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
 		if (pointer !== null) (this.inspector.visible ? this.inspector : this.scroll).handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
 	}

@@ -2,7 +2,8 @@ import { getPressedState, Input, makeButtonState } from './manager';
 import { inputBindingId, type ButtonState, type KeyboardButtonId, type KeyboardInputHandler, type KeyOrButtonId2ButtonState } from './models';
 import type { HostClock } from '../clock';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
-import { HID_MODIFIER_FIRST_USAGE, hidKeyUsageForCode } from './hid_keys';
+import { HID_MODIFIER_FIRST_USAGE, HID_MODIFIER_MASK_ALT, HID_MODIFIER_MASK_CONTROL, HID_MODIFIER_MASK_SHIFT, hidKeyUsageForCode } from './hid_keys';
+import { KeyModifier } from './text';
 
 
 /** Retains the combined keyboard state of every keyboard source assigned to player one. */
@@ -36,6 +37,15 @@ export class KeyboardInput implements KeyboardInputHandler {
 	public get physicalOrdinaryHeldCount(): number { return this.ordinaryHeldCount; }
 	public get physicalOrdinaryPressGeneration(): number { return this.ordinaryPressGeneration; }
 	public get routedPhysicalModifierMask(): number { return this.routedPhysicalKeyUsageWords[HID_MODIFIER_FIRST_USAGE >>> 5] & 0xff; }
+	/** Source state at event delivery, before any host poll or later key release. */
+	public get liveModifiers(): KeyModifier {
+		const word = HID_MODIFIER_FIRST_USAGE >>> 5;
+		const modifiers = this.physicalKeyUsageWords[word] | this.virtualKeyUsageWords[word];
+		return ((modifiers & HID_MODIFIER_MASK_SHIFT) !== 0 ? KeyModifier.shift : 0)
+			| ((modifiers & HID_MODIFIER_MASK_CONTROL) !== 0 ? KeyModifier.ctrl : 0)
+			| ((modifiers & HID_MODIFIER_MASK_ALT) !== 0 ? KeyModifier.alt : 0)
+			| ((modifiers & 0x88) !== 0 ? KeyModifier.meta : 0);
+	}
 
 	constructor(
 		private readonly clock: HostClock,

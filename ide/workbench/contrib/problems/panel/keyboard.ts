@@ -1,30 +1,30 @@
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../../input/keyboard/key_input';
 import type { ProblemsPanelController } from './controller';
 import { handleProblemsPanelNavigationCommand } from './navigation';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
 
 export function handleProblemsPanelKeyboardInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	controller: ProblemsPanelController,
 	editorPanes: EditorPanes,
 ): void {
-	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+	if (isKeyDown('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'up');
-	} else if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+	} else if (isKeyDown('ArrowDown', playerInput)) {
 		consumeIdeKey('ArrowDown', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'down');
-	} else if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+	} else if (isKeyDown('PageUp', playerInput)) {
 		consumeIdeKey('PageUp', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'page-up');
-	} else if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+	} else if (isKeyDown('PageDown', playerInput)) {
 		consumeIdeKey('PageDown', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'page-down');
-	} else if (shouldRepeatKeyFromPlayer('Home', playerInput)) {
+	} else if (isKeyDown('Home', playerInput)) {
 		consumeIdeKey('Home', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'home');
-	} else if (shouldRepeatKeyFromPlayer('End', playerInput)) {
+	} else if (isKeyDown('End', playerInput)) {
 		consumeIdeKey('End', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'end');
 	} else if (isKeyJustPressed('Enter', playerInput)) {
@@ -34,10 +34,10 @@ export function handleProblemsPanelKeyboardInput(
 		consumeIdeKey('NumpadEnter', playerInput);
 		handleProblemsPanelNavigationCommand(controller, editorPanes, 'activate');
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {
+	if (isKeyDown('ArrowLeft', playerInput)) {
 		consumeIdeKey('ArrowLeft', playerInput);
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowRight', playerInput)) {
+	if (isKeyDown('ArrowRight', playerInput)) {
 		consumeIdeKey('ArrowRight', playerInput);
 	}
 }

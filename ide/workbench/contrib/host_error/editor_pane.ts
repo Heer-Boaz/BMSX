@@ -1,6 +1,6 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { forEachWrappedMeasuredRange } from '../../../common/text';
 import { measureTextRange } from '../../../editor/common/text/layout';
@@ -62,7 +62,7 @@ export class HostErrorPane extends FullWidthWorkbenchEditorPane<HostErrorInput> 
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		drawEditorText(editorViewState.font, 'Ctrl+C: copy stack | Ctrl+W: close', bounds.left + 4, bounds.top + 2, 0, color);
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot): boolean { return this.scroll.handlePointer(snapshot); }
+	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean { return this.scroll.handlePointer(snapshot); }
 	public handleKeyboard(): void {}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, player: PlayerInput): void {
 		if (pointer !== null && this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight))

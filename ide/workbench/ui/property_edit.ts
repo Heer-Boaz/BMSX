@@ -5,7 +5,7 @@ import type { EditorTextModel } from '../../editor/model/text_model';
 import { ValueInput } from '../../editor/ui/inline/value_input';
 import { drawValueInput } from '../../editor/ui/inline/value_input_render';
 import type { InputFocusTarget } from '../../input/focus';
-import { PointerButton } from '../../input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { api } from '../../runtime/overlay_api';
 import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from './property_tree';
 import type { WorkbenchTreeNode } from './tree_view';

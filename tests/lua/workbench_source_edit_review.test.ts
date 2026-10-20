@@ -1,5 +1,5 @@
 import { PointerHoverService } from '../../ide/input/pointer/hover';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';

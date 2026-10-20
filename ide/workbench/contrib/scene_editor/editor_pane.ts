@@ -1,14 +1,15 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { SceneEditorNavigationSelection } from './navigation_selection';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { INTEGER_INPUT_FORMAT } from '../../../editor/ui/inline/integer_input';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { api } from '../../../runtime/overlay_api';
@@ -179,9 +180,9 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		layoutSceneEditor(this.input, contentChanged, true, this.contentBounds);
 	}
 
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [code, command] of TREE_NAVIGATION) {
-			if (shouldRepeatKeyFromPlayer(code, input)) {
+			if (isKeyDown(code, input)) {
 				consumeIdeKey(code, input);
 				if (navigateWorkbenchTree(this.input.outline, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.outline.selectionIndex, false);
 				return;
@@ -197,7 +198,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.input.outline.hoverIndex = -1;
 	}
 
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		for (let index = 0; index < this.controls.length; index += 1) {

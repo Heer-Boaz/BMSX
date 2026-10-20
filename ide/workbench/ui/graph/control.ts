@@ -1,14 +1,14 @@
-import { PointerButton } from '../../../input/pointer/buttons';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { dragScrollSpeed } from '../drag_scroll';
 import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, type WorkbenchGraphViewport } from './viewport';
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
@@ -50,7 +50,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private readonly unbindBlur: () => void;
 
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly pointerHover: PointerHoverService, keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
+		private readonly pointerHover: PointerHoverService, keyboard: (input: KeyInputEvent) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
 		this.scrollbarPointer = new ScrollbarPointerControl(capture);
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.inputValue !== null;
@@ -321,17 +321,17 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		return true;
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		const view = this.inputValue!;
 		for (const key of PAN_KEYS) {
-			if (shouldRepeatKeyFromPlayer(key.code, input)) {
+			if (isKeyDown(key.code, input)) {
 				consumeIdeKey(key.code, input);
 				this.cancelPointer();
 				view.pan(key.x, key.y);
 				return;
 			}
 		}
-		if (shouldRepeatKeyFromPlayer('Home', input)) {
+		if (isKeyDown('Home', input)) {
 			consumeIdeKey('Home', input);
 			this.cancelPointer();
 			if (view.selection !== null) view.reveal(view.selection);

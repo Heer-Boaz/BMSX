@@ -1,38 +1,34 @@
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { pointerHover, type PointerHoverTarget } from '../hover';
-import { PointerButton } from '../buttons';
+import { type PointerHoverTarget } from '../hover';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { isCodeTabActive } from '../../../workbench/ui/tabs';
 import { clearGotoHoverHighlight, refreshGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip, updateHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot } from '../../../common/models';
 import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 export const codeAreaHover: PointerHoverTarget = {
 	onPointerLeave(): void { clearHoverTooltip(); clearGotoHoverHighlight(); },
 };
 
 export function updateCodeAreaPointerFeedback(
-	playerInput: PlayerInput,
 	sources: RuntimeSourceState,
 	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
-	snapshot: PointerSnapshot,
+	snapshot: PointerInputSnapshot,
 	insideCodeArea: boolean,
 	gotoModifierActive: boolean,
 	pointerSelecting: boolean,
 	activeContext: CodeEditorContext,
 	bounds: CodeAreaBounds
 ): void {
-	if (snapshot.valid && snapshot.insideViewport && insideCodeArea) pointerHover.visit(codeAreaHover);
-	else pointerHover.release(codeAreaHover);
 	if (isCodeTabActive() && (snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 			refreshGotoHoverHighlight(sources, hover.row, hover.column, activeContext);
@@ -40,7 +36,7 @@ export function updateCodeAreaPointerFeedback(
 		clearGotoHoverHighlight();
 	}
 	if (isCodeTabActive()) {
-		const altDown = isAltDown(playerInput);
+		const altDown = isAltDown(snapshot);
 		if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && altDown) {
 			const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 			updateHoverTooltip(sources, guest, fault, runtime, activeContext, hover.row, hover.column);

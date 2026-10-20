@@ -1,3 +1,4 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
@@ -13,7 +14,7 @@ import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ScenarioLabNavigationSelection } from './navigation_selection';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -41,6 +42,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly unbindResultsGamepad = this.resultsFocus.bindGamepad(input => this.handleGamepad(input));
 	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
 		this.input.view.focus = 'tests';
 		updateScenarioLabStatus(this.input.view);
@@ -133,7 +135,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.targetInspection.dispose();
 		pointerHover.release(this);
 		this.actionBar.dispose();
-		this.unbindResultsKeyboard();
+		this.unbindResultsKeyboard(); this.unbindResultsGamepad();
 		this.unbindTestsFocus();
 		this.unbindResultsFocus();
 		super.dispose();
@@ -177,14 +179,12 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		drawWorkbenchSplit(view.split, this.split.hovered || this.split.focusTarget.hasFocus);
 	}
 
-	public handleKeyboard(playerInput: PlayerInput): void {
-		if (!handleScenarioLabKeyboardInput(playerInput, this.navigate)) {
-			handleScenarioLabGamepadInput(
-				playerInput,
-				this.navigate,
-				this.commands,
-			);
-		}
+	public handleKeyboard(event: KeyInputEvent): void {
+		handleScenarioLabKeyboardInput(event, this.navigate);
+	}
+
+	public override handleGamepad(input: PlayerInput): void {
+		handleScenarioLabGamepadInput(input, this.navigate, this.commands);
 	}
 
 	public onPointerLeave(): void {
@@ -193,7 +193,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	protected override handleViewPointer(
-		snapshot: PointerSnapshot,
+		snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		now: number,
 	): boolean {

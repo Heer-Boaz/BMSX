@@ -5,7 +5,7 @@ import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';

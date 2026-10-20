@@ -2,7 +2,7 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
-import { CHARACTER_MAP } from '../../../ide/common/character_map';
+import { CHARACTER_MAP } from '../../../hosts/common/input/character_map';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 
 /** Physical single-line typing, including Lua punctuation; no clipboard/model writes. */

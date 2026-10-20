@@ -1,3 +1,4 @@
+import type { KeyInputEvent } from '../../hosts/common/input/text';
 import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
@@ -14,7 +15,7 @@ import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import type { PlayerInput } from '../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { activateCodeEditorTab, applyActiveCodeTabSelection } from '../../ide/workbench/ui/code_tab/activation';
 import type {
@@ -55,14 +56,13 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public draw(): void {
 	}
 
-	public handleKeyboard(_playerInput: PlayerInput): void {
+	public handleKeyboard(_event: KeyInputEvent): void {
 	}
 
 	public handlePointer(
-		_snapshot: PointerSnapshot,
+		_snapshot: PointerInputSnapshot,
 		_justPressed: boolean,
 		_pointerSecondaryJustPressed: boolean,
-		_playerInput: PlayerInput,
 		_now: number,
 		_gotoModifierActive: boolean,
 	): void {

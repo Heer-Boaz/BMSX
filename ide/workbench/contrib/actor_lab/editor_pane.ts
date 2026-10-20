@@ -1,3 +1,4 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -7,13 +8,13 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isCtrlDown, isShiftDown, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isCtrlDown, isShiftDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
@@ -340,11 +341,11 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 	}
 
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		if (!this.input.actorPresent) return;
 		if (this.input.presentation === 'graph') { this.handleGraphKeyboard(input); return; }
 		for (const [key, command] of NAVIGATION) {
-			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
+			if (!isKeyDown(key, input)) continue;
 			consumeIdeKey(key, input);
 			this.input.follow.stop();
 			navigateWorkbenchTree(this.input.outline, command);
@@ -372,7 +373,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
 		this.boundGraph?.viewport.layout(4, top + layout.rowHeight + 4, divider, bottom);
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.inspector.visible && (this.detailsSplit.handlePointer(snapshot) || this.inspector.handlePointer(snapshot))) return true;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
 			if (!this.controller.rewind.seeking) {
@@ -442,21 +443,21 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
-	private handleGraphKeyboard(player: PlayerInput): void {
+	private handleGraphKeyboard(player: KeyInputEvent): void {
 		const view = this.input.stateGraph!.viewport;
 		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.commands.execute('actorLab.outline'); return; }
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('actorLab.details'); return; }
 		for (const [key, direction] of GRAPH_SELECTION_KEYS) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player); this.input.follow.stop(); view.selectRelative(direction);
 			this.input.stateGraph!.rememberSelection();
 			if (view.selection !== null) view.reveal(view.selection);
 			return;
 		}
 		for (const [key, x, y] of GRAPH_PAN_KEYS) {
-			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); this.input.follow.stop(); view.pan(x, y); return; }
+			if (isKeyDown(key, player)) { consumeIdeKey(key, player); this.input.follow.stop(); view.pan(x, y); return; }
 		}
-		if (shouldRepeatKeyFromPlayer('Home', player) && view.selection !== null) { consumeIdeKey('Home', player); this.input.follow.stop(); view.reveal(view.selection); }
+		if (isKeyDown('Home', player) && view.selection !== null) { consumeIdeKey('Home', player); this.input.follow.stop(); view.reveal(view.selection); }
 	}
 }
 

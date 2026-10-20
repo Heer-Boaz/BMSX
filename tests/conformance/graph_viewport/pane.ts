@@ -1,6 +1,7 @@
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { pointerHover } from '../../../ide/input/pointer/hover';
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../ide/common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../ide/common/models';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -34,10 +35,9 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 		drawWorkbenchGraph(this.views.get(this.input)!.view, this.graph.hover, this.graph.focusTarget.hasFocus,
 			this.graph.dragFeedback, this.graph.connectionHandles);
 	}
-	public handleKeyboard(input: PlayerInput): void { inputFocus.handleKeyboard(input); }
-	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _secondary: boolean, input: PlayerInput, now: number): void {
-		this.result = this.graph.handlePointer(snapshot, now, input.getRawButtonState('Space', 'keyboard').pressed);
-		if (justPressed && this.result !== WorkbenchGraphPointerResult.Outside) input.inputHandlers.pointer!.consumeButton('pointer_primary');
+	public handleKeyboard(input: KeyInputEvent): void { inputFocus.handleKeyboard(input); }
+	public handlePointer(snapshot: PointerInputSnapshot, _justPressed: boolean, _secondary: boolean, now: number): void {
+		this.result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
 	}
 	public handleWheel(direction: number, steps: number, snapshot: PointerSnapshot | null, input: PlayerInput): void {
 		if (snapshot !== null && this.graph.handleWheel(snapshot, 0, direction * steps * 16)) input.inputHandlers.pointer!.consumeButton('pointer_wheel');

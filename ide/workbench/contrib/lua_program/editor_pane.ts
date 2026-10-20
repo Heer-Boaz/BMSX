@@ -1,13 +1,14 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -148,9 +149,9 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		if (this.edit.active) this.edit.draw();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		const tree = this.input.liveVisible ? this.input.live : this.input.tree;
-		for (const [key, command] of NAVIGATION) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			if (navigateWorkbenchTree(tree, command) === WorkbenchTreeNavigationResult.Collapse && this.input.liveVisible) this.controller.resolveRuntime(this.input);
 			return;
@@ -162,7 +163,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		}
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('luaProgram.remove')) this.commands.execute('luaProgram.remove'); }
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) return true;
 		const result = this.pointer.handle(this.input.liveVisible ? this.input.live : this.input.tree, snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;

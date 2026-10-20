@@ -1,6 +1,7 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
@@ -57,13 +58,14 @@ export abstract class EditorPane<TInput extends EditorInput> {
 
 	public abstract draw(): void;
 
-	public abstract handleKeyboard(playerInput: PlayerInput): void;
+	public abstract handleKeyboard(event: KeyInputEvent): void;
+
+	public handleGamepad(_input: PlayerInput): void {}
 
 	public abstract handlePointer(
-		snapshot: PointerSnapshot,
+		snapshot: PointerInputSnapshot,
 		justPressed: boolean,
 		pointerSecondaryJustPressed: boolean,
-		playerInput: PlayerInput,
 		now: number,
 		gotoModifierActive: boolean,
 	): void;

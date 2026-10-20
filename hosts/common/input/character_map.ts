@@ -4,6 +4,7 @@ type CharacterMapEntry = {
 };
 
 export const CHARACTER_MAP: Record<string, CharacterMapEntry> = {
+	Space: { normal: ' ', shift: ' ' },
 	KeyA: { normal: 'a', shift: 'A' },
 	KeyB: { normal: 'b', shift: 'B' },
 	KeyC: { normal: 'c', shift: 'C' },

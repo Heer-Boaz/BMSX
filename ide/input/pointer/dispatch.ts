@@ -1,12 +1,11 @@
-import type { PlayerInput } from '../../../hosts/common/input/player';
-import { PointerButton } from './buttons';
-import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';
+import type { PointerInputSnapshot } from '../../common/models';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
+import { prepareEditorPointerFrame } from './frame';
 import { handleEditorPanelPointer } from './panel';
-import { clearEditorPointerSelectionState } from './state';
+import { clearEditorPointerSelectionState, editorPointerState } from './state';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
-import type { EditorDisplay } from '../../common/viewport';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './capture';
 import { pointerHover } from './hover';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
@@ -14,17 +13,15 @@ import { point_in_rect } from '../../../machine/ts/common/rect';
 import { inputFocus } from '../focus';
 
 export function handleTextEditorPointerInput(
-	display: EditorDisplay,
-	playerInput: PlayerInput,
+	snapshot: PointerInputSnapshot,
 	now: number,
 	editor: CartEditor,
 ): void {
 	pointerHover.beginDispatch();
 	try {
-		const ctrlDown = isCtrlDown(playerInput);
-		const metaDown = isMetaDown(playerInput);
+		const ctrlDown = isCtrlDown(snapshot);
+		const metaDown = isMetaDown(snapshot);
 		const gotoModifierActive = ctrlDown || metaDown;
-		const snapshot = readEditorPointerSnapshot(display, playerInput);
 		const focused = inputFocus.target;
 		if (focused?.guestInput !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
 			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInput.bounds))) {
@@ -34,6 +31,7 @@ export function handleTextEditorPointerInput(
 		const quickInputVisible = editor.quickInput.visible;
 		const captureScope = blockingModal ? editor.actionPrompt.pointerScope : quickInputVisible ? editor.quickInput.pointerScope
 			: editor.contextMenu.visible ? editor.contextMenu.pointerScope : WORKBENCH_POINTER_SCOPE;
+		editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 		const justReleased = (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
 		if (pointerCapture.dispatch(snapshot, captureScope === WORKBENCH_POINTER_SCOPE && editorChromeState.openMenuId !== null, now, captureScope)) return;
 		prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible
@@ -55,7 +53,7 @@ export function handleTextEditorPointerInput(
 			clearEditorPointerSelectionState();
 			return;
 		}
-		if (handleEditorChromePointerDispatch(editor, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
+		if (handleEditorChromePointerDispatch(editor, snapshot, justPressed, pointerAuxJustPressed)) {
 			return;
 		}
 		if (handleEditorPanelPointer(editor.resourcePanel, editor.editorPanes, snapshot, justPressed, justReleased)) {
@@ -66,7 +64,6 @@ export function handleTextEditorPointerInput(
 			snapshot,
 			justPressed,
 			pointerSecondaryJustPressed,
-			playerInput,
 			now,
 			gotoModifierActive,
 		);

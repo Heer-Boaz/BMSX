@@ -14,6 +14,7 @@ import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
 import { parseNodeToolingOptions } from '../../scripts/bootrom/platforms/node_tooling_options';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 import type { HostControlRequest } from '../../hosts/common/control/protocol';
+import { KeyModifier, type TextInputHost, type TextInputTarget } from '../../hosts/common/input/text';
 
 test('client chord waits for the press frame before releasing its keys', async () => {
 	const requests: HostControlRequest[] = [];
@@ -85,6 +86,60 @@ test('remote input owns press IDs across requests and releases only held input',
 	assert.deepEqual(events[3], { type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: 120, y: 80, timestamp: 20 });
 });
 
+test('remote key producer edits in request order with live modifiers independently of guest sampling', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const state = { text: '', selectionStart: 0, selectionEnd: 0, offset: 0 };
+	const target: TextInputTarget = {
+		readOnly: false, revision: 0,
+		readText: () => state,
+		replaceText(from, to, text) {
+			state.text = state.text.slice(0, from) + text + state.text.slice(to);
+			state.selectionStart = state.selectionEnd = from + text.length;
+			return true;
+		},
+		setSelection(from, to) { state.selectionStart = from; state.selectionEnd = to; },
+		caretRect: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+	};
+	let saves = 0;
+	const host: TextInputHost = {
+		textTarget: target,
+		dispatchKey(event) {
+			if (!event.down) return false;
+			if (event.code === 'ArrowLeft') {
+				state.selectionStart = state.selectionEnd = state.selectionStart - 1;
+				return true;
+			}
+			if (event.code === 'KeyS' && event.modifiers === KeyModifier.ctrl) { saves += 1; return true; }
+			return false;
+		},
+		cancelInput() {}, onDidChangeTarget: () => () => {},
+	};
+	input.setEditingInput(host);
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input));
+	for (const code of ['KeyB', 'KeyA', 'KeyB', 'KeyB', 'ArrowLeft', 'KeyX']) {
+		remote.apply([{ type: 'key', code, down: true }, { type: 'key', code, down: false }]);
+	}
+	remote.apply([
+		{ type: 'key', code: 'ShiftRight', down: true },
+		{ type: 'key', code: 'Digit1', down: true },
+		{ type: 'key', code: 'Digit1', down: false },
+		{ type: 'key', code: 'ShiftRight', down: false },
+		{ type: 'key', code: 'ControlRight', down: true },
+		{ type: 'key', code: 'KeyS', down: true },
+		{ type: 'key', code: 'KeyS', down: true },
+	]);
+	assert.equal(state.text, 'babx!b');
+	assert.equal(saves, 1, 'a held key is not a second physical activation');
+	assert.equal(input.getPlayerInput(1).pollFrame, 0);
+	remote.release();
+	input.pollInput();
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('KeyS').pressed, false);
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('ControlRight').pressed, false);
+	assert.equal(state.text, 'babx!b');
+});
+
 test('remote pointer reaches the machine in raster pixels and signed logical wheel steps', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
@@ -135,4 +190,18 @@ test('filesystem-exclusive creation admits one concurrent writer and never overw
 	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
 	await assert.rejects(provider.write('src/actor.lua', records[1 - winner], false), /File already exists/);
 	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
+});
+
+test('remote disconnect releases raw keys without fabricating editor key-up activation', t => {
+	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	let armed = false, invoked = 0;
+	input.setEditingInput({ textTarget: undefined, onDidChangeTarget: () => () => {},
+		dispatchKey(event) { if (event.code === 'Enter') { if (event.down) armed = true; else if (armed) invoked++; } return false; },
+		cancelInput() { armed = false; },
+	});
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input));
+	remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+	assert.equal(armed, true); remote.release();
+	assert.equal(armed, false); assert.equal(invoked, 0);
 });

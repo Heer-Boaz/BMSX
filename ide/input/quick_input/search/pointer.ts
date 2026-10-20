@@ -1,5 +1,5 @@
 import { pointerHover } from '../../pointer/hover';
-import { PointerButton } from '../../pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';

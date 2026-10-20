@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -5,7 +6,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchSlider } from '../../ide/workbench/ui/slider';
 import { WorkbenchSliderControl } from '../../ide/workbench/ui/slider_control';
@@ -59,7 +60,7 @@ test('slider preserves captured input through readback and cancels on geometry, 
 	let sequence = 0;
 	for (const key of ['Home', 'ArrowRight', 'End', 'ArrowLeft']) for (const down of [true, false]) {
 		input.inputButton('keyboard:0', key, down, down ? 1 : 0, clock.now(), ++sequence);
-		clock.advance(20); input.pollInput(); focus.handleKeyboard(input.getPlayerInput(1));
+		clock.advance(20); input.pollInput(); focus.handleKeyboard(new KeyInputEvent(key, input.getPlayerInput(1).modifiers, false, down));
 	}
 	assert.deepEqual(values.slice(-4), [0, 1, 2000, 1999]);
 });

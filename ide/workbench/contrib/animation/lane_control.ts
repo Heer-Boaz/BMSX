@@ -2,7 +2,7 @@ import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusTarget } from '../../../input/focus';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { AnimationEditorController } from './controller';
 import type { AnimationEditorInput } from './editor_input';
 import type { AnimationClipSource } from './model';

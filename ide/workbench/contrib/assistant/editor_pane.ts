@@ -5,11 +5,11 @@ import { AssistantAttachmentStrip } from './attachment_strip';
 import { AssistantTranscriptControl } from './transcript_control';
 import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureStyledText } from '../../../editor/render/markdown';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
@@ -19,7 +19,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { writeClipboard } from '../../../input/clipboard';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -232,7 +232,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		if (this.preview.handlePointer(snapshot)) return true;
 		if (this.input.attachments.images.length > 0 && this.attachments.handlePointer(snapshot)) return true;
 		if (this.references.suggestions.handlePointer(snapshot)) return true;
@@ -242,7 +242,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		// Controls own focus: a transcript click still routes Ctrl+C to the message.
 		return this.composer.handlePointer(snapshot) || this.transcriptView.scroll.handlePointer(snapshot) || snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
-	public handleKeyboard(input: PlayerInput): void {
+	public handleKeyboard(input: KeyInputEvent): void {
 		if (!this.input.draft.focusTarget.hasFocus) return;
 		if (!(isCtrlDown(input) || isMetaDown(input)) && this.references.suggestions.handleKeyboard(input)) return;
 		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute(isShiftDown(input) ? 'assistant.direct' : 'assistant.send'); return; }

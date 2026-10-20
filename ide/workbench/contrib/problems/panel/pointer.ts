@@ -1,4 +1,4 @@
-import { PointerButton } from '../../../../input/pointer/buttons';
+import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';

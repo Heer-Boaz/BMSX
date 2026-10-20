@@ -10,7 +10,7 @@ import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { renderTabBar } from '../../ide/workbench/render/tab_bar';
 import { layoutTabBar, tabBarItems } from '../../ide/workbench/ui/tab/layout';
 import { beginTabDrag, endTabDrag } from '../../ide/workbench/ui/tab/drag';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';

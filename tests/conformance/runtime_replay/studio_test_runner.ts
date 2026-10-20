@@ -3,7 +3,7 @@ import { testStudioScenarioOutput } from './studio_scenario_output';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
-import { PointerButton } from '../../../ide/input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 
 /** Real Studio commands, source models and isolated physical execution targets. */
 export async function runStudioTestRunner(test: StudioFixture) {

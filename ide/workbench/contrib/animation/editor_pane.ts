@@ -1,12 +1,13 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
@@ -155,10 +156,10 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); if (this.edit.active) this.edit.draw(); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
-	public handleKeyboard(player: PlayerInput): void {
+	public handleKeyboard(player: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.lanes.cancelPointer(); return; }
 		for (const [key, delta] of TRACK_NAVIGATION) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
 			this.keys.cancelPointer(); this.lanes.cancelPointer();
 			const list = this.input.tracks, index = Math.max(0, Math.min(list.rows.length - 1, list.selectionIndex + delta));
@@ -167,13 +168,13 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		}
 		if (isKeyJustPressed('Delete', player)) { consumeIdeKey('Delete', player); this.lanes.cancelPointer(); this.commands.execute('animation.remove'); }
 	}
-	private handleDetailsKeyboard(player: PlayerInput): void {
+	private handleDetailsKeyboard(player: KeyInputEvent): void {
 		for (const [key, command] of DETAILS_NAVIGATION) {
-			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); return; }
+			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); return; }
 		}
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit'); }
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
 		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot) || this.lanes.handlePointer(snapshot)) return true;
 		const result = this.propertyPointer.handle(this.input.details, snapshot, justPressed, now);
@@ -189,7 +190,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, player: PlayerInput): void {
 		if (pointer === null) return;
-		if (this.imageBitmap !== undefined && this.image.handleWheel(pointer, direction * steps * 16, -direction * steps, player.getModifiers())) {
+		if (this.imageBitmap !== undefined && this.image.handleWheel(pointer, direction * steps * 16, -direction * steps, player.modifiers)) {
 			player.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
 		}
 		const list = this.input.tracks, details = this.input.details;

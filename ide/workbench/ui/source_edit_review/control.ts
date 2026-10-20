@@ -2,14 +2,14 @@ import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandId } from '../../../common/commands';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerHoverService } from '../../../input/pointer/hover';
 import type { PointerCaptureService } from '../../../input/pointer/capture';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { scrollWorkbenchList } from '../list_view';
@@ -153,8 +153,8 @@ export class WorkbenchSourceEditReview {
 
 	public handleWheel(rows: number): void { this.pointer.cancel(); scrollWorkbenchList(this.tree, rows); }
 
-	private handleKeyboard(input: PlayerInput): void {
-		for (const [key, command] of NAVIGATION) if (shouldRepeatKeyFromPlayer(key, input)) {
+	private handleKeyboard(input: KeyInputEvent): void {
+		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.pointer.cancel();
 			navigateWorkbenchTree(this.tree, command);

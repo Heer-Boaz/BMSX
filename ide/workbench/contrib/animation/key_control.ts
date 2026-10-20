@@ -1,10 +1,10 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../../common/models';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
-import { PointerButton } from '../../../input/pointer/buttons';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import type { AnimationEditorController } from './controller';
 import type { AnimationEditorInput } from './editor_input';
 import type { AnimationKeySource } from './model';
@@ -143,7 +143,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 		pointerCapture.release(this); this.gesture = undefined;
 		this.input?.keys.cancel();
 	}
-	private handleKeyboard(player: PlayerInput): void {
+	private handleKeyboard(player: KeyInputEvent): void {
 		const input = this.input!;
 		if (isKeyJustPressed('Escape', player)) {
 			consumeIdeKey('Escape', player); this.cancelPointer();
@@ -154,7 +154,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			consumeIdeKey('Delete', player); this.cancelPointer(); inputFocus.executeCommand('animation.remove', this.focusTarget); return;
 		}
 		for (const key of KEY_NAVIGATION) {
-			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
+			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
 			this.cancelPointer();
 			if (input.keys.track === undefined) {

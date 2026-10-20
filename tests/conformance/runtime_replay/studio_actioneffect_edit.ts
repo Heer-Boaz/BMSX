@@ -4,7 +4,7 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
-import { PointerButton } from '../../../ide/input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../../ide/input/focus';
 
 /** Independent source, real commands, value focus/draft history and workspace Save. */

@@ -1,13 +1,6 @@
 import type { PlayerInput } from '../../../hosts/common/input/player';
 
-/** Host pointer buttons, independent of guest ICU registers or keyboard bindings. */
-export const enum PointerButton { Primary = 1, Secondary = 2, Auxiliary = 4 }
-
-export type PointerButtons = {
-	pressedButtons: number;
-	justPressedButtons: number;
-	justReleasedButtons: number;
-};
+import { PointerButton, type PointerButtons } from '../../../hosts/common/input/pointer_event';
 
 const BUTTONS = [
 	{ code: 'pointer_primary', bit: PointerButton.Primary },

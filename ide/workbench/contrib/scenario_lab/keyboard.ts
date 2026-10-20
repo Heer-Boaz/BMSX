@@ -1,8 +1,9 @@
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import {
 	consumeIdeKey,
 	isKeyJustPressed,
-	shouldRepeatKeyFromPlayer,
+	isKeyDown,
 } from '../../../input/keyboard/key_input';
 import type { BGamepadButton } from '../../../../hosts/common/input/models';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
@@ -50,12 +51,12 @@ const scenarioLabGamepadCommandBindings: readonly {
 ];
 
 export function handleScenarioLabKeyboardInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	navigate: (command: ScenarioLabNavigationCommand) => void,
 ): boolean {
 	for (let index = 0; index < scenarioLabKeyboardRepeatNavigationBindings.length; index += 1) {
 		const binding = scenarioLabKeyboardRepeatNavigationBindings[index];
-		if (shouldRepeatKeyFromPlayer(binding.code, playerInput)) {
+		if (isKeyDown(binding.code, playerInput)) {
 			consumeIdeKey(binding.code, playerInput);
 			navigate(binding.command);
 			return true;

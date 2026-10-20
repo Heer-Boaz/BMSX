@@ -1,34 +1,24 @@
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerSnapshot } from '../../../common/models';
-import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
+import type { PointerInputSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { processRuntimeErrorOverlayPointer } from '../../../workbench/contrib/code_editor/input/overlays/runtime_error/input';
 import { handleCodeAreaPrimaryPressPointer } from './primary_press';
 import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './secondary_actions';
-import { updateCodeAreaPointerFeedback } from './feedback';
+import { codeAreaHover } from './feedback';
+import { pointerHover } from '../hover';
 import { handleCodeAreaSelectionPointer } from './selection';
-import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	guest: SuspendedGuestSession,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
-	snapshot: PointerSnapshot,
+	snapshot: PointerInputSnapshot,
 	justPressed: boolean,
 	gotoModifierActive: boolean,
-	activeContext: CodeEditorContext,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: PlayerInput,
 	now: number,
 	clipboard: Clipboard,
 ): void {
@@ -55,7 +45,7 @@ export function handleCodeAreaPointerInput(
 	const inGutter = insideCodeArea
 		&& snapshot.viewportX >= bounds.gutterLeft
 		&& snapshot.viewportX < bounds.gutterRight;
-	if (handleCodeAreaSecondaryPointer(editor, snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
+	if (handleCodeAreaSecondaryPointer(editor, snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed)) {
 		return;
 	}
 	if (handleCodeAreaGutterPointer(editor.breakpoints, snapshot, justPressed, inGutter, bounds)) {
@@ -74,17 +64,6 @@ export function handleCodeAreaPointerInput(
 		return;
 	}
 	handleCodeAreaSelectionPointer(snapshot, bounds);
-	updateCodeAreaPointerFeedback(
-		playerInput,
-		sources,
-		guest,
-		fault,
-		runtime,
-		snapshot,
-		insideCodeArea,
-		gotoModifierActive,
-		editorPointerState.pointerSelecting,
-		activeContext,
-		bounds,
-	);
+	if (snapshot.valid && snapshot.insideViewport && insideCodeArea) pointerHover.visit(codeAreaHover);
+	else pointerHover.release(codeAreaHover);
 }

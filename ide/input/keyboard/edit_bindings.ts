@@ -6,9 +6,9 @@ import { applyDocumentFormatting } from '../../editor/editing/text_editing_and_s
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
-import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 
-export function handleSearchNavigationKeybinding(playerInput: PlayerInput): boolean {
+export function handleSearchNavigationKeybinding(playerInput: KeyInputEvent): boolean {
 	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3', playerInput)) {
 		return false;
 	}
@@ -21,7 +21,7 @@ export function handleSearchNavigationKeybinding(playerInput: PlayerInput): bool
 	return true;
 }
 
-function handleEditableCodeBinding(playerInput: PlayerInput, code: string, matchesBinding: () => boolean, applyEdit: () => void): boolean {
+function handleEditableCodeBinding(playerInput: KeyInputEvent, code: string, matchesBinding: () => boolean, applyEdit: () => void): boolean {
 	if (!matchesBinding()) {
 		return false;
 	}
@@ -34,7 +34,7 @@ function handleEditableCodeBinding(playerInput: PlayerInput, code: string, match
 	return true;
 }
 
-function handleToggleCommentBinding(playerInput: PlayerInput, code: string): boolean {
+function handleToggleCommentBinding(playerInput: KeyInputEvent, code: string): boolean {
 	return handleEditableCodeBinding(
 		playerInput,
 		code,
@@ -43,7 +43,7 @@ function handleToggleCommentBinding(playerInput: PlayerInput, code: string): boo
 	);
 }
 
-function handleIndentationBinding(playerInput: PlayerInput, code: string, applyEdit: () => void): boolean {
+function handleIndentationBinding(playerInput: KeyInputEvent, code: string, applyEdit: () => void): boolean {
 	return handleEditableCodeBinding(
 		playerInput,
 		code,
@@ -52,7 +52,7 @@ function handleIndentationBinding(playerInput: PlayerInput, code: string, applyE
 	);
 }
 
-export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolean {
+export function handleCodeFormattingKeybinding(playerInput: KeyInputEvent): boolean {
 	if (!isAltDown(playerInput) || !isShiftDown(playerInput) || isCtrlDown(playerInput) || isMetaDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
@@ -62,7 +62,7 @@ export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolea
 }
 
 export function handleEditorEditingBindings(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 ): boolean {
 	return handleToggleCommentBinding(playerInput, 'Slash')
 		|| handleToggleCommentBinding(playerInput, 'NumpadDivide')

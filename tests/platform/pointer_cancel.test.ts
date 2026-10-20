@@ -4,7 +4,8 @@ import { Input } from '../../hosts/common/input/manager';
 import { PointerInput } from '../../hosts/common/input/pointer';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import { PointerButton, readEditorPointerButtons, type PointerButtons } from '../../ide/input/pointer/buttons';
+import { readEditorPointerButtons } from '../../ide/input/pointer/buttons';
+import { PointerButton, type PointerButtons } from '../../hosts/common/input/pointer_event';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import {
 	createInputControllerSnapshot,
@@ -94,8 +95,10 @@ test('button cancellation retains position, pending movement and wheel state', (
 	pointer.ingestButton('pointer_primary', true, 1, 2, 1);
 	pointer.ingestAxis2('pointer_position', 13.5, 17.25, 3);
 	pointer.ingestAxis2('pointer_position', 14.25, 16.5, 4);
+	pointer.ingestAxis2('pointer_attachment_position', 14.25, 16.5, 4);
 	pointer.ingestAxis1('pointer_wheel', 1.25, 5);
 	pointer.ingestAxis1('pointer_wheel', -0.5, 6);
+	pointer.ingestAxis1('pointer_attachment_wheel', 0.75, 6);
 	const position = pointer.getButtonState('pointer_position');
 	const positionValue = position.value2d;
 	pointer.cancelButtons(1 << INP_POINTER_BUTTON_PRIMARY, 7);

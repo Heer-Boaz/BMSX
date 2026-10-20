@@ -1,13 +1,10 @@
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, setFieldText, selectAll, backspace, setCursorFromOffset, getCursorOffset } from '../../ide/editor/ui/inline/text_field';
 import { resolveEditorCommandKeybinding } from '../../ide/input/keyboard/command_keybindings';
-import { KeyModifier } from '../../hosts/common/input/player';
-import { Input } from '../../hosts/common/input/manager';
-import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { executeClipboardAction } from '../../ide/input/clipboard';
@@ -53,7 +50,7 @@ test('focus dispatch has one concrete keyboard owner and detaches before blur no
 	const focus = new InputFocusService();
 	const first = focus.createTarget();
 	const second = focus.createTarget();
-	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1).getPlayerInput(1);
+	const input = new KeyInputEvent('KeyA', KeyModifier.none);
 	const calls: string[] = [];
 	first.bindKeyboard(() => calls.push('first-input'));
 	second.bindKeyboard(() => calls.push('second-input'));

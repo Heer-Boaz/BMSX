@@ -1,9 +1,9 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../common/models';
 import * as colors from '../../common/constants';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard/key_input';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { pointerCapture, type PointerCaptureTarget } from '../../input/pointer/capture';
 import { pointerHover } from '../../input/pointer/hover';
 import { editorViewState } from '../../editor/ui/view/state';
@@ -66,10 +66,10 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 		api.blit_rect(b.left, b.top, b.right, b.bottom, 0, colors.COLOR_QUICK_OPEN_OUTLINE);
 		drawQuickPickRows(this.model, this.rows);
 	}
-	public handleKeyboard(input: PlayerInput): boolean {
+	public handleKeyboard(input: KeyInputEvent): boolean {
 		if (!this.visible) return false;
 		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.hide(); return true; }
-		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
+		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.model.list.selectionIndex = advanceQuickInputSelection(this.model.list.selectionIndex, this.model.list.rows.length, key === 'ArrowDown' ? 1 : -1);
 			this.model.revealSelection(); return true;

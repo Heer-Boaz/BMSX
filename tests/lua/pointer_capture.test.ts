@@ -1,4 +1,4 @@
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';

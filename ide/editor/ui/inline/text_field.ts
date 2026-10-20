@@ -1,6 +1,5 @@
-import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
 import type { Position } from '../../../common/models';
 import type { TextField, TextFieldAnnotation } from './text_field_model';
 import { clamp } from '../../../../machine/ts/common/clamp';
@@ -16,7 +15,7 @@ import {
 } from '../../editing/cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '../../editing/cursor/words';
 import { editorRuntimeState } from '../../common/runtime_state';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { showEditorMessage } from '../../../common/feedback_state';
 
 export type InlineFieldMetrics = {
@@ -409,41 +408,37 @@ export function setFieldText<T>(field: TextField<T>, value: string, moveCursorTo
 }
 
 /** Clipboard text obeys the same retained field constraints as typing. */
-export function pasteFieldText(field: TextField, text: string): void {
-	const { singleLine, characterFilter, maxLength } = field.options;
+export function pasteFieldText(field: TextField, text: string): boolean {
+	const { singleLine, characterFilter, maxLength, allowSpace } = field.options;
 	if (singleLine && /[\r\n]/.test(text)) {
 		showEditorMessage('This input accepts one line; multiline paste was not applied.', constants.COLOR_STATUS_WARNING, 4);
-		return;
+		return false;
 	}
 	let insertion = text;
-	if (characterFilter) {
+	if (characterFilter || !allowSpace) {
 		let filtered = '';
 		for (let i = 0; i < insertion.length; i++) {
 			const ch = insertion.charAt(i);
-			if (characterFilter(ch)) filtered += ch;
+			if ((allowSpace || ch !== ' ') && (characterFilter === undefined || characterFilter(ch))) filtered += ch;
 		}
 		insertion = filtered;
 	}
 	if (maxLength !== undefined) {
 		const remaining = maxLength - (field.text.length - selectionLength(field));
-		if (remaining <= 0) return;
+		if (remaining <= 0) return false;
 		insertion = insertion.slice(0, remaining);
 	}
 	insertValue(field, insertion);
+	return insertion === text;
 }
 
 export function applyInlineFieldEditing(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	field: TextField,
 ): boolean {
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	const shiftDown = isShiftDown(playerInput);
-	const altDown = isAltDown(playerInput);
-	const options = field.options;
-	const { allowSpace } = options;
-	const characterFilter = options.characterFilter;
-	const maxLength = options.maxLength;
 	const useCtrl = ctrlDown || metaDown;
 	let textChanged = false;
 
@@ -452,7 +447,7 @@ export function applyInlineFieldEditing(
 		selectAll(field);
 	}
 
-	if (shouldRepeatKeyFromPlayer('Backspace', playerInput)) {
+	if (isKeyDown('Backspace', playerInput)) {
 		consumeIdeKey('Backspace', playerInput);
 		if (useCtrl) {
 			textChanged = deleteWordBackward(field) || textChanged;
@@ -461,7 +456,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('Delete', playerInput)) {
+	if (isKeyDown('Delete', playerInput)) {
 		consumeIdeKey('Delete', playerInput);
 		if (useCtrl) {
 			textChanged = deleteWordForward(field) || textChanged;
@@ -470,7 +465,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {
+	if (isKeyDown('ArrowLeft', playerInput)) {
 		consumeIdeKey('ArrowLeft', playerInput);
 		if (useCtrl) {
 			moveWordLeft(field, shiftDown);
@@ -479,7 +474,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('ArrowRight', playerInput)) {
+	if (isKeyDown('ArrowRight', playerInput)) {
 		consumeIdeKey('ArrowRight', playerInput);
 		if (useCtrl) {
 			moveWordRight(field, shiftDown);
@@ -488,57 +483,14 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('Home', playerInput)) {
+	if (isKeyDown('Home', playerInput)) {
 		consumeIdeKey('Home', playerInput);
 		moveToStart(field, shiftDown);
 	}
 
-	if (shouldRepeatKeyFromPlayer('End', playerInput)) {
+	if (isKeyDown('End', playerInput)) {
 		consumeIdeKey('End', playerInput);
 		moveToEnd(field, shiftDown);
-	}
-
-		if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space', playerInput)) {
-			consumeIdeKey('Space', playerInput);
-			if (maxLength === undefined) {
-				textChanged = insertValue(field, ' ') || textChanged;
-			} else {
-			const currentLength = totalLength(field);
-			const selectedLength = selectionLength(field);
-			if (maxLength - (currentLength - selectedLength) > 0) {
-				textChanged = insertValue(field, ' ') || textChanged;
-			}
-		}
-	}
-
-	if (!useCtrl && !altDown) {
-		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
-			const code = CHARACTER_CODES[i];
-			if (!isKeyJustPressed(code, playerInput)) {
-				continue;
-			}
-			const entry = CHARACTER_MAP[code];
-			const value = shiftDown ? entry.shift : entry.normal;
-			if (value.length === 0) {
-				consumeIdeKey(code, playerInput);
-				continue;
-			}
-				if (characterFilter && !characterFilter(value)) {
-					consumeIdeKey(code, playerInput);
-					continue;
-				}
-				if (maxLength != null) {
-					const currentLength = totalLength(field);
-					const selectedLength = selectionLength(field);
-					const available = maxLength - (currentLength - selectedLength);
-					if (available <= 0) {
-						consumeIdeKey(code, playerInput);
-						continue;
-				}
-			}
-			textChanged = insertValue(field, value) || textChanged;
-			consumeIdeKey(code, playerInput);
-		}
 	}
 
 	return textChanged;

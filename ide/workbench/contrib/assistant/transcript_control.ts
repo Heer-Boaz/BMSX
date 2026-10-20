@@ -1,12 +1,12 @@
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { AssistantEntry } from '../../services/assistant/transcript';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusTarget } from '../../../input/focus';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { PointerButton } from '../../../input/pointer/buttons';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { api } from '../../../runtime/overlay_api';
 import * as colors from '../../../common/constants';
@@ -84,14 +84,14 @@ export class AssistantTranscriptControl {
 		return false;
 	}
 
-	private handleKeyboard(input: PlayerInput): boolean {
+	private handleKeyboard(input: KeyInputEvent): boolean {
 		if (this.input.selectedEntry >= 0 && isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input); this.input.selectedEntry = -1; return true;
 		}
 
 		if (this.openSelected && isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.openSelected(); return true; }
 		for (const key of ['ArrowUp', 'ArrowDown'] as const) {
-			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
+			if (!isKeyDown(key, input)) continue;
 			consumeIdeKey(key, input);
 			const { conversation, transcript, viewport, layout } = this.input;
 			this.input.selectedEntry = Math.max(-1, Math.min(conversation.entries.length - 1,

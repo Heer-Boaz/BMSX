@@ -7,7 +7,7 @@ import type { PlaySessionFactory } from './services/play/session';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { KeyModifier } from '../../hosts/common/input/player';
+import { KeyModifier } from '../../hosts/common/input/text';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

@@ -22,6 +22,7 @@ import {
 	showBrowserBootError,
 } from '../../hosts/browser/boot';
 import { BrowserClipboard } from '../../hosts/browser/clipboard';
+import { BrowserTextInput } from '../../hosts/browser/text_input';
 import { reportClipboardFailure } from '../input/clipboard';
 import { HttpWorkspaceRecordProvider } from './workspace_records';
 import { IndexedDbWorkspaceRecordProvider } from './indexeddb_workspace_records';
@@ -148,6 +149,9 @@ async function startBrowserStudio(): Promise<void> {
 			artifact === null ? 'workspace' : 'installed',
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
+		const textInput = new BrowserTextInput(document.getElementById('gamescreen') as HTMLCanvasElement, ide.editor);
+		options.browserInput.setNativeKeyHandler(textInput.handleKey);
+		options.browserInput.setNativePointerHandler(event => ide.editor.dispatchPointer(event));
 		if (workspace.kind === 'http') ide.editor.importFiles = (directory, signal) => importWorkspaceFiles(httpSession(workspace.baseUrl), directory, signal);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.device.select(audioOutput);
@@ -166,7 +170,11 @@ async function startBrowserStudio(): Promise<void> {
 			ide.editor.assistant.disconnect();
 			ide.editor.observedConversation.disconnect();
 			persistWorkspaceSessionLocally();
-			if (!event.persisted) browserFiles?.close();
+			if (!event.persisted) {
+				options.browserInput.setNativeKeyHandler(undefined);
+				textInput.dispose();
+				browserFiles?.close();
+			}
 		});
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
@@ -184,6 +192,7 @@ async function startBrowserStudio(): Promise<void> {
 				hostOverlayMenu,
 				currentTime,
 			);
+			textInput.refresh();
 			if (result === HostFrameRunResult.ExitRequested) {
 				window.close();
 				if (window.closed) {

@@ -1,6 +1,6 @@
 import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { PointerButton } from '../../input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService } from '../../input/pointer/capture';
 import type { Scrollbar } from '../../workbench/ui/scrollbar';
 import { ScrollbarPointerControl } from '../../workbench/ui/scrollbar_pointer';

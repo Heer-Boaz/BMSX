@@ -1,4 +1,3 @@
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { BreakpointController } from '../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
@@ -14,14 +13,12 @@ export function handleCodeAreaSecondaryPointer(
 	insideCodeArea: boolean,
 	inGutter: boolean,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: PlayerInput
 ): boolean {
 	if (!pointerSecondaryJustPressed || !insideCodeArea || inGutter) {
 		return false;
 	}
 	const position = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY);
 	openCodeContextMenu(editor, position.row, position.column, snapshot.viewportX, snapshot.viewportY);
-	playerInput.inputHandlers.pointer.consumeButton('pointer_secondary');
 	clearEditorPointerSelectionState();
 	return true;
 }

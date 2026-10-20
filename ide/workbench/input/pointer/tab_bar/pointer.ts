@@ -1,5 +1,4 @@
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
@@ -60,7 +59,6 @@ export function handleTabBarPointer(
 export function handleTabBarMiddleClick(
 	editorPanes: EditorPanes,
 	snapshot: PointerSnapshot,
-	playerInput: PlayerInput,
 ): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
@@ -79,7 +77,6 @@ export function handleTabBarMiddleClick(
 		}
 		if (point_in_rect(x, y, bounds)) {
 			closeTab(editorPanes, tab.id);
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
 			consumeChromePointerPress();
 			return true;
 		}

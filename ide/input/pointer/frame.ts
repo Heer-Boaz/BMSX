@@ -1,32 +1,33 @@
-import { PointerButton, readEditorPointerButtons } from './buttons';
-import type { PlayerInput } from '../../../hosts/common/input/player';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { mapScreenPointToViewport } from '../../editor/ui/view/view';
+import { mapDisplayPointToViewport, DisplayPointMappingResult } from '../../../machine/ts/render/video_output';
+import type { PointerInputEvent } from '../../../hosts/common/input/pointer_event';
+import { editorViewState } from '../../editor/ui/view/state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { endTabDrag } from '../../workbench/ui/tab/drag';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerInputSnapshot } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { EditorDisplay } from '../../common/viewport';
 
-export function readEditorPointerSnapshot(display: EditorDisplay, playerInput: PlayerInput): PointerSnapshot {
-	const snapshot: PointerSnapshot = {
-		viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
-		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
-	};
-	readEditorPointerButtons(playerInput, snapshot);
-	const coords = playerInput.getRawButtonState('pointer_position', 'pointer').value2d;
-	if (coords === null) return snapshot;
-	const mapped = mapScreenPointToViewport(display, coords[0], coords[1]);
+const mapped = { x: 0, y: 0 };
+
+/** Project native client coordinates into the retained editor's logical viewport. */
+export function projectEditorPointerEvent(display: EditorDisplay, event: PointerInputEvent, snapshot: PointerInputSnapshot): void {
+	const result = mapDisplayPointToViewport(display.measureDisplay(), editorViewState.viewportWidth, editorViewState.viewportHeight, event.x, event.y, mapped);
 	snapshot.viewportX = mapped.x;
 	snapshot.viewportY = mapped.y;
-	snapshot.insideViewport = mapped.inside;
-	snapshot.valid = mapped.valid;
-	return snapshot;
+	snapshot.insideViewport = result === DisplayPointMappingResult.Inside;
+	snapshot.valid = result !== DisplayPointMappingResult.Invalid;
+	snapshot.pressedButtons = event.buttons;
+	snapshot.justPressedButtons = event.pressedButtons;
+	snapshot.justReleasedButtons = event.releasedButtons;
+	snapshot.modifiers = event.modifiers;
+	snapshot.spaceDown = event.spaceDown;
 }
 
 export function prepareEditorPointerFrame(
-	snapshot: PointerSnapshot,
+	snapshot: PointerInputSnapshot,
 	gotoModifierActive: boolean,
 	workbenchInputBlocked: boolean,
 ): void {

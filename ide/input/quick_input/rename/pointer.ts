@@ -1,4 +1,4 @@
-import { PointerButton } from '../../pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
 import { getRenameBarBounds } from '../../../workbench/common/layout';

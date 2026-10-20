@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -20,10 +21,11 @@ function fixture(t: TestContext) {
 	origin.focus();
 	const prompt = new ActionPrompt(focus, capture);
 	let pressId = 0;
-	const frame = () => { clock.advance(20); input.pollInput(); focus.handleKeyboard(input.getPlayerInput(1)); };
+	const frame = () => { clock.advance(20); input.pollInput(); };
 	const key = (code: string, down: boolean) => {
 		input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
 		frame();
+		focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pointer = (index: number, pressed = 0, down = 0, up = 0) => {
@@ -44,7 +46,10 @@ test('modal owns focus until Escape is released, then returns it to the invoking
 	f.key('Escape', true);
 	for (let index = 0; index < 10; index++) f.frame();
 	assert.equal(f.prompt.visible, true);
+	f.focus.cancelKeyboard();
 	f.key('Escape', false);
+	assert.equal(f.prompt.visible, true, 'host cancellation revokes the armed Escape without faking a release');
+	f.press('Escape');
 	assert.equal(await result, 'cancel');
 	assert.equal(f.focus.target, f.origin);
 });

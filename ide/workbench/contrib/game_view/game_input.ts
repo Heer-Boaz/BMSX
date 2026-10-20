@@ -1,10 +1,10 @@
-import { KeyModifier } from '../../../../hosts/common/input/player';
+import { KeyModifier } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import { COLOR_FOCUS_BORDER } from '../../../common/constants';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { GuestInputBinding } from '../../../input/focus';
@@ -19,7 +19,7 @@ export class GameInputControl {
 		this.focusTarget = inputFocus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.focusTarget.guestInput !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
-			if (player.getModifiers() === KeyModifier.shift && isKeyJustPressed('F1', player)) {
+			if (player.modifiers === KeyModifier.shift && isKeyJustPressed('F1', player)) {
 				consumeIdeKey('F1', player);
 				this.focusTarget.release();
 			}

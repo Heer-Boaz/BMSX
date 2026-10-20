@@ -1,5 +1,5 @@
 import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
-import { PointerButton } from '../../input/pointer/buttons';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../common/constants';
 import type { PointerSnapshot } from '../../common/models';
 import { workbenchListRowIndexAtPosition } from './list_view';

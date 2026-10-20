@@ -2,10 +2,10 @@ import { consumeIdeKey } from '../../../../input/keyboard/key_input';
 import { isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import type { RenameController } from './controller';
 import type { CrossFileRenameManager } from './operations';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 
 export function handleRenameControllerInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	controller: RenameController,
 	crossFileRename: CrossFileRenameManager,
 ): void {

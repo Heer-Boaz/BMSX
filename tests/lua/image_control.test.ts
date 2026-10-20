@@ -1,12 +1,13 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
-import { KeyModifier } from '../../hosts/common/input/player';
+import { KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchImageControl } from '../../ide/workbench/ui/image_control';
 import { WorkbenchImageViewport } from '../../ide/workbench/ui/image_viewport';
@@ -99,8 +100,8 @@ test('image navigation and zoom consume real keyboard edges only through image f
 		let consumed = false;
 		for (const down of [true, false]) {
 			input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
-			clock.advance(20); input.pollInput(); f.focus.handleKeyboard(input.getPlayerInput(1));
-			if (down) consumed = input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState(code).consumed;
+			clock.advance(20); input.pollInput(); const event = new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down); f.focus.handleKeyboard(event);
+			if (down) consumed = event.consumed;
 		}
 		return consumed;
 	};

@@ -5,7 +5,7 @@ import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
 import { drawImagePreview, type ImagePreviewCache } from '../../ui/image_preview';
 import type { AssistantAttachments } from './attachments';

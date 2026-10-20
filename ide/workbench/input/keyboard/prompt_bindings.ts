@@ -4,9 +4,9 @@ import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret
 import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
-function handleGlobalFindBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+function handleGlobalFindBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
@@ -15,7 +15,7 @@ function handleGlobalFindBinding(playerInput: PlayerInput, editor: CartEditor): 
 	return true;
 }
 
-function handleLocalFindBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+function handleLocalFindBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
@@ -24,7 +24,7 @@ function handleLocalFindBinding(playerInput: PlayerInput, editor: CartEditor): b
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+function handleDefinitionAndReferenceBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
 	if (!isKeyJustPressed('F12', playerInput)) {
 		return false;
 	}
@@ -37,7 +37,7 @@ function handleDefinitionAndReferenceBinding(playerInput: PlayerInput, editor: C
 	return true;
 }
 
-function handleSelectAllBinding(playerInput: PlayerInput): boolean {
+function handleSelectAllBinding(playerInput: KeyInputEvent): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyA', playerInput)) {
 		return false;
 	}
@@ -51,7 +51,7 @@ function handleSelectAllBinding(playerInput: PlayerInput): boolean {
 	return true;
 }
 
-function handleLineJumpBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+function handleLineJumpBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyL', playerInput)) {
 		return false;
 	}
@@ -60,7 +60,7 @@ function handleLineJumpBinding(playerInput: PlayerInput, editor: CartEditor): bo
 	return true;
 }
 
-export function handleEditorPromptBindings(playerInput: PlayerInput, editor: CartEditor): boolean {
+export function handleEditorPromptBindings(playerInput: KeyInputEvent, editor: CartEditor): boolean {
 	return handleGlobalFindBinding(playerInput, editor)
 		|| handleLocalFindBinding(playerInput, editor)
 		|| handleDefinitionAndReferenceBinding(playerInput, editor)

@@ -1,6 +1,6 @@
 import { semanticSnapshot } from './semantic_test_harness';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';

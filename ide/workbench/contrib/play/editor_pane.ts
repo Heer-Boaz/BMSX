@@ -1,6 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
@@ -124,11 +123,11 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number, player: PlayerInput): boolean {
+	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.details.visible) return this.details.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		if (this.gameInput?.handlePointer(snapshot)) return false;
-		return super.handleViewPointer(snapshot, justPressed, now, player);
+		return super.handleViewPointer(snapshot, justPressed, now);
 	}
 	public handleKeyboard(): void {}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {

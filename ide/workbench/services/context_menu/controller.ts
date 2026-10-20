@@ -1,11 +1,11 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
@@ -37,7 +37,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.focusTarget = focus.createTarget();
 		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
 		this.scroll.setInput(this.model.viewport);
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.hide(false));
 	}
 
@@ -148,37 +148,32 @@ export class ContextMenuController implements PointerCaptureTarget {
 		view.scrollbar.setScroll(view.scrollTop + steps * this.model.rowHeight);
 	}
 
-	public handleKeyboard(input: PlayerInput): boolean {
+	public handleKeyboard(input: KeyInputEvent): boolean {
 		if (isKeyJustPressed('Escape', input) || isKeyJustPressed('Tab', input)) {
 			consumeIdeKey('Escape', input);
 			consumeIdeKey('Tab', input);
 			this.hide();
 			return true;
 		}
-		if (input.getModifiers() !== KeyModifier.none) {
+		if (input.modifiers !== KeyModifier.none) {
 			if (this.triggerKey !== undefined) this.cancelPointer();
 			return false;
 		}
-		for (const code of ACCEPT_KEYS) {
-			const button = input.inputHandlers.keyboard.getKeyState(code);
-			if (button.consumed) continue;
-			if (button.justpressed && this.triggerKey === undefined && this.model.selectedIndex >= 0) {
+		if (ACCEPT_KEYS.includes(input.code as typeof ACCEPT_KEYS[number]) && !input.consumed) {
+			if (input.down && !input.repeat && this.triggerKey === undefined && this.model.selectedIndex >= 0) {
 				this.cancelPointer();
-				this.triggerKey = code;
+				this.triggerKey = input.code;
 				this.pressedIndex = this.model.selectedIndex;
 			}
-			if (button.pressed || button.justpressed || button.justreleased) consumeIdeKey(code, input);
-			if (code !== this.triggerKey) continue;
-			if (button.justreleased) {
+			consumeIdeKey(input.code, input);
+			if (input.code === this.triggerKey && !input.down) {
 				const accept = this.model.selectedIndex === this.pressedIndex;
 				this.cancelPointer();
 				if (accept) this.accept();
-				return true;
 			}
-			if (!button.pressed) this.cancelPointer();
 			return true;
 		}
-		for (const code of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(code, input)) {
+		for (const code of NAVIGATION_KEYS) if (isKeyDown(code, input)) {
 			consumeIdeKey(code, input);
 			this.cancelPointer();
 			switch (code) {

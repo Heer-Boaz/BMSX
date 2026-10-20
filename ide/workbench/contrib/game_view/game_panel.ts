@@ -1,6 +1,5 @@
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -8,7 +7,7 @@ import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -120,17 +119,15 @@ export class GamePanel {
 		drawWorkbenchSplit(this.split, this.sash.hovered || this.sash.focusTarget.hasFocus);
 	}
 
-	public handlePointer(snapshot: PointerSnapshot, playerInput: PlayerInput): boolean {
+	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!this.visible) return false;
 		if (this.sash.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) {
-			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) playerInput.inputHandlers.pointer.consumeButton('pointer_primary');
 			return true;
 		}
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
 		if (this.gameInput.handlePointer(snapshot)) return true;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
 			this.focusTarget.focus();
-			playerInput.inputHandlers.pointer.consumeButton('pointer_primary');
 		}
 		return true;
 	}

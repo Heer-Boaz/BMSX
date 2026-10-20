@@ -2,7 +2,6 @@ import { getWorkbenchStatusBounds } from '../../workbench/common/layout';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { handleEditorScrollbarPointer } from './scrollbar';
 import type { CartEditor } from '../../cart_editor';
-import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../common/models';
 import { handleEditorPanelResizePointer } from './panel';
 import { handleTabBarMiddleClick, handleTabBarPointer, updateTabHoverState } from '../../workbench/input/pointer/tab_bar/pointer';
@@ -17,17 +16,15 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
-	playerInput: PlayerInput
 ): boolean {
 	if (justPressed && !point_in_rect(snapshot.viewportX, snapshot.viewportY, editorChromeState.tabBarBounds)) editorChromeState.lastTabClickId = null;
 	if (editorChromeState.openMenuId === null && editor.runtimeTimeline.handlePointer(snapshot)) {
-		if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
 		return true;
 	}
 	if (handleTopBarPointer(editor.commands, snapshot, justPressed)) {
 		return true;
 	}
-	if (editor.gamePanel.handlePointer(snapshot, playerInput)) {
+	if (editor.gamePanel.handlePointer(snapshot)) {
 		return true;
 	}
 	if (editor.resourcePanel.isVisible() && handleEditorScrollbarPointer(snapshot, RESOURCE_SCROLLBARS)) return true;
@@ -42,10 +39,9 @@ export function handleEditorChromePointerDispatch(
 	}
 	const overTabs = updateTabHoverState(snapshot);
 	if (editor.tabBar.handlePointer(snapshot)) {
-		if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
 		return true;
 	}
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, snapshot, playerInput)) {
+	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, snapshot)) {
 		return true;
 	}
 	if (justPressed && handleTabBarPointer(editor.editorPanes, snapshot, editorRuntimeState.currentTimeMs)) {

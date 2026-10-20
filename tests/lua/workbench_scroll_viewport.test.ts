@@ -1,3 +1,4 @@
+import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -6,7 +7,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
-import { PointerButton } from '../../ide/input/pointer/buttons';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchScrollViewport } from '../../ide/workbench/ui/scroll_viewport';
 import { WorkbenchScrollControl } from '../../ide/workbench/ui/scroll_control';
@@ -114,7 +115,7 @@ test('wheel routes only inside this viewport and leaves focused values alone', t
 	const press = (code: string) => {
 		for (const down of [true, false]) {
 			input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
-			clock.advance(20); input.pollInput(); f.focus.handleKeyboard(input.getPlayerInput(1));
+			clock.advance(20); input.pollInput(); f.focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 		}
 	};
 	press('PageDown'); assert.equal(f.view.scrollTop, 140);

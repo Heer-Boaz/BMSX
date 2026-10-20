@@ -1,14 +1,14 @@
 import { pointerHover } from '../../../input/pointer/hover';
 import type { ContextMenuController } from '../context_menu/controller';
-import { PointerButton } from '../../../input/pointer/buttons';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../editor/render/caret';
 import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
@@ -190,7 +190,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		resetBlink();
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input);
 			this.hide();
@@ -216,7 +216,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			return;
 		}
 		for (const [code, delta] of NAVIGATION) {
-			if (shouldRepeatKeyFromPlayer(code, input)) {
+			if (isKeyDown(code, input)) {
 				consumeIdeKey(code, input);
 				this.moveSelection(delta * (code === 'PageUp' || code === 'PageDown' ? this.model.visibleRowCount : 1));
 				return;

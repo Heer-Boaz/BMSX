@@ -1,6 +1,6 @@
 import type { CartEditor } from '../../cart_editor';
 import { handleEditorCommandBindings, handleEscapeBinding } from './global_bindings';
-import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { handleWorkbenchTabInput } from '../../workbench/input/keyboard/tab_input';
 import { inputFocus } from '../focus';
 import { handleClipboardBindings } from '../clipboard';
@@ -8,7 +8,7 @@ import { pointerCapture } from '../pointer/capture';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
 export function handleEditorInput(
-	playerInput: PlayerInput,
+	playerInput: KeyInputEvent,
 	editor: CartEditor,
 ): void {
 	if (inputFocus.target?.guestInput !== undefined) {

@@ -203,7 +203,7 @@ export class OnScreenKeyboard {
 			if (++this.keyCounts[key] === 1) {
 				this.input.setVirtualKeyboardKey(definition.code, true);
 				this.recordKeyFeedback(key, true);
-			}
+			} else this.input.activateVirtualKeyboardKey(definition.code);
 		}
 		this.changed();
 	}

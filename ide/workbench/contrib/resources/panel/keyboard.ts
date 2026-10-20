@@ -1,11 +1,11 @@
+import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
 import { resetBlink } from '../../../../editor/render/caret';
 import type { ResourcePanelController } from './controller';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
 
-export function handleResourcePanelKeyboardInput(playerInput: PlayerInput, controller: ResourcePanelController): void {
+export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, controller: ResourcePanelController): void {
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	const shiftDown = isShiftDown(playerInput);

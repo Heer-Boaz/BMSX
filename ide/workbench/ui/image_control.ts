@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/player';
+import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { PointerButton } from '../../input/pointer/buttons';
+import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { WorkbenchImageViewport } from './image_viewport';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
@@ -101,10 +101,10 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 		return true;
 	}
 
-	private handleKeyboard(input: PlayerInput): void {
+	private handleKeyboard(input: KeyInputEvent): void {
 		const view = this.input!;
 		for (const code of IMAGE_KEYS) {
-			if (!shouldRepeatKeyFromPlayer(code, input)) continue;
+			if (!isKeyDown(code, input)) continue;
 			consumeIdeKey(code, input);
 			this.cancelPointer();
 			switch (code) {

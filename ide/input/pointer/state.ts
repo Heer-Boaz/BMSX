@@ -1,4 +1,4 @@
-import type { PointerSnapshot, VisualLineSegment } from '../../common/models';
+import type { PointerInputSnapshot, VisualLineSegment } from '../../common/models';
 
 type PointerRowResolution = {
 	visualIndex: number;
@@ -6,7 +6,7 @@ type PointerRowResolution = {
 };
 
 type EditorPointerState = {
-	lastPointerSnapshot: PointerSnapshot;
+	lastPointerSnapshot: PointerInputSnapshot;
 	pointerSelecting: boolean;
 	lastPointerClickTimeMs: number;
 	lastPointerClickRow: number;

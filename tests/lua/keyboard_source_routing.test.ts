@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
-import { KeyModifier } from '../../hosts/common/input/player';
+import { KeyModifier } from '../../hosts/common/input/text';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
 import { NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { HostUiInput, HostUiInputSource } from '../../hosts/common/input/ui';
@@ -171,11 +171,11 @@ test('physical host capture precedes editor shortcut routing without hiding a se
 	assert.equal(f.input.supervisorRequestLineHigh(), true);
 	assert.equal(f.keyboard.getKeyState('ShiftLeft').pressed, true, 'consumption does not fabricate physical release');
 	assert.equal(f.keyboard.getKeyState('ShiftLeft').consumed, true);
-	assert.equal(f.input.getPlayerInput(1).getModifiers(), KeyModifier.none);
+	assert.equal(f.input.getPlayerInput(1).modifiers, KeyModifier.none);
 	assert.equal(shiftedCommands, 0, 'editor cannot accept a hardware modifier owned by a host control chord');
 	f.virtual.releaseSource(digit); f.poll(); f.touch('ShiftLeft');
 	f.virtual.pressKey(digit, ON_SCREEN_KEY_INDEX_BY_CODE.get('Digit1')); f.poll();
-	assert.equal(f.input.getPlayerInput(1).getModifiers(), KeyModifier.shift);
+	assert.equal(f.input.getPlayerInput(1).modifiers, KeyModifier.shift);
 	assert.equal(shiftedCommands, 1, 'a separate virtual Shift remains an intentional editor modifier');
-	f.keyboard.consumeKey('ShiftLeft'); assert.equal(f.input.getPlayerInput(1).getModifiers(), KeyModifier.none);
+	f.keyboard.consumeKey('ShiftLeft'); assert.equal(f.input.getPlayerInput(1).modifiers, KeyModifier.none);
 });
