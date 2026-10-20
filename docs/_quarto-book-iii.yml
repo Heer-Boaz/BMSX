@@ -3,7 +3,10 @@ project:
 
 book:
   title: "Book III — Cartridge and Expansion Reference"
+  subtitle: "BMSX-DR-003 · Publication revision 1"
   output-file: bmsx-book-iii
   chapters:
     - index.md
     - book3/cartridge.md
+
+subject: "BMSX-DR-003 — Cartridge and Expansion Reference — Publication revision 1"

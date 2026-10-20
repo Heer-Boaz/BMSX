@@ -15,7 +15,7 @@ in ROM or RAM.
 Use `string.from_utf8(address, byte_count)` to construct text from mapped
 UTF-8 bytes. The address selects actual byte storage and the count measures
 encoded bytes. [BLua storage declarations](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)
-define those ranges; [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} gives their physical mapping and
+define those ranges; [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} gives their physical mapping and
 reservations. [CPU value rules](cpu.md#sec-cpu) specify indexing and Number
 conversion, and [protected calls](coroutines.md#sec-coroutines) describe language-error
 handling.
@@ -132,7 +132,7 @@ Pass one Number for each Unicode scalar to put in the result. Values are not
 restricted to 0 through 255. Each Number is converted to an unsigned 32-bit
 word: a finite value is truncated toward zero and wrapped modulo
 4,294,967,296; NaN and either infinity convert to zero. The converted value
-must be in `0x000000` through `0x10ffff`, excluding `0xd800` through `0xdfff`.
+must be in `000000H` through `10FFFFH`, excluding `D800H` through `DFFFH`.
 
 | Call | Result |
 | --- | --- |
@@ -208,7 +208,7 @@ codepoints. These are different units even when both are expressed as Numbers.
 The caller must provide backed storage containing complete, well-formed
 UTF-8 sequences and keep those bytes valid and stable while decoding reads
 them. The function does not allocate the input storage or grant access to it.
-An embedded byte `0x00` becomes codepoint zero and does not end the input.
+An embedded byte `00H` becomes codepoint zero and does not end the input.
 With the installed bindings, a zero byte count returns one empty String.
 
 
@@ -217,30 +217,30 @@ hard read barrier** for the continuation bytes of a sequence already begun:
 
 | Lead byte value | Bytes read for that sequence, including the lead |
 | --- | --- |
-| `0x00`–`0x7f` | 1 |
-| `0x80`–`0xdf` | 2 |
-| `0xe0`–`0xef` | 3 |
-| `0xf0`–`0xff` | 4 |
+| `00H`–`7FH` | 1 |
+| `80H`–`DFH` | 2 |
+| `E0H`–`EFH` | 3 |
+| `F0H`–`FFH` | 4 |
 
 
 These are the decoder's read shapes, not a validation table. The decoder does
 not check continuation prefixes or reject overlong encodings before
 constructing the codepoint. Continuation reads are not compared with the
-end of the declared span. For example, if mapped bytes `0xc3, 0xa9` are both
+end of the declared span. For example, if mapped bytes `C3H, A9H` are both
 present, declaring only one byte still reads the second byte and produces
-codepoint `0xe9`. Do not use a shortened count to make an incomplete sequence
+codepoint `E9H`. Do not use a shortened count to make an incomplete sequence
 safe.
 
 Malformed input does not have a replacement-character policy. For example,
-the overlong sequence `0xc0, 0xaf` produces codepoint 47. A decoded surrogate,
-such as the value produced by `0xed, 0xa0, 0x80`, reaches `char` and raises its
+the overlong sequence `C0H, AFH` produces codepoint 47. A decoded surrogate,
+such as the value produced by `EDH, A0H, 80H`, reaches `char` and raises its
 `INVALID_ARGUMENT` error. Mapped-access faults and their recovery belong to
 the Memory, CPU and SYSTEM rules; there is no separate
 invalid-UTF-8 error.
 
 Literal escapes do not perform this decoding. The String literal
-`"\xc3\xa9"` contains two codepoints, `0xc3` and `0xa9`. To obtain codepoint
-`0xe9` from the encoded bytes `0xc3, 0xa9`, put those bytes in mapped storage
+`"\xc3\xa9"` contains two codepoints, `C3H` and `A9H`. To obtain codepoint
+`E9H` from the encoded bytes `C3H, A9H`, put those bytes in mapped storage
 and call `string.from_utf8` with that address and a byte count of 2.
 
 After normal return, the String is independent of the source bytes; rewriting
@@ -845,7 +845,10 @@ For an empty match, after replacement evaluation the function first checks the *
 
 After substitution stops, the remaining source tail is appended and the output pieces are concatenated. A leading `^` is applied at every current search position, not as a one-time absolute-source-beginning restriction.
 
-A replacement function can have observable effects before a later match or operation fails. Those effects are not rolled back. If a reached operation raises an error, `gsub` does not return a partial output or count. Its private count advances only after replacement evaluation returns. The substitution limit does not bound output size or matching work.
+A replacement function's effects remain visible if a later match or operation
+fails. An error ends `gsub` without returning a partial output or count. The
+match count advances after replacement evaluation returns. The substitution
+limit does not bound output size or matching work.
 
 ## Floating-point word decoder {#sec-bios-string-floating-point-word-decoder}
 
@@ -1166,7 +1169,12 @@ Alignment remains relative to the absolute source offset. A packet packed at off
 
 The position argument has no Number-category or integer check. A nonnumeric value or NaN becomes NaN through `//`, evades the range comparisons, and is not repaired. For example, an empty format and String source with a numeric String position produce NaN as the only next-position result. Either infinity fails the explicit range check.
 
-Before reading or skipping `x`, `X`, integer, float, fixed-width text, length-prefix, or prefixed-content spans, `unpack` checks whether the needed span extends beyond the source. Such a failure reports `string.unpack string is too short.` The `z` scan instead has its own missing-terminator error. Earlier processing is not rolled back when a later field fails.
+Before reading or skipping `x`, `X`, integer, float, fixed-width text,
+length-prefix, or prefixed-content spans, `unpack` checks whether the needed
+span extends beyond the source. Such a failure reports
+`string.unpack string is too short.` The `z` scan instead has its own
+missing-terminator error. A later field error leaves earlier processing
+effects in place.
 
 Successful unpacking need not consume the whole String: trailing content is allowed. The final result is the **next one-based codepoint position**, not the number of units consumed. It can be passed as the next call's `pos`, provided the desired absolute-offset alignment is retained:
 

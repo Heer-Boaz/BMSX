@@ -7,7 +7,7 @@ Use the installed global names directly after normal BIOS startup.
 This chapter covers sixteen base functions, including direct Table access and
 metatable selection. [Protected calls and coroutines](coroutines.md#sec-coroutines)
 specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
-words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}.
+words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
 Choose the operation according to the representation being used:
 
@@ -367,7 +367,7 @@ ends the diagnostic line, but does not itself update the console display.
 Direct PRINT_CHAR and PRINT_FLUSH writes use only the diagnostic channel:
 they neither add BIOS history nor draw glyphs. The channel has its own
 8192-byte queue and overflow rules, specified in
-[[Book I, System control and timing — Diagnostic text output](system.md#sec-system-diagnostic-text-output)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “Diagnostic text output”]{.content-visible when-format="pdf"}.
+[[Book I, System control and timing — Diagnostic text output](system.md#sec-system-diagnostic-text-output)]{.content-visible when-format="html"}[Book I, §12.4]{.content-visible when-format="pdf"}.
 
 For a comparison of the resulting text and monitor display, see
 [BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line).
@@ -376,7 +376,7 @@ For a comparison of the resulting text and monitor display, see
 
 Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.` and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
 
-Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one cycle**, with no additional per-argument or per-result charge. This increment is separate from call and return instructions and the surrounding operation. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} for the execution and timing model.
+Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one cycle**, with no additional per-argument or per-result charge. This increment is separate from call and return instructions and the surrounding operation. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
 
 ## Programming examples {#sec-bios-base-programming-examples}
 

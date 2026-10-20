@@ -7,9 +7,9 @@ byte-addressed storage. Function calls, closures and language error handling
 are part of the processor's execution architecture.
 
 This chapter defines instruction encoding, operand values, execution timing
-and CP0 control. [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} defines the address map;
+and CP0 control. [[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} defines the address map;
 [Program images and startup](program-images.md#sec-program-images) defines program records;
-[[IRQ](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} defines interrupt-source service; [[SYSTEM](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} defines
+[[IRQ](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"} defines interrupt-source service; [[SYSTEM](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} defines
 supervisor device contexts. Device commands and their result formats are
 defined in the corresponding Book I chapters.
 
@@ -39,7 +39,7 @@ lifetime.
 To control a device, prepare its addressed payload and operands, then write its
 command port. The receiving unit supplies a status or interrupt condition for
 its subsequent completion. Wait for that condition before reusing live input or
-output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Device-specific buffer lifetimes”]{.content-visible when-format="pdf"} describes
+output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, §2.11]{.content-visible when-format="pdf"} describes
 these lifetimes across DMA, geometry, drawing and sound.
 
 ### Values are not register words {#sec-cpu-values-are-not-register-words}
@@ -864,7 +864,7 @@ Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NI
 
 Numeric `1`, string `"1"`, and boolean `true` are separate keys. Positive zero and negative zero address the same key. A canonical numeric NaN is also an admissible key: repeated NaN keys address the same mapping, although ordinary numeric NaN equality is false. Positive and negative infinity are admissible numeric keys.
 
-Only positive integral numeric keys from 1 through `0x7fffffff` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
+Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for array storage. Zero, negative numbers, fractions, NaN, infinities, and larger numbers use hash storage. An eligible numeric key may also reside in hash storage when it lies beyond the allocated array capacity. Numeric key zero has no special indexing role.
 
 A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.
 
@@ -917,7 +917,7 @@ LuaFaultReason `9` (`OUT_OF_MEMORY`).
 
 Language allocations have value identity rather than cartridge-visible byte
 addresses. Plan DATA/BSS and hardware buffers using the separate byte-storage
-reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
+reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
 Use addressed byte storage for exact device records and payloads.
 
 
@@ -1218,7 +1218,7 @@ expression, total program execution time, or sustained memory bandwidth.
 
 The accounting rules above define instruction charges, retries and additional work; the
 [memory instruction reference](#sec-cpu-memory-instruction-reference) gives the complete
-transfer-instruction table. [[DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, “Direct memory access”, under “Transfer timing and sharing the bus”]{.content-visible when-format="pdf"} supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
+transfer-instruction table. [[DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, §4.10]{.content-visible when-format="pdf"} supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
 
 ### Additional work and waiting {#sec-cpu-additional-work-and-waiting}
 

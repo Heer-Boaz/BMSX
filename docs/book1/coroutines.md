@@ -5,10 +5,10 @@ chosen call boundary. Coroutines let one procedure suspend and later continue
 with its local values intact. The BIOS supplies `error`, `pcall`, `xpcall`
 and the `coroutine` Table before normal program entry.
 
-These interfaces carry language values and result tuples. Device status,
-interrupt acceptance and hardware exception return remain governed by the
-[CPU](cpu.md#sec-cpu), [[interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} and
-[[system-control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} interfaces.
+These interfaces carry language values and result tuples. The rules for device
+status, interrupt acceptance and hardware exception return are specified in
+[CPU](cpu.md#sec-cpu), [[interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"} and
+[[system-control reference](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
 ## Control flow and hardware progress {#sec-coroutines-control-flow-and-hardware-progress}
 
@@ -234,7 +234,7 @@ precedes the target-status check and leaves the target unchanged.
 Yield is also forbidden across an entered exception boundary. A language
 error that cannot reach protection on its own side enters the Lua fault
 exception route. It does not unwind through an older hardware handler to
-return a coroutine result. See [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} for device-context
+return a coroutine result. See [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for device-context
 switching and the [CPU HALT interface](cpu.md#sec-cpu-halt) for interrupt waits.
 
 ### Cycle increments {#sec-coroutines-cycle-increments}
@@ -259,17 +259,17 @@ keep their own value and identity; their text does not select a reason code.
 | 10 | Invalid argument |
 
 
-[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} describes retained fault words and publication.
-[[Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"} describes interrupt handling. Protected language calls
+[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} describes retained fault words and publication.
+[[Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"} describes interrupt handling. Protected language calls
 are not substitutes for those hardware interfaces.
 
 ## Reset and startup boundary {#sec-coroutines-reset-and-startup-boundary}
 
 A newly created coroutine has not run its entry and is reported as `suspended`.
 CPU reset is not an ordinary `coroutine.close` call. It clears the active call
-and resumer chain, including protected-call ownership, and starts the selected
+and resumer chain, including protected-call state, and starts the selected
 system startup; it does not deliver a close-result tuple to the interrupted
-caller. [CPU reference](cpu.md#sec-cpu) and [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}
+caller. [CPU reference](cpu.md#sec-cpu) and [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}
 describe CPU startup and the system-wide reset request separately.
 
 

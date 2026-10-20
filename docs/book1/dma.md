@@ -77,7 +77,7 @@ the transfer and arbitration boundaries, not the address units or total count.
 ### A device port is a fixed endpoint {#sec-dma-a-device-port-is-a-fixed-endpoint}
 
 A command stream differs from the RAM copy at its destination. Every command
-word goes to the **same GP0 port**, `0801023cH`; the GPU interprets the words
+word goes to the **same GP0 port**, `0801023CH`; the GPU interprets the words
 as a stream. Enable the source increment to walk the command array, but disable
 the destination increment to keep writing GP0. Advancing this destination by
 four bytes would address GP1 instead of supplying the next word to GP0. The
@@ -159,16 +159,16 @@ CONTROL = read_increment
 ```
 
 For that RAM copy, the request encodings are both zero, the two increment bits
-contribute 3, and `(16−1) << 10` contributes `00003c00H`. Their combination is
-`00003c03H`, used for the `source` → `copy0` sequence below. The following
+contribute 3, and `(16−1) << 10` contributes `00003C00H`. Their combination is
+`00003C03H`, used for the `source` → `copy0` sequence below. The following
 CONTROL words select this and the other example routes:
 
 | CONTROL | Operation |
 |---|---|
-| `00003c03H` | Both increments, FORCE/FORCE, 16-word blocks |
-| `00000c03H` | Both increments, FORCE/FORCE, four-word blocks |
-| `00003c41H` | Read increment, fixed destination, FORCE/GX_WRITE, 16-word blocks |
-| `00003c0aH` | Fixed source, write increment, GX_READ/FORCE, 16-word blocks |
+| `00003C03H` | Both increments, FORCE/FORCE, 16-word blocks |
+| `00000C03H` | Both increments, FORCE/FORCE, four-word blocks |
+| `00003C41H` | Read increment, fixed destination, FORCE/GX_WRITE, 16-word blocks |
+| `00003C0AH` | Fixed source, write increment, GX_READ/FORCE, 16-word blocks |
 
 ### START and zero count {#sec-dma-start-and-zero-count}
 
@@ -229,7 +229,7 @@ region, not a different DMA operation code, determines that difference.
 ### Use both channels {#sec-dma-use-both-channels}
 
 The second channel has the same capabilities and register order at base
-`080103e4H`. To copy the RAM source to two destinations, reserve both idle
+`080103E4H`. To copy the RAM source to two destinations, reserve both idle
 channels and a separate 80-byte `copy1` array. Prepare both channels before
 starting either:
 
@@ -238,9 +238,9 @@ starting either:
 | READ_ADDR | Address of `source` | Address of `source` |
 | WRITE_ADDR | Address of `copy0` | Address of `copy1` |
 | TRANSFER_COUNT | 20 | 20 |
-| CONTROL | `00003c03H`: 16-word blocks | `00000c03H`: four-word blocks |
+| CONTROL | `00003C03H`: 16-word blocks | `00000C03H`: four-word blocks |
 
-With `dma0` and `irq_ack` bound as above and `dma1` bound to `080103e4H`, the
+With `dma0` and `irq_ack` bound as above and `dma1` bound to `080103E4H`, the
 submission and completion sequence is:
 
 ```lua
@@ -297,7 +297,7 @@ end
 DMA holds GP0 fixed and advances its ROM source by 20 bytes; its one short
 block costs 44 cycles. The DMA wait releases the command-stream source; the
 following waits separately observe the GPU marker and GPU idle. The local
-fill's RGB555 result is `001fH`, but observing those status bits is not a pixel
+fill's RGB555 result is `001FH`, but observing those status bits is not a pixel
 readback. The sequence neither programs a display mode nor publishes a new
 scanout source. Display latching remains a [PCRTC](pcrtc.md#sec-pcrtc) operation.
 
@@ -310,16 +310,19 @@ Reading these words does not acknowledge an IRQ or clear DONE.
 
 | Register | Channel 0 address | Channel 1 address | Access | Reset |
 |---|---|---|---|---|
-| READ_ADDR | `0800000cH` | `080103e4H` | R/W | `00000000H` |
-| WRITE_ADDR | `08000010H` | `080103e8H` | R/W | `00000000H` |
-| TRANSFER_COUNT | `08000014H` | `080103ecH` | R/W | `00000000H` |
-| CONTROL | `08000018H` | `080103f0H` | R/W | `00000000H` |
-| STATUS | `0800001cH` | `080103f4H` | R | `00000000H` |
-| TRIGGER | `08000020H` | `080103f8H` | Command / R=0 | `00000000H` |
+| READ_ADDR | `0800000CH` | `080103E4H` | R/W | `00000000H` |
+| WRITE_ADDR | `08000010H` | `080103E8H` | R/W | `00000000H` |
+| TRANSFER_COUNT | `08000014H` | `080103ECH` | R/W | `00000000H` |
+| CONTROL | `08000018H` | `080103F0H` | R/W | `00000000H` |
+| STATUS | `0800001CH` | `080103F4H` | R | `00000000H` |
+| TRIGGER | `08000020H` | `080103F8H` | Command / R=0 | `00000000H` |
 
-Do not derive channel 1 by adding one channel-0 bank length. READ_ADDR and
-WRITE_ADDR retain complete byte-address words. TRANSFER_COUNT retains a
-complete unsigned word. Neither the address nor count writes clear STATUS.
+The two six-word banks occupy separate, nonadjacent parts of the I/O map:
+channel 0 begins at `0800000CH`, and channel 1 at `080103E4H`. Use each channel's
+listed addresses; a six-word offset from channel 0 does not reach channel 1.
+READ_ADDR and WRITE_ADDR retain complete byte-address words. TRANSFER_COUNT
+retains a complete unsigned word. Neither the address nor count writes clear
+STATUS.
 
 ### CONTROL fields {#sec-dma-control-fields}
 
@@ -359,7 +362,7 @@ independently; their meanings are not reversed when used on the other side.
 
 FORCE is always asserted and DISABLED is never asserted. Do not equate the
 unnamed encodings with either one. For cartridge socket selection and card
-protocols, see [[Book III: Cartridge sockets and mapped card devices — DMA between sockets](../book3/cartridge.md#sec-cartridge-dma-between-sockets)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “DMA between sockets”]{.content-visible when-format="pdf"}.
+protocols, see [[Book III: Cartridge sockets and mapped card devices — DMA between sockets](../book3/cartridge.md#sec-cartridge-dma-between-sockets)]{.content-visible when-format="html"}[Book III, §1.7]{.content-visible when-format="pdf"}.
 
 ### STATUS and TRIGGER {#sec-dma-status-and-trigger}
 
@@ -389,11 +392,10 @@ READ_ADDR, WRITE_ADDR, the full remaining TRANSFER_COUNT and CONTROL. The actual
 block contains the smaller of the remaining count and the programmed 1–16 words.
 
 These captured values remain in force until block completion, including when
-software rewrites the programmed registers. The captured source address selects
-the storage to read, not a copy of its contents. This is the old/new-array
-hazard described under
-[Source reuse and result use](#sec-dma-source-reuse-and-result-use): admission
-captures the addresses, not the bytes stored at them.
+software rewrites the programmed registers. Source words are read from the
+captured address during the transfer. Changing the source bytes can therefore
+change words that have not yet been transferred; see
+[Source reuse and result use](#sec-dma-source-reuse-and-result-use).
 
 ### Word transfers and block writeback {#sec-dma-what-happens-at-service}
 
@@ -405,7 +407,7 @@ Within a block, each word has this order:
 4. Update the write address.
 5. Decrement the remaining count.
 
-CONTROL bit 0 enables a four-byte source step; bit 1 enables a four-byte destination step. A disabled step leaves that address unchanged. Address addition and count subtraction wrap as unsigned 32-bit arithmetic. For example, a four-byte step from `0xFFFFFFFC` produces `0x00000000`.
+CONTROL bit 0 enables a four-byte source step; bit 1 enables a four-byte destination step. A disabled step leaves that address unchanged. Address addition and count subtraction wrap as unsigned 32-bit arithmetic. For example, a four-byte step from `FFFFFFFCH` produces `00000000H`.
 
 Only after the entire block are the resulting read address, write address and remaining count written back to the channel registers. Register values are therefore not a per-word progress display. When the transfer ends, the final address/count words are published before DONE, and DONE is published before the completion IRQ.
 
@@ -420,17 +422,17 @@ Let `A` be four-byte aligned, with `A` through `A + 15` in one ordinary writable
 
 | Address | Word |
 |---|---:|
-| `A` | `0x11111111` |
-| `A + 4` | `0x22222222` |
-| `A + 8` | `0x33333333` |
+| `A` | `11111111H` |
+| `A + 4` | `22222222H` |
+| `A + 8` | `33333333H` |
 
 Admit one three-word block with read address `A`, write address `A + 4`, count 3 and both increments enabled.
 
-- Word 1 reads `0x11111111` at `A`, then writes it to `A + 4`.
-- Word 2 reads the **new** `0x11111111` at `A + 4`, then writes it to `A + 8`.
-- Word 3 reads the **new** `0x11111111` at `A + 8`, then writes it to `A + 12`.
+- Word 1 reads `11111111H` at `A`, then writes it to `A + 4`.
+- Word 2 reads the **new** `11111111H` at `A + 4`, then writes it to `A + 8`.
+- Word 3 reads the **new** `11111111H` at `A + 8`, then writes it to `A + 12`.
 
-The three destination words all become `0x11111111`. The channel finishes with read address `A + 12`, write address `A + 16` and count zero. Forward overlap does not preserve the original source sequence: each write precedes the next read.
+The three destination words all become `11111111H`. The channel finishes with read address `A + 12`, write address `A + 16` and count zero. Forward overlap does not preserve the original source sequence: each write precedes the next read.
 
 ### Programming while BUSY {#sec-dma-programming-while-busy}
 
@@ -704,7 +706,7 @@ Each continuously eligible successor is anchored to the preceding block's deadli
 ### Budgeting transfers to and from VRAM {#sec-dma-budgeting-transfers-to-and-from-vram}
 
 VRAM is GPU-local storage, not a separate mapped DMA endpoint. Uploads send a
-command and packed image words to **GP0 at 0801023cH**. Downloads read packed
+command and packed image words to **GP0 at 0801023CH**. Downloads read packed
 image words from **GPUREAD at that same address**. The DMA timing classification
 of that address is I/O. Select the proper GPU DMA direction and GX_WRITE or
 GX_READ request; the I/O row alone says nothing about the GPU's readiness.

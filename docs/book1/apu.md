@@ -34,7 +34,7 @@ separates sample loading, command execution and playback.
 | Command staging bank | One separate set of 21 parameter words |
 | Command FIFO | 16 commands, each retaining its command and 21 parameter words |
 | Selected-slot window | 21 word ports addressing one of the sixteen slot banks |
-| Private sample RAM | 512 KiB; sample-source addresses `40000000H`–`4007ffffH` |
+| Private sample RAM | 512 KiB; sample-source addresses `40000000H`–`4007FFFFH` |
 | Sample-transfer FIFO | 16 words, 64 bytes |
 | Output cadence | 44,100 stereo frames per second |
 | Output components | Signed sixteen-bit left and right values |
@@ -306,7 +306,7 @@ PLAY binds the cartridge ROM selected at execution. Keep that socket selected
 until the command executes; later SELECT writes leave the voice on its bound
 ROM. Live source-field writes bind again using the selection at that access.
 See [Source fields are individually live](#sec-apu-source-fields-are-individually-live)
-and [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Cartridge controller”]{.content-visible when-format="pdf"}.
+and [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"}.
 
 The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use the current bytes. BADP retains its current and previous decoded
 frames; edits to compressed bytes take effect when those bytes are decoded again.
@@ -338,7 +338,7 @@ PCM data starts at SOURCE_ADDR + SOURCE_DATA_OFFSET. For frame n, the first samp
 
 PCM8 is unsigned offset-binary. Its decoded value is (byte minus 128) multiplied by 256. Bytes 00H, 80H, FFH and 40H therefore decode to −32768, 0, 32512 and −16384. In particular, FFH is not +32767 and 00H is not silence.
 
-PCM16 is signed little-endian. Bytes 00H 80H mean −32768; FFH 7FH mean +32767; 00H C0H mean −16384. A stereo data sequence `00 80 FF 7F 00 00 00 C0` contains two frames: (−32768, +32767), then (0, −16384).
+PCM16 is signed little-endian. Bytes 00H 80H mean −32768; FFH 7FH mean +32767; 00H C0H mean −16384. A stereo data sequence `00H 80H FFH 7FH 00H 00H 00H C0H` contains two frames: (−32768, +32767), then (0, −16384).
 
 Playback uses linear interpolation for PCM and for decoded BADP samples. Let n be the current integer source-frame position and f its 16-bit fractional part. For either channel:
 
@@ -653,7 +653,7 @@ the bank itself, with output-frame progress observed through the access cycle.
 A live write does not enqueue CMD, reset staging or activate an idle slot.
 
 Select a bank through staging SLOT at `08000148H`. The selected-window SLOT
-word at `080001bcH` is ordinary bank data and leaves the selection unchanged.
+word at `080001BCH` is ordinary bank data and leaves the selection unchanged.
 
 ACTIVE_MASK bit n means slot n is non-idle. Paused and fading slots still have
 active bits. STATUS.BUSY is any active slot or queued command, so it can remain
@@ -1071,8 +1071,8 @@ After successful bus accesses, the results are:
 
 | Destination | Words |
 |---|---|
-| `received[0..19]` | `5a000000H OR 0..19` |
-| `received[20..23]`, from byte offset `40H` | `5a000010H`–`5a000013H` |
+| `received[0..19]` | `5A000000H OR 0..19` |
+| `received[20..23]`, from byte offset `40H` | `5A000010H`–`5A000013H` |
 
 The second receipt shows that STOP preserves the overlapping sample-RAM bytes.
 Both channel completions have count zero and STATUS=DONE, even with their
@@ -1174,14 +1174,14 @@ The selected addresses alias the bank chosen by staging SLOT bits 3:0.
 |---:|---|---|---|---|---|
 |0|SOURCE_ADDR| `08000120H` | `08000194H` | `00000000H` | `00000000H` |
 |1|SOURCE_BYTES| `08000124H` | `08000198H` | `00000000H` | `00000000H` |
-|2|SOURCE_SAMPLE_RATE_HZ| `08000128H` | `0800019cH` | `00000000H` | `00000000H` |
-|3|SOURCE_CHANNELS| `0800012cH` | `080001a0H` | `00000000H` | `00000000H` |
-|4|SOURCE_BITS_PER_SAMPLE| `08000130H` | `080001a4H` | `00000000H` | `00000000H` |
-|5|SOURCE_FRAME_COUNT| `08000134H` | `080001a8H` | `00000000H` | `00000000H` |
-|6|SOURCE_DATA_OFFSET| `08000138H` | `080001acH` | `00000000H` | `00000000H` |
-|7|SOURCE_DATA_BYTES| `0800013cH` | `080001b0H` | `00000000H` | `00000000H` |
-|8|SOURCE_LOOP_START_SAMPLE| `08000140H` | `080001b4H` | `00000000H` | `00000000H` |
-|9|SOURCE_LOOP_END_SAMPLE| `08000144H` | `080001b8H` | `00000000H` | `00000000H` |
+|2|SOURCE_SAMPLE_RATE_HZ| `08000128H` | `0800019CH` | `00000000H` | `00000000H` |
+|3|SOURCE_CHANNELS| `0800012CH` | `080001A0H` | `00000000H` | `00000000H` |
+|4|SOURCE_BITS_PER_SAMPLE| `08000130H` | `080001A4H` | `00000000H` | `00000000H` |
+|5|SOURCE_FRAME_COUNT| `08000134H` | `080001A8H` | `00000000H` | `00000000H` |
+|6|SOURCE_DATA_OFFSET| `08000138H` | `080001ACH` | `00000000H` | `00000000H` |
+|7|SOURCE_DATA_BYTES| `0800013CH` | `080001B0H` | `00000000H` | `00000000H` |
+|8|SOURCE_LOOP_START_SAMPLE| `08000140H` | `080001B4H` | `00000000H` | `00000000H` |
+|9|SOURCE_LOOP_END_SAMPLE| `08000144H` | `080001B8H` | `00000000H` | `00000000H` |
 
 : {tbl-colwidths="[6,36,15,15,14,14]"}
 
@@ -1189,17 +1189,17 @@ The selected addresses alias the bank chosen by staging SLOT bits 3:0.
 
 | Index | Parameter | Staging address | Selected address | Staging reset | Selected reset |
 |---:|---|---|---|---|---|
-|10|SLOT| `08000148H` | `080001bcH` | `00000000H` | `00000000H` |
-|11|RATE_STEP_Q16| `0800014cH` | `080001c0H` | `00010000H` | `00000000H` |
-|12|GAIN_Q12| `08000150H` | `080001c4H` | `00001000H` | `00000000H` |
-|13|START_SAMPLE| `08000154H` | `080001c8H` | `00000000H` | `00000000H` |
-|14|FILTER_CONTROL| `08000158H` | `080001ccH` | `00000000H` | `00000000H` |
-|15|FILTER_B0_B1| `0800015cH` | `080001d0H` | `00004000H` | `00000000H` |
-|16|FILTER_B2_A1| `08000160H` | `080001d4H` | `00000000H` | `00000000H` |
-|17|FILTER_A2| `08000164H` | `080001d8H` | `00000000H` | `00000000H` |
-|18|FADE_SAMPLES| `08000168H` | `080001dcH` | `00000000H` | `00000000H` |
-|19|GENERATOR_KIND| `0800016cH` | `080001e0H` | `00000000H` | `00000000H` |
-|20|GENERATOR_DUTY_Q12| `08000170H` | `080001e4H` | `00000800H` | `00000000H` |
+|10|SLOT| `08000148H` | `080001BCH` | `00000000H` | `00000000H` |
+|11|RATE_STEP_Q16| `0800014CH` | `080001C0H` | `00010000H` | `00000000H` |
+|12|GAIN_Q12| `08000150H` | `080001C4H` | `00001000H` | `00000000H` |
+|13|START_SAMPLE| `08000154H` | `080001C8H` | `00000000H` | `00000000H` |
+|14|FILTER_CONTROL| `08000158H` | `080001CCH` | `00000000H` | `00000000H` |
+|15|FILTER_B0_B1| `0800015CH` | `080001D0H` | `00004000H` | `00000000H` |
+|16|FILTER_B2_A1| `08000160H` | `080001D4H` | `00000000H` | `00000000H` |
+|17|FILTER_A2| `08000164H` | `080001D8H` | `00000000H` | `00000000H` |
+|18|FADE_SAMPLES| `08000168H` | `080001DCH` | `00000000H` | `00000000H` |
+|19|GENERATOR_KIND| `0800016CH` | `080001E0H` | `00000000H` | `00000000H` |
+|20|GENERATOR_DUTY_Q12| `08000170H` | `080001E4H` | `00000800H` | `00000000H` |
 
 : {tbl-colwidths="[6,36,15,15,14,14]"}
 
@@ -1217,15 +1217,15 @@ selected-window write effects.
 |---|---|---|---|
 | `08000174H` | CMD | Command write / read zero | `00000000H` |
 | `08000178H` | STATUS | Read; writes fault | `00000020H` |
-| `0800017cH` | EVENT_KIND | Read; writes fault | `00000000H` |
+| `0800017CH` | EVENT_KIND | Read; writes fault | `00000000H` |
 | `08000180H` | EVENT_SLOT | Read; writes fault | `00000000H` |
 | `08000184H` | EVENT_SOURCE_ADDR | Read; writes fault | `00000000H` |
 | `08000188H` | EVENT_SEQ | Read; writes fault | `00000000H` |
-| `0800018cH` | SELECTED_SOURCE_ADDR | Read; writes fault | `00000000H` |
+| `0800018CH` | SELECTED_SOURCE_ADDR | Read; writes fault | `00000000H` |
 | `08000190H` | ACTIVE_MASK | Read; writes fault | `00000000H` |
-| `080001f4H` | CMD_QUEUED | Read; writes have no queue effect | `00000000H` |
-| `080001f8H` | CMD_FREE | Read; writes have no queue effect | `00000010H` |
-| `080001fcH` | CMD_CAPACITY | Read; writes have no queue effect | `00000010H` |
+| `080001F4H` | CMD_QUEUED | Read; writes have no queue effect | `00000000H` |
+| `080001F8H` | CMD_FREE | Read; writes have no queue effect | `00000010H` |
+| `080001FCH` | CMD_CAPACITY | Read; writes have no queue effect | `00000010H` |
 | `08000200H` | SAMPLE_SEQUENCE | Read; writes have no clock effect | `00000000H` |
 
 STATUS reads observe output-frame progress through their access cycle.
@@ -1237,11 +1237,11 @@ SELECTED_SOURCE_ADDR are retained mirrors, not read-to-clear operations.
 
 | Address | Name | Access | Reset read |
 |---|---|---|---|
-| `080001e8H` | TRANSFER_ADDRESS | R/W full programmed word | `00000000H` |
-| `080001ecH` | TRANSFER_DATA | R/W data port | `00000000H` |
-| `080001f0H` | TRANSFER_CONTROL | R/W full programmed word | `00000000H` |
+| `080001E8H` | TRANSFER_ADDRESS | R/W full programmed word | `00000000H` |
+| `080001ECH` | TRANSFER_DATA | R/W data port | `00000000H` |
+| `080001F0H` | TRANSFER_CONTROL | R/W full programmed word | `00000000H` |
 | `08010218H` | FAULT_CODE | Read; writes fault | `00000000H` |
-| `0801021cH` | FAULT_DETAIL | Read; writes fault | `00000000H` |
+| `0801021CH` | FAULT_DETAIL | Read; writes fault | `00000000H` |
 | `08010220H` | FAULT_ACK | Nonzero write acknowledges / read zero | `00000000H` |
 
 ### STATUS fields {#sec-apu-status-fields}

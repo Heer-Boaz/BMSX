@@ -1337,19 +1337,19 @@ The table describes stage A, not an ordered sequence of writes.
 
 | Register | Address | Stage-A raw word |
 |---|---|---|
-| PMODE_LOW | `08010354` | `0000FF23` |
-| DISPFB1_LOW | `0801035C` | `000FA000` |
-| DISPFB1_HIGH | `08010360` | `00000000` |
-| DISPLAY1_LOW | `08010364` | `018553A8` |
-| DISPLAY1_HIGH | `08010368` | `0005F1FF` |
-| DISPFB2_LOW | `0801036C` | `000FA000` |
-| DISPFB2_HIGH | `08010370` | `00000000` |
-| DISPLAY2_LOW | `08010374` | `018252A8` |
-| DISPLAY2_HIGH | `08010378` | `000BF3FF` |
+| PMODE_LOW | `08010354H` | `0000FF23H` |
+| DISPFB1_LOW | `0801035CH` | `000FA000H` |
+| DISPFB1_HIGH | `08010360H` | `00000000H` |
+| DISPLAY1_LOW | `08010364H` | `018553A8H` |
+| DISPLAY1_HIGH | `08010368H` | `0005F1FFH` |
+| DISPFB2_LOW | `0801036CH` | `000FA000H` |
+| DISPFB2_HIGH | `08010370H` | `00000000H` |
+| DISPLAY2_LOW | `08010374H` | `018252A8H` |
+| DISPLAY2_HIGH | `08010378H` | `000BF3FFH` |
 
 Circuit 2 starts at signal position (680, 37), spans 1024 horizontal signal units and 192 rows, and reads source (0, 0). Its window fixes the cropped output origin at (0, 0). Keep it enabled and unchanged throughout the example. The minimum enabled signal X and Y establish that origin; moving a lone enabled circuit would move the crop with it.
 
-`PMODE_LOW = 0000FF23` enables both circuits. Circuit 2 supplies raw RGB; circuit 1 supplies direct raw RGB and its sample alpha inside its window, without RGB blending. The programmed ALP value of 255 does not force sample alpha to 255.
+`PMODE_LOW = 0000FF23H` enables both circuits. Circuit 2 supplies raw RGB; circuit 1 supplies direct raw RGB and its sample alpha inside its window, without RGB blending. The programmed ALP value of 255 does not force sample alpha to 255.
 
 ### Change selection, then placement {#sec-pcrtc-change-selection-then-placement}
 
@@ -1357,9 +1357,9 @@ The following table gives retained register words and decoded geometry. Source o
 
 | Stage | DISPFB1_HIGH | DISPLAY1_LOW | Source origin | Signal origin | Output cutout |
 |---|---|---|---|---|---|
-| A | `00000000` | `018553A8` | (0, 0) | (936, 85) | [64, 192) × [48, 144) |
-| B | `00008020` | `018553A8` | (32, 16) | (936, 85) | [64, 192) × [48, 144) |
-| C | `00008020` | `01855428` | (32, 16) | (1064, 85) | [96, 224) × [48, 144) |
+| A | `00000000H` | `018553A8H` | (0, 0) | (936, 85) | [64, 192) × [48, 144) |
+| B | `00008020H` | `018553A8H` | (32, 16) | (936, 85) | [64, 192) × [48, 144) |
+| C | `00008020H` | `01855428H` | (32, 16) | (1064, 85) | [96, 224) × [48, 144) |
 
 From A to B, write only `DISPFB1_HIGH`. The visible source selection changes inside the stationary window. From B to C, write only `DISPLAY1_LOW`. The selected cutout moves 32 output pixels right. Neither change alters its extent or the 256 × 192-pixel canvas.
 
@@ -1571,17 +1571,17 @@ eight packed words; it does not return the eight-pixel composed strip.
 
 Both reading circuits cover the same 256 × 192 output. Circuit 1 contains red across the whole picture, divided into two 128-column halves: the left half has sample alpha 0, and the right half has sample alpha 128. Circuit 2 contains blue with sample alpha 128 throughout. The background is green. These sources, their windows and the background remain unchanged through all four phases; only PMODE changes.
 
-The stored GX16 words are `0x001F` for circuit 1's left half, `0x801F` for its
-right half, and `0xFC00` for circuit 2. Both red words decode to RGB `(255,0,0)`;
+The stored GX16 words are `001FH` for circuit 1's left half, `801FH` for its
+right half, and `FC00H` for circuit 2. Both red words decode to RGB `(255,0,0)`;
 bit 15 supplies their different sample alpha values. Both reading circuits
 remain enabled, and ALP remains 128:
 
 | Phase | PMODE_LOW | MMOD | AMOD | SLBG | ALP |
 |---|---:|---:|---:|---:|---:|
-| A | `0x00008023` | 1 | 0 | 0 | 128 |
-| B | `0x00008003` | 0 | 0 | 0 | 128 |
-| C | `0x00008083` | 0 | 0 | 1 | 128 |
-| D | `0x00008043` | 0 | 1 | 0 | 128 |
+| A | `00008023H` | 1 | 0 | 0 | 128 |
+| B | `00008003H` | 0 | 0 | 0 | 128 |
+| C | `00008083H` | 0 | 0 | 1 | 128 |
+| D | `00008043H` | 0 | 1 | 0 | 128 |
 
 For each RGB channel, composition uses `Q = (S*k + D*(255-k) + 127) div 255`, where S is circuit 1's channel and D is the destination channel. Multiplication and addition precede the integer quotient; the denominator is 255, with 127 added for rounding.
 
@@ -1631,11 +1631,11 @@ are zero:
 
 | Register | Address | Word |
 |---|---|---|
-| DISPFB1_LOW / HIGH | `0801035C` / `08010360` | `000FA000` / `00000000` |
-| DISPLAY1_LOW / HIGH | `08010364` / `08010368` | `018252A8` / `000BF3FF` |
-| DISPFB2_LOW / HIGH | `0801036C` / `08010370` | `000FA040` / `00000000` |
-| DISPLAY2_LOW / HIGH | `08010374` / `08010378` | `018252A8` / `000BF3FF` |
-| BGCOLOR_LOW | `0801037C` | `0000FF00` |
+| DISPFB1_LOW / HIGH | `0801035CH` / `08010360H` | `000FA000H` / `00000000H` |
+| DISPLAY1_LOW / HIGH | `08010364H` / `08010368H` | `018252A8H` / `000BF3FFH` |
+| DISPFB2_LOW / HIGH | `0801036CH` / `08010370H` | `000FA040H` / `00000000H` |
+| DISPLAY2_LOW / HIGH | `08010374H` / `08010378H` | `018252A8H` / `000BF3FFH` |
+| BGCOLOR_LOW | `0801037CH` | `0000FF00H` |
 
 Close the GP1 Y-address gate with `09000000H`. Establish E1=`0400H`, E2=0,
 drawing area `(0,0)…(255,191)` and zero drawing offset, then prepare both raw

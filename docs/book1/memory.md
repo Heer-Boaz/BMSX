@@ -14,25 +14,25 @@ specifies program-image records, initialization and BIOS startup.
 
 ## Addresses and data sizes {#sec-memory-addresses-and-data-sizes}
 
-BMSX uses 32-bit unsigned byte addresses. Each address identifies one byte; the address space runs from `0x00000000` through `0xffffffff`, inclusive. A 32-bit word occupies four consecutive bytes. For 16-bit and 32-bit values in main RAM, byte order is little-endian: the least significant byte is at the lowest address.
+BMSX uses 32-bit unsigned byte addresses. Each address identifies one byte; the address space runs from `00000000H` through `FFFFFFFFH`, inclusive. A 32-bit word occupies four consecutive bytes. For 16-bit and 32-bit values in main RAM, byte order is little-endian: the least significant byte is at the lowest address.
 
-All capacities in this section are byte counts: 1 KiB is 1024 bytes and 1 MiB is 1048576 bytes. A range written `[start, end)` includes `start` but excludes `end`; its last byte is at `end - 1`. The tables use inclusive starts and exclusive ends. `0x100000000` denotes the exclusive end of the address space, not an address that a program can supply.
+All capacities in this section are byte counts: 1 KiB is 1024 bytes and 1 MiB is 1048576 bytes. A range written `[start, end)` includes `start` but excludes `end`; its last byte is at `end - 1`. The tables use inclusive starts and exclusive ends. `100000000H` denotes the exclusive end of the address space, not an address that a program can supply.
 
 ## Installed memory and address windows {#sec-memory-installed-memory-and-address-windows}
 
-BMSX has **4 MiB of main RAM**, occupying `[0x08000000, 0x08400000)` before I/O mapping and reservation restrictions; its last byte is `0x083fffff`. The main-RAM address window is larger than the installed memory. Similarly, the system-ROM window is an address-space allocation, not the byte length of the installed firmware. Cartridge windows describe the cartridge bus, not how much ROM or RAM a cartridge contains.
+BMSX has **4 MiB of main RAM**, occupying `[08000000H, 08400000H)` before I/O mapping and reservation restrictions; its last byte is `083FFFFFH`. The main-RAM address window is larger than the installed memory. Similarly, the system-ROM window is an address-space allocation, not the byte length of the installed firmware. Cartridge windows describe the cartridge bus, not how much ROM or RAM a cartridge contains.
 
 | Address-space region | Start, inclusive | End, exclusive | Window size or status |
 |---|---|---|---|
-| System ROM | `0x00000000` | `0x01000000` | 16 MiB window; firmware image length is separate |
-| Unmapped gap | `0x01000000` | `0x08000000` | No mapped storage |
-| Main RAM | `0x08000000` | `0x10000000` | 128 MiB window; 4 MiB installed at its beginning |
-| Cartridge ROM | `0x10000000` | `0x30000000` | 512 MiB window; installed media capacity is not specified by this window |
-| Cartridge RAM | `0x30000000` | `0x30f00000` | 15 MiB window; does not imply 15 MiB is present |
-| Cartridge MMIO | `0x30f00000` | `0x31000000` | 1 MiB window |
-| Unmapped upper range | `0x31000000` | `0x100000000` | Outside the cartridge bus and other declared windows |
+| System ROM | `00000000H` | `01000000H` | 16 MiB window; firmware image length is separate |
+| Unmapped gap | `01000000H` | `08000000H` | No mapped storage |
+| Main RAM | `08000000H` | `10000000H` | 128 MiB window; 4 MiB installed at its beginning |
+| Cartridge ROM | `10000000H` | `30000000H` | 512 MiB window; installed media capacity is not specified by this window |
+| Cartridge RAM | `30000000H` | `30F00000H` | 15 MiB window; does not imply 15 MiB is present |
+| Cartridge MMIO | `30F00000H` | `31000000H` | 1 MiB window |
+| Unmapped upper range | `31000000H` | `100000000H` | Outside the cartridge bus and other declared windows |
 
-The cartridge bus begins at `0x10000000` and ends just before `0x31000000`; the system's main-RAM window ends at that cartridge-bus start. Within the main-RAM window, `[0x08400000, 0x10000000)` has no installed main RAM. It is not an extension or mirror of the installed 4 MiB.
+The cartridge bus begins at `10000000H` and ends just before `31000000H`; the system's main-RAM window ends at that cartridge-bus start. Within the main-RAM window, `[08400000H, 10000000H)` has no installed main RAM. It is not an extension or mirror of the installed 4 MiB.
 
 GPU VRAM is a separate **2 MiB** capacity and is not included in the 4 MiB main-RAM total.
 
@@ -45,14 +45,14 @@ and [Sample RAM transfer](apu.md#sec-apu-sample-ram-transfer).
 
 ## Reserved and cartridge storage in main RAM {#sec-memory-reserved-and-cartridge-storage-in-main-ram}
 
-The installed main RAM occupies `0x08000000` through `0x083fffff`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge program's static storage.
+The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, GEO scratch storage, and the system's static storage as well as the cartridge program's static storage.
 
 Static storage includes DATA, whose initial bytes are copied from ROM, and
 BSS, which startup initializes to zero. Both use assigned main-RAM addresses.
 The firmware and the cartridge each have their own occupied sections.
 
 Subtracting the 256 KiB I/O reservation and 512 KiB GEO scratch reservation
-leaves **3.25 MiB** in `[0x080c0000, 0x08400000)` before accounting for system
+leaves **3.25 MiB** in `[080C0000H, 08400000H)` before accounting for system
 and cartridge static storage. The installed firmware occupies the beginning
 of this span. Its actual DATA/BSS footprint, rather than 3.25 MiB alone,
 determines where cartridge placement can begin.
@@ -61,14 +61,14 @@ The following ranges use an exclusive end: the end address is the first byte out
 
 | Use | Start | Exclusive end | Size |
 |---|---|---|---|
-| Declared I/O reservation | `0x08000000` | `0x08040000` | 256 KiB |
-| GEO scratch reservation | `0x08040000` | `0x080c0000` | 512 KiB |
-| System static storage | `0x080c0000` | Actual end of system BSS | Specified by the system executable image |
+| Declared I/O reservation | `08000000H` | `08040000H` | 256 KiB |
+| GEO scratch reservation | `08040000H` | `080C0000H` | 512 KiB |
+| System static storage | `080C0000H` | Actual end of system BSS | Specified by the system executable image |
 | Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
 
-The decoded I/O register aperture ends at `0x08010440`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
+The decoded I/O register aperture ends at `08010440H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
 
-`0x080c0000` is the start of **system DATA**, not a universal cartridge RAM base.
+`080C0000H` is the start of **system DATA**, not a universal cartridge RAM base.
 The installed firmware's BSS follows its DATA. Account for their actual occupied
 extent in the matching BIOS image, rather than assuming a fixed cartridge base.
 The image's declared BSS address and byte count identify that span; their sum
@@ -83,7 +83,7 @@ use that chosen placement without overwriting firmware storage.
 
 | Section in the compact layout, in address order | Run address |
 |---|---|
-| System DATA | `0x080c0000` |
+| System DATA | `080C0000H` |
 | System BSS | End of system DATA |
 | Cartridge DATA | Actual end of system BSS |
 | Cartridge BSS | End of cartridge DATA |
@@ -92,8 +92,7 @@ Each end in this table is exclusive and includes the section's alignment padding
 
 The cartridge's writable static objects belong to its DATA and BSS sections.
 The program image records their actual RAM addresses and extents; see
-[[Program images and startup](program-images.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “BLua32 executable image”]{.content-visible when-format="pdf"}
-in Book II. Those sections must fit the installed RAM without overlapping
+[[Program images and startup](program-images.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book II, §3.5]{.content-visible when-format="pdf"}. Those sections must fit the installed RAM without overlapping
 reserved storage.
 
 Choosing a static layout is not a hardware allocation service. Neither the
@@ -107,11 +106,17 @@ The 2 MiB VRAM is shared GPU storage, arranged as 1024 rows of 1024 **16-bit wor
 
 The firmware uses VRAM both for the full terminal drawing surface and for its system texture atlas, which supplies terminal glyphs. Preserve the **bounding rectangle covering both**, rather than reserve only the currently visible text or the atlas alone. This VRAM reservation is separate from the I/O, GEO scratch and static-storage reservations in main RAM.
 
-### Handoff is not release {#sec-memory-handoff-is-not-release}
+### Reservation lifetime {#sec-memory-handoff-is-not-release}
 
-Clearing terminal text or status, or selecting a smaller active terminal viewport, does not shrink the queried full-layout reservation. Cartridge handoff does not release it either. The BIOS monitor later uses the same terminal coordinates and uploads the system atlas again before drawing its output.
+The full queried rectangle remains reserved throughout cartridge execution,
+including after terminal text or status is cleared or a smaller terminal
+viewport is selected. The BIOS monitor later uses the same terminal coordinates
+and uploads the system atlas again before drawing its output.
 
-Keep the complete queried region out of cartridge allocations. The query does not install hardware write protection or grant permission to overwrite that region, and it does not establish that every coordinate outside it is free.
+Keep the complete queried region out of cartridge allocations. Cartridge
+software preserves this reservation; the query does not install hardware write
+protection. Coordinates outside it remain subject to the cartridge's other
+graphics allocations and live uses.
 
 For the limits of later device-context restoration, see [System control and timing — Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service). Restoring device context does not restore overwritten VRAM pixels.
 
@@ -127,9 +132,8 @@ Here x and width count **16-bit VRAM words** across a row; y and height count
 reports the terminal and atlas extent; uploading and synchronizing those bytes
 remain separate operations.
 
-Use the named import below, or resolve its function-record address through the
-[[published BIOS call-target lookup](program-images.md#sec-blua-programs-locating-bios-call-targets)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “Locating BIOS call targets”]{.content-visible when-format="pdf"}
-in Book II. Do not hard-code an address from another firmware image.
+Use the named import below, or resolve its function-record address using the BIOS lookup procedure in
+[[published BIOS call-target lookup](program-images.md#sec-blua-programs-locating-bios-call-targets)]{.content-visible when-format="html"}[Book II, §3.6]{.content-visible when-format="pdf"}. Do not hard-code an address from another firmware image.
 
 ```lua
 local system_vram_region<const> = require('gpu/system_vram_region')
@@ -150,7 +154,7 @@ For the installed BIOS terminal layout and system atlas, the rectangles are:
 | Actual system atlas, 216 × 12 | `[768, 984)` | `[960, 972)` |
 | Returned bounding rectangle, 320 × 252 | `[704, 1024)` | `[720, 972)` |
 
-For those dimensions, the returned origin word is `0x02d002c0` and the size word is `0x00fc0140`. These numbers illustrate the query result, not universal constants for cartridge code. Use the rectangle returned by the installed BIOS.
+For those dimensions, the returned origin word is `02D002C0H` and the size word is `00FC0140H`. These numbers illustrate the query result, not universal constants for cartridge code. Use the rectangle returned by the installed BIOS.
 
 The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
 
@@ -161,22 +165,22 @@ function value is not such a range, and the CPU's function-local value slots
 do not provide a cartridge-addressable byte stack. Use storage with the
 layout and alignment required by the receiving unit.
 
-Book II's [[BLua storage reference](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Typed storage, layouts, and address views”]{.content-visible when-format="pdf"}
-defines declarations, typed views and record indexing. Its
-[[worked record copy](blua-programs.md#sec-memory-worked-example-prepare-and-copy-two-records)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Worked example: prepare and copy two records”]{.content-visible when-format="pdf"}
+[[BLua storage reference](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)]{.content-visible when-format="html"}[Book II, §2.2]{.content-visible when-format="pdf"}
+defines declarations, typed views and record indexing. The example in
+[[worked record copy](blua-programs.md#sec-memory-worked-example-prepare-and-copy-two-records)]{.content-visible when-format="html"}[Book II, §2.3.1]{.content-visible when-format="pdf"}
 connects those declarations to the resulting bytes. The rules below govern the
 accesses that reach the memory map.
 
 Program initialization is a separate operation from storage placement. The
 startup sequence copies DATA initializers from ROM and clears BSS before
-entering application code. [[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, “Program images and startup”]{.content-visible when-format="pdf"}
+entering application code. [[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, Chapter 3]{.content-visible when-format="pdf"}
 defines that sequence, the ROM records and the BIOS handoff. Reserve firmware
 storage regardless of the cartridge's chosen initialization routine.
 
 ## I/O register-bank directory {#sec-memory-io-register-bank-directory}
 
 The I/O-slot aperture contains 16656 four-byte slots: 66624 bytes in
-`[0x08000000, 0x08010440)`. The reservation and allocation boundaries above
+`[08000000H, 08010440H)`. The reservation and allocation boundaries above
 remain separate from that decoded aperture.
 
 The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
@@ -185,50 +189,50 @@ The following directory covers the complete I/O aperture in address order. Each 
 
 | First word address | Exclusive end | 32-bit word positions | Unit and subbank |
 |---|---|---|---|
-| `0x08000000` | `0x0800000c` | 3 | [IRQ](irq.md#sec-irq-register-reference) — pending flags, acknowledgement and mask |
-| `0x0800000c` | `0x08000024` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 0 |
-| `0x08000024` | `0x08000064` | 16 | [GEO](geo.md#sec-geo-register-reference) — operands, command, control, progress and fault |
-| `0x08000064` | `0x08000120` | 47 | [Input](input.md#sec-input-register-map) — sampling, keyboard, pointer, four pads and output port |
-| `0x08000120` | `0x08000174` | 21 | [APU](apu.md#sec-apu-register-reference) — command-staging parameters |
-| `0x08000174` | `0x0800017c` | 2 | [APU](apu.md#sec-apu-register-reference) — CMD and STATUS |
-| `0x0800017c` | `0x0800018c` | 4 | [APU](apu.md#sec-apu-register-reference) — retained end-event words |
-| `0x0800018c` | `0x08000194` | 2 | [APU](apu.md#sec-apu-register-reference) — selected source and active-slot mask |
-| `0x08000194` | `0x080001e8` | 21 | [APU](apu.md#sec-apu-register-reference) — live selected-slot parameter window |
-| `0x080001e8` | `0x080001f4` | 3 | [APU](apu.md#sec-apu-register-reference) — sample-transfer address, data and control |
-| `0x080001f4` | `0x08000200` | 3 | [APU](apu.md#sec-apu-register-reference) — command-queue occupancy, free space and capacity |
-| `0x08000200` | `0x08000204` | 1 | [APU](apu.md#sec-apu-register-reference) — sample sequence |
-| `0x08000204` | `0x08000208` | 1 | Reserved retained word |
-| `0x08000208` | `0x08010208` | 16384 | Reserved retained-slot range |
+| `08000000H` | `0800000CH` | 3 | [IRQ](irq.md#sec-irq-register-reference) — pending flags, acknowledgement and mask |
+| `0800000CH` | `08000024H` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 0 |
+| `08000024H` | `08000064H` | 16 | [GEO](geo.md#sec-geo-register-reference) — operands, command, control, progress and fault |
+| `08000064H` | `08000120H` | 47 | [Input](input.md#sec-input-register-map) — sampling, keyboard, pointer, four pads and output port |
+| `08000120H` | `08000174H` | 21 | [APU](apu.md#sec-apu-register-reference) — command-staging parameters |
+| `08000174H` | `0800017CH` | 2 | [APU](apu.md#sec-apu-register-reference) — CMD and STATUS |
+| `0800017CH` | `0800018CH` | 4 | [APU](apu.md#sec-apu-register-reference) — retained end-event words |
+| `0800018CH` | `08000194H` | 2 | [APU](apu.md#sec-apu-register-reference) — selected source and active-slot mask |
+| `08000194H` | `080001E8H` | 21 | [APU](apu.md#sec-apu-register-reference) — live selected-slot parameter window |
+| `080001E8H` | `080001F4H` | 3 | [APU](apu.md#sec-apu-register-reference) — sample-transfer address, data and control |
+| `080001F4H` | `08000200H` | 3 | [APU](apu.md#sec-apu-register-reference) — command-queue occupancy, free space and capacity |
+| `08000200H` | `08000204H` | 1 | [APU](apu.md#sec-apu-register-reference) — sample sequence |
+| `08000204H` | `08000208H` | 1 | Reserved retained word |
+| `08000208H` | `08010208H` | 16384 | Reserved retained-slot range |
 
 ### Upper register banks {#sec-memory-upper-register-banks}
 
 | First word address | Exclusive end | 32-bit word positions | Unit and subbank |
 |---|---|---|---|
-| `0x08010208` | `0x08010218` | 4 | [Memory bus fault](#sec-memory-bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
-| `0x08010218` | `0x08010224` | 3 | [APU](apu.md#sec-apu-register-reference) — fault code, detail and acknowledgement |
-| `0x08010224` | `0x08010228` | 1 | [GEO](geo.md#sec-geo-register-reference) — fault acknowledgement |
-| `0x08010228` | `0x08010230` | 2 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — elapsed milliseconds and frame interval |
-| `0x08010230` | `0x08010238` | 2 | [SYSTEM](system.md#sec-system-diagnostic-text-output) — diagnostic character and line flush |
-| `0x08010238` | `0x0801023c` | 1 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — cycles per frame |
-| `0x0801023c` | `0x08010244` | 2 | [GPU](gpu.md#sec-gpu-gp0-gpuread-gp1-and-gpustat) — GP0/GPUREAD and GP1/GPUSTAT |
-| `0x08010244` | `0x080102c4` | 32 | [GTE](gte.md#sec-gte-register-reference) — data words D[0]–D[31] |
-| `0x080102c4` | `0x08010344` | 32 | [GTE](gte.md#sec-gte-register-reference) — control words C[0]–C[31] |
-| `0x08010344` | `0x0801034c` | 2 | [GTE](gte.md#sec-gte-normal-command-and-cycles) — normal COMMAND and CYCLES |
-| `0x0801034c` | `0x08010354` | 2 | [SYSTEM](system.md#sec-system) — CONTROL and STATUS |
-| `0x08010354` | `0x08010384` | 12 | [PCRTC](pcrtc.md#sec-pcrtc) — composition words, PMODE through BGCOLOR |
-| `0x08010384` | `0x080103ac` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
-| `0x080103ac` | `0x080103e4` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
-| `0x080103e4` | `0x080103fc` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
-| `0x080103fc` | `0x08010420` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
-| `0x08010420` | `0x08010428` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Cartridge controller”]{.content-visible when-format="pdf"} — socket selection and status |
-| `0x08010428` | `0x08010440` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
+| `08010208H` | `08010218H` | 4 | [Memory bus fault](#sec-memory-bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
+| `08010218H` | `08010224H` | 3 | [APU](apu.md#sec-apu-register-reference) — fault code, detail and acknowledgement |
+| `08010224H` | `08010228H` | 1 | [GEO](geo.md#sec-geo-register-reference) — fault acknowledgement |
+| `08010228H` | `08010230H` | 2 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — elapsed milliseconds and frame interval |
+| `08010230H` | `08010238H` | 2 | [SYSTEM](system.md#sec-system-diagnostic-text-output) — diagnostic character and line flush |
+| `08010238H` | `0801023CH` | 1 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — cycles per frame |
+| `0801023CH` | `08010244H` | 2 | [GPU](gpu.md#sec-gpu-gp0-gpuread-gp1-and-gpustat) — GP0/GPUREAD and GP1/GPUSTAT |
+| `08010244H` | `080102C4H` | 32 | [GTE](gte.md#sec-gte-register-reference) — data words D[0]–D[31] |
+| `080102C4H` | `08010344H` | 32 | [GTE](gte.md#sec-gte-register-reference) — control words C[0]–C[31] |
+| `08010344H` | `0801034CH` | 2 | [GTE](gte.md#sec-gte-normal-command-and-cycles) — normal COMMAND and CYCLES |
+| `0801034CH` | `08010354H` | 2 | [SYSTEM](system.md#sec-system) — CONTROL and STATUS |
+| `08010354H` | `08010384H` | 12 | [PCRTC](pcrtc.md#sec-pcrtc) — composition words, PMODE through BGCOLOR |
+| `08010384H` | `080103ACH` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
+| `080103ACH` | `080103E4H` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
+| `080103E4H` | `080103FCH` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
+| `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
+| `08010420H` | `08010428H` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"} — socket selection and status |
+| `08010428H` | `08010440H` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
 
 These ranges partition all 16656 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
 
 ### Reserved retained words and decoder boundary {#sec-memory-reserved-retained-words-and-decoder-boundary}
 
 Of the 16656 positions, **16385 are reserved retained words** in
-`[0x08000204, 0x08010208)`. An aligned word read returns the stored raw word;
+`[08000204H, 08010208H)`. An aligned word read returns the stored raw word;
 an accepted aligned word write replaces it. These words reset to zero and have
 no command, FIFO, automatic address increment or transfer-completion behavior.
 They remain reserved: retention does not make them cartridge RAM or grant a
@@ -236,7 +240,7 @@ scratch-buffer allocation. Do not apply this read/write description to other
 directory rows; their unit-specific permissions and side effects still apply.
 
 I/O decoding and the I/O reservation have different limits. Addresses in
-`[0x08010440, 0x08040000)` reach installed main-RAM bytes rather than register
+`[08010440H, 08040000H)` reach installed main-RAM bytes rather than register
 slots, but remain within the reserved 256 KiB. They are not additional
 registers or newly available cartridge storage.
 
@@ -248,16 +252,16 @@ not permission to bypass ordinary CPU instruction alignment:
 
 | Mapped transfer | Selected path |
 |---|---|
-| U32 at `0x0801043c` | Last complete I/O slot: supervisor fault DOMAIN |
-| U32 at `0x0801043e` | Four main-RAM bytes spanning the decoder boundary |
-| U16 at `0x0801043f` | Two main-RAM bytes spanning the decoder boundary |
-| U32 at `0x08010440` | Main RAM within the reservation |
+| U32 at `0801043CH` | Last complete I/O slot: supervisor fault DOMAIN |
+| U32 at `0801043EH` | Four main-RAM bytes spanning the decoder boundary |
+| U16 at `0801043FH` | Two main-RAM bytes spanning the decoder boundary |
+| U32 at `08010440H` | Main RAM within the reservation |
 
 Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
 reaching the mapped bus. The [scalar-access rules](#sec-memory-scalar-memory-accesses)
 separate that CPU alignment check from I/O decoding. F64 instead consists of
-two word transfers: an aligned F64 access at `0x0801043c` reaches the last I/O
-slot first and RAM at `0x08010440` second, subject to the ordered fault rules.
+two word transfers: an aligned F64 access at `0801043CH` reaches the last I/O
+slot first and RAM at `08010440H` second, subject to the ordered fault rules.
 
 ## Scalar memory accesses {#sec-memory-scalar-memory-accesses}
 
@@ -278,7 +282,7 @@ The CPU checks alignment before making the mapped access. A misaligned ordinary 
 
 ### System-ROM data accesses {#sec-memory-system-rom-data-accesses}
 
-The declared system-ROM window is `0x00000000` through `0x00ffffff` (16 MiB). When the full width of a mapped scalar read fits this window, bytes beyond the installed ROM image are returned as zero. A U16 or U32 read that straddles the installed image's end is zero-filled only for its missing bytes.
+The declared system-ROM window is `00000000H` through `00FFFFFFH` (16 MiB). When the full width of a mapped scalar read fits this window, bytes beyond the installed ROM image are returned as zero. A U16 or U32 read that straddles the installed image's end is zero-filled only for its missing bytes.
 
 Scalar writes to the system-ROM window report `BUS_FAULT_UNMAPPED` and leave ROM unchanged. They do not report `BUS_FAULT_READ_ONLY`. The CPU alignment check precedes these mapped-access rules. These are system-ROM data-access rules, not cartridge-ROM or instruction-fetch rules.
 
@@ -319,10 +323,10 @@ These four registers use byte addresses. The access labels describe aligned Word
 
 | Byte address | Register | Word access and contents | System reset / ACK value |
 |---|---|---|---|
-| `0x08010208` | `IO_SYS_BUS_FAULT_CODE` | Read-only. Numerical code of the first pending fault. | `0x00000000` (`BUS_FAULT_NONE`) |
-| `0x0801020c` | `IO_SYS_BUS_FAULT_ADDR` | Read-only. Byte address supplied by the first pending fault. | `0x00000000` |
-| `0x08010210` | `IO_SYS_BUS_FAULT_ACCESS` | Read-only. Access flags supplied by the first pending fault. | `0x00000000` |
-| `0x08010214` | `IO_SYS_BUS_FAULT_ACK` | Reads as zero. A zero word write does not acknowledge; **any nonzero word write** clears the latch. | `0x00000000` |
+| `08010208H` | `IO_SYS_BUS_FAULT_CODE` | Read-only. Numerical code of the first pending fault. | `00000000H` (`BUS_FAULT_NONE`) |
+| `0801020CH` | `IO_SYS_BUS_FAULT_ADDR` | Read-only. Byte address supplied by the first pending fault. | `00000000H` |
+| `08010210H` | `IO_SYS_BUS_FAULT_ACCESS` | Read-only. Access flags supplied by the first pending fault. | `00000000H` |
+| `08010214H` | `IO_SYS_BUS_FAULT_ACK` | Reads as zero. A zero word write does not acknowledge; **any nonzero word write** clears the latch. | `00000000H` |
 
 : {tbl-colwidths="[16,28,34,22]"}
 
@@ -336,10 +340,10 @@ Reading the status registers does not acknowledge a fault. An aligned Word/U32 w
 
 | Name | Word value | Meaning |
 |---|---|---|
-| `BUS_FAULT_NONE` | `0x00000000` | No pending fault. |
-| `BUS_FAULT_UNMAPPED` | `0x00000001` | Unmapped access. |
-| `BUS_FAULT_UNALIGNED_IO` | `0x00000002` | Rejected I/O width or slot alignment, as specified above. |
-| `BUS_FAULT_READ_ONLY` | `0x00000003` | Rejected write to a read-only register. |
+| `BUS_FAULT_NONE` | `00000000H` | No pending fault. |
+| `BUS_FAULT_UNMAPPED` | `00000001H` | Unmapped access. |
+| `BUS_FAULT_UNALIGNED_IO` | `00000002H` | Rejected I/O width or slot alignment, as specified above. |
+| `BUS_FAULT_READ_ONLY` | `00000003H` | Rejected write to a read-only register. |
 
 ### ACCESS flags {#sec-memory-access-flags}
 
@@ -347,17 +351,17 @@ The ACCESS word combines a direction flag with an access-kind flag by bitwise OR
 
 | Direction flag | Bit | Mask |
 |---|---:|---|
-| `BUS_FAULT_ACCESS_READ` | 0 | `0x00000001` |
-| `BUS_FAULT_ACCESS_WRITE` | 1 | `0x00000002` |
+| `BUS_FAULT_ACCESS_READ` | 0 | `00000001H` |
+| `BUS_FAULT_ACCESS_WRITE` | 1 | `00000002H` |
 
 | Access-kind flag | Bit | Mask | Read ACCESS word | Write ACCESS word |
 |---|---:|---|---|---|
-| `BUS_FAULT_ACCESS_U8` | 8 | `0x00000100` | `0x00000101` | `0x00000102` |
-| `BUS_FAULT_ACCESS_U16` | 9 | `0x00000200` | `0x00000201` | `0x00000202` |
-| `BUS_FAULT_ACCESS_U32` | 10 | `0x00000400` | `0x00000401` | `0x00000402` |
-| `BUS_FAULT_ACCESS_WORD` | 11 | `0x00000800` | `0x00000801` | `0x00000802` |
-| `BUS_FAULT_ACCESS_F32` | 12 | `0x00001000` | `0x00001001` | `0x00001002` |
-| `BUS_FAULT_ACCESS_F64` | 13 | `0x00002000` | `0x00002001` | `0x00002002` |
+| `BUS_FAULT_ACCESS_U8` | 8 | `00000100H` | `00000101H` | `00000102H` |
+| `BUS_FAULT_ACCESS_U16` | 9 | `00000200H` | `00000201H` | `00000202H` |
+| `BUS_FAULT_ACCESS_U32` | 10 | `00000400H` | `00000401H` | `00000402H` |
+| `BUS_FAULT_ACCESS_WORD` | 11 | `00000800H` | `00000801H` | `00000802H` |
+| `BUS_FAULT_ACCESS_F32` | 12 | `00001000H` | `00001001H` | `00001002H` |
+| `BUS_FAULT_ACCESS_F64` | 13 | `00002000H` | `00002001H` | `00002002H` |
 
 : {tbl-colwidths="[30,6,20,22,22]"}
 
@@ -385,13 +389,13 @@ unaffected. Device-master faults update the report without vectoring the CPU.
 Clearing the report acknowledges those diagnostics; exception return is a
 separate CPU operation.
 
-The CPU cause-code field occupies bits 6:2, selected by `CPU_CAUSE_CODE_MASK = 0x0000007c`.
+The CPU cause-code field occupies bits 6:2, selected by `CPU_CAUSE_CODE_MASK = 0000007CH`.
 
 | Ordinary-access condition | CPU cause code | Encoded cause-field value |
 |---|---:|---|
-| Misaligned load | 4 | `0x00000010` |
-| Misaligned store | 5 | `0x00000014` |
-| New bus fault during the mapped access | 7 | `0x0000001c` |
+| Misaligned load | 4 | `00000010H` |
+| Misaligned store | 5 | `00000014H` |
+| New bus fault during the mapped access | 7 | `0000001CH` |
 
 These CPU cause codes are not the values 1–3 in `IO_SYS_BUS_FAULT_CODE`. They are not IRQ bits either: IRQ and NMI are independently represented by bits 10 and 16. Acknowledging the fault record and entering a CPU exception are distinct operations.
 
@@ -403,8 +407,7 @@ report are separate from this retained record.
 
 The BIOS monitor can inspect these words and, when a suitable live binding is
 available, repair an operand before retrying the stopped instruction. See
-[[BIOS diagnostics](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”, under “Memory faults and the monitor”]{.content-visible when-format="pdf"}
-in Book II for the complete inspection and repair sequence. Acknowledging the
+[[BIOS diagnostics](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book II, §7.2]{.content-visible when-format="pdf"} for the complete inspection and repair sequence. Acknowledging the
 bus-fault record alone neither changes the operand nor resumes the program.
 
 ## DMA buffer lifetime {#sec-memory-dma-buffer-lifetime}
@@ -413,14 +416,14 @@ DMA uses byte addresses but counts transfers in **32-bit words**. Starting a tra
 
 ### Attribute a bus fault before START {#sec-memory-attribute-a-bus-fault-before-start}
 
-The shared record contains CODE (`0x08010208`), ADDR (`0x0801020c`) and ACCESS (`0x08010210`); ACCESS identifies direction and access kind, not a channel or bus master. Read them with aligned Word/U32 MMIO accesses from ordinary cartridge code, not privileged CP0 accesses; reads do not acknowledge them.
+The shared record contains CODE (`08010208H`), ADDR (`0801020CH`) and ACCESS (`08010210H`); ACCESS identifies direction and access kind, not a channel or bus master. Read them with aligned Word/U32 MMIO accesses from ordinary cartridge code, not privileged CP0 accesses; reads do not acknowledge them.
 
 To associate the report with one transfer, first arrange exclusive reporting
 for that interval: other DMA work, CPU accesses, interrupt handlers and BIOS
 service must neither introduce a bus fault nor acknowledge one. The report has
 no channel or bus-master identifier.
 
-**Before START**, read CODE and preserve any older nonzero report's CODE/ADDR/ACCESS in owned storage. Write aligned Word/U32 `1` to ACK (`0x08010214`), then read CODE to establish a zero baseline. Start the prepared operation and wait for its real completion predicate. Read CODE again; if nonzero, preserve CODE/ADDR/ACCESS before another ACK. Under the stated assumption, this is the first reported fault since clearing and belongs to the assessed operation.
+**Before START**, read CODE and preserve any older nonzero report's CODE/ADDR/ACCESS in owned storage. Write aligned Word/U32 `1` to ACK (`08010214H`), then read CODE to establish a zero baseline. Start the prepared operation and wait for its real completion predicate. Read CODE again; if nonzero, preserve CODE/ADDR/ACCESS before another ACK. Under the stated assumption, this is the first reported fault since clearing and belongs to the assessed operation.
 
 If the old report must remain latched, preserve it in place and treat later
 transfer faults as unattributed: the report cannot record another fault until
@@ -519,7 +522,7 @@ Use the [IMGDEC chapter](imgdec.md#sec-imgdec) and its [BLua programming sequenc
 
 ### APU sample storage and lifetime {#sec-memory-apu-sample-storage-and-lifetime}
 
-Sampled voices read installed ROM or the APU's 512 KiB private sample RAM, not CPU main RAM. Main RAM can hold upload staging or a download destination, but it is not a direct voice source. The private source address `0x40000000` names APU storage; it is not a CPU pointer. The transfer address instead names an offset within that private RAM.
+Sampled voices read installed ROM or the APU's 512 KiB private sample RAM, not CPU main RAM. Main RAM can hold upload staging or a download destination, but it is not a direct voice source. The private source address `40000000H` names APU storage; it is not a CPU pointer. The transfer address instead names an offset within that private RAM.
 
 For a supported nonzero command, an accepted CMD write captures the staging
 parameters into the command queue, not the sample bytes. Later staging writes
@@ -532,7 +535,7 @@ active voice's source using its current full description, not an atomic staged
 replacement. A failed source change can stop that voice and raise a fault;
 other voices' source lifetimes are unchanged.
 
-Keep upload completion separate from playback lifetime. A DMA upload first delivers words to the transfer FIFO; private-RAM writes can remain pending after DMA DONE. After the intended DMA upload completes, with no competing transfer writer, read APU STATUS and wait for TRANSFER_BUSY, bit 10 (`0x400`), to clear before starting a voice over the uploaded bytes. Keep the operation's DMA and fault checks: a clear bit alone does not prove correct data. CPU DATA writes in MANUAL_WRITE commit immediately. Do not change the transfer address while an upload commit is pending. A download may continue prefetching after its DMA completes; select transfer STOP to cancel that work and clear its FIFO before reprogramming. This does not undo committed writes or stop voices.
+Keep upload completion separate from playback lifetime. A DMA upload first delivers words to the transfer FIFO; private-RAM writes can remain pending after DMA DONE. After the intended DMA upload completes, with no competing transfer writer, read APU STATUS and wait for TRANSFER_BUSY, bit 10 (`400H`), to clear before starting a voice over the uploaded bytes. Keep the operation's DMA and fault checks: a clear bit alone does not prove correct data. CPU DATA writes in MANUAL_WRITE commit immediately. Do not change the transfer address while an upload commit is pending. A download may continue prefetching after its DMA completes; select transfer STOP to cancel that work and clear its FIFO before reprogramming. This does not undo committed writes or stop voices.
 
 A paused voice retains its source, and a looping voice continues reading it.
 STOP enters the command queue. A fading STOP keeps the source in use until

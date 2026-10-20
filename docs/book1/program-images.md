@@ -9,7 +9,7 @@ Startup establishes writable static contents before calling the application.
 An ordinary function call, an EXEC transfer and a fresh startup therefore have
 different effects. This chapter follows those effects from reset to cartridge
 entry, then specifies the ROM records and BIOS call-target lookup.
-[[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"} in Book I supplies the physical
+[[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} supplies the physical
 address map and the storage reservations that every placement must respect.
 
 ## Addresses used to enter a program {#sec-program-images-entry-addresses}
@@ -89,7 +89,8 @@ program subsequently reads and changes the RAM word; its ROM initializer stays
 unchanged. Likewise, filling `output` changes its RAM bytes, not `inputs`.
 
 The object extents above do not choose their addresses. Place the RAM objects
-outside the [[reserved and firmware-owned spans](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}, and describe the
+outside the reserved and firmware-owned spans specified in
+[[reserved and firmware-owned spans](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}, and describe the
 chosen section addresses consistently in startup and the program image. A local
 pointer view selects an existing object's bytes; it does not allocate another
 copy of that object.
@@ -134,7 +135,7 @@ executable cartridge and performs the handoff described below.
 
 The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:
 
-- ROM magic is `0x58534d42`;
+- ROM magic is `58534D42H`;
 - the header-size word is at least 60;
 - the executable-image-offset word is nonzero;
 - the startup-function word is nonzero.
@@ -177,13 +178,13 @@ and BIOS bindings while replacing execution. Initialize program-owned globals
 explicitly when transferring between programs. See [CPU execution
 control](cpu.md#sec-cpu-exec) for the complete transfer behavior.
 
-### Taking ownership after the BIOS {#sec-memory-taking-ownership-after-the-bios}
+### State at cartridge entry {#sec-memory-taking-ownership-after-the-bios}
 
 At normal BIOS handoff, video timing is running and the display contains BIOS
 drawing. Cartridge code may retain that display or establish its own drawing
 and display configuration. Program each unit before use; its reset-value table
 applies to reset, while its inherited boot state follows the rules here.
-[[System timing](system.md#sec-system-system-time-and-frame-timing)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “System time and frame timing”]{.content-visible when-format="pdf"} describes the live
+[[System timing](system.md#sec-system-system-time-and-frame-timing)]{.content-visible when-format="html"}[Book I, §12.3]{.content-visible when-format="pdf"} describes the live
 readouts, and [CPU control](cpu.md#sec-cpu-cp0-and-execution-control) describes entry
 privilege and interrupt enable.
 
@@ -193,13 +194,12 @@ install its handler and prepare the device: a previously pending source can
 become deliverable immediately. Service the device's local condition and the
 controller's pending bit separately. The complete dispatch and acknowledgement
 sequence is given in
-[[Book I, Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, “Interrupt controller”]{.content-visible when-format="pdf"}.
+[[Book I, Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"}.
 
-Execution handoff also does not release the [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"}; see [[Handoff is not release](memory.md#sec-memory-handoff-is-not-release)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Handoff is not release”]{.content-visible when-format="pdf"}. Later supervisor service preserves selected device context, not overwritten VRAM pixels. Its boundaries are described in [[System control and timing — Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “Device boundaries during supervisor service”]{.content-visible when-format="pdf"}.
+The firmware's VRAM region remains reserved after cartridge entry; see [[Reservation lifetime](memory.md#sec-memory-handoff-is-not-release)]{.content-visible when-format="html"}[Book I, §2.4.1]{.content-visible when-format="pdf"}. Later supervisor service preserves selected device context; overwritten VRAM pixels remain overwritten. Its boundaries are described in [[System control and timing — Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)]{.content-visible when-format="html"}[Book I, §12.7]{.content-visible when-format="pdf"}.
 
-INPUT likewise carries BIOS sampling state into cartridge entry rather than
-starting from its reset words. Follow
-[[BIOS handoff and supervisor sampling](input.md#sec-input-bios-handoff-and-supervisor-sampling)]{.content-visible when-format="html"}[Book I, “Input controller”, under “BIOS handoff and supervisor sampling”]{.content-visible when-format="pdf"}
+INPUT likewise retains its BIOS sampling state at cartridge entry. Follow
+[[BIOS handoff and supervisor sampling](input.md#sec-input-bios-handoff-and-supervisor-sampling)]{.content-visible when-format="html"}[Book I, §11.9.1]{.content-visible when-format="pdf"}
 to establish a fresh cartridge sample, including after supervisor return.
 
 #### Firmware work at normal boot handoff {#sec-memory-firmware-work-at-normal-boot-handoff}
@@ -227,22 +227,22 @@ place.
 ## ROM header fields {#sec-memory-rom-header-fields}
 
 The ROM header begins at the ROM base. Provide at least its first **60 bytes**,
-through offset `0x3b`, for CPU program selection. All offsets in the following
+through offset `3BH`, for CPU program selection. All offsets in the following
 table are byte offsets from that base. Header words are unsigned 32-bit
 little-endian. The CPU uses the program and vector fields; BIOS also checks the
 identification and startup fields when selecting a cartridge.
 
 | Byte offset | Field | CPU program selection | BIOS cartridge selection |
 | --- | --- | --- | --- |
-| `0x00` | Magic | Not read. | Requires `0x58534d42`; bytes `42 4d 53 58` spell `BMSX`. |
-| `0x04` | Header size | Not read. | Requires at least 60 bytes. |
-| `0x08`–`0x1f` | Other prefix words | Not read. | Not read. |
-| `0x20` | BLua32 image offset | Byte offset relative to the ROM base; zero means no executable image. | Requires a nonzero word. |
-| `0x24` | Declared image byte count | Not read. | Not read. |
-| `0x28` | Startup function | Absolute function-record address. | Requires a nonzero word; supplies the EXEC target unchanged. |
-| `0x2c` | IRQ function | Absolute function-record address. | Not read. |
-| `0x30` | Exception function | Absolute function-record address. | Not read. |
-| `0x34`, `0x38` | Unused by the boot interface | Not read. | Not read. |
+| `00H` | Magic | Not read. | Requires `58534D42H`; bytes `42 4D 53 58` spell `BMSX`. |
+| `04H` | Header size | Not read. | Requires at least 60 bytes. |
+| `08H`–`1FH` | Other prefix words | Not read. | Not read. |
+| `20H` | BLua32 image offset | Byte offset relative to the ROM base; zero means no executable image. | Requires a nonzero word. |
+| `24H` | Declared image byte count | Not read. | Not read. |
+| `28H` | Startup function | Absolute function-record address. | Requires a nonzero word; supplies the EXEC target unchanged. |
+| `2CH` | IRQ function | Absolute function-record address. | Not read. |
+| `30H` | Exception function | Absolute function-record address. | Not read. |
+| `34H`, `38H` | Unused by the boot interface | Not read. | Not read. |
 
 System ROM begins at `00000000H` and has execution-domain ID −1. Either
 cartridge socket uses ROM base `10000000H`, with domain ID 0 or 1 selecting the
@@ -261,7 +261,7 @@ The boot interface assigns no interpretation to the unused prefix words.
 Their contents do not select a program, change startup initialization or
 establish a memory reservation.
 
-The next ROM-header word, at byte offset `0x3c`, is a ROM-relative offset to
+The next ROM-header word, at byte offset `3CH`, is a ROM-relative offset to
 optional BIOS diagnostic records; zero means absent. It is outside the CPU's
 60-byte selection prefix. [BIOS diagnostics](bios-monitor.md#sec-memory-optional-bios-diagnostic-directory)
 defines its source-location and frame-scope tables separately from executable
@@ -275,12 +275,12 @@ to the program-header address obtained above. The CPU uses these six unsigned
 
 | Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
-| `0x18` | Constant-table address | Absolute machine byte address in installed ROM. |
-| `0x1c` | Constant count | Number of 16-byte constant records. |
-| `0x20` | Global-name-table address | Absolute machine byte address in installed ROM. |
-| `0x24` | Global-name count | Number of 8-byte name records. |
-| `0x28` | System-global-name-table address | Absolute machine byte address in installed ROM. |
-| `0x2c` | System-global-name count | Number of 8-byte name records. |
+| `18H` | Constant-table address | Absolute machine byte address in installed ROM. |
+| `1CH` | Constant count | Number of 16-byte constant records. |
+| `20H` | Global-name-table address | Absolute machine byte address in installed ROM. |
+| `24H` | Global-name count | Number of 8-byte name records. |
+| `28H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
+| `2CH` | System-global-name count | Number of 8-byte name records. |
 
 The other four-byte header slots describe the program's sections and linkage. They retain
 the following format; CPU program selection does not use them to locate the
@@ -288,16 +288,16 @@ constant or name tables.
 
 | Image byte offset | Descriptive field |
 | --- | --- |
-| `0x00` | Magic; declared constant `0x32334c42`. |
-| `0x04` | Version; declared constant 1. |
-| `0x08`, `0x0c` | Image byte count; flags. |
-| `0x10`, `0x14` | Function-table address; function count. |
-| `0x30`, `0x34` | String address; string byte count. |
-| `0x38`, `0x3c` | RODATA address; RODATA byte count. |
-| `0x40`, `0x44`, `0x48` | DATA load address; DATA byte count; DATA run address. |
-| `0x4c`, `0x50` | BSS address; BSS byte count. |
-| `0x54`, `0x58` | TEXT address; TEXT byte count. |
-| `0x5c` | Preparation-sequence function-record address; zero when no sequence is present. |
+| `00H` | Magic; declared constant `32334C42H`. |
+| `04H` | Version; declared constant 1. |
+| `08H`, `0CH` | Image byte count; flags. |
+| `10H`, `14H` | Function-table address; function count. |
+| `30H`, `34H` | String address; string byte count. |
+| `38H`, `3CH` | RODATA address; RODATA byte count. |
+| `40H`, `44H`, `48H` | DATA load address; DATA byte count; DATA run address. |
+| `4CH`, `50H` | BSS address; BSS byte count. |
+| `54H`, `58H` | TEXT address; TEXT byte count. |
+| `5CH` | Preparation-sequence function-record address; zero when no sequence is present. |
 
 Provide the complete 96-byte header, including its descriptive slots. The CPU
 reads the explicit constant/name addresses and counts. Magic, version,
@@ -320,26 +320,26 @@ count leaves its address unused.
 
 ### Constant and name records {#sec-memory-constant-and-name-records}
 
-Constant record `i` begins at `constantTableAddress + 16i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `0x00`:
+Constant record `i` begins at `constantTableAddress + 16i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `00H`:
 
 | Tag | Value | Payload consumed |
 | --- | --- | --- |
 | 0 | Nil | None. |
 | 1 | False | None. |
 | 2 | True | None. |
-| 3 | Number | Eight-byte IEEE-754 binary64, little-endian, at `0x04`–`0x0b`. |
-| 4 | String | Absolute ROM text byte address at `0x04`; text byte count at `0x08`, both u32 little-endian. |
+| 3 | Number | Eight-byte IEEE-754 binary64, little-endian, at `04H`–`0BH`. |
+| 4 | String | Absolute ROM text byte address at `04H`; text byte count at `08H`, both u32 little-endian. |
 
 Constant indices select records in table order. Tags 0–2 encode their value
-without a payload; bytes `0x0c`–`0x0f` are unused. A record with another tag is
+without a payload; bytes `0CH`–`0FH` are unused. A record with another tag is
 invalid and prevents program activation.
 
 Both name tables use the same layout. Name record `i` begins at `tableAddress + 8i`:
 
 | Record byte offset | Field |
 | --- | --- |
-| `0x00` | Absolute ROM text byte address, u32 little-endian. |
-| `0x04` | Text byte count, u32 little-endian. |
+| `00H` | Absolute ROM text byte address, u32 little-endian. |
+| `04H` | Text byte count, u32 little-endian. |
 
 Text lengths count **bytes**, not codepoints. Reads consume the specified span, not a NUL-terminated sequence. A zero byte within the span is part of the text. A zero byte count produces empty text without reading the address.
 
@@ -361,14 +361,14 @@ A function address identifies a **32-byte function record**, not its first instr
 
 | Record byte offset | Field | Interpretation |
 | --- | --- | --- |
-| `0x00` | Code address | Absolute machine byte address of the initial instruction. |
-| `0x04` | Declared code byte count | Not read. |
-| `0x08` | Parameter count | Number of fixed parameter slots. |
-| `0x0c` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
-| `0x10` | Flags | Bit 0 VARARG; bit 1 STATIC. |
-| `0x14` | Upvalue-table address | Absolute machine byte address. |
-| `0x18` | Upvalue count | Number of four-byte descriptors. |
-| `0x1c` | Reserved | Not read. |
+| `00H` | Code address | Absolute machine byte address of the initial instruction. |
+| `04H` | Declared code byte count | Not read. |
+| `08H` | Parameter count | Number of fixed parameter slots. |
+| `0CH` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
+| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC. |
+| `14H` | Upvalue-table address | Absolute machine byte address. |
+| `18H` | Upvalue count | Number of four-byte descriptors. |
+| `1CH` | Reserved | Not read. |
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
 
@@ -385,8 +385,8 @@ Function-record words are little-endian; [instruction words are big-endian](cpu.
 The [published BIOS import names](blua-programs.md#sec-blua-programs-named-bios-function-imports)
 bind to fixed, zero-based slots in the system
 executable's function table. The ROM header at system address zero supplies
-the executable's offset at `0x20`. Its executable header supplies the absolute
-function-table address at offset `0x10`. Each function record occupies
+the executable's offset at `20H`. Its executable header supplies the absolute
+function-table address at offset `10H`. Each function record occupies
 32 bytes, so slot `s` has function-record address `table_address + 32*s`.
 These addresses select function records, not their instruction bytes.
 
@@ -410,7 +410,7 @@ local sine = sin_turn32(0x40000000) -- 65536
 
 Use the installed system ROM's own fields, rather than assuming a fixed
 instruction address or substituting a record from the cartridge image.
-For static RAM placement, the system executable's BSS address at `0x4c`
-plus its padded byte count at `0x50` gives the first byte after firmware
+For static RAM placement, the system executable's BSS address at `4CH`
+plus its padded byte count at `50H` gives the first byte after firmware
 static storage. The [executable-image reference](#sec-memory-blua32-executable-image) above
 defines these section and record fields.

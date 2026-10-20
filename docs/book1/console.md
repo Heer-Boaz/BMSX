@@ -63,13 +63,13 @@ its working storage and selects an executable cartridge. Cartridge ROM supplies
 the game's program and read-only data; main RAM supplies writable data and
 buffers. System-ROM routines remain available through the BIOS interfaces.
 The startup and storage requirements are described in
-[[Program images and startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “Reset and cartridge startup”]{.content-visible when-format="pdf"}.
+[[Program images and startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, §3.3]{.content-visible when-format="pdf"}.
 
 The CPU controls the units through memory-mapped ports. A word
 write can set a parameter, supply data or issue a command, depending on the port;
 a read can return status, retained configuration or a result. The device's
 programming sequence establishes which values must be prepared before its start
-command. The [[CPU reference](cpu.md#sec-cpu)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”]{.content-visible when-format="pdf"}
+command. [[CPU reference](cpu.md#sec-cpu)]{.content-visible when-format="html"}[Book II, Chapter 1]{.content-visible when-format="pdf"}
 defines instruction operation and cycle costs.
 
 Three supporting units connect program execution to the rest of the machine:
@@ -101,19 +101,19 @@ range.
 
 | Region | Byte-address interval | Capacity or use |
 |---|---|---|
-| System ROM | `[0x00000000, 0x01000000)` | 16 MiB address window for the installed firmware |
-| Unmapped | `[0x01000000, 0x08000000)` | No mapped storage or device |
-| Main RAM | `[0x08000000, 0x10000000)` | 128 MiB window; 4 MiB installed in `[0x08000000, 0x08400000)`, including the reservations below |
-| Cartridge ROM | `[0x10000000, 0x30000000)` | 512 MiB window; capacity depends on the selected card |
-| Cartridge RAM | `[0x30000000, 0x30f00000)` | 15 MiB window for optional card RAM |
-| Cartridge devices | `[0x30f00000, 0x31000000)` | 1 MiB window for the selected card's mapped devices |
-| Unmapped | At or above `0x31000000` | No mapped storage or device through the end of the address space |
+| System ROM | `[00000000H, 01000000H)` | 16 MiB address window for the installed firmware |
+| Unmapped | `[01000000H, 08000000H)` | No mapped storage or device |
+| Main RAM | `[08000000H, 10000000H)` | 128 MiB window; 4 MiB installed in `[08000000H, 08400000H)`, including the reservations below |
+| Cartridge ROM | `[10000000H, 30000000H)` | 512 MiB window; capacity depends on the selected card |
+| Cartridge RAM | `[30000000H, 30F00000H)` | 15 MiB window for optional card RAM |
+| Cartridge devices | `[30F00000H, 31000000H)` | 1 MiB window for the selected card's mapped devices |
+| Unmapped | At or above `31000000H` | No mapped storage or device through the end of the address space |
 
 The main-RAM window beyond the installed 4 MiB does not provide additional or
 mirrored RAM. Both cartridge sockets use the same windows; the socket selection
 chooses which card an access reaches. The capacities of the two cards are not
 combined into a larger address range. See
-[[Cartridge sockets and mapped card devices](../book3/cartridge.md#sec-cartridge)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”]{.content-visible when-format="pdf"}
+[[Cartridge sockets and mapped card devices](../book3/cartridge.md#sec-cartridge)]{.content-visible when-format="html"}[Book III, Chapter 1]{.content-visible when-format="pdf"}
 for CPU, instruction-fetch and DMA selection.
 
 ### Reservations before cartridge storage {#sec-console-reservations-before-cartridge-storage}
@@ -122,9 +122,9 @@ The beginning of installed main RAM is reserved as follows:
 
 | Reservation | Byte-address interval or extent | Purpose |
 |---|---|---|
-| I/O | `[0x08000000, 0x08040000)` | 256 KiB reservation containing the device-register aperture |
-| GEO scratch | `[0x08040000, 0x080c0000)` | 512 KiB reserved area |
-| Firmware static storage | Starting at `0x080c0000`, through the actual end of system BSS | Initialized DATA and zero-initialized BSS used by the BIOS |
+| I/O | `[08000000H, 08040000H)` | 256 KiB reservation containing the device-register aperture |
+| GEO scratch | `[08040000H, 080C0000H)` | 512 KiB reserved area |
+| Firmware static storage | Starting at `080C0000H`, through the actual end of system BSS | Initialized DATA and zero-initialized BSS used by the BIOS |
 
 The I/O and GEO reservations occupy 768 KiB. This leaves 3.25 MiB before
 subtracting firmware and cartridge static storage; it is not a free-memory
@@ -132,7 +132,7 @@ figure. Reserve both complete areas even where no register is decoded. Place
 cartridge data and buffers outside the firmware's complete DATA/BSS extent.
 The [Memory chapter](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)
 specifies the register aperture, reserved storage and RAM placement.
-[[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, “Program images and startup”]{.content-visible when-format="pdf"} in Book II
+[[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, Chapter 3]{.content-visible when-format="pdf"}
 describes section initialization and cartridge entry.
 
 Firmware also retains part of GPU local memory for its terminal and system
@@ -356,5 +356,5 @@ and fault capture.
 A reset returns execution to system-ROM startup and the BIOS cartridge
 selection process. See
 [Reset requests](system.md#sec-system-reset-requests) and
-[[Reset and cartridge startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “Reset and cartridge startup”]{.content-visible when-format="pdf"}
+[[Reset and cartridge startup](program-images.md#sec-memory-reset-and-cartridge-startup)]{.content-visible when-format="html"}[Book II, §3.3]{.content-visible when-format="pdf"}
 for the reset and subsequent firmware sequence.

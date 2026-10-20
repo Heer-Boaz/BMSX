@@ -76,7 +76,7 @@ local result = chunk()
 A generated symbol can be shared as a key, but its declarations and each use
 must be separate syntax nodes. Compilation consumes the tree and may modify
 its nodes, so construct a fresh tree for each attempt. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
-specifies constructors, node ownership, result counts and diagnostics.
+specifies constructors, node construction and reuse, result counts and diagnostics.
 
 ### Names, environments and captured bindings {#sec-bios-loader-name-binding-and-retained-dependencies}
 
@@ -128,11 +128,11 @@ local first, second = chunk(), chunk()
 
 The calls return 12 and 14; `binding.value` becomes 14 while
 `environment.external_value` remains 1000. `step` has no external descriptor
-and uses the environment. These descriptors own ordinary storage. Accessors
+and uses the environment. These descriptors retain ordinary storage. Accessors
 borrowing a selected frame instead expire when that evaluation scope closes,
 even if a returned closure retains its code.
 
-### Runtime-compiled code: storage, ownership and lifetime {#sec-bios-loader-runtime-compiled-code-storage-ownership-and-lifetime}
+### Code storage and lifetime {#sec-bios-loader-runtime-compiled-code-storage-ownership-and-lifetime}
 
 Runtime-compiled procedures occupy the BIOS code arena in main RAM. One
 compilation places its root procedure, nested procedures, capture descriptors
@@ -170,8 +170,9 @@ local second = child(5)
 ```
 
 The results are 15 and 25. Keeping the child retains the compilation's code
-allocation after the factory reference is dropped. It does not freeze the
-environment or promise when an unreachable allocation will be reclaimed.
+allocation after the factory reference is dropped. The environment remains
+shared and mutable. Once the retaining references become unreachable, the
+allocation is eligible for reclamation.
 
 #### Environments and borrowed bindings {#sec-bios-loader-environments-and-borrowed-bindings}
 
@@ -554,17 +555,26 @@ lua_compiler.compile_syntax(chunk, chunk_name, environment, external_scope)
 
 Successful compilation returns **one root callable closure**. It does not call that closure. The root has no syntax parameters, and its nested functions are compiled with it. This route accepts constructed syntax rather than text. There is no `mode` argument on this entry point. Compilation errors raise directly: this is not an interface returning `nil, message` on failure.
 
-### Node ownership, lists, and locations {#sec-bios-loader-node-ownership-lists-and-locations}
+### Constructing nodes and reusing symbols {#sec-bios-loader-node-ownership-lists-and-locations}
 
 Each constructor or helper returns one value. Constructors store the supplied children, lists, values, and symbol keys directly; they do not clone them or supply default arguments.
 
 Every tagged node has `kind`, `line = 1`, and `column = 1`, in addition to the fields listed in the reference below. The helper records returned by `generated_symbol`, `if_clause`, and `else_clause` are untagged and have no location fields.
 
-A node is an **owned syntax occurrence**. Construct a fresh node for every declaration, reference, expression, and statement occurrence. Do not put the same node into multiple positions or trees. Share a generated-symbol key when several occurrences must name the same binding, not the identifier node carrying that key.
+A node represents **one syntax occurrence**. Construct a fresh node for every
+declaration, reference, expression, and statement position in each tree. When
+several occurrences name the same binding, share their generated-symbol key
+and create a separate identifier node for each occurrence.
 
-Compilation consumes the supplied syntax occurrences and may modify them, including before a failure. Do not recompile the tree, reuse its nodes in another tree, or retry a failed compilation with the same tree. Construct a fresh tree for each compilation attempt.
+Compilation consumes the supplied syntax occurrences and may modify them,
+including before a failure. Construct a fresh tree with new nodes for each
+compilation attempt, including a retry after failure.
 
-All lists in this interface are ordinary consecutive, 1-based Tables. They are consumed through `#list` and `list[index]`; a packed table's `.n` field has no role. Pass `{}` for an empty statement, parameter, argument, return-expression, or clause list. There are no default empty lists or hole-filling rules.
+All lists in this interface are ordinary consecutive, 1-based Tables. They are
+read through `#list` and `list[index]`; a packed table's `.n` field has no role.
+Supply every required list, using `{}` for an empty statement, parameter,
+argument, return-expression, or clause list. Supply consecutive entries for
+nonempty lists; the compiler neither fills holes nor supplies omitted lists.
 
 
 ### Chunk, blocks, names, and literals {#sec-bios-loader-chunk-blocks-names-and-literals}
@@ -865,7 +875,7 @@ defines when an allocation can be reused.
 
 | Property | Specification |
 | --- | --- |
-| Arena capacity | `0x00040000` bytes (256 KiB) declared storage. The usable span is its 16-byte-aligned interior, not a guaranteed 256 KiB of payload. |
+| Arena capacity | `00040000H` bytes (256 KiB) declared storage. The usable span is its 16-byte-aligned interior, not a guaranteed 256 KiB of payload. |
 | Allocation alignment | 16 bytes. |
 | Allocation header | 16 bytes per allocation. |
 | Allocation size | Header plus linked payload, rounded upward to a multiple of 16 bytes. An unsplittable remainder is consumed by the allocation. |
@@ -873,7 +883,8 @@ defines when an allocation can be reused.
 | Allocation contents | All functions, capture metadata, and instruction streams from one compilation share one block. Constant-pool tables and closures use the separate language-allocation budget. |
 | Final arena-exhaustion error | `runtime compiler memory exhausted` |
 
-The arena belongs to the [[firmware RAM reservation](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}.
+The arena lies within the firmware RAM reservation specified in
+[[firmware RAM reservation](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
 The capacity above is shared by live compilations; use the separate language
 allocation budget for Tables, closures and other language objects.
 
@@ -925,4 +936,4 @@ that BIOS arena in place. Keep program sections outside firmware-reserved RAM.
 A system reboot clears the execution environment and starts BIOS
 initialization again. A CPU-only restart or a transfer with `EXEC` has a
 different state boundary; see [CPU execution control](cpu.md#sec-cpu-exec) and
-[[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}. System reboot begins a new runtime-compilation lifetime.
+[[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}. System reboot begins a new runtime-compilation lifetime.

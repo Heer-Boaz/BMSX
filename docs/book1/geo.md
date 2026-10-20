@@ -208,7 +208,7 @@ Choose a command according to the operation and coordinate representation:
 | XFORM2 span / SAT2 polygon | At most 64 vertices |
 | OVERLAP2D polygon / clipping workspace | At most 64 input vertices / 128 clipping vertices |
 | Installed main RAM | 4 MiB; addressed operand and result storage, not a private GEO payload buffer |
-| Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080bffffH; not an automatic operand destination |
+| Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080BFFFFH; not an automatic operand destination |
 | System-cycle timebase | 33,868,800 cycles/s |
 | Outer-record processing rate | 16,384,000 outer records/s |
 
@@ -247,7 +247,7 @@ There is one active job and no command queue. `DONE` does not require a local ac
 | `BUSY` | The active job is discarded and `REJECT_BUSY` is reported. The new command is not launched. |
 | `ERROR` or `REJECTED` | No new job is launched. The first fault, status, and progress remain unchanged until local fault acknowledgement. |
 
-Every `CMD` write changes its raw readback, including a write ignored because a fault is still latched. Reading `CMD` therefore identifies the last word written, not necessarily the command that produced the current result. The supported complete words are `XFORM2_BATCH = 0x20`, `SAT2_BATCH = 0x21`, and `OVERLAP2D_PASS = 0x22`. These are whole-word encodings, not independent command bits. Extra set bits do not retain the meaning of a supported command.
+Every `CMD` write changes its raw readback, including a write ignored because a fault is still latched. Reading `CMD` therefore identifies the last word written, not necessarily the command that produced the current result. The supported complete words are `XFORM2_BATCH = 20H`, `SAT2_BATCH = 21H`, and `OVERLAP2D_PASS = 22H`. These are whole-word encodings, not independent command bits. Extra set bits do not retain the meaning of a supported command.
 
 ### Captured operands and live memory {#sec-geo-captured-operands-and-live-memory}
 
@@ -445,27 +445,30 @@ No recovery step erases the earlier RAM results.
 
 | Offset | Address | Register | Access | Reset | Word interpretation |
 |---|---|---|---|---|---|
-| `+0x00` | `0x08000024` | `SRC0` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
-| `+0x04` | `0x08000028` | `SRC1` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
-| `+0x08` | `0x0800002c` | `SRC2` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
-| `+0x0c` | `0x08000030` | `DST0` | RW | `0` | Full 32-bit captured destination word; command-specific meaning. |
-| `+0x10` | `0x08000034` | `DST1` | RW | `0` | Full 32-bit captured destination word; command-specific meaning. |
-| `+0x14` | `0x08000038` | `COUNT` | RW | `0` | Unsigned 32-bit outer-record count, captured at launch. |
-| `+0x18` | `0x0800003c` | `CMD` | RW | `0` | Whole-word launch doorbell: `0x20`, `0x21`, or `0x22`. Other complete words reject when launch is permitted. |
-| `+0x1c` | `0x08000040` | `CTRL` | RW | `0` | Bit 0: self-clearing `ABORT` pulse. Bits 31:1 retain the written bits and define no further controller action. |
-| `+0x20` | `0x08000044` | `STATUS` | RO | `0` | Bit 0 `BUSY`; bit 1 `DONE`; bit 2 `ERROR`; bit 3 `REJECTED`. No further status bits are defined. |
-| `+0x24` | `0x08000048` | `PARAM0` | RW | `0` | Full 32-bit captured parameter word; command-specific meaning. |
-| `+0x28` | `0x0800004c` | `PARAM1` | RW | `0` | Full 32-bit captured parameter word; command-specific meaning. |
-| `+0x2c` | `0x08000050` | `STRIDE0` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
-| `+0x30` | `0x08000054` | `STRIDE1` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
-| `+0x34` | `0x08000058` | `STRIDE2` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
-| `+0x38` | `0x0800005c` | `PROCESSED` | RO | `0` | Full 32-bit number of completed outer records. |
-| `+0x3c` | `0x08000060` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `0xffff`. |
-| Separate | `0x08010224` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
+| `+00H` | `08000024H` | `SRC0` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
+| `+04H` | `08000028H` | `SRC1` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
+| `+08H` | `0800002CH` | `SRC2` | RW | `0` | Full 32-bit captured source word; command-specific meaning. |
+| `+0CH` | `08000030H` | `DST0` | RW | `0` | Full 32-bit captured destination word; command-specific meaning. |
+| `+10H` | `08000034H` | `DST1` | RW | `0` | Full 32-bit captured destination word; command-specific meaning. |
+| `+14H` | `08000038H` | `COUNT` | RW | `0` | Unsigned 32-bit outer-record count, captured at launch. |
+| `+18H` | `0800003CH` | `CMD` | RW | `0` | Whole-word launch doorbell: `20H`, `21H`, or `22H`. Other complete words reject when launch is permitted. |
+| `+1CH` | `08000040H` | `CTRL` | RW | `0` | Bit 0: self-clearing `ABORT` pulse. Bits 31:1 retain the written bits and define no further controller action. |
+| `+20H` | `08000044H` | `STATUS` | RO | `0` | Bit 0 `BUSY`; bit 1 `DONE`; bit 2 `ERROR`; bit 3 `REJECTED`. No further status bits are defined. |
+| `+24H` | `08000048H` | `PARAM0` | RW | `0` | Full 32-bit captured parameter word; command-specific meaning. |
+| `+28H` | `0800004CH` | `PARAM1` | RW | `0` | Full 32-bit captured parameter word; command-specific meaning. |
+| `+2CH` | `08000050H` | `STRIDE0` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
+| `+30H` | `08000054H` | `STRIDE1` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
+| `+34H` | `08000058H` | `STRIDE2` | RW | `0` | Full 32-bit captured stride word; command-specific meaning. |
+| `+38H` | `0800005CH` | `PROCESSED` | RO | `0` | Full 32-bit number of completed outer records. |
+| `+3CH` | `08000060H` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `FFFFH`. |
+| Separate | `08010224H` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
 
-The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The table offsets are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses. The [CPU alignment check](memory.md#sec-memory-width-and-alignment) precedes mapped I/O; an ordinary misaligned word load or store takes an address-error exception. Mapped byte or halfword writes fault without operating the register. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
+The bank begins at `08000024H` and occupies 16 consecutive 32-bit words. The table offsets are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses. The [CPU alignment check](memory.md#sec-memory-width-and-alignment) precedes mapped I/O; an ordinary misaligned word load or store takes an address-error exception. Mapped byte or halfword writes fault without operating the register. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
 
-Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
+Writable configuration words retain and read back all written bits, including
+those unused by the selected command. `CMD` also retains its complete written
+word. `CTRL` retains the written word except that bit 0 is cleared whenever
+written as one; it has no start, interrupt-enable, or reset bit.
 
 GEO's RAM data path accesses bytes directly, including RAM at addresses
 reserved for CPU I/O. Writing a GEO result there changes the underlying RAM
@@ -508,25 +511,25 @@ in OVERLAP2D.
 
 ## Completion, faults, and recovery {#sec-geo-completion-faults-and-recovery}
 
-Each successful outer record increments `PROCESSED` by one. Successful completion publishes `STATUS = 0x2` (`DONE` only), the completed count, and `FAULT = 0`, then raises `GEO_DONE`.
+Each successful outer record increments `PROCESSED` by one. Successful completion publishes `STATUS = 2H` (`DONE` only), the completed count, and `FAULT = 0`, then raises `GEO_DONE`.
 
-An execution fault publishes `STATUS = 0x6` (`DONE | ERROR`) and raises `GEO_ERROR`. The failing record is not added to `PROCESSED`. `FAULT` contains its zero-based outer-record index in bits 15:0 and the fault code in bits 31:16. The index is truncated to 16 bits independently of the full-width count and progress words. Preserve `PROCESSED` when diagnosing a large batch; the fault word alone does not retain the index's high bits.
+An execution fault publishes `STATUS = 6H` (`DONE | ERROR`) and raises `GEO_ERROR`. The failing record is not added to `PROCESSED`. `FAULT` contains its zero-based outer-record index in bits 15:0 and the fault code in bits 31:16. The index is truncated to 16 bits independently of the full-width count and progress words. Preserve `PROCESSED` when diagnosing a large batch; the fault word alone does not retain the index's high bits.
 
-A rejected submission publishes `STATUS = 0x8` (`REJECTED` without `DONE`), resets `PROCESSED` to zero, and uses fault index `0xffff`. It raises `GEO_ERROR`. Rejection during `BUSY` discards the active job even if some records had already completed. Neither rejection nor execution failure rolls back output memory already written.
+A rejected submission publishes `STATUS = 8H` (`REJECTED` without `DONE`), resets `PROCESSED` to zero, and uses fault index `FFFFH`. It raises `GEO_ERROR`. Rejection during `BUSY` discards the active job even if some records had already completed. Neither rejection nor execution failure rolls back output memory already written.
 
 | Fault code | Name |
 |---|---|
-| `0x0001` | `ABORTED` |
-| `0x0002` | `BAD_RECORD_ALIGNMENT` |
-| `0x0003` | `BAD_VERTEX_COUNT` |
-| `0x0004` | `SRC_RANGE` |
-| `0x0005` | `DST_RANGE` |
-| `0x0006` | `DESCRIPTOR_KIND` |
-| `0x0007` | `NUMERIC_OVERFLOW_INTERNAL` |
-| `0x0008` | `BAD_RECORD_FLAGS` |
-| `0x0009` | `RESULT_CAPACITY` |
-| `0x8001` | `REJECT_BUSY` |
-| `0x8002` | `REJECT_BAD_CMD` |
+| `0001H` | `ABORTED` |
+| `0002H` | `BAD_RECORD_ALIGNMENT` |
+| `0003H` | `BAD_VERTEX_COUNT` |
+| `0004H` | `SRC_RANGE` |
+| `0005H` | `DST_RANGE` |
+| `0006H` | `DESCRIPTOR_KIND` |
+| `0007H` | `NUMERIC_OVERFLOW_INTERNAL` |
+| `0008H` | `BAD_RECORD_FLAGS` |
+| `0009H` | `RESULT_CAPACITY` |
+| `8001H` | `REJECT_BUSY` |
+| `8002H` | `REJECT_BAD_CMD` |
 
 The command reference below identifies which conditions produce each fault.
 
@@ -534,13 +537,13 @@ To stop a busy job, write `CTRL` with bit 0 set. `ABORT` terminates it with `DON
 
 After inspecting a fault, write any nonzero word to `FAULT_ACK`. This clears `ERROR`, `REJECTED`, and `FAULT`; it preserves `DONE`, `BUSY`, and `PROCESSED`. An execution-error result consequently becomes `DONE`; a rejection becomes idle. A zero write has no effect. Acknowledgement never resumes the discarded job.
 
-Local fault acknowledgement and central interrupt acknowledgement are separate. `GEO_DONE` uses central bit 3 (`0x8`); `GEO_ERROR` uses bit 4 (`0x10`). Success raises only the done source; execution fault, abort, and rejection raise only the error source. Pending sources are recorded regardless of masking. The central IRQ registers are `FLAGS` at `0x08000000`, `ACK` at `0x08000004`, and `MASK` at `0x08000008`. Clear a pending source by writing its one bit to central `ACK`; that write leaves other pending sources untouched. Central `ACK` then reads zero. Masking a source does not clear it. `FAULT_ACK` does not clear central pending bits, and central acknowledgement does not release a sticky GEO fault. Use the interrupt-controller chapter for CPU interrupt entry.
+Local fault acknowledgement and central interrupt acknowledgement are separate. `GEO_DONE` uses central bit 3 (`8H`); `GEO_ERROR` uses bit 4 (`10H`). Success raises only the done source; execution fault, abort, and rejection raise only the error source. Pending sources are recorded regardless of masking. The central IRQ registers are `FLAGS` at `08000000H`, `ACK` at `08000004H`, and `MASK` at `08000008H`. Clear a pending source by writing its one bit to central `ACK`; that write leaves other pending sources untouched. Central `ACK` then reads zero. Masking a source does not clear it. `FAULT_ACK` does not clear central pending bits, and central acknowledgement does not release a sticky GEO fault. Use the interrupt-controller chapter for CPU interrupt entry.
 
 GEO reset discards the active job, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
 
 ## XFORM2_BATCH: transform vertices and build bounds {#sec-geo-xform2_batch-transform-vertices-and-build-bounds}
 
-Command word: **0x20**.
+Command word: **20H**.
 
 XFORM2_BATCH applies one affine matrix to each selected run of two-dimensional vertices. Each record selects its source run, matrix, destination run and, optionally, an axis-aligned bounding box (AABB).
 
@@ -584,9 +587,9 @@ All offsets and strides below are in **bytes**. Each word occupies four little-e
 | +8 | dst_index | Output-vertex index, scaled by 8 |
 | +12 | aux_index | Matrix index, scaled by STRIDE2 |
 | +16 | vertex_count | Number of consecutive vertices; 0–64 |
-| +20 | dst1_index | AABB index, scaled by 16; `0xffffffff` suppresses the box |
+| +20 | dst1_index | AABB index, scaled by 16; `FFFFFFFFH` suppresses the box |
 
-The `0xffffffff` value is special only in `dst1_index`: it suppresses both AABB address checking and writing. No equivalent sentinel applies to the other indices. A zero vertex count succeeds after the record and flags checks, without checking or accessing the source run, matrix, vertex output or AABB.
+The `FFFFFFFFH` value is special only in `dst1_index`: it suppresses both AABB address checking and writing. No equivalent sentinel applies to the other indices. A zero vertex count succeeds after the record and flags checks, without checking or accessing the source run, matrix, vertex output or AABB.
 
 | Data object | Size | Word offsets and contents |
 |---|---|---|
@@ -613,15 +616,15 @@ as follows:
 3. Add `t × 65536`, again saturating to signed 64-bit range.
 4. Shift arithmetically right by 16 bits, then saturate to signed 32-bit range.
 
-The first row is `(m00, m01, tx)` and the second is `(m10, m11, ty)`. Saturation does not wrap, and arithmetic overflow does not raise a numeric-overflow fault. The shift is not round-to-nearest: a negative fractional raw unit rounds downward. For example, raw `a = -1`, `x = 1`, with the other terms zero, produces raw `-1` (`0xffffffff`), not zero. An identity x coefficient with a +1 translation applied to raw `2147483647` remains `2147483647` through saturation.
+The first row is `(m00, m01, tx)` and the second is `(m10, m11, ty)`. Saturation does not wrap, and arithmetic overflow does not raise a numeric-overflow fault. The shift is not round-to-nearest: a negative fractional raw unit rounds downward. For example, raw `a = -1`, `x = 1`, with the other terms zero, produces raw `-1` (`FFFFFFFFH`), not zero. An identity x coefficient with a +1 translation applied to raw `2147483647` remains `2147483647` through saturation.
 
 The matrix is read before processing the vertices. Vertices are then read and written in ascending order, with each source vertex read immediately before its output x and y are written. Bounds are formed from the saturated output words, initialized from the first vertex, and written only after all vertices: min_x, min_y, max_x, max_y. Overlapping source and output storage is not prohibited or copied aside; an earlier output can change a later source read. The already-read matrix is unaffected.
 
 ### Address and memory rules {#sec-geo-address-and-memory-rules}
 
-These rules also apply to SAT2_BATCH below. For a nonempty indexed span, the byte displacement, base-plus-displacement and span end must not overflow the 32-bit address space. A span end exactly `0x100000000` passes this arithmetic check. A zero stride is permitted and repeatedly selects the same address.
+These rules also apply to SAT2_BATCH below. For a nonempty indexed span, the byte displacement, base-plus-displacement and span end must not overflow the 32-bit address space. A span end exactly `100000000H` passes this arithmetic check. A zero stride is permitted and repeatedly selects the same address.
 
-Every input span must lie wholly within one readable region: the system-ROM window `0x00000000–0x00ffffff`, installed main RAM beginning at `0x08000000`, or the cartridge-bus window `0x10000000–0x30ffffff`. The cartridge window is not a promise of ROM at every address; it includes cartridge RAM and device mappings. System-ROM reads beyond the populated contents, but within its window, return zero. Output spans must lie wholly in installed main RAM. The RAM checks do not exclude its I/O-address window, and these word transfers do not invoke mapped-I/O handling.
+Every input span must lie wholly within one readable region: the system-ROM window `00000000H–00FFFFFFH`, installed main RAM beginning at `08000000H`, or the cartridge-bus window `10000000H–30FFFFFFH`. The cartridge window is not a promise of ROM at every address; it includes cartridge RAM and device mappings. System-ROM reads beyond the populated contents, but within its window, return zero. Output spans must lie wholly in installed main RAM. The RAM checks do not exclude its I/O-address window, and these word transfers do not invoke mapped-I/O handling.
 
 XFORM2_BATCH imposes no separate word-alignment check on these addresses or strides. In particular, the fault name BAD_RECORD_ALIGNMENT must not be read as an additional alignment requirement.
 
@@ -654,7 +657,7 @@ The first output run is unchanged. The second starts 32 bytes after DST0 and con
 
 ## SAT2_BATCH: test convex-polygon pairs {#sec-geo-sat2_batch-test-convex-polygon-pairs}
 
-Command word: **0x21**.
+Command word: **21H**.
 
 SAT2_BATCH tests pairs of polygon descriptors using their edge normals as separating axes. It returns a hit flag, selected normal, interval-overlap depth and the edge that supplied that axis. Polygon coordinates are signed Q16 words in one common coordinate space; SAT2 does not transform them.
 
@@ -753,7 +756,7 @@ With B translated by `(4,0)` instead, the squares touch and return `(1,65536,0,0
 
 ## OVERLAP2D_PASS: translated-shape contacts {#sec-geo-overlap2d_pass-translated-shape-contacts}
 
-`OVERLAP2D_PASS` (`0x22`) finds strict two-dimensional overlaps between translated shapes. It accepts AABBs, convex polygons, and compounds of those primitives. For each overlapping instance pair it emits at most one contact: a normal, penetration depth, contact point, and identifiers for the selected pieces and feature. Non-overlapping pairs occupy no output slots.
+`OVERLAP2D_PASS` (`22H`) finds strict two-dimensional overlaps between translated shapes. It accepts AABBs, convex polygons, and compounds of those primitives. For each overlapping instance pair it emits at most one contact: a normal, penetration depth, contact point, and identifiers for the selected pieces and feature. Non-overlapping pairs occupy no output slots.
 
 Use **candidate mode** when the cartridge already has a pair list, needs a particular pair order, or carries its own pair metadata. Use **full pass** to examine every distinct pair in an instance array. The two modes share the same mask, bounds, exact-overlap, and contact operations.
 
@@ -856,7 +859,7 @@ Compound piece `i` is the descriptor at `parent + dataOffset + i × 16`: the arr
 
 #### Address spans {#sec-geo-address-spans}
 
-Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `0x100000000`. There is no alignment predicate in this pass.
+Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `100000000H`. There is no alignment predicate in this pass.
 
 Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. The four summary words are written separately, in order.
 
@@ -952,9 +955,9 @@ For each reached pair, the order is descriptor readability, mask filtering, A bo
 
 ### Small AABB example {#sec-geo-small-aabb-example}
 
-Build one 32-byte shape from descriptor words `[1, 4, 16, 16]`, followed by F32 bounds/data `[0, 0, 4, 4]`. Two 20-byte instances share it: A has translation `(0,0)`, B `(1,1)`, and both have layer and mask `1`. Supply candidate `[0, 1, 0x12345678]`.
+Build one 32-byte shape from descriptor words `[1, 4, 16, 16]`, followed by F32 bounds/data `[0, 0, 4, 4]`. Two 20-byte instances share it: A has translation `(0,0)`, B `(1,1)`, and both have layer and mask `1`. Supply candidate `[0, 1, 12345678H]`.
 
-Set `SRC0` to the instances, `STRIDE0=20`, `SRC1` to the candidate, `STRIDE1=12`, `COUNT=1`, `STRIDE2=2`, `PARAM0=1`, and `PARAM1>=1`, with result and summary storage provided as described above. The result is normal `(0,−1)`, depth `3`, point `(2.5,2.5)`, pieces `0/0`, feature `0`, and unchanged metadata `0x12345678`. The normal's x component may carry signed zero; positive-zero bits are not promised. Summary is `[1,1,1,0]`, processed count `1`.
+Set `SRC0` to the instances, `STRIDE0=20`, `SRC1` to the candidate, `STRIDE1=12`, `COUNT=1`, `STRIDE2=2`, `PARAM0=1`, and `PARAM1>=1`, with result and summary storage provided as described above. The result is normal `(0,−1)`, depth `3`, point `(2.5,2.5)`, pieces `0/0`, feature `0`, and unchanged metadata `12345678H`. The normal's x component may carry signed zero; positive-zero bits are not promised. Summary is `[1,1,1,0]`, processed count `1`.
 
 With full-pass `PARAM0=2` and `COUNT=2`, the contact is the same, metadata is `1`, and processed count is `2`. Moving B to `(4,0)` yields touching bounds but no exact overlap: summary `[0,1,1,0]`, even with capacity zero. At `(5,0)`, summary is `[0,0,1,0]`. Either mask set to zero gives `[0,0,0,0]`, provided both descriptor spans remain readable.
 

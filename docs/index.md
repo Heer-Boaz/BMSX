@@ -1,4 +1,51 @@
-# About these manuals {.unnumbered}
+# Reader's guide {.unnumbered}
+
+::: {.content-visible when-profile="book-i"}
+
+The BMSX console combines a programmable processor with dedicated units for
+geometry, drawing, display, sound and data transfer. This volume describes
+their operation and the registers and data formats used to control them.
+It is intended for programmers developing cartridge software.
+
+Begin with the system overview and memory map. The interrupt and DMA chapters
+describe the shared service mechanisms; each unit chapter then explains its
+operation, programming sequences and complete register reference.
+
+For the BLua32 instruction set and resident BIOS services, use Book II.
+Cartridge socket selection and mapped card devices are covered in Book III.
+
+:::
+
+::: {.content-visible when-profile="book-ii"}
+
+BLua32 provides the processor instructions and language facilities used by
+BMSX cartridge programs. The resident BIOS supplies callable services for
+program loading, diagnostics and common operations. This volume specifies
+those interfaces and the program-image formats they use.
+
+For BLua programming, begin with Chapter 2. For instruction encoding, begin
+with Chapter 1 and the program-image reference in Chapter 3. Each BIOS entry
+specifies its call, arguments, results and effects.
+
+Physical memory mapping and hardware control are covered in Book I.
+Cartridge sockets and mapped card devices are covered in Book III.
+
+:::
+
+::: {.content-visible when-profile="book-iii"}
+
+A BMSX cartridge may contain ROM, writable memory, mapped devices or a combination
+of these resources. This volume specifies how software selects a socket and accesses
+the card's address windows and mailbox interface.
+
+The cartridge chapter introduces socket selection before describing the
+address map, bus access, registers and interrupt service.
+Use Book I for the console memory map and DMA controller, and Book II for
+program-image records and startup.
+
+:::
+
+::: {.content-visible when-profile="html"}
 
 The BMSX Developer Reference describes the console, its programming architecture
 and the interfaces available to cartridge software. The three books separate
@@ -33,3 +80,9 @@ Addresses are byte addresses unless stated otherwise. Register descriptions
 give bit positions within the named word; binary layouts give byte offsets
 within the described structure. Capacities, units and synchronization conditions
 are specified with the interface to which they apply.
+
+Hexadecimal quantities use uppercase digits and the suffix `H`. Program
+fragments retain the notation of their language, including BLua hexadecimal
+literals beginning with `0x`.
+
+:::

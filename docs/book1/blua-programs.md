@@ -45,9 +45,8 @@ forms. Choose a mapped access for an explicit address and width, or a typed
 view when field offsets and element strides belong to a declared layout.
 Unary `*` reads a typed selection; the view itself occupies no new byte range.
 
-The [source-semantics reference](#sec-blua-programs-blua-source-semantics) records
-literal spellings, local binding, result adjustment and control-flow rules that
-must not be inferred from another Lua edition.
+The [source-semantics reference](#sec-blua-programs-blua-source-semantics) specifies
+BLua literal spellings, local binding, result adjustment and control flow.
 
 ## Typed storage, layouts, and address views {#sec-blua-programs-typed-storage-layouts-and-address-views}
 
@@ -101,7 +100,7 @@ Locate writable program sections outside the installed firmware's RAM
 reservation. The standard placement puts program DATA after firmware BSS,
 then program BSS after DATA. Access declarations by their resolved addresses;
 fixed offsets from the start of RAM can overwrite firmware state. See
-[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}
+[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}
 for the firmware footprint and placement rules.
 
 Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
@@ -194,7 +193,7 @@ existing address. Neither a local value nor an ordinary Table is a device buffer
 The [declaration and layout reference](#sec-blua-programs-declaration-and-expression-reference)
 defines declarations, initializers, sizes, alignment, arrays and structs,
 including `sizeof`, `offsetof`, address-of and zero-based indexing.
-[[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
+[[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"}
 defines what happens when the resulting address reaches RAM, ROM or an I/O port.
 
 For example, a word view of an existing DMA register bank accesses consecutive
@@ -213,7 +212,7 @@ A storage address still carries the region's ownership and lifetime rules.
 Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
 read-only byte source, and keep a device's input bytes unchanged until its
 completion condition releases them. The record copy above only prepares bytes;
-[[DMA buffer lifetime](memory.md#sec-memory-dma-buffer-lifetime)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “DMA buffer lifetime”]{.content-visible when-format="pdf"}
+[[DMA buffer lifetime](memory.md#sec-memory-dma-buffer-lifetime)]{.content-visible when-format="html"}[Book I, §2.10]{.content-visible when-format="pdf"}
 and the unit references cover asynchronous use.
 
 ### Language execution storage and byte RAM {#sec-memory-language-execution-storage-and-byte-ram}
@@ -245,8 +244,8 @@ its prescribed bytes, not the Table that the program uses to organize them.
 Use typed static storage and scalar writes to construct that byte layout.
 Loads return numeric scalars under the selected access format; they do not
 reconstruct arbitrary language values from words. Integer stores retain the
-specified low bits, while floating stores encode floating-point bits. The
-[[scalar memory rules](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Scalar memory accesses”]{.content-visible when-format="pdf"} give the alignment, conversion
+specified low bits, while floating stores encode floating-point bits. See
+[[Scalar memory rules](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, §2.7]{.content-visible when-format="pdf"} for alignment, conversion
 and partial-access behavior.
 
 #### Function arguments, results and BIOS calls {#sec-memory-function-arguments-results-and-bios-calls}
@@ -622,9 +621,11 @@ The spellings are case-sensitive; an optional semicolon may follow the marker.
 
 A program has one entry chunk. `module<entry>` declares that role. Each
 module also has a distinct path using `/`; dots remain literal path
-characters. Use that path in imports. The [[physical memory map](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
-and [[cartridge socket selection](../book3/cartridge.md#sec-cartridge-selection-and-execution)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Selection and execution”]{.content-visible when-format="pdf"}
-are separate from module naming. [Program images and startup](program-images.md#sec-program-images)
+characters. Use that path in imports. Module naming is independent of the
+physical memory map and cartridge selection; see
+[[Physical memory map](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"}
+and [[cartridge socket selection](../book3/cartridge.md#sec-cartridge-selection-and-execution)]{.content-visible when-format="html"}[Book III, §1.2]{.content-visible when-format="pdf"}.
+[Program images and startup](program-images.md#sec-program-images)
 specifies program entry and initialization.
 
 ### Import a literal module path {#sec-blua-programs-import-a-literal-module-path}
@@ -800,7 +801,7 @@ call for preparation required at normal entry; the annotation alone supplies
 no startup call or once-only latch.
 
 The executable header publishes the preparation sequence's absolute
-function-record address at byte offset `0x5c`. Zero means that no sequence is
+function-record address at byte offset `5CH`. Zero means that no sequence is
 present. A sequence can contain only module initialization when the program
 has dependencies but no annotated participants.
 For a nonzero address, construct a closure with `blua32.closure` and call it
@@ -836,7 +837,7 @@ The named BIOS function imports are:
 | --- | --- | --- | --- |
 | 0 | `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
 | 1 | `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
-| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"} |
+| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, §2.4]{.content-visible when-format="pdf"} |
 
 
 
@@ -920,8 +921,8 @@ local wide = memf64le[double_address]
 
 Misalignment raises an address-error-load or address-error-store exception before the access. In
 particular, `memf64le` requires four-byte, not eight-byte, alignment. It transfers the low word
-first and the high word at the address plus four. A fault stops the sequence; the two-word transfer
-is not an atomic transaction. A fault on the second word of a write does not undo the first word.
+first and the high word at the address plus four. A fault stops the sequence.
+If the second word of a write faults, the first word remains written.
 
 A mapped device retains its own access rules. An access width is not permission to slice a device
 register as though it were ordinary byte storage. For example, a `mem8` I/O read must address an I/O
@@ -1124,9 +1125,8 @@ not establish that the desired transfer or frame completed.
 
 ## BLua source semantics {#sec-blua-programs-blua-source-semantics}
 
-This section records source conventions and behavior that must not be inferred
-from another Lua edition. General Lua syntax and introductory programming are
-outside this reference. Runtime values, arithmetic and instruction costs are
+This section specifies BLua source conventions, bindings, expression results
+and control flow. Runtime values, arithmetic and instruction costs are
 specified by the [CPU reference](cpu.md#sec-cpu).
 
 ### Number spellings {#sec-blua-programs-number-spellings}
@@ -1151,8 +1151,7 @@ The expressions `-0` and `-0.0` produce negative zero. Constant binding and load
 Hexadecimal spelling does not create a distinct address or register-word
 literal type. It is another spelling of a Number literal. The
 [typed-storage reference](#sec-blua-programs-typed-storage-layouts-and-address-views)
-defines declarations and address views; [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and bus access”]{.content-visible when-format="pdf"}
-in Book I defines what happens when the resulting address reaches the bus.
+defines declarations and address views; [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} defines what happens when the resulting address reaches the bus.
 
 ### String literal differences {#sec-blua-programs-string-literal-differences}
 

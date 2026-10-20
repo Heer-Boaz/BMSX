@@ -7,7 +7,7 @@ stored calendar dates. `difftime` subtracts whole-second values.
 
 The sampled counter is the system millisecond word, not a calendar clock.
 Civil conversion uses its own 1970 epoch and fixed BMSX zone convention.
-The [[system-control reference](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} specifies the underlying counter;
+[[system-control reference](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} specifies the underlying counter;
 [Number arithmetic](cpu.md#sec-cpu-values-and-numeric-instructions) determines
 precision in date calculations. These services provide no filesystem or
 process operations.
@@ -143,7 +143,11 @@ timestamp; `wday`, `yday` and `isdst` are recomputed outputs.
 
 ### Normalization and result checking {#sec-bios-os-normalization-and-result-checking}
 
-Months first carry into the year. Days then participate arithmetically in the civil-date conversion; they are not checked against the selected month's length. Hours, minutes, and seconds contribute their corresponding numbers of seconds. Thus, outlying fields normalize through the combined timestamp rather than being rejected merely for crossing a calendar boundary.
+Months first carry into the year. Days then participate arithmetically in the
+civil-date conversion, including values outside the selected month's length.
+Hours, minutes, and seconds contribute their corresponding numbers of seconds.
+Fields that cross a calendar boundary therefore normalize through the combined
+timestamp.
 
 For example:
 
@@ -167,7 +171,9 @@ Negative timestamps use floor-day decomposition. For example, timestamp −1 bel
 ### In-place Table update {#sec-bios-os-in-place-table-update}
 
 
-After all six input validations and the combined timestamp check succeed, the function completes the inverse civil decomposition before making its first Table write. It then writes these fields in this order:
+After all six fields and the combined timestamp pass their checks, the function
+converts the timestamp back to calendar fields before making its first Table
+write. It then writes these fields in this order:
 
 `year`, `month`, `day`, `hour`, `min`, `sec`, `wday`, `yday`, `isdst`.
 
@@ -341,7 +347,7 @@ Only `nil` selects a default. An omitted parameter is `nil` on an ordinary call.
 | A format beginning with `!` | Remove exactly one leading `!` before selecting the result kind. |
 | Format exactly `"*t"` after that removal | Return a fresh Table. |
 | Any other accepted format | Return a String. |
-| `timestamp == nil` | Read the word at address `0x08010228` in this call and use that value `// 1000`. |
+| `timestamp == nil` | Read the word at address `08010228H` in this call and use that value `// 1000`. |
 | Explicit timestamp | Apply the integer and range checks below. |
 
 
@@ -365,7 +371,7 @@ time is not an integer
 ```
 
 
-Only after that check does it require the integer to lie within the inclusive range `-0x1fffffffffffff` through `0x1fffffffffffff`. A value outside that range invokes `error` with exactly:
+Only after that check does it require the integer to lie within the inclusive range `-1FFFFFFFFFFFFFH` through `1FFFFFFFFFFFFFH`. A value outside that range invokes `error` with exactly:
 
 ```text
 time is out-of-bound

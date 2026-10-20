@@ -166,8 +166,8 @@ costs. Drawing, texture lookup and display sampling share local memory.
 |---|---|
 | Installed main RAM | 4 MiB, separate from GPU local memory |
 | GPU local memory | 2 MiB: 1,048,576 sixteen-bit words; low byte first |
-| GP0 — `0x0801023c` | Write command/input words; read GPUREAD |
-| GP1 — `0x08010240` | Write control words; read GPUSTAT, not the last control word |
+| GP0 — `0801023CH` | Write command/input words; read GPUREAD |
+| GP1 — `08010240H` | Write control words; read GPUSTAT, not the last control word |
 | GP0 input FIFO | 16 thirty-two-bit words |
 | Separate DMA ingress | 16 thirty-two-bit words; not another 16 CPU FIFO slots |
 | Ordinary programming access | Thirty-two-bit words, four-byte alignment |
@@ -236,8 +236,8 @@ are different; neither address is an ordinary read/write register variable.
 
 | Address | Write operation | Read operation | Full-reset read at the initial beam position |
 |---|---|---|---|
-| `0x0801023c` | GP0 command or payload word | GPUREAD latch or next permitted ready readback word | `0x00000000` |
-| `0x08010240` | GP1 control word | GPUSTAT | `0x14922000` |
+| `0801023CH` | GP0 command or payload word | GPUREAD latch or next permitted ready readback word | `00000000H` |
+| `08010240H` | GP1 control word | GPUSTAT | `14922000H` |
 
 Writing GP0 does not make a following read return that command word. Writing at
 the GPUSTAT address sends a GP1 control; it does not assign a status-bit mask.
@@ -364,9 +364,9 @@ The other programmed defaults associated with full GPU reset are:
 |---|---|
 | Draw mode, texture window, drawing bounds, drawing offset, mask mode | Zero |
 | Display start | Zero |
-| Display mode | `0x00000009` |
-| Horizontal display range | `0x00c60260` |
-| Vertical display range | `0x00044c23` |
+| Display mode | `00000009H` |
+| Horizontal display range | `00C60260H` |
+| Vertical display range | `00044C23H` |
 | VRAM Y-address extension | Zero |
 | DMA direction; GPU interrupt-request latch | Zero |
 
@@ -388,7 +388,7 @@ remain a distinct interface.
 
 ## GP1 control commands {#sec-gpu-gp1-control-commands}
 
-Write each control as one aligned word to **GP1, `0x08010240`**. A read from
+Write each control as one aligned word to **GP1, `08010240H`**. A read from
 that address returns GPUSTAT, not the control word. GP1 is separate from the GP0
 packet stream: a control is not inserted between a GP0 packet's operands.
 
@@ -413,7 +413,7 @@ stream; they do not wait for idle.
 
 ### GP1(00h) — reset GPU command and register state {#sec-gpu-gp100h-reset-gpu-command-and-register-state}
 
-**Word:** `0x00000000`; all payload bits are ignored.
+**Word:** `00000000H`; all payload bits are ignored.
 
 Perform the GP0 stream clear described under GP1(01h), then restore these GPU
 register defaults:
@@ -422,9 +422,9 @@ register defaults:
 |---|---|
 | Draw mode, texture window, drawing-area corners, drawing offset, mask mode | Zero |
 | Display start | Zero |
-| Display mode | `0x09` |
-| Horizontal display range | `0x00c60260` |
-| Vertical display range | `0x00044c23` |
+| Display mode | `09H` |
+| Horizontal display range | `00C60260H` |
+| Vertical display range | `00044C23H` |
 | Display-disabled latch | One |
 | DMA direction; GPU interrupt-request latch | Zero |
 
@@ -437,7 +437,7 @@ status constant for that read.
 
 ### GP1(01h) — clear the GP0 stream {#sec-gpu-gp101h-clear-the-gp0-stream}
 
-**Word:** `0x01000000`; all payload bits are ignored.
+**Word:** `01000000H`; all payload bits are ignored.
 
 Clear the GP0 FIFO, separate DMA ingress FIFO, incomplete fixed-packet/image
 header and polyline continuation state. Terminate any readback, discard its
@@ -465,11 +465,11 @@ also wanted.
 
 ### GP1(02h) — acknowledge the GPU request latch {#sec-gpu-gp102h-acknowledge-the-gpu-request-latch}
 
-**Word:** `0x02000000`; all payload bits are ignored.
+**Word:** `02000000H`; all payload bits are ignored.
 
 Clear **GPUSTAT bit 24**. This does not clear the independent GPU pending bit
 in the system interrupt controller. The in-order GP0(1Fh) marker sets bit 24 and
-raises `IRQ_GPU`, bit 6 (`0x00000040`), only when the GPU request latch was clear;
+raises `IRQ_GPU`, bit 6 (`00000040H`), only when the GPU request latch was clear;
 markers received while it remains set do not raise a fresh request. A complete
 acknowledgement therefore services the GPU latch with this command and the
 controller latch through its own acknowledgement register. This command is not
@@ -478,7 +478,7 @@ raise `IRQ_GPU`.
 
 ### GP1(03h) — set display-disable state {#sec-gpu-gp103h-set-display-disable-state}
 
-**Word:** `0x03000000 OR d`; **payload mask:** `0x000001`.
+**Word:** `0x03000000 OR d`; **payload mask:** `000001H`.
 
 | d | Programmed GPU display state | GPUSTAT bit 23 |
 |---|---|---|
@@ -491,7 +491,7 @@ readback does not prove that a new displayed presentation has latched.
 
 ### GP1(04h) — select DMA direction and request source {#sec-gpu-gp104h-select-dma-direction-and-request-source}
 
-**Word:** `0x04000000 OR direction`; **payload mask:** `0x000003`.
+**Word:** `0x04000000 OR direction`; **payload mask:** `000003H`.
 
 | Direction | Selection | GPUSTAT bit 25, DMA request |
 |---|---|---|
@@ -510,35 +510,35 @@ request source is not a general CPU-store-ready predicate.
 
 ### GP1(05h) — set the GPU display-start word {#sec-gpu-gp105h-set-the-gpu-display-start-word}
 
-**Word:** `0x05000000 OR start`; **payload mask:** `0x0ffffe`.
+**Word:** `0x05000000 OR start`; **payload mask:** `0FFFFEH`.
 
 The retained word is `start AND 0x000ffffe`: bit 0 is discarded. Decode it as
 
 - source X = `retained AND 0x3ff`, an even raw-word X address;
 - source Y = `(retained >> 10) AND Ymask`, where GP1(09h) selects `Ymask` as
-  `0x1ff` or `0x3ff`.
+  `1FFH` or `3FFH`.
 
 This is GPU display-start state. It neither writes PCRTC's DISPFB/DISPLAY
 registers nor restarts the beam. The stored high Y bit remains available when
 the Y gate is closed; changing the gate changes its decoded address rather than
 requiring that the stored start word be rewritten.
 
-For example, `0x05ffffff` retains `0x000ffffe`: X is 1022, and Y is 511 with the
+For example, `05FFFFFFH` retains `000FFFFEH`: X is 1022, and Y is 511 with the
 nine-bit gate or 1023 with the ten-bit gate. Program PCRTC's source layout and
 window separately for the required displayed picture.
 
 ### GP1(06h) — retain horizontal-display-range state {#sec-gpu-gp106h-retain-horizontal-display-range-state}
 
-**Word:** `0x06000000 OR range`; **payload mask:** `0xffffff`.
+**Word:** `0x06000000 OR range`; **payload mask:** `FFFFFFH`.
 
 Retain all twenty-four payload bits as the GPU horizontal-display-range word.
-For example, `0x06ffffff` retains `0x00ffffff`. These are GPU control values,
+For example, `06FFFFFFH` retains `00FFFFFFH`. These are GPU control values,
 not writes to PCRTC's horizontal synchronization or reading-window registers;
 this command does not establish a physical pixel clock or beam interval.
 
 ### GP1(07h) — set vertical-display-range state {#sec-gpu-gp107h-set-vertical-display-range-state}
 
-**Word:** `0x07000000 OR range`; **payload mask:** `0x0fffff`.
+**Word:** `0x07000000 OR range`; **payload mask:** `0FFFFFH`.
 
 | Retained bits | Field |
 |---|---|
@@ -548,13 +548,13 @@ this command does not establish a physical pixel clock or beam interval.
 The retained word is `range AND 0x000fffff`; payload bits 23:20 are ignored.
 Start and end are stored without ordering validation: equal or reversed values
 are not silently replaced by a preferred range. This is not a write to PCRTC's
-vertical timing or DISPLAY window. `0x07ffffff` therefore stores `0x000fffff`,
+vertical timing or DISPLAY window. `07FFFFFFH` therefore stores `000FFFFFH`,
 with both ten-bit fields equal to 1023, rather than selecting a maximum valid
 monitor mode.
 
 ### GP1(08h) — set GPU display-mode fields {#sec-gpu-gp108h-set-gpu-display-mode-fields}
 
-**Word:** `0x08000000 OR mode`; **payload mask:** `0x0000ff`.
+**Word:** `0x08000000 OR mode`; **payload mask:** `0000FFH`.
 
 All eight mode bits are retained. Their GPUSTAT mapping is:
 
@@ -571,8 +571,8 @@ All eight mode bits are retained. Their GPUSTAT mapping is:
 : {tbl-colwidths="[12,22,66]"}
 
 A mode update clears GPUSTAT's bit-14 reverse mask; retained mode bit 7 is not
-copied there. For example, `0x08ffffff` retains mode `0xff`, sets GPUSTAT bits
-22:16 to `0x7f`, and leaves bit 14 clear. Do not reinterpret that raw high bit as
+copied there. For example, `08FFFFFFH` retains mode `FFH`, sets GPUSTAT bits
+22:16 to `7FH`, and leaves bit 14 clear. Do not reinterpret that raw high bit as
 a horizontal-reversal command.
 
 These GPU mode/status fields do not program PCRTC's clock, synchronization,
@@ -582,12 +582,12 @@ status reference; they are not command-completion flags.
 
 ### GP1(09h) — select the VRAM Y-address gate {#sec-gpu-gp109h-select-the-vram-y-address-gate}
 
-**Word:** `0x09000000 OR extension`; **payload mask:** `0x000001`.
+**Word:** `0x09000000 OR extension`; **payload mask:** `000001H`.
 
 | Extension | Decoded Y bits | Ymask |
 |---|---|---|
-| 0 | Nine | `0x1ff` |
-| 1 | Ten | `0x3ff` |
+| 0 | Nine | `1FFH` |
+| 1 | Ten | `3FFH` |
 
 This selects address interpretation; it does not resize the installed local
 memory. It is a different latch from GP0 draw-mode's texture-page-Y-high bit.
@@ -597,7 +597,7 @@ reinterpret those operands.
 
 ### Opcode boundaries and display visibility {#sec-gpu-opcode-boundaries-and-display-visibility}
 
-Opcodes `0x10`–`0x1f` are info-query aliases, not additional controls in this
+Opcodes `10H`–`1FH` are info-query aliases, not additional controls in this
 catalog; the payload's low four bits select the query. Other eight-bit opcodes
 have no selected control action and do not raise an unknown-opcode exception.
 An opcode whose low six bits resemble a listed command does not alias it.
@@ -1934,7 +1934,7 @@ This plate brings several packet types into one 256 × 192 image. The two large 
 
 **GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The small marks near the left edge are the readback strip and the unscaled 4 × 4 texture.
 
-The black texture areas and the background-coloured gaps are deliberately different. The source word `0x8000` supplies black and retains bit 15 in VRAM; a sampled `0x0000` leaves the background unchanged. This distinction appears in both the direct-colour texture and the indexed strip, whose entries 4 and 3 contain those words respectively.
+The black texture areas and the background-coloured gaps are deliberately different. The source word `8000H` supplies black and retains bit 15 in VRAM; a sampled `0000H` leaves the background unchanged. This distinction appears in both the direct-colour texture and the indexed strip, whose entries 4 and 3 contain those words respectively.
 
 The lower-left overlay selects semi-transparency with background-plus-foreground blending. At the lower right, set-mask and check-mask are enabled together: the first rectangle sets destination bit 15, so the second cannot replace it in their overlap. These are different effects; the protected overlap is not a blend.
 
@@ -1942,20 +1942,20 @@ The lower-left overlay selects semi-transparency with background-plus-foreground
 
 | Packet location | Picture and packet interpretation | Selected VRAM readback |
 |---|---|---|
-| Background: fill at `(0,0)`, `256 × 192` | Dark field and margins; fill header `0x02181008`. | Background visible through the upper-left texture at `(78,84)` is `0x0c41`. |
-| Quad: `(16,24)`, `(80,24)`, `(16,88)`, `(80,88)` | Raw red/green/blue/white texture, plus black and unchanged-background areas. Header `0x2d808080`; UV `(0,0)` to `(3,3)`; T1 `0x010a` selects direct16 at `(640,0)`. | `(16,24)` = `0x001f`; black at `(59,84)` = `0x8000`. |
-| Quad: `(96,24)`, `(160,24)`, `(96,88)`, `(160,88)` | Modulated counterpart: darker red and tinted white. Header `0x2cc08040`; same UVs and T1 as the raw quad. | `(96,24)` = `0x000f`; `(140,24)` = `0x03e0`; `(138,68)` = `0x7fef`. |
-| Rectangle: `(24,112)`, `4 × 4` | Small raw view of the same direct-colour image; header `0x65000000`, UV `(0,0)`. | `(26,114)` = `0x7fff`; `(26,115)` = `0x8000`; `(27,115)` = `0x0c41`. |
+| Background: fill at `(0,0)`, `256 × 192` | Dark field and margins; fill header `02181008H`. | Background visible through the upper-left texture at `(78,84)` is `0C41H`. |
+| Quad: `(16,24)`, `(80,24)`, `(16,88)`, `(80,88)` | Raw red/green/blue/white texture, plus black and unchanged-background areas. Header `2D808080H`; UV `(0,0)` to `(3,3)`; T1 `010AH` selects direct16 at `(640,0)`. | `(16,24)` = `001FH`; black at `(59,84)` = `8000H`. |
+| Quad: `(96,24)`, `(160,24)`, `(96,88)`, `(160,88)` | Modulated counterpart: darker red and tinted white. Header `2CC08040H`; same UVs and T1 as the raw quad. | `(96,24)` = `000FH`; `(140,24)` = `03E0H`; `(138,68)` = `7FEFH`. |
+| Rectangle: `(24,112)`, `4 × 4` | Small raw view of the same direct-colour image; header `65000000H`, UV `(0,0)`. | `(26,114)` = `7FFFH`; `(26,115)` = `8000H`; `(27,115)` = `0C41H`. |
 
 **Nine-region legend, continued.** Packet positions, visible results and selected raw words remain separate.
 
 | Packet location | Picture and packet interpretation | Selected VRAM readback |
 |---|---|---|
 | Triangle: `(176,24)`, `(240,24)`, `(208,88)` | Separate untextured triangle with red, green and blue vertex colours. | No triangle pixel word is listed. |
-| Bases: `(16,128)` and `(80,128)`, each `64 × 40`; overlay: `(48,144)`, `64 × 24` | The overlay crosses both bases. Header `0x62202080` with E1 `0xe1000420` selects background-plus-foreground blending. | Intersections: `(50,150)` = `0x3114`; `(90,150)` = `0x2194`. |
-| Rectangles: `(176,128)` and `(192,144)`, each `32 × 32` | Mustard/cyan pair with E6 `0xe6000003`: the first rectangle remains in the protected overlap. E6 then returns to `0xe6000000`. | Overlap `(200,150)` = `0x8218`; second-only `(220,165)` = `0xe200`. Both retain bit 15. |
-| Strip: `(16,176)`, `(240,176)`, `(16,192)`, `(240,192)` | Raw indexed texture, U `0..15`, V `16`; T1 `0x000b` selects palette4 at page `(704,0)`. CLUT `0x4030` selects `(768,256)`. Indices come from `0x3210`, `0x7654`, `0xba98`, `0xfedc`, low nibble first. | Red `(16,180)` = `0x001f`; unchanged background `(61,180)` = `0x0c41`; black `(76,180)` = `0x8000`; white `(91,180)` = `0x7fff`. |
-| Witness: `(16,112)`, `3 × 1` | Three pixels read from `(640,0)` and uploaded at this destination. | The three-pixel row reads as two GPUREAD words: `0x001f001f`, then `0x000003e0`. |
+| Bases: `(16,128)` and `(80,128)`, each `64 × 40`; overlay: `(48,144)`, `64 × 24` | The overlay crosses both bases. Header `62202080H` with E1 `E1000420H` selects background-plus-foreground blending. | Intersections: `(50,150)` = `3114H`; `(90,150)` = `2194H`. |
+| Rectangles: `(176,128)` and `(192,144)`, each `32 × 32` | Mustard/cyan pair with E6 `E6000003H`: the first rectangle remains in the protected overlap. E6 then returns to `E6000000H`. | Overlap `(200,150)` = `8218H`; second-only `(220,165)` = `E200H`. Both retain bit 15. |
+| Strip: `(16,176)`, `(240,176)`, `(16,192)`, `(240,192)` | Raw indexed texture, U `0..15`, V `16`; T1 `000BH` selects palette4 at page `(704,0)`. CLUT `4030H` selects `(768,256)`. Indices come from `3210H`, `7654H`, `BA98H`, `FEDCH`, low nibble first. | Red `(16,180)` = `001FH`; unchanged background `(61,180)` = `0C41H`; black `(76,180)` = `8000H`; white `(91,180)` = `7FFFH`. |
+| Witness: `(16,112)`, `3 × 1` | Three pixels read from `(640,0)` and uploaded at this destination. | The three-pixel row reads as two GPUREAD words: `001F001FH`, then `000003E0H`. |
 
 ## Frame the GP0 command stream {#sec-gpu-frame-the-gp0-command-stream}
 
@@ -2534,7 +2534,7 @@ and [Predict shared-edge and joint writes](#sec-gpu-predict-shared-edge-and-join
 
 ### CLUT, persistent T1 state and retained operands {#sec-gpu-clut-persistent-t1-state-and-retained-operands}
 
-T0's upper half is the CLUT attribute: base X is `(attribute AND 3fH)×16` raw
+T0's upper half is the CLUT attribute: base X is `(attribute AND 3FH)×16` raw
 words, and base Y is `attribute>>6` through the retained Y-address gate. Palette
 lookup uses that base; direct16 depth does not use the CLUT.
 
@@ -2622,16 +2622,16 @@ Supply these nine words:
 |---|---|---|
 | 1 | `36C08040H` | Triangle, modulated, semitransparent; C0=(64,128,192) |
 | 2 | `00180028H` | P0=(40,24) |
-| 3 | `190C0503H` | T0: U/V=(3,5), CLUT attribute 190cH |
+| 3 | `190C0503H` | T0: U/V=(3,5), CLUT attribute 190CH |
 | 4 | `E18040C0H` | C1=(192,64,128); high E1H is not a command |
 | 5 | `0018002FH` | P1=(47,24) |
-| 6 | `00A30711H` | T1: U/V=(17,7), page attribute 00a3H |
+| 6 | `00A30711H` | T1: U/V=(17,7), page attribute 00A3H |
 | 7 | `E240C080H` | C2=(128,192,64); high E2H is not a command |
 | 8 | `001E0028H` | P2=(40,30) |
 | 9 | `BEEF1709H` | T2: U/V=(9,23); upper half ignored |
 
-T1 changes draw mode to `(3709H AND NOT 09ffH) OR 00a3H = 36a3H`: page X=192,
-Y=0, palette8, additive blend mode 1. CLUT attribute 190cH gives base `(192,100)`.
+T1 changes draw mode to `(3709H AND NOT 09FFH) OR 00A3H = 36A3H`: page X=192,
+Y=0, palette8, additive blend mode 1. CLUT attribute 190CH gives base `(192,100)`.
 The triangle determinant is 42 and its plane anchor is vertex 0. The retained
 plane quantities are:
 
@@ -2932,7 +2932,7 @@ color, not raw/modulated or semitransparency options.
 
 ### Decode alignment, dimensions and color {#sec-gpu-decode-alignment-dimensions-and-color}
 
-With `Ymask=1ffH` for the nine-bit gate or `3ffH` for the ten-bit gate:
+With `Ymask=1FFH` for the nine-bit gate or `3FFH` for the ten-bit gate:
 
 ```text
 X0 = XY AND 3f0H
@@ -2949,7 +2949,7 @@ the Y-address gate is open. Unselected position/size bits do not extend these
 fields.
 
 For each admitted row j and column i, raw coordinates are
-`X=(X0+i) AND 3ffH`, `Y=(Y0+j) AND Ymask`. X wraps within its row; an overrun
+`X=(X0+i) AND 3FFH`, `Y=(Y0+j) AND Ymask`. X wraps within its row; an overrun
 past 1023 does not carry into the next row. The Y gate also applies to each
 generated row. These are raw-word addresses, not signed drawing coordinates or
 PCRTC storage-format addresses; see [Organize local memory for drawing and display](#sec-gpu-organize-local-memory-for-drawing-and-display).
@@ -3599,25 +3599,25 @@ the interval. The beam remains on reset line parity zero throughout these 83
 cycles. Startup, the caller and initialization that establishes these preconditions
 are outside this stated interval.
 
-Reserve eight writable bytes at illustrative RAM address `0x080c1000` for the two
+Reserve eight writable bytes at illustrative RAM address `080C1000H` for the two
 status snapshots. This is cartridge-owned result storage, not GPU scratch RAM.
 The function loads every address/value it uses; none of its CPU registers is
 assumed preloaded:
 
 | Register | Constant loaded by LOADK |
 |---|---|
-| r0 | GP0 address `0x0801023c` |
-| r1 | GP1/GPUSTAT address `0x08010240` |
-| r2 | Red fill word `0x020000ff` |
+| r0 | GP0 address `0801023CH` |
+| r1 | GP1/GPUSTAT address `08010240H` |
+| r2 | Red fill word `020000FFH` |
 | r3 | Zero: destination `(0,0)` and the comparison operand |
-| r4 | Fill size word `0x00040020`:32×4 |
-| r5 | IRQ marker word `0x1f000000` |
-| r6 | GPU IRQ status mask `0x01000000`, bit 24 |
-| r7 | GP1 acknowledge word `0x02000000` |
-| r8 | Controller acknowledge address `0x08000004` |
-| r9 | Controller GPU IRQ bit `0x00000040` |
-| r10 | Result-storage address `0x080c1000` |
-| r11 | GPU idle status mask `0x04000000`, bit 26 |
+| r4 | Fill size word `00040020H`:32×4 |
+| r5 | IRQ marker word `1F000000H` |
+| r6 | GPU IRQ status mask `01000000H`, bit 24 |
+| r7 | GP1 acknowledge word `02000000H` |
+| r8 | Controller acknowledge address `08000004H` |
+| r9 | Controller GPU IRQ bit `00000040H` |
+| r10 | Result-storage address `080C1000H` |
+| r11 | GPU idle status mask `04000000H`, bit 26 |
 
 r12 holds a GPUSTAT read; r13 holds its masked test. The twelve LOADK instructions
 cost twelve cycles. All memory operations below are scalar displaced **Word**
@@ -3710,14 +3710,14 @@ acknowledgement and resumption costs and needs its own budget.
 
 ## Move a raw image through DMA {#sec-gpu-move-a-raw-image-through-dma}
 
-Move an image along this route: RAM → fixed GP0 port → GPU local memory → fixed GPUREAD port → RAM. GP0 and GPUREAD share address `0x0801023c`; GP1 and GPUSTAT share `0x08010240`. GP1 opcode `04` selects the GPU DMA direction, but does not start a DMA channel.
+Move an image along this route: RAM → fixed GP0 port → GPU local memory → fixed GPUREAD port → RAM. GP0 and GPUREAD share address `0801023CH`; GP1 and GPUSTAT share `08010240H`. GP1 opcode `04` selects the GPU DMA direction, but does not start a DMA channel.
 
 This example owns DMA0 and the GPU ports, masks interrupts, and polls completion. It uploads a raw 9 × 9 image at local-memory coordinate (96, 64), then reads the same rectangle into a separate RAM buffer. It does not program PCRTC or display the image.
 
 | Transfer | GP1 direction | DMA CONTROL | Read endpoint | Write endpoint | Requests |
 |---|---:|---:|---|---|---|
-| RAM → GP0 | 2 (`0x04000002`) | `0x00003c41` | RAM, incrementing | GP0, fixed | Read FORCE; write GX_WRITE |
-| GPUREAD → RAM | 3 (`0x04000003`) | `0x00003c0a` | GPUREAD, fixed | RAM, incrementing | Read GX_READ; write FORCE |
+| RAM → GP0 | 2 (`04000002H`) | `00003C41H` | RAM, incrementing | GP0, fixed | Read FORCE; write GX_WRITE |
+| GPUREAD → RAM | 3 (`04000003H`) | `00003C0AH` | GPUREAD, fixed | RAM, incrementing | Read GX_READ; write FORCE |
 
 Both controls select up to 16 words per block. COUNT counts words, not pixels or bytes. Each admitted block captures its addresses, count, and control; requests are sampled at admission. Both request selectors must permit admission. FORCE permits it unconditionally.
 

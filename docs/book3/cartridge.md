@@ -60,8 +60,8 @@ A cartridge-targeted `CP0.EXEC` samples SELECT and establishes the execution
 socket for the new entry. Since cartridge addresses are identical in both
 sockets, insertion in the other socket does not by itself require relocation.
 A cartridge-function closure contains a function-record address, not a socket
-selection; calling it uses the current execution socket. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “EXEC and cartridge entry”]{.content-visible when-format="pdf"}
-and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “CP0 and execution control”]{.content-visible when-format="pdf"}.
+selection; calling it uses the current execution socket. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, §3.3.3]{.content-visible when-format="pdf"}
+and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, §1.13]{.content-visible when-format="pdf"}.
 
 DMA also distinguishes the address from the socket. Its source and destination
 request fields can select different sockets, allowing a direct copy from one
@@ -80,8 +80,8 @@ regardless of which socket is selected.
 
 | Address | Name | Access | Controller-reset value |
 |---|---|---|---|
-| `0x08010420` | `SELECT` | Read/write | `0x00000000` |
-| `0x08010424` | `STATUS` | Read-only | Installed-cartridge presence bits; bit 16 clear |
+| `08010420H` | `SELECT` | Read/write | `00000000H` |
+| `08010424H` | `STATUS` | Read-only | Installed-cartridge presence bits; bit 16 clear |
 
 `SELECT` retains the complete 32-bit word written to it. Bit 0 selects the
 socket; bits 31:1 are retained and read back without affecting selection.
@@ -152,9 +152,9 @@ may be smaller than the window.
 
 | Region | First address | Exclusive limit | Window size |
 | --- | --- | --- | --- |
-| ROM | `0x10000000` | `0x30000000` | 512 MiB |
-| RAM | `0x30000000` | `0x30f00000` | 15 MiB |
-| MMIO | `0x30f00000` | `0x31000000` | 1 MiB |
+| ROM | `10000000H` | `30000000H` | 512 MiB |
+| RAM | `30000000H` | `30F00000H` | 15 MiB |
+| MMIO | `30F00000H` | `31000000H` | 1 MiB |
 
 Absent or unpopulated ROM and RAM locations read as zero. Smaller memories
 are not mirrored through the remaining window. ROM writes are ignored; a RAM
@@ -178,7 +178,7 @@ each byte's address, so such a sequence can cross into the next window.
 | Logical card reset | Resets the mapped device, if present. Retains RAM contents and leaves ROM unchanged. |
 
 MMIO reads return zero when no device is present. Otherwise, the device decodes
-the byte offset from `0x30f00000` without prior rounding to a word boundary.
+the byte offset from `30F00000H` without prior rounding to a word boundary.
 An 8-bit read selects the decoded word's byte lane using address bits 1:0.
 A 16-bit read selects its low or high half using address bit 1. A 32-bit read
 returns the complete word. Use the device's register map for the word selected
@@ -195,8 +195,8 @@ startup checks. A RAM-only card, or a card whose ROM does not meet those
 requirements, is skipped. This entry establishes the execution socket as
 described under [Selection and execution](#sec-cartridge-selection-and-execution).
 
-[[Program images and startup — Cartridge startup](../book1/program-images.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book II, “Program images and startup”, under “ROM header fields”]{.content-visible when-format="pdf"}
-specifies the ROM header, startup requirements and entry sequence.
+[[Program images and startup — ROM header fields](../book1/program-images.md#sec-memory-rom-header-fields)]{.content-visible when-format="html"}[Book II, §3.4]{.content-visible when-format="pdf"}
+specifies the ROM header layout.
 
 ## Cartridge mailbox {#sec-cartridge-cartridge-mailbox}
 
@@ -255,14 +255,14 @@ connect to a transfer.
 | `30F00008H` | STATUS | R; writes ignored | Bit 0 IRQ_PENDING; bits 31:1 zero | `00000000H` |
 | `30F0000CH` | IRQ_ACK | R=0; W action | Any nonzero word clears local pending; zero has no effect | `00000000H` |
 
-Read decoding ignores the low two offset bits. Offsets `+0x00` through `+0x03`
-therefore select DATA, `+0x04` through `+0x07` select CONTROL, and `+0x08`
-through `+0x0B` select STATUS. The read width then selects the byte lanes as
+Read decoding ignores the low two offset bits. Offsets `+00H` through `+03H`
+therefore select DATA, `+04H` through `+07H` select CONTROL, and `+08H`
+through `+0BH` select STATUS. The read width then selects the byte lanes as
 described under [Card storage and MMIO access](#sec-cartridge-card-storage-and-mmio-access).
-Every other offset group reads zero, including `+0x0C` through `+0x0F`.
+Every other offset group reads zero, including `+0CH` through `+0FH`.
 
-Use aligned word stores for the mailbox actions. Only `+0x00`, `+0x04`, and
-`+0x0C` perform an action. Writes to STATUS and other aligned offsets are ignored;
+Use aligned word stores for the mailbox actions. Only `+00H`, `+04H`, and
+`+0CH` perform an action. Writes to STATUS and other aligned offsets are ignored;
 byte and halfword writes do not perform mailbox actions.
 
 ### DATA and CONTROL {#sec-cartridge-data-and-control}
@@ -274,10 +274,10 @@ CONTROL has the following defined fields:
 
 | Bits | Mask | Name | Meaning on a CONTROL write |
 |---|---|---|---|
-| 0 | `0x00000001` | IRQ_TRIGGER | Requests a local interrupt-pending transition. Not retained by the write. |
-| 1 | `0x00000002` | DREQ_READ | Sets the DREQ_READ level. |
-| 2 | `0x00000004` | DREQ_WRITE | Sets the DREQ_WRITE level. |
-| 31:3 | `0xFFFFFFF8` | Unnamed | Retained exactly as written; no defined IRQ or DREQ contribution. |
+| 0 | `00000001H` | IRQ_TRIGGER | Requests a local interrupt-pending transition. Not retained by the write. |
+| 1 | `00000002H` | DREQ_READ | Sets the DREQ_READ level. |
+| 2 | `00000004H` | DREQ_WRITE | Sets the DREQ_WRITE level. |
+| 31:3 | `FFFFFFF8H` | Unnamed | Retained exactly as written; no defined IRQ or DREQ contribution. |
 
 A CONTROL write replaces bits 31:1, including unnamed bits. Preserve any of
 those fields that must remain unchanged when constructing a new value.
@@ -338,7 +338,7 @@ The third row demonstrates why acknowledging only the central controller does
 not rearm a mailbox edge. When handling both sockets, select the intended card
 before touching its local registers and acknowledge only the central bits owned
 by that handler. The complete CPU-enable, `irq(flags)` and predicate-wait route
-is in [[Interrupt controller](../book1/irq.md#sec-irq-cpu-delivery-and-waiting)]{.content-visible when-format="html"}[Book I, “Interrupt controller”, under “CPU delivery and waiting”]{.content-visible when-format="pdf"}.
+is in [[Interrupt controller](../book1/irq.md#sec-irq-cpu-delivery-and-waiting)]{.content-visible when-format="html"}[Book I, §3.2]{.content-visible when-format="pdf"}.
 
 ## DMA between sockets {#sec-cartridge-dma-between-sockets}
 
@@ -424,7 +424,7 @@ The four-word ROM(socket 0) → RAM(socket 1) block therefore takes
 `(8 × 4 + 4) + (8 × 4 + 4) = 72` cycles once started.
 Incrementing across a ROM, RAM or MMIO boundary starts another span and incurs
 setup again. Add request waiting, channel competition and CPU setup or polling
-to obtain the complete operation time. [[DMA](../book1/dma.md#sec-dma)]{.content-visible when-format="html"}[Book I, “Direct memory access”]{.content-visible when-format="pdf"} gives the general
+to obtain the complete operation time. [[DMA](../book1/dma.md#sec-dma)]{.content-visible when-format="html"}[Book I, Chapter 4]{.content-visible when-format="pdf"} gives the general
 channel programming sequence.
 
 ### Two-card programming example {#sec-cartridge-two-card-programming-example}
@@ -464,7 +464,8 @@ The explicit endpoint overrides keep the source on socket 0 and destination on
 socket 1 while ordinary CPU selection remains 1. After normal completion,
 DMA STATUS is 2 and COUNT is zero. READ_ADDR is `seed + 16`, WRITE_ADDR is
 `30000020H`, and the masked DMA0 pending bit is set. Before consuming the data,
-check for new bus faults using the [[Memory fault-attribution procedure](../book1/memory.md#sec-memory-attribute-a-bus-fault-before-start)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Attribute a bus fault before START”]{.content-visible when-format="pdf"};
+check for new bus faults using the procedure in
+[[Memory fault-attribution procedure](../book1/memory.md#sec-memory-attribute-a-bus-fault-before-start)]{.content-visible when-format="html"}[Book I, §2.10.1]{.content-visible when-format="pdf"};
 DMA DONE does not imply valid endpoint accesses.
 
 Read socket 1's destination while it remains selected:
@@ -481,8 +482,8 @@ mem[0x08000004] = 1
 
 The destination words are `01234567H`, `89ABCDEFH`, `55AA33CCH` and
 `F00DCAFEH`; `first` and `last` read the first and fourth. Socket-0 RAM is
-unchanged. The destination survives a logical card reset, so a warm rerun
-must not assume that untouched card RAM has returned to zero. The block takes
+unchanged. Card RAM, including the destination, retains its contents across a
+logical card reset. The block takes
 72 system cycles, plus CPU setup, request waiting, polling and result reads.
 
 ## Access faults {#sec-cartridge-access-faults}
@@ -493,7 +494,7 @@ alignment. A misaligned ordinary load or store enters its address-error
 exception before reaching the bus. A new mapped fault during an ordinary load
 enters a data-bus-error exception before committing the read value; a new fault
 during an ordinary store enters the same exception. A bus-level zero return is
-not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Scalar memory accesses”]{.content-visible when-format="pdf"}.
+not a successful ordinary CPU load of zero. See [[Memory — Scalar memory accesses](../book1/memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, §2.7]{.content-visible when-format="pdf"}.
 
 Installed I/O and cartridge MMIO have different mapped-access rules. The
 controller's SELECT and STATUS registers occupy installed-I/O word slots.
@@ -530,5 +531,5 @@ DMA uses these mapped-access rules, but continues its programmed reads, writes
 and count progression after a fault. Check for new bus faults as well as DONE
 before using the result. The first outstanding bus fault retains its code,
 address and access; later faults do not replace it. See
-[[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, “Memory and bus access”, under “Bus-fault status and CPU exceptions”]{.content-visible when-format="pdf"}
+[[Memory — Bus faults](../book1/memory.md#sec-memory-bus-fault-status-and-cpu-exceptions)]{.content-visible when-format="html"}[Book I, §2.8]{.content-visible when-format="pdf"}
 for the fault registers and acknowledgement procedure.

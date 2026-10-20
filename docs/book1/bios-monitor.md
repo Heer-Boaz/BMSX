@@ -34,7 +34,7 @@ local flush_readback<const> = *print_flush
 print('SYSTEM samples complete')
 ```
 
-CHAR readback is `ffffffffH`, even though the invalid codepoint emits `?`.
+CHAR readback is `FFFFFFFFH`, even though the invalid codepoint emits `?`.
 FLUSH readback is zero. Both are last-written words, not receiver-ready or
 completion flags. The raw middle line is encoded as:
 
@@ -72,7 +72,7 @@ refresh the fault report.
 
 ### Inspect an actual unmapped load {#sec-memory-inspect-an-actual-unmapped-load}
 
-This cartridge fragment deliberately accesses unmapped storage. Its Word view addresses `0x01000000`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
+This cartridge fragment deliberately accesses unmapped storage. Its Word view addresses `01000000H`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
 
 ```lua
 module<entry>
@@ -88,7 +88,7 @@ while true do
 end
 ```
 
-This load produces a data bus error, displayed as **DBE**. The CPU cause field is `0x0000001c` (code 7); the Memory fault CODE is instead `0x00000001` (unmapped). These are different reports, not two encodings to write to the same register. DBE does not establish a new CP0 bad-address value. Inspect the Memory ADDR word for this bus fault's address.
+This load produces a data bus error, displayed as **DBE**. The CPU cause field is `0000001CH` (code 7); the Memory fault CODE is instead `00000001H` (unmapped). These are different reports, not two encodings to write to the same register. DBE does not establish a new CP0 bad-address value. Inspect the Memory ADDR word for this bus fault's address.
 
 At the BIOS monitor prompt, type the following command and press Enter. Its address is hexadecimal, and the count selects three consecutive 32-bit words:
 
@@ -203,14 +203,14 @@ WORDS 12345678 9ABCDEF0
 FAULT 00000001 -> 00000000
 ```
 
-`REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [[System control and timing — Reset requests](system.md#sec-system-reset-requests)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “Reset requests”]{.content-visible when-format="pdf"}.
+`REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [[System control and timing — Reset requests](system.md#sec-system-reset-requests)]{.content-visible when-format="html"}[Book I, §12.10]{.content-visible when-format="pdf"}.
 
 For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#sec-cpu-read-cp0-in-a-cartridge-irq). The callback returns normally, allowing the standard IRQ entry to perform RFE and resume the interrupted cartridge code.
 
 
 ## Optional BIOS diagnostic directory {#sec-memory-optional-bios-diagnostic-directory}
 
-The ROM word at byte offset `0x3c` supplies a **ROM-relative byte offset** to
+The ROM word at byte offset `3CH` supplies a **ROM-relative byte offset** to
 an optional diagnostic directory. Zero means absent. This word extends beyond
 the CPU's 60-byte boot prefix: it is consumed by BIOS source reporting and
 selected-frame evaluation, not by instruction execution or image activation.
@@ -223,16 +223,16 @@ count is a number of records, not a byte count.
 
 | Header byte offset | Field |
 | --- | --- |
-| `0x00`, `0x04` | Source-range count; range-table offset |
-| `0x08`, `0x0c` | File count; file-table offset |
-| `0x10`, `0x14` | Line-offset count; line-offset-table offset |
-| `0x18`, `0x1c` | Path-byte-table offset; path byte count |
-| `0x20`, `0x24` | Scope-function count; function-table offset |
-| `0x28`, `0x2c` | Scope-frame count; frame-table offset |
-| `0x30`, `0x34` | Binding count; binding-table offset |
-| `0x38`, `0x3c` | Interval count; interval-table offset |
-| `0x40`, `0x44` | Scope-name byte count; name-byte-table offset |
-| `0x48` | Static-global binding count; these occupy the first binding records |
+| `00H`, `04H` | Source-range count; range-table offset |
+| `08H`, `0CH` | File count; file-table offset |
+| `10H`, `14H` | Line-offset count; line-offset-table offset |
+| `18H`, `1CH` | Path-byte-table offset; path byte count |
+| `20H`, `24H` | Scope-function count; function-table offset |
+| `28H`, `2CH` | Scope-frame count; frame-table offset |
+| `30H`, `34H` | Binding count; binding-table offset |
+| `38H`, `3CH` | Interval count; interval-table offset |
+| `40H`, `44H` | Scope-name byte count; name-byte-table offset |
+| `48H` | Static-global binding count; these occupy the first binding records |
 
 ### Source locations {#sec-memory-source-locations}
 

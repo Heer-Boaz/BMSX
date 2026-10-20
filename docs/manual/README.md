@@ -111,22 +111,36 @@ Use ordinary Markdown with Quarto/Pandoc semantics:
   unique `{#fig-device-topic}` labels. Preserve numerical and visual accuracy.
 - Code uses fenced `lua` or `text` blocks. Break overlong prose code spans at
   meaningful boundaries; do not shrink the entire book to fit one line.
+- Use uppercase hexadecimal digits with an `H` suffix in prose and reference
+  tables. Preserve language syntax in code and literal-spelling examples:
+  BLua hexadecimal literals use `0x`, not an `H` suffix.
 - Do not add HTML print wrappers, raw anchors, custom filters or renderer hooks.
   Quarto and LuaLaTeX supply pagination, table continuation, contents, numbering,
   PDF bookmarks and link destinations.
 
-Within a volume, native chapter/heading links work in HTML and PDF. Between
-volumes, print references name the book, chapter and section; the combined HTML
-can link directly. Use Quarto's standard conditional spans when both are needed:
+Within a volume, use native `@sec-…` references for numbered chapters and
+sections. Between volumes, use compact print references such as “Book II,
+§3.3”; the combined HTML links directly to the section. An unnumbered
+subheading needs its name as well as its numbered parent. Keep external section
+numbers aligned with the book profiles when changing chapter order or headings.
+Use Quarto's standard conditional spans when both forms are needed:
 
 ```markdown
-[CPU programming model](../book1/cpu.md#sec-cpu-programming-model)
+[[Program images and startup](program-images.md#sec-program-images)]{.content-visible when-format="html"}[Book II, Chapter 3]{.content-visible when-format="pdf"}
 ```
 
 Do not build a cross-PDF resolver or rewrite PDF objects afterward. The native
 book index covers the chapters included in that volume.
 
 ## Publishing and retention
+
+Shared metadata and book profiles carry document identifiers, publication
+revisions and dates.
+`index.md` supplies a short reader's guide for each profile; the HTML profile
+retains the series overview. Standard KOMA-Script title-page controls in
+`typography.tex` supply the series heading, notation and the existing MIT notice.
+Do not invent a company, license restrictions or hardware revision to dress up
+the publication.
 
 Install Quarto and its supported TinyTeX distribution; Linux also needs
 `librsvg2-bin`, `fonts-liberation` and `fonts-dejavu-core`. Commands and output locations are in the

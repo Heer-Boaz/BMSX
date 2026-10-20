@@ -22,8 +22,8 @@ bytes or a device address are required.
 These result counts are part of the interface. An ordinary bare return or
 fallthrough produces one nil; that is not the zero-result tuple returned by an
 empty `unpack` interval. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
-adjustment. [Protected calls and coroutines](coroutines.md#sec-coroutines) explains interception of an
-error value, including nil, without undoing earlier writes.
+adjustment. [Protected calls and coroutines](coroutines.md#sec-coroutines) explains how to
+receive an error value, including nil; earlier writes remain visible.
 
 `table.pack` creates a Table containing the supplied values, not deep copies
 of them. A packed Table, closure or Thread remains the same referenced value.
@@ -59,7 +59,8 @@ String-index Table for reads; assigning to it raises the shared assignment
 error. Use String operations when character access is intended.
 
 Insert, remove and sort write the caller's Table directly, in the stated
-order. There is no deferred commit or restoration on error. Pack creates a new
+order. Each assignment takes effect when reached, and preceding assignments
+remain visible if a later operation raises an error. Pack creates a new
 Table; concat and unpack do not themselves assign into the target. A callback
 or a deliberately replaced public dependency can still have its own effects.
 The library's public fields and the `select`/`tostring` globals it uses are
@@ -233,7 +234,7 @@ local removed = table.remove(values, 99)
 
 The default position is also used when `L` is zero. For a table whose length snapshot is zero and whose key `0` contains `7`, `table.remove(target)` returns `7` and deletes key `0`.
 
-Throughout these functions, element reads are ordinary table reads, including a table-valued `__index` where applicable. Assignments write directly to the target and do not call `__newindex`. Copying a `nil` deletes the destination mapping. Removal leaves a field named `n` unchanged. If a later operation fails, earlier assignments remain in effect; these functions do not undo them.
+Throughout these functions, element reads are ordinary table reads, including a table-valued `__index` where applicable. Assignments write directly to the target and do not call `__newindex`. Copying a `nil` deletes the destination mapping. Removal leaves a field named `n` unchanged. If a later operation fails, earlier assignments remain in effect.
 
 ## `table.sort` {#sec-bios-table-tablesort}
 
@@ -247,7 +248,10 @@ Sorting modifies `target` in place. It takes the length snapshot `L` first and o
 
 The sort begins by scanning from index `2` through `L`. At each index it asks whether the current value belongs before its predecessor. Falsey answers continue the scan. The first truthy answer starts reordering the **entire** range `1` through `L`, not just the remaining suffix. If the scan reaches the end, the sort itself makes no assignments; with a valid custom comparator this ordered-input path makes exactly `L - 1` comparator calls.
 
-Sorting swaps entries using two sequential writes, not an atomic exchange. Do not depend on the order of equal elements: this sort has no stability guarantee. Apart from the ordered-input scan described above, neither a particular comparison schedule nor a particular callback count is promised.
+Sorting swaps entries using two sequential writes. If the second write fails,
+the first remains visible. Equal elements may change relative order. Apart
+from the ordered-input scan described above, the comparison schedule and
+callback count are unspecified.
 
 ### Choosing an ordering {#sec-bios-table-choosing-an-ordering}
 
@@ -307,8 +311,8 @@ These errors occur when the corresponding operation is reached.
 Mixed-category ordering and non-Number arithmetic follow the CPU rules given
 above. A comparator can also raise any language value of its own.
 [Protected calls and coroutines](coroutines.md#sec-coroutines) defines the protected-call boundary;
-[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} defines hardware fault publication. Do not treat
-error interception as restoration of a modified Table.
+[[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} defines hardware fault publication. A modified
+Table retains its preceding changes when a protected call receives the error.
 
 Choose finite, usable endpoints and a consistent comparator. `unpack`
 expands a recursive result chain, `concat` creates intermediate Strings, and
@@ -363,7 +367,7 @@ local last = table.remove(sequence) -- 5.5; sequence is now 9, 8, 7.
 
 ### Handle an interrupted sort {#sec-bios-table-handle-an-interrupted-sort}
 
-An error does not undo earlier swaps. This example preserves the error object's
+Earlier swaps remain visible after an error. This example preserves the error object's
 identity and shows the partial arrangement for one input and error point. Other
 inputs or error points need not produce the same arrangement or callback count.
 

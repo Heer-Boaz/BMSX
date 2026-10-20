@@ -106,8 +106,6 @@ own source reads and exception return.
 
 Neither exception entry nor ordinary interrupt return acknowledges a source. Software must write the appropriate bits to `IO_IRQ_ACK`. Writing one clears the corresponding pending bit; writing zero leaves it unchanged. A source left pending and enabled can request delivery again once `IEc` is restored.
 
-> **Caution — delivery is not source selection.** Do not assume that every bit supplied to `irq(flags)` was enabled, or that the CPU has already acknowledged any of them.
-
 ### CPU state on entry and return {#sec-irq-cpu-state-on-entry-and-return}
 
 An accepted IRQ enters supervisor mode with maskable interrupt acceptance
@@ -123,7 +121,7 @@ exception frame.
 
 CP0 register numbers, saved Cause and EPC, mode-stack transitions, privileged
 access and RFE effects are specified under
-[[CPU execution control](cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “CP0 and execution control”]{.content-visible when-format="pdf"}.
+[[CPU execution control](cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, §1.13]{.content-visible when-format="pdf"}.
 Controller pending bits and device-local requests still require their own
 acknowledgements; CPU exception return clears neither.
 
@@ -223,7 +221,7 @@ its first local request. The second marker then supplies no new interrupt edge.
 To make each marker independently observable, service both the device's local
 request and the controller's pending bit. The GPU uses these operations:
 
-- GP0 word `1f000000H` is an in-order interrupt marker. When it executes with
+- GP0 word `1F000000H` is an in-order interrupt marker. When it executes with
   GPUSTAT24 clear, it sets that local bit and raises controller bit 6.
 - GP1 word `02000000H` clears GPUSTAT24. It does not clear controller bit 6.
 - Writing `00000040H` to IO_IRQ_ACK clears controller bit 6. It does not clear
@@ -353,14 +351,14 @@ equal-duration time slots or atomic multi-register samples.
 
 | Operation | FLAGS | MASK | GPU24 | Completed GPU services |
 |---|---|---|---|---:|
-| VBlank pending, before a marker | `04` | `00` | `00000000` | 0 |
-| First marker executes | `44` | `00` | `01000000` | 0 |
-| GPU-local clear only | `44` | `00` | `00000000` | 0 |
-| Second marker executes | `44` | `00` | `01000000` | 0 |
-| First handler, before acknowledgement | `44` | `40` | `01000000` | 0 |
-| First service complete | `04` | `40` | `00000000` | 1 |
-| Third marker serviced | `04` | `40` | `00000000` | 2 |
-| Delivery masked again | `04` | `00` | `00000000` | 2 |
+| VBlank pending, before a marker | `04H` | `00H` | `00000000H` | 0 |
+| First marker executes | `44H` | `00H` | `01000000H` | 0 |
+| GPU-local clear only | `44H` | `00H` | `00000000H` | 0 |
+| Second marker executes | `44H` | `00H` | `01000000H` | 0 |
+| First handler, before acknowledgement | `44H` | `40H` | `01000000H` | 0 |
+| First service complete | `04H` | `40H` | `00000000H` | 1 |
+| Third marker serviced | `04H` | `40H` | `00000000H` | 2 |
+| Delivery masked again | `04H` | `00H` | `00000000H` | 2 |
 
 Both services in the trace receive `44H`, although the enabled subset is only `40H`.
 The handler clears GPU only, so disabled VBlank remains pending. ACK always
@@ -405,7 +403,7 @@ MASK, clear a source unit's local status, or record the word that was written.
 ACK reads `00000000H` after reset and after each accepted write.
 
 With FLAGS=`00000044H`, writing ACK=`00000040H` leaves FLAGS=`00000004H`.
-Writing ACK=`00000000H` changes nothing. Writing ACK=`ffffffffH` clears every
+Writing ACK=`00000000H` changes nothing. Writing ACK=`FFFFFFFFH` clears every
 pending bit, including disabled ones; it is not selective service of the source
 that caused an interrupt.
 

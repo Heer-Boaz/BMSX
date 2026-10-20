@@ -32,7 +32,7 @@ To measure an interval, read TIME_MS at its beginning and again at its end.
 Each count represents one whole millisecond of console time. The difference
 measures the interval, including time during which other work was performed;
 it is not a count of instructions executed by the calling routine. The counter
-wraps after `ffffffffH`, so calculate the difference modulo `2^32` rather than
+wraps after `FFFFFFFFH`, so calculate the difference modulo `2^32` rather than
 comparing the two raw counter values as an ever-increasing clock.
 
 TIME_MS advances with system cycles, so this polling example needs no interrupt
@@ -49,11 +49,11 @@ local elapsed<const> = (finish - start) % 0x100000000
 ```
 
 `elapsed` is at least 100 milliseconds, not necessarily exactly 100.
-For `start = fffffff0H` and `finish = 00000054H`, the wrapping distance is
+For `start = FFFFFFF0H` and `finish = 00000054H`, the wrapping distance is
 100 milliseconds. A HALT-based wait additionally needs an enabled interrupt
 route and must recheck its time predicate after each wake-up; advancing
 TIME_MS alone cannot wake HALT. BIOS time functions and their units are described
-in [[Book II, BIOS time and calendar services](bios-os.md#sec-bios-os)]{.content-visible when-format="html"}[Book II, “BIOS time and calendar services”]{.content-visible when-format="pdf"}.
+in [[Book II, BIOS time and calendar services](bios-os.md#sec-bios-os)]{.content-visible when-format="html"}[Book II, Chapter 9]{.content-visible when-format="pdf"}.
 
 ## System time and frame timing {#sec-system-system-time-and-frame-timing}
 
@@ -61,9 +61,9 @@ The installed system-cycle frequency is 33,868,800 Hz. `TIME_MS` reports elapsed
 
 | Address | Register | Access | Word interpretation | Reset/state value |
 |---|---|---|---|---|
-| `0x08010228` | `TIME_MS` | R | Bits 31–0: unsigned whole milliseconds, modulo 2^32 | `0x00000000` after hardware time reset |
-| `0x0801022c` | `FRAME_MS_Q16` | R | Bits 31–0: unsigned Q16 milliseconds; bits 15–0 are fractional | `0x00141893` at installed hardware reset; zero while stopped |
-| `0x08010238` | `CYCLES_PER_FRAME` | R | Bits 31–0: unsigned system-cycle count for a VBlank period | `0x000a62b4` at installed hardware reset; zero while stopped |
+| `08010228H` | `TIME_MS` | R | Bits 31–0: unsigned whole milliseconds, modulo 2^32 | `00000000H` after hardware time reset |
+| `0801022CH` | `FRAME_MS_Q16` | R | Bits 31–0: unsigned Q16 milliseconds; bits 15–0 are fractional | `00141893H` at installed hardware reset; zero while stopped |
+| `08010238H` | `CYCLES_PER_FRAME` | R | Bits 31–0: unsigned system-cycle count for a VBlank period | `000A62B4H` at installed hardware reset; zero while stopped |
 
 These reset-state readouts apply before firmware advances execution. They are
 not constants guaranteed at cartridge entry. The two frame words are derived
@@ -72,7 +72,7 @@ registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
-`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
+`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `00010000H` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
 
 `CYCLES_PER_FRAME` is a whole-period cycle count, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive counts differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
@@ -81,7 +81,7 @@ Use aligned word reads for these registers. Writes are read-only-access faults. 
 For two raw `TIME_MS` samples, compute elapsed milliseconds modulo 2^32.
 In BLua, use `(current - start) % 0x100000000` for the nonnegative wrapping
 distance. A bitwise `& 0xffffffff` instead returns a signed 32-bit result and
-cannot represent distances from `80000000H` through `ffffffffH` as nonnegative
+cannot represent distances from `80000000H` through `FFFFFFFFH` as nonnegative
 Numbers. The modulo result measures the interval only
 when the actual elapsed time is shorter than one complete 2^32-millisecond
 period. A zero result is valid when both samples fall in the same millisecond.
@@ -93,20 +93,20 @@ The diagnostic channel publishes lines assembled from codepoints. Write each
 codepoint to PRINT_CHAR, then write PRINT_FLUSH to end and submit the line.
 Appending text and publishing it are separate operations. This channel carries
 diagnostic text, independently of GPU drawing. BIOS console output is described
-in [[Book II, BIOS base services — Console history and display](bios-base.md#sec-system-bios-console-integration)]{.content-visible when-format="html"}[Book II, “BIOS base services”, under “Console history and display”]{.content-visible when-format="pdf"}.
+in [[Book II, BIOS base services — Console history and display](bios-base.md#sec-system-bios-console-integration)]{.content-visible when-format="html"}[Book II, §5.4.6, “Console history and display”]{.content-visible when-format="pdf"}.
 
 | Address | Register | Access | Word interpretation | Reset |
 |---|---|---|---|---|
-| `0x08010230` | `PRINT_CHAR` | R/W | Bits 31–0: Unicode codepoint to append; reads return the full last written word | `0x00000000` |
-| `0x08010234` | `PRINT_FLUSH` | R/W | All written values request line publication; reads return the full last written word | `0x00000000` |
+| `08010230H` | `PRINT_CHAR` | R/W | Bits 31–0: Unicode codepoint to append; reads return the full last written word | `00000000H` |
+| `08010234H` | `PRINT_FLUSH` | R/W | All written values request line publication; reads return the full last written word | `00000000H` |
 
 Use aligned word writes, supplying one Unicode codepoint per PRINT_CHAR word.
 The channel encodes that codepoint as UTF-8: values
-`0x00000000`–`0x0000007f` use one byte, `0x00000080`–`0x000007ff` use two,
-`0x00000800`–`0x0000ffff` use three except for surrogates, and
-`0x00010000`–`0x0010ffff` use four. Surrogate words
-`0x0000d800`–`0x0000dfff` and words above `0x0010ffff` append the single byte
-`0x3f` (`?`). Readback retains the original word, including an invalid codepoint.
+`00000000H`–`0000007FH` use one byte, `00000080H`–`000007FFH` use two,
+`00000800H`–`0000FFFFH` use three except for surrogates, and
+`00010000H`–`0010FFFFH` use four. Surrogate words
+`0000D800H`–`0000DFFFH` and words above `0010FFFFH` append the single byte
+`3FH` (`?`). Readback retains the original word, including an invalid codepoint.
 
 PRINT_CHAR extends the current partial line, including when its codepoint is
 line feed. Every PRINT_FLUSH write appends an ASCII line-feed byte and submits
@@ -118,15 +118,15 @@ PRINT_FLUSH:
 
 | PRINT_CHAR word | Character | Encoded bytes |
 |---|---|---|
-| `00000053H` | S | `53` |
-| `000000e9H` | é | `C3 A9` |
-| `0001f600H` | 😀 | `F0 9F 98 80` |
-| `ffffffffH` | Replacement `?` | `3F` |
+| `00000053H` | S | `53H` |
+| `000000E9H` | é | `C3H A9H` |
+| `0001F600H` | 😀 | `F0H 9FH 98H 80H` |
+| `FFFFFFFFH` | Replacement `?` | `3FH` |
 
-The flush appends byte `0A` and submits the nine-byte line. CHAR still reads
-`ffffffffH` and FLUSH reads zero: readback retains the written words, not
+The flush appends byte `0AH` and submits the nine-byte line. CHAR still reads
+`FFFFFFFFH` and FLUSH reads zero: readback retains the written words, not
 transmission status. A BLua sequence comparing this channel with BIOS console
-output appears in [[Book II, BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”, under “Diagnostic text and the BIOS console”]{.content-visible when-format="pdf"}.
+output appears in [[Book II, BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line)]{.content-visible when-format="html"}[Book II, §7.1]{.content-visible when-format="pdf"}.
 
 Completed unread lines and the current partial line share one 8192-byte queue. Each character needs space for its complete one- to four-byte UTF-8 encoding. If a character cannot fit, the current partial line is discarded, completed unread lines are preserved, and further character writes are ignored until the next flush. That flush publishes nothing and clears the overflow condition. If the flush itself first encounters insufficient space for its added line-feed byte, it likewise discards the partial line, publishes nothing, and leaves overflow cleared. In particular, 8192 unflushed ASCII characters leave no room for the flush's line feed, so that entire partial line is lost. No readiness, free-space, or accepted-line counter is available through these ports. Reset empties the queue and clears both register words.
 
@@ -171,8 +171,8 @@ Use aligned 32-bit accesses to the registers below. `CONTROL` is a command port,
 
 | Register | Address | Access | Reset value |
 |---|---|---|---|
-| `CONTROL` | `0x0801034c` | Command write; reads return `0` | `0x00000000` |
-| `STATUS` | `0x08010350` | Read-only | `0x00000000` |
+| `CONTROL` | `0801034CH` | Command write; reads return `0` | `00000000H` |
+| `STATUS` | `08010350H` | Read-only | `00000000H` |
 
 ### CONTROL {#sec-system-control}
 
@@ -180,12 +180,12 @@ Each set command bit is considered independently. One write is processed in the 
 
 | Bits | Mask | Operation | Effect |
 |---|---|---|---|
-| 0 | `0x00000001` | `RESET` | Latch a system-reset request for service at a CPU execution boundary. The write itself does not perform the reboot. |
-| 1 | `0x00000002` | `SUPERVISOR_ENTER` (`ENTER`) | Activate the supervisor device context **only at ENTRY_VECTOR**. It has no effect in any other stage and does not initiate entry from USER. |
-| 3 | `0x00000008` | `SUPERVISOR_FAULT` (`FAULT`) | Capture the CPU fault words. In ACTIVE, make no further transition. Otherwise select the fault transition, clear resumability, cancel any pending NMI request and request transition processing at a CPU execution boundary; only USER starts a new entry-quiescence sequence. |
-| 4 | `0x00000010` | `SUPERVISOR_FAULT_PUBLISH` (`FAULT_PUBLISH`) | Increment the retained fault sequence modulo `2^32`. Do not capture or clear the payload, change supervisor flags or enter an exception. |
-| 2 | `0x00000004` | `SUPERVISOR_LEAVE` (`LEAVE`) | Begin return to the user device context only in ACTIVE with `RESUMABLE` set. Clear `EXIT_REQUESTED` and suspend CPU execution for the transition. Otherwise do nothing. |
-| `31:5` | `0xffffffe0` | Unused | Ignored. |
+| 0 | `00000001H` | `RESET` | Latch a system-reset request for service at a CPU execution boundary. The write itself does not perform the reboot. |
+| 1 | `00000002H` | `SUPERVISOR_ENTER` (`ENTER`) | Activate the supervisor device context **only at ENTRY_VECTOR**. It has no effect in any other stage and does not initiate entry from USER. |
+| 3 | `00000008H` | `SUPERVISOR_FAULT` (`FAULT`) | Capture the CPU fault words. In ACTIVE, make no further transition. Otherwise select the fault transition, clear resumability, cancel any pending NMI request and request transition processing at a CPU execution boundary; only USER starts a new entry-quiescence sequence. |
+| 4 | `00000010H` | `SUPERVISOR_FAULT_PUBLISH` (`FAULT_PUBLISH`) | Increment the retained fault sequence modulo `2^32`. Leave the payload and supervisor flags unchanged; no exception is entered. |
+| 2 | `00000004H` | `SUPERVISOR_LEAVE` (`LEAVE`) | Begin return to the user device context only in ACTIVE with `RESUMABLE` set. Clear `EXIT_REQUESTED` and suspend CPU execution for the transition. Otherwise do nothing. |
+| `31:5` | `FFFFFFE0H` | Unused | Ignored. |
 
 : {tbl-colwidths="[6,14,29,51]"}
 
@@ -195,10 +195,10 @@ For example, `FAULT | FAULT_PUBLISH` captures the payload before advancing its p
 
 | Bits | Mask | Flag | Meaning when set |
 |---|---|---|---|
-| 0 | `0x00000001` | `SUPERVISOR_ACTIVE` | SYSTEM is not in USER. This includes entry quiescence, ENTRY_VECTOR, ACTIVE and exit quiescence. |
-| 1 | `0x00000002` | `EXIT_REQUESTED` | A supervisor-request edge has requested exit from an ACTIVE, resumable context. The flag does not itself execute LEAVE. |
-| 2 | `0x00000004` | `RESUMABLE` | The supervisor-context resumability latch is set. LEAVE also requires the ACTIVE stage. |
-| `31:3` | `0xfffffff8` | Unused | Always zero. |
+| 0 | `00000001H` | `SUPERVISOR_ACTIVE` | SYSTEM is not in USER. This includes entry quiescence, ENTRY_VECTOR, ACTIVE and exit quiescence. |
+| 1 | `00000002H` | `EXIT_REQUESTED` | A supervisor-request edge has requested exit from an ACTIVE, resumable context. The flag does not itself execute LEAVE. |
+| 2 | `00000004H` | `RESUMABLE` | The supervisor-context resumability latch is set. LEAVE also requires the ACTIVE stage. |
+| `31:3` | `FFFFFFF8H` | Unused | Always zero. |
 
 These flags are independent. Entry can set `SUPERVISOR_ACTIVE` before `RESUMABLE`; an admitted LEAVE keeps both set while restoration is in progress, then clears them when USER is restored. `SUPERVISOR_ACTIVE` does not identify CPU privilege, and `RESUMABLE` does not certify that an exception has been repaired or that CPU exception return has already occurred.
 
@@ -267,12 +267,12 @@ all 32 bits of each word are retained.
 
 | Register | Address | Access | Reset value | Recorded value |
 |---|---|---|---|---|
-| `SEQUENCE` | `0x08010428` | Read-only | `0x00000000` | Publication sequence, incremented by FAULT_PUBLISH modulo `2^32`. |
-| `CAUSE` | `0x0801042c` | Read-only | `0x00000000` | CPU Cause word at FAULT capture. |
-| `EPC` | `0x08010430` | Read-only | `0x00000000` | CPU EPC word at FAULT capture. |
-| `BAD_ADDRESS` | `0x08010434` | Read-only | `0x00000000` | Retained CPU BadAddress word at FAULT capture. |
-| `LUA_REASON` | `0x08010438` | Read-only | `0x00000000` | Retained CPU LuaReason word at FAULT capture; not the Lua error value. |
-| `DOMAIN` | `0x0801043c` | Read-only | `0x00000000` | Interrupted execution-image domain: cartridge `0` or `1`, or system `0xffffffff`. This is not CPU privilege or SYSTEM stage. |
+| `SEQUENCE` | `08010428H` | Read-only | `00000000H` | Publication sequence, incremented by FAULT_PUBLISH modulo `2^32`. |
+| `CAUSE` | `0801042CH` | Read-only | `00000000H` | CPU Cause word at FAULT capture. |
+| `EPC` | `08010430H` | Read-only | `00000000H` | CPU EPC word at FAULT capture. |
+| `BAD_ADDRESS` | `08010434H` | Read-only | `00000000H` | Retained CPU BadAddress word at FAULT capture. |
+| `LUA_REASON` | `08010438H` | Read-only | `00000000H` | Retained CPU LuaReason word at FAULT capture; not the Lua error value. |
+| `DOMAIN` | `0801043CH` | Read-only | `00000000H` | Interrupted execution-image domain: cartridge `0` or `1`, or system `FFFFFFFFH`. This is not CPU privilege or SYSTEM stage. |
 
 FAULT copies the five CPU payload words. FAULT_PUBLISH advances SEQUENCE
 modulo 2^32 and leaves that payload unchanged. Software can capture first and
@@ -281,7 +281,7 @@ of CPU exception entry. Zero is a valid sequence after reset and after wrap.
 
 An NMI entry alone does not refresh this bank: the words change through FAULT
 capture, not by following the CPU diagnostic registers continuously. BIOS fault
-publication is described in [[Book II, BIOS diagnostics — Memory faults and the monitor](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”, under “Memory faults and the monitor”]{.content-visible when-format="pdf"}.
+publication is described in [[Book II, BIOS diagnostics — Memory faults and the monitor](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book II, §7.2]{.content-visible when-format="pdf"}.
 
 Interpret the payload using Cause. Synchronous entry records the faulting
 instruction's EPC; asynchronous entry records the interrupted PC. A subsequent
@@ -291,19 +291,19 @@ update LuaReason; unrelated exceptions retain that word. These retained fields
 must be read with the recorded cause.
 
 The raw Cause word uses the following values. The exception-code mask is
-`0x0000007c`; IRQ and NMI indications are listed separately.
+`0000007CH`; IRQ and NMI indications are listed separately.
 
 | Value | Meaning |
 |---|---|
-| `0x00000400` | Maskable IRQ indication |
-| `0x00010000` | NMI indication |
-| `0x00000010` | Address-error load |
-| `0x00000014` | Address-error store |
-| `0x00000018` | Instruction-bus error |
-| `0x0000001c` | Data-bus error |
-| `0x00000028` | Reserved instruction |
-| `0x0000002c` | Coprocessor unusable |
-| `0x00000034` | Trap |
+| `00000400H` | Maskable IRQ indication |
+| `00010000H` | NMI indication |
+| `00000010H` | Address-error load |
+| `00000014H` | Address-error store |
+| `00000018H` | Instruction-bus error |
+| `0000001CH` | Data-bus error |
+| `00000028H` | Reserved instruction |
+| `0000002CH` | Coprocessor unusable |
+| `00000034H` | Trap |
 
 | LuaReason | Meaning |
 |---|---|
@@ -344,7 +344,7 @@ Lua failures that are handled by protected-call or coroutine error handling do n
 Device-context restoration and CPU exception return are separate operations.
 Neither advances a synchronous-fault EPC or repairs its cause. The monitor's
 inspection and continuation procedure is described in
-[[Book II, BIOS diagnostics](bios-monitor.md#sec-bios-monitor)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”]{.content-visible when-format="pdf"}.
+[[Book II, BIOS diagnostics](bios-monitor.md#sec-bios-monitor)]{.content-visible when-format="html"}[Book II, Chapter 7]{.content-visible when-format="pdf"}.
 
 ## Reset requests {#sec-system-reset-requests}
 

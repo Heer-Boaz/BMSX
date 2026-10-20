@@ -583,7 +583,7 @@ If `seed` is nil, including an omitted parameter, the function calls the current
 trunc(((*time_ms / 1000) * 1000)) % 4294967296.0
 ```
 
-Here `time_ms` denotes the unsigned millisecond word sampled by the BIOS clock function. The divide-then-multiply expression is significant; it is not replaced here by a direct word value. The seed therefore depends on the sampled system counter, rather than a civil clock or an entropy source. See [[system services](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"}.
+Here `time_ms` denotes the unsigned millisecond word sampled by the BIOS clock function. The divide-then-multiply expression is significant; it is not replaced here by a direct word value. The seed therefore depends on the sampled system counter, rather than a civil clock or an entropy source. See [[system services](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
 Otherwise, the function stores:
 
@@ -591,13 +591,13 @@ Otherwise, the function stores:
 trunc(seed) % 4294967296.0
 ```
 
-An explicit seed does not use the clock. Finite seeds are truncated toward zero, reduced using positive-modulus semantics, and stored as an unsigned word. Both `-1` and `-1.9` therefore store `0xffffffff`; zero stores zero. False selects this supplied-seed branch, not the clock branch. Nonnumeric seeds, NaN, and either infinity reach a NaN modulus result and store word zero. There is no local explicit seed error.
+An explicit seed does not use the clock. Finite seeds are truncated toward zero, reduced using positive-modulus semantics, and stored as an unsigned word. Both `-1` and `-1.9` therefore store `FFFFFFFFH`; zero stores zero. False selects this supplied-seed branch, not the clock branch. Nonnumeric seeds, NaN, and either infinity reach a NaN modulus result and store word zero. There is no local explicit seed error.
 
 Seeding performs no generation step or warm-up loop and returns no seed value. After seeding zero, the next unit output is exactly `1013904223 / 4294967296`.
 
 ### Generator state and update {#sec-bios-math-generator-state-and-update}
 
-The public bindings are `math.random` and `math.randomseed`. They use one shared 32-bit generator state, initialized to `0x12345678` during BIOS startup. The Math Table provides no separate state-access interface.
+The public bindings are `math.random` and `math.randomseed`. They use one shared 32-bit generator state, initialized to `12345678H` during BIOS startup. The Math Table provides no separate state-access interface.
 
 Each generation step reads the old word and computes:
 

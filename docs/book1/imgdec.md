@@ -80,9 +80,9 @@ counts. Decoded payload words and generated packet-header words are distinct:
 only the former contribute to DECODED_WORD_COUNT.
 
 For DMA input from ROM or main RAM, serialize each compressed word in
-little-endian byte order: `31444D49H` occupies bytes `49 4D 44 31` at increasing
-addresses. This is data-word order, not
-[[CPU instruction byte order](cpu.md#sec-cpu-instruction-words-and-execution-resources)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Instruction words and execution resources”]{.content-visible when-format="pdf"};
+little-endian byte order: `31444D49H` occupies bytes `49H 4DH 44H 31H` at increasing
+addresses. This is data-word order, not instruction byte order (see
+[[CPU instruction byte order](cpu.md#sec-cpu-instruction-words-and-execution-resources)]{.content-visible when-format="html"}[Book II, §1.3]{.content-visible when-format="pdf"});
 see [Memory — Addresses and data sizes](memory.md#sec-memory-addresses-and-data-sizes).
 
 | Resource | Capacity or basis |
@@ -117,7 +117,7 @@ IMGDEC consumes a stream of 32-bit words. The stream contains a three-word heade
 
 | Input word | Meaning |
 |---|---|
-| 0 | Magic: exactly `0x31444d49`. |
+| 0 | Magic: exactly `31444D49H`. |
 | 1 | `T`: number of decoded texture payload words. |
 | 2 | `C`: number of decoded CLUT payload words. |
 
@@ -138,13 +138,13 @@ Bits 31:30 select the token kind. The remaining bits have the following layouts;
 
 | Field | Decoding | Encoded field range | Decoded range |
 |---|---|---|---|
-| Literal, repeat, or zero length `L` | `(token & 0x3fffffff) + 1` | `0x00000000`–`0x3fffffff` | 1–1,073,741,824 words. |
-| Back-reference length `L` | `((token >> 12) & 0x3ffff) + 3` | `0x00000`–`0x3ffff` | 3–262,146 words. |
-| Back-reference distance `D` | `(token & 0x00000fff) + 1` | `0x000`–`0xfff` | 1–4096 words. |
+| Literal, repeat, or zero length `L` | `(token & 0x3fffffff) + 1` | `00000000H`–`3FFFFFFFH` | 1–1,073,741,824 words. |
+| Back-reference length `L` | `((token >> 12) & 0x3ffff) + 3` | `00000H`–`3FFFFH` | 3–262,146 words. |
+| Back-reference distance `D` | `(token & 0x00000fff) + 1` | `000H`–`FFFH` | 1–4096 words. |
 
 The right shift in the table extracts bits from the unsigned token word.
 
-A literal token copies its next `L` input words into the decoded payload. A repeat token first consumes its one value word, then emits that value `L` times. A zero token emits `L` words of `0x00000000`. Repeat and zero emission consume no further input words. A missing repeat value is not an implicit zero value: the decoder waits for that word, or faults when the declared input is exhausted.
+A literal token copies its next `L` input words into the decoded payload. A repeat token first consumes its one value word, then emits that value `L` times. A zero token emits `L` words of `00000000H`. Repeat and zero emission consume no further input words. A missing repeat value is not an implicit zero value: the decoder waits for that word, or faults when the declared input is exhausted.
 
 A token may span the texture/CLUT boundary. Do not insert a new token merely because texture payload ends: any remaining words of the current run continue as CLUT payload after the generated CLUT header.
 
@@ -166,10 +166,10 @@ IMGDEC queues GP0 command and payload words in its output FIFO. Producing these 
 
 | Packet | Word 0 | Word 1 | Word 2 | Following words |
 |---|---|---|---|---|
-| Texture; always present | `0xa0000000` | Programmed texture destination word | Programmed texture size word | `T` decoded payload words. |
-| CLUT; present only if `C != 0` | `0xa0000000` | Programmed CLUT destination word | `0x00010010` | `C` decoded payload words. |
+| Texture; always present | `A0000000H` | Programmed texture destination word | Programmed texture size word | `T` decoded payload words. |
+| CLUT; present only if `C != 0` | `A0000000H` | Programmed CLUT destination word | `00010010H` | `C` decoded payload words. |
 
-The command word is the GP0 CPU-to-VRAM command. The CLUT size word is fixed: `0x00010010`, the GP0 4-bit CLUT size word. IMGDEC does not select a different size word from `C`.
+The command word is the GP0 CPU-to-VRAM command. The CLUT size word is fixed: `00010010H`, the GP0 4-bit CLUT size word. IMGDEC does not select a different size word from `C`.
 
 Each three-word header is queued together and requires at least three free output FIFO words. Header production does not consume a token and does not increment the decoded payload count. Texture payload ends when that count equals `T`. If `C` is nonzero, the CLUT header follows and decoding continues until the count equals `T + C`, with 32-bit wraparound. If `C` is zero, no CLUT header or payload is generated.
 
@@ -187,7 +187,10 @@ The expected output-word count is calculated as:
 
 `T + 3 + (C == 0 ? 0 : C + 3)`, modulo `2^32`.
 
-The combined CLUT endpoint `T + C`, decoded count increments, and subtraction of decoded count from a stage endpoint also use modulo-`2^32` arithmetic. Count overflow is not saturated or rejected. Do not replace this arithmetic with an assumed nonwrapping image-size calculation.
+The combined CLUT endpoint `T + C`, decoded count increments, and subtraction
+of decoded count from a stage endpoint also use modulo-`2^32` arithmetic.
+Overflow wraps in each of these calculations; it is neither saturated nor
+rejected.
 
 ### Size words and count mismatches {#sec-imgdec-size-words-and-count-mismatches}
 
@@ -198,9 +201,9 @@ The downstream GP0 size interpretation is distinct from IMGDEC's `T` and `C` cou
 | Width | `(((size & 0x0000ffff) - 1) & 0x3ff) + 1` | 1–1024. |
 | Height | `((((size >> 16) & 0x0000ffff) - 1) & 0x1ff) + 1` | 1–512. |
 
-For example, `0x00060004` describes GP0 dimensions 4 × 6, `0x00010010` describes 16 × 1, and raw size word zero describes 1024 × 512, not an empty transfer. IMGDEC does not use these dimension calculations when accepting its payload counts.
+For example, `00060004H` describes GP0 dimensions 4 × 6, `00010010H` describes 16 × 1, and raw size word zero describes 1024 × 512, not an empty transfer. IMGDEC does not use these dimension calculations when accepting its payload counts.
 
-`T` controls IMGDEC's texture payload endpoint, independently of the texture-size word. Likewise, `C` controls the CLUT payload endpoint while the emitted CLUT size word remains fixed. The value 16 in `0x00010010` is not a declaration of 16 compressed-stream payload words. An accepted stream can therefore have payload counts that do not agree with its downstream transfer description. IMGDEC acceptance is not a packet-size consistency check; cartridge software must supply a stream appropriate for the downstream GP0 transfer. No pixel packing, color-channel interpretation, or destination-coordinate interpretation is defined by this compressed-stream format.
+`T` controls IMGDEC's texture payload endpoint, independently of the texture-size word. Likewise, `C` controls the CLUT payload endpoint while the emitted CLUT size word remains fixed. The value 16 in `00010010H` is not a declaration of 16 compressed-stream payload words. An accepted stream can therefore have payload counts that do not agree with its downstream transfer description. IMGDEC acceptance is not a packet-size consistency check; cartridge software must supply a stream appropriate for the downstream GP0 transfer. No pixel packing, color-channel interpretation, or destination-coordinate interpretation is defined by this compressed-stream format.
 
 ## Worked stream: 19 input words, 26 output words {#sec-imgdec-worked-stream-19-input-words-26-output-words}
 
@@ -208,36 +211,36 @@ Use these programmed words:
 
 | Setting | Value |
 |---|---|
-| Input-word count | `19` (`0x00000013`) |
-| Texture destination | `0x00400040` |
-| Texture size | `0x00060004` |
-| CLUT destination | `0x00800040` |
+| Input-word count | `19` (`00000013H`) |
+| Texture destination | `00400040H` |
+| Texture size | `00060004H` |
+| CLUT destination | `00800040H` |
 
 The following complete stream uses all four token kinds. `A`, `B`, and `R` below are names for raw words, not pixel values.
 
 | Input index | Word | Meaning |
 |---|---|---|
-| 0 | `0x31444d49` | Magic. |
-| 1 | `0x0000000c` | `T = 12`. |
-| 2 | `0x00000008` | `C = 8`. |
-| 3 | `0x00000001` | Literal length 2. |
-| 4 | `0x11112222` | `A`. |
-| 5 | `0x33334444` | `B`. |
-| 6 | `0x40000001` | Repeat length 2. |
-| 7 | `0x55556666` | Repeat value `R`. |
-| 8 | `0x80001003` | Back-reference length 4, distance 4. |
-| 9 | `0xc0000003` | Zero length 4. |
-| 10 | `0x00000007` | Literal length 8. |
-| 11 | `0x00000000` | CLUT payload word 0. |
-| 12 | `0x03e0001f` | CLUT payload word 1. |
-| 13 | `0x7fff7c00` | CLUT payload word 2. |
-| 14 | `0x42104210` | CLUT payload word 3. |
-| 15 | `0x001f001f` | CLUT payload word 4. |
-| 16 | `0x03e003e0` | CLUT payload word 5. |
-| 17 | `0x7c007c00` | CLUT payload word 6. |
-| 18 | `0x7fff7fff` | CLUT payload word 7. |
+| 0 | `31444D49H` | Magic. |
+| 1 | `0000000CH` | `T = 12`. |
+| 2 | `00000008H` | `C = 8`. |
+| 3 | `00000001H` | Literal length 2. |
+| 4 | `11112222H` | `A`. |
+| 5 | `33334444H` | `B`. |
+| 6 | `40000001H` | Repeat length 2. |
+| 7 | `55556666H` | Repeat value `R`. |
+| 8 | `80001003H` | Back-reference length 4, distance 4. |
+| 9 | `C0000003H` | Zero length 4. |
+| 10 | `00000007H` | Literal length 8. |
+| 11 | `00000000H` | CLUT payload word 0. |
+| 12 | `03E0001FH` | CLUT payload word 1. |
+| 13 | `7FFF7C00H` | CLUT payload word 2. |
+| 14 | `42104210H` | CLUT payload word 3. |
+| 15 | `001F001FH` | CLUT payload word 4. |
+| 16 | `03E003E0H` | CLUT payload word 5. |
+| 17 | `7C007C00H` | CLUT payload word 6. |
+| 18 | `7FFF7FFFH` | CLUT payload word 7. |
 
-After the first two tokens, history is `A, B, R, R`. Token `0x80001003` has length `1 + 3 = 4` and distance `3 + 1 = 4`, reproducing those four words. The zero run completes the texture payload:
+After the first two tokens, history is `A, B, R, R`. Token `80001003H` has length `1 + 3 = 4` and distance `3 + 1 = 4`, reproducing those four words. The zero run completes the texture payload:
 
 `A, B, R, R, A, B, R, R, 0, 0, 0, 0`.
 
@@ -245,32 +248,32 @@ The final literal supplies the eight CLUT payload words. The input has 3 header 
 
 | Output index | Word | Role |
 |---|---|---|
-| 0 | `0xa0000000` | Texture command. |
-| 1 | `0x00400040` | Texture destination. |
-| 2 | `0x00060004` | Texture size. |
-| 3 | `0x11112222` | Texture payload 0. |
-| 4 | `0x33334444` | Texture payload 1. |
-| 5 | `0x55556666` | Texture payload 2. |
-| 6 | `0x55556666` | Texture payload 3. |
-| 7 | `0x11112222` | Texture payload 4. |
-| 8 | `0x33334444` | Texture payload 5. |
-| 9 | `0x55556666` | Texture payload 6. |
-| 10 | `0x55556666` | Texture payload 7. |
-| 11 | `0x00000000` | Texture payload 8. |
-| 12 | `0x00000000` | Texture payload 9. |
-| 13 | `0x00000000` | Texture payload 10. |
-| 14 | `0x00000000` | Texture payload 11. |
-| 15 | `0xa0000000` | CLUT command. |
-| 16 | `0x00800040` | CLUT destination. |
-| 17 | `0x00010010` | Fixed CLUT size. |
-| 18 | `0x00000000` | CLUT payload 0. |
-| 19 | `0x03e0001f` | CLUT payload 1. |
-| 20 | `0x7fff7c00` | CLUT payload 2. |
-| 21 | `0x42104210` | CLUT payload 3. |
-| 22 | `0x001f001f` | CLUT payload 4. |
-| 23 | `0x03e003e0` | CLUT payload 5. |
-| 24 | `0x7c007c00` | CLUT payload 6. |
-| 25 | `0x7fff7fff` | CLUT payload 7. |
+| 0 | `A0000000H` | Texture command. |
+| 1 | `00400040H` | Texture destination. |
+| 2 | `00060004H` | Texture size. |
+| 3 | `11112222H` | Texture payload 0. |
+| 4 | `33334444H` | Texture payload 1. |
+| 5 | `55556666H` | Texture payload 2. |
+| 6 | `55556666H` | Texture payload 3. |
+| 7 | `11112222H` | Texture payload 4. |
+| 8 | `33334444H` | Texture payload 5. |
+| 9 | `55556666H` | Texture payload 6. |
+| 10 | `55556666H` | Texture payload 7. |
+| 11 | `00000000H` | Texture payload 8. |
+| 12 | `00000000H` | Texture payload 9. |
+| 13 | `00000000H` | Texture payload 10. |
+| 14 | `00000000H` | Texture payload 11. |
+| 15 | `A0000000H` | CLUT command. |
+| 16 | `00800040H` | CLUT destination. |
+| 17 | `00010010H` | Fixed CLUT size. |
+| 18 | `00000000H` | CLUT payload 0. |
+| 19 | `03E0001FH` | CLUT payload 1. |
+| 20 | `7FFF7C00H` | CLUT payload 2. |
+| 21 | `42104210H` | CLUT payload 3. |
+| 22 | `001F001FH` | CLUT payload 4. |
+| 23 | `03E003E0H` | CLUT payload 5. |
+| 24 | `7C007C00H` | CLUT payload 6. |
+| 25 | `7FFF7FFFH` | CLUT payload 7. |
 
 ## Starting a transfer {#sec-imgdec-starting-a-transfer}
 
@@ -357,22 +360,22 @@ interrupt-driven completion sequence.
 ## Register reference {#sec-imgdec-register-reference}
 
 IMGDEC occupies nine consecutive 32-bit registers, beginning at
-`0x080103FC`. Adjacent registers are four bytes apart. All reset values in the
+`080103FCH`. Adjacent registers are four bytes apart. All reset values in the
 table are complete 32-bit words. R denotes read-only; R/W denotes read/write.
 The five configuration registers share the inactive-only write condition
 described below.
 
 | Address | Name | Access | Bits | Reset | Function |
 |---|---|---|---|---|---|
-| `0x080103FC` | INPUT_WORD_COUNT | R/W, configuration | 31:0 | `0x00000000` | Total number of compressed input words to submit for the stream. |
-| `0x08010400` | TEXTURE_DESTINATION | R/W, configuration | 31:0 | `0x00000000` | Raw destination word placed in the texture upload header. |
-| `0x08010404` | TEXTURE_SIZE | R/W, configuration | 31:0 | `0x00000000` | Raw size word placed in the texture upload header. |
-| `0x08010408` | CLUT_DESTINATION | R/W, configuration | 31:0 | `0x00000000` | Raw destination word placed in the CLUT upload header, when present. |
-| `0x0801040C` | CONTROL | R/W, configuration | START at 0; retained bits 31:1 | `0x00000000` | Starts a new stream when written with START set. |
-| `0x08010410` | STATUS | R | Defined fields 4:0; zero 31:5 | `0x00000000` | Activity, terminal result, and input/output request state. |
-| `0x08010414` | DATA | R/W, data port | 31:0 | `0x00000000` | Writes submit compressed input; reads obtain output through the shared data latch. |
-| `0x08010418` | INPUT_WORDS_RECEIVED | R | 31:0 | `0x00000000` | Live count of submitted DATA writes, not words consumed by decompression. |
-| `0x0801041C` | DECODED_WORD_COUNT | R | 31:0 | `0x00000000` | Live count of decoded payload words produced; excludes generated headers. |
+| `080103FCH` | INPUT_WORD_COUNT | R/W, configuration | 31:0 | `00000000H` | Total number of compressed input words to submit for the stream. |
+| `08010400H` | TEXTURE_DESTINATION | R/W, configuration | 31:0 | `00000000H` | Raw destination word placed in the texture upload header. |
+| `08010404H` | TEXTURE_SIZE | R/W, configuration | 31:0 | `00000000H` | Raw size word placed in the texture upload header. |
+| `08010408H` | CLUT_DESTINATION | R/W, configuration | 31:0 | `00000000H` | Raw destination word placed in the CLUT upload header, when present. |
+| `0801040CH` | CONTROL | R/W, configuration | START at 0; retained bits 31:1 | `00000000H` | Starts a new stream when written with START set. |
+| `08010410H` | STATUS | R | Defined fields 4:0; zero 31:5 | `00000000H` | Activity, terminal result, and input/output request state. |
+| `08010414H` | DATA | R/W, data port | 31:0 | `00000000H` | Writes submit compressed input; reads obtain output through the shared data latch. |
+| `08010418H` | INPUT_WORDS_RECEIVED | R | 31:0 | `00000000H` | Live count of submitted DATA writes, not words consumed by decompression. |
+| `0801041CH` | DECODED_WORD_COUNT | R | 31:0 | `00000000H` | Live count of decoded payload words produced; excludes generated headers. |
 
 : {tbl-colwidths="[13,30,11,11,13,22]"}
 
@@ -398,12 +401,12 @@ The programming words remain in their registers during the stream. The input
 count governs input submission and completion checks; destination and size
 words supply the headers as those headers are produced.
 
-### CONTROL — `0x0801040C` {#sec-imgdec-control-0x0801040c}
+### CONTROL — `0801040CH` {#sec-imgdec-control-0x0801040c}
 
 | Bits | Mask | Field | Write behavior and readback |
 |---|---|---|---|
-| 0 | `0x00000001` | START | A written 1 starts a new stream and is cleared as part of that start. A written 0 does not start a stream. |
-| 31:1 | `0xFFFFFFFE` | Retained, no defined decoding function | Retained exactly as written, including when START is written as 1. |
+| 0 | `00000001H` | START | A written 1 starts a new stream and is cleared as part of that start. A written 0 does not start a stream. |
+| 31:1 | `FFFFFFFEH` | Retained, no defined decoding function | Retained exactly as written, including when START is written as 1. |
 
 An accepted CONTROL write retains its whole word before START is acted upon.
 Starting clears only bit 0 of CONTROL; bits 31:1 are not cleared or interpreted
@@ -416,16 +419,16 @@ words. Do not require BUSY to be observable after an invalid start: with
 INPUT_WORD_COUNT equal to zero, the new stream immediately reports FORMAT_FAULT
 because its required input header cannot be supplied.
 
-### STATUS — `0x08010410` {#sec-imgdec-status-0x08010410}
+### STATUS — `08010410H` {#sec-imgdec-status-0x08010410}
 
 | Bit(s) | Mask | Field | Meaning when set |
 |---|---|---|---|
-| 0 | `0x00000001` | BUSY | A stream is active. |
-| 1 | `0x00000002` | DONE | The stream has completed successfully, including the required output reads. |
-| 2 | `0x00000004` | INPUT_REQUEST | The input DMA-request condition is asserted. |
-| 3 | `0x00000008` | OUTPUT_REQUEST | The output DMA-request condition is asserted. |
-| 4 | `0x00000010` | FORMAT_FAULT | The stream stopped with a format fault. |
-| 31:5 | `0xFFFFFFE0` | Unused | Zero. |
+| 0 | `00000001H` | BUSY | A stream is active. |
+| 1 | `00000002H` | DONE | The stream has completed successfully, including the required output reads. |
+| 2 | `00000004H` | INPUT_REQUEST | The input DMA-request condition is asserted. |
+| 3 | `00000008H` | OUTPUT_REQUEST | The output DMA-request condition is asserted. |
+| 4 | `00000010H` | FORMAT_FAULT | The stream stopped with a format fault. |
+| 31:5 | `FFFFFFE0H` | Unused | Zero. |
 
 START replaces the previous status word with BUSY. Request-state evaluation
 then updates INPUT_REQUEST and OUTPUT_REQUEST without changing the other
@@ -694,20 +697,20 @@ direct GPU upload also requires GPU processing and PCRTC display timing.
 
 ## Worked stream: overlapping history across the CLUT header {#sec-imgdec-worked-stream-overlapping-history-across-the-clut-header}
 
-Program input count 10, texture destination `0x00200040`, texture size `0x00010010`, and CLUT destination `0x00300060`.
+Program input count 10, texture destination `00200040H`, texture size `00010010H`, and CLUT destination `00300060H`.
 
 | Input index | Word | Meaning |
 |---|---|---|
-| 0 | `0x31444d49` | Magic. |
-| 1 | `0x00000008` | `T = 8`. |
-| 2 | `0x00000008` | `C = 8`. |
-| 3 | `0x00000001` | Literal length 2. |
-| 4 | `0x11223344` | `A`. |
-| 5 | `0xaabbccdd` | `B`. |
-| 6 | `0x40000001` | Repeat length 2. |
-| 7 | `0x55667788` | Repeat value `R`. |
-| 8 | `0xc0000000` | Zero length 1. |
-| 9 | `0x80008004` | Back-reference length 11, distance 5. |
+| 0 | `31444D49H` | Magic. |
+| 1 | `00000008H` | `T = 8`. |
+| 2 | `00000008H` | `C = 8`. |
+| 3 | `00000001H` | Literal length 2. |
+| 4 | `11223344H` | `A`. |
+| 5 | `AABBCCDDH` | `B`. |
+| 6 | `40000001H` | Repeat length 2. |
+| 7 | `55667788H` | Repeat value `R`. |
+| 8 | `C0000000H` | Zero length 1. |
+| 9 | `80008004H` | Back-reference length 11, distance 5. |
 
 Before the back-reference, history is `A, B, R, R, 0`. The token's length is `8 + 3 = 11` and its distance is `4 + 1 = 5`. Its first three words complete texture payload. Its remaining eight words follow the CLUT header, without another token.
 
@@ -734,10 +737,10 @@ The generated output is 22 words:
 
 | Output indices | Words, in order |
 |---|---|
-| 0–2 | `0xa0000000`, `0x00200040`, `0x00010010` |
-| 3–10 | `0x11223344`, `0xaabbccdd`, `0x55667788`, `0x55667788`, `0x00000000`, `0x11223344`, `0xaabbccdd`, `0x55667788` |
-| 11–13 | `0xa0000000`, `0x00300060`, `0x00010010` |
-| 14–21 | `0x55667788`, `0x00000000`, `0x11223344`, `0xaabbccdd`, `0x55667788`, `0x55667788`, `0x00000000`, `0x11223344` |
+| 0–2 | `A0000000H`, `00200040H`, `00010010H` |
+| 3–10 | `11223344H`, `AABBCCDDH`, `55667788H`, `55667788H`, `00000000H`, `11223344H`, `AABBCCDDH`, `55667788H` |
+| 11–13 | `A0000000H`, `00300060H`, `00010010H` |
+| 14–21 | `55667788H`, `00000000H`, `11223344H`, `AABBCCDDH`, `55667788H`, `55667788H`, `00000000H`, `11223344H` |
 
 The inserted three-word header does not increase the back-reference distance: distance counts decoded payload history, not output FIFO positions.
 
@@ -779,7 +782,7 @@ These rules have two important consequences. An invalid first payload token can 
 
 | Condition | Point of detection | Partial effect |
 |---|---|---|
-| Magic is not `0x31444d49`. | On consuming the first header word. | No generated header or payload from this stream has been emitted. |
+| Magic is not `31444D49H`. | On consuming the first header word. | No generated header or payload from this stream has been emitted. |
 | Declared input ends within the three-word header. | After available header words have been consumed and another is required. | No generated header or payload has been emitted. |
 | Declared input ends while a token is required. | On finding no token word available. | Earlier headers and payload remain. |
 | Declared input ends before a repeat value. | After consuming its repeat token, before emitting that run. | Earlier output remains; that repeat run emits no value word. |
@@ -796,10 +799,10 @@ For each row, start a fresh stream, configure the input count to the exact liste
 
 | Input words, in order | Result |
 |---|---|
-| `0x31444d49`, `0x00000003`, `0x00000000`, `0x80000000` | The first back-reference has length 3 and distance 1, but history is empty. `FORMAT_FAULT`; decoded count 0. Three output words remain: `0xa0000000`, `D`, `S`. |
-| `0x31444d49`, `0x00000002`, `0x00000000`, `0xc0000002` | Zero run length 3 exceeds final target 2. Two zeros are emitted, leaving one run word outstanding. `FORMAT_FAULT`; decoded count 2. Five output words remain: `0xa0000000`, `D`, `S`, `0x00000000`, `0x00000000`. |
-| `0x31444d49`, `0x00000002`, `0x00000000`, `0x00000001`, `0x12345678` | Literal length 2 has only one data word. That word is emitted before exhaustion faults. Decoded count 1; four output words remain: `0xa0000000`, `D`, `S`, `0x12345678`. |
-| `0x31444d49`, `0x00000000`, `0x00000000` | Valid empty-payload stream. Its only output is `0xa0000000`, `D`, `S`. No token is required; `DONE` still requires output-read completion. |
+| `31444D49H`, `00000003H`, `00000000H`, `80000000H` | The first back-reference has length 3 and distance 1, but history is empty. `FORMAT_FAULT`; decoded count 0. Three output words remain: `A0000000H`, `D`, `S`. |
+| `31444D49H`, `00000002H`, `00000000H`, `C0000002H` | Zero run length 3 exceeds final target 2. Two zeros are emitted, leaving one run word outstanding. `FORMAT_FAULT`; decoded count 2. Five output words remain: `A0000000H`, `D`, `S`, `00000000H`, `00000000H`. |
+| `31444D49H`, `00000002H`, `00000000H`, `00000001H`, `12345678H` | Literal length 2 has only one data word. That word is emitted before exhaustion faults. Decoded count 1; four output words remain: `A0000000H`, `D`, `S`, `12345678H`. |
+| `31444D49H`, `00000000H`, `00000000H` | Valid empty-payload stream. Its only output is `A0000000H`, `D`, `S`. No token is required; `DONE` still requires output-read completion. |
 
 ## Use the output packets {#sec-imgdec-use-the-output-packets}
 
@@ -807,7 +810,7 @@ For each row, start a fresh stream, configure the input count to the exact liste
 
 Own GP0 as well as both DMA channels. There must be no partial packet or unread
 readback. Before starting, wait for GPUSTAT bit 26 (`04000000H`) at
-`08010240H`, write `e6000000H` to GP0 to disable both mask-protection modes,
+`08010240H`, write `E6000000H` to GP0 to disable both mask-protection modes,
 and write `04000002H` to GP1 to select CPU_TO_GP0 DMA direction. Wait for GPU
 idle again before arming the transfer.
 
@@ -816,8 +819,8 @@ operands:
 
 | Register | RAM receipt | Direct upload |
 |---|---|---|
-| DMA1 WRITE_ADDR, `080103e8H` | `ram_output` | `0801023cH` (GP0) |
-| DMA1 CONTROL, `080103f0H` | `00003c1aH` | `00003c58H` |
+| DMA1 WRITE_ADDR, `080103E8H` | `ram_output` | `0801023CH` (GP0) |
+| DMA1 CONTROL, `080103F0H` | `00003C1AH` | `00003C58H` |
 
 The direct control word selects fixed DATA and GP0 addresses, IMGDEC_READ and
 GX_WRITE requests, and sixteen-word blocks. Keep count 26. It waits for both
@@ -848,16 +851,16 @@ end
 ```
 
 STATUS is `10H` (FORMAT_FAULT), received count is 4 and decoded count is zero.
-The three retained output words are `a0000000H`, `00400040H`, `00060004H`.
+The three retained output words are `A0000000H`, `00400040H`, `00060004H`.
 They are a generated header, not a complete GPU packet: do not forward this
 prefix to GP0. A decoder fault neither cancels an admitted DMA block nor
 removes GP0 words already accepted downstream.
 
 A fresh START discards the faulted stream state. A minimum valid input is
-`31444d49H, 0, 0`: three header words with no token. Set INPUT_WORD_COUNT to 3,
+`31444D49H, 0, 0`: three header words with no token. Set INPUT_WORD_COUNT to 3,
 TEXTURE_DESTINATION to `00200020H` and TEXTURE_SIZE to zero, then START and
 supply those three words. Wait for OUTPUT_REQUEST and read exactly three DATA
-words into RAM. They are `a0000000H, 00200020H, 0`; their final read completes
+words into RAM. They are `A0000000H, 00200020H, 0`; their final read completes
 the stream with STATUS=`02H`, received count 3 and decoded count zero.
 Acknowledge bit `80H` separately. Keep this output in RAM: raw GP0 size zero
 means 1024 × 512, not an empty rectangle, so the header alone is not a complete
@@ -873,12 +876,12 @@ background. Wait for that fill to reach GPU idle before arming the upload.
 
 | Order | Port address | Words written in order |
 |---:|---|---|
-| 1 | PCRTC CSR, `080103d4H` | `00000200H` |
+| 1 | PCRTC CSR, `080103D4H` | `00000200H` |
 | 2 | PCRTC PMODE, `08010354H` | `00000000H` (disable output) |
-| 3 | PCRTC DISPFB1, `0801035cH` | `000fa000H` |
+| 3 | PCRTC DISPFB1, `0801035CH` | `000FA000H` |
 | 4 | PCRTC source origin, `08010360H` | `00000100H` |
-| 5 | PCRTC display extent, `08010368H` | `000bf3ffH` |
-| 6 | GP0, `0801023cH` | `e1000400H`, `e3000100H`, `e402fdffH`, `02181008H`, `00000100H`, `00c00100H` |
+| 5 | PCRTC display extent, `08010368H` | `000BF3FFH` |
+| 6 | GP0, `0801023CH` | `E1000400H`, `E3000100H`, `E402FDFFH`, `02181008H`, `00000100H`, `00C00100H` |
 
 The 256 × 192 source window begins at VRAM X=256. It is disjoint from the
 texture at (64,64) and CLUT at (64,128). After the upload and GPU-idle wait,
@@ -919,13 +922,13 @@ itself a displayed-frame acknowledgement.
 
 With exclusive GP0 ownership and no DMA read owner, send each following header
 as three ordered GP0 writes. Wait for GPUSTAT bit 27 (`08000000H`) before reading
-the transaction's data at `0801023cH`. Drain its full count before sending the
+the transaction's data at `0801023CH`. Drain its full count before sending the
 next header.
 
 | Storage | GP0 header words, in order | Expected DATA reads |
 |---|---|---|
-| Texture | `c0000000H`, `00400040H`, `00060004H` | 12 words, equal to `ram_output[3..14]` |
-| CLUT | `c0000000H`, `00800040H`, `00010010H` | 8 words, equal to `ram_output[18..25]` |
+| Texture | `C0000000H`, `00400040H`, `00060004H` | 12 words, equal to `ram_output[3..14]` |
+| CLUT | `C0000000H`, `00800040H`, `00010010H` | 8 words, equal to `ram_output[18..25]` |
 
 Each returned word contains two raw storage halfwords, first in bits 15:0.
 The last read clears READY. Readback returns the stored halfwords independently of display selection.
