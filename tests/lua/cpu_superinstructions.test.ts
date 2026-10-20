@@ -12,6 +12,7 @@ import {
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import {
 	createTestSystemCpu,
 	linkRawTestSystemBlua32,
@@ -19,7 +20,7 @@ import {
 } from '../helpers/blua32';
 
 function makePairImage(loop = false): TestBlua32Image {
-	const code = new Uint8Array(10 * INSTRUCTION_BYTES);
+	const code = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.SHL, 2, 0, 1, 0);
@@ -63,6 +64,10 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(fusedCpu.readFramePc(0), entryPc + 4 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.lastPc, entryPc + 3 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.readFrameRegister(0, 3), 3);
+	assert.equal(
+		fusedCpu.rootThread.frames[0].decodedPage!.dispatchOps[((entryPc + 2 * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2],
+		DecodedDispatchOp.FusedShlBxor,
+	);
 
 	assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 	assert.equal(cpu.readFramePc(0), entryPc + 3 * INSTRUCTION_BYTES);
@@ -75,6 +80,31 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(cpu.readFrameRegister(0, 5), 8);
 	assert.equal(cpu.readFrameRegister(0, 6), 4);
 	assert.equal(cpu.readFrameRegister(0, 7), 5);
+	const page = cpu.rootThread.frames[0].decodedPage!;
+	for (const [word, op] of [[2, DecodedDispatchOp.FusedShlBxor], [4, DecodedDispatchOp.FusedAddShl], [6, DecodedDispatchOp.FusedShrBxor]]) {
+		assert.equal(page.dispatchOps[((entryPc + word * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2], op);
+	}
+});
+
+test('warmed fused dispatch does not repeat mapped-page binding or instruction reads', () => {
+	const image = makePairImage(true);
+	const { cpu, memory } = createTestSystemCpu(image);
+	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
+	let bindings = 0;
+	let reads = 0;
+	const bindMappedPage = memory.bindMappedPage.bind(memory);
+	const readMappedBusU32BE = memory.readMappedBusU32BE.bind(memory);
+	memory.bindMappedPage = (address, signals, out) => {
+		bindings += 1;
+		bindMappedPage(address, signals, out);
+	};
+	memory.readMappedBusU32BE = (address, signals, faultAccess) => {
+		reads += 1;
+		return readMappedBusU32BE(address, signals, faultAccess);
+	};
+	assert.equal(cpu.runUntilDepth(0, 900), RunResult.Yielded);
+	assert.equal(bindings, 0);
+	assert.equal(reads, 0);
 });
 
 test('instrumented dispatch observes the second instruction of a normally fused pair', () => {

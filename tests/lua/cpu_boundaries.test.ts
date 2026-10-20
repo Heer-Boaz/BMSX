@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import { Memory } from '../../machine/ts/machine/memory/memory';
 import { createDecodedInstructionPage, DecodedDispatchOp } from '../../machine/ts/machine/cpu/execution_image';
 import { type Value, valueIsString } from '../../machine/ts/machine/cpu/value';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
-import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
 
 function returnImage(op = OpCode.RET, a = 0, b = 1, c = 0) {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
@@ -43,6 +50,80 @@ test('zero-count LOADNIL neither writes a slot nor extends the frame top', () =>
 	const { cpu } = createTestSystemCpu(image);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.getFrameRegisterCount(0), 0);
+});
+
+test('numeric lookahead cannot take a successor fetch fault before current effects and budget', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text,
+		functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }, { firstWord: 1, wordCount: 1 }],
+		exceptionFunctionIndex: 1,
+	});
+	// Also exercise a partial backing page: cacheability does not guarantee a readable successor.
+	for (const ramBytes of [PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes - 16]) {
+		for (const [op, expected] of [[OpCode.ADD, 4], [OpCode.SHL, 6], [OpCode.SHR, 1]]) {
+			for (const wideSuccessor of [false, true]) {
+				for (const dispatch of ['normal', 'observe-current', 'observe-successor', 'instrumented']) {
+					for (const warm of [false, true]) {
+						const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, ramBytes);
+						const irq = new IrqController(memory);
+						const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
+						cpu.reset();
+						const faultAddress = RAM_BASE + ramBytes;
+						const currentPc = faultAddress - (wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES;
+						const successorPc = currentPc + INSTRUCTION_BYTES;
+						const instructions = new Uint8Array((wideSuccessor ? 2 : 1) * INSTRUCTION_BYTES);
+						writeInstruction(instructions, 0, op, 2, 0, 1);
+						if (wideSuccessor) writeInstruction(instructions, 1, OpCode.WIDE, 0, 0, 0);
+						memory.writeBytes(currentPc, instructions);
+						const functionAddress = image.symbols.functionAddresses[0];
+						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
+						const registers = cpu.rootThread.frames[0].registers;
+						registers.setNumber(0, 3);
+						registers.setNumber(1, 1);
+						let observations = 0;
+						if (dispatch === 'observe-current' || dispatch === 'observe-successor') {
+							cpu.setInstructionObserver({
+								points: [new Set([dispatch === 'observe-current' ? currentPc : successorPc]), new Set(), new Set()],
+								observe: () => { observations += 1; },
+							});
+						}
+						if (warm) {
+							cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+							assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+							cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
+							observations = 0;
+						}
+						cpu.setExecutionHook(dispatch === 'instrumented' ? () => false : null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+						registers.setNumber(2, -1);
+						const faultSequence = memory.readBusFaultSequence();
+						assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+						assert.equal(cpu.readFrameRegister(0, 2), expected);
+						assert.equal(cpu.readFramePc(0), successorPc);
+						assert.equal(cpu.lastPc, currentPc);
+						assert.equal(cpu.instructionBudgetRemaining, 0);
+						assert.equal(cpu.getFrameDepth(), 1);
+						assert.equal(memory.readBusFaultSequence(), faultSequence);
+						assert.equal(observations, dispatch === 'observe-current' ? 1 : 0);
+						assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+						assert.equal(cpu.readFrameRegister(0, 2), expected);
+						assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+						assert.equal(cpu.readEpcWord(), successorPc);
+						assert.equal(cpu.readBadAddressWord(), 0);
+						assert.equal(cpu.instructionBudgetRemaining, 0);
+						assert.equal(cpu.getFrameDepth(), 2);
+						assert.equal(memory.readBusFaultSequence(), faultSequence + 1);
+						assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+						assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), faultAddress);
+						assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+						assert.equal(observations, dispatch === 'observe-current' ? 1 : 0);
+					}
+				}
+			}
+		}
+	}
 });
 
 test('all scalar memory instructions decode reserved kinds into an architectural exception', () => {

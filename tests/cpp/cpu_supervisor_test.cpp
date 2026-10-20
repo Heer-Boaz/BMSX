@@ -126,7 +126,7 @@ auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 
 auto makeDecodedPairSystemImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(10u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(bmsx::MAPPED_PAGE_BYTE_SIZE);
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
@@ -627,6 +627,12 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 	require(
 		bmsx::asNumber(fused.cpu.readFrameRegister(0, 3)) == 3.0,
 		"fused pair commits its second numeric result"
+	);
+	require(
+		fused.cpu.activeThread()->frames[0]->decodedPage->words[
+			((entryPc + 2u * bmsx::INSTRUCTION_BYTES) & bmsx::MAPPED_PAGE_BYTE_MASK) >> 2
+		].dispatchOp == static_cast<bmsx::u8>(bmsx::DecodedDispatchOp::FusedShlBxor),
+		"fully backed lookahead retains fused dispatch"
 	);
 
 	CpuTestMachine budgeted(makeDecodedPairSystemImage());

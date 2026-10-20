@@ -370,9 +370,9 @@ fetch PC is the instruction start, including the prefix address when the body
 read fails. Fetch exception entry has a one-cycle charge; an unfetched body is
 not dispatched with its nominal instruction cost.
 
-Selected numeric instruction sequences can read and decode a successor before
-the current instruction executes. A fault on that read can enter the fetch
-exception. Do not assume that only the current instruction has been fetched.
+In ordinary sequential execution, an instruction's effects precede a fault
+fetching the following instruction. The completed instruction's effects remain
+in place; the saved fetch PC identifies the instruction whose fetch failed.
 
 Conditional-skip instructions decode the next instruction's full width and
 skip that whole instruction without executing its handler or charging its

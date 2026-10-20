@@ -1407,6 +1407,17 @@ export class CPU implements MappedPageInvalidator {
 				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 				return true;
 			}
+			// Lookahead may inspect only fully backed memory, never a faulting bus access.
+			// The last-word exclusion above keeps a WIDE body in that same backing page.
+			const binding = this.mappedPageBinding;
+			this.memory.bindMappedPage(
+				(nextPc & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
+				this.executionBusSignals,
+				binding,
+			);
+			if (binding.readBytes === null) {
+				return true;
+			}
 			if (!this.decodeInstruction(
 				frame,
 				nextPage,

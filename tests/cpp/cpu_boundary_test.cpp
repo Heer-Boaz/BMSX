@@ -38,9 +38,9 @@ struct CpuMachine {
 	ExecutionAddressSpace executionAddressSpace;
 	CPU cpu;
 
-	explicit CpuMachine(test::Blua32TestImage image)
+	explicit CpuMachine(test::Blua32TestImage image, u32 ramBytes = PSX_MACHINE_SPEC.ramBytes)
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
-		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, ramBytes)
 		, irq(memory), executionAddressSpace(memory), cpu(memory, irq, executionAddressSpace) {
 		cpu.reset();
 	}
@@ -70,6 +70,78 @@ void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
 	require(machine.cpu.getFrameRegisterCount(0) == 0, "zero LOADNIL does not extend top");
+}
+
+void successorFetchOrdering() {
+	auto image = returnImage(OpCode::K1, 0, 0, 0);
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions[0].maxStack = 3;
+	image.functions.push_back({.firstWord = 1, .wordCount = 1});
+	image.exceptionFunctionIndex = 1;
+	// A partial backing page proves cacheability is not a readable-successor capability.
+	for (const u32 ramBytes : {PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes - 16u}) {
+		for (const auto [op, expected] : {std::pair{OpCode::ADD, 4.0}, {OpCode::SHL, 6.0}, {OpCode::SHR, 1.0}}) {
+			for (const bool wideSuccessor : {false, true}) {
+				for (int dispatch = 0; dispatch < 4; ++dispatch) {
+					for (const bool warm : {false, true}) {
+						CpuMachine machine(image, ramBytes);
+						auto& cpu = machine.cpu;
+						const u32 faultAddress = RAM_BASE + ramBytes;
+						const u32 currentPc = faultAddress - (wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES;
+						const u32 successorPc = currentPc + INSTRUCTION_BYTES;
+						std::vector<u8> instructions((wideSuccessor ? 2u : 1u) * INSTRUCTION_BYTES);
+						writeInstruction(instructions, 0, static_cast<u8>(op), 2, 0, 1);
+						if (wideSuccessor) writeInstruction(instructions, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+						machine.memory.writeBytes(currentPc, instructions.data(), instructions.size());
+						const u32 functionAddress = machine.rom.functionAddresses[0];
+						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
+						Value* registers = cpu.activeThread()->frames[0]->registers;
+						registers[0] = valueNumber(3.0);
+						registers[1] = valueNumber(1.0);
+						int observations = 0;
+						if (dispatch == 1 || dispatch == 2) {
+							InstructionObserverBinding observer;
+							observer.points[0].insert(dispatch == 1 ? currentPc : successorPc);
+							observer.observe = [](void* state, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(state); };
+							observer.context = &observations;
+							cpu.setInstructionObserver(std::move(observer));
+						}
+						if (warm) {
+							cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+							require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "warm current instruction consumes its grant");
+							cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
+							observations = 0;
+						}
+						if (dispatch == 3) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+						else cpu.setExecutionHook({});
+						registers[2] = valueNumber(-1.0);
+						const u32 faultSequence = machine.memory.readBusFaultSequence();
+						require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "current instruction consumes its own grant");
+						require(asNumber(cpu.readFrameRegister(0, 2)) == expected, "current numeric result precedes successor fault");
+						require(cpu.readFramePc(0) == successorPc, "current instruction advances to successor");
+						require(cpu.lastPc == currentPc, "last PC identifies current instruction");
+						require(cpu.instructionBudgetRemaining == 0, "current instruction retains its base charge");
+						require(cpu.getFrameDepth() == 1, "successor exception does not enter before current instruction");
+						require(machine.memory.readBusFaultSequence() == faultSequence, "speculative lookahead issues no faulting bus read");
+						require(observations == (dispatch == 1 ? 1 : 0), "only fetched current instruction is observed");
+						require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "successor fetch consumes its own grant");
+						require(asNumber(cpu.readFrameRegister(0, 2)) == expected, "successor fault retains current result");
+						require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, "successor fetch records IBE");
+						require(cpu.readEpcWord() == successorPc, "successor fetch records instruction-start EPC");
+						require(cpu.readBadAddressWord() == 0u, "IBE retains BadAddress");
+						require(cpu.instructionBudgetRemaining == 0, "fetch fault has one-cycle charge");
+						require(cpu.getFrameDepth() == 2, "successor fetch enters exception frame");
+						require(machine.memory.readBusFaultSequence() == faultSequence + 1u, "architectural successor fetch issues its bus read");
+						require(machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "successor bus fault retains code");
+						require(machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == faultAddress, "successor bus fault retains physical address");
+						require(machine.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32), "successor bus fault retains access width");
+						require(observations == (dispatch == 1 ? 1 : 0), "unfetched successor is never observed");
+					}
+				}
+			}
+		}
+	}
 }
 
 void reservedMemoryKinds() {
@@ -222,7 +294,7 @@ void bootAddressWrap() {
 
 int main() {
 	try {
-		loadKrIndices(); zeroLoadNil(); reservedMemoryKinds(); zeroStackReuse();
+		loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;
