@@ -904,7 +904,14 @@ For download, program the offset before selecting DMA_READ. Filling the FIFO cos
 
 A nonzero DMA count sets channel BUSY at START. Zero count reaches DONE at START without accessing DATA. Neither DONE nor TRANSFER_BUSY = 0 proves that the intended RAM bytes received valid data. An admitted DMA block is not aborted by a system bus fault and can still finish with DONE and its IRQ after accesses to an unmapped or read-only destination.
 
-Use aligned word accesses for these ports. I/O byte writes, halfword accesses and unaligned word accesses raise system bus fault UNALIGNED_IO = 2 without performing the intended port operation. An aligned byte read invokes the word read and returns its low eight bits; it does not select a byte lane. STATUS rejects word writes with READ_ONLY = 3. These system bus faults are distinct from the APU fault latch.
+Use aligned word accesses for these ports. The
+[CPU alignment check](memory.md#sec-memory-width-and-alignment) precedes mapped
+I/O access. After that check, I/O byte writes, halfword accesses and accesses
+to a non-word-aligned I/O slot raise system bus fault UNALIGNED_IO = 2 without
+performing the intended port operation. An aligned byte read invokes the word
+read and returns its low eight bits; it does not select a byte lane. STATUS
+rejects word writes with READ_ONLY = 3. These system bus faults are distinct
+from the APU fault latch.
 
 Reset clears the programmed transfer words, offset, latch, FIFO contents/count and timing state, selects STOP, cancels service and deasserts both request lines. Reset clears sample RAM as well; ordinary STOP and mode changes preserve it.
 
