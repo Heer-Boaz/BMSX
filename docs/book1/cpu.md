@@ -41,6 +41,59 @@ its subsequent completion. Wait for that condition before reusing live input or
 output storage. [[Memory](memory.md#sec-memory-device-specific-buffer-lifetimes)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Device-specific buffer lifetimes”]{.content-visible when-format="pdf"} describes
 these lifetimes across DMA, geometry, drawing and sound.
 
+### From stored bytes to a frame value {#sec-cpu-from-stored-bytes-to-a-frame-value}
+
+Consider four data bytes at consecutive addresses:
+
+| Byte address | `p` | `p+1` | `p+2` | `p+3` |
+|---|---|---|---|---|
+| Stored byte | `78H` | `56H` | `34H` | `12H` |
+
+Let R1 hold the numeric address `p`, four-byte aligned in readable data storage,
+and reserve R0 through R2 in the current frame. The following two instructions
+read from the same starting address:
+
+| Instruction | Meaning of its operands | Result |
+|---|---|---|
+| `LOAD_MEM 0,1,2` | Destination R0; address from R1; format 2, unsigned little-endian halfword | R0 receives Number 22136 (`5678H`) |
+| `LOAD_MEM 2,1,3` | Destination R2; address from R1; format 3, unsigned little-endian word | R2 receives Number 305419896 (`12345678H`) |
+
+The address selects the bytes; the format selects how many are read and how
+they become a Number. R0 and R2 are both value slots, not permanently typed
+halfword and word registers. Neither load changes R1 or the stored bytes.
+Likewise, a scalar store converts a numeric value to its selected storage
+representation; it does not write the complete language value into memory.
+
+These are the same bytes used by `halves[0]` and `*whole` in the
+[worked computation](#sec-cpu-worked-computation-numbers-words-and-stored-bytes).
+Those BLua pointer types select the memory operation; they do not give the
+destination value slot a different numeric kind. The instruction encoding
+below carries the destination, address selection and format as operands A, B
+and C. The [memory reference](#sec-cpu-memory-transfers) defines all formats,
+alignment rules and fault effects.
+
+### Following a closure call {#sec-cpu-following-a-closure-call}
+
+A call changes both the current instruction stream and the current register
+frame. Follow a call to the function whose record is at `10001230H`, using R3
+for its closure:
+
+| Step | Caller state | Execution effect |
+|---|---|---|
+| Construct the function's closure in R3 | R3 holds the callable value | Execution continues in the caller; the callee has not started |
+| Execute `CALL 3,1,1` | R3 supplies that closure; B=1 supplies no arguments; C=1 requests one result | A new frame starts at the code address in the function record |
+| Return normally from that callee | Its first result replaces the caller's R3, or nil is supplied if it produced none | The caller resumes at the instruction following the CALL |
+
+The callee uses its own R0 and subsequent slots. Its function-record address
+identifies the entry metadata, while its PC identifies the instructions being
+executed. The caller retains its next PC during the call; that continuation is
+not an argument or an ordinary returned value. Constructing the closure,
+entering the function and receiving its results are therefore separate steps.
+The [call reference](#sec-cpu-calling-and-returning-values) defines argument
+placement, variable result counts and other return routes. The
+[encoding example](#sec-cpu-linkage-operands-and-encoding-examples) below turns
+this same R3 call sequence into instruction bytes.
+
 
 ## Instruction words and execution resources {#sec-cpu-instruction-words-and-execution-resources}
 
@@ -155,6 +208,19 @@ raw B/C field. Merely adding a zero-filled prefix to a narrow negative operand
 does not preserve its sign. A prefix word uses opcode zero, its `a/b/c` fields
 are `pA/pB/pC`, and its ignored extension byte can be zero.
 
+The [two loads above](#sec-cpu-from-stored-bytes-to-a-frame-value) use ABC with
+opcode `31H`. Their operands fit the low fields, so EXT is zero and no WIDE
+prefix is needed:
+
+| Instruction | A | B | C | Instruction word | Code bytes, in address order |
+|---|---:|---:|---:|---|---|
+| `LOAD_MEM 0,1,2` | 0 | 1 | 2 | `00C40042H` | `00 C4 00 42` |
+| `LOAD_MEM 2,1,3` | 2 | 1 | 3 | `00C42043H` | `00 C4 20 43` |
+
+The instruction bytes describe which operation to perform. The data bytes
+`78 56 34 12` remain at `p` in their little-endian data order. Encoding or
+fetching either instruction does not change that stored representation.
+
 ### Linkage operands and encoding examples {#sec-cpu-linkage-operands-and-encoding-examples}
 
 A known function target still uses `CLOSURE` followed by `CALL`; `CALL` has no
@@ -178,8 +244,10 @@ An address stored **as a Number constant's payload** is still an address and
 must be distinguished from the instruction's index selecting that constant.
 The Memory chapter defines the referenced records and their address fields.
 
-All numbers in the following table are hexadecimal except register numbers
-and argument/result counts. Spaces separate actual code bytes:
+The first three rows below encode the R3 closure and call introduced in
+[Following a closure call](#sec-cpu-following-a-closure-call). All numbers in
+the table are hexadecimal except register numbers and argument/result counts.
+Spaces separate actual code bytes:
 
 | Operation | Code bytes | Decoded operands |
 |---|---|---|

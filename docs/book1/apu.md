@@ -51,11 +51,96 @@ voice path reads or generates samples, applies interpolation, filtering and
 gain, and contributes to the stereo mixer. The separate transfer path supplies
 sample RAM.
 
+## From sample data to a playing voice {#sec-apu-from-sample-data-to-a-playing-voice}
+
+A **source** supplies the waveform; a **voice** is one playback of it. The
+source description identifies its bytes, format and source-time scale. The
+voice adds a current position, playback-rate multiplier, gain and optional
+filter. A slot holds that voice. Two slots can use the same source while
+playing different positions, pitches or gains.
+
+A channel **sample** is one amplitude value at one instant. A **source frame**
+contains the channel samples for that instant: one for mono, or a left/right
+pair for stereo. A mono PCM16 frame therefore occupies two bytes; a stereo
+PCM16 frame occupies four. Frame counts, start positions and loop bounds count
+these source-time positions, not individual channel samples or bytes.
+
+An **output frame** is the stereo result produced by the mixer at 44,100
+frames/s. Its cadence is common to all voices. A voice's source rate says how
+quickly its cursor travels through source frames. When a cursor lies between
+stored frames, the APU interpolates their samples for the current output
+frame. A mono source supplies the same sample to both output channels.
+
+### Make the PCM example repeat at 440 Hz {#sec-apu-make-the-pcm-example-repeat-at-440-hz}
+
+The [PCM example below](#sec-apu-start-a-pcm-loop-or-square-voice) stores a
+waveform whose first sixteen mono frames form one cycle. Its source sample
+values begin at zero, reach +8192 at frame 4, return to zero at frame 8, and
+reach −8192 at frame 12. The declaration contains that cycle twice: 32 frames
+and 64 bytes in total.
+
+To sustain a tone, repeat the first cycle. Choose a loop beginning at frame 0
+and ending just before frame 16, with playback starting at frame 0. At unity
+rate, a source rate of 7040 frames/s carries the cursor through this sixteen-frame
+cycle 440 times per second:
+
+```text
+waveform cycle rate = 7040 source frames/s ÷ 16 source frames/cycle
+                    = 440 cycles/s
+```
+
+The loop repeats frames 0–15; the end bound 16 is excluded. The complete source
+still contains 32 frames. Its byte extent, declared frame count and loop length
+describe different things, even though all are needed for this one voice.
+
+RATE_STEP_Q16 multiplies the source-time rate. Unity uses the 7040-frame/s
+rate as programmed; a multiplier of two traverses the loop twice as quickly.
+This changes the tone's pitch, not the 44,100-frame/s output clock. For a
+nonlooped sound, faster traversal also shortens playback. The exact cursor and
+remainder arithmetic is given under
+[Source phase, rate and duration](#sec-apu-source-phase-rate-and-duration).
+
+GAIN_Q12 multiplies the voice's sample amplitudes before mixing. Choose a gain
+of one half for this voice. This halves its contribution to the mix without
+changing pitch or duration; it is an amplitude ratio, not a statement about
+perceived loudness. Leave the filter disabled for the first example.
+
+The choices for the PCM voice are therefore:
+
+| Choice | Meaning for this sound |
+|---|---|
+| Mono PCM16, 32 source frames | 32 signed channel samples, occupying 64 bytes |
+| Source rate 7040 frames/s; rate multiplier 1 | Traverse source time at 7040 frames/s |
+| Start 0, loop [0,16) | Repeat the first sixteen-frame waveform cycle |
+| Gain 1/2; filter disabled | Half-amplitude contribution without filtering |
+| Slot 2 | Keep this voice and its cursor separate from the other slots |
+
+### Turn the choices into a PLAY command {#sec-apu-turn-the-choices-into-a-play-command}
+
+Source and playback settings share a 21-word **staging bank**. Writing it
+prepares a command; it does not start or change a voice by itself. Describe
+the source, choose slot 2 and prepare the loop, rate and gain, then write PLAY
+to CMD. That final write captures the complete description into the command
+FIFO. At execution, PLAY binds the source and installs the captured settings
+in slot 2. The slot then supplies samples at the output-frame cadence.
+
+The stored rate and gain have different scales. Unity rate is 65536
+(`00010000H`) in RATE_STEP_Q16. Unity gain is 4096 (`00001000H`) in GAIN_Q12,
+so the chosen half gain is 2048 (`00000800H`). Loop bounds and START_SAMPLE
+remain ordinary source-frame indices. These are the values carried into the
+complete staging sequence below.
+
+The square alternative generates its sample instead of reading PCM bytes.
+One phase cycle spans one source frame, so it uses source rate 440 and loop
+[0,1) for the same 440-cycle/s phase rate. Its duty setting chooses the positive
+part of that phase cycle. The square column below uses one-half duty and
+one-quarter gain; it needs no sample-memory transfer.
+
 ## Programming sequence {#sec-apu-programming-sequence}
 
 First choose where the samples will reside and how they will be decoded.
-ROM samples can play in place. Samples produced or modified in RAM must be
-loaded into private sample RAM before playback.
+ROM samples can play in place. Samples prepared in main RAM or card RAM must
+be loaded into private sample RAM before playback.
 
 | Starting material | Hardware route to playback |
 |---|---|
@@ -69,57 +154,73 @@ PCM16 respectively; other values select PCM8. SOURCE_DATA_OFFSET counts bytes
 within the bound region, whereas START_SAMPLE and loop bounds count source
 frames.
 
-1. **Own the required resources.** Reserve a playback slot and serialize users
-   of the shared staging bank. Own the shared transfer ports for a sample-RAM
-   transfer; for DMA, also reserve the chosen system-DMA channel. Either channel
-   can supply or drain the APU FIFO with the same capability. Finish earlier
-   owned transfers before reprogramming their resources.
-2. **Prepare the sample storage.** TRANSFER_ADDRESS programs a moving RAM byte
-   offset from bits 18:2, not a playback source address. Offset zero corresponds
-   to source address `40000000H`; readback retains the programmed word rather
-   than following transfer progress. MANUAL_WRITE CPU stores through
-   TRANSFER_DATA write RAM directly. DMA_WRITE and DMA_READ instead use the
-   sixteen-word sample-transfer FIFO, a fixed TRANSFER_DATA endpoint and the
-   corresponding APU_WRITE or APU_READ block request.
-3. **Separate DMA transport from RAM commit.** Keep an upload's DMA source
-   unchanged until channel DONE, then separately wait for
-   STATUS.TRANSFER_BUSY to clear before playback or a mode change. DONE reports
-   the final system-DMA accesses, not the final sample-RAM commit. For download,
-   channel DONE marks receipt of the requested words; select transfer STOP
-   afterward to discard unwanted prefetch. The transfer unit has no separate
-   completion IRQ. See [Sample RAM transfer](#sec-apu-sample-ram-transfer).
-4. **Capture coherent configuration.** Assemble the 21-word staging bank
-   before writing CMD. A recognized nonzero command captures all 21 words, restores
-   staging defaults and selects live bank zero. Check CMD_FREE before a burst
-   that must retain every command: the sixteen-entry command FIFO replaces
-   its oldest entry when full. It is separate from the sample-transfer FIFO.
-   Source extents and offsets are bytes; start positions and loop bounds are
-   source frames. Unity rate is `00010000H`, unity gain `00001000H`.
-5. **Distinguish capture, execution and live access.** PLAY binds at execution,
-   not capture; keep the intended cartridge socket selected until then.
-   Reselect through staging SLOT after capture before using the selected-slot
-   window. Its stores change that bank directly, while other staging stores
-   only prepare a command. A live edit is not an ordered follow-up to a
-   still-queued PLAY. Use PLAY for a coherent source replacement rather than
-   consecutive live source-field stores.
-6. **Retain playback storage for the voice's lifetime.** PLAY does not copy its
-   sample payload, and pause retains the voice and its source requirement.
-   Natural ends and completed nonzero fades publish SLOT_ENDED; an immediate
-   zero-fade STOP_SLOT does not. The APU retains only the latest end event,
-   not one FIFO entry per end. Its central interrupt request is distinct from
-   DMA completion, and an interrupt wakeup alone does not identify which
-   condition completed. See [End events and interrupts](#sec-apu-end-events-and-interrupts).
+### Load changing sample data before PLAY {#sec-apu-load-changing-sample-data-before-play}
 
-The [worked download](#sec-apu-worked-download-requested-data-and-surplus-prefetch) shows the transfer-port sequence
-and the timing of DMA receipt and surplus prefetch.
+Suppose a program has assembled a new sound in main RAM and wants a voice to
+read it. SOURCE_ADDR cannot name that main-RAM buffer: first copy its bytes
+through TRANSFER_DATA into private sample RAM, then give PLAY the corresponding
+`40000000H + byte_offset` source address. CPU stores in MANUAL_WRITE mode write
+sample RAM directly. DMA uploads instead fill the transfer FIFO, from which
+the APU schedules RAM writes.
+
+At DMA DONE, the final words can still be in that FIFO. Starting playback then
+can make the voice read old sample-RAM bytes where the new sound's tail belongs.
+Changing transfer mode then can cancel the tail's pending write entirely. Keep
+the upload buffer unchanged until DMA DONE, then wait for
+STATUS.TRANSFER_BUSY to clear before issuing PLAY or changing mode. This second
+wait establishes that the final sample-RAM batch has committed. The
+[20-word upload timeline](#sec-apu-dma-transport-and-ram-commit-are-separate)
+shows the two completion points numerically.
+
+Downloads use the opposite direction. DMA DONE means the requested words have
+arrived in the destination, but the APU can have started another prefetch.
+Select transfer STOP after receipt to discard that surplus; waiting for a
+transfer-completion IRQ would not work because the transfer unit has none.
+The [worked download](#sec-apu-worked-download-requested-data-and-surplus-prefetch)
+shows the requested data and the surplus separately.
+
+### Submit the prepared voice {#sec-apu-submit-the-prepared-voice}
+
+1. **Choose the slot and source.** Select an idle slot when another voice must
+   be preserved. PLAY on an occupied slot replaces it. Make the sample bytes
+   available in ROM or finish loading them into sample RAM; a square generator
+   needs neither operation.
+2. **Prepare one complete command.** Write its source and playback settings to
+   staging, with SLOT identifying the target. Finish those writes before CMD.
+   Another routine must not interleave a different description: both routines
+   would be writing the same staging bank. Check CMD_FREE before a burst that
+   must preserve every command; a full sixteen-entry FIFO replaces its oldest
+   entry rather than waiting.
+3. **Issue PLAY and allow execution.** A recognized nonzero CMD captures all
+   21 words, restores staging defaults and selects live bank zero. PLAY binds
+   at execution, not capture, so keep the intended cartridge socket selected
+   until it executes. The starting example below shows its active-bit result;
+   inspect the fault words as well.
+4. **Keep later changes distinct.** Staging writes prepare the next command.
+   Selected-slot writes instead change a live bank: reselect through staging
+   SLOT after capture before using that window. They are not queued behind a
+   pending PLAY. Use another captured PLAY when a replacement source description
+   must take effect together.
+5. **Retain the source until the voice has stopped.** PLAY does not copy the
+   payload, and pause retains its source requirement. Natural ends and completed
+   nonzero fades publish SLOT_ENDED; an immediate zero-fade STOP_SLOT does not.
+   The latest-event registers and APU interrupt are distinct from DMA completion.
+   [End events and interrupts](#sec-apu-end-events-and-interrupts) gives the
+   overwrite and acknowledgement rules.
+
+The [source](#sec-apu-voice-sources-and-their-lifetime),
+[command](#sec-apu-commands-and-slot-ownership) and
+[transfer](#sec-apu-sample-ram-transfer) sections specify the full formats and
+write effects used by this sequence.
 
 ### Start a PCM loop or square voice {#sec-apu-start-a-pcm-loop-or-square-voice}
 
-These two configurations show the complete staging bank. Start with the
-selected slot idle, no queued commands, no outstanding
-APU fault, and exclusive ownership of the staging bank and that slot. No DMA
-or transfer-port operation is needed: PCM is read from cartridge ROM, while the
-square generator has no sample buffer.
+These two configurations encode the PCM and square choices explained above.
+They show the complete staging bank. Start with the selected slot idle, no
+queued commands and no outstanding APU fault; keep this staging sequence
+separate from other command preparation. No DMA or transfer-port operation is
+needed: PCM is read from cartridge ROM, while the square generator has no sample
+buffer.
 
 For the PCM case, place the following mono PCM16 samples in cartridge ROM.
 Let **A** be their mapped byte address; the declaration occupies 64 bytes.
@@ -855,6 +956,12 @@ The following controlled upload transfers 20 words. Before cycle 0, the address 
 Here, DMA DONE occurs at cycle 680, while final RAM commit occurs at cycle **132 + 512 + 36 + 128 = 808**. Switching to STOP at DMA DONE would cancel the tail's scheduled commit.
 
 ## Sample RAM transfer {#sec-apu-sample-ram-transfer}
+
+The transfer ports and FIFO form one shared path to sample RAM. Finish the
+previous transfer before reprogramming them for another operation. Either
+system-DMA channel can supply or drain this FIFO with the same capability;
+reserve the chosen channel while it uses the port. Keep sample-RAM ranges in
+use by existing voices separate from data being replaced for a new sound.
 
 ![Three transfer modes share the private sample RAM and one FIFO](figures/apu-transfer.svg){#fig-apu-transfer}
 

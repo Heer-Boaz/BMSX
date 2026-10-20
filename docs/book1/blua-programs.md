@@ -46,6 +46,59 @@ lookup tables and structured records. A storage name supplies its byte
 address. Field selection and indexing apply the declared layout to that
 address; scalar dereference reads or writes the selected bytes.
 
+Use addressed storage when an operation needs a byte address or a prescribed
+binary layout: for example, a transfer buffer, a record exchanged with a device,
+or a lookup table read by numeric offset. Ordinary locals and Tables hold
+language values instead. A Table's indexed values are not a declaration of
+consecutive bytes, and assigning a storage address to a local does not copy
+those bytes into the local.
+
+### Choosing a storage section {#sec-blua-programs-choosing-a-storage-section}
+
+`bss` reserves writable RAM that is cleared to zero during section initialization.
+`data` reserves writable RAM whose initial bytes are copied from the cartridge image.
+`rodata` places initialized bytes in the image itself.
+
+Choose BSS for scratch space and state that starts at zero, DATA for mutable
+state with an initial value, and RODATA for fixed lookup data. These are program
+storage sections: an ordinary function call does not allocate another copy or
+initialize them again.
+
+```lua
+bss scratch: u8[16]
+bss total: word
+data counter: word = 3
+rodata levels: u16[] = { 10, 20, 30 }
+rodata title: string = "ready"
+
+*total = *counter
+local previous = *counter
+*counter = previous + 1
+```
+
+After these operations, `previous` and the contents of `total` are 3, while
+the contents of `counter` are 4. The Number `previous` is a loaded value;
+`counter` and `total` name the byte addresses of the two stored words.
+`scratch` reserves 16 bytes; `levels` holds three consecutive two-byte values.
+
+A bare storage name, including `counter` or `total`, evaluates to its linked numeric address.
+Use `*counter` to load its scalar contents and `*counter = value` to store them.
+Assigning a new value directly to a `bss` or `data` name is rejected; the name is not a rebindable scalar variable.
+
+Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
+It precedes static module initializers and the entry routine.
+Locate writable program sections outside the installed firmware's RAM
+reservation. The standard placement puts program DATA after firmware BSS,
+then program BSS after DATA. Access declarations by their resolved addresses;
+fixed offsets from the start of RAM can overwrite firmware state. See
+[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}
+for the firmware footprint and placement rules.
+
+Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
+Two separate `u8` declarations therefore need not occupy adjacent bytes.
+Use one array or struct when the relative spacing of bytes matters.
+
+
 ### Declaration and expression reference {#sec-blua-programs-declaration-and-expression-reference}
 
 The following forms use lowercase placeholder names; source identifiers cannot contain uppercase letters.
@@ -94,45 +147,21 @@ counterparts. Sign extension must be explicit when a stored field represents
 a signed quantity. `word` holds a numeric register word, and `addr` holds a
 numeric address; select the target layout with an annotated view.
 
+To recover an eight-bit signed quantity, shift the loaded word left by 24 bits,
+then arithmetically right by 24. Use shifts of 16 for a sixteen-bit quantity;
+`raw | 0` gives the signed interpretation of a complete thirty-two-bit word.
+See [bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
+
+```lua
+bss delta: i8
+*delta = -3
+local raw = *delta                -- 253
+local signed = (raw << 24) >> 24  -- -3
+```
+
 A `string` field holds a constant reference. Its RODATA initializer selects a
 String constant, and a read returns the referenced value. It is separate from
 inline text bytes; use byte storage and an explicit decoder for encoded text.
-
-### Choosing a storage section {#sec-blua-programs-choosing-a-storage-section}
-
-`bss` reserves writable RAM that is cleared to zero during section initialization.
-`data` reserves writable RAM whose initial bytes are copied from the cartridge image.
-`rodata` places initialized bytes in the image itself.
-
-```lua
-bss scratch: u8[16]
-bss total: word
-data counter: word = 3
-rodata levels: u16[] = { 10, 20, 30 }
-rodata title: string = "ready"
-
-*total = *counter
-local previous = *counter
-*counter = previous + 1
-```
-
-A bare storage name, including `counter` or `total`, evaluates to its linked numeric address.
-Use `*counter` to load its scalar contents and `*counter = value` to store them.
-Assigning a new value directly to a `bss` or `data` name is rejected; the name is not a rebindable scalar variable.
-
-Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
-It precedes static module initializers and the entry routine.
-Locate writable program sections outside the installed firmware's RAM
-reservation. The standard placement puts program DATA after firmware BSS,
-then program BSS after DATA. Access declarations by their resolved addresses;
-fixed offsets from the start of RAM can overwrite firmware state. See
-[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Reserved and cartridge storage in main RAM”]{.content-visible when-format="pdf"}
-for the firmware footprint and placement rules.
-
-Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
-Two separate `u8` declarations therefore need not occupy adjacent bytes.
-Use one array or struct when the relative spacing of bytes matters.
-
 
 ### Initializer rules {#sec-blua-programs-initializer-rules}
 
@@ -226,6 +255,13 @@ A typed local view supplies a layout for an existing address. Declare it
 with `: *type_name`, then select fields or elements in the same way as for
 declared storage. The addressed bytes keep their existing lifetime and access
 permissions; creating the view reserves no storage and copies no record.
+
+For the stored `counter` above, `local current<const>: *word = counter`
+selects word accesses at that address. `*current` reads the stored 4;
+`&current` obtains its address without a read. The annotation selects how an
+access is made, while `<const>` prevents rebinding `current` to another address.
+It still permits `*current = 5`. The address, its stored value and the view's
+binding are three separate things.
 
 Indexing is **zero-based**.
 This is different from the one-based sequence keys used by the
@@ -337,6 +373,14 @@ String operations on that result. Only the typed-storage form yields a byte
 address; a String operand supplies neither a character-buffer address nor a
 numeric identifier.
 
+Postfix field selection, indexing and calls bind before unary `*` and `&`.
+These unary forms have the same precedence as unary `-`, `not`, `#` and `~`:
+exponentiation binds more tightly, while multiplication and the other binary
+arithmetic operators bind less tightly. Thus `*current + 4` adds four to the
+loaded value, and `&samples[0].weight` selects a field before taking its address.
+Use `(*current)^2` to square a loaded scalar rather than making the power
+expression the operand of the dereference.
+
 ### Named members with `->` {#sec-blua-programs-named-members-with}
 
 `base->member` is another named-member spelling alongside `base.member`.
@@ -367,6 +411,14 @@ to every operator.
 A module publishes either an ordinary value or static exports. Use an
 ordinary value for mutable state and replaceable function fields. Use static
 exports for named constants, storage addresses and directly resolved calls.
+
+This choice determines what an importer receives. An ordinary export can be
+retained, passed to other functions and changed through its runtime fields.
+A static namespace instead resolves named selections: a storage export gives
+its address, a constant gives its value, and a static function export supplies
+a call target. Importing a namespace does not create an object containing
+those exports. The import path names that interface, independently of the
+local name used for it.
 
 ### Choose the module mode {#sec-blua-programs-choose-the-module-mode}
 
@@ -429,6 +481,34 @@ Imports of an ordinary exported table read the same published root.
 Its fields remain runtime fields: replacing a function field changes what a later
 ordinary `module.field()` lookup calls. A const local naming that table does not
 turn the table into a compile-time namespace or freeze its fields.
+
+### Worked module linkage {#sec-blua-programs-worked-module-linkage}
+
+An ordinary module named `counter` can publish a mutable runtime object:
+
+```lua
+local counter = { value = 10 }
+function counter.advance(amount)
+    counter.value += amount
+    return counter.value
+end
+return counter
+```
+
+Its importer begins after that top-level initialization:
+
+```lua
+module<entry>
+local first = require('counter')
+local second = require('counter')
+local before = first.advance(2)
+local after = second.advance(3)
+```
+
+`before` is 12 and `after` is 15. Both imports select the same export, not two
+instances. Neither written import reruns the initializer. A dependency written
+inside a function is still initialized before entry; imports express dependency
+order rather than deferred loading.
 
 ### A const namespace is not a const local {#sec-blua-programs-a-const-namespace-is-not-a-const-local}
 
@@ -596,8 +676,8 @@ does not retain that RODATA protection; the storage section above distinguishes 
 
 An untyped numeric address is not a dereferenceable pointer. Do not replace `mem[address]` with
 `*address` when `address` has no compiled pointer type, and do not use `*0x08000000` as a raw memory
-access. Typed-pointer declarations, storage layout, and address views are specified in the [[Memory
-reference](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, “Memory and program storage”]{.content-visible when-format="pdf"}.
+access. Typed-pointer declarations, storage layout and address views are specified
+under [Typed storage, layouts, and address views](#sec-blua-programs-typed-storage-layouts-and-address-views).
 
 ### Compound assignment performs a read and a write {#sec-blua-programs-compound-assignment-performs-a-read-and-a-write}
 
@@ -659,6 +739,13 @@ operations, not an atomic update.
 The complete intrinsic operation set is `closure`, `trace`, and `trace_sink`. Use a direct dotted
 call on `blua32`; alias calls and colon-method calls do not provide intrinsic access. Unknown
 operation names are rejected.
+
+Use `closure` when a callable value must be formed from an existing function
+record. The two trace forms serve a different purpose: optional observation
+of program state. A subject identifies the observed object, a named channel
+selects the observation, and a bound sink receives the payload values. A
+compilation can retain selected channels or erase their statements and operand
+evaluation. Keep required program work outside these optional observations.
 
 #### `blua32.closure(function_address)` {#sec-blua-programs-blua32closurefunction_address}
 
@@ -1003,6 +1090,14 @@ These are ordinary public bindings. A program can change them; their initial pre
 
 Ordinary global values belong to a shared bank indexed by String names. This bank is separate from the system-global bank. It is not an ordinary Table, and accessing it is not Table indexing.
 
+Source-name resolution and the value in that bank are distinct. A bare global
+read is resolved before execution; an unknown bare name is a compilation error.
+Installed bindings and the program's global assignments or function declarations
+make names known for this resolution. A declaration can make the name known
+before its assignment executes; it does not supply the assigned value early.
+A String argument to `setglobal` writes the bank without declaring a source identifier. Use
+`getglobal` and `setglobal` for names chosen during execution.
+
 A previously unseen ordinary name begins with `nil`. When another program image registers the same ordinary name, it uses the existing shared binding; registering the name does not clear its value. Do not assume that moving between program images gives every name a new `nil` value.
 
 The BIOS installers described here do not install `_G` or `_ENV` as global-environment Tables. The installed environment therefore does not supply `_G[name]` or replacement of `_ENV` as its name-based access interface. This is an installation statement, not an additional source-identifier or loader-environment rule.
@@ -1081,32 +1176,3 @@ text language, environments, external bindings and errors.
 The BIOS monitor maintains its own session environment. Monitor variables
 and loaded-chunk environments are separate from the ordinary global bank;
 use the appropriate interface for the names being read or written.
-
-
-## Worked module linkage {#sec-blua-programs-worked-module-linkage}
-
-An ordinary module named `counter` can publish a mutable runtime object:
-
-```lua
-local counter = { value = 10 }
-function counter.advance(amount)
-    counter.value += amount
-    return counter.value
-end
-return counter
-```
-
-Its importer begins after that top-level initialization:
-
-```lua
-module<entry>
-local first = require('counter')
-local second = require('counter')
-local before = first.advance(2)
-local after = second.advance(3)
-```
-
-`before` is 12 and `after` is 15. Both imports select the same export, not two
-instances. Neither written import reruns the initializer. A dependency written
-inside a function is still initialized before entry; imports express dependency
-order rather than deferred loading.

@@ -13,11 +13,66 @@ channel feed compressed words into it. CPU reads or an output DMA channel
 remove the generated packets. Route the output to GPU GP0 for an upload, or to
 RAM for later use. The GPU performs the resulting VRAM writes.
 
+## From compressed patterns to upload words {#sec-imgdec-from-compressed-patterns-to-upload-words}
+
+A texture can contain runs of the same value or a pattern that appears more
+than once. Instead of storing every word of such a run, the input stream can
+describe how to reconstruct it. IMGDEC works on complete words: a **literal**
+copies supplied words, a **repeat** emits one supplied value several times,
+a **back-reference** copies earlier decoded words, and a **zero** run emits
+words with all bits clear. The interpretation of their pixels and palette entries belongs to
+the GPU, not to the decompression operation.
+
+Follow the texture in the [nineteen-word worked stream](#sec-imgdec-worked-stream-19-input-words-26-output-words).
+Let A be `11112222H`, B be `33334444H`, and R be `55556666H`. Its first twelve
+payload words are produced as follows:
+
+| Input operation | Words added to the texture payload | Payload words so far |
+|---|---|---:|
+| Literal: supply A and B | A, B | 2 |
+| Repeat: supply R, repeat twice | R, R | 4 |
+| Back-reference: copy four words from four positions back | A, B, R, R | 8 |
+| Zero: supply four zero words | 0, 0, 0, 0 | 12 |
+
+The back-reference uses the already decoded `A, B, R, R`, not positions in the
+compressed input. These twelve words form the texture payload. A final literal
+supplies eight palette payload words. The stream header declares those two
+decoded lengths, T=12 and C=8; token words describe the runs that produce them.
+Their exact encoding is given under [Compressed word stream](#sec-imgdec-compressed-word-stream).
+
+The output must also tell the GPU what to do with those payloads. IMGDEC puts
+a three-word upload header before the texture and another before the palette.
+The programmed texture destination, texture size and palette destination supply
+the relevant header fields. These are GPU packet settings, not addresses from
+which IMGDEC fetches the input bytes.
+
+This gives three different counts for the same image:
+
+| Count | Worked stream | What the programmer uses it for |
+|---|---:|---|
+| Compressed input | 19 words | INPUT_WORD_COUNT and the input transfer count |
+| Decoded payload | 12 + 8 = 20 words | Texture/palette endpoints and DECODED_WORD_COUNT |
+| Generated output | 3 + 12 + 3 + 8 = 26 words | The output transfer count, including both GPU headers |
+
+Draining only twenty output words would omit part of the palette packet, even
+though twenty payload words have been decoded. Likewise, submitting all nineteen
+input words does not establish that the GPU has received or processed the output.
+The programming sequence supplies an input producer and an output consumer,
+then observes the completion of each operation separately.
+
+## Programming resources {#sec-imgdec-programming-resources}
+
 Input and output DMA can remain armed while decoding proceeds. The shared DMA
 controller serves one block at a time. Request lines regulate FIFO flow: missing input
 holds decoding, and a full output FIFO holds the next output batch. If the
 output remains blocked, input can fill in turn. A direct DATA-to-GP0 DMA block
 starts when both IMGDEC output and GPU write requests permit it.
+
+For a larger image, waiting for all input to finish before draining output can
+stop this flow: the output FIFO fills, decoding waits for output space, and
+the input FIFO can fill while decoding is held. The input producer then waits
+even though its stream is valid. Establish the output consumer before waiting
+for input completion so that both sides can make progress.
 
 The programming interface, compressed input, decoded payload, and output
 packets use 32-bit words. Input and output counts are word counts, not byte
@@ -66,70 +121,6 @@ the resulting packet stream for RAM storage or GPU processing.
    result. Inspect STATUS to separate DONE from FORMAT_FAULT and read exactly
    the expected output count. Completion is not a reason to make speculative
    extra DATA reads.
-
-## Programming IMGDEC in BLua {#sec-imgdec-programming-imgdec-in-blua}
-
-### Decode the worked stream into RAM {#sec-imgdec-decode-the-worked-stream-into-ram}
-
-The following nineteen-word stream produces twenty decoded payload words and
-six header words, for twenty-six output words. With IMGDEC and both DMA channels
-idle, arm output before starting the input and decoder. The fragments assume
-exclusive use of those units and the interrupt mask. Array indices address
-consecutive hardware registers.
-
-```lua
-rodata stream: word[19] = {
-    0x31444d49, 12, 8, 1, 0x11112222, 0x33334444,
-    0x40000001, 0x55556666, 0x80001003, 0xc0000003,
-    7, 0, 0x03e0001f, 0x7fff7c00, 0x42104210,
-    0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
-}
-bss ram_output: word[26]
-local dma0<const>: *word = 0x0800000c
-local dma1<const>: *word = 0x080103e4
-local decoder<const>: *word = 0x080103fc
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-
-*irq_mask = 0
-*irq_ack = 0x00000181
--- IMGDEC input count and raw GP0 texture/CLUT fields.
-decoder[0] = 19
-decoder[1] = 0x00400040
-decoder[2] = 0x00060004
-decoder[3] = 0x00800040
--- Output: fixed DATA -> incrementing RAM, IMGDEC_READ/FORCE.
-dma1[0] = 0x08010414
-dma1[1] = ram_output
-dma1[2] = 26
-dma1[3] = 0x00003c1a
-dma1[5] = 1
--- Input: incrementing ROM -> fixed DATA, FORCE/IMGDEC_WRITE.
-dma0[0] = stream
-dma0[1] = 0x08010414
-dma0[2] = 19
-dma0[3] = 0x00003d41
-dma0[5] = 1
-decoder[4] = 1
-while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do
-end
-while (decoder[5] & 1) ~= 0 do
-end
-*irq_ack = 0x00000181
-```
-
-After successful bus accesses, `ram_output` contains the 26 packet words in
-[the worked expansion](#sec-imgdec-worked-stream-19-input-words-26-output-words).
-IMGDEC STATUS is `02H`, INPUT_WORDS_RECEIVED is 19 and DECODED_WORD_COUNT is 20.
-Both DMA counts are zero and both DMA statuses are DONE. The three separate
-pending interrupt bits are raised even though delivery is masked.
-
-For this valid stream, both DMA channels complete normally. For a general
-loader, also monitor IMGDEC STATUS while waiting: FORMAT_FAULT withdraws its
-requests and can leave a channel BUSY. Stop or recover that transfer before
-reusing its resources. Inspect bus faults as well as decoder status.
-[DMA, Completion and interrupts](dma.md#sec-dma-completion-and-interrupts) gives the
-interrupt-driven completion sequence.
 
 ## Register reference {#sec-imgdec-register-reference}
 
@@ -630,6 +621,70 @@ The final literal supplies the eight CLUT payload words. The input has 3 header 
 | 23 | `0x03e003e0` | CLUT payload 5. |
 | 24 | `0x7c007c00` | CLUT payload 6. |
 | 25 | `0x7fff7fff` | CLUT payload 7. |
+
+## Programming IMGDEC in BLua {#sec-imgdec-programming-imgdec-in-blua}
+
+### Decode the worked stream into RAM {#sec-imgdec-decode-the-worked-stream-into-ram}
+
+The following nineteen-word stream produces twenty decoded payload words and
+six header words, for twenty-six output words. With IMGDEC and both DMA channels
+idle, arm output before starting the input and decoder. The fragments assume
+exclusive use of those units and the interrupt mask. Array indices address
+consecutive hardware registers.
+
+```lua
+rodata stream: word[19] = {
+    0x31444d49, 12, 8, 1, 0x11112222, 0x33334444,
+    0x40000001, 0x55556666, 0x80001003, 0xc0000003,
+    7, 0, 0x03e0001f, 0x7fff7c00, 0x42104210,
+    0x001f001f, 0x03e003e0, 0x7c007c00, 0x7fff7fff,
+}
+bss ram_output: word[26]
+local dma0<const>: *word = 0x0800000c
+local dma1<const>: *word = 0x080103e4
+local decoder<const>: *word = 0x080103fc
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+
+*irq_mask = 0
+*irq_ack = 0x00000181
+-- IMGDEC input count and raw GP0 texture/CLUT fields.
+decoder[0] = 19
+decoder[1] = 0x00400040
+decoder[2] = 0x00060004
+decoder[3] = 0x00800040
+-- Output: fixed DATA -> incrementing RAM, IMGDEC_READ/FORCE.
+dma1[0] = 0x08010414
+dma1[1] = ram_output
+dma1[2] = 26
+dma1[3] = 0x00003c1a
+dma1[5] = 1
+-- Input: incrementing ROM -> fixed DATA, FORCE/IMGDEC_WRITE.
+dma0[0] = stream
+dma0[1] = 0x08010414
+dma0[2] = 19
+dma0[3] = 0x00003d41
+dma0[5] = 1
+decoder[4] = 1
+while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do
+end
+while (decoder[5] & 1) ~= 0 do
+end
+*irq_ack = 0x00000181
+```
+
+After successful bus accesses, `ram_output` contains the 26 packet words in
+[the worked expansion](#sec-imgdec-worked-stream-19-input-words-26-output-words).
+IMGDEC STATUS is `02H`, INPUT_WORDS_RECEIVED is 19 and DECODED_WORD_COUNT is 20.
+Both DMA counts are zero and both DMA statuses are DONE. The three separate
+pending interrupt bits are raised even though delivery is masked.
+
+For this valid stream, both DMA channels complete normally. For a general
+loader, also monitor IMGDEC STATUS while waiting: FORMAT_FAULT withdraws its
+requests and can leave a channel BUSY. Stop or recover that transfer before
+reusing its resources. Inspect bus faults as well as decoder status.
+[DMA, Completion and interrupts](dma.md#sec-dma-completion-and-interrupts) gives the
+interrupt-driven completion sequence.
 
 ## Worked stream: overlapping history across the CLUT header {#sec-imgdec-worked-stream-overlapping-history-across-the-clut-header}
 

@@ -40,6 +40,122 @@ raw destination-word layout described below. Select a matching PCRTC layout
 for that storage. The [frame hand-off sequence](#sec-gpu-render-successive-frames)
 shows how to alternate drawing and display regions.
 
+## Draw one colored shape {#sec-gpu-draw-one-colored-shape}
+
+### Choose the geometry and its color source {#sec-gpu-choose-the-geometry-and-its-color-source}
+
+First decide which positions the primitive covers and where its colors come
+from. A triangle supplies three corners; a quad supplies four and is drawn as
+two triangles. A rectangle supplies an origin and dimensions for an
+axis-aligned image. Lines supply endpoints. These choices describe geometry.
+
+Color is a separate choice. Flat drawing uses one supplied RGB color; Gouraud
+drawing interpolates colors supplied at the vertices. Textured drawing also
+supplies U/V coordinates selecting pixels in local memory. It can use those
+texture colors directly or modulate them with the supplied RGB. The geometry,
+color source and blend request determine the packet, not just its corner count.
+@sec-gpu-choose-a-primitive-for-the-required-image gives the complete choices.
+
+Use the following small **opaque, flat, untextured quad** to follow a polygon
+from its positions to its stored result. Its RGB bytes are `(124,100,160)`:
+
+| Corner | Position | Place in the rectangular shape |
+|---|---|---|
+| V0 | `(40,24)` | Upper left |
+| V1 | `(46,24)` | Upper right |
+| V2 | `(40,26)` | Lower left |
+| V3 | `(46,26)` | Lower right |
+
+The GPU draws triangles `(V0,V1,V2)` and `(V2,V1,V3)` in that order. This
+ordering places the shared diagonal between V1 and V2. Under the state chosen
+below, the two triangles together cover X=40…45 on Y=24 and 25: twelve samples.
+The right edge X=46 and bottom edge Y=26 are excluded. The exact edge ownership
+and overlapping-quad cases are explained under
+@sec-gpu-predict-shared-edge-and-joint-writes.
+
+### Select the drawing destination {#sec-gpu-select-the-drawing-destination}
+
+Primitive positions and the drawing environment work together. The **drawing
+offset** moves the supplied positions; the **drawing area** limits which
+resulting pixels may be written. Changing the offset does not move those area
+limits. Neither control selects PCRTC's displayed window.
+
+For the quad, use zero offset and an inclusive drawing area from `(0,0)` to
+`(63,31)`. This admits all twelve samples. Permit both row parities and clear
+destination-mask checking and force-mask, so each covered pixel replaces its
+old word. Own this destination region and the GPU ports, keeping other writers
+and [firmware-reserved VRAM](memory.md#sec-memory-firmware-reservation-in-vram)
+out of the operation.
+
+Drawing writes the shared local-memory store in rows of 1024 sixteen-bit words.
+X advances along a row; Y selects its row. Thus the supplied drawing positions
+identify the words that will later be read as an image. For this untextured,
+opaque case, storage conversion discards each color byte's low three bits:
+
+```text
+RGB5 = (124 >> 3, 100 >> 3, 160 >> 3) = (15,12,20)
+stored word = 15 | (12 << 5) | (20 << 10) = 518FH
+```
+
+Bit 15 is clear. All twelve samples receive `518FH`; surrounding words retain
+their prior contents. The [local-memory organization](#sec-gpu-organize-local-memory-for-drawing-and-display)
+section explains the full address map and the distinction between a sixteen-bit
+pixel word and a thirty-two-bit command word.
+
+### Encode and submit the packet {#sec-gpu-encode-and-submit-the-packet}
+
+Opcode `28H` selects this opaque flat untextured quad. Its first word combines
+the opcode in bits 31:24 with R, G and B in the three low bytes:
+`28A0647CH`. Four position words follow in V0…V3 order, each with X in its low
+half and Y in its high half. These positive coordinates fit their signed
+eleven-bit fields. No texture or additional color words are needed.
+
+Start with GPU idle at a complete command boundary, no readback and no DMA
+ownership of either port. The following compact sequence supplies the drawing
+environment, then the five-word packet. All stores address the same GP0 port;
+GP1 is read as GPUSTAT for completion.
+
+```lua
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+*gp0 = 0xe1000400                    -- Both row parities; dither off.
+*gp0 = 0xe3000000                    -- Drawing-area top left (0,0).
+*gp0 = 0xe4000000 | 63 | (31 << 10) -- Inclusive bottom right (63,31).
+*gp0 = 0xe5000000                    -- Zero drawing offset.
+*gp0 = 0xe6000000                    -- No destination check or force-mask.
+*gp0 = 0x28a0647c                    -- Opaque flat quad, RGB=(124,100,160).
+*gp0 = 40 | (24 << 16)              -- V0
+*gp0 = 46 | (24 << 16)              -- V1
+*gp0 = 40 | (26 << 16)              -- V2
+*gp0 = 46 | (26 << 16)              -- V3 completes the packet.
+while (*gp1 & 0x04000000) == 0 do   -- GPUSTAT.IDLE, not display acceptance.
+end
+```
+
+The ordered stream makes the environment apply to this quad. Its final
+position completes the packet; it is not an instruction to wait for drawing.
+The CPU may supply later packets while the GPU executes earlier work, subject
+to port admission. The final status loop instead waits until this command path
+is idle. Packet acceptance, execution completion and display selection are
+three different boundaries.
+
+### Select the completed pixels for display {#sec-gpu-select-the-completed-pixels-for-display}
+
+PCRTC selects the image after drawing. For the GPU's linear destination layout,
+GX16 with base zero and a 1024-pixel row width reads these words in the same
+arrangement. Use noninterlaced, one-to-one sampling to show the same pixel
+grid, and choose a display window containing the quad. With source origin
+`(0,0)`, its stored position `(40,24)` then appears at output `(40,24)`.
+A larger window also shows surrounding stored words, which this small drawing
+did not clear.
+
+Program the completed source before its intended VBlank-entry latch and observe
+a fresh entry after the final setting. GPU idle does not select that image or
+acknowledge the display latch. Keep storage intact while display or another
+reader still uses it. The [PCRTC example](pcrtc.md#sec-pcrtc-31-set-a-256-192-window-on-circuit-1)
+shows source/window encoding; [Render successive frames](#sec-gpu-render-successive-frames)
+explains the drawing-to-display hand-off for reusable buffers.
+
 ## Technical specifications {#sec-gpu-technical-specifications}
 
 The following specifications distinguish the **32-bit GP0 programming word**,
@@ -113,340 +229,6 @@ accesses fault. F32 uses one word's bit pattern; F64 accesses the word at A and
 then A+4, stopping if the first faults. Thus an F64 access at GP0 reaches
 **GP0 then GP1**, not two words of the GP0 stream, and is not an atomic GPU
 transaction. Misaligned accesses fault before the corresponding device operation.
-
-## Program a complete picture in BLua {#sec-gpu-program-a-complete-picture-in-blua}
-
-This sequence prepares one static 256×192 picture, reads three stored texels
-back, and displays those same raw words in a small strip. Its texture and command
-words are fixed; two writable words retain the readback. Each scalar stream store
-addresses GP0 again, while indexing advances through the source data.
-
-The picture contains two enlarged copies of one 4×4 texture, a Gouraud triangle,
-additive rectangles and protected overlapping rectangles. A small unscaled
-textured rectangle demonstrates persistent page selection. A separate three-pixel
-strip receives the actual readback result. The bottom strip displays sixteen
-uploaded palette4 texels. No GTE command is needed: all positions
-are already screen coordinates.
-
-### Ports, texture and command storage {#sec-gpu-ports-texture-and-command-storage}
-
-The following listings form one entry sequence. GP0/GP1 are the
-GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source,
-extent and PMODE formats are specified in the PCRTC chapter.
-
-```lua
-module<entry>
-
-local irq_ack<const>: *word = 0x08000004
-local irq_mask<const>: *word = 0x08000008
-local gp0<const>: *word = 0x0801023c
-local gp1<const>: *word = 0x08010240
-local pmode<const>: *word = 0x08010354
-local framebuffer<const>: *word = 0x0801035c
-local source<const>: *word = 0x08010360
-local display_extent<const>: *word = 0x08010368
-local pcrtc_csr<const>: *word = 0x080103d4
-
--- Sixteen raw RGB555/mask words, low halfword first on upload.
-rodata texels: u16[4][4] = {
-	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
-	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
-	{ 0x7c00, 0x7c00, 0x7fff, 0x7fff },
-	{ 0x7c00, 0x7c00, 0x8000, 0x0000 },
-}
-```
-
-### Texture uploads and drawing packets {#sec-gpu-texture-uploads-and-drawing-packets}
-
-The halfword array is a sixteen-pixel image. Its last row deliberately includes
-both `8000H` and `0000H`: the former draws black; the latter leaves the background.
-The upload sends two adjacent halfwords per command word, low half first.
-
-The packet array below contains **55 words**. Its first two packets are nine-word
-textured quads. T0 supplies U/V with CLUT zero; direct16 ignores that palette.
-T1 supplies page/depth fields `010AH`: X=10×64=640, Y=0, direct16. The persistent
-update preserves the separately programmed draw-to-displayed-field bit. The
-four-word textured rectangle after them supplies no new page.
-
-Each quad maps byte U/V from 0 to 3 across its vertices, magnifying the texture
-by affine interpolation.
-Raw RGB gain is ignored. The modulated quad halves red and preserves green;
-its supplied blue gain saturates already-full-blue texels. The later six-word
-triangle instead interleaves three colors with three positions and has no UV words.
-
-```lua
--- Palette entry zero is red; entry three is transparent; entry four is black.
-rodata palette_colors: u16[16] = {
-	0x001f, 0x03e0, 0x7c00, 0x0000, 0x8000, 0x7fff, 0x03ff, 0x7fe0,
-	0x7c1f, 0x4210, 0x0010, 0x0200, 0x4000, 0x0210, 0x4200, 0x4010,
-}
-rodata palette_indices: u16[4] = { 0x3210, 0x7654, 0xba98, 0xfedc }
-
--- These are complete GP0 packets, not an array of register values.
-rodata drawing_commands: word[] = {
-	-- Raw textured quad. T1 selects direct16, page X=640, page Y=0.
-	0x2d808080,
-	16 | (24 << 16), 0,
-	80 | (24 << 16), 3 | (0x010a << 16),
-	16 | (88 << 16), 3 << 8,
-	80 | (88 << 16), 3 | (3 << 8),
-	-- Modulated quad: halve red, preserve green; blue gain 1.5 saturates.
-	0x2cc08040,
-	96 | (24 << 16), 0,
-	160 | (24 << 16), 3 | (0x010a << 16),
-	96 | (88 << 16), 3 << 8,
-	160 | (88 << 16), 3 | (3 << 8),
-	-- No E1 here: this rectangle inherits the preceding polygon's T1 page.
-	0x65000000, 24 | (112 << 16), 0, 4 | (4 << 16),
-	-- A separate RGB-interpolated triangle; no texture words.
-	0x300000ff, 176 | (24 << 16),
-	0x0000ff00, 240 | (24 << 16),
-	0x00ff0000, 208 | (88 << 16),
-	-- Two opaque rectangles, then an additive rectangle crossing both.
-	0x60402020, 16 | (128 << 16), 64 | (40 << 16),
-	0x60204020, 80 | (128 << 16), 64 | (40 << 16),
-	0xe1000420,
-	0x62202080, 48 | (144 << 16), 64 | (24 << 16),
-	-- Set+check: the first rectangle marks its pixels; the second protects them.
-	0xe6000003,
-	0x600080c0, 176 | (128 << 16), 32 | (32 << 16),
-	0x60c08000, 192 | (144 << 16), 32 | (32 << 16),
-	0xe6000000,
-	-- Sixteen palette4 texels across the bottom strip. CLUT is (768,256).
-	0x2d000000,
-	16 | (176 << 16), (16 << 8) | (0x4030 << 16),
-	240 | (176 << 16), 15 | (16 << 8) | (0x000b << 16),
-	16 | (192 << 16), 16 << 8,
-	240 | (192 << 16), 15 | (16 << 8),
-}
-```
-
-The final quad uses palette4 page X=704,Y=0 and constant V=16. Its four
-source halfwords hold sixteen four-bit indices, lowest nibble first: `3210H`
-selects entries 0,1,2,3. The CLUT attribute `4030H` selects raw (768,256);
-entry 0 is red, entry 3 is zero, and entry 4 is nonzero black. The palette and
-indices are uploaded separately through GP0.
-Raw texturing ignores the quad's zero color field. The sixteen colors are
-magnified across the bottom strip by interpolating U=0…15 while the source
-remains four packed words.
-
-### Readback storage and interrupts {#sec-gpu-readback-storage-and-interrupts}
-
-The two BSS words receive the readback result. The interrupt entry acknowledges
-delivered requests. GPU IRQ delivery is masked during drawing;
-its request latch is observed explicitly later.
-
-```lua
-bss readback_words: word[2]
-
-function irq(flags)
-	*irq_ack = flags
-end
-```
-
-### Establish the drawing and display domains {#sec-gpu-establish-the-drawing-and-display-domains}
-
-PCRTC CSR RESET establishes both PCRTC configuration and GPU stream/register
-defaults; it does not initialize local-memory pixels. The Y-address gate is
-explicitly closed, and E1–E6 establish
-the drawing environment. The background fill covers only the 256×192 picture;
-the texture's later upload initializes its separate source words.
-
-The drawing area includes (0,0)…(255,191), with zero offset. E1=`0400H` sets
-draw-to-displayed-field and disables dither. E6 clears destination check/force.
-The picture's background RGB bytes `(8,16,24)` reduce to raw word `0C41H`.
-PCRTC reading circuit 1 selects GX16 storage with a 1,024-word stride; PMODE
-remains disabled while the GPU prepares this single, never-reused picture.
-
-```lua
-*irq_mask = 0
-*pcrtc_csr = 0x00000200
-*pmode = 0
-*framebuffer = 0x000fa000
-*source = 0
-*display_extent = 0x000bf3ff
-*gp1 = 0x09000000
-
--- Explicit drawing state; RESET does not clear local memory.
-*gp0 = 0xe1000400
-*gp0 = 0xe2000000
-*gp0 = 0xe3000000
-*gp0 = 0xe40000ff | (191 << 10)
-*gp0 = 0xe5000000
-*gp0 = 0xe6000000
-*gp0 = 0x02181008
-*gp0 = 0
-*gp0 = 256 | (192 << 16)
-```
-
-### Upload and issue the stream through one port {#sec-gpu-upload-and-issue-the-stream-through-one-port}
-
-A0 selects 4×4 raw pixels at `(640,0)`: exactly eight payload words follow its
-three-word header. The word view reads two adjacent raw halfwords at a time.
-Both loops write to `*gp0` every iteration; indexing applies to the source only.
-The scalar-store admission mechanism supplies any necessary wait; DMA-ready
-bit 28 is not its admission test. A CPU word-sequence store advances the
-destination and must not replace these fixed-port stores.
-
-```lua
--- A0 header followed by eight whole-word payload stores to the SAME port.
-*gp0 = 0xa0000000
-*gp0 = 640
-*gp0 = 4 | (4 << 16)
-local texture_words<const>: *word = texels
-for index = 0, sizeof(u16[4][4]) // 4 - 1 do
-	*gp0 = texture_words[index]
-end
--- A palette is raw local-memory data, uploaded exactly like the direct image.
-*gp0 = 0xa0000000
-*gp0 = 768 | (256 << 16)
-*gp0 = 16 | (1 << 16)
-local palette_words<const>: *word = palette_colors
-for index = 0, sizeof(u16[16]) // 4 - 1 do
-	*gp0 = palette_words[index]
-end
-*gp0 = 0xa0000000
-*gp0 = 704 | (16 << 16)
-*gp0 = 4 | (1 << 16)
-local index_words<const>: *word = palette_indices
-for index = 0, sizeof(u16[4]) // 4 - 1 do
-	*gp0 = index_words[index]
-end
-for index = 0, #drawing_commands - 1 do
-	*gp0 = drawing_commands[index]
-end
-```
-
-The direct image occupies eight payload words. The sixteen-entry palette
-occupies another eight, and its four packed index halfwords occupy two. All
-three uploads finish before their drawing packets. The final quad's T1 selects
-palette4 rather than the preceding direct16 page; its T0 locates the uploaded
-palette. A zero index therefore draws red, while index 3 leaves the background
-because the **fetched palette word** is zero. Index 4 draws black from `8000H`.
-No direct CPU local-memory aperture or palette upload helper is needed.
-
-### Wait for readback readiness and consume its full count {#sec-gpu-wait-for-readback-readiness-and-consume-its-full-count}
-
-The C0 request selects the first three texture pixels: red, red, green.
-GPUSTAT bit 27—not bit 26—qualifies consumption. Once ready and without a DMA
-reader owning the port, the two reads return `001F001FH` and `000003E0H`.
-The final word's high half is zero and consuming it releases readback. The
-preceding draw commands must reach the ordered readback fence before its
-result is supplied. Continue waiting until bit 27 reports READY.
-
-```lua
--- Three pixels produce two reads. The final read has a zero high half.
-*gp0 = 0xc0000000
-*gp0 = 640
-*gp0 = 3 | (1 << 16)
-while (*gp1 & 0x08000000) == 0 do
-end
-readback_words[0] = *gp0
-readback_words[1] = *gp0
-```
-
-### Use the returned raw representation directly {#sec-gpu-use-the-returned-raw-representation-directly}
-
-Upload those two words into the three-pixel strip at `(16,112)`. There is no
-conversion to RGB bytes or display pixels. The final high half is unused because
-the destination area contains three pixels, not four. The following marker is a
-new **whole** GP0 word, never a value hidden in that unused halfword.
-
-```lua
--- Re-upload those exact words as a three-pixel strip at (16,112).
-*gp0 = 0xa0000000
-*gp0 = 16 | (112 << 16)
-*gp0 = 3 | (1 << 16)
-for index = 0, #readback_words - 1 do
-	*gp0 = readback_words[index]
-end
-```
-
-### Separate the marker, idle and display hand-off {#sec-gpu-separate-the-marker-idle-and-display-hand-off}
-
-The marker sets GPUSTAT bit 24 after earlier queued commands. GP1(02h) clears
-that GPU latch; the controller acknowledgement clears pending GPU IRQ bit 6.
-Waiting for bit 26 is separate because the marker can be set before its own
-one-tick command interval completes. Only then does PMODE enable reading circuit 1. The later VBlank publication, not either GPU status bit, accepts the picture.
-The cartridge subsequently acknowledges VBlank requests and sleeps without
-modifying the displayed pixels.
-
-```lua
--- IRQ is an in-order marker, not an idle or display acknowledgement.
-*gp0 = 0x1f000000
-while (*gp1 & 0x01000000) == 0 do
-end
-*gp1 = 0x02000000
-*irq_ack = 0x00000040
-while (*gp1 & 0x04000000) == 0 do
-end
-*pmode = 0x0000ff21
-*irq_ack = 0xffffffff
-*irq_mask = 0x00000004
-while true do
-	halt_until_irq
-end
-```
-
-### Stored-word results {#sec-gpu-stored-word-results}
-
-These expected samples distinguish the controls without relying on display-color
-expansion. Mask bits remain part of each stored word.
-
-| Raw position | Expected word | What it distinguishes |
-|---|---|---|
-| (16,24) | `001FH` | Raw full red |
-| (96,24) | `000FH` | Red reduced by gain 64 |
-| (138,68) | `7FEFH` | Modulated white: red reduced, green unchanged, blue saturated |
-| (24,112) | `001FH` | Following rectangle inherits polygon T1 page |
-| (26,115) | `8000H` | Nonzero black texel writes its bit 15 |
-| (27,115) | `0C41H` | Exact-zero texel leaves the initialized background |
-| (50,150) | `3114H` | Additive rectangle over first destination color |
-| (90,150) | `2194H` | Same source over a different destination color |
-| (200,150) | `8218H` | A later checked draw preserves the first rectangle's marked pixel |
-| (220,165) | `E200H` | Second rectangle writes and marks an unprotected pixel |
-| (16,180) | `001FH` | Palette index 0 fetches a nonzero red word |
-| (31,180) | `03E0H` | Next packed nibble selects palette entry 1 |
-| (46,180) | `7C00H` | Palette entry 2 is blue |
-| (61,180) | `0C41H` | Index 3 fetches zero and preserves the background |
-| (76,180) | `8000H` | Index 4 fetches nonzero black |
-| (91,180) | `7FFFH` | Index 5 fetches white |
-
-The picture remains in local memory after drawing. PCRTC's VBlank-entry latch
-makes its display settings active. For animation, alternate storage using
-[Render successive frames](#sec-gpu-render-successive-frames); include packet issue,
-GPU execution and the display wait in the frame budget.
-
-### GPU output plate {#sec-gpu-gpu-output-plate}
-
-This plate brings several packet types into one 256 × 192 image. The two large upper quads sample the same 4 × 4 direct-colour texture: the left uses raw texture colour, while the middle applies the packet's RGB colour. Their red and white areas show the contrast. The bottom strip instead reads four-bit indices and looks up their colours in a CLUT; index zero is red here, not transparent.
-
-![Full 256 by 192 GPU output plate](figures/gpu-output-materials.png){#fig-gpu-output-materials}
-
-**GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The small marks near the left edge are the readback strip and the unscaled 4 × 4 texture.
-
-The black texture areas and the background-coloured gaps are deliberately different. The source word `0x8000` supplies black and retains bit 15 in VRAM; a sampled `0x0000` leaves the background unchanged. This distinction appears in both the direct-colour texture and the indexed strip, whose entries 4 and 3 contain those words respectively.
-
-The lower-left overlay selects semi-transparency with background-plus-foreground blending. At the lower right, set-mask and check-mask are enabled together: the first rectangle sets destination bit 15, so the second cannot replace it in their overlap. These are different effects; the protected overlap is not a blend.
-
-**Picture regions.** The table identifies each packet's placement and effect, with selected raw VRAM words from the completed drawing.
-
-| Packet location | Picture and packet interpretation | Selected VRAM readback |
-|---|---|---|
-| Background: fill at `(0,0)`, `256 × 192` | Dark field and margins; fill header `0x02181008`. | Background visible through the upper-left texture at `(78,84)` is `0x0c41`. |
-| Quad: `(16,24)`, `(80,24)`, `(16,88)`, `(80,88)` | Raw red/green/blue/white texture, plus black and unchanged-background areas. Header `0x2d808080`; UV `(0,0)` to `(3,3)`; T1 `0x010a` selects direct16 at `(640,0)`. | `(16,24)` = `0x001f`; black at `(59,84)` = `0x8000`. |
-| Quad: `(96,24)`, `(160,24)`, `(96,88)`, `(160,88)` | Modulated counterpart: darker red and tinted white. Header `0x2cc08040`; same UVs and T1 as the raw quad. | `(96,24)` = `0x000f`; `(140,24)` = `0x03e0`; `(138,68)` = `0x7fef`. |
-| Rectangle: `(24,112)`, `4 × 4` | Small raw view of the same direct-colour image; header `0x65000000`, UV `(0,0)`. | `(26,114)` = `0x7fff`; `(26,115)` = `0x8000`; `(27,115)` = `0x0c41`. |
-
-**Nine-region legend, continued.** Packet positions, visible results and selected raw words remain separate.
-
-| Packet location | Picture and packet interpretation | Selected VRAM readback |
-|---|---|---|
-| Triangle: `(176,24)`, `(240,24)`, `(208,88)` | Separate untextured triangle with red, green and blue vertex colours. | No triangle pixel word is listed. |
-| Bases: `(16,128)` and `(80,128)`, each `64 × 40`; overlay: `(48,144)`, `64 × 24` | The overlay crosses both bases. Header `0x62202080` with E1 `0xe1000420` selects background-plus-foreground blending. | Intersections: `(50,150)` = `0x3114`; `(90,150)` = `0x2194`. |
-| Rectangles: `(176,128)` and `(192,144)`, each `32 × 32` | Mustard/cyan pair with E6 `0xe6000003`: the first rectangle remains in the protected overlap. E6 then returns to `0xe6000000`. | Overlap `(200,150)` = `0x8218`; second-only `(220,165)` = `0xe200`. Both retain bit 15. |
-| Strip: `(16,176)`, `(240,176)`, `(16,192)`, `(240,192)` | Raw indexed texture, U `0..15`, V `16`; T1 `0x000b` selects palette4 at page `(704,0)`. CLUT `0x4030` selects `(768,256)`. Indices come from `0x3210`, `0x7654`, `0xba98`, `0xfedc`, low nibble first. | Red `(16,180)` = `0x001f`; unchanged background `(61,180)` = `0x0c41`; black `(76,180)` = `0x8000`; white `(91,180)` = `0x7fff`. |
-| Witness: `(16,112)`, `3 × 1` | Three pixels read from `(640,0)` and uploaded at this destination. | The three-pixel row reads as two GPUREAD words: `0x001f001f`, then `0x000003e0`. |
 
 ## GP0, GPUREAD, GP1 and GPUSTAT {#sec-gpu-gp0-gpuread-gp1-and-gpustat}
 
@@ -1152,7 +934,8 @@ The polygon vertex differences are 16 times those of the preceding numerical exa
 
 #### Submit the coverage examples {#sec-gpu-submit-the-coverage-examples}
 
-Use the 256×192 drawing environment from the first programming sequence,
+Use the 256×192 drawing environment from the
+[complete-picture sequence](#sec-gpu-program-a-complete-picture-in-blua),
 with destination-mask checking and force-mask disabled. Set E1=`0420H` for
 additive blending, dither off and both row parities. Send these complete GP0
 packets to clear the picture and draw the two quads:
@@ -1539,8 +1322,9 @@ Without dither, modulation produces RGB5 `(6, 7, 16)`, stored as `40E6H`. The up
 
 These are stored RGB555 words, not displayed-picture RGB bytes. The dither offsets come from a `4 × 4` matrix indexed by destination coordinates. For these particular texture and color operands, quantization maps those offsets into the repeated `2 × 2` word pattern shown here. It does **not** make the GPU's dither matrix universally `2 × 2`.
 
-Use the GP0 port and 256×192 drawing environment from the first programming
-sequence, with mask controls cleared and E1=`0400H` initially. The complete
+Use the GP0 port and 256×192 drawing environment from the
+[complete-picture sequence](#sec-gpu-program-a-complete-picture-in-blua), with
+mask controls cleared and E1=`0400H` initially. The complete
 packets below first fill the source texture uniformly, then draw all four
 panels. No image decoder or filtered sampler is involved.
 
@@ -1681,6 +1465,340 @@ Red here is supplied RGB=(255,0,0). The fill also writes X=16…30 on admitted r
 The first row writes 510→511. The second reads that newly written row 511 and writes it to row 0; the third reads the newly written row 0 and writes row 1. Retained row suppression does not prevent these raw-copy writes. To preserve the original rows in this shift, copy logical rows 2,1,0 as separate one-row commands, or use a nonoverlapping intermediate region; do not expect a hidden snapshot.
 
 Upload data is row-major raw words, packed low halfword first in each GP0 payload word. A 3×3 upload needs five payload words: only the last high halfword is unused, with no padding after each odd-width row. Supply the counted payload, not an end-image marker. Readback reports raw storage words, not PCRTC-converted or composed display pixels.
+
+## Program a complete picture in BLua {#sec-gpu-program-a-complete-picture-in-blua}
+
+This sequence prepares one static 256×192 picture, reads three stored texels
+back, and displays those same raw words in a small strip. Its texture and command
+words are fixed; two writable words retain the readback. Each scalar stream store
+addresses GP0 again, while indexing advances through the source data.
+
+The picture contains two enlarged copies of one 4×4 texture, a Gouraud triangle,
+additive rectangles and protected overlapping rectangles. A small unscaled
+textured rectangle demonstrates persistent page selection. A separate three-pixel
+strip receives the actual readback result. The bottom strip displays sixteen
+uploaded palette4 texels. No GTE command is needed: all positions
+are already screen coordinates.
+
+### Ports, texture and command storage {#sec-gpu-ports-texture-and-command-storage}
+
+The following listings form one entry sequence. GP0/GP1 are the
+GPU ports listed in the specification table. PCRTC's CSR, framebuffer, source,
+extent and PMODE formats are specified in the PCRTC chapter.
+
+```lua
+module<entry>
+
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
+local gp0<const>: *word = 0x0801023c
+local gp1<const>: *word = 0x08010240
+local pmode<const>: *word = 0x08010354
+local framebuffer<const>: *word = 0x0801035c
+local source<const>: *word = 0x08010360
+local display_extent<const>: *word = 0x08010368
+local pcrtc_csr<const>: *word = 0x080103d4
+
+-- Sixteen raw RGB555/mask words, low halfword first on upload.
+rodata texels: u16[4][4] = {
+	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
+	{ 0x001f, 0x001f, 0x03e0, 0x03e0 },
+	{ 0x7c00, 0x7c00, 0x7fff, 0x7fff },
+	{ 0x7c00, 0x7c00, 0x8000, 0x0000 },
+}
+```
+
+### Texture uploads and drawing packets {#sec-gpu-texture-uploads-and-drawing-packets}
+
+The halfword array is a sixteen-pixel image. Its last row deliberately includes
+both `8000H` and `0000H`: the former draws black; the latter leaves the background.
+The upload sends two adjacent halfwords per command word, low half first.
+
+The packet array below contains **55 words**. Its first two packets are nine-word
+textured quads. T0 supplies U/V with CLUT zero; direct16 ignores that palette.
+T1 supplies page/depth fields `010AH`: X=10×64=640, Y=0, direct16. The persistent
+update preserves the separately programmed draw-to-displayed-field bit. The
+four-word textured rectangle after them supplies no new page.
+
+Each quad maps byte U/V from 0 to 3 across its vertices, magnifying the texture
+by affine interpolation.
+Raw RGB gain is ignored. The modulated quad halves red and preserves green;
+its supplied blue gain saturates already-full-blue texels. The later six-word
+triangle instead interleaves three colors with three positions and has no UV words.
+
+```lua
+-- Palette entry zero is red; entry three is transparent; entry four is black.
+rodata palette_colors: u16[16] = {
+	0x001f, 0x03e0, 0x7c00, 0x0000, 0x8000, 0x7fff, 0x03ff, 0x7fe0,
+	0x7c1f, 0x4210, 0x0010, 0x0200, 0x4000, 0x0210, 0x4200, 0x4010,
+}
+rodata palette_indices: u16[4] = { 0x3210, 0x7654, 0xba98, 0xfedc }
+
+-- These are complete GP0 packets, not an array of register values.
+rodata drawing_commands: word[] = {
+	-- Raw textured quad. T1 selects direct16, page X=640, page Y=0.
+	0x2d808080,
+	16 | (24 << 16), 0,
+	80 | (24 << 16), 3 | (0x010a << 16),
+	16 | (88 << 16), 3 << 8,
+	80 | (88 << 16), 3 | (3 << 8),
+	-- Modulated quad: halve red, preserve green; blue gain 1.5 saturates.
+	0x2cc08040,
+	96 | (24 << 16), 0,
+	160 | (24 << 16), 3 | (0x010a << 16),
+	96 | (88 << 16), 3 << 8,
+	160 | (88 << 16), 3 | (3 << 8),
+	-- No E1 here: this rectangle inherits the preceding polygon's T1 page.
+	0x65000000, 24 | (112 << 16), 0, 4 | (4 << 16),
+	-- A separate RGB-interpolated triangle; no texture words.
+	0x300000ff, 176 | (24 << 16),
+	0x0000ff00, 240 | (24 << 16),
+	0x00ff0000, 208 | (88 << 16),
+	-- Two opaque rectangles, then an additive rectangle crossing both.
+	0x60402020, 16 | (128 << 16), 64 | (40 << 16),
+	0x60204020, 80 | (128 << 16), 64 | (40 << 16),
+	0xe1000420,
+	0x62202080, 48 | (144 << 16), 64 | (24 << 16),
+	-- Set+check: the first rectangle marks its pixels; the second protects them.
+	0xe6000003,
+	0x600080c0, 176 | (128 << 16), 32 | (32 << 16),
+	0x60c08000, 192 | (144 << 16), 32 | (32 << 16),
+	0xe6000000,
+	-- Sixteen palette4 texels across the bottom strip. CLUT is (768,256).
+	0x2d000000,
+	16 | (176 << 16), (16 << 8) | (0x4030 << 16),
+	240 | (176 << 16), 15 | (16 << 8) | (0x000b << 16),
+	16 | (192 << 16), 16 << 8,
+	240 | (192 << 16), 15 | (16 << 8),
+}
+```
+
+The final quad uses palette4 page X=704,Y=0 and constant V=16. Its four
+source halfwords hold sixteen four-bit indices, lowest nibble first: `3210H`
+selects entries 0,1,2,3. The CLUT attribute `4030H` selects raw (768,256);
+entry 0 is red, entry 3 is zero, and entry 4 is nonzero black. The palette and
+indices are uploaded separately through GP0.
+Raw texturing ignores the quad's zero color field. The sixteen colors are
+magnified across the bottom strip by interpolating U=0…15 while the source
+remains four packed words.
+
+### Readback storage and interrupts {#sec-gpu-readback-storage-and-interrupts}
+
+The two BSS words receive the readback result. The interrupt entry acknowledges
+delivered requests. GPU IRQ delivery is masked during drawing;
+its request latch is observed explicitly later.
+
+```lua
+bss readback_words: word[2]
+
+function irq(flags)
+	*irq_ack = flags
+end
+```
+
+### Establish the drawing and display domains {#sec-gpu-establish-the-drawing-and-display-domains}
+
+PCRTC CSR RESET establishes both PCRTC configuration and GPU stream/register
+defaults; it does not initialize local-memory pixels. The Y-address gate is
+explicitly closed, and E1–E6 establish
+the drawing environment. The background fill covers only the 256×192 picture;
+the texture's later upload initializes its separate source words.
+
+The drawing area includes (0,0)…(255,191), with zero offset. E1=`0400H` sets
+draw-to-displayed-field and disables dither. E6 clears destination check/force.
+The picture's background RGB bytes `(8,16,24)` reduce to raw word `0C41H`.
+PCRTC reading circuit 1 selects GX16 storage with a 1,024-word stride; PMODE
+remains disabled while the GPU prepares this single, never-reused picture.
+
+```lua
+*irq_mask = 0
+*pcrtc_csr = 0x00000200
+*pmode = 0
+*framebuffer = 0x000fa000
+*source = 0
+*display_extent = 0x000bf3ff
+*gp1 = 0x09000000
+
+-- Explicit drawing state; RESET does not clear local memory.
+*gp0 = 0xe1000400
+*gp0 = 0xe2000000
+*gp0 = 0xe3000000
+*gp0 = 0xe40000ff | (191 << 10)
+*gp0 = 0xe5000000
+*gp0 = 0xe6000000
+*gp0 = 0x02181008
+*gp0 = 0
+*gp0 = 256 | (192 << 16)
+```
+
+### Upload and issue the stream through one port {#sec-gpu-upload-and-issue-the-stream-through-one-port}
+
+A0 selects 4×4 raw pixels at `(640,0)`: exactly eight payload words follow its
+three-word header. The word view reads two adjacent raw halfwords at a time.
+Both loops write to `*gp0` every iteration; indexing applies to the source only.
+The scalar-store admission mechanism supplies any necessary wait; DMA-ready
+bit 28 is not its admission test. A CPU word-sequence store advances the
+destination and must not replace these fixed-port stores.
+
+```lua
+-- A0 header followed by eight whole-word payload stores to the SAME port.
+*gp0 = 0xa0000000
+*gp0 = 640
+*gp0 = 4 | (4 << 16)
+local texture_words<const>: *word = texels
+for index = 0, sizeof(u16[4][4]) // 4 - 1 do
+	*gp0 = texture_words[index]
+end
+-- A palette is raw local-memory data, uploaded exactly like the direct image.
+*gp0 = 0xa0000000
+*gp0 = 768 | (256 << 16)
+*gp0 = 16 | (1 << 16)
+local palette_words<const>: *word = palette_colors
+for index = 0, sizeof(u16[16]) // 4 - 1 do
+	*gp0 = palette_words[index]
+end
+*gp0 = 0xa0000000
+*gp0 = 704 | (16 << 16)
+*gp0 = 4 | (1 << 16)
+local index_words<const>: *word = palette_indices
+for index = 0, sizeof(u16[4]) // 4 - 1 do
+	*gp0 = index_words[index]
+end
+for index = 0, #drawing_commands - 1 do
+	*gp0 = drawing_commands[index]
+end
+```
+
+The direct image occupies eight payload words. The sixteen-entry palette
+occupies another eight, and its four packed index halfwords occupy two. All
+three uploads finish before their drawing packets. The final quad's T1 selects
+palette4 rather than the preceding direct16 page; its T0 locates the uploaded
+palette. A zero index therefore draws red, while index 3 leaves the background
+because the **fetched palette word** is zero. Index 4 draws black from `8000H`.
+No direct CPU local-memory aperture or palette upload helper is needed.
+
+### Wait for readback readiness and consume its full count {#sec-gpu-wait-for-readback-readiness-and-consume-its-full-count}
+
+The C0 request selects the first three texture pixels: red, red, green.
+GPUSTAT bit 27—not bit 26—qualifies consumption. Once ready and without a DMA
+reader owning the port, the two reads return `001F001FH` and `000003E0H`.
+The final word's high half is zero and consuming it releases readback. The
+preceding draw commands must reach the ordered readback fence before its
+result is supplied. Continue waiting until bit 27 reports READY.
+
+```lua
+-- Three pixels produce two reads. The final read has a zero high half.
+*gp0 = 0xc0000000
+*gp0 = 640
+*gp0 = 3 | (1 << 16)
+while (*gp1 & 0x08000000) == 0 do
+end
+readback_words[0] = *gp0
+readback_words[1] = *gp0
+```
+
+### Use the returned raw representation directly {#sec-gpu-use-the-returned-raw-representation-directly}
+
+Upload those two words into the three-pixel strip at `(16,112)`. There is no
+conversion to RGB bytes or display pixels. The final high half is unused because
+the destination area contains three pixels, not four. The following marker is a
+new **whole** GP0 word, never a value hidden in that unused halfword.
+
+```lua
+-- Re-upload those exact words as a three-pixel strip at (16,112).
+*gp0 = 0xa0000000
+*gp0 = 16 | (112 << 16)
+*gp0 = 3 | (1 << 16)
+for index = 0, #readback_words - 1 do
+	*gp0 = readback_words[index]
+end
+```
+
+### Separate the marker, idle and display hand-off {#sec-gpu-separate-the-marker-idle-and-display-hand-off}
+
+The marker sets GPUSTAT bit 24 after earlier queued commands. GP1(02h) clears
+that GPU latch; the controller acknowledgement clears pending GPU IRQ bit 6.
+Waiting for bit 26 is separate because the marker can be set before its own
+one-tick command interval completes. Only then does PMODE enable reading circuit 1. The later VBlank publication, not either GPU status bit, accepts the picture.
+The cartridge subsequently acknowledges VBlank requests and sleeps without
+modifying the displayed pixels.
+
+```lua
+-- IRQ is an in-order marker, not an idle or display acknowledgement.
+*gp0 = 0x1f000000
+while (*gp1 & 0x01000000) == 0 do
+end
+*gp1 = 0x02000000
+*irq_ack = 0x00000040
+while (*gp1 & 0x04000000) == 0 do
+end
+*pmode = 0x0000ff21
+*irq_ack = 0xffffffff
+*irq_mask = 0x00000004
+while true do
+	halt_until_irq
+end
+```
+
+### Stored-word results {#sec-gpu-stored-word-results}
+
+These expected samples distinguish the controls without relying on display-color
+expansion. Mask bits remain part of each stored word.
+
+| Raw position | Expected word | What it distinguishes |
+|---|---|---|
+| (16,24) | `001FH` | Raw full red |
+| (96,24) | `000FH` | Red reduced by gain 64 |
+| (138,68) | `7FEFH` | Modulated white: red reduced, green unchanged, blue saturated |
+| (24,112) | `001FH` | Following rectangle inherits polygon T1 page |
+| (26,115) | `8000H` | Nonzero black texel writes its bit 15 |
+| (27,115) | `0C41H` | Exact-zero texel leaves the initialized background |
+| (50,150) | `3114H` | Additive rectangle over first destination color |
+| (90,150) | `2194H` | Same source over a different destination color |
+| (200,150) | `8218H` | A later checked draw preserves the first rectangle's marked pixel |
+| (220,165) | `E200H` | Second rectangle writes and marks an unprotected pixel |
+| (16,180) | `001FH` | Palette index 0 fetches a nonzero red word |
+| (31,180) | `03E0H` | Next packed nibble selects palette entry 1 |
+| (46,180) | `7C00H` | Palette entry 2 is blue |
+| (61,180) | `0C41H` | Index 3 fetches zero and preserves the background |
+| (76,180) | `8000H` | Index 4 fetches nonzero black |
+| (91,180) | `7FFFH` | Index 5 fetches white |
+
+The picture remains in local memory after drawing. PCRTC's VBlank-entry latch
+makes its display settings active. For animation, alternate storage using
+[Render successive frames](#sec-gpu-render-successive-frames); include packet issue,
+GPU execution and the display wait in the frame budget.
+
+### GPU output plate {#sec-gpu-gpu-output-plate}
+
+This plate brings several packet types into one 256 × 192 image. The two large upper quads sample the same 4 × 4 direct-colour texture: the left uses raw texture colour, while the middle applies the packet's RGB colour. Their red and white areas show the contrast. The bottom strip instead reads four-bit indices and looks up their colours in a CLUT; index zero is red here, not transparent.
+
+![Full 256 by 192 GPU output plate](figures/gpu-output-materials.png){#fig-gpu-output-materials}
+
+**GPU output plate.** Direct and indexed textures, an untextured RGB-gradient triangle, a blending overlay, and a mask-protected overlap share a dark background. The small marks near the left edge are the readback strip and the unscaled 4 × 4 texture.
+
+The black texture areas and the background-coloured gaps are deliberately different. The source word `0x8000` supplies black and retains bit 15 in VRAM; a sampled `0x0000` leaves the background unchanged. This distinction appears in both the direct-colour texture and the indexed strip, whose entries 4 and 3 contain those words respectively.
+
+The lower-left overlay selects semi-transparency with background-plus-foreground blending. At the lower right, set-mask and check-mask are enabled together: the first rectangle sets destination bit 15, so the second cannot replace it in their overlap. These are different effects; the protected overlap is not a blend.
+
+**Picture regions.** The table identifies each packet's placement and effect, with selected raw VRAM words from the completed drawing.
+
+| Packet location | Picture and packet interpretation | Selected VRAM readback |
+|---|---|---|
+| Background: fill at `(0,0)`, `256 × 192` | Dark field and margins; fill header `0x02181008`. | Background visible through the upper-left texture at `(78,84)` is `0x0c41`. |
+| Quad: `(16,24)`, `(80,24)`, `(16,88)`, `(80,88)` | Raw red/green/blue/white texture, plus black and unchanged-background areas. Header `0x2d808080`; UV `(0,0)` to `(3,3)`; T1 `0x010a` selects direct16 at `(640,0)`. | `(16,24)` = `0x001f`; black at `(59,84)` = `0x8000`. |
+| Quad: `(96,24)`, `(160,24)`, `(96,88)`, `(160,88)` | Modulated counterpart: darker red and tinted white. Header `0x2cc08040`; same UVs and T1 as the raw quad. | `(96,24)` = `0x000f`; `(140,24)` = `0x03e0`; `(138,68)` = `0x7fef`. |
+| Rectangle: `(24,112)`, `4 × 4` | Small raw view of the same direct-colour image; header `0x65000000`, UV `(0,0)`. | `(26,114)` = `0x7fff`; `(26,115)` = `0x8000`; `(27,115)` = `0x0c41`. |
+
+**Nine-region legend, continued.** Packet positions, visible results and selected raw words remain separate.
+
+| Packet location | Picture and packet interpretation | Selected VRAM readback |
+|---|---|---|
+| Triangle: `(176,24)`, `(240,24)`, `(208,88)` | Separate untextured triangle with red, green and blue vertex colours. | No triangle pixel word is listed. |
+| Bases: `(16,128)` and `(80,128)`, each `64 × 40`; overlay: `(48,144)`, `64 × 24` | The overlay crosses both bases. Header `0x62202080` with E1 `0xe1000420` selects background-plus-foreground blending. | Intersections: `(50,150)` = `0x3114`; `(90,150)` = `0x2194`. |
+| Rectangles: `(176,128)` and `(192,144)`, each `32 × 32` | Mustard/cyan pair with E6 `0xe6000003`: the first rectangle remains in the protected overlap. E6 then returns to `0xe6000000`. | Overlap `(200,150)` = `0x8218`; second-only `(220,165)` = `0xe200`. Both retain bit 15. |
+| Strip: `(16,176)`, `(240,176)`, `(16,192)`, `(240,192)` | Raw indexed texture, U `0..15`, V `16`; T1 `0x000b` selects palette4 at page `(704,0)`. CLUT `0x4030` selects `(768,256)`. Indices come from `0x3210`, `0x7654`, `0xba98`, `0xfedc`, low nibble first. | Red `(16,180)` = `0x001f`; unchanged background `(61,180)` = `0x0c41`; black `(76,180)` = `0x8000`; white `(91,180)` = `0x7fff`. |
+| Witness: `(16,112)`, `3 × 1` | Three pixels read from `(640,0)` and uploaded at this destination. | The three-pixel row reads as two GPUREAD words: `0x001f001f`, then `0x000003e0`. |
 
 ## Frame the GP0 command stream {#sec-gpu-frame-the-gp0-command-stream}
 

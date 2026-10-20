@@ -7,8 +7,12 @@ whose reads and writes can consume results, change configuration or start work.
 
 GPU local memory and APU sample RAM have separate access paths. Use GPU image
 and readback commands for local memory, and APU transfer ports for sample RAM.
-Before placing cartridge buffers in main RAM, reserve the I/O area, GEO scratch
-and the installed firmware's static storage as specified below.
+A program's storage layout must account for three separate matters: which
+bytes are installed, which are reserved, and how the remaining objects are
+initialized and used. A DATA initializer in ROM and its writable RAM copy are
+two locations; a transfer buffer's address and the time it can be reused are
+two different questions. This chapter establishes those distinctions before
+specifying the program records, access rules and device-buffer lifetimes.
 
 ## Addresses and data sizes {#sec-memory-addresses-and-data-sizes}
 
@@ -32,93 +36,86 @@ BMSX has **4 MiB of main RAM**, occupying `[0x08000000, 0x08400000)` before I/O 
 
 The cartridge bus begins at `0x10000000` and ends just before `0x31000000`; the system's main-RAM window ends at that cartridge-bus start. Within the main-RAM window, `[0x08400000, 0x10000000)` has no installed main-RAM backing. It is not an extension or mirror of the installed 4 MiB.
 
-The I/O-slot aperture contains 16656 four-byte slots: 66624 bytes in
-`[0x08000000, 0x08010440)`. The reservation and allocation boundaries below
-remain separate from that decoded aperture.
-
 GPU VRAM is a separate **2 MiB** capacity and is not included in the 4 MiB main-RAM total.
 
-## I/O register-bank directory {#sec-memory-io-register-bank-directory}
+The APU's **512 KiB sample RAM** also has a separate access path. A main-RAM
+buffer can supply an upload, but playback reads the resulting sample-RAM bytes
+through the APU's private source address. The upload buffer and the playback
+source therefore have different addresses and lifetimes. See
+[APU — Voice sources and their lifetime](apu.md#sec-apu-voice-sources-and-their-lifetime)
+and [Sample RAM transfer](apu.md#sec-apu-sample-ram-transfer).
 
-The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
+## ROM contents, RAM sections, and startup {#sec-memory-rom-contents-ram-sections-and-startup}
 
-### Lower register banks and reserved slots {#sec-memory-lower-register-banks-and-reserved-slots}
+The ROM layout described here stores program instructions, read-only data
+and the initial contents of writable data. Mutable static objects have
+separately assigned run addresses in main RAM. The section names distinguish
+their storage and initialization rules:
 
-| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
+| Section | Contents in the ROM image | Address used during execution |
+|---|---|---|
+| TEXT | Executable code | Instruction byte address in ROM |
+| RODATA | Read-only data bytes | Read-only byte address in ROM |
+| DATA | Initializer bytes | DATA run address in main RAM, after startup copies the initializers |
+| BSS | No section byte payload | BSS address in main RAM, after startup clears the section |
+
+DATA consequently has two distinct addresses:
+
+- Its **load address** identifies the initializer bytes in the ROM image.
+- Its **run address** identifies the writable storage in main RAM.
+
+Instructions access a DATA object's RAM run address. Startup reads the
+initializer at its ROM load address and copies it to that run address.
+RODATA is used in place in ROM. BSS reserves a RAM address range, whose initial
+zero contents are written by startup; the ROM needs only its address and size.
+
+### Follow the records, counter and output storage {#sec-memory-follow-the-records-counter-and-output-storage}
+
+The [record-copy example](#sec-memory-worked-example-prepare-and-copy-two-records)
+uses three addressed objects: two read-only input records, an initialized
+counter, and space for two output records. Each record occupies twelve bytes.
+Their storage requirements are:
+
+| Object | Bytes in ROM | Bytes in main RAM | Preparation |
 |---|---|---|---|
-| `0x08000000` | `0x0800000c` | 3 | [IRQ](irq.md#sec-irq-register-reference) — pending flags, acknowledgement and mask |
-| `0x0800000c` | `0x08000024` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 0 |
-| `0x08000024` | `0x08000064` | 16 | [GEO](geo.md#sec-geo-register-reference) — operands, command, control, progress and fault |
-| `0x08000064` | `0x08000120` | 47 | [Input](input.md#sec-input-register-map) — sampling, keyboard, pointer, four pads and output port |
-| `0x08000120` | `0x08000174` | 21 | [APU](apu.md#sec-apu-register-reference) — command-staging parameters |
-| `0x08000174` | `0x0800017c` | 2 | [APU](apu.md#sec-apu-register-reference) — CMD and STATUS |
-| `0x0800017c` | `0x0800018c` | 4 | [APU](apu.md#sec-apu-register-reference) — retained end-event words |
-| `0x0800018c` | `0x08000194` | 2 | [APU](apu.md#sec-apu-register-reference) — selected source and active-slot mask |
-| `0x08000194` | `0x080001e8` | 21 | [APU](apu.md#sec-apu-register-reference) — live selected-slot parameter window |
-| `0x080001e8` | `0x080001f4` | 3 | [APU](apu.md#sec-apu-register-reference) — sample-transfer address, data and control |
-| `0x080001f4` | `0x08000200` | 3 | [APU](apu.md#sec-apu-register-reference) — command-queue occupancy, free space and capacity |
-| `0x08000200` | `0x08000204` | 1 | [APU](apu.md#sec-apu-register-reference) — sample sequence |
-| `0x08000204` | `0x08000208` | 1 | Reserved retained word |
-| `0x08000208` | `0x08010208` | 16384 | Reserved retained-slot range |
+| `inputs`: two read-only records | 24 record bytes | None | Use the ROM bytes in place |
+| `counter`: one initialized word | 4 initializer bytes | 4 working bytes | Copy `12345678H` into the working word |
+| `output`: two zero-initialized records | No BSS payload | 24 working bytes | Clear all 24 bytes |
 
-### Upper register banks {#sec-memory-upper-register-banks}
+The counter's initializer occupies bytes `78 56 34 12` in increasing ROM
+addresses. Startup copies those bytes to the counter's RAM run address. The
+program subsequently reads and changes the RAM word; its ROM initializer stays
+unchanged. Likewise, filling `output` changes its RAM bytes, not `inputs`.
 
-| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
-|---|---|---|---|
-| `0x08010208` | `0x08010218` | 4 | [Memory bus fault](#sec-memory-bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
-| `0x08010218` | `0x08010224` | 3 | [APU](apu.md#sec-apu-register-reference) — fault code, detail and acknowledgement |
-| `0x08010224` | `0x08010228` | 1 | [GEO](geo.md#sec-geo-register-reference) — fault acknowledgement |
-| `0x08010228` | `0x08010230` | 2 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — elapsed milliseconds and frame interval |
-| `0x08010230` | `0x08010238` | 2 | [SYSTEM](system.md#sec-system-diagnostic-text-output) — diagnostic character and line flush |
-| `0x08010238` | `0x0801023c` | 1 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — cycles per frame |
-| `0x0801023c` | `0x08010244` | 2 | [GPU](gpu.md#sec-gpu-gp0-gpuread-gp1-and-gpustat) — GP0/GPUREAD and GP1/GPUSTAT |
-| `0x08010244` | `0x080102c4` | 32 | [GTE](gte.md#sec-gte-register-reference) — data words D[0]–D[31] |
-| `0x080102c4` | `0x08010344` | 32 | [GTE](gte.md#sec-gte-register-reference) — control words C[0]–C[31] |
-| `0x08010344` | `0x0801034c` | 2 | [GTE](gte.md#sec-gte-normal-command-and-cycles) — normal COMMAND and CYCLES |
-| `0x0801034c` | `0x08010354` | 2 | [SYSTEM](system.md#sec-system) — CONTROL and STATUS |
-| `0x08010354` | `0x08010384` | 12 | [PCRTC](pcrtc.md#sec-pcrtc) — composition words, PMODE through BGCOLOR |
-| `0x08010384` | `0x080103ac` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
-| `0x080103ac` | `0x080103e4` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
-| `0x080103e4` | `0x080103fc` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
-| `0x080103fc` | `0x08010420` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
-| `0x08010420` | `0x08010428` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Cartridge controller”]{.content-visible when-format="pdf"} — socket selection and status |
-| `0x08010428` | `0x08010440` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
+The object extents above do not choose their addresses. Place the RAM objects
+outside the reserved and firmware-owned spans described next, and describe the
+chosen section addresses consistently in startup and the program image. A local
+pointer view selects an existing object's bytes; it does not allocate another
+copy of that object.
 
-These ranges partition all 16656 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
+### When initialization occurs {#sec-memory-when-initialization-occurs}
 
-### Reserved retained words and decoder boundary {#sec-memory-reserved-retained-words-and-decoder-boundary}
+A program's startup routine establishes its static storage before entering
+application code. The standard BLua startup sequence is:
 
-Of the 16656 positions, **16385 are reserved retained words** in
-`[0x08000204, 0x08010208)`. An aligned word read returns the stored raw word;
-an accepted aligned word write replaces it. These words reset to zero and have
-no command, FIFO, automatic address increment or transfer-completion behavior.
-They remain reserved: retention does not make them cartridge RAM or grant a
-scratch-buffer allocation. Do not apply this read/write description to other
-directory rows; their unit-specific permissions and side effects still apply.
-
-I/O decoding and the I/O reservation have different limits. Addresses in
-`[0x08010440, 0x08040000)` reach installed main-RAM bytes rather than register
-slots, but remain within the reserved 256 KiB. They are not additional
-registers or newly available cartridge storage.
-
-For byte, halfword and word bus transfers, the **complete transfer** must fit
-inside the decoded I/O aperture for its I/O width rules to apply. A transfer
-crossing that end uses main-RAM backing for its complete width; it is not split
-between a final register and RAM. These examples describe mapped-bus transfers,
-not permission to bypass ordinary CPU instruction alignment:
-
-| Mapped transfer | Selected path |
+| Order | Operation |
 |---|---|
-| U32 at `0x0801043c` | Last complete I/O slot: supervisor fault DOMAIN |
-| U32 at `0x0801043e` | Four main-RAM bytes spanning the decoder boundary |
-| U16 at `0x0801043f` | Two main-RAM bytes spanning the decoder boundary |
-| U32 at `0x08010440` | Main-RAM backing within the reservation |
+| 1 | Copy the complete DATA section from its ROM load address to its RAM run address. |
+| 2 | Write zero throughout the BSS section in RAM. |
+| 3 | Run static module initialization. |
+| 4 | Call the program's entry function. |
 
-Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
-reaching the mapped bus. The [scalar-access rules](#sec-memory-scalar-memory-accesses)
-separate that CPU alignment check from I/O decoding. F64 instead consists of
-two word transfers: an aligned F64 access at `0x0801043c` reaches the last I/O
-slot first and RAM at `0x08010440` second, subject to the ordered fault rules.
+The DATA copy and BSS clear use four-byte word accesses over their complete
+padded byte counts. System startup initializes the firmware sections; cartridge
+startup initializes the cartridge program's sections. System startup also
+removes the temporary boot-primitive bindings after module initialization.
+
+EXEC starts the addressed function. DATA initialization and BSS clearing occur
+only when the instructions performing them execute. Therefore the ROM startup
+address must select the initialization routine when that initialization is
+required. Entering another function leaves the sections as they stand.
+Re-entering startup repeats the copy and clear, replacing the program's
+writable static contents with their initial values.
 
 ## Reserved and cartridge storage in main RAM {#sec-memory-reserved-and-cartridge-storage-in-main-ram}
 
@@ -158,10 +155,17 @@ use that chosen placement without overwriting firmware storage.
 |---|---|
 | System DATA | `0x080c0000` |
 | System BSS | End of system DATA |
-| Cartridge DATA | Exported actual end of system BSS |
+| Cartridge DATA | Actual end of system BSS |
 | Cartridge BSS | End of cartridge DATA |
 
 Each end in this table is exclusive and includes the section's alignment padding. The compiler aligns static objects to their type alignment and rounds section sizes to multiples of four bytes.
+
+For the counter-and-record layout, DATA must provide the counter's working
+word and BSS must provide the output records. Their offsets belong to the
+cartridge sections placed after the firmware, not to a fixed address assumed
+from the 4 MiB capacity. The program image records the sections' actual
+addresses and extents; its fields are listed under
+[BLua32 executable image](#sec-memory-blua32-executable-image).
 
 Choosing a static layout is not a hardware allocation service. Neither the
 installed RAM extent nor the end of cartridge BSS defines a free arena, stack
@@ -219,52 +223,206 @@ For those dimensions, the returned origin word is `0x02d002c0` and the size word
 
 The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
 
-## ROM contents, RAM sections, and startup {#sec-memory-rom-contents-ram-sections-and-startup}
+## Typed byte storage and address views {#sec-memory-typed-byte-storage-and-address-views}
 
-ROM stores program instructions, read-only data and the initial contents of
-writable data. During execution, mutable static objects occupy main RAM.
-The following section names distinguish their storage and initialization rules.
+Use byte-addressed storage for the records, command words and sample bytes that
+hardware consumes. BLua's `bss`, `data` and `rodata` declarations define
+addressed storage objects; a local typed view supplies an access layout for an
+existing address. Neither a local value nor an ordinary Table is a device buffer.
 
-| Section | Contents in the ROM image | Address used during execution |
-|---|---|---|
-| TEXT | Executable code | Instruction byte address in ROM |
-| RODATA | Read-only data bytes | Read-only byte address in ROM |
-| DATA | Initializer bytes | DATA run address in main RAM, after startup copies the initializers |
-| BSS | No section byte payload | BSS address in main RAM, after startup clears the section |
+The complete declaration, initializer, type-size, alignment, array and struct
+rules are in [[Book II — Typed storage, layouts, and address views](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Typed storage, layouts, and address views”]{.content-visible when-format="pdf"}.
+That reference also defines `sizeof`, `offsetof`, address-of and zero-based typed
+indexing. The memory rules in this chapter determine what happens when the
+resulting address reaches RAM, ROM or an I/O port.
 
-DATA consequently has two distinct addresses:
+For example, a word view of an existing DMA register bank accesses consecutive
+four-byte ports. It does not reserve a DMA channel or alter the port layout:
 
-- Its **load address** identifies the initializer bytes in the ROM image.
-- Its **run address** identifies the writable storage in main RAM.
+```lua
+local dma0<const>: *word = 0x0800000c
+local remaining = dma0[2]
+```
 
-Instructions access a DATA object's RAM run address. Startup reads the
-initializer at its ROM load address and copies it to that run address.
-RODATA is used in place in ROM. BSS reserves a RAM address range, whose initial
-zero contents are written by startup; the ROM needs only its address and size.
+The read reaches TRANSFER_COUNT at `08000014H`. By contrast, `dma0 + 2` is the
+byte address `0800000EH`, not that third port. Use an indexed typed access or an
+explicit byte offset that preserves the device's required alignment.
 
-### When initialization occurs {#sec-memory-when-initialization-occurs}
+A storage address still carries the region's ownership and lifetime rules.
+Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
+read-only byte source, and keep a device's input bytes unchanged until its
+completion condition releases them. The [record-copy example](#sec-memory-worked-example-prepare-and-copy-two-records)
+below applies typed layouts to exact bytes; [DMA buffer lifetime](#sec-memory-dma-buffer-lifetime)
+and the following unit-specific sections cover asynchronous use.
 
-A program's startup routine establishes its static storage before entering
-application code. The standard BLua startup sequence is:
+## Worked example: prepare and copy two records {#sec-memory-worked-example-prepare-and-copy-two-records}
 
-| Order | Operation |
-|---|---|
-| 1 | Copy the complete DATA section from its ROM load address to its RAM run address. |
-| 2 | Write zero throughout the BSS section in RAM. |
-| 3 | Run static module initialization. |
-| 4 | Call the program's entry function. |
+This sequence prepares bytes without submitting a device job. Start after
+normal cartridge DATA/BSS initialization. The declared objects supply the source and destination addresses.
 
-The DATA copy and BSS clear use four-byte word accesses over their complete
-padded byte counts. System startup initializes the firmware sections; cartridge
-startup initializes the cartridge program's sections. System startup also
-removes the temporary boot-primitive bindings after module initialization.
+```lua
+module<entry>
+struct memory_sample
+    tag: u8
+    value: word
+    samples: u16[2]
+end
+rodata inputs: memory_sample[2] = {
+    { tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
+    { tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
+}
+data counter: word = 0x12345678
+bss output: memory_sample[2]
+local source<const>: *memory_sample = inputs
+local destination<const>: *memory_sample = output
 
-EXEC starts the addressed function. DATA initialization and BSS clearing occur
-only when the instructions performing them execute. Therefore the ROM startup
-address must select the initialization routine when that initialization is
-required. Entering another function leaves the sections as they stand.
-Re-entering startup repeats the copy and clear, replacing the program's
-writable static contents with their initial values.
+for index = 0, #inputs - 1 do
+    destination[index].tag = source[index].tag
+    destination[index].value = source[index].value
+    destination[index].samples[0] = source[index].samples[0]
+    destination[index].samples[1] = source[index].samples[1]
+end
+*counter = *counter + #inputs
+```
+
+### Record indexing is not byte arithmetic {#sec-memory-record-indexing-is-not-byte-arithmetic}
+
+| Part of `memory_sample` | Byte offset | Bytes |
+| --- | ---: | ---: |
+| `tag` | 0 | 1 |
+| Padding | 1 | 3 |
+| `value` | 4 | 4 |
+| `samples` | 8 | 4 |
+
+Record alignment is 4 and record size is 12 bytes. Each two-record array
+occupies 24 bytes. Typed indices start at zero: `&source[1]` is 12 bytes after
+`inputs`, `&source[0].value` is 4 bytes after it, and
+`&source[1].samples[1]` is 22 bytes after it. Advancing a byte view by one
+would instead select the next byte, here padding, not the next record.
+
+### Resulting bytes {#sec-memory-resulting-bytes}
+
+BSS supplies initial zero output bytes. The copy writes scalar fields rather
+than assigning whole records, so their three padding bytes remain zero.
+
+| Output byte offset | Word | Contents |
+| ---: | --- | --- |
+| 0 | `00000011H` | First tag and three zero padding bytes |
+| 4 | `12345678H` | First value |
+| 8 | `33441122H` | First record's two samples |
+| 12 | `00000022H` | Second tag and three zero padding bytes |
+| 16 | `9ABCDEF0H` | Second value |
+| 20 | `77885566H` | Second record's two samples |
+
+The final counter is `1234567AH`: `#inputs` counts **two records**, not bytes.
+No interrupt, rendering or buffer-release event follows this CPU copy. A
+hardware-facing use must still satisfy the receiving unit's address, layout,
+count, completion and lifetime rules.
+
+## Language execution storage and byte RAM {#sec-memory-language-execution-storage-and-byte-ram}
+
+The record-copy example's `output` is twenty-four addressed RAM bytes. A Table
+used to organize two records is a language value with its own identity; it is
+not that byte array. A local variable holding an address also differs from the
+storage reached through the address. Keep these roles separate when supplying
+hardware operands or budgeting writable storage.
+
+Function calls use language value slots. A frame's register area follows its variable-argument area in the active thread's slot stack. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
+
+Language values use a shared allocation budget, described under
+[[CPU — Language allocation and lifetime](cpu.md#sec-cpu-language-allocation-and-lifetime)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Language allocation and lifetime”]{.content-visible when-format="pdf"}.
+That budget does not describe a mapped byte-RAM heap or report free RAM bytes.
+Mapped DATA/BSS placement and the language budget are separate constraints:
+placing a static byte buffer neither allocates a language Table nor yields a
+byte address for the CPU's value slots.
+
+### Values are not byte buffers {#sec-memory-values-are-not-byte-buffers}
+
+A language value can hold a Number, text, a Table, a function or a Thread.
+Copying a Table or function value preserves its identity; it does not copy its
+contents into main RAM. A device needs the numeric address of storage containing
+its prescribed bytes, not the Table that the program uses to organize them.
+
+Use typed static storage and scalar writes to construct that byte layout.
+Loads return numeric scalars under the selected access format; they do not
+reconstruct arbitrary language values from words. Integer stores retain the
+specified low bits, while floating stores encode floating-point bits. The
+[scalar memory rules](#sec-memory-scalar-memory-accesses) give the alignment, conversion
+and partial-access behavior.
+
+### Function arguments, results and BIOS calls {#sec-memory-function-arguments-results-and-bios-calls}
+
+Passing an address to a function passes its numeric value. It neither copies
+the pointed-to bytes nor extends their lifetime. A callee can establish a typed
+view of that address before accessing it, as in the example below. Ordinary
+calls use value slots, not a cartridge-addressable byte stack.
+
+Use [[CPU — Calling and returning values](cpu.md#sec-cpu-calling-and-returning-values)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Calling and returning values”]{.content-visible when-format="pdf"}
+for argument/result placement and closure capture, and
+[[BLua source semantics](blua-programs.md#sec-blua-programs-blua-source-semantics)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “BLua source semantics”]{.content-visible when-format="pdf"} for source-level
+varargs and result expansion. Named static BIOS targets and installed global
+library values are distinct call routes; see
+[[Named BIOS function imports](blua-programs.md#sec-blua-programs-named-bios-function-imports)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Named BIOS function imports”]{.content-visible when-format="pdf"}.
+Calling either kind of BIOS function is an ordinary call, not EXEC or a
+privilege transition. Its documented memory and device requirements still apply.
+
+### Text, codepoints and UTF-8 bytes {#sec-memory-text-codepoints-and-utf-8-bytes}
+
+A String holds Unicode text, not the numeric address of encoded bytes.
+`#text` counts codepoints; a byte count for DMA or a hardware record counts bytes.
+For example, U+00E9 is one codepoint but occupies two bytes in UTF-8. U+0000
+is an ordinary character rather than a String terminator.
+
+The BIOS bridge `string.from_utf8(address, byte_count)` reads UTF-8 from byte
+memory. Supply a complete, well-formed encoded span; it is not a malformed-input
+validator, and continuation reads for an incomplete final sequence can extend
+past the supplied count. A zero byte within a valid span becomes U+0000.
+The call reads the supplied storage; it does not give a String a byte address or
+turn that source into a retained DMA buffer.
+
+A static `string` field instead stores an image constant reference. Its address
+locates that reference, not inline UTF-8. Likewise, `string.pack` produces a
+String value rather than an addressed hardware buffer. Use explicit byte
+storage when supplying a device's payload. [[BIOS String operations](bios-string.md#sec-bios-string)]{.content-visible when-format="html"}[Book II, “BIOS String operations”]{.content-visible when-format="pdf"}
+defines the text operations, conversions and their full argument contracts.
+
+### Worked values, byte storage and text {#sec-memory-worked-values-byte-storage-and-text}
+
+After normal BIOS entry, typed storage supplies the destination bytes; passing
+its address to a function does not allocate a new destination:
+
+```lua
+bss written: word[2]
+local write_pair = function(address, first, second)
+    local destination<const>: *word = address
+    destination[0] = first
+    destination[1] = second
+    return first + second, 2
+end
+local sum, count = write_pair(written, 17, 25)
+```
+
+`sum` is 42, `count` is 2, and the two stored words are 17 and 25.
+The function's address view and the declared array select the same storage.
+Neither a Table nor a String can be substituted for its byte address.
+
+Text uses a different route:
+
+```lua
+rodata utf8_bytes: u8[8] = { 0x41, 0xc3, 0xa9, 0, 0xf0, 0x9f, 0x99, 0x82 }
+local text = string.from_utf8(utf8_bytes, #utf8_bytes)
+local count = #text
+local zero = string.byte(text, 3)
+local face = string.byte(text, 4)
+```
+
+Eight bytes decode to four codepoints: `0041H`, `00E9H`, `0000H`, `1F642H`.
+`count` is 4, `zero` is 0 and `face` is `1F642H`. Embedded zero does not
+terminate the String; the supplementary codepoint counts as one. Conversely,
+`'\xc3\xa9'` contains two codepoints rather than decoding two UTF-8 bytes.
+Use [[BIOS String operations](bios-string.md#sec-bios-string)]{.content-visible when-format="html"}[Book II, “BIOS String operations”]{.content-visible when-format="pdf"} for explicit text/byte conversion,
+and [[CPU calls](cpu.md#sec-cpu-calls-closures-globals-and-tables)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Calls, closures, globals, and tables”]{.content-visible when-format="pdf"} for argument/result
+counts, captures and language-value identity.
 
 ## Reset and cartridge startup {#sec-memory-reset-and-cartridge-startup}
 
@@ -576,137 +734,6 @@ that work, use the GPU completion protocol. Display publication remains a
 separate PCRTC event. EXEC leaves the device registers and submitted work in
 place.
 
-## Typed byte storage and address views {#sec-memory-typed-byte-storage-and-address-views}
-
-Use byte-addressed storage for the records, command words and sample bytes that
-hardware consumes. BLua's `bss`, `data` and `rodata` declarations provide linked
-storage addresses; a local typed view supplies an access layout for an existing
-address. Neither a local value nor an ordinary Table is a device buffer.
-
-The complete declaration, initializer, type-size, alignment, array and struct
-rules are in [[Book II — Typed storage, layouts, and address views](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Typed storage, layouts, and address views”]{.content-visible when-format="pdf"}.
-That reference also defines `sizeof`, `offsetof`, address-of and zero-based typed
-indexing. The memory rules in this chapter determine what happens when the
-resulting address reaches RAM, ROM or an I/O port.
-
-For example, a word view of an existing DMA register bank accesses consecutive
-four-byte ports. It does not reserve a DMA channel or alter the port layout:
-
-```lua
-local dma0<const>: *word = 0x0800000c
-local remaining = dma0[2]
-```
-
-The read reaches TRANSFER_COUNT at `08000014H`. By contrast, `dma0 + 2` is the
-byte address `0800000EH`, not that third port. Use an indexed typed access or an
-explicit byte offset that preserves the device's required alignment.
-
-A storage address still carries the region's ownership and lifetime rules.
-Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
-read-only byte source, and keep a device's input bytes unchanged until its
-completion condition releases them. The [record-copy example](#sec-memory-worked-example-prepare-and-copy-two-records)
-below applies typed layouts to exact bytes; [DMA buffer lifetime](#sec-memory-dma-buffer-lifetime)
-and the following unit-specific sections cover asynchronous use.
-
-## Language execution storage and byte RAM {#sec-memory-language-execution-storage-and-byte-ram}
-
-Function calls use language value slots. A frame's register area follows its variable-argument area in the active thread's slot stack. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
-
-Language values use a shared allocation budget, described under
-[[CPU — Language allocation and lifetime](cpu.md#sec-cpu-language-allocation-and-lifetime)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Language allocation and lifetime”]{.content-visible when-format="pdf"}.
-That budget does not describe a mapped byte-RAM heap or report free RAM bytes.
-Mapped DATA/BSS placement and the language budget are separate constraints:
-placing a static byte buffer neither allocates a language Table nor yields a
-byte address for the CPU's value slots.
-
-### Values are not byte buffers {#sec-memory-values-are-not-byte-buffers}
-
-A language value can hold a Number, text, a Table, a function or a Thread.
-Copying a Table or function value preserves its identity; it does not copy its
-contents into main RAM. A device needs the numeric address of storage containing
-its prescribed bytes, not the Table that the program uses to organize them.
-
-Use typed static storage and scalar writes to construct that byte layout.
-Loads return numeric scalars under the selected access format; they do not
-reconstruct arbitrary language values from words. Integer stores retain the
-specified low bits, while floating stores encode floating-point bits. The
-[scalar memory rules](#sec-memory-scalar-memory-accesses) give the alignment, conversion
-and partial-access behavior.
-
-### Function arguments, results and BIOS calls {#sec-memory-function-arguments-results-and-bios-calls}
-
-Passing an address to a function passes its numeric value. It neither copies
-the pointed-to bytes nor extends their lifetime. A callee can establish a typed
-view of that address before accessing it, as in the example below. Ordinary
-calls use value slots, not a cartridge-addressable byte stack.
-
-Use [[CPU — Calling and returning values](cpu.md#sec-cpu-calling-and-returning-values)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Calling and returning values”]{.content-visible when-format="pdf"}
-for argument/result placement and closure capture, and
-[[BLua source semantics](blua-programs.md#sec-blua-programs-blua-source-semantics)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “BLua source semantics”]{.content-visible when-format="pdf"} for source-level
-varargs and result expansion. Named static BIOS targets and installed global
-library values are distinct call routes; see
-[[Named BIOS function imports](blua-programs.md#sec-blua-programs-named-bios-function-imports)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “Named BIOS function imports”]{.content-visible when-format="pdf"}.
-Calling either kind of BIOS function is an ordinary call, not EXEC or a
-privilege transition. Its documented memory and device requirements still apply.
-
-### Text, codepoints and UTF-8 bytes {#sec-memory-text-codepoints-and-utf-8-bytes}
-
-A String holds Unicode text, not the numeric address of encoded bytes.
-`#text` counts codepoints; a byte count for DMA or a hardware record counts bytes.
-For example, U+00E9 is one codepoint but occupies two bytes in UTF-8. U+0000
-is an ordinary character rather than a String terminator.
-
-The BIOS bridge `string.from_utf8(address, byte_count)` reads UTF-8 from byte
-memory. Supply a complete, well-formed encoded span; it is not a malformed-input
-validator, and continuation reads for an incomplete final sequence can extend
-past the supplied count. A zero byte within a valid span becomes U+0000.
-The call reads the supplied storage; it does not give a String a byte address or
-turn that source into a retained DMA buffer.
-
-A static `string` field instead stores an image constant reference. Its address
-locates that reference, not inline UTF-8. Likewise, `string.pack` produces a
-String value rather than an addressed hardware buffer. Use explicit byte
-storage when supplying a device's payload. [[BIOS String operations](bios-string.md#sec-bios-string)]{.content-visible when-format="html"}[Book II, “BIOS String operations”]{.content-visible when-format="pdf"}
-defines the text operations, conversions and their full argument contracts.
-
-### Worked values, byte storage and text {#sec-memory-worked-values-byte-storage-and-text}
-
-After normal BIOS entry, typed storage supplies the destination bytes; passing
-its address to a function does not allocate a new destination:
-
-```lua
-bss written: word[2]
-local write_pair = function(address, first, second)
-    local destination<const>: *word = address
-    destination[0] = first
-    destination[1] = second
-    return first + second, 2
-end
-local sum, count = write_pair(written, 17, 25)
-```
-
-`sum` is 42, `count` is 2, and the two stored words are 17 and 25.
-The function's address view and the declared array select the same storage.
-Neither a Table nor a String can be substituted for its byte address.
-
-Text uses a different route:
-
-```lua
-rodata utf8_bytes: u8[8] = { 0x41, 0xc3, 0xa9, 0, 0xf0, 0x9f, 0x99, 0x82 }
-local text = string.from_utf8(utf8_bytes, #utf8_bytes)
-local count = #text
-local zero = string.byte(text, 3)
-local face = string.byte(text, 4)
-```
-
-Eight bytes decode to four codepoints: `0041H`, `00E9H`, `0000H`, `1F642H`.
-`count` is 4, `zero` is 0 and `face` is `1F642H`. Embedded zero does not
-terminate the String; the supplementary codepoint counts as one. Conversely,
-`'\xc3\xa9'` contains two codepoints rather than decoding two UTF-8 bytes.
-Use [[BIOS String operations](bios-string.md#sec-bios-string)]{.content-visible when-format="html"}[Book II, “BIOS String operations”]{.content-visible when-format="pdf"} for explicit text/byte conversion,
-and [[CPU calls](cpu.md#sec-cpu-calls-closures-globals-and-tables)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Calls, closures, globals, and tables”]{.content-visible when-format="pdf"} for argument/result
-counts, captures and language-value identity.
-
 ## Execution addresses and instruction reads {#sec-memory-execution-addresses-and-instruction-reads}
 
 ### Function records and instruction addresses {#sec-memory-function-records-and-instruction-addresses}
@@ -772,6 +799,92 @@ another base charge. These charges do not specify the cost of a source
 expression, total program execution time, or sustained memory bandwidth.
 
 Use [[CPU — Cycle accounting and execution boundaries](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Cycle accounting and execution boundaries”]{.content-visible when-format="pdf"} for admission, retries and additional instruction work, and its [[Memory instruction reference](cpu.md#sec-cpu-memory-instruction-reference)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Memory instruction reference”]{.content-visible when-format="pdf"} for the complete transfer-instruction table. [DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus) supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
+
+## I/O register-bank directory {#sec-memory-io-register-bank-directory}
+
+The I/O-slot aperture contains 16656 four-byte slots: 66624 bytes in
+`[0x08000000, 0x08010440)`. The reservation and allocation boundaries above
+remain separate from that decoded aperture.
+
+The following directory covers the complete I/O aperture in address order. Each word position occupies four bytes; its address is the first byte of that word. The end column is exclusive. Counts include status, snapshot and result words as well as control words: they are **addressed word positions**, not counts of independently writable registers. Access permissions, read side effects, command admission and reset values belong to the individual register descriptions linked in the last column, not to a whole directory range.
+
+### Lower register banks and reserved slots {#sec-memory-lower-register-banks-and-reserved-slots}
+
+| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
+|---|---|---|---|
+| `0x08000000` | `0x0800000c` | 3 | [IRQ](irq.md#sec-irq-register-reference) — pending flags, acknowledgement and mask |
+| `0x0800000c` | `0x08000024` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 0 |
+| `0x08000024` | `0x08000064` | 16 | [GEO](geo.md#sec-geo-register-reference) — operands, command, control, progress and fault |
+| `0x08000064` | `0x08000120` | 47 | [Input](input.md#sec-input-register-map) — sampling, keyboard, pointer, four pads and output port |
+| `0x08000120` | `0x08000174` | 21 | [APU](apu.md#sec-apu-register-reference) — command-staging parameters |
+| `0x08000174` | `0x0800017c` | 2 | [APU](apu.md#sec-apu-register-reference) — CMD and STATUS |
+| `0x0800017c` | `0x0800018c` | 4 | [APU](apu.md#sec-apu-register-reference) — retained end-event words |
+| `0x0800018c` | `0x08000194` | 2 | [APU](apu.md#sec-apu-register-reference) — selected source and active-slot mask |
+| `0x08000194` | `0x080001e8` | 21 | [APU](apu.md#sec-apu-register-reference) — live selected-slot parameter window |
+| `0x080001e8` | `0x080001f4` | 3 | [APU](apu.md#sec-apu-register-reference) — sample-transfer address, data and control |
+| `0x080001f4` | `0x08000200` | 3 | [APU](apu.md#sec-apu-register-reference) — command-queue occupancy, free space and capacity |
+| `0x08000200` | `0x08000204` | 1 | [APU](apu.md#sec-apu-register-reference) — sample sequence |
+| `0x08000204` | `0x08000208` | 1 | Reserved retained word |
+| `0x08000208` | `0x08010208` | 16384 | Reserved retained-slot range |
+
+### Upper register banks {#sec-memory-upper-register-banks}
+
+| First word address | Exclusive end | 32-bit word positions | Unit and subbank |
+|---|---|---|---|
+| `0x08010208` | `0x08010218` | 4 | [Memory bus fault](#sec-memory-bus-fault-status-and-cpu-exceptions) — code, address, access and acknowledgement |
+| `0x08010218` | `0x08010224` | 3 | [APU](apu.md#sec-apu-register-reference) — fault code, detail and acknowledgement |
+| `0x08010224` | `0x08010228` | 1 | [GEO](geo.md#sec-geo-register-reference) — fault acknowledgement |
+| `0x08010228` | `0x08010230` | 2 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — elapsed milliseconds and frame interval |
+| `0x08010230` | `0x08010238` | 2 | [SYSTEM](system.md#sec-system-diagnostic-text-output) — diagnostic character and line flush |
+| `0x08010238` | `0x0801023c` | 1 | [SYSTEM](system.md#sec-system-system-time-and-frame-timing) — cycles per frame |
+| `0x0801023c` | `0x08010244` | 2 | [GPU](gpu.md#sec-gpu-gp0-gpuread-gp1-and-gpustat) — GP0/GPUREAD and GP1/GPUSTAT |
+| `0x08010244` | `0x080102c4` | 32 | [GTE](gte.md#sec-gte-register-reference) — data words D[0]–D[31] |
+| `0x080102c4` | `0x08010344` | 32 | [GTE](gte.md#sec-gte-register-reference) — control words C[0]–C[31] |
+| `0x08010344` | `0x0801034c` | 2 | [GTE](gte.md#sec-gte-normal-command-and-cycles) — normal COMMAND and CYCLES |
+| `0x0801034c` | `0x08010354` | 2 | [SYSTEM](system.md#sec-system) — CONTROL and STATUS |
+| `0x08010354` | `0x08010384` | 12 | [PCRTC](pcrtc.md#sec-pcrtc) — composition words, PMODE through BGCOLOR |
+| `0x08010384` | `0x080103ac` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
+| `0x080103ac` | `0x080103e4` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
+| `0x080103e4` | `0x080103fc` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
+| `0x080103fc` | `0x08010420` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
+| `0x08010420` | `0x08010428` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Cartridge controller”]{.content-visible when-format="pdf"} — socket selection and status |
+| `0x08010428` | `0x08010440` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
+
+These ranges partition all 16656 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
+
+### Reserved retained words and decoder boundary {#sec-memory-reserved-retained-words-and-decoder-boundary}
+
+Of the 16656 positions, **16385 are reserved retained words** in
+`[0x08000204, 0x08010208)`. An aligned word read returns the stored raw word;
+an accepted aligned word write replaces it. These words reset to zero and have
+no command, FIFO, automatic address increment or transfer-completion behavior.
+They remain reserved: retention does not make them cartridge RAM or grant a
+scratch-buffer allocation. Do not apply this read/write description to other
+directory rows; their unit-specific permissions and side effects still apply.
+
+I/O decoding and the I/O reservation have different limits. Addresses in
+`[0x08010440, 0x08040000)` reach installed main-RAM bytes rather than register
+slots, but remain within the reserved 256 KiB. They are not additional
+registers or newly available cartridge storage.
+
+For byte, halfword and word bus transfers, the **complete transfer** must fit
+inside the decoded I/O aperture for its I/O width rules to apply. A transfer
+crossing that end uses main-RAM backing for its complete width; it is not split
+between a final register and RAM. These examples describe mapped-bus transfers,
+not permission to bypass ordinary CPU instruction alignment:
+
+| Mapped transfer | Selected path |
+|---|---|
+| U32 at `0x0801043c` | Last complete I/O slot: supervisor fault DOMAIN |
+| U32 at `0x0801043e` | Four main-RAM bytes spanning the decoder boundary |
+| U16 at `0x0801043f` | Two main-RAM bytes spanning the decoder boundary |
+| U32 at `0x08010440` | Main-RAM backing within the reservation |
+
+Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
+reaching the mapped bus. The [scalar-access rules](#sec-memory-scalar-memory-accesses)
+separate that CPU alignment check from I/O decoding. F64 instead consists of
+two word transfers: an aligned F64 access at `0x0801043c` reaches the last I/O
+slot first and RAM at `0x08010440` second, subject to the ordered fault rules.
 
 ## Scalar memory accesses {#sec-memory-scalar-memory-accesses}
 
@@ -1044,70 +1157,6 @@ FAULT 00000001 -> 00000000
 `REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [System control and timing — Reset requests](system.md#sec-system-reset-requests).
 
 For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [[CPU — Read CP0 in a cartridge IRQ](cpu.md#sec-cpu-read-cp0-in-a-cartridge-irq)]{.content-visible when-format="html"}[Book II, “CPU and BLua32 instruction reference”, under “Read CP0 in a cartridge IRQ”]{.content-visible when-format="pdf"}. The callback returns normally, allowing the standard IRQ entry to perform RFE and resume the interrupted cartridge code.
-
-## Worked example: prepare and copy two records {#sec-memory-worked-example-prepare-and-copy-two-records}
-
-This sequence prepares bytes without submitting a device job. Start after
-normal cartridge DATA/BSS initialization. The declared objects supply the source and destination addresses.
-
-```lua
-module<entry>
-struct memory_sample
-    tag: u8
-    value: word
-    samples: u16[2]
-end
-rodata inputs: memory_sample[2] = {
-    { tag = 0x11, value = 0x12345678, samples = { 0x1122, 0x3344 } },
-    { tag = 0x22, value = 0x9abcdef0, samples = { 0x5566, 0x7788 } },
-}
-data counter: word = 0x12345678
-bss output: memory_sample[2]
-local source<const>: *memory_sample = inputs
-local destination<const>: *memory_sample = output
-
-for index = 0, #inputs - 1 do
-    destination[index].tag = source[index].tag
-    destination[index].value = source[index].value
-    destination[index].samples[0] = source[index].samples[0]
-    destination[index].samples[1] = source[index].samples[1]
-end
-*counter = *counter + #inputs
-```
-
-### Record indexing is not byte arithmetic {#sec-memory-record-indexing-is-not-byte-arithmetic}
-
-| Part of `memory_sample` | Byte offset | Bytes |
-| --- | ---: | ---: |
-| `tag` | 0 | 1 |
-| Padding | 1 | 3 |
-| `value` | 4 | 4 |
-| `samples` | 8 | 4 |
-
-Record alignment is 4 and record size is 12 bytes. Each two-record array
-occupies 24 bytes. Typed indices start at zero: `&source[1]` is 12 bytes after
-`inputs`, `&source[0].value` is 4 bytes after it, and
-`&source[1].samples[1]` is 22 bytes after it. Advancing a byte view by one
-would instead select the next byte, here padding, not the next record.
-
-### Resulting bytes {#sec-memory-resulting-bytes}
-
-BSS supplies initial zero output bytes. The copy writes scalar fields rather
-than assigning whole records, so their three padding bytes remain zero.
-
-| Output byte offset | Word | Contents |
-| ---: | --- | --- |
-| 0 | `00000011H` | First tag and three zero padding bytes |
-| 4 | `12345678H` | First value |
-| 8 | `33441122H` | First record's two samples |
-| 12 | `00000022H` | Second tag and three zero padding bytes |
-| 16 | `9ABCDEF0H` | Second value |
-| 20 | `77885566H` | Second record's two samples |
-
-The final counter is `1234567AH`: `#inputs` counts **two records**, not bytes.
-No interrupt, rendering or buffer-release event follows this CPU copy. A
-hardware-facing use must still satisfy the receiving unit's address, layout,
-count, completion and lifetime rules.
 
 ## DMA buffer lifetime {#sec-memory-dma-buffer-lifetime}
 

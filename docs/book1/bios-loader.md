@@ -26,6 +26,29 @@ typed storage declaration or raw mapped-memory source form. Pass the required
 values through its environment or external bindings rather than assuming all
 linked BLua extensions are accepted by `load`.
 
+## Compile first, invoke explicitly {#sec-bios-loader-compile-first-invoke-explicitly}
+
+The installed environment supplies `load`. Compiling the first chunk below
+leaves `environment.total` at zero; only its invocations change the field.
+
+```lua
+local environment = { total = 0, step = 3 }
+local chunk, message = load(
+    'total = total + step return total', 'counter', 't', environment)
+if chunk == nil then
+    error(message)
+end
+local first = chunk()
+environment.step = 5
+local second = chunk()
+```
+
+`first` is 3 and `second` is 8. The same closure accesses the same environment;
+compilation did not copy its fields. Compare the first result with `nil` to
+recognize failure: the second result can be any error payload, including nil.
+Calling the closure is a separate operation with its own error boundary.
+
+
 ## Runtime compilation interface {#sec-bios-loader-runtime-compilation-interface}
 
 The BIOS installs `lua_compiler` and assigns its `load` function to the global
@@ -393,6 +416,34 @@ lua_compiler.compile_syntax(chunk, chunk_name, environment, external_scope)
 
 
 Successful compilation returns **one root callable closure**. It does not call that closure. The root has no syntax parameters. Compilation binds and compiles every nested function and links the resulting program; it skips text parsing, not the remaining compilation work. There is no `mode` argument on this entry point. Compilation errors raise directly: this is not an interface returning `nil, message` on failure.
+
+### Construct syntax without parsing text {#sec-bios-loader-construct-syntax-without-parsing-text}
+
+The expression `6 * 7` has two Number operands and a multiplication
+operation. To return its value, place that expression in a return statement,
+place the statement in a block, and make that block the chunk's body. The
+constructors describe these operations; they do not execute the multiplication.
+
+Use the installed factory so each syntax occurrence has its own node:
+
+```lua
+local factory = lua_compiler.syntax_factory
+local syntax = factory.syntax
+local chunk = lua_compiler.compile_syntax(
+    factory.chunk(factory.block({
+        factory.return_statement({
+            factory.binary_expression(syntax.binary_multiply,
+                factory.number_literal(6), factory.number_literal(7)),
+        }),
+    })), 'syntax')
+local result = chunk()
+```
+
+`result` is 42. `compile_syntax` has no load-style returned-error wrapper; use
+`pcall(lua_compiler.compile_syntax, ...)` when a protected result is required.
+A generated symbol can be shared as a key, but its declarations and each use
+must be separate syntax nodes. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
+specifies constructors, node ownership, result counts and diagnostics.
 
 ### Node ownership, lists, and locations {#sec-bios-loader-node-ownership-lists-and-locations}
 
@@ -801,29 +852,6 @@ different state boundary; see [CPU execution control](cpu.md#sec-cpu-exec) and
 
 ## Programming runtime compilation {#sec-bios-loader-programming-runtime-compilation}
 
-### Compile first, invoke explicitly {#sec-bios-loader-compile-first-invoke-explicitly}
-
-The installed environment supplies `load`. Compiling the first chunk below
-leaves `environment.total` at zero; only its invocations change the field.
-
-```lua
-local environment = { total = 0, step = 3 }
-local chunk, message = load(
-    'total = total + step return total', 'counter', 't', environment)
-if chunk == nil then
-    error(message)
-end
-local first = chunk()
-environment.step = 5
-local second = chunk()
-```
-
-`first` is 3 and `second` is 8. The same closure accesses the same environment;
-compilation did not copy its fields. Compare the first result with `nil` to
-recognize failure: the second result can be any error payload, including nil.
-Calling the closure is a separate operation with its own error boundary.
-
-
 ### Bind an external location {#sec-bios-loader-bind-an-external-location}
 
 An external descriptor takes precedence over an environment field of the same
@@ -873,26 +901,3 @@ local second = child(5)
 The results are 15 and 25. Keeping the child retains the compilation's code
 allocation after the factory reference is dropped. It does not freeze the
 environment or promise when an unreachable allocation will be reclaimed.
-
-### Construct syntax without parsing text {#sec-bios-loader-construct-syntax-without-parsing-text}
-
-Use the installed factory so each syntax occurrence has its own node:
-
-```lua
-local factory = lua_compiler.syntax_factory
-local syntax = factory.syntax
-local chunk = lua_compiler.compile_syntax(
-    factory.chunk(factory.block({
-        factory.return_statement({
-            factory.binary_expression(syntax.binary_multiply,
-                factory.number_literal(6), factory.number_literal(7)),
-        }),
-    })), 'syntax')
-local result = chunk()
-```
-
-`result` is 42. `compile_syntax` has no load-style returned-error wrapper; use
-`pcall(lua_compiler.compile_syntax, ...)` when a protected result is required.
-A generated symbol can be shared as a key, but its declarations and each use
-must be separate syntax nodes. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
-specifies constructors, node ownership, result counts and diagnostics.

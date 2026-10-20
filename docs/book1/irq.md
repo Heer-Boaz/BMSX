@@ -6,6 +6,13 @@ pending source in FLAGS and combines FLAGS with MASK to assert the CPU's
 maskable interrupt line. Each source has one pending bit, so repeated arrivals
 can coalesce before service.
 
+For example, a GPU marker can finish while the CPU is preparing other work.
+The pending bit remembers that request until software acknowledges it. MASK
+lets software defer delivery without discarding the request: enabling a source
+that is already pending can assert the interrupt line immediately. The handler
+then services the device and clears the appropriate pending bit. This separates
+the event's occurrence from the time at which the CPU handles it.
+
 Sources include DMA completion, PCRTC events, VBlank, GEO completion/errors,
 APU events, GPU markers, IMGDEC events and the two cartridge sockets. Program a
 source's local event controls, install its service routine, then enable its
@@ -220,8 +227,11 @@ not include time spent pending behind a closed MASK or disabled IEc.
 
 ## Acknowledge the source and the controller separately {#sec-irq-acknowledge-the-source-and-the-controller-separately}
 
-Controller ACK removes a pending bit. It is not a command to the unit that
-raised that bit. The GPU provides a concrete example of the distinction:
+Consider a program that handles one GPU marker and then submits another. If
+the handler clears only the controller's pending bit, the GPU can still retain
+its first local request. The second marker then supplies no new interrupt edge.
+To make each marker independently observable, service both the device's local
+request and the controller's pending bit. The GPU uses these operations:
 
 - GP0 word `1f000000H` is an in-order interrupt marker. When it executes with
   GPUSTAT24 clear, it sets that local bit and raises controller bit 6.
@@ -249,8 +259,7 @@ masked while following this sequence:
 The opposite partial acknowledgement is different: clearing only GPUSTAT24
 leaves controller bit 6 pending. A new marker can then raise bit 6 again, but
 OR-ing it into an already-set pending bit still leaves just one pending bit.
-The programming example below demonstrates that coalescence before enabling
-delivery.
+The separate trace below follows that coalescence before enabling delivery.
 
 Follow the local acknowledgement sequence of each source. The
 [GPU command reference](gpu.md#sec-gpu) defines marker ordering and GPU completion;
@@ -298,7 +307,8 @@ Use ordinary BIOS cartridge entry with the inherited beam running and CPU
 interrupt enable set. Own GP0, the GPU interrupt handler and MASK exclusively;
 no unfinished packet, readback or DMA transfer may remain. This example leaves
 VBlank pending but masked so that the full handler argument can be distinguished
-from the enabled subset.
+from the enabled subset. For the numerical flag values shown, only VBlank and
+the submitted GPU markers raise requests during the example.
 
 ```lua
 bss gpu_services: word
@@ -319,8 +329,8 @@ function irq(flags)
 end
 ```
 
-With the handler installed, establish the masked requests, then enable GPU
-delivery and wait for the two services:
+With the handler installed, retain a masked VBlank request, enable GPU
+delivery and wait for one marker service:
 
 ```lua
 *irq_mask = 0
@@ -331,28 +341,24 @@ end
 while (*irq_flags & 4) == 0 do
 end
 
-*gp0 = 0x1f000000          -- First masked GPU request.
-while (*gp1 & 0x01000000) == 0 do
-end
-*gp1 = 0x02000000          -- Re-arm GPU; central pending is still set.
-*irq_ack = 0               -- No pending bit is cleared.
-*gp0 = 0x1f000000          -- A second request coalesces into bit 6.
-while (*gp1 & 0x01000000) == 0 do
-end
-
 *irq_mask = 0x00000040
+*gp0 = 0x1f000000
 while *gpu_services == 0 do
-    halt_until_irq
-end
-*gp0 = 0x1f000000          -- The handler cleared both required latches.
-while *gpu_services == 1 do
     halt_until_irq
 end
 *irq_mask = 0
 ```
 
-Under the stated ownership conditions, the ordered states are as follows.
-GPU24 is shown as a masked word. Rows are operation boundaries, not
+The handler receives `44H`: VBlank is pending but masked, while GPU bit 6
+enabled delivery. It clears only GPU's local request and controller bit, leaving
+VBlank pending. The service count becomes 1 and permits the caller to continue;
+`delivered_flags` retains the complete argument for this example.
+
+The following separate trace shows what changes if two markers are requested
+while delivery is masked, before the first service. Start with GPU's local
+request and controller bit clear, VBlank pending and MASK zero. The local clear
+between the first two markers rearms the GPU, but their central requests still
+coalesce. GPU24 is shown as a masked word. Rows are operation boundaries, not
 equal-duration time slots or atomic multi-register samples.
 
 | Operation | FLAGS | MASK | GPU24 | Completed GPU services |
@@ -366,7 +372,7 @@ equal-duration time slots or atomic multi-register samples.
 | Third marker serviced | `04` | `40` | `00000000` | 2 |
 | Delivery masked again | `04` | `00` | `00000000` | 2 |
 
-Both services receive `44H`, although the enabled subset is only `40H`.
+Both services in the trace receive `44H`, although the enabled subset is only `40H`.
 The handler clears GPU only, so disabled VBlank remains pending. ACK always
 reads zero. The two service increments count these controlled services after
 re-arming; they do not count all possible source arrivals or establish an
