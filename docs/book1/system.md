@@ -11,6 +11,21 @@ provide frame synchronization; these readouts provide measurements. Diagnostic
 output appends codepoints through PRINT_CHAR and submits a complete line
 through PRINT_FLUSH.
 
+Supervisor service lets the BIOS use the interrupt controller, DMA and graphics
+hardware while retaining the cartridge's device context. The context preserves
+registers and pending work; main RAM and VRAM remain shared storage. This
+distinction matters when a cartridge resumes: restoring a drawing configuration
+does not restore pixels overwritten while the BIOS was using the GPU.
+
+## SYSTEM specifications {#sec-system-system-specifications}
+
+| Resource | Specification |
+|---|---|
+| Register interface | Thirteen 32-bit word ports at the noncontiguous addresses listed in this chapter; four-byte words |
+| Addressed register bytes | 52 bytes in total, not one contiguous reservation or payload RAM |
+| Supervisor fault report | Six raw words, 24 bytes including its publication sequence |
+| Diagnostic output queue | 8192 bytes, shared by completed unread text and the current partial line |
+
 ## Measure elapsed console time {#sec-system-measure-elapsed-console-time}
 
 To measure an interval, read TIME_MS at its beginning and again at its end.
@@ -20,10 +35,9 @@ it is not a count of instructions executed by the calling routine. The counter
 wraps after `ffffffffH`, so calculate the difference modulo `2^32` rather than
 comparing the two raw counter values as an ever-increasing clock.
 
-This polling example needs no interrupt source: TIME_MS advances with system
-cycles, not with timer interrupts. It leaves the inherited display and
-interrupt configuration unchanged. The interval must be shorter than one
-complete 2^32-millisecond wrap.
+TIME_MS advances with system cycles, so this polling example needs no interrupt
+source or changes to the display configuration. The measured interval must be
+shorter than one complete 2^32-millisecond wrap.
 
 ```lua
 local time_ms<const>: *word = 0x08010228
@@ -36,11 +50,10 @@ local elapsed<const> = (finish - start) % 0x100000000
 
 `elapsed` is at least 100 milliseconds, not necessarily exactly 100.
 For `start = fffffff0H` and `finish = 00000054H`, the wrapping distance is
-100 milliseconds. BIOS `os.clock()` instead expresses a fresh TIME_MS read
-in seconds; `os.time()` without arguments returns whole seconds. Neither
-supplies a civil clock. A HALT-based wait additionally needs an owned interrupt
+100 milliseconds. A HALT-based wait additionally needs an enabled interrupt
 route and must recheck its time predicate after each wake-up; advancing
-TIME_MS alone cannot wake HALT.
+TIME_MS alone cannot wake HALT. BIOS time functions and their units are described
+in [[Book II, BIOS time and calendar services](bios-os.md#sec-bios-os)]{.content-visible when-format="html"}[Book II, “BIOS time and calendar services”]{.content-visible when-format="pdf"}.
 
 ## System time and frame timing {#sec-system-system-time-and-frame-timing}
 
@@ -59,7 +72,7 @@ constant registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
-`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. The full period is maintained separately, rather than recovered from this register. A sufficiently long period can therefore wrap the reported word without shortening the complete period.
+`FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
 
 `CYCLES_PER_FRAME` is a whole-period budget, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive budgets differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
@@ -74,90 +87,48 @@ when the actual elapsed time is shorter than one complete 2^32-millisecond
 period. A zero result is valid when both samples fall in the same millisecond.
 `os.difftime` is ordinary subtraction, not wrapping hardware-time arithmetic.
 
-The BIOS `os.clock()` returns `TIME_MS / 1000`, in seconds with millisecond resolution. The no-argument `os.time()` returns `TIME_MS // 1000`, in whole seconds. Both inherit the hardware word's wrap and neither measures time spent exclusively executing cartridge instructions. `os.time(date_table)` instead calculates a civil timestamp from the supplied fields; it does not set the console clock. These functions do not establish a wall-clock or real-time-clock service.
-
 ## Diagnostic text output {#sec-system-diagnostic-text-output}
 
 The diagnostic channel publishes lines assembled from codepoints. Write each
 codepoint to PRINT_CHAR, then write PRINT_FLUSH to end and submit the line.
-Appending text and publishing it are separate operations. Neither port draws
-the line on the screen; the BIOS console has its own retained text and drawing
-path, described below.
+Appending text and publishing it are separate operations. This channel carries
+diagnostic text, independently of GPU drawing. BIOS console output is described
+in [[Book II, BIOS base services — Console history and display](bios-base.md#sec-system-bios-console-integration)]{.content-visible when-format="html"}[Book II, “BIOS base services”, under “Console history and display”]{.content-visible when-format="pdf"}.
 
 | Address | Register | Access | Word interpretation | Reset |
 |---|---|---|---|---|
 | `0x08010230` | `PRINT_CHAR` | R/W | Bits 31–0: Unicode codepoint to append; reads return the full last written word | `0x00000000` |
 | `0x08010234` | `PRINT_FLUSH` | R/W | All written values request line publication; reads return the full last written word | `0x00000000` |
 
-Use aligned word writes. `PRINT_CHAR` accepts a Unicode codepoint, not a memory address, string reference, packed group of characters, or UTF-8 byte. Values `0x00000000`–`0x0000007f` encode as one UTF-8 byte, `0x00000080`–`0x000007ff` as two, `0x00000800`–`0x0000ffff` as three except for surrogates, and `0x00010000`–`0x0010ffff` as four. Surrogate words `0x0000d800`–`0x0000dfff` and words above `0x0010ffff` append the single byte `0x3f` (`?`). Readback still returns the original word, including an invalid codepoint word.
+Use aligned word writes, supplying one Unicode codepoint per PRINT_CHAR word.
+The channel encodes that codepoint as UTF-8: values
+`0x00000000`–`0x0000007f` use one byte, `0x00000080`–`0x000007ff` use two,
+`0x00000800`–`0x0000ffff` use three except for surrogates, and
+`0x00010000`–`0x0010ffff` use four. Surrogate words
+`0x0000d800`–`0x0000dfff` and words above `0x0010ffff` append the single byte
+`0x3f` (`?`). Readback retains the original word, including an invalid codepoint.
 
 PRINT_CHAR extends the current partial line, including when its codepoint is
 line feed. Every PRINT_FLUSH write appends an ASCII line-feed byte and submits
 the partial line when space permits; zero and nonzero write values have the
-same action. Submitted text is available on the diagnostic channel. Screen text
-uses the separate BIOS console drawing path described below.
+same action. Submitted text is available on the diagnostic channel.
+
+For example, write the following codepoints in order, then write zero to
+PRINT_FLUSH:
+
+| PRINT_CHAR word | Character | Encoded bytes |
+|---|---|---|
+| `00000053H` | S | `53` |
+| `000000e9H` | é | `C3 A9` |
+| `0001f600H` | 😀 | `F0 9F 98 80` |
+| `ffffffffH` | Replacement `?` | `3F` |
+
+The flush appends byte `0A` and submits the nine-byte line. CHAR still reads
+`ffffffffH` and FLUSH reads zero: readback retains the written words, not
+transmission status. A BLua sequence comparing this channel with BIOS console
+output appears in [[Book II, BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”, under “Diagnostic text and the BIOS console”]{.content-visible when-format="pdf"}.
 
 Completed unread lines and the current partial line share one 8192-byte queue. Each character needs space for its complete one- to four-byte UTF-8 encoding. If a character cannot fit, the current partial line is discarded, completed unread lines are preserved, and further character writes are ignored until the next flush. That flush publishes nothing and clears the overflow condition. If the flush itself first encounters insufficient space for its added line-feed byte, it likewise discards the partial line, publishes nothing, and leaves overflow cleared. In particular, 8192 unflushed ASCII characters leave no room for the flush's line feed, so that entire partial line is lost. No readiness, free-space, or accepted-line counter is available through these ports. Reset empties the queue and clears both register words.
-
-### BIOS console integration {#sec-system-bios-console-integration}
-
-BIOS `print(...)` converts each argument with `tostring`, separates arguments with tabs, writes to the BIOS console, and ends the line. Console writes send the full codepoints to `PRINT_CHAR` and also append to a separate 8192-byte BIOS history; codepoints above `0xff` become `?` in that history. Ending the line appends a history line feed and writes `PRINT_FLUSH = 1`. Thus `print` sends text to both diagnostic output and BIOS history, but does not itself flush the console display.
-
-Direct writes to `PRINT_CHAR` and `PRINT_FLUSH` do not add BIOS-history entries or draw glyphs. The BIOS console display is updated separately from its retained history. Diagnostic publication, retained console text, and visible console drawing are distinct events.
-
-## Send a diagnostic line {#sec-system-send-a-diagnostic-line}
-
-Assume no other diagnostic writer and enough queue space for the line. These
-writes send four codepoints, then publish the line. A zero FLUSH word is still
-a flush command.
-
-```lua
-local print_char<const>: *word = 0x08010230
-local print_flush<const>: *word = 0x08010234
-
-print('SYSTEM timer experiment')
-*print_char = 0x00000053
-*print_char = 0x000000e9
-*print_char = 0x0001f600
-*print_char = 0xffffffff
-local char_readback<const> = *print_char
-*print_flush = 0
-local flush_readback<const> = *print_flush
-print('SYSTEM samples complete')
-```
-
-CHAR readback is `ffffffffH`, even though the invalid codepoint emits `?`.
-FLUSH readback is zero. Both are last-written words, not receiver-ready or
-completion flags. The raw middle line is encoded as:
-
-```text
-53 C3 A9 F0 9F 98 80 3F 0A
-```
-
-The diagnostic text is:
-
-```text
-SYSTEM timer experiment
-Sé😀?
-SYSTEM samples complete
-```
-
-Only the two BIOS `print` calls also add text to the BIOS console history.
-The direct codepoint line neither enters that history nor draws glyphs.
-
-![BIOS console after the timer experiment](figures/system-console.png){#fig-system-console}
-
-The monitor displays the two BIOS print lines from retained console history.
-The raw diagnostic line does not appear in that history.
-
-## SYSTEM specifications {#sec-system-system-specifications}
-
-| Resource | Specification |
-|---|---|
-| Register interface | Thirteen 32-bit word ports at the noncontiguous addresses listed in this chapter; four-byte words |
-| Addressed register bytes | 52 bytes in total, not one contiguous reservation or payload RAM |
-| Supervisor fault report | Six raw words, 24 bytes including its publication sequence |
-| Diagnostic output queue | 8192 bytes, shared by completed unread text and the current partial line |
 
 ## Privilege and supervisor entry {#sec-system-privilege-and-supervisor-entry}
 
@@ -209,11 +180,11 @@ Each set command bit is considered independently. One write is processed in the 
 
 | Bits | Mask | Operation | Effect |
 |---|---|---|---|
-| 0 | `0x00000001` | `RESET` | Latch a system-reset request and request a CPU yield. The write itself does not perform the reboot. |
+| 0 | `0x00000001` | `RESET` | Latch a system-reset request for service at a CPU execution boundary. The write itself does not perform the reboot. |
 | 1 | `0x00000002` | `SUPERVISOR_ENTER` (`ENTER`) | Activate the supervisor device context **only at ENTRY_VECTOR**. It has no effect in any other stage and does not initiate entry from USER. |
-| 3 | `0x00000008` | `SUPERVISOR_FAULT` (`FAULT`) | Capture the CPU fault words. In ACTIVE, make no further transition. Otherwise select the fault transition, clear resumability, cancel any pending NMI request and request a yield; only USER starts a new entry-quiescence sequence. |
+| 3 | `0x00000008` | `SUPERVISOR_FAULT` (`FAULT`) | Capture the CPU fault words. In ACTIVE, make no further transition. Otherwise select the fault transition, clear resumability, cancel any pending NMI request and request transition processing at a CPU execution boundary; only USER starts a new entry-quiescence sequence. |
 | 4 | `0x00000010` | `SUPERVISOR_FAULT_PUBLISH` (`FAULT_PUBLISH`) | Increment the retained fault sequence modulo `2^32`. Do not capture or clear the payload, change supervisor flags or enter an exception. |
-| 2 | `0x00000004` | `SUPERVISOR_LEAVE` (`LEAVE`) | Begin return to the user device context only in ACTIVE with `RESUMABLE` set. Clear `EXIT_REQUESTED` and request a yield. Otherwise do nothing. |
+| 2 | `0x00000004` | `SUPERVISOR_LEAVE` (`LEAVE`) | Begin return to the user device context only in ACTIVE with `RESUMABLE` set. Clear `EXIT_REQUESTED` and suspend CPU execution for the transition. Otherwise do nothing. |
 | `31:5` | `0xffffffe0` | Unused | Ignored. |
 
 : {tbl-colwidths="[6,14,29,51]"}
@@ -309,7 +280,9 @@ modulo 2^32 and leaves that payload unchanged. Software can capture first and
 publish later; a new sequence identifies publication rather than the instant
 of CPU exception entry. Zero is a valid sequence after reset and after wrap.
 
-The firmware's synchronous-fault path publishes after preparing the monitor display and waiting another VBlank. Publication is therefore later than CPU fault admission. An NMI entry alone does not refresh this bank: the words change through FAULT capture, not by following the CPU diagnostic registers continuously.
+An NMI entry alone does not refresh this bank: the words change through FAULT
+capture, not by following the CPU diagnostic registers continuously. BIOS fault
+publication is described in [[Book II, BIOS diagnostics — Memory faults and the monitor](bios-monitor.md#sec-memory-installed-response-to-a-memory-exception)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”, under “Memory faults and the monitor”]{.content-visible when-format="pdf"}.
 
 Interpret the payload using Cause. Synchronous entry records the faulting
 instruction's EPC; asynchronous entry records the interrupted PC. A subsequent
@@ -354,8 +327,9 @@ new Lua failure.
 
 The SYSTEM NMI is distinct from a maskable IRQ. A pending NMI takes precedence and is not gated by CPU interrupt-enable or the IRQ mask; it enters the system exception function. Maskable interrupt acceptance and source acknowledgement follow the **IRQ** chapter. Neither the request edge nor these priority rules establishes a fixed request-to-vector latency.
 
-The shared access and fault contract is described in **Memory and program
-storage**. An ordinary typed load or store checks its scalar alignment first:
+The shared access and fault rules are described in
+[Memory and bus access](memory.md#sec-memory). An ordinary typed load or store
+checks its scalar alignment first:
 a misaligned word or halfword takes the CPU address-error path before MMIO is
 accessed. For the aligned SYSTEM ports here, a word write to STATUS or any
 supervisor-fault word raises `READ_ONLY` (`3`) without changing the word.
@@ -368,11 +342,19 @@ fault record rather than assuming supervisor BadAddress holds that MMIO address.
 
 Lua failures that are handled by protected-call or coroutine error handling do not necessarily reach the system exception path. An unhandled Lua failure enters a trap exception and supplies its Lua reason. This does not imply that protected Lua calls catch hardware address, MMIO or privilege exceptions.
 
-Continuing the monitor is a retry, not a repair. For an invocation that owns the supervisor context, the firmware restores its saved EPC and CPU status and issues LEAVE before returning. CPU exception return is separate from device-context restoration and does not automatically advance a synchronous-fault EPC. The `CONT` command can therefore retry the same failing instruction and fault again; `RESUMABLE` does not promise successful program recovery.
+Device-context restoration and CPU exception return are separate operations.
+Neither advances a synchronous-fault EPC or repairs its cause. The monitor's
+inspection and continuation procedure is described in
+[[Book II, BIOS diagnostics](bios-monitor.md#sec-bios-monitor)]{.content-visible when-format="html"}[Book II, “BIOS diagnostics”]{.content-visible when-format="pdf"}.
 
 ## Reset requests {#sec-system-reset-requests}
 
-RESET is available in either CPU mode. It latches one pending request and asks the CPU to yield; repeated RESET writes coalesce until the request is consumed. CONTROL still reads zero, and STATUS has no reset-pending flag. Reading either word neither consumes the request nor proves that reboot has occurred. Other admitted command bits in the same write are still processed in the defined order.
+RESET is available in either CPU mode. It latches one pending request for service
+at a CPU execution boundary; repeated RESET writes coalesce until the request
+is consumed. CONTROL reads zero, and STATUS has no reset-pending flag. Reading
+either word neither consumes the request nor proves that reboot has occurred.
+Other admitted command bits in the same write are still processed in the
+defined order.
 
 A pending request is serviced at a CPU execution boundary. Servicing it performs a system reboot: it clears I/O and bus faults, resets hardware and CPU execution state, and starts firmware again. There is no fixed request-to-reboot cycle latency. This is not a local device reset or a bus-fault acknowledgement, and it is not a promise that all RAM or every device buffer is zeroed.
 

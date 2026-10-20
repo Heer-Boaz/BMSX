@@ -63,6 +63,62 @@ samples is lost.
 
 Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
 
+## From a snapshot to game controls {#sec-input-from-a-snapshot-to-game-controls}
+
+A capture gives the program control positions and pressed levels. The game
+assigns their actions: a held direction can move a character on every update,
+whereas a menu can confirm a choice on the transition from released to
+pressed. Reading the same captured level twice does not produce two presses.
+
+The input quantities have different units even where they share a numeric
+representation:
+
+| Captured quantity | Meaning for the program |
+|---|---|
+| Keyboard, pointer and pad button bits | Pressed or released levels; compare captures for transitions |
+| Stick X/Y | Position from −1 through zero to +1; the program chooses the corresponding movement or steering scale |
+| Trigger travel | Fraction of travel from zero to one, independently of the trigger button bit |
+| Pointer X/Y | Position in displayed-image pixels; subtract successive positions when relative movement is required |
+| Pointer wheel | Scroll steps from the most recent attachment update; not the total since the preceding capture |
+
+For example, a left-stick X value of +0.5 is half travel to the right. A game
+choosing four pixels of movement per update at full travel obtains two pixels
+from this sample. The controller supplies the stick position, not the game's
+movement speed. By contrast, pointer X=128 already locates a position in the
+displayed raster; it is not half a stick's travel or a movement of 128 pixels.
+The exact axes, directions and word representations follow under
+[Raw input representations](#sec-input-raw-input-representations).
+
+### Retained levels and software edges {#sec-input-retained-levels-and-software-edges}
+
+Keyboard and button words describe sampled levels. They are not an event queue. A cartridge can compare a current mask with its own previous mask:
+
+- pressed: `current & ~previous`;
+- released: `previous & ~current`.
+
+These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
+
+Keep the preceding mask in program storage between captures. To start without
+counting an already-held button as a new press, use the first completed
+capture as `previous` before processing later captures.
+
+### Worked KeyA transition sequence {#sec-input-worked-keya-transition-sequence}
+
+The KeyA mask is `00000010H`, not pad A's `00000001H`. Apply the pressed and
+released expressions above to this mask, keeping the current mask as
+`previous` for the next sample. With `previous` initially zero, four completed
+samples give:
+
+| Sample | KeyA level | Pressed mask | Released mask | Cumulative presses | Cumulative releases |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `0` | `0` | `0` | 0 | 0 |
+| 2 | `10H` | `10H` | `0` | 1 | 0 |
+| 3 | `10H` | `0` | `0` | 1 | 0 |
+| 4 | `0` | `0` | `10H` | 1 | 1 |
+
+The cumulative columns show the counts a program obtains from the edge masks.
+An unchanged released sample has both masks zero.
+
 ## Sample input in BLua {#sec-input-sample-input-in-blua}
 
 The following fragment obtains KeyA and pad 0's left-stick X from one capture.
@@ -86,8 +142,10 @@ local left_x_word<const> = pad0[1]
 KeyA is bit 4 of the first keyboard word. The next word after pad 0's button
 word is its left X axis. For a captured keyboard word of `00000010H` and an
 axis word of `00008000H`, `key_a_down` is true and `left_x_word` represents
-+0.5, halfway from the stick's center to its right endpoint. The bit assignments
-and signed 16.16 interpretation are specified in the next section.
++0.5, the half-travel position used above. `key_a_down` remains true in each
+capture while the key is held; use the preceding edge calculation when the
+operation should occur only on a new press. The bit assignments and signed
+16.16 interpretation are specified in the next section.
 
 Read any other required snapshot words before the next ARM. With exclusive
 use of INPUT, all those reads refer to the same capture. Retaining the current
@@ -204,43 +262,94 @@ it, so skipped controller samples can miss movement.
 ### Signed 16.16 values {#sec-input-signed-1616-values}
 
 Interpret a signed 16.16 word as a signed 32-bit integer divided by 65536.
+Whole-word loads return an unsigned Number, so recover the sign before using
+that Number as an axis or position:
+
+| Loaded word `w` | Signed integer | Numeric value |
+|---|---|---|
+| `00000000H`–`7FFFFFFFH` | `w` | `w / 65536` |
+| `80000000H`–`FFFFFFFFH` | `w − 4294967296` | `(w − 4294967296) / 65536` |
 
 | Raw word | Numeric value |
 | --- | --- |
 | `00000000H` | 0 |
+| `00008000H` | +0.5 |
 | `00010000H` | +1 |
 | `FFFF0000H` | −1 |
+| `FFFF8000H` | −0.5 |
+
+Thus `FFFF8000H` is −0.5, not 65535.5. The same decoded +0.5 means
+half-travel on a stick or trigger, half a pixel in a pointer position, and
+half a scroll step in the wheel word.
 
 The representation has a quantum of `1/65536` and a range of −32768 through
 `32767 + 65535/65536`. Stick and trigger operating ranges are given above; pointer
 positions use raster coordinates. The controller retains the attachment's words
 unchanged. Apply any additional calibration or dead zone in the program.
 
-### Retained levels and software edges {#sec-input-retained-levels-and-software-edges}
+## Pad output commands {#sec-input-pad-output-commands}
 
-Keyboard and button words describe sampled levels. They are not an event queue. A cartridge can compare a current mask with its own previous mask:
+A short vibration pulse can accompany a collision or other game event. Its
+parameters are the pad number, a fraction of full intensity, and a duration in
+milliseconds. Prepare these three values, then issue APPLY. Input capture and
+output submission are separate operations: a pulse need not wait for another
+sample or display edge.
 
-- pressed: `current & ~previous`;
-- released: `previous & ~current`.
+After an accepted input sample, `IO_INP_OUTPUT_STATUS` bit 0 reports whether
+pad 0 supports vibration; bits 1 through 3 apply to the other pads. Use the bit
+for the intended pad before requesting its effect. This is a capability sample,
+not a report of an effect's progress.
 
-These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
+### Intensity and duration {#sec-input-intensity-and-duration}
 
-### Worked KeyA transition sequence {#sec-input-worked-keya-transition-sequence}
+The normal intensity interval is `00000000H` through `00010000H`, inclusive.
+Intensity is the raw word divided by 65536: zero at `00000000H`, one-half at
+`00008000H`, and maximum at `00010000H`, with a step of 1/65536. The actuator's
+physical response depends on the attached pad.
 
-The KeyA mask is `00000010H`, not pad A's `00000001H`. Apply the pressed and
-released expressions above to this mask, keeping the current mask as
-`previous` for the next sample. With `previous` initially zero, four completed
-samples give:
+`IO_INP_OUTPUT_DURATION_MS` holds the requested duration as an unsigned 32-bit
+millisecond count. The complete word is retained unchanged throughout the effect;
+readback gives the programmed duration, not remaining time.
 
-| Sample | KeyA level | Pressed mask | Released mask | Cumulative presses | Cumulative releases |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `0` | `0` | `0` | 0 | 0 |
-| 2 | `10H` | `10H` | `0` | 1 | 0 |
-| 3 | `10H` | `0` | `0` | 1 | 0 |
-| 4 | `0` | `0` | `10H` | 1 | 1 |
+For example, the following ordered writes request pad 0 at half intensity for 100 milliseconds. The last write is the command; the preceding writes only prepare its operands.
 
-The cumulative columns show the counts a program obtains from the edge masks.
-An unchanged released sample has both masks zero.
+| Order | Register | Written word |
+|---|---|---|
+| 1 | `IO_INP_OUTPUT_PORT` | `00000000H` |
+| 2 | `IO_INP_OUTPUT_INTENSITY_Q16` | `00008000H` |
+| 3 | `IO_INP_OUTPUT_DURATION_MS` | `00000064H` |
+| 4 | `IO_INP_OUTPUT_CTRL` | `00000001H` |
+
+### Preparing and submitting the request {#sec-input-preparing-and-submitting-the-request}
+
+The output port uses three retained parameter words and one command word.
+Write the pad to `IO_INP_OUTPUT_PORT`, intensity to
+`IO_INP_OUTPUT_INTENSITY_Q16`, and duration to `IO_INP_OUTPUT_DURATION_MS`.
+These writes only prepare operands; write the complete word `00000001H`
+(APPLY) to `IO_INP_OUTPUT_CTRL` to submit them. A second effect for another pad
+requires selecting that pad and issuing another APPLY.
+
+APPLY uses the parameters present at that write. The selected pad is `IO_INP_OUTPUT_PORT & 3`, so only the low two bits select pads 0 through 3. The upper bits remain stored and readable; they do not select additional pads.
+
+The command is dispatched on the APPLY write, without waiting for ARM or a VBlank edge. There is no output command queue. Each exact APPLY write issues a request with the current parameters. APPLY does not alter those parameters or the sampled capability word.
+
+`IO_INP_OUTPUT_CTRL` tests the entire command word. A word such as `00000003H`, `00000101H` or `80000001H` is not APPLY, even though bit 0 is set. Other command words issue no request. After a command write completes, the control word reads zero; that zero is not an output-completion indication.
+
+The intensity register retains all 32 bits, and APPLY decodes the full
+unsigned U16.16 word exactly: `FFFFFFFFH` requests
+`65535 + 65535/65536`. The output attachment saturates requests above one to
+its maximum intensity. This saturation does not rewrite the programmed word.
+Unsupported output attachments produce no effect.
+
+### Capability and completion {#sec-input-capability-and-completion}
+
+`IO_INP_OUTPUT_STATUS` contains sampled vibration-capability bits, one per pad in bits 0 through 3. It is refreshed with the other input words when an armed sample is accepted. Until then it retains the previous snapshot's value; after reset it is zero until a new sample is accepted. The complete supplied word is retained, including bits above bit 3.
+
+Use the capability bits to identify pads supporting vibration. They retain
+their sampled values when APPLY is written. The output port supplies no busy,
+completion or error indication and raises no output-complete interrupt.
+
+Input RESET zeroes the output parameters and capability word without issuing a stop or cancellation command for an earlier request. Do not use a register reset as an output-stop operation.
 
 ## Register map {#sec-input-register-map}
 
@@ -355,49 +464,3 @@ snapshot or sequence. After resuming, request and observe a new capture before
 treating those words as a fresh cartridge sample. See
 [SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service),
 for the other units' preservation rules.
-
-## Pad output commands {#sec-input-pad-output-commands}
-
-The output port uses three retained parameter words and one command word. Write the selected pad to `IO_INP_OUTPUT_PORT`, the requested intensity to `IO_INP_OUTPUT_INTENSITY_Q16`, and the requested duration to `IO_INP_OUTPUT_DURATION_MS`. These parameter writes alone do not request output. Write the complete word `00000001H` (APPLY) to `IO_INP_OUTPUT_CTRL` after preparing the parameters.
-
-APPLY uses the parameters present at that write. The selected pad is `IO_INP_OUTPUT_PORT & 3`, so only the low two bits select pads 0 through 3. The upper bits remain stored and readable; they do not select additional pads.
-
-The command is dispatched on the APPLY write, without waiting for ARM or a VBlank edge. There is no output command queue. Each exact APPLY write issues a request with the current parameters. APPLY does not alter those parameters or the sampled capability word.
-
-`IO_INP_OUTPUT_CTRL` tests the entire command word. A word such as `00000003H`, `00000101H` or `80000001H` is not APPLY, even though bit 0 is set. Other command words issue no request. After a command write completes, the control word reads zero; that zero is not an output-completion indication.
-
-### Intensity and duration {#sec-input-intensity-and-duration}
-
-The normal intensity interval is `00000000H` through `00010000H`, inclusive.
-Intensity is the raw word divided by 65536: zero at `00000000H`, one-half at
-`00008000H`, and maximum at `00010000H`, with a step of 1/65536. The actuator's
-physical response depends on the attached pad.
-
-The intensity register retains all 32 bits, and APPLY decodes the full
-unsigned U16.16 word exactly: `FFFFFFFFH` requests
-`65535 + 65535/65536`. The output attachment saturates requests above one to
-its maximum intensity. This saturation does not rewrite the programmed word.
-Unsupported output attachments produce no effect.
-
-`IO_INP_OUTPUT_DURATION_MS` holds the requested duration as an unsigned 32-bit
-millisecond count. The complete word is retained unchanged throughout the effect;
-readback gives the programmed duration, not remaining time.
-
-For example, the following ordered writes request pad 0 at half intensity for 100 milliseconds. The last write is the command; the preceding writes only prepare its operands.
-
-| Order | Register | Written word |
-|---|---|---|
-| 1 | `IO_INP_OUTPUT_PORT` | `00000000H` |
-| 2 | `IO_INP_OUTPUT_INTENSITY_Q16` | `00008000H` |
-| 3 | `IO_INP_OUTPUT_DURATION_MS` | `00000064H` |
-| 4 | `IO_INP_OUTPUT_CTRL` | `00000001H` |
-
-### Capability and completion {#sec-input-capability-and-completion}
-
-`IO_INP_OUTPUT_STATUS` contains sampled vibration-capability bits, one per pad in bits 0 through 3. It is refreshed with the other input words when an armed sample is accepted. Until then it retains the previous snapshot's value; after reset it is zero until a new sample is accepted. The complete supplied word is retained, including bits above bit 3.
-
-Use the capability bits to identify pads supporting vibration. They retain
-their sampled values when APPLY is written. The output port supplies no busy,
-completion or error indication and raises no output-complete interrupt.
-
-Input RESET zeroes the output parameters and capability word without issuing a stop or cancellation command for an earlier request. Do not use a register reset as an output-stop operation.

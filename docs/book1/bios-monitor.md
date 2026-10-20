@@ -4,16 +4,71 @@ The BIOS monitor retains a stopped program's fault state so that its registers,
 memory and source context can be inspected before continuation. Clearing a
 report, repairing the cause and resuming execution are separate operations.
 
-The following example follows a mapped-memory fault from inspection to retry.
-The optional ROM diagnostic directory supplies the source locations and named
-frame scopes used during that inspection. Its binary reference follows the
-programming example; ordinary instruction execution does not require it.
+During normal execution, a program can send diagnostic text through SYSTEM or
+use BIOS `print` to retain text for the console display as well. The first
+example distinguishes those two destinations. The memory examples then follow
+a fault from inspection to retry. The optional ROM diagnostic directory
+supplies source locations and named frame scopes; its binary reference follows
+the examples.
+
+## Diagnostic text and the BIOS console {#sec-system-send-a-diagnostic-line}
+
+BIOS `print` sends text to both the diagnostic channel and the console history.
+Direct SYSTEM port writes send only diagnostic text. In this example, the
+first and last lines use `print`; the middle line sends four codepoints
+directly, then publishes them. Assume no other diagnostic writer and enough
+queue space for each line. A zero FLUSH word is still a flush command.
+
+```lua
+local print_char<const>: *word = 0x08010230
+local print_flush<const>: *word = 0x08010234
+
+print('SYSTEM timer experiment')
+*print_char = 0x00000053
+*print_char = 0x000000e9
+*print_char = 0x0001f600
+*print_char = 0xffffffff
+local char_readback<const> = *print_char
+*print_flush = 0
+local flush_readback<const> = *print_flush
+print('SYSTEM samples complete')
+```
+
+CHAR readback is `ffffffffH`, even though the invalid codepoint emits `?`.
+FLUSH readback is zero. Both are last-written words, not receiver-ready or
+completion flags. The raw middle line is encoded as:
+
+```text
+53 C3 A9 F0 9F 98 80 3F 0A
+```
+
+The diagnostic text is:
+
+```text
+SYSTEM timer experiment
+Sé😀?
+SYSTEM samples complete
+```
+
+Only the two BIOS `print` calls also add text to the BIOS console history.
+The direct codepoint line neither enters that history nor draws glyphs.
+
+![BIOS console after the diagnostic-output example](figures/system-console.png){#fig-system-console}
+
+The monitor displays the two BIOS print lines from retained console history.
+The raw diagnostic line does not appear in that history.
 
 ## Memory faults and the monitor {#sec-memory-installed-response-to-a-memory-exception}
 
 A synchronous memory exception enters the **system exception entry**, even when the faulting instruction belongs to a cartridge. This differs from a maskable IRQ, whose entry is selected according to the interrupted mode. Declaring a cartridge `exception` function does not install it as the handler for this memory-fault route.
 
 The system exception entry calls the BIOS exception function, which enters the BIOS monitor. Acknowledging the Memory fault record is not exception return: it clears the retained report but does not repair an address or advance the faulting instruction. Likewise, returning from an exception does not itself acknowledge that record.
+
+The BIOS captures the CPU diagnostic words through SYSTEM's FAULT command.
+It prepares the monitor display and waits another VBlank before issuing
+FAULT_PUBLISH. The resulting supervisor-fault sequence change therefore marks
+publication, later than CPU exception entry. An NMI entry alone does not
+refresh the fault report.
 
 ### Inspect an actual unmapped load {#sec-memory-inspect-an-actual-unmapped-load}
 
@@ -61,7 +116,13 @@ The displayed result is:
 
 The monitor's `FAULT` command displays its saved fault report when one is retained. `FAULT CLEAR` discards that saved BIOS report; it does not write `IO_SYS_BUS_FAULT_ACK`, clear the Memory CODE/ADDR/ACCESS words, or resume the cartridge.
 
-`CONT` returns using the saved EPC without advancing it. In the program above, the invalid address is unchanged, so `CONT` retries the load and enters the monitor again with another DBE. The first Memory fault remains latched. Clearing either report does not turn an unmapped address into usable storage.
+`CONT` restores the saved EPC and CPU status. When the monitor owns the
+supervisor device context, it also issues LEAVE before returning. CPU exception
+return and device-context restoration are separate operations; neither
+advances the saved EPC. In the program above, the invalid address is unchanged,
+so `CONT` retries the load and enters the monitor again with another DBE. The
+first Memory fault remains latched. Clearing either report does not turn an
+unmapped address into usable storage.
 
 CP0 reads and writes require non-user mode; attempting them from ordinary cartridge user mode causes the coprocessor-unusable exception. Do not attempt to repair this example by reading or replacing CP0 fields in ordinary cartridge code. The example demonstrates inspection and an unchanged-instruction retry, not a cartridge recovery handler or a successful recovery.
 

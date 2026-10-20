@@ -350,10 +350,27 @@ Argument selection uses current `select`; conversion uses current
 global bindings is replaced. The conversion rules appear under
 [Value checks and conversion](#sec-bios-base-value-checks-and-conversion).
 
-Console writing sends character codes through the system-print interface. Separately, it retains one-byte history entries: codes through 255 are retained unchanged, and larger codes are recorded as 63. The original code still goes to the system-print interface. Writing a field does not itself append a newline. Ending the line records newline code 10 in that history and writes 1 to the system-print-flush register. The history has capacity for 8192 one-byte entries and is distinct from the SYSTEM diagnostic queue. This is console output, not a file-stream operation or a drawing call. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, “System control and timing”]{.content-visible when-format="pdf"} for the transport and presentation boundaries; a `print` call does not by itself specify when a display is presented.
-
 Successful `print` returns **one nil**. In contrast, `setglobal` returns
 zero results. A single-result assignment receives nil in either case.
+
+#### Console history and display {#sec-system-bios-console-integration}
+
+The BIOS console sends each codepoint to SYSTEM's PRINT_CHAR port and retains
+a separate one-byte history entry. Codes through 255 are retained unchanged;
+larger codes are recorded as 63 (`?`). The original codepoint still goes to
+PRINT_CHAR. Ending the line appends code 10 to the history and writes 1 to
+PRINT_FLUSH. The history holds 8192 entries; once full, each new entry replaces
+the oldest unread entry.
+
+The console draws its retained entries separately. `print` appends text and
+ends the diagnostic line, but does not itself update the console display.
+Direct PRINT_CHAR and PRINT_FLUSH writes use only the diagnostic channel:
+they neither add BIOS history nor draw glyphs. The channel has its own
+8192-byte queue and overflow rules, specified in
+[[Book I, System control and timing — Diagnostic text output](system.md#sec-system-diagnostic-text-output)]{.content-visible when-format="html"}[Book I, “System control and timing”, under “Diagnostic text output”]{.content-visible when-format="pdf"}.
+
+For a comparison of the resulting text and monitor display, see
+[BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line).
 
 ### Faults and incremental cycle charges {#sec-bios-base-faults-and-incremental-cycle-charges}
 

@@ -14,6 +14,43 @@ a contact query can additionally return a point representing their overlap.
 The following drone scene carries these choices from geometry to job records
 and displayed results.
 
+## Geometry, placement and query results {#sec-geo-geometry-placement-and-query-results}
+
+A collision shape describes the occupied region used by the calculation.
+For a convex polygon, supply its perimeter vertices in order. A local vertex
+list describes one shape; a placement puts an instance of that shape into the
+coordinate system in which it will be compared with another object. The
+visible sprite and the collision shape are separate program data.
+
+An **axis-aligned bounding box**, or AABB, records the shape's least and
+greatest X and Y coordinates. It encloses the shape in a rectangle aligned with
+the coordinate axes. A polygon's box can overlap another box even when the
+polygons themselves are separate. Bounds are therefore useful for rejecting
+unpromising pairs before an exact polygon test, but overlapping bounds alone
+do not establish a polygon contact.
+
+Choose the operation according to the data already available and the required
+result:
+
+| Required operation | Program supplies | GEO returns |
+|---|---|---|
+| Place local vertices with `XFORM2_BATCH` | Vertex runs and affine matrices | Transformed vertices and optional bounds |
+| Compare placed convex polygons with `SAT2_BATCH` | Pair records and vertices already in a common coordinate system | One hit/miss result per pair, with normal, overlap depth and selected edge |
+| Find translated-shape contacts with `OVERLAP2D_PASS` | Local AABBs, convex polygons or compounds, their bounds, and translated instances | Packed contacts for strictly overlapping pairs, plus a summary |
+
+XFORM2's output vertices can be SAT2's input without a coordinate conversion.
+Its bounds output is separate: SAT2 tests the vertices, not the boxes.
+OVERLAP2D instead reads binary32 shape data and applies each instance's
+translation while querying it. The Q16 XFORM2 output is not an OVERLAP2D input
+format.
+
+Each command processes a batch described by memory records. A transform
+record selects one vertex run; a SAT2 record selects one pair. For an OVERLAP2D
+query, the program can supply candidate pairs or ask GEO to visit every
+distinct pair in the instance array. The programmer retains the geometry and
+receives results in addressed RAM; the command does not attach geometry to a
+sprite or update the game's object positions.
+
 ## An authored sprite and its collision hull {#sec-geo-an-authored-sprite-and-its-collision-hull}
 
 The following scene uses two copies of a 16 × 16 indexed drone sprite. Its
@@ -78,6 +115,13 @@ horizontal projection intervals are `[0,16]` and `[12,28]`, with a four-unit
 intersection. SAT2 tests the polygons' edge-normal axes; the horizontal axis
 wins for the touching and overlapping poses.
 
+A separating-axis test projects both polygons onto a line perpendicular to a
+polygon edge. If their projection intervals are separate on any such axis,
+the polygons cannot intersect. Otherwise SAT2 selects the smallest interval
+overlap among the tested axes. In the X=12 pose, the horizontal intervals
+intersect over `[12,16]`: four units along X. This is an overlap length on the
+selected axis, not a point on either hull.
+
 SAT2 returns a hit flag, the selected normal, its overlap depth and an edge
 identifier. A touching pair is a hit with depth zero. These scene results are:
 
@@ -100,6 +144,18 @@ world-vertex buffer. Both drone instances can share the local polygon and its
 bounds `(0,0,16,16)`; their translations select the same three world poses.
 An instance applies translation only. Rotation or scale requires separately
 transformed binary32 geometry and matching bounds.
+
+OVERLAP2D first uses the two instances' layer/mask fields to select permitted
+comparisons, then compares their translated bounds before loading exact
+geometry. Here both instances permit the pair. At B=(20,0), the bounds already
+separate, so no exact polygon comparison is needed. At B=(16,0), the bounds
+touch and permit an exact test; that test still finds no positive overlap.
+At B=(12,0), the polygons overlap as well as their bounds.
+
+Supply local bounds enclosing the shape and keep them consistent with any
+change to its geometry. The query translates the supplied bounds; it does not
+rebuild them from the vertices. Bounds that exclude part of the shape can
+filter out a pair before those vertices are examined.
 
 This query requires strictly positive overlap. The separated and touching
 poses therefore produce no contact. The overlapping pose produces normal
@@ -126,99 +182,12 @@ Supply the directed winding required by the clipping rule.
 
 After reuse, trust the **current completed summary**, not retained contact bytes. The cartridge returns to separation using the same live contact buffer without clearing it. Its previous normal, depth, point and feature remain, but the new result count is zero, so no contact slot is valid and no old marker is submitted. The resulting picture is identical to the separated plate. SAT2 differs: separation overwrites all five result words with zero.
 
-### Encode and submit the drone jobs {#sec-geo-encode-the-drone-jobs}
-
-The geometry above determines the operands. XFORM2 and SAT2 use signed Q16.16
-coordinates: the signed value of each 32-bit word divided by 65536. The integer
-coordinates here are encoded exactly by multiplying by 65536. An affine matrix
-contains `m00, m01, tx, m10, m11, ty`. Each drone matrix has the form
-`[00010000H,0,tx,0,00010000H,0]`, with the X translation selected for its pose.
-
-Store one local eight-vertex hull, two matrices, and these XFORM2 records. Fields are `flags, source_index, destination_index, matrix_index, vertex_count, bounds_index`:
-
-```
-[0, 0, 0, 0, 8, 0]
-[0, 0, 8, 1, 8, 1]
-```
-
-They share the local hull and write A's eight world vertices followed by B's: 128 bytes altogether, plus two 16-byte Q16 bounds records. `source_index` is multiplied by STRIDE1; vertices within a hull are consecutive eight-byte records. `destination_index` is a vertex index, not a byte offset.
-
-For XFORM2, set SRC0=records, SRC1=local vertices, SRC2=matrices, DST0=world vertices, DST1=bounds, COUNT=2 and strides `24,8,24`; submit CMD=`20H` after setup.
-
-SAT2 must consume **that completed world buffer**. Its descriptors contain `flags`, `vertex_count`, `vertex_offset_bytes`, `reserved`:
-
-```
-A: [1, 8, 0, 0]
-B: [1, 8, 64, 0]
-```
-
-The pair is `[0,0,0,1,0]`, in field order `flags, shape_a, result_index, shape_b, flags2`. Set SRC0=pair, SRC1=descriptors, SRC2=XFORM2's world buffer, DST0=20-byte result, COUNT=1, STRIDE0=20 and STRIDE1=16; submit CMD=`21H`.
-
-Retain XFORM2's records, local hull and matrices until completion. For this
-job, successful completion gives STATUS=2, FAULT=0 and PROCESSED=2. Then submit
-SAT2, retaining its pair, descriptors and world vertices until it completes with
-STATUS=2, FAULT=0 and PROCESSED=1. Read the results before reusing the buffers.
-
-A's world bounds remain `(0,0,16,16)`. SAT2 returns `hit, nx, ny, depth, meta`; normal and depth words are Q16.16.
-
-| Pose | B translation word | B world bounds | SAT2 result words |
-|---|---|---|---|
-| Separated | `00140000H` | `(20,0,36,16)` | `(0,0,0,0,0)` |
-| Touching | `00100000H` | `(16,0,32,16)` | `(1,00010000H,0,0,2)` |
-| Overlapping | `000C0000H` | `(12,0,28,16)` | (`1`, `00010000H`, `0`, `00040000H`, `2`) |
-
-Metadata 2 selects A's edge 2, the directed segment `(16,4) → (16,12)`. SAT2 packs the shape selector into the high 16 bits and edge index into the low 16 bits; flipping the normal does not change that identity. SAT2 supplies no contact point.
-
-#### Encode the contact query {#sec-geo-encode-the-contact-query}
-
-Prepare the local vertices and bounds as binary32 numbers, separately from the
-Q16 arrays. Both instances use the same shape descriptor; their F32 translations
-are `(0,0)` and the selected B position. The following configuration uses one
-explicit candidate pair.
-
-The 96-byte polygon object has kind=3, count=8, data offset=32 and bounds offset=16, with offsets relative to its descriptor. Both instances use layer=mask=1. The candidate is `[0,1,44524F4EH]`; its final word is cartridge-supplied pair information, not a computed feature. Set SRC0=instances, SRC1=candidate, DST0=36-byte contact storage, DST1=16-byte summary, COUNT=1, PARAM0=1, PARAM1=1 and strides `20,12,2`; submit CMD=`22H`.
-
-The completed summary is `result_count, exact_pairs, broadphase_pairs, flags`:
-
-| Pose | Summary | Valid contact |
-|---|---|---|
-| Separated | `(0,0,1,0)` | None |
-| Touching | `(0,1,1,0)` | None |
-| Overlapping | `(1,1,1,0)` | Normal `(-1,0)`, depth 4, world point `(14,8)` |
-
-Only `result_count` contact records are valid. The other summary counts report
-which filtering and exact-test stages were reached; the
-[contact-pass reference](#sec-geo-overlap2d_pass-translated-shape-contacts)
-defines them and the packed result layout.
-
-### From geometry results to video packets {#sec-geo-from-geometry-results-to-video-packets}
-
-The sprite's six direct16 RGB555 palette words are `0000H`, `8000H`, `294AH`,
-`4631H`, `6318H` and `7FFFH`. Index 0 is transparent; index 1 is opaque black.
-The image is enlarged before upload: each authored pixel becomes a 4 × 4 block in a 64 × 64 RGB555 texture. The 8192-byte texture is uploaded to VRAM origin `(640,0)` using image-upload command `A0H`, origin word `00000280H` and size `00400040H`. Its 2048 payload words each contain two adjacent 16-bit texels. These are repeated scalar writes to the fixed GP0 port. The 64 × 64 textured rectangles do not themselves scale a 16 × 16 image; they use the prepared texture, modulated blue for A and red for B.
-
-Sprites are submitted before hulls. Each hull becomes eight finite flat-line packets: command/color with opcode `40H`, then two endpoints. Command colors use RGB888 with red in the low byte, then green and blue. Endpoints pack signed 11-bit integer pixel X in the low halfword and Y in the high halfword. For these positive integral poses, shifting a Q16 coordinate right by 14 combines division by 65536 with the four-pixel scale; add the display origin afterwards.
-
-The yellow bracket uses the winning horizontal projection interval. The green arrow has a separate illustrative anchor. The magenta arrow and white cross use the valid F32 world point. The cross is drawn last. These arrowheads and bracket placements are authored for the illustrated horizontal normals, not an arbitrary rotated-normal renderer.
-
-The scene uses two 256 × 192 GX16 drawing surfaces: VRAM word-X `[0,256)`,
-rows `[0,192)` and `[256,448)`. The texture occupies word-X `[640,704)`, rows
-`[0,64)`. Each VRAM row has 1024 halfwords. These rectangles leave the BIOS
-reservation untouched: in this example its queried origin is `(704,720)` and
-size `320 × 252`. Query the installed BIOS reservation before allocating VRAM;
-its extent can differ between firmware images.
-
-PCRTC is reset and display output disabled during setup. Drawing selects the surface's draw area and offset. Fill command `02H` ignores both, so clearing the second surface explicitly uses its raw VRAM origin `(0,256)` rather than relying on the draw offset.
-
-After drawing, wait for GPUSTAT bit 26, then select the completed framebuffer
-and enable display. PCRTC applies the display configuration at its VBlank latch;
-wait for a fresh VBlank to observe the new picture. With exclusive use of the
-interrupt mask, mask delivery during setup, acknowledge old VBlank bit `4`,
-record the handler's VBlank counter and enable the owned sources with mask
-`1CH`. A change in that counter identifies the required edge. The illustrations
-hold each pose for eight further VBlank intervals for viewing.
-
-The scene therefore has three explicit hand-offs: XFORM2 output becomes SAT2 input, completed collision results select drawing packets, and a completed GPU picture becomes a PCRTC source. None of these hand-offs launches the next unit automatically.
+The program uses these completed query results to choose its next action and
+to draw the explanatory overlays. Moving an object means changing the geometry
+or instance translation supplied for its next query. GEO writes the requested
+results; software submits the corresponding GPU drawing commands. The
+[rendering notes](#sec-geo-from-geometry-results-to-video-packets) describe the
+pictures' textures, coordinate mapping and display sequence.
 
 ## GEO specifications {#sec-geo-geo-specifications}
 
@@ -289,6 +258,71 @@ Launch does not capture the payload bytes. Records and their referenced data are
 Command acceptance checks the complete opcode, not the record pointers, strides, parameters, alignment, flags, or payload shape. Those checks belong to the selected operation when it processes a record. A supported command with `COUNT = 0` completes immediately without processing a record; it is not a way to validate a record layout or payload. An unsupported command is still rejected when `COUNT = 0`.
 
 `OVERLAP2D_PASS` has a launch side effect: after command acceptance, GEO writes four zero summary words at `DST1 + 0`, `+4`, `+8`, and `+12`. This happens before testing `COUNT`, including for a zero-count job. No launch-time destination validation precedes those summary writes. Program `DST1` for this operation even when no outer records will run.
+
+### Encode and submit the drone jobs {#sec-geo-encode-the-drone-jobs}
+
+The geometry above determines the operands. XFORM2 and SAT2 use signed Q16.16
+coordinates: the signed value of each 32-bit word divided by 65536. The integer
+coordinates here are encoded exactly by multiplying by 65536. An affine matrix
+contains `m00, m01, tx, m10, m11, ty`. Each drone matrix has the form
+`[00010000H,0,tx,0,00010000H,0]`, with the X translation selected for its pose.
+
+Store one local eight-vertex hull, two matrices, and these XFORM2 records. Fields are `flags, source_index, destination_index, matrix_index, vertex_count, bounds_index`:
+
+```
+[0, 0, 0, 0, 8, 0]
+[0, 0, 8, 1, 8, 1]
+```
+
+They share the local hull and write A's eight world vertices followed by B's: 128 bytes altogether, plus two 16-byte Q16 bounds records. `source_index` is multiplied by STRIDE1; vertices within a hull are consecutive eight-byte records. `destination_index` is a vertex index, not a byte offset.
+
+For XFORM2, set SRC0=records, SRC1=local vertices, SRC2=matrices, DST0=world vertices, DST1=bounds, COUNT=2 and strides `24,8,24`; submit CMD=`20H` after setup.
+
+SAT2 must consume **that completed world buffer**. Its descriptors contain `flags`, `vertex_count`, `vertex_offset_bytes`, `reserved`:
+
+```
+A: [1, 8, 0, 0]
+B: [1, 8, 64, 0]
+```
+
+The pair is `[0,0,0,1,0]`, in field order `flags, shape_a, result_index, shape_b, flags2`. Set SRC0=pair, SRC1=descriptors, SRC2=XFORM2's world buffer, DST0=20-byte result, COUNT=1, STRIDE0=20 and STRIDE1=16; submit CMD=`21H`.
+
+Retain XFORM2's records, local hull and matrices until completion. For this
+job, successful completion gives STATUS=2, FAULT=0 and PROCESSED=2. Then submit
+SAT2, retaining its pair, descriptors and world vertices until it completes with
+STATUS=2, FAULT=0 and PROCESSED=1. Read the results before reusing the buffers.
+
+A's world bounds remain `(0,0,16,16)`. SAT2 returns `hit, nx, ny, depth, meta`; normal and depth words are Q16.16.
+
+| Pose | B translation word | B world bounds | SAT2 result words |
+|---|---|---|---|
+| Separated | `00140000H` | `(20,0,36,16)` | `(0,0,0,0,0)` |
+| Touching | `00100000H` | `(16,0,32,16)` | `(1,00010000H,0,0,2)` |
+| Overlapping | `000C0000H` | `(12,0,28,16)` | (`1`, `00010000H`, `0`, `00040000H`, `2`) |
+
+Metadata 2 selects A's edge 2, the directed segment `(16,4) → (16,12)`. SAT2 packs the shape selector into the high 16 bits and edge index into the low 16 bits; flipping the normal does not change that identity. SAT2 supplies no contact point.
+
+#### Encode the contact query {#sec-geo-encode-the-contact-query}
+
+Prepare the local vertices and bounds as binary32 numbers, separately from the
+Q16 arrays. Both instances use the same shape descriptor; their F32 translations
+are `(0,0)` and the selected B position. The following configuration uses one
+explicit candidate pair.
+
+The 96-byte polygon object has kind=3, count=8, data offset=32 and bounds offset=16, with offsets relative to its descriptor. Both instances use layer=mask=1. The candidate is `[0,1,44524F4EH]`; its final word is cartridge-supplied pair information, not a computed feature. Set SRC0=instances, SRC1=candidate, DST0=36-byte contact storage, DST1=16-byte summary, COUNT=1, PARAM0=1, PARAM1=1 and strides `20,12,2`; submit CMD=`22H`.
+
+The completed summary is `result_count, exact_pairs, broadphase_pairs, flags`:
+
+| Pose | Summary | Valid contact |
+|---|---|---|
+| Separated | `(0,0,1,0)` | None |
+| Touching | `(0,1,1,0)` | None |
+| Overlapping | `(1,1,1,0)` | Normal `(-1,0)`, depth 4, world point `(14,8)` |
+
+Only `result_count` contact records are valid. The other summary counts report
+which filtering and exact-test stages were reached; the
+[contact-pass reference](#sec-geo-overlap2d_pass-translated-shape-contacts)
+defines them and the packed result layout.
 
 ### Transform the drone hulls and pass them to SAT2 {#sec-geo-transform-two-squares-and-pass-them-to-sat2}
 
@@ -387,6 +421,8 @@ Both summaries are `(1,1,1,0)`. Candidate mode retains pair information
 12345678H; full-pass mode generates 1 for pair `(0,1)`. PROCESSED is respectively
 1 and 2: even the last full-pass instance consumes an outer record.
 
+#### Recover after a failed record {#sec-geo-recover-after-a-failed-record}
+
 To see the fault boundary, substitute an XFORM2 record whose flags word is 1,
 set COUNT=1 and CMD=20H. It produces STATUS=6, PROCESSED=0 and
 FAULT=00080000H before fetching vertices or a matrix. Acknowledge the local
@@ -427,7 +463,7 @@ No recovery step erases the earlier RAM results.
 | `+0x3c` | `0x08000060` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `0xffff`. |
 | Separate | `0x08010224` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
 
-The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The offsets below are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
+The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The table offsets are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
 
 Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
 
@@ -436,7 +472,7 @@ reserved for CPU I/O. Writing a GEO result there changes the underlying RAM
 rather than operating an I/O register. Apply each command's range rules when
 allocating buffers, and keep results out of memory reserved for other uses.
 
-## Work budget and timing {#sec-geo-work-budget-and-timing}
+## Processing rate and timing {#sec-geo-work-budget-and-timing}
 
 GEO accrues work credit at 16,384,000 units/s against the 33,868,800-Hz system
 timebase. One unit permits one outer record to run, including a record that
@@ -562,7 +598,17 @@ The `0xffffffff` value is special only in `dst1_index`: it suppresses both AABB 
 
 ### Transformation arithmetic {#sec-geo-transformation-arithmetic}
 
-For each input vertex, the two matrix rows produce the output x and y independently. Using the signed **raw words**, a row `(a, b, t)` is evaluated as follows:
+The matrix's linear part rotates, scales or shears the supplied coordinates;
+`tx` and `ty` then translate them. In spatial units, its two rows express:
+
+```text
+world x = m00 × local x + m01 × local y + tx
+world y = m10 × local x + m11 × local y + ty
+```
+
+The following rules define the fixed-point products, rounding and saturation
+of that operation. Using the signed **raw words**, a row `(a, b, t)` is evaluated
+as follows:
 
 1. Form the exact signed 64-bit products `a × x` and `b × y`.
 2. Add those products, saturating the sum to the signed 64-bit range.
@@ -713,6 +759,12 @@ With B translated by `(4,0)` instead, the squares touch and return `(1,65536,0,0
 
 Use **candidate mode** when the cartridge already has a pair list, needs a particular pair order, or carries its own pair metadata. Use **full pass** to examine every distinct pair in an instance array. The two modes share the same mask, bounds, exact-overlap, and contact operations.
 
+A compound represents one instance with several AABB or convex-polygon
+pieces. Use it when one convex outline does not describe the desired occupied
+region. Each piece shares the instance translation. GEO tests the reached
+piece pairs and selects at most one contact for the instance pair; it does not
+emit a contact for every intersecting piece.
+
 All addresses and offsets below are byte quantities unless explicitly identified as indices or counts. `U32` means an unsigned 32-bit register or memory word. `F32` means the IEEE 754 binary32 bit pattern stored in one word; geometry is not fixed-point. Source F32 values are decoded for double-precision calculation, and contact components are rounded back to F32 on output.
 
 ### Pass configuration {#sec-geo-pass-configuration}
@@ -734,7 +786,20 @@ The pass uses the configuration captured at launch:
 
 Only `PARAM0 & 3` selects the mode. Selector `1` is candidate mode; selectors `0`, `2`, and `3` are full pass. Thus `2` is the named full-pass encoding, but is not its only accepted encoding.
 
-The remaining `PARAM0` bits have no effect on this pass. In particular, the named broadphase field (bits 2–3, mask `0x0000000C`, with NONE=`0` and LOCAL_BOUNDS=`4`), contact field (bits 4–5, mask `0x00000030`, with CLIPPED_FEATURE=`0`), output field (bits 6–7, mask `0x000000C0`, with STOP_ON_OVERFLOW=`0`), and reserved mask `0xFFFF0000` are not selectable policies or rejected encodings. Local-bounds filtering and stop-on-overflow operate regardless of these bits. For example, `PARAM0=6` selects full pass; it does not enable an additional broadphase operation.
+The pass always uses local-bounds filtering, clipped-feature contact points,
+and stop-on-overflow output. Only the mode field selects behavior. The other
+named fields retain these encodings but have no effect on the operation:
+
+| Field | Bits / mask | Named encodings |
+|---|---|---|
+| Broadphase | 2–3 / `0000000CH` | NONE=`0`; LOCAL_BOUNDS=`4` |
+| Contact | 4–5 / `00000030H` | CLIPPED_FEATURE=`0` |
+| Output | 6–7 / `000000C0H` | STOP_ON_OVERFLOW=`0` |
+| Reserved | Mask `FFFF0000H` | All values accepted without an additional action |
+
+For example, `PARAM0=6` selects full pass with the same bounds filtering as
+`PARAM0=2`. Bits outside the mode field do not disable filtering, select
+another contact algorithm or cause a reserved-encoding fault.
 
 A launch clears the processed, result, exact-pair, and broadphase-pair counts and writes a zero summary, including when `COUNT=0`. There is no separate OVERLAP2D configuration-validation stage.
 
@@ -896,3 +961,32 @@ Set `SRC0` to the instances, `STRIDE0=20`, `SRC1` to the candidate, `STRIDE1=12`
 With full-pass `PARAM0=2` and `COUNT=2`, the contact is the same, metadata is `1`, and processed count is `2`. Moving B to `(4,0)` yields touching bounds but no exact overlap: summary `[0,1,1,0]`, even with capacity zero. At `(5,0)`, summary is `[0,0,1,0]`. Either mask set to zero gives `[0,0,0,0]`, provided both descriptor spans remain readable.
 
 Repeating the original overlapping candidate twice with capacity one leaves the first result intact. The second hit publishes `[1,2,2,1]` and faults with code `9` at record index `1`; processed count remains `1`.
+
+## From geometry results to video packets {#sec-geo-from-geometry-results-to-video-packets}
+
+The sprite's six direct16 RGB555 palette words are `0000H`, `8000H`, `294AH`,
+`4631H`, `6318H` and `7FFFH`. Index 0 is transparent; index 1 is opaque black.
+The image is enlarged before upload: each authored pixel becomes a 4 × 4 block in a 64 × 64 RGB555 texture. The 8192-byte texture is uploaded to VRAM origin `(640,0)` using image-upload command `A0H`, origin word `00000280H` and size `00400040H`. Its 2048 payload words each contain two adjacent 16-bit texels. These are repeated scalar writes to the fixed GP0 port. The 64 × 64 textured rectangles do not themselves scale a 16 × 16 image; they use the prepared texture, modulated blue for A and red for B.
+
+Sprites are submitted before hulls. Each hull becomes eight finite flat-line packets: command/color with opcode `40H`, then two endpoints. Command colors use RGB888 with red in the low byte, then green and blue. Endpoints pack signed 11-bit integer pixel X in the low halfword and Y in the high halfword. For these positive integral poses, shifting a Q16 coordinate right by 14 combines division by 65536 with the four-pixel scale; add the display origin afterwards.
+
+The yellow bracket uses the winning horizontal projection interval. The green arrow has a separate illustrative anchor. The magenta arrow and white cross use the valid F32 world point. The cross is drawn last. These arrowheads and bracket placements are authored for the illustrated horizontal normals, not an arbitrary rotated-normal renderer.
+
+The scene uses two 256 × 192 GX16 drawing surfaces: VRAM word-X `[0,256)`,
+rows `[0,192)` and `[256,448)`. The texture occupies word-X `[640,704)`, rows
+`[0,64)`. Each VRAM row has 1024 halfwords. These rectangles leave the BIOS
+reservation untouched: in this example its queried origin is `(704,720)` and
+size `320 × 252`. Query the installed BIOS reservation before allocating VRAM;
+its extent can differ between firmware images.
+
+PCRTC is reset and display output disabled during setup. Drawing selects the surface's draw area and offset. Fill command `02H` ignores both, so clearing the second surface explicitly uses its raw VRAM origin `(0,256)` rather than relying on the draw offset.
+
+After drawing, wait for GPUSTAT bit 26, then select the completed framebuffer
+and enable display. PCRTC applies the display configuration at its VBlank latch;
+wait for a fresh VBlank to observe the new picture. With exclusive use of the
+interrupt mask, mask delivery during setup, acknowledge old VBlank bit `4`,
+record the handler's VBlank counter and enable the owned sources with mask
+`1CH`. A change in that counter identifies the required edge. The illustrations
+hold each pose for eight further VBlank intervals for viewing.
+
+The scene therefore has three explicit hand-offs: XFORM2 output becomes SAT2 input, completed collision results select drawing packets, and a completed GPU picture becomes a PCRTC source. None of these hand-offs launches the next unit automatically.

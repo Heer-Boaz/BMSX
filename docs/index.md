@@ -16,8 +16,8 @@ BLua language extensions and resident BIOS services. It supplies the program
 and data representations needed to implement cartridge software. The BLua
 chapter explains the source-language extensions; the CPU chapter is the
 instruction reference. Program images and startup have their own chapter,
-separate from physical memory mapping. BIOS diagnostics describes source and
-frame inspection and the optional records that support them.
+separate from physical memory mapping. BIOS diagnostics describes console
+output, source and frame inspection, and the optional records that support them.
 
 **Book III — Cartridge and Expansion Reference** describes cartridge sockets
 and mapped card devices, including their memory and interrupt interfaces.

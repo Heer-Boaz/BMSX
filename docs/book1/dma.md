@@ -183,48 +183,68 @@ does not start anything. TRIGGER reads zero after either kind of write.
 
 ## Copy words in BLua {#sec-dma-copy-words-in-blua}
 
-The example first copies twenty ROM words into main RAM, then uses both
-channels to copy that RAM source into two separate destinations. It begins
-after normal BIOS handoff with both channels idle and reserved for this work.
-The buffers do not overlap.
+This fragment copies twenty words from one main-RAM array to another. Begin
+after normal BIOS handoff with channel 0 idle and reserved for this work. The
+arrays are four-byte aligned and do not overlap. DMA addresses name their first
+bytes; array indices below select the six consecutive channel registers.
 
-Delivery is masked during the polling waits, so the final ACK clears the
-completion requests raised by the two channels. Array indices select the six
-consecutive mapped registers in each channel.
+The example polls BUSY with IRQ delivery masked. It clears the channel's old
+completion request before START and acknowledges the new request after the copy.
+An application using interrupts instead keeps its established MASK and services
+DMA0_DONE through its handler.
 
 ```lua
-rodata seed: word[20] = {
+data source: word[20] = {
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
     10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 }
-bss source: word[20]
 bss copy0: word[20]
-bss copy1: word[20]
 local dma0<const>: *word = 0x0800000c
-local dma1<const>: *word = 0x080103e4
 local irq_ack<const>: *word = 0x08000004
 local irq_mask<const>: *word = 0x08000008
 
 *irq_mask = 0
-*irq_ack = 0x00000101
--- Cartridge ROM -> RAM, both endpoints increment, sixteen-word blocks.
-dma0[0] = seed
-dma0[1] = source
-dma0[2] = 20
-dma0[3] = 0x00003c03
-dma0[5] = 1
+*irq_ack = 0x00000001
+dma0[0] = source           -- READ_ADDR: first source byte.
+dma0[1] = copy0            -- WRITE_ADDR: first destination byte.
+dma0[2] = 20               -- TRANSFER_COUNT: words, not bytes.
+dma0[3] = 0x00003c03       -- Both increments, FORCE/FORCE, 16-word blocks.
+dma0[5] = 1                -- TRIGGER: start after all configuration writes.
 while (dma0[4] & 1) ~= 0 do
 end
+*irq_ack = 0x00000001
+```
 
--- Prepare both RAM copies before starting either channel.
-dma0[0] = source
-dma0[1] = copy0
-dma0[2] = 20
-dma0[3] = 0x00003c03
-dma1[0] = source
-dma1[1] = copy1
-dma1[2] = 20
-dma1[3] = 0x00000c03
+After successful bus accesses, `copy0` contains the twenty source words in
+order. Count is zero, STATUS is `00000002H`, and TRIGGER reads zero. Both
+incrementing addresses have advanced 80 bytes. Check the shared bus-fault
+report as well: DONE alone does not certify successful accesses.
+
+This RAM-to-RAM copy costs 44 admitted DMA cycles, excluding request waits,
+competing-channel service and CPU instructions. Declaring the same source as
+`rodata` instead places it in cartridge ROM: the register sequence is unchanged,
+but the corresponding ROM-to-RAM transfer costs 168 admitted cycles. The source
+region, not a different DMA operation code, determines that difference.
+
+### Use both channels {#sec-dma-use-both-channels}
+
+The second channel has the same capabilities and register order at base
+`080103e4H`. To copy the RAM source to two destinations, reserve both idle
+channels and a separate 80-byte `copy1` array. Prepare both channels before
+starting either:
+
+| Register | Channel 0 | Channel 1 |
+|---|---|---|
+| READ_ADDR | Address of `source` | Address of `source` |
+| WRITE_ADDR | Address of `copy0` | Address of `copy1` |
+| TRANSFER_COUNT | 20 | 20 |
+| CONTROL | `00003c03H`: 16-word blocks | `00000c03H`: four-word blocks |
+
+With `dma0` and `irq_ack` bound as above and `dma1` bound to `080103e4H`, the
+submission and completion sequence is:
+
+```lua
+*irq_ack = 0x00000101
 dma0[5] = 1
 dma1[5] = 1
 while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do
@@ -232,29 +252,28 @@ end
 *irq_ack = 0x00000101
 ```
 
-After successful bus accesses, `source`, `copy0` and `copy1` contain the twenty
-seed words in order. Each completed
-channel has count zero, STATUS=`00000002H` and TRIGGER zero. Its incrementing
-addresses have advanced 80 bytes. Check the shared bus-fault report as well:
-DONE alone does not certify successful accesses.
-
-The ROM-to-RAM transfer costs 168 admitted DMA cycles. For the two RAM copies,
-the [round-robin trace](#sec-dma-worked-block-round-robin-trace) gives the 94-cycle
-schedule when channel 1 starts before channel 0's first block completes.
-Those costs exclude programming instructions, arbitration waits and interrupt
-service; sequential START stores are not an atomic simultaneous launch.
+Both channels can remain BUSY, but they take turns on the shared transfer
+path. The [round-robin trace](#sec-dma-worked-block-round-robin-trace) gives the
+94-cycle schedule when channel 1 starts before channel 0's first block
+completes. Sequential START stores are not an atomic simultaneous launch.
 
 ### Send a command stream to GP0 {#sec-dma-send-a-command-stream-to-gp0}
 
-Retain `dma0` and `irq_ack` from above. Own GP0 exclusively, with no partial
-packet or unread readback. This five-word stream sets mask mode, fills a red
-64 × 64 rectangle at (0,0), then requests an in-order GPU interrupt.
+This is a separate channel-0 transfer to a fixed device port. Begin with
+channel 0 idle, reserve GP0 for the sequence, and leave no partial command packet
+or unread readback. IRQ delivery is masked while the sequence polls completion.
+The five-word stream sets mask mode, fills a red 64 × 64 rectangle at (0,0),
+then requests an in-order GPU interrupt.
 
 ```lua
 rodata gpu_commands: word[5] = {
     0xe6000000, 0x020000ff, 0x00000000, 0x00400040, 0x1f000000,
 }
+local dma0<const>: *word = 0x0800000c
+local irq_ack<const>: *word = 0x08000004
+local irq_mask<const>: *word = 0x08000008
 local gp1<const>: *word = 0x08010240
+*irq_mask = 0
 while (*gp1 & 0x04000000) == 0 do
 end
 *gp1 = 0x02000000
