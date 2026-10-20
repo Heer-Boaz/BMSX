@@ -267,6 +267,7 @@ return { bin_gx_system_texture_addr = texture }`],
 		const systemPrefix = layoutRomPrefix([], false, null);
 		const systemBlua32 = buildRomBlua32Tail(systemExecutableSources, {
 			generatedLuaModules: [],
+			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 3,
 			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
@@ -361,6 +362,7 @@ return imgdec
 		}
 		const cartBlua32 = buildRomBlua32Tail(cartExecutableSources, {
 			generatedLuaModules: [],
+			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 3,
 			imageOffset: cartPrefix.nextOffset,

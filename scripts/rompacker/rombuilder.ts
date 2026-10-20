@@ -96,7 +96,7 @@ import { compileCollisionMap } from './collision_map_compiler';
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { mkdir, mkdtemp, rename, rm, writeFile } = require('fs/promises');
+const { mkdir, mkdtemp, rename, rm } = require('fs/promises');
 // @ts-ignore
 const { createWriteStream } = require('fs');
 // @ts-ignore
@@ -118,7 +118,6 @@ const { loadImage } = require('canvas');
 // @ts-ignore
 const yaml = require('js-yaml');
 
-export const BLUA32_SYMBOLS_SIDECAR_SUFFIX = '.blua32-symbols';
 // @ts-ignore
 const { createHash } = require('crypto');
 
@@ -1005,6 +1004,7 @@ type BuildRomBlua32TailOptions = {
 	generatedLuaModules: GeneratedLuaModule[];
 	traceStatements?: TraceStatementSelection;
 	preloadModules?: readonly string[];
+	includeDiagnostics: boolean;
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
 	ramByteCount: number;
@@ -1039,7 +1039,6 @@ type RomBlua32TailCommon = {
 
 type SystemRomBlua32Tail = RomBlua32TailCommon & {
 	domain: 'system';
-	symbolsPayload: Uint8Array;
 };
 
 export type CartRomBlua32Tail = RomBlua32TailCommon & {
@@ -1077,7 +1076,6 @@ export function buildRomBlua32Tail(
 		const linked = built.linked;
 		const imageEndOffset = imageOffset + linked.bytes.byteLength;
 		assertSystemBlua32ImageFits(imageEndOffset);
-		const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
 		const imageLayout = layoutRomAssetPayloads([{
 			resid: BLUA32_IMAGE_ID,
 			type: 'code',
@@ -1090,6 +1088,7 @@ export function buildRomBlua32Tail(
 		}], true, imageOffset);
 		const tailAssets: RomAsset[] = [];
 		if (options.includeSymbols) {
+			const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
 			tailAssets.push({
 				resid: BLUA32_SYMBOLS_IMAGE_ID,
 				type: 'code',
@@ -1123,12 +1122,11 @@ export function buildRomBlua32Tail(
 				payloadEnd: tailLayout.payloadEnd,
 				nextOffset: tailLayout.nextOffset,
 			},
-			diagnostics: options.includeSymbols ? {
+			diagnostics: options.includeDiagnostics ? {
 				image: linked.layout,
 				symbols: linked.symbols,
 				sources: built.diagnosticSources,
 			} : null,
-			symbolsPayload,
 		};
 	}
 	const built = buildBlua32Image({
@@ -1178,7 +1176,7 @@ export function buildRomBlua32Tail(
 			staticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
 		},
 		layout: layoutRomAssetPayloads(executableAssets, true, options.imageOffset),
-		diagnostics: options.includeSymbols ? {
+		diagnostics: options.includeDiagnostics ? {
 			image: linked.layout,
 			symbols: linked.symbols,
 			sources: built.diagnosticSources,
@@ -1373,7 +1371,6 @@ export async function finalizeRompack(
 
 	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
 	const tempFile = join(tempDirectory, outfileBasename);
-	const symbolsTempFile = join(tempDirectory, `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
 	try {
 		const writer = createWriteStream(tempFile);
 		let offset = 0;
@@ -1413,14 +1410,6 @@ export async function finalizeRompack(
 		}
 
 		await finished(writer);
-		if (blua32 !== null && blua32.domain === 'system') {
-			const symbolsOutputFile = `${outputPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
-			await writeFile(symbolsTempFile, blua32.symbolsPayload);
-			await rename(symbolsTempFile, symbolsOutputFile);
-			outputs.push(
-				{ file: `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`, digest: createHash('sha256').update(blua32.symbolsPayload).digest('hex') },
-			);
-		}
 		await rename(tempFile, outputPath);
 		outputs.push({ file: outfileBasename, digest: romDigest.digest('hex') });
 	} finally {

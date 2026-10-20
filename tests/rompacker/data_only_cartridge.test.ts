@@ -122,7 +122,7 @@ for (const name of ['cartridge_data_conformance', 'system', 'bmsx-bios']) test(`
 	}
 });
 
-test('normal cart production discovers external program source and resolves its BIOS dependency', async () => {
+for (const debug of [false, true]) test(`${debug ? 'debug' : 'ordinary'} cart production resolves its BIOS dependency from one ROM`, async () => {
 	const externalRoot = await mkdtemp(join(tmpdir(), 'bmsx-external-cart-'));
 	try {
 		const resourceRoot = join(externalRoot, 'res');
@@ -146,19 +146,20 @@ test('normal cart production discovers external program source and resolves its 
 			resourceRoot,
 			'--output-dir',
 			outputRoot,
+			...(debug ? ['--debug'] : []),
 			'--force',
 		], {
 			cwd: process.cwd(),
 			encoding: 'utf8',
 		});
 		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-		const cart = parseCartridgePackage(await readFile(join(outputRoot, 'external_source_probe.rom')));
+		const suffix = debug ? '.debug.rom' : '.rom';
+		const cart = parseCartridgePackage(await readFile(join(outputRoot, `external_source_probe${suffix}`)));
 		assert.ok(cart.header.blua32ImageByteCount > 0);
-		const systemRom = await readFile(join(outputRoot, 'system', 'bmsx-bios.rom'));
+		const systemFile = `bmsx-bios${suffix}`;
+		const systemRom = await readFile(join(outputRoot, 'system', systemFile));
 		assert.equal(readBlua32BiosImports(systemRom).functions.length, 3);
-		assert.deepEqual((await readdir(join(outputRoot, 'system'))).sort(), [
-			'bmsx-bios.rom', 'bmsx-bios.rom.blua32-symbols',
-		]);
+		assert.deepEqual(await readdir(join(outputRoot, 'system')), [systemFile]);
 	} finally {
 		await rm(externalRoot, { recursive: true, force: true });
 	}
@@ -276,6 +277,7 @@ test('package producer rejects BLua32 program metadata without a ROM device', as
 		const layout = layoutRomPrefix(assets, false, MANIFEST);
 		const blua32 = buildRomBlua32Tail(assets, {
 			generatedLuaModules: [],
+			includeDiagnostics: false,
 			includeSymbols: false,
 			optLevel: 3,
 			imageOffset: layout.nextOffset,
@@ -311,6 +313,7 @@ test('a cart with Lua source still requires a module entry', () => {
 			source_path: 'module.lua',
 		}], {
 			generatedLuaModules: [],
+			includeDiagnostics: false,
 			includeSymbols: false,
 			optLevel: 3,
 			imageOffset: 0x100,

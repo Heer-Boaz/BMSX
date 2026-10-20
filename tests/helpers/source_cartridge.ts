@@ -38,7 +38,7 @@ export async function buildSourceCartridgeFixture(
 	const layout = layoutRomPrefix(assets, true, { hardware: [{ type: 'rom' }] });
 	const blua32 = buildRomBlua32Tail(assets, {
 		...options,
-		domain: 'cart', includeSymbols: true, optLevel: 3, imageOffset: layout.nextOffset,
+		domain: 'cart', includeDiagnostics: true, includeSymbols: true, optLevel: 3, imageOffset: layout.nextOffset,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		biosImports: readBlua32BiosImports(systemRom),
 		generatedLuaModules: [

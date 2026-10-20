@@ -1,11 +1,29 @@
 # BLua32 private symbols
 
-`__blua32_symbols__` and `<system-rom>.blua32-symbols` contain the same private
-tooling graph. The compiler/linker produces it; the symbol codec owns its wire
+`__blua32_symbols__` contains the private tooling graph embedded in a debug ROM.
+The compiler/linker produces it; the symbol codec owns its wire
 representation. Debuggers, source inspection and Hot Resume consume it. Neither
 the CPU nor the cartridge linker consumes these symbols. BIOS public targets
 are resolved from the ROM's executable header and published function slots;
 see [Named BIOS function imports](book1/blua-programs.md#sec-blua-programs-named-bios-function-imports).
+
+## Independent metadata consumers
+
+The public BIOS diagnostic directory supplies the console monitor's names,
+source locations and binding availability without a host debugger. Its
+product interface is specified by
+[BIOS diagnostic directory](book1/memory.md#sec-memory-optional-bios-diagnostic-directory).
+The private tooling graph supplies the richer source and live-compilation
+information used by host tools. The BIOS does not decode that graph.
+
+`includeDiagnostics` selects the public directory and `includeSymbols` selects
+the private graph independently at ROM production. The ordinary build requests
+neither; `--debug` requests both in one `.debug.rom`. Neither payload requires
+the other, and no separate symbols file is exported.
+
+Both payloads occupy ordinary mapped ROM bytes. “Private” describes the tooling
+format and its consumers, not a hidden address range or an access restriction.
+The separation is logical within the ROM, not a second file or container.
 
 ## Shared values, not a dumped object tree
 
@@ -81,6 +99,6 @@ an ordinary pooled value. The original `debugInlineCallSiteChainIds` still index
 
 Booleans are 0/1. Kinds and opcodes retain their existing enum values. There is
 no schema version, negotiation or legacy reader: this is generated internal
-data, and both producers and readers change together. Rebuild debug ROMs and
-sidecars after a format change. The rompacker hashes the tooling sources into
+data, and both producers and readers change together. Rebuild debug ROMs
+after a format change. The rompacker hashes the tooling sources into
 its build identity, including the codec, so old cached outputs are not reused.

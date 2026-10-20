@@ -94,6 +94,7 @@ test('BLua32 image rejects a cart Lua module that collides with generated asset 
 				path: ROM_ASSET_SYMBOL_MODULE_PATH,
 				source: generatedAssetSource,
 			}],
+			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 3,
 			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
@@ -139,6 +140,7 @@ for (const generated of [
 		assert.throws(
 			() => buildRomBlua32Tail(assets, {
 				generatedLuaModules: [{ path: generated.path, source: generated.source }],
+				includeDiagnostics: true,
 				includeSymbols: true,
 				optLevel: 3,
 				systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,

@@ -92,6 +92,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const layout = layoutRomPrefix(assets, true, MANIFEST, SYSTEM_ROM_ASSET_OFFSET);
 		const blua32 = buildRomBlua32Tail(assets, {
 			generatedLuaModules: [],
+			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 0,
 			systemAssetEndOffset: layout.nextOffset,

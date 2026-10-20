@@ -84,6 +84,7 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 				source: GX_REGISTER_MODULE_SOURCE,
 			},
 		],
+		includeDiagnostics: debug,
 		includeSymbols: debug,
 		optLevel,
 		systemAssetEndOffset: BIOSLayout.nextOffset,
@@ -137,6 +138,7 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 		const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 		progress({ type: 'phase', message: 'Compile cartridge Lua' });
 		blua32 = buildRomBlua32Tail(romAssets, {
+			includeDiagnostics: debug,
 			includeSymbols: debug,
 			optLevel,
 			imageOffset: romLayout.nextOffset,

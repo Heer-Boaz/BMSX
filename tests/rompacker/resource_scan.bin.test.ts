@@ -180,6 +180,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			source_path: 'entry.lua',
 		}], {
 			generatedLuaModules: [],
+			includeDiagnostics: false,
 			includeSymbols: false,
 			optLevel: 3,
 			systemAssetEndOffset: layout.nextOffset,

@@ -161,11 +161,12 @@ local result = initialize()
 local first<const> = *carried == 11 and *runs == 1 and result == nil
 initialize()
 return cold and first, *carried == 16 and *runs == 2 and captured == 6`;
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry.lua'), [], {
-			entrySource: source, programDomain: domain, optLevel,
-		});
+		const chunk = parseLuaChunk(source, 'entry.lua');
+		const compiled = domain === 'system'
+			? compileLuaChunkToProgram(chunk, [], { entrySource: source, programDomain: 'system', optLevel })
+			: compileLuaChunkToProgram(chunk, [], { entrySource: source, programDomain: 'cart', optLevel });
 		let machine: ReturnType<typeof createTestSystemCpu>;
-		if (domain === 'system') {
+		if (compiled.domain === 'system') {
 			const image = linkTestSystemBlua32(compiled);
 			machine = createTestSystemCpu({
 				romBytes: image.romBytes.subarray(0, image.image.address + image.image.bytes.byteLength),

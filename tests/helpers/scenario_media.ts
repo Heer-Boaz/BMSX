@@ -79,6 +79,7 @@ export async function buildScenarioMediaFixture(
 	);
 	const systemBlua32 = buildRomBlua32Tail(systemAssets, {
 		generatedLuaModules: [],
+		includeDiagnostics: true,
 		includeSymbols: true,
 		optLevel: options?.systemOptLevel ?? 0,
 		ramByteCount: 0x00400000,
@@ -137,6 +138,7 @@ export async function buildScenarioMediaFixture(
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],
+		includeDiagnostics: true,
 		includeSymbols: true,
 		optLevel: options?.cartOptLevel ?? 0,
 		ramByteCount: 0x00400000,

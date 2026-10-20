@@ -10,6 +10,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
+import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 
@@ -44,7 +45,7 @@ return count`);
 	assert.deepEqual(builds[1], builds[0]);
 });
 
-for (const optLevel of [0, 3] as const) test(`symbol inclusion preserves executable bytes at the same link address (O${optLevel})`, () => {
+for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] as const) test(`independent metadata preserves executable bytes (${domain}, O${optLevel})`, () => {
 	const source = `module<entry>
 local value = 0
 local function emit(n)
@@ -54,12 +55,21 @@ end
 for i = 1, 10 do emit(i) end
 return value`;
 	const assets = [{ resid: 'entry', type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: 'entry.lua' }];
-	const images = [false, true].map(includeSymbols => buildRomBlua32Tail(assets, {
-		domain: 'system', generatedLuaModules: [], biosExports: [], ramByteCount: 0x00400000,
-		optLevel, includeSymbols, systemAssetEndOffset: 0x100,
-	}));
+	const biosImports = linkTestSystemBlua32(compileLuaSource('return 0')).biosImports;
+	const images = [];
+	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
+		const options = { generatedLuaModules: [], ramByteCount: 0x00400000, optLevel, includeDiagnostics, includeSymbols };
+		const image = domain === 'system'
+			? buildRomBlua32Tail(assets, { ...options, domain: 'system', biosExports: [], systemAssetEndOffset: 0x100 })
+			: buildRomBlua32Tail(assets, { ...options, domain: 'cart', biosImports, imageOffset: 0x100 });
+		assert.equal(image.diagnostics !== null, includeDiagnostics);
+		assert.equal(image.layout.entries.some(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID), includeSymbols);
+		images.push(image);
+	}
 	// Symbols/source packaging may relocate images. With placement held equal,
 	// every executable byte (not only opcode counts or return values) must match.
-	assert.deepEqual(images[1].layout.ranges[0].buffer, images[0].layout.ranges[0].buffer);
-	assert.deepEqual(images[1].boot, images[0].boot);
+	for (const image of images) {
+		assert.deepEqual(image.layout.ranges[0].buffer, images[0].layout.ranges[0].buffer);
+		assert.deepEqual(image.boot, images[0].boot);
+	}
 });
