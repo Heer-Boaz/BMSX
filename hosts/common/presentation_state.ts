@@ -14,13 +14,12 @@ type RenderPresentation = {
 	commitFrame: boolean;
 };
 
+const enum PresentationIntent { None, Held, Partial, Commit }
+
 export class RenderPresentationState {
 	/** Machine position when a completed image was published, not each held UI repaint. */
 	public readonly gameFrame: PublishedGameFrame = { presentationSequence: undefined, cycles: 0, videoTick: 0 };
-	private pendingPresentation = false;
-	private restoredPresentationPending = false;
-	private presentationMode: RenderPresentationMode = 'completed';
-	private presentationCommitFrame = false;
+	private presentationIntent = PresentationIntent.None;
 	private readonly presentationScratch: RenderPresentation = {
 		mode: 'completed',
 		commitFrame: false,
@@ -33,7 +32,7 @@ export class RenderPresentationState {
 	private pcrtcScanoutRevision = 0;
 
 	public get pending(): boolean {
-		return this.pendingPresentation;
+		return this.presentationIntent !== PresentationIntent.None;
 	}
 
 	private presentFrame(
@@ -62,44 +61,39 @@ export class RenderPresentationState {
 		}
 	}
 
-	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {
-		this.pendingPresentation = true;
-		this.presentationMode = mode;
-		this.presentationCommitFrame = commitFrame;
+	private markPresentation(intent: PresentationIntent): void {
+		if (intent > this.presentationIntent) this.presentationIntent = intent;
 	}
 
 	public requestHeldPresentation(): void {
-		if (!this.pendingPresentation) {
-			this.markPresentation('completed', false);
-		}
+		this.markPresentation(PresentationIntent.Held);
 	}
 
 	public requestRestoredPresentation(): void {
-		this.restoredPresentationPending = true;
 		this.pcrtcScanoutRevision = 0;
-		this.markPresentation('completed', true);
+		this.markPresentation(PresentationIntent.Commit);
 	}
 
 	private consumePresentation(out: RenderPresentation): boolean {
-		if (!this.pendingPresentation) {
+		if (this.presentationIntent === PresentationIntent.None) {
 			return false;
 		}
-		out.mode = this.presentationMode;
-		out.commitFrame = this.presentationCommitFrame;
-		this.restoredPresentationPending = false;
+		out.mode = this.presentationIntent === PresentationIntent.Partial ? 'partial' : 'completed';
+		out.commitFrame = this.presentationIntent === PresentationIntent.Commit;
 		this.clearPresentation();
 		return true;
 	}
 
+	public beginHostFrame(): void {
+		if (this.presentationIntent !== PresentationIntent.Commit) this.clearPresentation();
+	}
+
 	public clearPresentation(): void {
-		this.pendingPresentation = this.restoredPresentationPending;
-		this.presentationMode = 'completed';
-		this.presentationCommitFrame = this.restoredPresentationPending;
+		this.presentationIntent = PresentationIntent.None;
 	}
 
 	public reset(presenter: VideoPresenter, runtime: Runtime): void {
 		this.gameFrame.presentationSequence = undefined;
-		this.restoredPresentationPending = false;
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
@@ -120,9 +114,9 @@ export class RenderPresentationState {
 			}
 		}
 		if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
-			this.markPresentation('completed', tickVisualCommitted);
+			this.markPresentation(tickVisualCommitted ? PresentationIntent.Commit : PresentationIntent.Held);
 		} else if (runtime.isDrawPending) {
-			this.markPresentation('partial', false);
+			this.markPresentation(PresentationIntent.Partial);
 		}
 	}
 

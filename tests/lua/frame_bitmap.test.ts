@@ -6,6 +6,8 @@ import { TestInput } from '../../ide/testing/input';
 import { HostBitmap, HostBitmapTextures } from '../../machine/ts/render/host_overlay/bitmap';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { GX_GPU_PCRTC_BGCOLOR_LOW, GX_GPU_PCRTC_PMODE_LOW } from '../../machine/ts/spec/gx/pcrtc';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
@@ -101,10 +103,79 @@ test('offscreen output publishes only actual completed presentations, never held
 	assert.equal(bitmap.image.pixels, storage);
 	assert.deepEqual([...storage.subarray(0, 4)], [0x11, 0x22, 0x33, 255]);
 	target.presentation.requestRestoredPresentation();
-	target.presentation.clearPresentation();
+	target.presentation.beginHostFrame();
 	target.present();
 	assert.equal(bitmap.revision, revision + 1); assert.equal(bitmap.image.pixels, storage);
 	assert.deepEqual([...storage.subarray(0, 4)], [0x44, 0x55, 0x66, 255]);
 	assert.deepEqual(output.published, target.presentation.gameFrame);
 	target.dispose(); assert.equal(output.bitmap, undefined);
+});
+
+test('restored image publication survives weaker requests until its pixels are committed', t => {
+	const system = linkTestSystemBlua32(compileLuaSource('return nil', 'presentation_intent', 0));
+	const target = new OffscreenMachine(system.romBytes, [null, null], PSX_MACHINE_SPEC, new TestInput());
+	t.after(() => target.dispose());
+	const { runtime, presentation } = target, output = target.frameOutput;
+	const state = captureRuntimeSaveState(runtime), pcrtc = state.machineState.machine.gxGpu.pcrtc;
+	pcrtc.registerWords[GX_GPU_PCRTC_PMODE_LOW] = 0;
+	pcrtc.presentWords[GX_GPU_PCRTC_PMODE_LOW] = 0;
+	pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00332211;
+	pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00332211;
+	applyRuntimeSaveState(runtime, state);
+	presentation.requestRestoredPresentation();
+	assert.equal(target.present(), true);
+	assert.deepEqual([...output.bitmap!.image.pixels.subarray(0, 4)], [0x11, 0x22, 0x33, 255]);
+
+	for (const completed of [false, true]) {
+		pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = completed ? 0x00998877 : 0x00665544;
+		pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = completed ? 0x00998877 : 0x00665544;
+		applyRuntimeSaveState(runtime, state);
+		presentation.requestRestoredPresentation();
+		presentation.beginHostFrame();
+		presentation.requestHeldPresentation();
+		const previousTick = runtime.frameScheduler.lastTickSequence;
+		if (completed) {
+			runtime.frameScheduler.enqueueTickCompletion({ cycleBudgetRemaining: 0, cycleBudgetGranted: 0, cycleCarryGranted: 0, activeCpuUsedCycles: 0 });
+			assert.equal(runtime.frameScheduler.lastTickVisualFrameCommitted, false);
+		} else {
+			runtime.frameScheduler.run(0);
+			assert.equal(runtime.isDrawPending, true);
+			assert.equal(runtime.frameScheduler.lastTickSequence, previousTick);
+		}
+		presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+		const sequence = presentation.gameFrame.presentationSequence;
+		assert.equal(target.present(), true);
+		assert.notEqual(presentation.gameFrame.presentationSequence, sequence, 'weaker requests cannot acknowledge a restore without committing history');
+		const pixels = completed ? [0x77, 0x88, 0x99, 255] : [0x44, 0x55, 0x66, 255];
+		assert.deepEqual([...output.bitmap!.image.pixels.subarray(0, 4)], pixels);
+		presentation.requestHeldPresentation();
+		target.present();
+		assert.deepEqual([...output.bitmap!.image.pixels.subarray(0, 4)], pixels);
+	}
+
+	pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00ccbbaa;
+	pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00ccbbaa;
+	applyRuntimeSaveState(runtime, state);
+	presentation.requestRestoredPresentation();
+	const pausedSequence = target.presenter.gameFrameSequence;
+	presentation.presentPausedFrame(target.presenter, runtime, 0, 0);
+	assert.equal(presentation.pending, false);
+	assert.notEqual(target.presenter.gameFrameSequence, pausedSequence, 'pausing does not defer an already requested restored commit');
+	assert.deepEqual([...target.backend.borrowPresentedPixels().subarray(0, 4)], [0xaa, 0xbb, 0xcc, 255]);
+	presentation.presentPausedFrame(target.presenter, runtime, 0, 0);
+	assert.equal(target.presenter.gameFrameSequence, presentation.gameFrame.presentationSequence, 'subsequent paused repaint holds the committed image');
+
+	presentation.requestHeldPresentation();
+	presentation.beginHostFrame();
+	assert.equal(target.present(), false, 'frame entry discards an ephemeral held request');
+	presentation.syncAfterRuntimeUpdate(runtime, runtime.frameScheduler.lastTickSequence);
+	assert.equal(presentation.pending, true);
+	presentation.beginHostFrame();
+	assert.equal(target.present(), false, 'frame entry discards an ephemeral partial request');
+	presentation.requestRestoredPresentation();
+	presentation.clearPresentation();
+	assert.equal(target.present(), false, 'explicit clearing cancels pending publication');
+	presentation.requestRestoredPresentation();
+	presentation.reset(target.presenter, runtime);
+	assert.equal(target.present(), false, 'reset cancels the previous pending commit');
 });

@@ -85,6 +85,87 @@ int16_t inputState(unsigned port, unsigned device, unsigned index, unsigned id) 
 }
 bool RETRO_CALLCONV supervisorRequest() { return false; }
 
+void testPresentationIntentLifetime() {
+	const auto system = test::makeMinimalBootRom(RomImageDomain::System);
+	LibretroInput input(supervisorRequest);
+	Runtime runtime({system, {}, PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	retro_system_av_info avInfo{};
+	avInfo.geometry.base_width = 4;
+	avInfo.geometry.base_height = 3;
+	LibretroVideoOutput video(avInfo);
+	auto backend = std::make_unique<SoftwareBackend>(4, 3, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	auto& software = *backend;
+	backend->resizePresentationTarget(4, 3);
+	VideoPresenter presenter(video, std::move(backend), 4, 3);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	presenter.crt_postprocessing_enabled = false;
+	RenderPresentationState presentation;
+	auto state = captureRuntimeSaveState(runtime);
+	state.machineState.machine.gxGpu.pcrtc.registerWords[GX_GPU_PCRTC_PMODE_LOW] = 0u;
+	state.machineState.machine.gxGpu.pcrtc.presentWords[GX_GPU_PCRTC_PMODE_LOW] = 0u;
+	state.machineState.machine.gxGpu.pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00332211u;
+	state.machineState.machine.gxGpu.pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00332211u;
+	applyRuntimeSaveState(runtime, state);
+	presentation.requestRestoredPresentation();
+	require(presentation.render(presenter, runtime, 0.0, 0.0, false), "initial restored image is presented");
+	require((software.framebuffer()[0] & 0x00ffffffu) == 0x00112233u, "initial history contains its native background");
+
+	for (bool completed : {false, true}) {
+		state.machineState.machine.gxGpu.pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = completed ? 0x00998877u : 0x00665544u;
+		state.machineState.machine.gxGpu.pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = completed ? 0x00998877u : 0x00665544u;
+		applyRuntimeSaveState(runtime, state);
+		presentation.requestRestoredPresentation();
+		presentation.beginHostFrame();
+		presentation.requestHeldPresentation();
+		const auto previousTick = runtime.frameScheduler.lastTickSequence;
+		if (completed) {
+			FrameState frame;
+			runtime.frameScheduler.enqueueTickCompletion(runtime, frame);
+			require(!runtime.frameScheduler.lastTickVisualFrameCommitted, "a completion with no new visual work requests a held image");
+		} else {
+			runtime.frameScheduler.run(runtime, 0.0);
+			require(runtime.isDrawPending() && runtime.frameScheduler.lastTickSequence == previousTick,
+				"zero newly admitted time leaves a partial update at the restored position");
+		}
+		presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+		const auto sequence = presenter.gameFrameSequence();
+		require(presentation.render(presenter, runtime, 0.0, 0.0, false), "restored commit survives weaker presentation requests");
+		require(presenter.gameFrameSequence() != sequence, "a weaker request must not acknowledge restoration without committing history");
+		require((software.framebuffer()[0] & 0x00ffffffu) == (completed ? 0x00778899u : 0x00445566u),
+			"restored native pixels replace the previous presentation history");
+		presentation.requestHeldPresentation();
+		require(presentation.render(presenter, runtime, 0.0, 0.0, false), "a subsequent held repaint is presented");
+		require((software.framebuffer()[0] & 0x00ffffffu) == (completed ? 0x00778899u : 0x00445566u),
+			"held repaint retains the restored history after the request is consumed");
+	}
+
+	state.machineState.machine.gxGpu.pcrtc.registerWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00ccbbaau;
+	state.machineState.machine.gxGpu.pcrtc.presentWords[GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00ccbbaau;
+	applyRuntimeSaveState(runtime, state);
+	presentation.requestRestoredPresentation();
+	const auto pausedSequence = presenter.gameFrameSequence();
+	require(presentation.render(presenter, runtime, 0.0, 0.0, true), "paused presentation consumes a restored commit");
+	require(presenter.gameFrameSequence() != pausedSequence, "pausing does not defer an already requested restored commit");
+	require((software.framebuffer()[0] & 0x00ffffffu) == 0x00aabbccu, "paused presentation displays restored native pixels");
+	const auto committedSequence = presenter.gameFrameSequence();
+	require(presentation.render(presenter, runtime, 0.0, 0.0, true), "subsequent paused repaint holds the committed image");
+	require(presenter.gameFrameSequence() == committedSequence, "held paused repaint does not publish another frame");
+
+	presentation.requestHeldPresentation();
+	presentation.beginHostFrame();
+	require(!presentation.render(presenter, runtime, 0.0, 0.0, false), "frame entry discards only an ephemeral held request");
+	presentation.syncAfterRuntimeUpdate(runtime, runtime.frameScheduler.lastTickSequence);
+	presentation.beginHostFrame();
+	require(!presentation.render(presenter, runtime, 0.0, 0.0, false), "frame entry discards an ephemeral partial request");
+	presentation.requestRestoredPresentation();
+	presentation.clearPresentation();
+	require(!presentation.render(presenter, runtime, 0.0, 0.0, false), "explicit clearing cancels pending presentation ownership");
+	presentation.requestRestoredPresentation();
+	presentation.reset(presenter, runtime);
+	require(!presentation.render(presenter, runtime, 0.0, 0.0, false), "runtime reset cancels the previous pending commit");
+}
+
 void testDefaultRetentionVideoStandards() {
 	for (bool pal : {true, false}) {
 		const auto system = test::makeMinimalBootRom(RomImageDomain::System);
@@ -158,6 +239,7 @@ void testDefaultRetentionVideoStandards() {
 int main(int argc, char** argv) {
 	try {
 		require(argc == 3 || argc == 4, "Usage: bmsx_host_rewind_conformance_runner SYSTEM_DIRECTORY CART_ROM [OUTPUT_DIRECTORY]");
+		testPresentationIntentLifetime();
 		testDefaultRetentionVideoStandards();
 		LibretroInput input(supervisorRequest);
 		input.setInputPollCallback(poll);

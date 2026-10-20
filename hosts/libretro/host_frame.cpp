@@ -39,7 +39,7 @@ LibretroFrameResult runLibretroFrame(
 	const HostMenuExecution menuExecution = overlayMenu.executionMode();
 	const bool menuPaused = menuExecution == HostMenuExecution::Paused;
 
-	presentation.clearPresentation();
+	presentation.beginHostFrame();
 	// Select execution before any service that can restore or advance the machine.
 	// Host input, menu drawing and wall time keep running while guest time is held.
 	if (!menuPaused) {

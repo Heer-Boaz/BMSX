@@ -171,7 +171,7 @@ export function runWorkbenchHostFrame(
 
 		ide.debuggerExecution.beforeHostFrame();
 		ide.scenarioRuns.advance();
-		screen.clearPresentation();
+		screen.beginHostFrame();
 		const collectHistory = !ide.debugger.plans.mutationActive;
 		if (!menuPaused) {
 			// Seek and recorded-frame stepping can execute inside service(), before the ordinary update.

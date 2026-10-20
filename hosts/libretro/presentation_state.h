@@ -19,6 +19,7 @@ struct RenderPresentation {
 class RenderPresentationState {
 public:
 	void recordHostFrame();
+	void beginHostFrame();
 	void clearPresentation();
 	void reset(VideoPresenter& presenter, Runtime& runtime);
 	void requestHeldPresentation();
@@ -33,16 +34,15 @@ public:
 	);
 
 private:
+	enum class PresentationIntent : u8 { None, Held, Partial, Commit };
+
 	void recordTickCompletion(bool visualCommitted);
 	void recordPresentation(VideoPresenter::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
-	void markPresentation(VideoPresenter::PresentationMode mode, bool commitFrame);
+	void markPresentation(PresentationIntent intent);
 	bool consumePresentation(RenderPresentation& outPresentation);
 
-	bool m_pendingPresentation = false;
-	bool m_restoredPresentationPending = false;
-	VideoPresenter::PresentationMode m_presentationMode = VideoPresenter::PresentationMode::Completed;
-	bool m_presentationCommitFrame = false;
+	PresentationIntent m_presentationIntent = PresentationIntent::None;
 	u32 m_pcrtcScanoutRevision = 0u;
 	bool m_debugPresentReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugPresentReportAt;

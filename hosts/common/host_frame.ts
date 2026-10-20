@@ -190,7 +190,7 @@ export function runHostFrame(
 	)) {
 		return HostFrameRunResult.Continue;
 	}
-	screen.clearPresentation();
+	screen.beginHostFrame();
 	if (!menuPaused) {
 		session.rewind.service(true);
 		if (session.rewind.playing && !session.execution.executionBlocked()) {

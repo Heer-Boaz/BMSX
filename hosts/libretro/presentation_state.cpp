@@ -105,14 +105,15 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 	m_debugPresentPausedPresents = 0;
 }
 
+void RenderPresentationState::beginHostFrame() {
+	if (m_presentationIntent != PresentationIntent::Commit) clearPresentation();
+}
+
 void RenderPresentationState::clearPresentation() {
-	m_pendingPresentation = m_restoredPresentationPending;
-	m_presentationMode = VideoPresenter::PresentationMode::Completed;
-	m_presentationCommitFrame = m_restoredPresentationPending;
+	m_presentationIntent = PresentationIntent::None;
 }
 
 void RenderPresentationState::reset(VideoPresenter& presenter, Runtime& runtime) {
-	m_restoredPresentationPending = false;
 	clearPresentation();
 	m_pcrtcScanoutRevision = 0u;
 	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
@@ -131,32 +132,27 @@ void RenderPresentationState::reset(VideoPresenter& presenter, Runtime& runtime)
 	m_debugPresentPausedPresents = 0;
 }
 
-void RenderPresentationState::markPresentation(VideoPresenter::PresentationMode mode, bool commitFrame) {
-	m_pendingPresentation = true;
-	m_presentationMode = mode;
-	m_presentationCommitFrame = commitFrame;
+void RenderPresentationState::markPresentation(PresentationIntent intent) {
+	if (intent > m_presentationIntent) m_presentationIntent = intent;
 }
 
 void RenderPresentationState::requestHeldPresentation() {
-	if (!m_pendingPresentation) {
-		markPresentation(VideoPresenter::PresentationMode::Completed, false);
-	}
+	markPresentation(PresentationIntent::Held);
 }
 
 void RenderPresentationState::requestRestoredPresentation() {
-	m_restoredPresentationPending = true;
 	m_pcrtcScanoutRevision = 0u;
-	markPresentation(VideoPresenter::PresentationMode::Completed, true);
+	markPresentation(PresentationIntent::Commit);
 }
 
 bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {
-	if (!m_pendingPresentation) {
+	if (m_presentationIntent == PresentationIntent::None) {
 		return false;
 	}
-	outPresentation.mode = m_presentationMode;
-	outPresentation.commitFrame = m_presentationCommitFrame;
+	outPresentation.mode = m_presentationIntent == PresentationIntent::Partial
+		? VideoPresenter::PresentationMode::Partial : VideoPresenter::PresentationMode::Completed;
+	outPresentation.commitFrame = m_presentationIntent == PresentationIntent::Commit;
 
-	m_restoredPresentationPending = false;
 	clearPresentation();
 	return true;
 }
@@ -170,9 +166,9 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 		recordTickCompletion(m_tickCompletionScratch.visualCommitted);
 	}
 	if (runtime.frameScheduler.lastTickSequence != previousTickSequence) {
-		markPresentation(VideoPresenter::PresentationMode::Completed, tickVisualCommitted);
+		markPresentation(tickVisualCommitted ? PresentationIntent::Commit : PresentationIntent::Held);
 	} else if (runtime.isDrawPending()) {
-		markPresentation(VideoPresenter::PresentationMode::Partial, false);
+		markPresentation(PresentationIntent::Partial);
 	}
 }
 
@@ -183,18 +179,15 @@ bool RenderPresentationState::render(
 	f64 deltaTime,
 	bool pausedPresent
 ) {
-	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
+	const bool runtimePresentPending = consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
 		return false;
 	}
 
-	const VideoPresenter::PresentationMode presentMode = pausedPresent
-		? VideoPresenter::PresentationMode::Completed
-		: m_presentationScratch.mode;
-	const bool commitFrame = pausedPresent
-		? false
-		: m_presentationScratch.commitFrame;
+	const VideoPresenter::PresentationMode presentMode = runtimePresentPending
+		? m_presentationScratch.mode : VideoPresenter::PresentationMode::Completed;
+	const bool commitFrame = runtimePresentPending && m_presentationScratch.commitFrame;
 	recordPresentation(presentMode, commitFrame, pausedPresent);
 
 	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();

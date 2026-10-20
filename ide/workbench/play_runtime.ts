@@ -148,7 +148,7 @@ export class PlayRuntimeSession implements PlaySession {
 			this.quarantine({ kind: 'machine', message: existingFault, cycles: runtime.machine.scheduler.currentNowCycles(), videoTick: runtime.frameScheduler.lastTickSequence });
 			return;
 		}
-		presentation.clearPresentation();
+		presentation.beginHostFrame();
 		if (this.rewind.seeking || this.rewind.playing) this.guest.invalidate();
 		const collectHistory = !this.debugger.plans.mutationActive;
 		this.rewind.service(collectHistory);
