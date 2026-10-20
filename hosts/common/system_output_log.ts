@@ -2,7 +2,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/spec/bmsx/io';
 import { LogLevel, type LogOutput } from './log';
 
-const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
+const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export class SystemOutputLog {
 	private readonly bytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
@@ -20,7 +20,8 @@ export class SystemOutputLog {
 		for (let index = 0; index < byteCount; index += 1) {
 			if (this.bytes[index] === 10) {
 				const text = systemOutputDecoder.decode(this.bytes.subarray(lineStart, index));
-				logOutput.log(LogLevel.Info, text);
+				// Human logs show NUL explicitly; observers retain the original text.
+				logOutput.log(LogLevel.Info, text.replaceAll('\0', '\\0'));
 				onLine?.(text);
 				lineStart = index + 1;
 			}

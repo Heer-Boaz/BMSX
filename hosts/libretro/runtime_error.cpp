@@ -22,22 +22,27 @@ void flushLibretroSystemOutput(
 	if (byteCount == 0u) {
 		return;
 	}
-	std::array<char, SYS_PRINT_BUFFER_BYTES> bytes;
+	// The printf logging ABI cannot carry NUL; display it without losing the tail.
+	std::array<char, SYS_PRINT_BUFFER_BYTES * 2u> bytes;
+	size_t storedBytes = 0u;
 	for (u32 index = 0u; index < byteCount; ++index) {
-		bytes[index] = static_cast<char>(output.readByte());
+		const u8 value = output.readByte();
+		if (value == 0u) {
+			bytes[storedBytes++] = '\\';
+			bytes[storedBytes++] = '0';
+		} else {
+			bytes[storedBytes++] = static_cast<char>(value);
+		}
 	}
 	size_t lineStart = 0u;
-	for (u32 index = 0u; index < byteCount; ++index) {
+	for (size_t index = 0u; index < storedBytes; ++index) {
 		if (bytes[index] == '\n') {
-			const std::string_view line(
-				bytes.data() + lineStart,
-				static_cast<size_t>(index) - lineStart);
 			logging.log(
 				RETRO_LOG_INFO,
-				"%.*s",
-				static_cast<int>(line.size()),
-				line.data());
-			lineStart = static_cast<size_t>(index) + 1u;
+				"%.*s\n",
+				static_cast<int>(index - lineStart),
+				bytes.data() + lineStart);
+			lineStart = index + 1u;
 		}
 	}
 }

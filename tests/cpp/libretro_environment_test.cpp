@@ -1,16 +1,24 @@
 #include "bmsx_libretro.h"
+#include "input.h"
+#include "runtime_error.h"
 #include "common/endian.h"
 #include "spec/bmsx/cartridge.h"
+#include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/bmsx/model.h"
 #include "machine/runtime/save_state/codec.h"
+#include "machine/runtime/runtime.h"
 #include "support/boot_rom_fixture.h"
 
+#include <array>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -35,6 +43,7 @@ bool lastVideoWasNull = false;
 retro_game_geometry lastGeometry{};
 retro_system_av_info lastSystemAvInfo{};
 std::string systemDirectory;
+std::vector<std::string> diagnosticLines;
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -45,9 +54,54 @@ void require(bool condition, const char* message) {
 void RETRO_CALLCONV discardLog(enum retro_log_level, const char*, ...) {
 }
 
+void RETRO_CALLCONV captureDiagnosticLog(enum retro_log_level level, const char* format, ...) {
+	require(level == RETRO_LOG_INFO, "diagnostic output uses the info log level");
+	std::array<char, bmsx::SYS_PRINT_BUFFER_BYTES * 2u + 2u> bytes;
+	va_list args;
+	va_start(args, format);
+	const int count = std::vsnprintf(bytes.data(), bytes.size(), format, args);
+	va_end(args);
+	require(count >= 0 && static_cast<size_t>(count) < bytes.size(), "diagnostic line fits the log capture");
+	diagnosticLines.emplace_back(bytes.data(), static_cast<size_t>(count));
+}
+
 bool RETRO_CALLCONV testRequestLine() {
 	requestLineReads += 1u;
 	return true;
+}
+
+void testDiagnosticTextLog() {
+	bmsx::LibretroInput input(testRequestLine);
+	bmsx::Runtime runtime({{}, {}, bmsx::PSX_MACHINE_SPEC}, input);
+	auto& memory = runtime.machine.memory;
+	const retro_log_callback logging{captureDiagnosticLog};
+	for (const bmsx::u32 value : {0xfeffu, 0x41u, 0u, 0x42u, 0x25u, 0x20acu}) {
+		memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, value);
+	}
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 0u);
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 1u);
+	for (const bmsx::u32 value : {0xfeffu, 0x43u, 0x10ffffu}) memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, value);
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 0u);
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	require(diagnosticLines == std::vector<std::string>{"\xef\xbb\xbf" "A\\0B%\xe2\x82\xac\n", "\n", "\xef\xbb\xbf" "C\xf4\x8f\xbf\xbf\n"},
+		"diagnostic log preserves Unicode and empty lines, renders NUL, and terminates every line");
+	require(runtime.machine.systemDebugTransmit.availableByteCount() == 0u, "diagnostic log drains complete bytes");
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	require(diagnosticLines.size() == 3u, "drained diagnostic lines are not repeated");
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0x78u);
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	require(diagnosticLines.size() == 3u, "partial diagnostic lines remain in the device");
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 0u);
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	require(diagnosticLines.back() == "x\n", "a later flush publishes the partial line once");
+	for (bmsx::u32 index = 0u; index < bmsx::SYS_PRINT_BUFFER_BYTES - 1u; ++index) {
+		memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_CHAR, 0u);
+	}
+	memory.writeMappedU32LE(bmsx::IO_SYS_PRINT_FLUSH, 0u);
+	bmsx::flushLibretroSystemOutput(runtime, logging);
+	std::string expanded;
+	for (bmsx::u32 index = 0u; index < bmsx::SYS_PRINT_BUFFER_BYTES - 1u; ++index) expanded += "\\0";
+	require(diagnosticLines.back() == expanded + '\n', "a full diagnostic line fits even when every codepoint is NUL");
 }
 
 void discardVideo(const void* data, unsigned, unsigned, size_t) {
@@ -147,6 +201,7 @@ bool frontendEnvironment(unsigned command, void* data) {
 } // namespace
 
 int main() {
+	testDiagnosticTextLog();
 	constexpr bmsx::u32 primaryCartRamBytes = 16u;
 	constexpr bmsx::u32 auxiliaryCartRamBytes = 24u;
 	const std::filesystem::path testDirectory =
