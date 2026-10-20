@@ -1783,6 +1783,7 @@ bool retro_unserialize(const void* data, size_t size) {
 				size));
 		if (restored) {
 			g_audio_output->resetPlayback();
+			g_presentation->requestRestoredPresentation();
 		}
 	} catch (const std::exception& error) {
 		logging.log(

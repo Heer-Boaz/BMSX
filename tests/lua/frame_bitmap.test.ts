@@ -100,7 +100,9 @@ test('offscreen output publishes only actual completed presentations, never held
 	assert.deepEqual(output.published, position); assert.equal(bitmap.revision, revision);
 	assert.equal(bitmap.image.pixels, storage);
 	assert.deepEqual([...storage.subarray(0, 4)], [0x11, 0x22, 0x33, 255]);
-	target.presentation.requestRestoredPresentation(); target.present();
+	target.presentation.requestRestoredPresentation();
+	target.presentation.clearPresentation();
+	target.present();
 	assert.equal(bitmap.revision, revision + 1); assert.equal(bitmap.image.pixels, storage);
 	assert.deepEqual([...storage.subarray(0, 4)], [0x44, 0x55, 0x66, 255]);
 	assert.deepEqual(output.published, target.presentation.gameFrame);

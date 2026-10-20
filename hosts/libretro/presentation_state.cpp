@@ -106,12 +106,13 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 }
 
 void RenderPresentationState::clearPresentation() {
-	m_pendingPresentation = false;
+	m_pendingPresentation = m_restoredPresentationPending;
 	m_presentationMode = VideoPresenter::PresentationMode::Completed;
-	m_presentationCommitFrame = false;
+	m_presentationCommitFrame = m_restoredPresentationPending;
 }
 
 void RenderPresentationState::reset(VideoPresenter& presenter, Runtime& runtime) {
+	m_restoredPresentationPending = false;
 	clearPresentation();
 	m_pcrtcScanoutRevision = 0u;
 	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
@@ -143,6 +144,7 @@ void RenderPresentationState::requestHeldPresentation() {
 }
 
 void RenderPresentationState::requestRestoredPresentation() {
+	m_restoredPresentationPending = true;
 	m_pcrtcScanoutRevision = 0u;
 	markPresentation(VideoPresenter::PresentationMode::Completed, true);
 }
@@ -154,6 +156,7 @@ bool RenderPresentationState::consumePresentation(RenderPresentation& outPresent
 	outPresentation.mode = m_presentationMode;
 	outPresentation.commitFrame = m_presentationCommitFrame;
 
+	m_restoredPresentationPending = false;
 	clearPresentation();
 	return true;
 }

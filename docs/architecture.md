@@ -103,17 +103,10 @@ grants and unspent execution budget. Host pacing, menu pause, capture and UI
 refresh policy remain outside device state.
 
 Browser/Node and native libretro execution use their existing common frame
-owners. Paced execution and bounded logical-tick execution share the frame
-scheduler; bounded suspended guest calls use `Runtime.cpuExecution`. Tests and
-debuggers do not create another CPU loop. Backend suspension retains admitted
-work until its actual completion. Each host reconciles scheduler suspension
-after servicing a backend request, then resumes unfinished execution with zero
-additional host time. A completed bounded tick is not resumed into the next
-tick merely to acknowledge backend completion. The offscreen host uses this
-same rule while keeping its backend and presentation output lazy. Backend
-latency does not become machine time, and a synchronous completion must not
-discard the next grant. Detailed hardware timing and event order are specified
-in the relevant unit manuals.
+owners. Explicit bounded execution and normal paced execution share those
+owners; a test or debugger does not create another CPU loop. Backend suspension
+retains admitted work until its actual completion. Detailed hardware timing and
+event order are specified in the relevant unit manuals.
 
 ### Persistence and rewind
 
@@ -204,12 +197,6 @@ and accelerated backends execute its command/buffer boundary, including
 emulated rasterization, transfers, VRAM synchronization and scanout. This is
 part of GPU emulation, not merely host display work; every backend implements
 the same product behavior. Concrete resource lifetime stays with the backend.
-
-The presenter orchestrates a render graph whose GX backend passes execute
-completed command prefixes and scanout before the host presentation passes.
-This orchestration does not transfer command completion or machine-time
-ownership to the presenter; backend service also executes directly at readback
-and command-drain boundaries without requiring a displayed frame.
 
 Completed scanout then enters host presentation. Host menus and Studio publish
 separate overlay work. The presenter owns destination sizing, render-target

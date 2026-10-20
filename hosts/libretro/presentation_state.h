@@ -40,6 +40,7 @@ private:
 	bool consumePresentation(RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;
+	bool m_restoredPresentationPending = false;
 	VideoPresenter::PresentationMode m_presentationMode = VideoPresenter::PresentationMode::Completed;
 	bool m_presentationCommitFrame = false;
 	u32 m_pcrtcScanoutRevision = 0u;

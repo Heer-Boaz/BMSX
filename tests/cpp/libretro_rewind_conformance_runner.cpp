@@ -2,6 +2,7 @@
 #include "common/endian.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
+#include "spec/gx/pcrtc.h"
 
 #include <chrono>
 #include <thread>
@@ -179,6 +180,40 @@ void checkQuickMenuPause(const char* imageName) {
 	require(!audioSuspended && resumptions == resumedBefore + 1,
 		"closing the menu must resume frontend audio exactly once");
 }
+
+void checkPausedExternalRestore() {
+	press(quickMenu);
+	require(audioSuspended, "external restore starts with the options menu paused");
+	auto envelope = captureBytes();
+	auto state = capture();
+	const auto savedCycles = state.machineState.schedulerNowCycles;
+	// Use an explicit background-only scanout, independent of game animation.
+	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
+	pcrtc.registerWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0u;
+	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0u;
+	pcrtc.registerWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x002a579bu;
+	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x002a579bu;
+	const auto payload = bmsx::encodeRuntimeSaveState(state);
+	bmsx::writeLE32(envelope.data() + 4u, static_cast<bmsx::u32>(payload.size()));
+	std::memcpy(envelope.data() + 8u, payload.data(), payload.size());
+	const size_t sample = static_cast<size_t>(height - 8u) * width + 8u;
+	const auto previousPixel = pixels[sample] & 0x00ffffffu;
+	constexpr uint32_t expectedPixel = 0x009b572au;
+	require(previousPixel != expectedPixel, "loaded scanout differs from the held image");
+	require(retro_unserialize(envelope.data(), envelope.size()), "paused frontend state load succeeds");
+	require(capture().machineState.schedulerNowCycles == savedCycles,
+		"paused external restore installs the saved machine time");
+	for (int index = 0; index < 3; ++index) frame();
+	require(audioSuspended && capture().machineState.schedulerNowCycles == savedCycles,
+		"paused external restore redraws without advancing guest time");
+	std::cout << "RUNTIME-LIBRETRO-PAUSED-RESTORE expected=" << expectedPixel
+		<< " previous=" << previousPixel << " actual=" << (pixels[sample] & 0x00ffffffu)
+		<< " held_cycles=" << savedCycles << '\n';
+	require((pixels[sample] & 0x00ffffffu) == expectedPixel,
+		"paused external restore must publish the restored game image, not the previous presentation history");
+	press(quickMenu);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -271,6 +306,7 @@ int main(int argc, char** argv) {
 		require(retro_unserialize(saved.data(), saved.size()), "frontend state load failed");
 		require(capture().machineState.schedulerNowCycles == savedCycles, "frontend load restores machine time");
 		for (int index = 0; index < 5; ++index) frame();
+		checkPausedExternalRestore();
 		press(quickMenu);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);

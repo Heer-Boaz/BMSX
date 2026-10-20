@@ -10,6 +10,8 @@
 - `docs/architecture.md` describes internal software ownership and dependencies
   only. Never use it, remembered excerpts or historical handovers as hardware,
   instruction, ROM-format or public BIOS authority.
+  Keep fix-specific behavior explanations and bug narratives in regression tests
+  and commit notes, not in the architecture document.
 - Verify product facts against the relevant numeric specification leaves,
   actual TS/C++ owners and BIOS consumers (and the BLua frontend for
   language/linkage contracts). Report disagreements; do not assume
