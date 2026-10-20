@@ -1,9 +1,11 @@
+#include "common/endian.h"
 #include "rompack/image.h"
 #include "rompack/toc.h"
 #include "rompack/tooling/blua32_media.h"
 #include "rompack/tooling/blua32_symbols.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
+#include "spec/bmsx/bios.h"
 #include "support/blua32_test_rom.h"
 
 #include <algorithm>
@@ -13,6 +15,13 @@
 
 namespace {
 using namespace bmsx;
+
+static_assert(static_cast<u32>(BiosFunction::TurnPhaseSine) == 0);
+static_assert(static_cast<u32>(BiosFunction::DecodeFloat) == 1);
+static_assert(static_cast<u32>(BiosFunction::SystemVramRegion) == 2);
+static_assert(BIOS_FUNCTION_MODULE_PATHS[0] == "math/sin");
+static_assert(BIOS_FUNCTION_MODULE_PATHS[1] == "string/float/decode");
+static_assert(BIOS_FUNCTION_MODULE_PATHS[2] == "gpu/system_vram_region");
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -33,7 +42,6 @@ test::Blua32TestImage makeImage(RomImageDomain domain, bool includeSymbols) {
 	symbols.imageAddress = base + test::BLUA32_TEST_IMAGE_OFFSET;
 	symbols.functionAddresses = {functionAddress};
 	symbols.moduleFunctions = {{"fixture/entry.lua", functionAddress}};
-	symbols.initFunctionAddress = functionAddress;
 	auto& metadata = symbols.metadata;
 	metadata.functionIds = {"fixture.entry"};
 	metadata.functionDisplayNames = {"entry"};
@@ -56,7 +64,9 @@ void testDirectorySourcesForBothDomains() {
 		const u32 base = domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 		for (bool includeSymbols : {false, true}) {
 			const auto source = makeImage(domain, includeSymbols);
-			const auto rom = test::encodeBlua32TestRom(domain, source);
+			auto rom = test::encodeBlua32TestRom(domain, source);
+			writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET,
+				rom.functionAddresses[0]);
 			RomImage image;
 			if (domain == RomImageDomain::System) image = parseSystemRomImage(rom.bytes.data(), rom.bytes.size());
 			else {
@@ -73,6 +83,8 @@ void testDirectorySourcesForBothDomains() {
 			require(!empty->symbols.has_value(), "a supplied empty directory is authoritative, even when the ROM embeds symbols");
 			for (const auto* loaded : {&*decoded, &*predecoded, &*empty}) {
 				const auto& layout = loaded->layout;
+				require(layout.header.initFunctionAddress == rom.functionAddresses[0],
+					"the public init address is decoded independently of tooling symbols and directory selection");
 				require(layout.address == base + image.header.blua32ImageOffset && layout.bytes.size() == image.header.blua32ImageByteCount,
 					"tooling layout uses the admitted domain base and executable range");
 				require(layout.bytes.data() == image.bytes.data() + image.header.blua32ImageOffset,
@@ -103,6 +115,7 @@ void testSuppliedDirectoryIsNotRetained() {
 			loaded = loadBlua32ToolingImage(image, base, std::span<const RomTocEntry>(toc.entries));
 		}
 		require(loaded.has_value() && loaded->symbols.has_value(), "a supplied directory produces an independent decoded tooling image");
+		require(loaded->layout.header.initFunctionAddress == 0, "a zero public init address means no preparation sequence");
 		require(encodeBlua32SymbolsImage(*loaded->symbols) == source.toolingSymbols,
 			"decoded symbols remain owned after the supplied directory has been destroyed");
 		require(blua32StartupSourcePath(&*loaded, rom.boot.startupFunctionAddress) == "fixture/entry.lua",

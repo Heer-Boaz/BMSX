@@ -11,10 +11,7 @@ import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import {
-	BLUA32_BIOS_IMPORTS_IMAGE_ID,
-	decodeBlua32BiosImports,
-} from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -45,7 +42,7 @@ import {
 } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../../scripts/rompacker/texture_atlas_contract';
-import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { BIOS_FUNCTION_EXPORTS, SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
@@ -242,6 +239,13 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
 			['string/utf8', readFileSync('machine/bios/string/utf8.lua', 'utf8')],
+			['math/sin', readFileSync('machine/bios/math/sin.lua', 'utf8')],
+			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
+			['gpu/system_vram_region', readFileSync('machine/bios/gpu/system_vram_region.lua', 'utf8')],
+			['tty/layout', readFileSync('machine/bios/tty/layout.lua', 'utf8')],
+			['bmsx/system_assets', `module<const>
+rodata texture: word[3] = { 0xa0000000, ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)} }
+return { bin_gx_system_texture_addr = texture }`],
 		] as const;
 		const systemExecutableSources: RomAsset[] = [{
 			type: 'lua',
@@ -268,7 +272,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
 			domain: 'system',
 			ramByteCount: 0x00400000,
-			biosExports: [],
+			biosExports: BIOS_FUNCTION_EXPORTS,
 		});
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
@@ -277,11 +281,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
 		});
 		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));
-		const systemIndex = await loadRomAssetList(systemRom, 'system');
-		const systemImportsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID)!;
-		const biosImports = decodeBlua32BiosImports(
-			systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
-		);
+		const biosImports = readBlua32BiosImports(systemRom);
 
 		const cartEntrySource = `module<entry>
 local atlas<const> = require('cartlib/gx/atlas')
@@ -301,12 +301,8 @@ return first_image._texture == second_image._texture and 1 or 0,
 `;
 		const cartModuleSources = [
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
-			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
-			['gpu/system_vram_region', `return function()
-	return ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)}
-end`],
 			['cartlib/gx/display', `return {
 	read_size_word = function()
 		return ${gxGpuPair16(320, 240)}

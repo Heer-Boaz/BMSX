@@ -1,5 +1,5 @@
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/profile_lua_compilation.ts \
-//   workspace.json dist/system/bmsx-bios.debug.rom.blua32-imports cart
+//   workspace.json dist/system/bmsx-bios.debug.rom cart
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -8,12 +8,12 @@ import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import { decodeBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 
-const [dumpPath, importsPath, entryPath] = process.argv.slice(2);
-assert(dumpPath && importsPath && entryPath, 'Usage: profile_lua_compilation.ts workspace.json bios.blua32-imports entry-module');
+const [dumpPath, systemRomPath, entryPath] = process.argv.slice(2);
+assert(dumpPath && systemRomPath && entryPath, 'Usage: profile_lua_compilation.ts workspace.json bios.rom entry-module');
 const sources: { path: string; source: string }[] = JSON.parse(readFileSync(dumpPath, 'utf8'));
-const biosFunctions = decodeBlua32BiosImports(readFileSync(importsPath)).functions;
+const biosFunctions = readBlua32BiosImports(readFileSync(systemRomPath)).functions;
 const biosPaths = new Set(biosFunctions.map(symbol => symbol.path));
 const inputs = sources.filter(file => !biosPaths.has(toLuaModulePath(file.path)));
 const times = { parseAndSelect: [] as number[], compile: [] as number[], total: [] as number[] };

@@ -187,13 +187,8 @@ export function storedValueToString(tag: ValueTag, scalar: number, stringPool: S
 			return 'false';
 		case ValueTag.True:
 			return 'true';
-		case ValueTag.Number: {
-			const numberValue = scalar;
-			if (numberValue - numberValue !== 0) {
-				return numberValue !== numberValue ? 'nan' : (numberValue < 0 ? '-inf' : 'inf');
-			}
-			return formatNumber(numberValue);
-		}
+		case ValueTag.Number:
+			return formatNumber(scalar);
 		case ValueTag.String:
 			return stringPool.toString(scalar as StringId);
 		case ValueTag.Thread:

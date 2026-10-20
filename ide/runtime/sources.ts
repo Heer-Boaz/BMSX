@@ -28,7 +28,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_media';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import {
-	loadBlua32BiosImports,
+	readBlua32BiosImports,
 	type Blua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -228,7 +228,7 @@ export function createRuntimeSourceState(
 				? createBlua32SystemSourceImage(
 					systemImage.layout,
 					systemImage.symbols,
-					loadBlua32BiosImports(systemLayer),
+					readBlua32BiosImports(systemLayer.bytes),
 					captureInstalledLuaSources(systemLuaSources),
 				)
 				: null,

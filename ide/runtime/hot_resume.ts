@@ -344,7 +344,7 @@ export function admitHotResume(
 		const address = blua32ToolingImageForDomain(
 			freshMedia,
 			cartridgeInitExecutionDomain,
-		)!.symbols!.initFunctionAddress;
+		)!.layout.header.initFunctionAddress;
 		if (address !== 0) {
 			initCalls.push({
 				executionDomain: cartridgeInitExecutionDomain,
@@ -353,7 +353,7 @@ export function admitHotResume(
 		}
 	}
 	if (stageSystemInit) {
-		const address = freshMedia.system!.symbols!.initFunctionAddress;
+		const address = freshMedia.system!.layout.header.initFunctionAddress;
 		if (address !== 0) {
 			initCalls.push({
 				executionDomain: SYSTEM_EXECUTION_DOMAIN_ID,

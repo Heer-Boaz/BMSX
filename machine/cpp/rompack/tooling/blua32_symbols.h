@@ -138,7 +138,6 @@ struct Blua32SymbolsImage {
 	u32 imageAddress = 0;
 	std::vector<u32> functionAddresses;
 	std::vector<Blua32ModuleFunction> moduleFunctions;
-	u32 initFunctionAddress = 0;
 	std::vector<Blua32InitParticipant> initParticipants;
 	Blua32StaticLayoutToken staticLayoutToken;
 	Blua32DebugMetadata metadata;

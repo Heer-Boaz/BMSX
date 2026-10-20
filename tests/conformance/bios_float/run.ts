@@ -10,6 +10,7 @@ import { decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../../helpers/bios_linkage';
 import { parseLuaChunk } from '../../lua/cpu_test_harness';
 
 for (const [command, args] of [
@@ -66,25 +67,63 @@ for index = 1, #rows do
  end
 end
 return true, true`;
+const numberTextSource = `rodata rounded: string = '' .. 1.234567
+rodata negative_zero: string = '' .. -0.0
+rodata infinity: string = '' .. (1 / 0)
+rodata not_a_number: string = '' .. (0 / 0)
+data numbers: f64[4] = { 1.234567, -0.0, 1 / 0, 0 / 0 }
+local value = *numbers[0]
+local zero = *numbers[1]
+local inf = *numbers[2]
+local nan = *numbers[3]
+return *rounded == '1.23457' and ('' .. value) == *rounded
+    and *negative_zero == '-0' and ('' .. zero) == *negative_zero,
+    *infinity == 'inf' and ('' .. inf) == *infinity
+    and *not_a_number == 'nan' and ('' .. nan) == *not_a_number`;
+const participantSource = `data carried: word = 7
+bss runs: word
+local captured = 4
+local function prepare<init>()
+ *carried = *carried + captured
+ captured = captured + 1
+ *runs = *runs + 1
+ return 99
+end
+local initialize<const> = blua32.closure(mem32le[mem32le[0x20] + 0x5c])
+local cold<const> = *carried == 7 and *runs == 0
+local first_result<const> = initialize()
+local first<const> = first_result == nil and *carried == 11 and *runs == 1
+local second_result<const> = initialize()
+return cold and first, second_result == nil and *carried == 16 and *runs == 2 and captured == 6`;
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-bios-float-'));
 try {
 	for (const optLevel of [0, 3] as const) {
 		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source), modules,
 			{ entrySource: source, optLevel, programDomain: 'system' }));
-		const path = join(directory, `float-O${optLevel}.rom`);
-		writeFileSync(path, image.romBytes);
-		const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-			sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
-		});
-		runtime.boot();
-		let result = RunResult.Yielded;
-		for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) result = runtime.machine.cpu.runUntilDepth(0, 100000);
-		assert.equal(result, RunResult.Halted);
-		assert.deepEqual(runtime.readCompletionValues(), [true, true]);
-		assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, 'run'], { stdio: 'inherit' }).status, 0);
-		const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(native, captureRuntimeSaveState(runtime), `BIOS float O${optLevel}: complete TS/C++ state parity`);
+		const publicBios = buildPublicBiosFixture(PUBLIC_BIOS_PROBE_SOURCE, optLevel);
+		const numberText = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(numberTextSource), [],
+			{ entrySource: numberTextSource, optLevel, programDomain: 'system' }));
+		const participants = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(participantSource), [],
+			{ entrySource: participantSource, optLevel, programDomain: 'system' }));
+		for (const [name, rom] of [
+			['float', image.romBytes], ['public-bios', publicBios.rom],
+			['number-text', numberText.romBytes], ['participants', participants.romBytes],
+		] as const) {
+			const path = join(directory, `${name}-O${optLevel}.rom`);
+			writeFileSync(path, rom);
+			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+				sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
+			});
+			runtime.boot();
+			let result = RunResult.Yielded;
+			for (let grant = 0; grant < 300 && result === RunResult.Yielded; grant++) result = runtime.machine.cpu.runUntilDepth(0, 100000);
+			assert.equal(result, RunResult.Halted);
+			assert.deepEqual(runtime.readCompletionValues(), [true, true]);
+			assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, 'run'], { stdio: 'inherit' }).status, 0);
+			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+			assert.deepEqual(native, captureRuntimeSaveState(runtime), `${name} O${optLevel}: complete TS/C++ state parity`);
+		}
 	}
 	rmSync(directory, { recursive: true });
-	console.log(`BIOS-FLOAT-PARITY:PASS (${rows.length} field vectors at O0/O3, exact words and full state)`);
+	console.log(`BIOS-FLOAT-PARITY:PASS (${rows.length} field vectors, Number text, BIOS lookup and participants at O0/O3, exact words and full state)`);
 } catch (error) { console.error(`Evidence retained: ${directory}`); throw error; }

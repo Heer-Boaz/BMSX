@@ -45,6 +45,7 @@ struct Blua32ImageHeader {
 	u32 bssByteCount = 0;
 	u32 textAddress = 0;
 	u32 textByteCount = 0;
+	u32 initFunctionAddress = 0;
 };
 
 struct Blua32UpvalueRecord {

@@ -46,6 +46,7 @@ import {
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
 	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
@@ -114,7 +115,6 @@ export type LinkedBlua32ImageBase = {
 	startupFunctionAddress: number;
 	irqFunctionAddress: number;
 	exceptionFunctionAddress: number;
-	initFunctionAddress: number;
 };
 
 export type LinkedCartBlua32Image = LinkedBlua32ImageBase & {
@@ -880,6 +880,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	writeLE32(bytes, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, bss.byteCount);
 	writeLE32(bytes, BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, input.loadAddress + textOffset);
 	writeLE32(bytes, BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET, code.byteLength);
+	writeLE32(bytes, BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET,
+		object.vectors.initProtoIndex === null ? 0 : functionAddressByProtoIndex[object.vectors.initProtoIndex]);
 
 	let upvalueOffset = upvalueTableOffset;
 	for (let slot = 0; slot < functionCount; slot += 1) {
@@ -1054,9 +1056,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		imageAddress: input.loadAddress,
 		functionAddresses,
 		moduleFunctions,
-		initFunctionAddress: object.vectors.initProtoIndex === null
-			? 0
-			: functionAddressByProtoIndex[object.vectors.initProtoIndex],
 		initParticipants: object.link.symbols.initParticipants,
 		staticLayoutToken,
 		metadata,
@@ -1080,7 +1079,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 			irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],
 			exceptionFunctionAddress: functionAddressByProtoIndex[object.vectors.exceptionProtoIndex],
-			initFunctionAddress: symbols.initFunctionAddress,
 		};
 	}
 	return {
@@ -1092,7 +1090,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 		irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],
 		exceptionFunctionAddress: functionAddressByProtoIndex[object.vectors.exceptionProtoIndex],
-		initFunctionAddress: symbols.initFunctionAddress,
 	};
 }
 

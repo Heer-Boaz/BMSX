@@ -4,10 +4,6 @@ import {
 	encodeBlua32SymbolsImage,
 } from './blua32_symbols';
 import {
-	BLUA32_BIOS_IMPORTS_IMAGE_ID,
-	encodeBlua32BiosImports,
-} from './blua32_bios_imports';
-import {
 	BLUA32_DIAGNOSTICS_IMAGE_ID,
 	encodeBlua32DiagnosticDirectory,
 	type Blua32DiagnosticSourceMap,
@@ -70,8 +66,7 @@ export function layoutBlua32PublicAssets(
 		const entry = layer.index.entries[index];
 		if (entry.resid === BLUA32_IMAGE_ID
 			|| entry.resid === BLUA32_SYMBOLS_IMAGE_ID
-			|| entry.resid === BLUA32_DIAGNOSTICS_IMAGE_ID
-			|| entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID) {
+			|| entry.resid === BLUA32_DIAGNOSTICS_IMAGE_ID) {
 			continue;
 		}
 		let assetEdit: RomAssetEdit | undefined;
@@ -229,15 +224,6 @@ export function buildBlua32Tail(
 		buffer: symbolsPayload,
 		source_path: BLUA32_SYMBOLS_IMAGE_ID,
 	}];
-	if (systemImage) {
-		const biosImportsPayload = encodeBlua32BiosImports(linked.biosImports);
-		toolingAssets.push({
-			resid: BLUA32_BIOS_IMPORTS_IMAGE_ID,
-			type: 'code',
-			buffer: biosImportsPayload,
-			source_path: BLUA32_BIOS_IMPORTS_IMAGE_ID,
-		});
-	}
 	const toolingLayout = layoutRomAssetPayloads(toolingAssets, true, toolingOffset);
 	entries.push({
 		resid: BLUA32_IMAGE_ID,

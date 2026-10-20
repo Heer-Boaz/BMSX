@@ -228,8 +228,10 @@ host symbols are a different artifact.
 
 ## Development invocation of `<init>`
 
-IDE Hot Resume explicitly prepares calls to selected cartridge or system
-`initFunctionAddress` vectors, omitting zero addresses. When media was rebuilt,
+IDE Hot Resume explicitly prepares calls to the public executable header's
+`initFunctionAddress` vectors for selected cartridge or system images, omitting
+zero addresses. Linked tooling reads `linked.layout.header.initFunctionAddress`.
+When media was rebuilt,
 it installs the revision before beginning the prepared completion calls in their
 selected execution domains. Initial selection includes the active cartridge when
 source-edited or when resuming without rebuilt media, and the system for a system
@@ -272,29 +274,27 @@ when using a named BIOS function import, bind that name to its actual
 function-record address. These addresses are not instruction PCs, image-relative
 offsets or cartridge resource IDs.
 
-The supplied build delivers a link-information file beside the BIOS ROM:
-`dist/system/bmsx-bios.debug.rom.blua32-imports` for the debug BIOS, or
-`dist/system/bmsx-bios.rom.blua32-imports` for the ordinary BIOS. Keep the ROM
-and link information from the same build together. The ordinary cartridge-build
-commands in this guide select the matching BIOS information automatically.
+Read the matching BIOS ROM itself: `dist/system/bmsx-bios.debug.rom` for a debug
+build or `dist/system/bmsx-bios.rom` for the ordinary build. Its boot header
+locates the executable header, whose public function table and RAM-section
+fields supply the required addresses. No package index or separate import file
+is needed. The ordinary cartridge-build commands select the matching ROM
+automatically.
 
-This file is a **development-tool artifact**, not installed firmware, a
-cartridge payload required by the CPU, or a runtime BIOS name-lookup service.
-Its current binary serialization is not a console register or ROM-boot format.
-Use the existing decoder to obtain its fields rather than reproducing that
-serialization inside a cartridge program:
+The existing tooling reader returns the link information from those public
+fields:
 
 ```sh
 ./node_modules/.bin/tsx --eval '
 import { readFileSync } from "node:fs";
-import { decodeBlua32BiosImports } from "./toolchain/ts/rompack/blua32_bios_imports.ts";
-console.log(JSON.stringify(decodeBlua32BiosImports(
-  readFileSync("dist/system/bmsx-bios.debug.rom.blua32-imports")
+import { readBlua32BiosImports } from "./toolchain/ts/rompack/blua32_bios_imports.ts";
+console.log(JSON.stringify(readBlua32BiosImports(
+  readFileSync("dist/system/bmsx-bios.debug.rom")
 ), null, 2));
 '
 ```
 
-| Decoded field | Meaning for an independent linker |
+| Returned field | Meaning for an independent linker |
 |---|---|
 | `cartridgeStaticRamBase` | Matching firmware's BSS end. The supplied linker places cartridge DATA here; the CPU does not allocate that storage or enforce this adjacency. |
 | `functions[i].path` | Literal named BIOS import, such as `gpu/system_vram_region`. |

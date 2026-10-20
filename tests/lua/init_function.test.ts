@@ -4,7 +4,11 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import {
+	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+} from '../../machine/ts/spec/bmsx/rom_header';
+import { BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { ProgramModule } from '../../toolchain/ts/lua/compiler/passes/module_contract';
 import {
@@ -83,7 +87,7 @@ test('init annotations have no cold semantics and tooling invokes modules in dep
 
 	const image = linkTestSystemBlua32(compiled);
 	assert.notEqual(image.vectors.initFunctionAddress, 0);
-	assert.equal(image.symbols.initFunctionAddress, image.vectors.initFunctionAddress);
+	assert.equal(image.image.header.initFunctionAddress, image.vectors.initFunctionAddress);
 	assert.deepEqual(image.symbols.initParticipants, compiled.metadata.initParticipants);
 	const { cpu } = createTestSystemCpu(image);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
@@ -135,6 +139,64 @@ test('an explicit source init call runs once cold and the tooling vector invokes
 	);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('marker')), 2);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [null], 'preparation returns exactly one nil, not the participant result');
+});
+
+for (const optLevel of [0, 3] as const) {
+	for (const domain of ['system', 'cart'] as const) test(`guest invokes its public init sequence and retains storage (${domain}, O${optLevel})`, () => {
+		const romBase = domain === 'system' ? 0 : CART_ROM_BASE;
+		const source = `data carried: word = 7
+bss runs: word
+local captured = 4
+local function prepare<init>()
+    *carried = *carried + captured
+    captured = captured + 1
+    *runs = *runs + 1
+    return 99, 100
+end
+local image<const> = ${romBase} + mem[${romBase + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local initialize<const> = blua32.closure(mem[image + ${BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET}])
+local cold<const> = *carried == 7 and *runs == 0
+local result = initialize()
+local first<const> = *carried == 11 and *runs == 1 and result == nil
+initialize()
+return cold and first, *carried == 16 and *runs == 2 and captured == 6`;
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry.lua'), [], {
+			entrySource: source, programDomain: domain, optLevel,
+		});
+		let machine: ReturnType<typeof createTestSystemCpu>;
+		if (domain === 'system') {
+			const image = linkTestSystemBlua32(compiled);
+			machine = createTestSystemCpu({
+				romBytes: image.romBytes.subarray(0, image.image.address + image.image.bytes.byteLength),
+			});
+		} else {
+			const boot = compileSystem(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`);
+			const image = linkTestBlua32Pair(boot, compiled);
+			machine = createTestBlua32PairCpu({
+				systemRomBytes: image.systemRomBytes.subarray(0, image.systemImage.address + image.systemImage.bytes.byteLength),
+				cartRomBytes: image.cartRomBytes.subarray(0, image.cartImage.address - CART_ROM_BASE + image.cartImage.bytes.byteLength),
+			});
+		}
+		assert.equal(machine.cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(machine.cpu), [true, true]);
+	});
+}
+
+test('module initialization alone publishes a callable public preparation sequence', () => {
+	const compiled = compileSystem('local dependency<const> = require("dependency")\nreturn dependency', [{
+		path: 'dependency', source: 'constructed = (constructed or 0) + 1\nreturn 7',
+	}]);
+	assert.deepEqual(compiled.metadata.initParticipants, []);
+	const image = linkTestSystemBlua32(compiled);
+	assert.notEqual(image.image.header.initFunctionAddress, 0);
+	const { cpu } = createTestSystemCpu(image);
+	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.image.header.initFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [null]);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('constructed')), 1);
 });
 
 test('cart init vector invokes retained cart-global closures', () => {
@@ -221,12 +283,12 @@ test('cart modules with init functions must be statically required', () => {
 	);
 });
 
-test('programs without init participants publish no init vector', () => {
+test('programs without module initialization or participants publish no preparation sequence', () => {
 	const compiled = compileSystem('return 7');
 	assert.equal(compiled.initProtoIndex, null);
 	assert.deepEqual(compiled.metadata.initParticipants, []);
 	const image = linkTestSystemBlua32(compiled);
 	assert.equal(image.vectors.initFunctionAddress, 0);
-	assert.equal(image.symbols.initFunctionAddress, 0);
+	assert.equal(image.image.header.initFunctionAddress, 0);
 	assert.deepEqual(image.symbols.initParticipants, []);
 });

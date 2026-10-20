@@ -43,6 +43,7 @@ import {
 	type LuaGotoStatement,
 } from './syntax/ast';
 import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
+import { formatNumber } from '../../../machine/ts/common/number_format';
 import type { SourcePosition, SourceRange } from './source_range';
 import { sourceRangesEqual } from './source_range';
 import type { LuaCaptureLayout } from './compiler/capture_layout';
@@ -1608,7 +1609,8 @@ class FunctionBuilder {
 				);
 				this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 1);
 			}
-			this.emitABC(OpCode.RET, callReg, 0, 0);
+			this.emitABC(OpCode.KNIL, callReg, 0, 0);
+			this.emitABC(OpCode.RET, callReg, 1, 0);
 		});
 		this.finalizeLabels();
 	}
@@ -3566,7 +3568,7 @@ class FunctionBuilder {
 		const leftHasNumber = this.compileTimeHasNumberValue;
 		let leftText: string;
 		if (leftHasNumber) {
-			leftText = String(leftNumber);
+			leftText = formatNumber(leftNumber);
 		} else if (typeof left === 'string') {
 			leftText = left;
 		} else {
@@ -3575,7 +3577,7 @@ class FunctionBuilder {
 		if (!this.evaluateCompileTimeExpression(rightExpression)) return false;
 		let rightText: string;
 		if (this.compileTimeHasNumberValue) {
-			rightText = String(this.compileTimeNumberValue);
+			rightText = formatNumber(this.compileTimeNumberValue);
 		} else if (typeof this.compileTimeValue === 'string') {
 			rightText = this.compileTimeValue;
 		} else {

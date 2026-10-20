@@ -36,9 +36,6 @@ import type { RomPrefixLayout } from '../../toolchain/ts/rompack/rom_prefix_layo
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import {
 	type Blua32BiosFunctionExport,
-	BLUA32_BIOS_IMPORTS_IMAGE_ID,
-	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
-	encodeBlua32BiosImports,
 	type Blua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import {
@@ -1043,7 +1040,6 @@ type RomBlua32TailCommon = {
 type SystemRomBlua32Tail = RomBlua32TailCommon & {
 	domain: 'system';
 	symbolsPayload: Uint8Array;
-	biosImportsPayload: Uint8Array;
 };
 
 export type CartRomBlua32Tail = RomBlua32TailCommon & {
@@ -1082,7 +1078,6 @@ export function buildRomBlua32Tail(
 		const imageEndOffset = imageOffset + linked.bytes.byteLength;
 		assertSystemBlua32ImageFits(imageEndOffset);
 		const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
-		const biosImportsPayload = encodeBlua32BiosImports(linked.biosImports);
 		const imageLayout = layoutRomAssetPayloads([{
 			resid: BLUA32_IMAGE_ID,
 			type: 'code',
@@ -1093,16 +1088,7 @@ export function buildRomBlua32Tail(
 			),
 			source_path: BLUA32_IMAGE_ID,
 		}], true, imageOffset);
-		const tailAssets: RomAsset[] = [{
-			resid: BLUA32_BIOS_IMPORTS_IMAGE_ID,
-			type: 'code',
-			buffer: Buffer.from(
-				biosImportsPayload.buffer,
-				biosImportsPayload.byteOffset,
-				biosImportsPayload.byteLength,
-			),
-			source_path: BLUA32_BIOS_IMPORTS_IMAGE_ID,
-		}];
+		const tailAssets: RomAsset[] = [];
 		if (options.includeSymbols) {
 			tailAssets.push({
 				resid: BLUA32_SYMBOLS_IMAGE_ID,
@@ -1143,7 +1129,6 @@ export function buildRomBlua32Tail(
 				sources: built.diagnosticSources,
 			} : null,
 			symbolsPayload,
-			biosImportsPayload,
 		};
 	}
 	const built = buildBlua32Image({
@@ -1389,7 +1374,6 @@ export async function finalizeRompack(
 	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
 	const tempFile = join(tempDirectory, outfileBasename);
 	const symbolsTempFile = join(tempDirectory, `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
-	const biosImportsTempFile = join(tempDirectory, `${outfileBasename}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`);
 	try {
 		const writer = createWriteStream(tempFile);
 		let offset = 0;
@@ -1431,14 +1415,10 @@ export async function finalizeRompack(
 		await finished(writer);
 		if (blua32 !== null && blua32.domain === 'system') {
 			const symbolsOutputFile = `${outputPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
-			const biosImportsOutputFile = `${outputPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`;
 			await writeFile(symbolsTempFile, blua32.symbolsPayload);
-			await writeFile(biosImportsTempFile, blua32.biosImportsPayload);
 			await rename(symbolsTempFile, symbolsOutputFile);
-			await rename(biosImportsTempFile, biosImportsOutputFile);
 			outputs.push(
 				{ file: `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`, digest: createHash('sha256').update(blua32.symbolsPayload).digest('hex') },
-				{ file: `${outfileBasename}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`, digest: createHash('sha256').update(blua32.biosImportsPayload).digest('hex') },
 			);
 		}
 		await rename(tempFile, outputPath);

@@ -31,7 +31,6 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		imageAddress: 0x1000,
 		functionAddresses: [],
 		moduleFunctions: [],
-		initFunctionAddress: 0,
 		initParticipants: [],
 		staticLayoutToken: { lo: 0, hi: 0 },
 		metadata: {

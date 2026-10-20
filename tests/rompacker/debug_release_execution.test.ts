@@ -9,7 +9,6 @@ import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { encodeBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues } from '../lua/cpu_test_harness';
@@ -29,12 +28,11 @@ end
 return count`);
 	const inputs = await prepareRomInputs([root], [entry]);
 	const system = linkTestSystemBlua32(compileLuaSource(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`));
-	const imports = Buffer.from(encodeBlua32BiosImports(system.biosImports));
 	const builds = [];
 	for (const debug of [false, true]) {
 		await compileCart({ inputs, sourceFiles: [entry], librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [],
 			recipe: { domain: 'cart', debug, optLevel, projectRoot: root, toolchain: 'execution-equivalence' },
-		}, join(root, 'out'), 'fixture', imports, () => {});
+		}, join(root, 'out'), 'fixture', system.romBytes, () => {});
 		const rom = new Uint8Array(await readFile(join(root, 'out', `fixture${debug ? '.debug' : ''}.rom`)));
 		const image = decodeBlua32RomImage(rom, CART_ROM_BASE)!;
 		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.romBytes, cartRomBytes: rom });

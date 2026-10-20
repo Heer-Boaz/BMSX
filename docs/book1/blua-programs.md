@@ -603,6 +603,34 @@ chunk keep their existing state during the sequence. Use the explicit startup
 call for preparation required at normal entry; the annotation alone supplies
 no startup call or once-only latch.
 
+The executable header publishes the preparation sequence's absolute
+function-record address at byte offset `0x5c`. Zero means that no sequence is
+present. A sequence can contain only module initialization when the program
+has dependencies but no annotated participants.
+For a nonzero address, construct a closure with `blua32.closure` and call it
+with no arguments. This is an ordinary call that returns to its caller; it
+does not require EXEC or a privilege change.
+It returns one nil value; participant return values are discarded. A language
+error escaping a participant propagates through the call and prevents later
+participants in that invocation from running.
+
+Continuing after the declaration above, a cartridge can invoke the complete
+sequence as follows. The ordinary data selection must select that cartridge
+when reading its ROM header:
+
+```lua
+local image<const> = 0x10000000 + mem32le[0x10000020]
+local participants<const> = blua32.closure(mem32le[image + 0x5c])
+count = 5
+participants()
+-- prepare runs through the sequence; count is now 0.
+```
+
+Declare the entry's participants before making this call so their closures
+have been established. Dependency modules are initialized before the entry
+chunk. The sequence address designates this program's participants; it does
+not select another cartridge's or the BIOS's participants.
+
 ## Direct access forms and intrinsics {#sec-blua-programs-direct-access-forms-and-intrinsics}
 
 BLua provides direct memory access, control-register access, closure construction, selectable
@@ -1049,11 +1077,11 @@ initialization and state changes on the executed path.
 The named BIOS function imports are:
 
 
-| Module path | Arguments and returned values | Routine reference |
-| --- | --- | --- |
-| `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
-| `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
-| `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"} |
+| Function-table slot | Module path | Arguments and returned values | Routine reference |
+| --- | --- | --- | --- |
+| 0 | `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
+| 1 | `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
+| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “Firmware reservation in VRAM”]{.content-visible when-format="pdf"} |
 
 
 
@@ -1079,6 +1107,40 @@ These paths are reserved published BIOS names. Importing one selects its
 static call target; it leaves ordinary program-module initialization
 unchanged. A program module cannot redefine one of these paths. Other BIOS
 libraries use their installed globals unless a named import is listed.
+
+### Locating BIOS call targets {#sec-blua-programs-locating-bios-call-targets}
+
+The module names above bind to fixed, zero-based slots in the system
+executable's function table. The ROM header at system address zero supplies
+the executable's offset at `0x20`. Its executable header supplies the absolute
+function-table address at offset `0x10`. Each function record occupies
+32 bytes, so slot `s` has function-record address `table_address + 32*s`.
+These addresses select function records, not their instruction bytes.
+
+An independent linker resolves the published names through these fields and
+slots. It uses that function-record address for a CLOSURE operand, with the
+address divided by sixteen as specified in the
+[instruction reference](cpu.md#sec-cpu-calls-closures-globals-and-tables).
+Only the three published slots bind these named imports. Startup, vector and
+preparation entry points are identified separately by their header fields;
+other table positions do not themselves define additional BIOS interfaces.
+
+The same lookup is available to a running program. This sequence calls slot
+zero without a named import:
+
+```lua
+local image<const> = mem32le[0x20]
+local function_table<const> = mem32le[image + 0x10]
+local sin_turn32<const> = blua32.closure(function_table)
+local sine = sin_turn32(0x40000000) -- 65536
+```
+
+Use the installed system ROM's own fields, rather than assuming a fixed
+instruction address or substituting a record from the cartridge image.
+For static RAM placement, the system executable's BSS address at `0x4c`
+plus its padded byte count at `0x50` gives the first byte after firmware
+static storage. The full section and record formats are in
+[[Memory and program storage](memory.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book I, “Memory and program storage”, under “BLua32 executable image”]{.content-visible when-format="pdf"}.
 
 ## The installed program environment {#sec-blua-programs-the-installed-program-environment}
 

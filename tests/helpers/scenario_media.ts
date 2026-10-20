@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
-import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { BIOS_FUNCTION_EXPORTS, SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import { decodeBlua32BiosImports, type Blua32BiosFunctionExport } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
@@ -50,7 +50,6 @@ export async function buildScenarioMediaFixture(
 	outputDirectory: string,
 	testSources: readonly ScenarioMediaTestSource[],
 	options?: {
-		biosExports?: readonly Blua32BiosFunctionExport[];
 		systemOptLevel?: 0 | 1 | 2 | 3;
 		cartOptLevel?: 0 | 1 | 2 | 3;
 		systemSource: string;
@@ -62,7 +61,13 @@ export async function buildScenarioMediaFixture(
 	},
 ): Promise<ScenarioMediaFixture> {
 	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
-	if (options !== undefined) for (const module of options.systemModules) {
+	// These isolated firmware doubles still provide the public fixed-slot ABI.
+	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.map(exported => [exported.path, {
+		path: exported.path,
+		source: 'module<const>\nreturn function(value) return value end',
+	}]));
+	for (const module of options?.systemModules ?? []) systemModules.set(module.path, module);
+	for (const module of systemModules.values()) {
 		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
 	}
 	if (options?.systemAssets !== undefined) systemAssets.push(...options.systemAssets);
@@ -79,7 +84,7 @@ export async function buildScenarioMediaFixture(
 		ramByteCount: 0x00400000,
 		domain: 'system',
 		systemAssetEndOffset: systemLayout.nextOffset,
-		biosExports: options?.biosExports ?? [],
+		biosExports: BIOS_FUNCTION_EXPORTS,
 	});
 	await finalizeRompack('system', {
 		debug: true,
@@ -87,6 +92,7 @@ export async function buildScenarioMediaFixture(
 		outputDirectory,
 		blua32: systemBlua32,
 	});
+	const systemRom = new Uint8Array(await readFile(join(outputDirectory, 'system.debug.rom')));
 
 	const sourceOnlyModule: RomAsset = {
 		resid: 'source-only-module',
@@ -136,7 +142,7 @@ export async function buildScenarioMediaFixture(
 		ramByteCount: 0x00400000,
 		domain: 'cart',
 		imageOffset: cartLayout.nextOffset,
-		biosImports: decodeBlua32BiosImports(systemBlua32.biosImportsPayload),
+		biosImports: readBlua32BiosImports(systemRom),
 	});
 	await finalizeRompack('cart', {
 		projectRootPath: 'carts/example',
@@ -147,7 +153,7 @@ export async function buildScenarioMediaFixture(
 	});
 
 	return {
-		systemRom: new Uint8Array(await readFile(join(outputDirectory, 'system.debug.rom'))),
+		systemRom,
 		cartRom: new Uint8Array(await readFile(join(outputDirectory, 'cart.debug.rom'))),
 	};
 }

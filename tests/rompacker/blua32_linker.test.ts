@@ -516,7 +516,7 @@ test('system init vector pin follows public BIOS export pins without shifting th
 		[{ path: 'system/boot', exportPathKey: '' }],
 	);
 	assert.equal(linked.biosImports.functions[0].functionAddress, linked.symbols.functionAddresses[0]);
-	assert.equal(linked.initFunctionAddress, linked.symbols.functionAddresses[1]);
+	assert.equal(linked.layout.header.initFunctionAddress, linked.symbols.functionAddresses[1]);
 	assert.equal(linked.symbols.metadata.functionIds[0], 'system/export');
 	assert.equal(linked.symbols.metadata.functionIds[1], 'system/init');
 });
@@ -1395,8 +1395,8 @@ test('BLua32 linker pins the init vector across body-only revisions', () => {
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	assert.notEqual(initial.initFunctionAddress, 0);
-	assert.equal(initial.initFunctionAddress, initial.symbols.functionAddresses[0]);
+	assert.notEqual(initial.layout.header.initFunctionAddress, 0);
+	assert.equal(initial.layout.header.initFunctionAddress, initial.symbols.functionAddresses[0]);
 
 	const changedSource = [
 		'',
@@ -1420,7 +1420,7 @@ test('BLua32 linker pins the init vector across body-only revisions', () => {
 		[],
 		{ image: initial.layout, symbols: initial.symbols },
 	);
-	assert.equal(changed.initFunctionAddress, initial.initFunctionAddress);
+	assert.equal(changed.layout.header.initFunctionAddress, initial.layout.header.initFunctionAddress);
 	assert.deepEqual(changed.symbols.initParticipants, initial.symbols.initParticipants);
 	assert.deepEqual(changed.symbols.staticLayoutToken, initial.symbols.staticLayoutToken);
 });

@@ -1,8 +1,12 @@
-import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
-import type { RomToolingLayer } from './loader';
-
-export const BLUA32_BIOS_IMPORTS_IMAGE_ID = '__blua32_bios_imports__';
-export const BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX = '.blua32-imports';
+import { readLE32 } from '../../../machine/ts/common/endian';
+import { BIOS_FUNCTION_MODULE_PATHS } from '../../../machine/ts/spec/bmsx/bios';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import {
+	BLUA32_FUNCTION_RECORD_SIZE,
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
+	BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+} from '../../../machine/ts/spec/blua32/image_format';
 
 export type Blua32BiosFunctionExport = {
 	readonly path: string;
@@ -20,22 +24,18 @@ export type Blua32BiosImports = {
 	readonly functions: ReadonlyArray<Blua32BiosFunctionImport>;
 };
 
-export function encodeBlua32BiosImports(imports: Blua32BiosImports): Uint8Array {
-	return encodeBinary(imports);
-}
-
-export function decodeBlua32BiosImports(bytes: Uint8Array): Blua32BiosImports {
-	return decodeBinary(bytes);
-}
-
-export function loadBlua32BiosImports(
-	rom: RomToolingLayer<'system'>,
-): Blua32BiosImports {
-	for (let index = 0; index < rom.index.entries.length; index += 1) {
-		const entry = rom.index.entries[index];
-		if (entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID) {
-			return decodeBlua32BiosImports(rom.bytes.subarray(entry.start!, entry.end!));
-		}
-	}
-	throw new Error('System ROM has no BLua32 BIOS import library.');
+/** Resolve the public BIOS slots and RAM footprint from the mapped ROM bytes. */
+export function readBlua32BiosImports(rom: Uint8Array): Blua32BiosImports {
+	const imageOffset = readLE32(rom, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
+	const functionTableAddress = readLE32(rom, imageOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET);
+	const bssAddress = readLE32(rom, imageOffset + BLUA32_IMAGE_BSS_ADDRESS_OFFSET);
+	const bssByteCount = readLE32(rom, imageOffset + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET);
+	return {
+		cartridgeStaticRamBase: bssAddress + bssByteCount,
+		functions: BIOS_FUNCTION_MODULE_PATHS.map((path, slot) => ({
+			path,
+			exportPathKey: '',
+			functionAddress: functionTableAddress + slot * BLUA32_FUNCTION_RECORD_SIZE,
+		})),
+	};
 }

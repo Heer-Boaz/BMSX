@@ -485,7 +485,7 @@ to the program-header address obtained above. The CPU uses these six unsigned
 | `0x28` | System-global-name-table address | Absolute machine byte address in installed ROM. |
 | `0x2c` | System-global-name count | Number of 8-byte name records. |
 
-The other four-byte header slots describe the program's sections. They retain
+The other four-byte header slots describe the program's sections and linkage. They retain
 the following format; CPU program selection does not use them to locate the
 constant or name tables.
 
@@ -500,13 +500,20 @@ constant or name tables.
 | `0x40`, `0x44`, `0x48` | DATA load address; DATA byte count; DATA run address. |
 | `0x4c`, `0x50` | BSS address; BSS byte count. |
 | `0x54`, `0x58` | TEXT address; TEXT byte count. |
-| `0x5c` | Reserved. |
+| `0x5c` | Preparation-sequence function-record address; zero when no sequence is present. |
 
 Provide the complete 96-byte header, including its descriptive slots. The CPU
 reads the explicit constant/name addresses and counts. Magic, version,
 function-table enumeration, section order and declared section extents do not
 alter those reads or bound instruction fetching. DATA and BSS are initialized
 by the startup instructions.
+
+The preparation address selects a separate ordinary function, not another
+startup vector. Calling it completes pending module initialization and runs
+the registered `<init>` participants without
+recopying DATA, clearing BSS or restarting the entry function. See
+[[BLua participant sequences](blua-programs.md#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup)]{.content-visible when-format="html"}[Book II, “BLua source programs and extensions”, under “`<init>` registers a participant”]{.content-visible when-format="pdf"}
+for declaration order and invocation.
 
 Table addresses are **absolute machine byte addresses**. Tables and their text
 must occupy installed ROM; their placement is independent of table order and

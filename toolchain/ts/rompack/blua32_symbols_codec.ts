@@ -163,7 +163,7 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 	const words = record.words;
 	const metadata = symbols.metadata;
 	const text = (value: string) => { words.push(tables.text(value)); };
-	words.push(symbols.imageAddress, symbols.initFunctionAddress, symbols.staticLayoutToken.lo, symbols.staticLayoutToken.hi);
+	words.push(symbols.imageAddress, symbols.staticLayoutToken.lo, symbols.staticLayoutToken.hi);
 	record.numbers(symbols.functionAddresses);
 	record.vector(symbols.moduleFunctions, fn => { words.push(tables.text(fn.path), fn.address); });
 	record.vector(symbols.initParticipants, fn => { words.push(tables.text(fn.functionId), tables.text(fn.slotName), +fn.system); });
@@ -245,7 +245,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 		registers.push(registerReader.numbers());
 	}
 	const text = () => strings[record.word()];
-	const imageAddress = record.word(), initFunctionAddress = record.word();
+	const imageAddress = record.word();
 	const staticLayoutToken = { lo: record.word(), hi: record.word() };
 	const functionAddresses = record.numbers();
 	const moduleFunctions = record.vector(() => ({ path: text(), address: record.word() }));
@@ -297,7 +297,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 	const bindingsByFunction = record.vector(() => record.vector(() => ({
 		declarationIndex: record.word(), inlineDepth: record.word(), visibleWordRanges: intervals[record.word()],
 	})));
-	return { imageAddress, initFunctionAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants,
+	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants,
 		metadata: { optLevel, traceStatements, preloadModules, functionIds, functionDisplayNames, functionDefinitions,
 			globalNames, systemGlobalNames, staticFunctionIdBySlot, debugRanges, debugInlineCallSiteChains,
 			debugInlineCallSiteChainIds, statementPointsByFunction, resumePointsByFunction, localSlotsByFunction,

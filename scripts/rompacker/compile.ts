@@ -22,7 +22,7 @@ import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
-import { decodeBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { buildScenarioTestSourceAssets } from './scenario_test_sources';
 import { getRomManifest } from './build_inputs';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
@@ -95,13 +95,13 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 	return finalizeRompack(SYSTEM_ROM_NAME, { projectRootPath: virtualRoot, status: progress, debug, blua32: BIOSBlua32, layout: BIOSLayout, outputDirectory });
 }
 
-export async function compileCart(prepared: PreparedUnit, outputDirectory: string, name: string, biosImportsBytes: Buffer, progress: BuildReporter): Promise<readonly RomBuildOutput[]> {
+export async function compileCart(prepared: PreparedUnit, outputDirectory: string, name: string, systemRom: Uint8Array, progress: BuildReporter): Promise<readonly RomBuildOutput[]> {
 	const { inputs, sourceFiles: cartSourceFiles, librarySourceFiles, testLibraryFiles, scenarioSourceFiles,
 		recipe: { debug, optLevel, projectRoot: virtualRoot } } = prepared;
 	const allLibraryFiles = prepared.allLibraryFiles;
 	const romManifest = getRomManifest(inputs);
 	if (romManifest === null) throw new Error(`ROM manifest missing in ${virtualRoot}`);
-	const biosImports = cartSourceFiles.length === 0 ? undefined : decodeBlua32BiosImports(biosImportsBytes);
+	const biosImports = cartSourceFiles.length === 0 ? undefined : readBlua32BiosImports(systemRom);
 	const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
 		getResMetaList, getResourcesList, resolveVirtualSourcePath } = await import('./rombuilder');
 	const { lintCartSources } = await import('./cart_lua_linter_runtime');

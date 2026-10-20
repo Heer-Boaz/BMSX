@@ -35,7 +35,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const systemSource = 'module<entry>\ncop0.exec = mem[0x10000028]';
 	const cartSource = 'module<entry>\nwhile true do halt_until_irq end';
 	const media = await buildScenarioMediaFixture(directory, [], {
-		biosExports: BIOS_FUNCTION_EXPORTS, systemSource,
+		systemSource,
 		systemModules: BIOS_FUNCTION_EXPORTS.map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
 		cartSource, systemAssets: [asset, mapAsset], cartAssets: [asset, mapAsset],
 	});

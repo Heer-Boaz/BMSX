@@ -18,6 +18,7 @@ import { CART_PACKAGE_MAX_BYTE_COUNT, CART_ROM_HEADER_SIZE } from '../../machine
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
+import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
 	buildRomBlua32Tail,
@@ -153,7 +154,11 @@ test('normal cart production discovers external program source and resolves its 
 		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 		const cart = parseCartridgePackage(await readFile(join(outputRoot, 'external_source_probe.rom')));
 		assert.ok(cart.header.blua32ImageByteCount > 0);
-		assert.ok((await readFile(join(outputRoot, 'system', 'bmsx-bios.rom.blua32-imports'))).length > 0);
+		const systemRom = await readFile(join(outputRoot, 'system', 'bmsx-bios.rom'));
+		assert.equal(readBlua32BiosImports(systemRom).functions.length, 3);
+		assert.deepEqual((await readdir(join(outputRoot, 'system'))).sort(), [
+			'bmsx-bios.rom', 'bmsx-bios.rom.blua32-symbols',
+		]);
 	} finally {
 		await rm(externalRoot, { recursive: true, force: true });
 	}

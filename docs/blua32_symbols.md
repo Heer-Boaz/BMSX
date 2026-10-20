@@ -3,8 +3,9 @@
 `__blua32_symbols__` and `<system-rom>.blua32-symbols` contain the same private
 tooling graph. The compiler/linker produces it; the symbol codec owns its wire
 representation. Debuggers, source inspection and Hot Resume consume it. Neither
-the CPU nor the cartridge linker consumes these symbols. BIOS public imports
-remain a separate artifact.
+the CPU nor the cartridge linker consumes these symbols. BIOS public targets
+are resolved from the ROM's executable header and published function slots;
+see [Named BIOS function imports](book1/blua-programs.md#sec-blua-programs-named-bios-function-imports).
 
 ## Shared values, not a dumped object tree
 
@@ -54,7 +55,7 @@ an ordinary pooled value. The original `debugInlineCallSiteChainIds` still index
 
 `records` contains these fields in order (`text` means string-table ID):
 
-1. Image address, init-function address, static-layout token low/high words.
+1. Image address, static-layout token low/high words.
 2. Function-address list; module-function list of (path text, address);
    init-participant list of (function text, slot text, system boolean).
 3. Optimization level; trace selector (0 erase, 1 emit, 2 selected channels,

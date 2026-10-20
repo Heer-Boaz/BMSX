@@ -17,7 +17,7 @@ for (const [system, first, second] of [[2, 0, 3], [1, 3, 0]] as const) {
 		openWorkspaceRecords(new MemoryWorkspaceFiles());
 		t.after(async () => { closeWorkspaceRecords(); await rm(root, { recursive: true, force: true }); });
 		const options = {
-			systemOptLevel: system, biosExports: BIOS_FUNCTION_EXPORTS,
+			systemOptLevel: system,
 			systemSource: 'module<entry>\nreturn 1',
 			systemModules: BIOS_FUNCTION_EXPORTS.map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
 			cartSource: 'module<entry>\nlocal value = 2\nreturn value ^ 0.5',

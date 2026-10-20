@@ -143,7 +143,7 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	auto& words = record.words;
 	const auto& metadata = symbols.metadata;
 	const auto text = [&](const std::string& value) { words.push_back(tables.text(value)); };
-	words.insert(words.end(), {symbols.imageAddress, symbols.initFunctionAddress, symbols.staticLayoutToken.lo, symbols.staticLayoutToken.hi});
+	words.insert(words.end(), {symbols.imageAddress, symbols.staticLayoutToken.lo, symbols.staticLayoutToken.hi});
 	record.numbers(symbols.functionAddresses);
 	record.vector(symbols.moduleFunctions, [&](const auto& fn) { words.insert(words.end(), {tables.text(fn.path), fn.address}); });
 	record.vector(symbols.initParticipants, [&](const auto& fn) {
@@ -252,7 +252,6 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 	const auto text = [&]() -> const std::string& { return strings[record.word()].asString(); };
 	Blua32SymbolsImage symbols;
 	symbols.imageAddress = record.word();
-	symbols.initFunctionAddress = record.word();
 	symbols.staticLayoutToken = {record.word(), record.word()};
 	symbols.functionAddresses = record.numbers();
 	symbols.moduleFunctions = record.vector([&] { return Blua32ModuleFunction{text(), record.word()}; });

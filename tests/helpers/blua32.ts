@@ -174,7 +174,7 @@ function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): Test
 		sectionInitFunctionAddress: functionAddresses[compiled.sectionInitProtoIndex],
 		irqFunctionAddress: linked.irqFunctionAddress,
 		exceptionFunctionAddress: linked.exceptionFunctionAddress,
-		initFunctionAddress: linked.initFunctionAddress,
+		initFunctionAddress: linked.layout.header.initFunctionAddress,
 	};
 }
 
@@ -309,7 +309,7 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 		sectionInitFunctionAddress: linked.symbols.functionAddresses[startupFunctionIndex],
 		irqFunctionAddress: linked.irqFunctionAddress,
 		exceptionFunctionAddress: linked.exceptionFunctionAddress,
-		initFunctionAddress: linked.initFunctionAddress,
+		initFunctionAddress: linked.layout.header.initFunctionAddress,
 	};
 }
 

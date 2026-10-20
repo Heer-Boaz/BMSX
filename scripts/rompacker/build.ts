@@ -9,7 +9,6 @@ import { CART_LIBRARY_ROOT } from '../../toolchain/ts/lua/source_paths';
 import { collectCartSourceFiles } from './cart_source_files';
 import { collectScenarioTestSourceFiles } from './scenario_test_sources';
 import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
-import { BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
 
@@ -20,7 +19,7 @@ export type PreparedUnit = {
 	librarySourceFiles: string[]; testLibraryFiles: string[]; allLibraryFiles: string[]; scenarioSourceFiles: string[];
 };
 
-/** Capture both domains before compiling either. The cart links to this build's system, never dist sidecars. */
+/** Capture both domains before compiling either. The cart links to this build's system ROM. */
 export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildReporter): Promise<PreparedRomArtifact> {
 	progress({ type: 'phase', message: 'Capture inputs' });
 	const systemDirectory = join(stage, 'system');
@@ -71,9 +70,9 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	let cartUnit: RomBuildUnit | undefined;
 	if (cart !== undefined) {
 		const { compileCart } = await import('./compile');
-		const imports = await readFile(join(systemDirectory, `${SYSTEM_ROM_NAME}${options.debug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`));
+		const systemRom = await readFile(join(systemDirectory, `${SYSTEM_ROM_NAME}${options.debug ? '.debug' : ''}.rom`));
 		cartUnit = { key: cartKey!, name: target, recipe: cart.recipe, inputs: cart.inputs.identity,
-			outputs: await compileWithDiagnostics(cart, () => compileCart(cart, stage, target, imports, progress)) };
+			outputs: await compileWithDiagnostics(cart, () => compileCart(cart, stage, target, systemRom, progress)) };
 	}
 	const contents = { target, system: systemUnit, cart: cartUnit };
 	const artifact: RomArtifact = { id: romBuildKey(contents), ...contents };

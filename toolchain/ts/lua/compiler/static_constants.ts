@@ -1,4 +1,5 @@
 import { utf8CodepointCount } from '../../../../machine/ts/common/utf8';
+import { formatNumber } from '../../../../machine/ts/common/number_format';
 import { LuaBinaryOperator, LuaSyntaxKind, LuaUnaryOperator, type LuaExpression } from '../syntax/ast';
 import type { LuaSemanticFrontend } from '../semantic/frontend';
 import type { Decl, FileSemanticData, SymbolID } from '../semantic/model';
@@ -85,7 +86,11 @@ export class StaticConstants {
 				}
 				if (expression.operator === LuaBinaryOperator.Concat) {
 					return (left.kind === 'number' || left.kind === 'string') && (right.kind === 'number' || right.kind === 'string')
-						? { kind: 'string', value: String(left.value) + String(right.value) } : undefined;
+						? {
+							kind: 'string',
+							value: (left.kind === 'number' ? formatNumber(left.value) : left.value)
+								+ (right.kind === 'number' ? formatNumber(right.value) : right.value),
+						} : undefined;
 				}
 				if (left.kind === 'number' && right.kind === 'number' || left.kind === 'string' && right.kind === 'string') {
 					switch (expression.operator) {

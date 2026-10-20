@@ -89,7 +89,7 @@ return { world = world }` },
 	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
 	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
 	for (let run = 0; run < 2; run += 1) {
-		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.symbols.initFunctionAddress);
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.layout.header.initFunctionAddress);
 		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('load_trace')), 1234);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('hook_trace')), 1234);

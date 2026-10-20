@@ -75,6 +75,9 @@ function trimTrailingZeros(text: string, dotIndex: number): string {
 }
 
 export function formatNumber(value: number): string {
+	if (value - value !== 0) {
+		return value !== value ? 'nan' : (value < 0 ? '-inf' : 'inf');
+	}
 	if (value === 0) {
 		return Object.is(value, -0) ? '-0' : '0';
 	}

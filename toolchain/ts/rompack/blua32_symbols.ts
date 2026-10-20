@@ -126,7 +126,6 @@ export type Blua32SymbolsImage = {
 	imageAddress: number;
 	functionAddresses: number[];
 	moduleFunctions: Blua32ModuleFunction[];
-	initFunctionAddress: number;
 	initParticipants: Blua32InitParticipant[];
 	staticLayoutToken: Blua32StaticLayoutToken;
 	metadata: Blua32DebugMetadata;

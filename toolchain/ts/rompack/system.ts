@@ -1,4 +1,5 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
+import { BIOS_FUNCTION_MODULE_PATHS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
 
@@ -6,20 +7,8 @@ export const SYSTEM_BLUA32_IMAGE_OFFSET = 0x00000100;
 export const SYSTEM_ROM_ASSET_OFFSET = 0x00400000;
 export const SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY = 4096;
 
-export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> = [
-	{
-		path: 'math/sin',
-		exportPathKey: '',
-	},
-	{
-		path: 'string/float/decode',
-		exportPathKey: '',
-	},
-	{
-		path: 'gpu/system_vram_region',
-		exportPathKey: '',
-	},
-];
+export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> =
+	BIOS_FUNCTION_MODULE_PATHS.map(path => ({ path, exportPathKey: '' }));
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_ROM_ASSET_OFFSET) {

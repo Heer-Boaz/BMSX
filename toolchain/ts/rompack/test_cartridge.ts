@@ -10,10 +10,7 @@ import {
 	buildRelocatableRomAssetSymbolModule,
 } from './asset_symbols';
 import type { RomAsset } from './assets';
-import {
-	BLUA32_BIOS_IMPORTS_IMAGE_ID,
-	decodeBlua32BiosImports,
-} from './blua32_bios_imports';
+import { readBlua32BiosImports } from './blua32_bios_imports';
 import { BLUA32_IMAGE_ID } from './blua32_image';
 import {
 	buildBlua32Image,
@@ -103,13 +100,8 @@ export async function buildTestCartridge(
 		loadRomAssetList(options.systemRom, 'system'),
 		parseCartridgeIndex(options.cartridge),
 	]);
-	const systemImportsEntry = systemIndex.entries.find(
-		entry => entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID,
-	)!;
 	const imageEntry = cartridgeIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
-	const biosImports = decodeBlua32BiosImports(
-		options.systemRom.subarray(systemImportsEntry.start, systemImportsEntry.end),
-	);
+	const biosImports = readBlua32BiosImports(options.systemRom);
 	const layer: RomSourceLayer<'cart'> = {
 		id: 'cart',
 		index: cartridgeIndex,

@@ -159,6 +159,7 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 	header.bssByteCount = readLE32(bytes.data() + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET);
 	header.textAddress = readLE32(bytes.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET);
 	header.textByteCount = readLE32(bytes.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET);
+	header.initFunctionAddress = readLE32(bytes.data() + BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET);
 
 	if (header.imageByteCount != bytes.size()) {
 		throw BMSX_RUNTIME_ERROR("BLua32 image byte count does not match its ROM record.");

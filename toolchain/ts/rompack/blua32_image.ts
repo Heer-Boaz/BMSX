@@ -33,6 +33,7 @@ import {
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
 	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
@@ -122,6 +123,7 @@ export type Blua32ImageHeader = {
 	bssByteCount: number;
 	textAddress: number;
 	textByteCount: number;
+	initFunctionAddress: number;
 };
 
 export type Blua32UpvalueRecord = {
@@ -209,6 +211,7 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		bssByteCount: readLE32(bytes, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET),
 		textAddress: readLE32(bytes, BLUA32_IMAGE_TEXT_ADDRESS_OFFSET),
 		textByteCount: readLE32(bytes, BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET),
+		initFunctionAddress: readLE32(bytes, BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET),
 	};
 	if (header.imageByteCount !== bytes.byteLength) {
 		throw new Error('BLua32 image byte count does not match its ROM record.');
