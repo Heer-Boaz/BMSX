@@ -3762,7 +3762,7 @@ The four words are `0x00000016`, `0x00000416`, `0x00080016`, `0x00080416` for SF
 
 With matrix base b=8 or16, rows are (`lo(C[b])`, `hi(C[b])`, `lo(C[b+1])`), (`hi(C[b+1])`, `lo(C[b+2])`, `hi(C[b+2])`), (`lo(C[b+3])`, `hi(C[b+3])`, `lo(C[b+4])`), with signed halves. Signed16 range is −32768…32767, signed32 range −2147483648…2147483647. The upper half of each Z word or last matrix word supplies no extra component. IR0 is consumed as signed16 even when software normally treats 0…4096 as cue weights; NCDT does not clamp or replace IR0 itself.
 
-In the useful SF=1 convention, normal and matrix coefficients use 4096 per unit; the first stage produces Q12 light responses and the color stage Q12 material gains. Ambient has the same gain scale. RGBC is byte color; far F is byte×16. IR0/4096 is the nominal interpolation weight. These scales are software choices, not runtime tags or normalization operations. Negative or larger-than-unit IR0 extrapolates through the same limited integer arithmetic.
+In the useful SF=1 convention, normal and matrix coefficients use 4096 per unit; the first stage produces Q12 light responses and the color stage Q12 material gains. Ambient has the same gain scale. RGBC is byte color; far F is byte×16. IR0/4096 is the nominal interpolation weight. Software chooses these scales; the unit does not normalize the operands. Negative or larger-than-unit IR0 extrapolates through the same limited integer arithmetic.
 
 **Ordered per-vector calculation.** Execute the entire sequence below for V0, then V1, then V2. Clear FLAG only before V0. `ASR` rounds negative fractions toward minus infinity; signed44/signed32 mean the signed interpretations of the retained low44/32 bits.
 
@@ -4716,8 +4716,8 @@ the next completion or cleared by reset. Issue COMMAND with a direct CPU word
 store so that its busy interlock controls acceptance; DMA command writes are
 ignored.
 
-**Calculation and scales.** At acceptance, snapshot the five current operand
-words, decode their signed components and calculate each lane:
+**Calculation and scales.** Acceptance captures the five current operand words.
+For their signed components, each lane's calculation is:
 
 ```text
 full_i    = 4096*ADD_i + MUL_i*signed SCALAR
@@ -4732,8 +4732,8 @@ software convention uses A, M and result in the same integer coordinate counts
 and scalar/4096 as a dimensionless weight. The signed scalar supports negative
 weights too; it is not restricted to0…4096.
 
-Pack the limited X/Y halves into pending RESULT_XY and Z's low half into pending
-RESULT_Z. A shifted lane strictly above32767 sets its positive flag and ERROR;
+The limited X/Y halves form RESULT_XY; Z occupies RESULT_Z's low half. A
+shifted lane strictly above32767 sets its positive flag and ERROR;
 a lane below−32768 sets its negative flag and ERROR. Exact integer endpoints
 are legal. This comparison occurs **after** the shift, not against an ideal
 fractional output.
@@ -4745,8 +4745,8 @@ fractional output.
 | X−, Y−, Z− saturation | 08000000, 04000000, 02000000 |
 | Invalid command | 01000000 |
 
-No other flag bits are set. Every VMAD3 starts a new **pending** flag result;
-the readable FLAG still belongs to the previous published job until completion.
+No other flag bits are set. Each VMAD3 produces its own flag result; the
+readable FLAG still belongs to the previous completed job until completion.
 
 **Pending versus published footprint.** Accepted VMAD3 starts a five-system-cycle
 interval and immediately exposes CYCLES=80000005. The input words and accepted
@@ -4754,10 +4754,9 @@ COMMAND remain readable. Until completion, result words and FLAG retain the
 older published set. Input writes while busy prepare later work; they do not
 alter the captured operands. There is one pending job, not a command FIFO.
 
-At completion, the two results and PLUS FLAG publish together; CYCLES clears
-busy and retains5. Any PLUS read, or an operand/COMMAND write, at or after the deadline
-synchronizes that completion; a waiting CPU command store also receives the ready edge. There is
-no completion interrupt or result-consumed acknowledgement. Individual result
+At completion, the two results and PLUS FLAG become visible together; CYCLES
+clears busy and retains5. A waiting CPU command store can then proceed. There
+is no completion interrupt or result-consumed acknowledgement. Individual result
 reads are not one multiword snapshot: another publication between reads can mix
 jobs. Retain every needed result and its flag before allowing the following job
 to replace them. Three scalar word loads alone have a six-cycle CPU base cost,
@@ -4789,9 +4788,9 @@ not survive the shift; the negative half-count did cross the lower limit.
 The larger saturation case in [Repeated PLUS work](#sec-gte-repeated-plus-work)
 produces both X+ and Y−, FLAG=c4000000.
 
-**Invalid command.** A low byte other than01 starts a one-cycle pending result,
-CYCLES=80000001. It retains the previous published result words as its pending
-output and publishes FLAG=81000000 at completion. It does not rerun VMAD3 with
+**Invalid command.** A low byte other than01 starts a one-cycle busy interval,
+CYCLES=80000001. It leaves the previous result words unchanged and sets
+FLAG=81000000 at completion. It does not rerun VMAD3 with
 a fallback opcode, reset inputs, clear results or change normal GTE FLAG.
 Until that completion, the old published flag remains visible. Busy input and
 command-admission rules still apply.
@@ -4941,7 +4940,7 @@ Separate the following when making a frame budget:
   depends on the scanout phase and on when the counter was sampled. It is not a
   constant that can be inferred from this GTE work unit.
 
-Report charged CPU work and elapsed device/scheduler waits separately, then
+Count charged CPU work and elapsed device waits separately, then
 construct the actual timeline if their overlap matters. The cartridge's actual
 loops, changing translation, GP0 traffic and frame-publication path require their
 own accounting; **221 is not their full-frame BLua budget**. This cold work unit also
@@ -4953,8 +4952,8 @@ turn a lower-bound transfer estimate into a measured program budget.
 
 ### Normal commands: nominal cost and CPU cost {#sec-gte-normal-commands-nominal-cost-and-cpu-cost}
 
-A normal COMMAND write performs the complete arithmetic operation during that
-write. A following data/control read sees its results without polling. Normal
+A normal COMMAND write completes with its arithmetic results available. A
+following data/control read sees those results without polling. Normal
 CYCLES records the last nominal command count; it has no busy bit and does not
 count down. For example, RTPS reports 15, MVMVA reports 8, and RTPT reports 23.
 These values do not cause waits of 15, 8 or 23 system cycles.
@@ -4982,17 +4981,16 @@ PLUS measures its completion interval in system cycles. At the installed
 | VMAD3 completion interval: five cycles | Approximately 147.628 ns |
 | Invalid-command completion interval: one cycle | Approximately 29.526 ns |
 
-An accepted command takes all operands from the current PLUS input words and
-forms one pending result set. Before its completion deadline, RESULT_XY,
+An accepted command captures all operands from the current PLUS input words.
+Before its completion deadline, RESULT_XY,
 RESULT_Z and PLUS FLAG retain the previously published values. PLUS CYCLES reads
 `0x80000005` for pending VMAD3 or `0x80000001` for a pending invalid command. The
 low 31 bits retain the nominal interval; they are not the remaining time.
 
-At or after the deadline, a PLUS read, accepted input/command write, or CPU
-command-store readiness check observes completion: both results and PLUS FLAG
-publish together, and busy clears. CYCLES then reads `0x00000005` or
-`0x00000001`. A CPU store already waiting on PLUS COMMAND is released at the
-completion deadline. Normal GTE accesses do not wait for or synchronize PLUS.
+At completion, both results and PLUS FLAG become visible together and busy
+clears. CYCLES then reads `0x00000005` or `0x00000001`. A CPU store already
+waiting on PLUS COMMAND is released at the completion deadline. Normal GTE
+accesses do not wait for PLUS.
 
 PLUS inputs may be rewritten while busy. Such writes prepare later work; they
 do not modify the operands already taken by the pending command. There is no
@@ -5028,8 +5026,8 @@ and perform two ordered register-word accesses. A later fault does not undo an
 earlier word's effects. Scalar-store readiness checks only A: an F64 store
 starting at PLUS FLAG (`0x080103a0`) can reach PLUS COMMAND as its second word
 without that address's store interlock. If PLUS is still busy and not due, that
-command word is ignored, rather than waiting; if idle after synchronization, it
-is accepted. Use a direct word store for the command protocol.
+command word is ignored, rather than waiting; if PLUS is idle at that access,
+it is accepted. Use a direct word store for the command protocol.
 
 CPU word-sequence stores instead check every addressed IO word's readiness
 before writing any sequence word. Once admitted, they write in increasing
@@ -5452,7 +5450,7 @@ An unknown function executes no arithmetic, leaves data/control and accumulator 
 
 : {tbl-colwidths="[18,18,64]"}
 
-Busy clears when the pending results and flag are published together. The nominal duration remains. RESULT_Z has a zero upper halfword even when its signed low-halfword result is negative.
+Busy clears when the command's results and flag become visible together. The nominal duration remains. RESULT_Z has a zero upper halfword even when its signed low-halfword result is negative.
 
 #### PLUS FLAG fields {#sec-gte-plus-flag-fields}
 
@@ -5470,7 +5468,7 @@ Busy clears when the pending results and flag are published together. The nomina
 
 : {tbl-colwidths="[18,18,64]"}
 
-These flags are independent of C[31]. A valid command starts with a pending flag word of zero; strict lane overflow or underflow sets the corresponding direction bit and ERROR. An invalid command publishes `0x81000000` (ERROR and INVALID) and preserves both previously published result words. It does not execute VMAD3 or raise an exception.
+These flags are independent of C[31]. A valid command's flag result starts at zero; strict lane overflow or underflow sets the corresponding direction bit and ERROR. The previous FLAG remains readable until completion. An invalid command completes with `0x81000000` (ERROR and INVALID) and preserves both result words. It does not execute VMAD3 or raise an exception.
 
 ## Normal-command arithmetic {#sec-gte-normal-command-arithmetic}
 

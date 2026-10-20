@@ -423,10 +423,9 @@ For a beam restart at system cycle zero, the calculated event deadlines are:
 | VSync; VSINT | 585 | 18.720 ms | 634024 |
 | Field end | 628 | 20.096 ms | 680628 |
 
-This gives approximately 49.761146497 field repetitions per second.
-Fractional system cycles are retained between events; deadlines round upward
-without accumulating a fresh rounding error each half-line. An executing CPU
-instruction may finish before a crossed deadline is serviced. Allow for CPU
+This gives approximately 49.761146497 field repetitions per second. Calculate
+each system-cycle deadline from the beam restart, rounding upward; do not
+accumulate the error from rounding every half-line separately. Allow for CPU
 interrupt acceptance and handler execution after these event deadlines.
 HSync points repeat every two half-lines, but a pending HSINT suppresses further
 interrupt requests until acknowledged.
@@ -476,23 +475,17 @@ display-latch edge.
 acknowledgements in the same write are processed first. RESET takes priority if both
 action bits are one.
 
-Both actions drop queued DMA ingress and GP0 FIFO input, discard partial command and
-polyline input state, and clear pending command-completion timing. Both terminate
-readback and handle a partial image upload as described below. **Neither action is a
-general cancel or undo of accepted drawing.**
+Both actions discard queued DMA ingress and GP0 FIFO input, along with partial
+command and polyline input state. Both terminate readback and handle a partial
+image upload as described below. **Neither action is a general cancel or undo
+of accepted drawing.** Already-performed local-memory writes remain effective,
+and accepted raster or upload work can still change local memory. Wait for GPU
+idle before the action when the program requires all drawing to be complete.
 
-| Readback condition | Effect on accepted command work |
-|---|---|
-| No active readback; next uncompleted command is not a readback | Retain accepted raster and upload work |
-| Readback accepted but not yet activated | Remove that readback and subsequent work; retain preceding commands |
-| Readback pending, with its command still retained | Remove that readback and subsequent work; retain preceding commands |
-| Readback submitted or data ready; other non-idle readback conditions | Clear the retained command work |
-
-A still-retained in-progress raster or upload command is marked complete as pending
-completion timing is cleared; this does not undo its memory writes. Input queued after
-an active readback is discarded, not executed past that readback. The readback port
-returns to idle, loses its dimensions and cursor, and drops its DMA request. A canceled
-completion cannot later make that readback ready again.
+Input queued after an active readback is discarded, not executed past that
+readback. The readback port returns to idle, loses its dimensions and cursor,
+and drops its DMA request. The terminated readback does not later become ready
+again.
 
 A partial CPU-to-local-memory image upload is treated according to the words already consumed by image assembly and retained with the upload. Words merely admitted to the GP0 FIFO or DMA ingress FIFO do not count; the action discards those still-queued words.
 

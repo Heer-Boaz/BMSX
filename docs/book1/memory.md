@@ -32,7 +32,7 @@ BMSX has **4 MiB of main RAM**, occupying `[0x08000000, 0x08400000)` before I/O 
 | Cartridge MMIO | `0x30f00000` | `0x31000000` | 1 MiB window |
 | Unmapped upper range | `0x31000000` | `0x100000000` | Outside the cartridge bus and other declared windows |
 
-The cartridge bus begins at `0x10000000` and ends just before `0x31000000`; the system's main-RAM window ends at that cartridge-bus start. Within the main-RAM window, `[0x08400000, 0x10000000)` has no installed main-RAM backing. It is not an extension or mirror of the installed 4 MiB.
+The cartridge bus begins at `0x10000000` and ends just before `0x31000000`; the system's main-RAM window ends at that cartridge-bus start. Within the main-RAM window, `[0x08400000, 0x10000000)` has no installed main RAM. It is not an extension or mirror of the installed 4 MiB.
 
 GPU VRAM is a separate **2 MiB** capacity and is not included in the 4 MiB main-RAM total.
 
@@ -66,7 +66,7 @@ The following ranges use an exclusive end: the end address is the first byte out
 | System static storage | `0x080c0000` | Actual end of system BSS | Specified by the system executable image |
 | Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
 
-The implemented I/O register aperture ends at `0x08010440`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
+The decoded I/O register aperture ends at `0x08010440`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers. Likewise, the GEO scratch reservation is not cartridge static storage.
 
 `0x080c0000` is the start of **system DATA**, not a universal cartridge RAM base.
 The installed firmware's BSS follows its DATA. Account for their actual occupied
@@ -140,9 +140,9 @@ local width<const> = system_size & 0x0000ffff
 local height<const> = system_size >> 16
 ```
 
-### Current-firmware example {#sec-memory-current-firmware-example}
+### Firmware-layout example {#sec-memory-current-firmware-example}
 
-For the current firmware image's terminal layout and packed atlas, the rectangles are:
+For the installed BIOS terminal layout and system atlas, the rectangles are:
 
 | Use | x range, in 16-bit words | y range, in rows |
 |---|---|---|
@@ -150,7 +150,7 @@ For the current firmware image's terminal layout and packed atlas, the rectangle
 | Actual system atlas, 216 × 12 | `[768, 984)` | `[960, 972)` |
 | Returned bounding rectangle, 320 × 252 | `[704, 1024)` | `[720, 972)` |
 
-For those dimensions, the returned origin word is `0x02d002c0` and the size word is `0x00fc0140`. These numbers are a **current-firmware example**, not universal constants for cartridge code. The atlas's configured maximum is 256 × 64, but its actual packed extent need not fill that maximum; consume the query result instead.
+For those dimensions, the returned origin word is `0x02d002c0` and the size word is `0x00fc0140`. These numbers illustrate the query result, not universal constants for cartridge code. Use the rectangle returned by the installed BIOS.
 
 The 320 × 252 bounding rectangle covers 80640 16-bit words, or 161280 bytes of storage footprint. Its row stride is nevertheless **1024 words**, or 2048 bytes: it is a rectangle within VRAM, not a contiguous CPU byte-address allocation. The bounding rectangle also includes space outside the exact terminal-plus-atlas union; the query does not identify internal holes for reuse.
 
@@ -242,7 +242,7 @@ registers or newly available cartridge storage.
 
 For byte, halfword and word bus transfers, the **complete transfer** must fit
 inside the decoded I/O aperture for its I/O width rules to apply. A transfer
-crossing that end uses main-RAM backing for its complete width; it is not split
+crossing that end accesses main RAM for its complete width; it is not split
 between a final register and RAM. These examples describe mapped-bus transfers,
 not permission to bypass ordinary CPU instruction alignment:
 
@@ -251,7 +251,7 @@ not permission to bypass ordinary CPU instruction alignment:
 | U32 at `0x0801043c` | Last complete I/O slot: supervisor fault DOMAIN |
 | U32 at `0x0801043e` | Four main-RAM bytes spanning the decoder boundary |
 | U16 at `0x0801043f` | Two main-RAM bytes spanning the decoder boundary |
-| U32 at `0x08010440` | Main-RAM backing within the reservation |
+| U32 at `0x08010440` | Main RAM within the reservation |
 
 Ordinary CPU U16 and U32 instructions reject the two unaligned examples before
 reaching the mapped bus. The [scalar-access rules](#sec-memory-scalar-memory-accesses)
@@ -304,7 +304,8 @@ An F64 access first accesses the low word at the starting address, then the high
 
 These two accesses are not an atomic eight-byte transaction. If an F64 store successfully writes the low word and then faults on the high word, the low-word write is not undone. An F64 read returns zero at the mapped-access level if either word faults; the ordinary CPU load does not commit that zero to its destination register.
 
-An aligned store also checks whether the mapped write is ready. If it is not ready, the store waits and performs no write on that pass. This is distinct from reporting a bus fault.
+An aligned store waits if its addressed port is not ready. No write occurs
+until the port accepts it; waiting does not itself report a bus fault.
 
 An unmapped scalar access reports `BUS_FAULT_UNMAPPED`. The unmapped U8, U16 and U32 read paths return zero, while the unmapped write paths perform no target write. Rejected I/O U8 and U16 reads likewise return zero. These returned zeros are not successful results of faulting ordinary CPU loads: the CPU exception check described below occurs before the destination register is assigned.
 
@@ -408,7 +409,7 @@ bus-fault record alone neither changes the operand nor resumes the program.
 
 ## DMA buffer lifetime {#sec-memory-dma-buffer-lifetime}
 
-DMA uses byte addresses but counts transfers in **32-bit words**. Starting a transfer does not copy its source into a private payload buffer. Source storage, destination storage and the channel's programmed words therefore have different lifetimes. The rules below describe aligned, backed main-RAM copies and the stated DMA-to-GPU example, not every hardware buffer.
+DMA uses byte addresses but counts transfers in **32-bit words**. Starting a transfer does not copy its source into a private payload buffer. Source storage, destination storage and the channel's programmed words therefore have different lifetimes. The rules below describe aligned copies within installed main RAM and the stated DMA-to-GPU example, not every hardware buffer.
 
 ### Attribute a bus fault before START {#sec-memory-attribute-a-bus-fault-before-start}
 
@@ -436,7 +437,7 @@ unready port write without raising a bus fault.
 
 2. **Program an idle channel completely.** Set its read address, write address, count, increment choices, request selectors and block length before START. An increment advances its address by four bytes per word; a fixed address advances by zero. The programmed block-length field specifies 1 through 16 words, and the last block uses only the remaining count. Both selected requests must be asserted before a block is admitted. `FORCE` is always asserted; `DISABLED` is never asserted. For a device port, choose its real request selectors rather than use FORCE to send words while the port is not ready.
 
-3. **Start once and preserve the live inputs.** An accepted START with a nonzero count sets BUSY; START while BUSY is ignored, not queued as a second transfer. A zero count finishes immediately, before testing requests. Admission retains one block's addresses, remaining count, control and length, but not its source words. At block service, each source word is read and immediately written to the destination before proceeding to the next word. Bytes changed after START can therefore affect later reads; START is not a source-buffer snapshot.
+3. **Start once and preserve the live inputs.** An accepted START with a nonzero count sets BUSY; START while BUSY is ignored, not queued as a second transfer. A zero count finishes immediately, before testing requests. Admission retains one block's addresses, remaining count, control and length, but not its source words. Each source word is read and written to the destination before proceeding to the next word. Bytes changed after START can therefore affect later reads; START is not a source-buffer snapshot.
 
    Leave the channel's programmed address/count/control words alone through completion. Writes to those words are not automatically rejected while BUSY: an already admitted block uses its captured configuration, and its later address/count writeback can overwrite changes made meanwhile. Reprogramming a busy channel is not a way to revise that admitted block safely.
 
@@ -452,7 +453,7 @@ unready port write without raising a bus fault.
 
 ### Overlap is not a buffered move {#sec-memory-overlap-is-not-a-buffered-move}
 
-For backed RAM, reads observe the current four little-endian bytes and writes immediately update their destination bytes. There is no block-sized source snapshot or special overlap-copy behavior. For example, start with RAM words `[1, 2, 3, 4, 5]` and copy a four-word block from *base* to *base + 4*, with both addresses incrementing. The access order produces `[1, 1, 1, 1, 1]`: each write changes the next source word before it is read.
+Within installed RAM, each DMA word is read before its destination is written, and that write precedes the next read. There is no block-sized source snapshot or special overlap-copy behavior. For example, start with RAM words `[1, 2, 3, 4, 5]` and copy a four-word block from *base* to *base + 4*, with both addresses incrementing. The access order produces `[1, 1, 1, 1, 1]`: each write changes the next source word before it is read.
 
 ### DMA programming example {#sec-memory-dma-programming-example}
 
@@ -476,9 +477,14 @@ GEO captures a job's configuration, not its source data. Prepare the buffers bef
    SRC0, SRC1, SRC2, DST0, DST1, COUNT, PARAM0, PARAM1 and all three strides
    before writing CMD.
 
-2. **Know what launch captures.** An accepted, supported nonzero command captures those register words, without reading source bytes. With nonzero `COUNT`, GEO becomes `BUSY` and schedules service. `OVERLAP2D_PASS` writes its summary at launch, before the count test; even a zero-count launch is not necessarily free of buffer writes. Never submit `CMD` while `BUSY`: it neither waits nor queues. It discards the running job, rejects the new command, resets `PROCESSED` to zero, publishes `REJECTED` with `REJECT_BUSY`, and raises the ERROR interrupt.
+2. **Know what launch captures.** An accepted, supported nonzero command captures those register words, without reading source bytes. With nonzero `COUNT`, GEO becomes `BUSY` and begins the job. `OVERLAP2D_PASS` writes its summary at launch, before the count test; even a zero-count launch is not necessarily free of buffer writes. Never submit `CMD` while `BUSY`: it neither waits nor queues. It discards the running job, rejects the new command, resets `PROCESSED` to zero, publishes `REJECTED` with `REJECT_BUSY`, and raises the ERROR interrupt.
 
-3. **Preserve live inputs.** `XFORM2_BATCH` reads each record during processing. A valid empty record with `flags = 0` and `vertexCount = 0` succeeds without reading a matrix or vertices. For a nonempty record that passes its checks, GEO reads the selected matrix during that record and each local vertex immediately before its corresponding output x/y writes. `SAT2_BATCH` reads pair, descriptor, and vertex words during processing; `OVERLAP2D_PASS` likewise reads candidate, instance, shape, and vertex data during processing. Changing these bytes after `CMD` can change pending work. Leave inputs and outputs unmodified until work stops; separate outputs do not establish arbitrary in-place or aliasing safety.
+3. **Preserve live inputs.** GEO reads its addressed records and payloads during
+   the job. Changing these bytes after `CMD` can change work still in progress.
+   A valid empty `XFORM2_BATCH` record with `flags = 0` and `vertexCount = 0`
+   succeeds without reading a matrix or vertices. Leave inputs and outputs
+   unmodified until work stops; separate outputs do not establish arbitrary
+   in-place or aliasing safety.
 
 4. **Check the actual terminal state.** `PROCESSED` advances after successful records. Successful completion latches `DONE` without a fault and raises the DONE interrupt. An execution fault stops the job, retains the completed-record count, latches `DONE|ERROR` and `FAULT`, and raises ERROR. `DONE` alone does not prove whole-batch success: inspect `ERROR`, `FAULT`, and `PROCESSED`.
 
@@ -488,7 +494,12 @@ GEO captures a job's configuration, not its source data. Prepare the buffers bef
 
 GTE PLUS uses an operand/result register bank, not a main-RAM source-address and length interface. Its five writable operand words are `ADD_XY`, `ADD_Z`, `MUL_XY`, `MUL_Z`, and `SCALAR`. This differs from an addressed RAM payload whose contents may be read as work progresses.
 
-An accepted, supported `VMAD3` command computes pending XY, Z, and flag results from the current operand words. Later writes to those five operand registers replace their register contents, but do not change that pending result. They can prepare operands for subsequent work; they do not submit another command. Until completion, result reads still see the previously published values. The pending XY, Z, and flag results publish together at completion, when `BUSY` clears.
+An accepted, supported `VMAD3` command captures the current operand words.
+Later writes to those five operand registers replace their register contents,
+but do not change the operation in progress. They can prepare operands for
+subsequent work; they do not submit another command. Until completion, result
+reads still see the previously published values. XY, Z, and flag results publish
+together at completion, when `BUSY` clears.
 
 Submit `COMMAND` through the CPU. CPU command submission is interlocked while a command remains pending, rather than starting overlapping work. DMA cannot issue PLUS `COMMAND`. Follow [GTE timed VMAD3](gte.md#sec-gte-vmad3-timed-vector-multiply-add-through-plus) for the command sequence and completion procedure; do not substitute a guessed delay for completion observation.
 
@@ -510,7 +521,16 @@ Use the [IMGDEC chapter](imgdec.md#sec-imgdec) and its [BLua programming sequenc
 
 Sampled voices read installed ROM or the APU's 512 KiB private sample RAM, not CPU main RAM. Main RAM can hold upload staging or a download destination, but it is not a direct voice source. The private source address `0x40000000` names APU storage; it is not a CPU pointer. The transfer address instead names an offset within that private RAM.
 
-For a supported nonzero command, an accepted CMD write captures the staging parameters into the command queue, not the sample bytes. Later staging writes do not change that queued entry. PLAY binds its source when the command executes; cartridge selection is taken at that binding, not when CMD is queued. The voice retains a source view and reads backing bytes during playback rather than taking a complete payload snapshot. Preserve those bytes for every remaining playback, loop, seek, or queued use. Do not expect live-byte changes to be immediately reread. Selected-slot source-window writes are individually live: each can rebind an active voice using its current full description, not an atomic staged replacement. A failed rebind can stop that voice and fault without releasing other source references.
+For a supported nonzero command, an accepted CMD write captures the staging
+parameters into the command queue, not the sample bytes. Later staging writes
+do not change that queued entry. PLAY selects its source when the command
+executes, using the cartridge selection at that time rather than at CMD
+submission. Playback continues to use bytes in the selected ROM or sample RAM;
+preserve them for every remaining playback, loop, seek or queued use.
+Selected-slot source-window writes are individually live: each can change an
+active voice's source using its current full description, not an atomic staged
+replacement. A failed source change can stop that voice and raise a fault;
+other voices' source lifetimes are unchanged.
 
 Keep upload completion separate from playback lifetime. A DMA upload first delivers words to the transfer FIFO; private-RAM writes can remain pending after DMA DONE. After the intended DMA upload completes, with no competing transfer writer, read APU STATUS and wait for TRANSFER_BUSY, bit 10 (`0x400`), to clear before starting a voice over the uploaded bytes. Keep the operation's DMA and fault checks: a clear bit alone does not prove correct data. CPU DATA writes in MANUAL_WRITE commit immediately. Do not change the transfer address while an upload commit is pending. A download may continue prefetching after its DMA completes; select transfer STOP to cancel that work and clear its FIFO before reprogramming. This does not undo committed writes or stop voices.
 

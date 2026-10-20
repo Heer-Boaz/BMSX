@@ -25,6 +25,11 @@ Tests check reached behavior and numerical examples. Report conflicting evidence
 rather than automatically choosing architecture prose or one implementation.
 Do not document suspected bugs as permanent hardware guarantees.
 
+Agreement between implementations does not make a private execution technique
+part of the product. Describe operand capture, data lifetime, completion and
+fault effects that software must observe; do not turn scheduler batches, caches,
+host buffers or internal callback order into hardware timing or structures.
+
 `cartlib`, packers, asset converters and project builders are independent game
 studio software, not console hardware, BIOS or a manufacturer SDK. Their APIs,
 formats and workflows do not belong in the books. Document actual consumed

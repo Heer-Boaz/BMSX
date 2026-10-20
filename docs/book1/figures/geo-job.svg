@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" role="img" aria-labelledby="geo-job-title geo-job-desc">
   <title id="geo-job-title">GEO captured job and live operand paths</title>
-  <desc id="geo-job-desc">An accepted command captures programmed addresses, count, parameters and strides. At record service, the selected operation reads addressed operand words and writes RAM results. Job completion or error signals the interrupt controller. Capturing addresses does not capture the operand data.</desc>
+  <desc id="geo-job-desc">An accepted command captures programmed addresses, count, parameters and strides. The selected operation reads addressed operand words and writes RAM results. Job completion or error signals the interrupt controller. Capturing addresses does not capture the operand data.</desc>
   <defs><marker id="geo-job-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#111"/></marker></defs>
   <g fill="#fff" stroke="#111" stroke-width="2">
     <rect x="15" y="30" width="330" height="85"/>
@@ -21,7 +21,7 @@
     <text x="180" y="60">Programmed addresses, count,</text><text x="180" y="91">parameters and strides</text>
     <text x="437" y="55" font-size="19">Accepted CMD</text>
     <text x="755" y="62">One captured job</text><text x="755" y="94">Configuration, not operand data</text>
-    <text x="650" y="158" font-size="19">Record service</text>
+    <text x="650" y="158" font-size="19">Job processing</text>
     <text x="137" y="264">Addressed records</text><text x="137" y="295">and operand words</text>
     <text x="532" y="252">Selected operation</text><text x="532" y="286">XFORM2 / SAT2</text><text x="532" y="319">or OVERLAP2D</text>
     <text x="887" y="272">RAM</text><text x="887" y="304">results</text>

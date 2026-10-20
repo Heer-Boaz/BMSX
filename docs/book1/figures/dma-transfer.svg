@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 415" role="img" aria-labelledby="dma-title dma-desc">
-  <title id="dma-title">DMA configuration and service paths</title>
-  <desc id="dma-desc">Two programmed channel banks and their request gates select one admitted block. It captures configuration, not source payload. At the service edge, mapped source reads supply successive mapped destination writes. The resulting addresses and remaining count are written back to the serviced channel.</desc>
+  <title id="dma-title">DMA configuration and transfer paths</title>
+  <desc id="dma-desc">Two programmed channel banks and their request gates select one block. It captures configuration, not source payload. Mapped source reads supply successive mapped destination writes. At block completion, the resulting addresses and remaining count are written back to that channel.</desc>
   <defs><marker id="dma-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#111"/></marker></defs>
   <g fill="#fff" stroke="#111" stroke-width="2">
     <rect x="15" y="25" width="225" height="65"/>
@@ -23,11 +23,11 @@
     <text x="127" y="53">Channel 0</text><text x="127" y="79">programmed words</text>
     <text x="127" y="153">Channel 1</text><text x="127" y="179">programmed words</text>
     <text x="427" y="87">Both request gates</text><text x="427" y="116">+ block selection</text><text x="427" y="145">among eligible channels</text>
-    <text x="800" y="87">One admitted block</text><text x="800" y="117">Addresses, count, CONTROL</text><text x="800" y="146">Block length and service edge</text>
+    <text x="800" y="87">One block in progress</text><text x="800" y="117">Addresses, count, CONTROL</text><text x="800" y="146">Block length and duration</text>
     <text x="127" y="331">Mapped source</text><text x="127" y="359">live payload</text>
-    <text x="515" y="318">Service edge</text><text x="515" y="347">Read, then write</text><text x="515" y="375">for each word slot</text>
+    <text x="515" y="318">Word transfers</text><text x="515" y="347">Read, then write</text><text x="515" y="375">for each word</text>
     <text x="872" y="331">Mapped</text><text x="872" y="359">destination</text>
     <text x="690" y="222" font-size="19">Captured configuration</text>
-    <text x="15" y="410" text-anchor="start" font-size="19">After service: address/count writeback to the serviced bank only; CONTROL is unchanged.</text>
+    <text x="15" y="410" text-anchor="start" font-size="19">At block completion: address/count writeback to that channel only; CONTROL is unchanged.</text>
   </g>
 </svg>

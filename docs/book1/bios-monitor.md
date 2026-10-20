@@ -175,11 +175,11 @@ depth from the matching source-scope row. Missing diagnostic information is
 reported instead of supplying a guessed scope. A binding must also be live and
 mutable at that PC to be assigned.
 
-In the supplied sample, the source frame is physical index `00000001`, depth
+In this example, the source frame is physical index `00000001`, depth
 `00000000`, and its PC matches the fault EPC. Both selectors are displayed as
 eight hexadecimal digits without a prefix; bare command selectors are decimal,
 so use `0x` when copying them. Other programs or builds need not use this pair.
-For the supplied sample, the sequence is:
+For this example, the sequence is:
 
 ```text
 FRAMES
@@ -187,11 +187,11 @@ LUA --FRAME 0x00000001 0x00000000 source = safe_words
 CONT
 ```
 
-The single `LUA` assignment changes the selected frame's live pointer; it does not redeclare a typed local or change the `safe_words` address binding. It returns to the prompt without resuming execution or acknowledging Memory's report. A success banner is not required.
+The single `LUA` assignment changes the selected frame's live pointer; it does not redeclare a typed local or change the `safe_words` address binding. It returns to the prompt without resuming execution or acknowledging Memory's report.
 
 ![Monitor after inspecting frames and assigning the repaired pointer, before continuing.](figures/memory-fault-repair.png){#fig-memory-fault-repair}
 
-**Repair before retry.** The monitor after `FRAMES` and `source = safe_words`, still at the prompt before `CONT`; this is not a completed-recovery screen.
+**Repair before retry.** The pointer has been repaired by `source = safe_words`, but execution remains stopped until `CONT`.
 
 `CONT` retries the saved instruction. The first read now succeeds; the program advances `source` by `sizeof(word)` (four bytes) and reads the second word. The old Memory CODE can remain `1` throughout both successful reads: a pending report does not make a valid address invalid. Only afterward does the program save that old code, write `1` to ACK, and read the cleared code.
 

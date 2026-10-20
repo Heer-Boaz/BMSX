@@ -253,11 +253,8 @@ approximations. They do **not** convert their arguments to 32-bit phases or
 quantize their results to Q16. Small angles therefore retain their floating-point
 scale: `math.sin(0.000001)` is nonzero.
 
-The BIOS reduces an argument to a nearby multiple of pi/2 and evaluates floating
-polynomials on the remaining angle. The remainder has separate leading and tail
-components to retain cancellation information. Large finite angles use a
-multiword 2/pi reduction covering the binary64 exponent range, rather than a
-remainder against a single rounded `2*pi` constant.
+Argument reduction covers the full finite binary64 range. Large angles are
+not reduced by taking a remainder against a single rounded `2*pi` constant.
 
 | Input | `math.sin` | `math.cos` | `math.tan` |
 |---|---|---|---|
@@ -519,7 +516,7 @@ produces NaN through `N(base)`; only nil selects the natural-log form.
 
 The divisions can produce infinities, signed zeros or NaN. Natural
 normalization depends on input magnitude, followed by 15 series updates;
-the general-base branch may perform normalization again for the base. There
+the general-base branch may perform normalization again for the base. The
 cycle count depends on the selected calculation.
 
 All decimal constants above are rounded to their stored Number values.
@@ -600,7 +597,7 @@ Seeding performs no generation step or warm-up loop and returns no seed value. A
 
 ### Generator state and update {#sec-bios-math-generator-state-and-update}
 
-The public bindings are `math.random` and `math.randomseed`. They use the same private four-byte word, whose declared initializer is `0x12345678`. Neither that word nor the private unit generator is returned by the Math Table.
+The public bindings are `math.random` and `math.randomseed`. They use one shared 32-bit generator state, initialized to `0x12345678` during BIOS startup. The Math Table provides no separate state-access interface.
 
 Each generation step reads the old word and computes:
 
@@ -608,7 +605,7 @@ Each generation step reads the old word and computes:
 ((old * 1664525) + 1013904223) % 4294967296.0
 ```
 
-It stores the result in the word, reads the stored unsigned word back, and divides it by `4294967296.0` to obtain the unit sample. Seeding replaces that same word. All callers advance and seed this same stream. Its declared initializer is applied during normal BIOS DATA initialization.
+The result becomes the new unsigned 32-bit state. Dividing that state by `4294967296.0` gives the unit sample. Seeding replaces the same state; all callers advance and seed this one stream.
 
 
 ## Programming examples {#sec-bios-math-programming-examples}

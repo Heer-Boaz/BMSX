@@ -245,9 +245,9 @@ Throughout these functions, element reads are ordinary table reads, including a 
 
 Sorting modifies `target` in place. It takes the length snapshot `L` first and operates on keys `1` through `L`; it does not make or return a sorted copy. If `L < 2`, it immediately returns one `nil` value without performing a comparison or checking whether `compare` can be called. Thus `table.sort({1}, false)` returns normally, whereas a nontrivial sort with `false` as its comparator attempts to call `false` and raises the ordinary non-function call error.
 
-The sort begins by scanning from index `2` through `L`. At each index it asks whether the current value belongs before its predecessor. Falsey answers continue the scan. The first truthy answer starts a quicksort of the **entire** range `1` through `L`, not just the remaining suffix. If the scan reaches the end, the sort itself makes no assignments; with a valid custom comparator this ordered-input path makes exactly `L - 1` comparator calls.
+The sort begins by scanning from index `2` through `L`. At each index it asks whether the current value belongs before its predecessor. Falsey answers continue the scan. The first truthy answer starts reordering the **entire** range `1` through `L`, not just the remaining suffix. If the scan reaches the end, the sort itself makes no assignments; with a valid custom comparator this ordered-input path makes exactly `L - 1` comparator calls.
 
-For each partition from `first` through `last`, the quicksort retains `target[(first + last) // 2]` as its pivot and scans inward. Each swap saves the left value, writes the right value into the left key, then writes the saved value into the right key; the two writes are sequential, not atomic. Do not depend on the order of equal elements: this sort has no stability guarantee. Apart from the ordered-input scan described above, neither a particular comparison schedule nor a particular callback count is promised.
+Sorting swaps entries using two sequential writes, not an atomic exchange. Do not depend on the order of equal elements: this sort has no stability guarantee. Apart from the ordered-input scan described above, neither a particular comparison schedule nor a particular callback count is promised.
 
 ### Choosing an ordering {#sec-bios-table-choosing-an-ordering}
 
@@ -278,9 +278,8 @@ The comparator must supply a consistent strict ordering: `compare(x, x)` must be
 
 
 Keep the target's entries and ordering unchanged inside the comparator.
-The sort retains its initial length and each current pivot across callback
-calls. A comparator error can be received through `pcall`, but swaps already
-performed remain visible. The [interrupted-sort example](#sec-bios-table-handle-an-interrupted-sort)
+The sort retains its initial length across callback calls. A comparator error
+can be received through `pcall`, but swaps already performed remain visible. The [interrupted-sort example](#sec-bios-table-handle-an-interrupted-sort)
 shows how to distinguish that failure from successful completion.
 
 ### Work performed {#sec-bios-table-work-performed}

@@ -755,8 +755,8 @@ targets. Their operations are restricted to scalar/static work: numeric and
 boolean constants, scalar locals, branches, static calls, and scalar memory access.
 Runtime global access, table allocation or dispatch, object length, runtime closure
 creation, vararg dispatch, and dynamic string concatenation are excluded.
-Ordinary string literals in such function bodies are also excluded; already
-interned constants read through immutable typed rodata are permitted.
+Ordinary string literals in such function bodies are also excluded;
+String constants read through immutable typed rodata are permitted.
 
 
 ### Preparation participants: `<init>` {#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup}
@@ -1080,7 +1080,7 @@ trace is therefore a call to a bound sink, not automatic output to a log.
 a String literal. It obeys the same compilation selection: an erased binding evaluates neither the
 subject nor the sink expression. When selected, it evaluates the subject, then the sink, and binds
 that sink to the subject's channel. Passing nil clears the binding. Use the intrinsic rather than
-accessing its channel-storage field directly.
+using ordinary field accesses to bind a channel.
 
 
 This fragment shows a receiver-aware sink and matching channel literals:
@@ -1104,7 +1104,7 @@ or arguments; a following semicolon is optional. Unlike `cop0` access, it has no
 requirement.
 
 If an interrupt-event-pending latch is already set, the statement consumes it without establishing a
-new halt. Otherwise it halts the active thread at its current physical frame depth. An occurrence
+new halt. Otherwise it halts the active thread at its current call-frame depth. An occurrence
 need not wait for a future event. Accepted interrupts, not arbitrary device activity, define the
 interrupt boundary. Maskable interrupt acceptance requires current interrupt enable and an asserted
 maskable interrupt line. Full interrupt-entry, return, and scheduling rules are specified in the
@@ -1301,7 +1301,7 @@ A final parenthesized `(factory())` supplies one value to this list. Use an
 unparenthesized final call when the iterator factory returns iterator, state
 and control together.
 
-The three retained values are cached, not recomputed on subsequent iterations. Rebinding a source variable does not replace its cached value. Caching a mutable value does not copy its contents: changes to shared contents remain visible.
+The three values are retained, not recomputed on subsequent iterations. Rebinding a source variable does not replace its retained value. Retaining a mutable value does not copy its contents: changes to shared contents remain visible.
 
 
 Each attempted iteration calls exactly:

@@ -120,8 +120,7 @@ For `value = string.char(65, 122, 233, 128640)`:
 | `string.byte(value, 2, 4)` | One result: `122` |
 
 There is no end-position argument or range-return form. Additional arguments
-are ignored. Each call scans forward from the first codepoint to the selected
-position; repeatedly selecting later positions repeats that traversal.
+are ignored.
 
 A missing or non-String first argument, or a nonnumeric non-`nil` position,
 raises `INVALID_ARGUMENT`. A numeric-looking String such as `"2"` is not
@@ -158,8 +157,8 @@ protected call receives the original error String `"Invalid argument."`.
 It is not a Memory interrupt.
 
 Each `byte` or `char` call has a builtin surcharge of two cycles, with no
-per-argument or per-result term in that surcharge. Scanning or constructing the String and the surrounding call instructions
-add their own work.
+per-argument, position or per-result term in that surcharge. The surrounding
+BIOS instructions and ordinary calls have their own cycle charges.
 
 ### `string.len(value)` {#sec-bios-string-stringlenvalue}
 
@@ -167,7 +166,7 @@ add their own work.
 returns its result. On a String it counts codepoints, including zero
 codepoints. It does not report an encoded UTF-8 byte count.
 
-On a Table it returns the maintained cached length, not the number of keys or
+On a Table it returns the maintained length, not the number of keys or
 the largest numeric key. For the Table length operation, its state rules
 and its fault handling, follow the CPU chapter's length-operation procedure.
 Other value categories raise the ordinary length error,
@@ -244,18 +243,15 @@ Literal escapes do not perform this decoding. The String literal
 `0xe9` from the encoded bytes `0xc3, 0xa9`, put those bytes in mapped storage
 and call `string.from_utf8` with that address and a byte count of 2.
 
-The decoder stages 256 codepoints per chunk and joins its chunks into the
-returned String. This is not a 256-codepoint size limit: a 257-byte input
-containing only `0x41` produces 257 codepoints. After normal return, the String
-is not a live view of the source bytes; rewriting those bytes does not change
-the returned text.
+After normal return, the String is independent of the source bytes; rewriting
+those bytes does not change the returned text.
 
 The decoder retains its `char`, `table.unpack` and `table.concat` function
 values. Replacing their public fields does not replace these calls. The
 captured `unpack` still uses the current global `select` for an empty range;
-the captured `concat` still uses the current global `tostring` for its joins.
-Changing those globals can therefore change the empty-span or chunk-join
-result. [BIOS table library](bios-table.md#sec-bios-table) describes the helper procedures.
+the captured `concat` still uses the current global `tostring` for text
+construction. Changing those globals can therefore change the empty-span or
+text result. [BIOS table library](bios-table.md#sec-bios-table) describes the helper procedures.
 
 ## Case conversion, slicing, reversal and repetition {#sec-bios-string-case-conversion-slicing-reversal-and-repetition}
 
@@ -338,8 +334,7 @@ raises `Invalid argument.` Other value kinds fail at `#value`.
 ### Codepoint reversal {#sec-bios-string-codepoint-reversal}
 
 `string.reverse` captures `L = #value`. If L is at most 1, it returns the original
-value. Otherwise, it reads positions L down to 1, constructs a String for each
-codepoint, and joins the temporary Table with captured `table.concat`.
+value. Otherwise, it returns the codepoints from positions L down to 1.
 
 ```lua
 local backwards = string.reverse('ABC') -- 'CBA'
@@ -390,13 +385,11 @@ Numbers use their Number formatter, and nil, Booleans, Tables and functions use
 their ordinary labels. It does not call `__tostring`. A separator is absent
 only when it is nil; `false` is a supplied separator.
 
-For a positive finite count, repetition uses parity tests and repeated halving
-of the remaining count, doubling an intermediate chunk when more work remains.
-It does not concatenate one copy per loop iteration. Intermediate Strings and
-the requested output still consume resources; there is no function-local
-repetition or output-size cap. Negative infinity takes the empty-result branch.
-Positive infinity does not decrease under halving, so it is not a terminating
-repetition request and may exhaust resources.
+For a positive finite count, the requested output and its construction consume
+language storage and processing time; there is no function-local repetition
+or output-size cap. Negative infinity takes the empty-result branch.
+Positive infinity is not a terminating repetition request and may exhaust
+resources.
 
 ### Captured calls and work performed {#sec-bios-string-captured-calls-and-work-performed}
 
@@ -407,10 +400,9 @@ consults the current global `tostring`. If that global is replaced with a
 function returning `'x'` for every argument, `string.upper('ab')` produces
 `'xx'`.
 
-Each codepoint read starts scanning at the beginning of its source String.
-Repeated indexed reads are therefore repeated scans, not constant-time random
-access. The mapping, slice and reversal paths also construct temporary Tables
-and Strings; they are not in-place transformations or single-pass byte-buffer
+Mapping, slicing and reversal construct their results without modifying the
+input String. Result construction uses the shared language-allocation budget
+and executes BIOS instructions and calls; these are not in-place byte-buffer
 operations.
 
 ## `string.format` {#sec-bios-string-stringformat}
@@ -423,9 +415,9 @@ Number arithmetic and value categories follow [Values and numeric instructions](
 
 Builds formatted text and, on normal completion, returns exactly one String. It does not return a character count or write into a caller-supplied buffer. Unused arguments are ignored.
 
-For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format. The main scan uses the initial format length; decimal width and precision parsing re-evaluate that length at each loop test.
+For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format.
 
-**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. General-uppercase conversion and substring operations used by precision-limited `%s` and general-format zero stripping can also construct temporary Tables. These Tables use the [CPU's maintained-length rules](cpu.md#sec-cpu-stored-length).
+**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The [CPU's maintained-length rules](cpu.md#sec-cpu-stored-length) also apply to the ordinary Table operations used during formatting.
 
 
 ### Example: formatted text {#sec-bios-string-example-formatted-text}
@@ -584,9 +576,7 @@ own.
 Choose finite widths and precisions appropriate to the output. Large
 padding and decimal precision create more text and require more processing.
 Positive-infinite precision prevents the scaling loop from progressing;
-positive-infinite width can prevent repetition from completing. String
-codepoint access is sequential, so repeated selections at distant positions
-also repeat the intervening traversal.
+positive-infinite width can prevent repetition from completing.
 
 ## Pattern language {#sec-bios-string-pattern-language}
 
@@ -795,7 +785,7 @@ Pattern operations save their installation-time `byte`, `sub`, `concat`,
 use current global `error`. Changing a helper's public binding leaves the
 saved reference unchanged, while any globals used by that helper remain live.
 
-Pattern search can backtrack and try multiple candidate positions. Codepoint reads scan from the beginning rather than providing constant-time random access. Pattern size, nesting and input therefore affect work; there is no pattern-local work-step or recursion-depth limit.
+Pattern search can backtrack and try multiple candidate positions. Pattern size, nesting and input therefore affect work; there is no pattern-local work-step or recursion-depth limit.
 
 ### `string.match` {#sec-bios-string-stringmatch}
 
@@ -1239,10 +1229,9 @@ later error can follow earlier reads, conversions and argument selections.
 ### Work and interface boundaries {#sec-bios-string-work-and-interface-boundaries}
 
 Packet size and field kind determine the processing and temporary
-language storage required. Character access scans from the String's
-beginning; integer fields convert their digits and floating fields perform
-word conversion. Large fixed-width text fields construct correspondingly
-large Strings.
+language storage required. Integer fields convert their digits and
+floating fields perform word conversion. Large fixed-width text fields
+construct correspondingly large Strings.
 
 Each `string.byte` or `string.char` invocation adds its two-cycle primitive
 surcharge, in addition to the executed BIOS instructions and ordinary calls.

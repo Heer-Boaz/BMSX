@@ -479,9 +479,9 @@ Do not use unrequested DMA writes to probe readiness.
 A CPU DATA read removes one output FIFO word when available, retains that word in DATA,
 and advances the internal output-read count modulo 2^32.
 If DMA owns the DATA read port, a CPU read returns the retained word immediately:
-it neither removes output nor performs the completion or scheduling checks below.
+it neither removes output nor changes completion, request state or decoding progress.
 Without that ownership, an empty output FIFO also returns the retained word,
-but the read still performs those checks.
+but the read still updates completion, request state and further decoding.
 Consequently, a repeated DATA value is not evidence that another output word was generated.
 
 DECODED_WORD_COUNT counts decoded payload words, modulo 2^32.
@@ -512,13 +512,14 @@ This release condition differs from the one-free-word test for a new CPU write:
 an already waiting write is not released merely because one FIFO slot becomes free.
 
 Each DMA word still performs its DATA latch, FIFO and counter operation.
-An input DMA write without BLOCK_END then returns without scheduling more decoding
-or recomputing the IMGDEC requests.
-The block-ending input write performs those operations after submitting its word.
-An output DMA read without BLOCK_END likewise returns after its DATA operation,
-without testing completion, scheduling more decoding or recomputing the requests.
-The block-ending output read performs those operations after removing its word.
-CPU DATA accesses perform the corresponding scheduling and request-update work immediately,
+The decoder uses the updated input availability and request state at the
+block-ending input write, after that write submits its word. Earlier input
+writes in the block change DATA, the FIFO and the submitted count without
+starting further decoding or updating the request state.
+Likewise, the block-ending output read updates completion, output-space
+availability and request state after removing its word. Earlier reads in the
+block change DATA, the FIFO and the output-read count without making those
+updates. CPU DATA accesses apply the corresponding updates immediately,
 except for the read-port ownership case described above.
 
 #### Successful completion and stopped output {#sec-imgdec-successful-completion-and-stopped-output}
@@ -529,10 +530,10 @@ completion is tested against the output-read count, including any word just remo
 Success requires that count to equal the entire expected output, including headers.
 At that point the output stage must be complete, the decoder must be at its token state,
 INPUT_WORDS_RECEIVED must equal INPUT_WORD_COUNT, and the input FIFO must be empty.
-For DMA output, this completion check occurs only at BLOCK_END.
+For DMA output, this completion check occurs only at the end of a DMA block.
 
 A successful stop replaces STATUS with DONE; a format-error stop replaces it with FORMAT_FAULT.
-Both stops end active processing, cancel the pending decode batch, withdraw
+Both stops end active processing, cancel unfinished output work, withdraw
 both DMA requests and raise the IMGDEC interrupt. Waiting configuration writes
 can then proceed when the system-pause condition also permits them.
 Neither stop empties the FIFOs nor clears DATA or the programming registers.
@@ -582,19 +583,19 @@ Handle any pending central IRQ separately.
 
 ### Reset and system pause {#sec-imgdec-reset-and-system-pause}
 
-An IMGDEC unit reset cancels scheduled decoding and deasserts both IMGDEC DMA requests.
+An IMGDEC unit reset stops decoding and deasserts both IMGDEC DMA requests.
 It makes the unit inactive, empties both FIFOs, clears available history and resets all stream progress.
 It clears DATA, the four programming words, CONTROL and STATUS, and removes the system-pause request.
-The decoder returns to the initial magic-word phase and texture-header output stage;
-run, repeat, back-reference distance and scheduled-word state are cleared.
-History availability is reset; no history word remains valid for a new stream.
+The next stream starts with its magic word and texture header, with no
+retained run, repeat value or back-reference distance. No history word remains
+valid for a new stream.
 The central interrupt flag is not acknowledged by this unit reset.
 
 System pause preserves the active stream and FIFO contents. On a pause
 request, IMGDEC withdraws both DMA requests and holds new CPU DATA writes,
-configuration writes and output batches. A batch already in progress completes
-at its normal edge, after which the unit is quiescent. Either FIFO can still
-contain words, and STATUS can still indicate an active stream.
+configuration writes and new output work. Output work already in progress
+completes at its normal edge, after which decoding is paused. Either FIFO
+can still contain words, and STATUS can still indicate an active stream.
 
 On resume, decoding and request generation continue. A waiting configuration
 write still requires the stream to become inactive before it proceeds.
@@ -765,7 +766,7 @@ The decoder may wait for a missing header word, token, repeat value, or literal 
 
 After header parsing, IMGDEC advances any finished payload stage before selecting further work. It then observes output space in this order:
 
-1. If the output FIFO is full, it returns before inspecting a malformed tail.
+1. If the output FIFO is full, inspection of a malformed tail waits.
 2. If a generated header is pending, it waits for three free words, then emits that header without preparing a token.
 3. If all output stages are complete, it checks the exact completion conditions. Queued input or an unfinished token/run causes `FORMAT_FAULT`. If the input FIFO is empty and the decoder is between tokens but the received count has not reached the configured count, it waits for the remaining input rather than declaring exhaustion.
 4. Otherwise, it prepares or continues payload work.

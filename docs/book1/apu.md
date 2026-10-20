@@ -39,7 +39,7 @@ separates sample loading, command execution and playback.
 | Output cadence | 44,100 stereo frames per second |
 | Output components | Signed sixteen-bit left and right values |
 | System-cycle timebase | 33,868,800 cycles per second; 768 cycles per output frame |
-| Sample-RAM transfer budget | 1,058,400 words per second; 32 cycles per scheduled word |
+| Sample-RAM transfer budget | 1,058,400 words per second; 32 cycles per transferred word |
 
 The `40000000H` source range addresses private RAM for voice playback.
 CPU and DMA transfers use TRANSFER_DATA instead of accessing that range directly.
@@ -279,7 +279,7 @@ a file header.
 | SOURCE_BYTES | Byte extent of that region |
 | SOURCE_SAMPLE_RATE_HZ | Source rate in Hz, used with RATE_STEP_Q16 |
 | SOURCE_CHANNELS | Channel count used by the decoder |
-| SOURCE_BITS_PER_SAMPLE | Decoder selection: 4 for BADP, 16 for PCM16, otherwise the PCM8 branch |
+| SOURCE_BITS_PER_SAMPLE | Decoder selection: 4 for BADP, 16 for PCM16, otherwise PCM8 |
 | SOURCE_FRAME_COUNT | Number of source frames used for playback duration |
 | SOURCE_DATA_OFFSET | Byte displacement from SOURCE_ADDR to sample or compressed-block data |
 | SOURCE_DATA_BYTES | Retained data-byte metadata; not a decoder read bound |
@@ -308,7 +308,7 @@ ROM. Live source-field writes bind again using the selection at that access.
 See [Source fields are individually live](#sec-apu-source-fields-are-individually-live)
 and [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, “Cartridge sockets and mapped card devices”, under “Cartridge controller”]{.content-visible when-format="pdf"}.
 
-The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use the current bytes. BADP caches its current and previous decoded
+The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use the current bytes. BADP retains its current and previous decoded
 frames; edits to compressed bytes take effect when those bytes are decoded again.
 
 A failed binding raises SOURCE_RANGE (`00000102H`) with SOURCE_ADDR as detail;
@@ -555,7 +555,7 @@ PAUSE_SLOT changes a non-idle, unpaused voice to paused without discarding it. R
 
 A paused voice contributes no samples and consumes no phase, fade frames or filter history. Resume continues the retained cursor, gain, fade and histories. Selected-slot writes can nevertheless modify a paused voice, because it remains non-idle.
 
-Selected-slot reads and writes first advance audio through the current access cycle. A write then takes effect for later output; it cannot change samples already due through that cycle. These accesses are distinct from writing command staging words.
+Selected-slot reads observe the voice after all output-frame edges through the access cycle. A write takes effect for subsequent output frames; it cannot change samples already due through that cycle. These accesses are distinct from writing command staging words.
 
 ### Source fields are individually live {#sec-apu-source-fields-are-individually-live}
 
@@ -605,9 +605,9 @@ NONE captures nothing and leaves the staged parameters intact. An unrecognized
 word records BAD_CMD and clears staging to defaults. A latched APU fault does
 not itself block later valid commands.
 
-At command execution, the APU first completes audio due through that cycle,
-then executes the queued commands in FIFO order. Consecutive commands can
-execute without an output frame between them. Use SAMPLE_SEQUENCE when an
+Queued commands execute in FIFO order, after the output-frame edges due
+through their execution cycle. Consecutive commands can execute without an
+output frame between them. Use SAMPLE_SEQUENCE when an
 operation requires an elapsed number of output frames.
 
 ### Preserve FIFO entries when every command matters {#sec-apu-preserve-fifo-entries-when-every-command-matters}
@@ -619,8 +619,8 @@ space nor reports a FIFO-full fault. Use the reported space before submitting a
 burst that must preserve every command.
 
 Queue-counter reads return the current queue state. They leave commands
-queued; STATUS and selected-slot accesses synchronize audio through their
-access cycle as described below.
+queued; STATUS and selected-slot reads observe output-frame progress through
+their access cycle as described below.
 
 ### Command words {#sec-apu-command-words}
 
@@ -649,7 +649,7 @@ gain word in an inactive bank; that write does not start playback.
 Write staging SLOT to select one bank through its low four bits. Only that
 staging write immediately changes selection; the other staging parameter
 writes merely prepare a later command. The selected window reads and writes
-the bank itself, after synchronizing preceding output to the access cycle.
+the bank itself, with output-frame progress observed through the access cycle.
 A live write does not enqueue CMD, reset staging or activate an idle slot.
 
 Select a bank through staging SLOT at `08000148H`. The selected-window SLOT
@@ -778,12 +778,12 @@ BLOCK_FRAMES=2, BLOCK_BYTES=9, initial predictor=1000 and index=0. Code 1 comes 
 
 ### Seeking and reverse playback {#sec-apu-seeking-and-reverse-playback}
 
-A seek clears both decoded-frame caches. Starting from the seek-table choice, decoding advances through block headers to the block containing the requested frame, then applies the forward nibble recurrence through that frame. A request for the current or previous cached frame reuses that decoded pair. An earlier uncached request seeks again and decodes forward.
+A seek discards both retained decoded frames. Starting from the seek-table choice, decoding advances through block headers to the block containing the requested frame, then applies the forward nibble recurrence through that frame. A request for the current or previous retained frame reuses that decoded pair. An earlier request seeks again and decodes forward.
 
-With negative RATE_STEP_Q16, the cursor requests earlier frames. An uncached
-frame is obtained by seeking to an earlier entry and decoding forward through
-it. Closely spaced seek entries reduce the amount of compressed data needed
-for these backward requests.
+With negative RATE_STEP_Q16, the cursor requests earlier frames. A frame not
+already retained is obtained by seeking to an earlier entry and decoding
+forward through it. Closely spaced seek entries reduce the amount of
+compressed data needed for these backward requests.
 
 ## Sample RAM transfer {#sec-apu-sample-ram-transfer}
 
@@ -806,7 +806,7 @@ read it. SOURCE_ADDR cannot name that main-RAM buffer: first copy its bytes
 through TRANSFER_DATA into private sample RAM, then give PLAY the corresponding
 `40000000H + byte_offset` source address. CPU stores in MANUAL_WRITE mode write
 sample RAM directly. DMA uploads instead fill the transfer FIFO, from which
-the APU schedules RAM writes.
+the APU transfers words into sample RAM.
 
 At DMA DONE, the final words can still be in that FIFO. Starting playback then
 can make the voice read old sample-RAM bytes where the new sound's tail belongs.
@@ -828,14 +828,14 @@ shows the requested data and the surplus separately.
 
 The APU contains 512 KiB of private sample RAM: 524,288 bytes or 131,072 four-byte words. Reset clears it to zero. A sample-source descriptor addresses these bytes at 40000000H–4007FFFFH inclusive. A nonempty descriptor must fit entirely within this range; descriptor binding neither wraps an overlong range nor requires word alignment.
 
-This source-address range is **not a CPU load/store aperture**. An ordinary CPU word read there returns zero and raises system bus fault UNMAPPED = 1. A word write raises that fault without changing sample RAM. Use the transfer port to write or read back the private RAM.
+This source-address range is **not a CPU load/store aperture**. An aligned CPU word read or write there raises system bus fault UNMAPPED = 1 without accessing sample RAM. An ordinary CPU load takes the resulting exception rather than returning sample data. Use the transfer port to write or read back the private RAM.
 
 | Address | Register | Function |
 |---|---|---|
 | 080001E8H | TRANSFER_ADDRESS | Program transfer offset; read raw programmed word |
 | 080001ECH | TRANSFER_DATA | CPU data latch or DMA FIFO port |
 | 080001F0H | TRANSFER_CONTROL | Program transfer mode; read raw programmed word |
-| 08000178H | STATUS | Read transfer requests and scheduled-service state |
+| 08000178H | STATUS | Read transfer requests and transfer-in-progress state |
 
 Writing TRANSFER_ADDRESS retains the entire word for readback and loads a separate moving byte offset:
 
@@ -877,11 +877,14 @@ DMA DATA writes also replace the latch. In DMA_WRITE they append to the FIFO if 
 
 The controller admits a block only when both its read and write request selectors pass. FORCE = 0 always passes; DISABLED = 15 never passes. Once admitted, every word in that block executes even if the APU request drops after the first word. Requests gate **whole blocks**, not individual ready words. Use the appropriate APU selector, the intended transfer mode and a fixed TRANSFER_DATA endpoint; FORCE cannot override the latch, overflow or empty-read behavior above.
 
-The final source access and final destination access of each admitted block carry BLOCK_END. In DMA_WRITE, that edge attempts to schedule FIFO-to-RAM service; in DMA_READ, it attempts a RAM-to-FIFO refill. It occurs for intermediate blocks as well as the block that finishes a channel. It is not synonymous with channel DONE.
+At the end of each DMA block, DMA_WRITE starts an eligible FIFO-to-RAM transfer
+and DMA_READ starts an eligible RAM-to-FIFO refill. This applies to intermediate
+blocks as well as the block that finishes a channel. It is not synonymous with
+channel DONE.
 
-With no batch pending, DMA_WRITE schedules the FIFO count then present. DMA_READ schedules the free capacity, 16 minus that count. Zero words schedule nothing. The scheduled count and deadline are fixed; later scheduling attempts neither enlarge nor reprice them. At completion, all admitted words transfer in FIFO order, the offset advances per word, requests update, and another batch may be scheduled from that completion deadline.
+With no batch in progress, DMA_WRITE starts a batch containing the FIFO count then present. DMA_READ starts a batch filling the free capacity, 16 minus that count. Zero words start no transfer. A batch's word count and completion cycle are fixed when it starts; later FIFO activity does not change either. The batch transfers words in FIFO order and advances the offset per word. At completion, requests update and another eligible batch can start.
 
-The offset is **not captured with the batch**. Writing TRANSFER_ADDRESS while service is pending retargets that batch to the new offset, unless the batch is already due at the access cycle. Changing mode instead cancels it.
+The offset is **not captured with the batch**. Writing TRANSFER_ADDRESS while a batch is in progress retargets that batch to the new offset, unless the batch is already due at the access cycle. Changing mode instead cancels it.
 
 ### Status and CPU port ownership {#sec-apu-status-and-cpu-port-ownership}
 
@@ -890,7 +893,7 @@ The offset is **not captured with the batch**. Writing TRANSFER_ADDRESS while se
 | 7 | 00000080H | DMA_REQUEST: read request OR write request |
 | 8 | 00000100H | DMA_READ_REQUEST |
 | 9 | 00000200H | DMA_WRITE_REQUEST |
-| 10 | 00000400H | TRANSFER_BUSY: a RAM batch is scheduled |
+| 10 | 00000400H | TRANSFER_BUSY: a RAM batch is in progress |
 
 TRANSFER_BUSY is not a mode indicator. DMA_WRITE with an empty FIFO can request a block while TRANSFER_BUSY is clear. DMA_READ with a full FIFO can likewise request a block without pending RAM service. STATUS BUSY, bit 2, concerns active voices or queued commands; it is not transfer completion.
 
@@ -898,9 +901,9 @@ A CPU DATA write waits while either busy DMA channel owns DATA as its exact read
 
 ### Completing uploads and downloads {#sec-apu-completing-uploads-and-downloads}
 
-For upload, program the offset, select DMA_WRITE, and DMA to the fixed DATA port using APU_WRITE admission. DMA channel DONE reports completion of the controller's final mapped accesses and count/address updates; its DMA IRQ does not report sample-RAM commit. Wait for the final scheduled batch to finish before changing mode or using the new bytes. In particular, a mode change immediately after DONE can discard the final upload batch.
+For upload, program the offset, select DMA_WRITE, and DMA to the fixed DATA port using APU_WRITE admission. DMA channel DONE reports completion of the controller's final mapped accesses and count/address updates; its DMA IRQ does not report sample-RAM commit. Wait for the final batch to finish before changing mode or using the new bytes. In particular, a mode change immediately after DONE can discard the final upload batch.
 
-For download, program the offset before selecting DMA_READ. Filling the FIFO costs RAM-service time; APU_READ asserts only when all 16 words are available. DMA reads dequeue those prefetched words. Final BLOCK_END can schedule further prefetch even when the channel reaches DONE. After receiving the desired words, select STOP to cancel unwanted prefetch. CPU DATA reads cannot drain the FIFO. The transfer unit has no separate START/DONE register or transfer-completion IRQ.
+For download, program the offset before selecting DMA_READ. Filling the FIFO costs sample-RAM transfer time; APU_READ asserts only when all 16 words are available. DMA reads dequeue those prefetched words. The final DMA block can start further prefetch even when the channel reaches DONE. After receiving the desired words, select STOP to cancel unwanted prefetch. CPU DATA reads cannot drain the FIFO. The transfer unit has no separate START/DONE register or transfer-completion IRQ.
 
 A nonzero DMA count sets channel BUSY at START. Zero count reaches DONE at START without accessing DATA. Neither DONE nor TRANSFER_BUSY = 0 proves that the intended RAM bytes received valid data. An admitted DMA block is not aborted by a system bus fault and can still finish with DONE and its IRQ after accesses to an unmapped or read-only destination.
 
@@ -913,7 +916,7 @@ read and returns its low eight bits; it does not select a byte lane. STATUS
 rejects word writes with READ_ONLY = 3. These system bus faults are distinct
 from the APU fault latch.
 
-Reset clears the programmed transfer words, offset, latch, FIFO contents/count and timing state, selects STOP, cancels service and deasserts both request lines. Reset clears sample RAM as well; ordinary STOP and mode changes preserve it.
+Reset clears the programmed transfer words, offset, latch, FIFO contents/count and timing state, selects STOP, cancels the transfer and deasserts both request lines. Reset clears sample RAM as well; ordinary STOP and mode changes preserve it.
 
 ## Clocks and transfer timing {#sec-apu-clocks-and-transfer-timing}
 
@@ -937,13 +940,11 @@ independently of that path, so all sixteen slots retain the 44,100-Hz output
 cadence during sample transfers. Transfer-mode changes leave the output-frame
 clock running.
 
-For a scheduled batch of N words:
+For a batch of N words:
 
 **batch completion cycle = batch start cycle + 32 × N**
 
-All N words transfer together at completion. They do not become visible one at
-a time during the interval. Rewriting the same mode preserves a pending batch;
-changing mode cancels it.
+Rewriting the same mode preserves a pending batch; changing mode cancels it.
 
 ### Sample sequence and edge order {#sec-apu-sample-sequence-and-edge-order}
 
@@ -974,12 +975,12 @@ The following controlled upload transfers 20 words. Before cycle 0, the address 
 | Cycle | Event |
 |---:|---|
 | 0 | Admit the first 16-word DMA block. Its cost is 8 × 16 + 4 = 132 cycles. |
-| 132 | DMA supplies 16 FIFO words. BLOCK_END schedules 16 words of RAM service: 512 cycles. |
-| 644 | The first 16 words commit together. The empty FIFO requests the remaining four DMA words; their block costs 8 × 4 + 4 = 36 cycles. |
-| 680 | DMA supplies the four-word tail, schedules 128 cycles of RAM service, and reaches channel DONE. The tail is not yet in sample RAM. |
+| 132 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
+| 644 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 8 × 4 + 4 = 36 cycles. |
+| 680 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
 | 808 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
 
-Here, DMA DONE occurs at cycle 680, while final RAM commit occurs at cycle **132 + 512 + 36 + 128 = 808**. Switching to STOP at DMA DONE would cancel the tail's scheduled commit.
+Here, DMA DONE occurs at cycle 680, while final RAM commit occurs at cycle **132 + 512 + 36 + 128 = 808**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
 
 ## Worked download: requested data and surplus prefetch {#sec-apu-worked-download-requested-data-and-surplus-prefetch}
 
@@ -1018,7 +1019,7 @@ Sample transfer costs 32 cycles per word. The initial prefill always contains 16
 | 517 | DMA writes W0–W3; DONE | W4–W15: 12 words | O + 64 | Surplus prefill 4, 128 cycles |
 | 645 | Surplus prefill 4 | W4–W19: 16 words | O + 80 | None |
 
-DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block schedules prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
+DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block starts prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
 
 After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1174, or 645 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. The STOP cycles refer to register-write edges. A polling loop adds its own
 instruction time before that write.
@@ -1087,9 +1088,9 @@ slot, and EVENT_SOURCE_ADDR records that slot's source address from before its
 bank was cleared. EVENT_SEQ advances modulo 2³². All event words are published
 before the central APU interrupt request, bit 5 (`00000020H`), is raised.
 
-The event registers hold the latest end. If slots 0 and 1 end during the same
-audio advancement, EVENT_SEQ advances twice and EVENT_SLOT becomes 1. The
-central pending bit can combine both requests. Compare the sequence to detect
+The event registers hold the latest end. If slots 0 and 1 end in that order
+before software reads the registers, EVENT_SEQ advances twice and EVENT_SLOT
+becomes 1. The central pending bit can combine both requests. Compare the sequence to detect
 new ends and inspect ACTIVE_MASK to determine which slots remain occupied;
 intermediate event addresses are overwritten.
 
@@ -1136,8 +1137,11 @@ format and payload. Command-queue overflow is separate from these faults: a
 full queue replaces its oldest entry, so check CMD_FREE before a required burst.
 
 Ordinary CPU access to `40000000H` does not reach sample RAM; it raises the
-system UNMAPPED fault. Invalid mapped I/O widths or alignment use the system
-UNALIGNED_IO fault. Mapped writes to the read-only APU ports use system
+system UNMAPPED fault. The CPU checks ordinary load/store alignment first;
+misalignment takes an address-error exception before mapped I/O is reached.
+After that check, invalid I/O widths or slot alignment use system UNALIGNED_IO,
+as described under [Completing uploads and downloads](#sec-apu-completing-uploads-and-downloads).
+Mapped writes to the read-only APU ports use system
 READ_ONLY and do not change those ports. These accesses report through the system bus-fault registers, separately from
 the APU BAD_CMD/SOURCE_RANGE latch.
 
@@ -1224,8 +1228,8 @@ selected-window write effects.
 | `080001fcH` | CMD_CAPACITY | Read; writes have no queue effect | `00000010H` |
 | `08000200H` | SAMPLE_SEQUENCE | Read; writes have no clock effect | `00000000H` |
 
-STATUS reads synchronize preceding audio to their access cycle.
-SAMPLE_SEQUENCE also synchronizes and returns the low 32 bits of elapsed output
+STATUS reads observe output-frame progress through their access cycle.
+SAMPLE_SEQUENCE includes the same progress and returns the low 32 bits of elapsed output
 frames, even with no active slots. Event words, ACTIVE_MASK and
 SELECTED_SOURCE_ADDR are retained mirrors, not read-to-clear operations.
 
@@ -1253,7 +1257,7 @@ SELECTED_SOURCE_ADDR are retained mirrors, not read-to-clear operations.
 | 7 | DMA_REQUEST | DMA read request OR DMA write request |
 | 8 | DMA_READ_REQUEST | DMA_READ mode and full transfer FIFO |
 | 9 | DMA_WRITE_REQUEST | DMA_WRITE mode and empty transfer FIFO |
-| 10 | TRANSFER_BUSY | A sample-RAM transfer batch is scheduled |
+| 10 | TRANSFER_BUSY | A sample-RAM transfer batch is in progress |
 | 11–31 | Unassigned | Read zero |
 
 TRANSFER_CONTROL bits 1:0 select STOP=0, MANUAL_WRITE=1, DMA_WRITE=2 or

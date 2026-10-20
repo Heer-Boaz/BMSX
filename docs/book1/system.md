@@ -63,18 +63,18 @@ The installed system-cycle frequency is 33,868,800 Hz. `TIME_MS` reports elapsed
 |---|---|---|---|---|
 | `0x08010228` | `TIME_MS` | R | Bits 31–0: unsigned whole milliseconds, modulo 2^32 | `0x00000000` after hardware time reset |
 | `0x0801022c` | `FRAME_MS_Q16` | R | Bits 31–0: unsigned Q16 milliseconds; bits 15–0 are fractional | `0x00141893` at installed hardware reset; zero while stopped |
-| `0x08010238` | `CYCLES_PER_FRAME` | R | Bits 31–0: unsigned system-cycle budget for a VBlank period | `0x000a62b4` at installed hardware reset; zero while stopped |
+| `0x08010238` | `CYCLES_PER_FRAME` | R | Bits 31–0: unsigned system-cycle count for a VBlank period | `0x000a62b4` at installed hardware reset; zero while stopped |
 
 These reset-state readouts apply before firmware advances execution. They are
-not fixed future budgets or values promised at cartridge entry. The two frame
-words are derived from the programmed beam and its fractional phase, not separate
-constant registers.
+not constants guaranteed at cartridge entry. The two frame words are derived
+from the programmed beam and its fractional phase, not separate constant
+registers.
 
 Use aligned word reads for these registers. Writes are read-only-access faults. The reads are independent samples, not an atomic snapshot of all three quantities.
 
 `FRAME_MS_Q16` describes the currently programmed beam period. Divide its unsigned word by `0x00010000` to express the reported value in milliseconds. The refresh value used to form this report is first truncated to whole millionths of a hertz; the Q16 period is then truncated and reduced to its low 32 bits. A sufficiently long period can therefore wrap the reported word without shortening the programmed beam period.
 
-`CYCLES_PER_FRAME` is a whole-period budget, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive budgets differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
+`CYCLES_PER_FRAME` is a whole-period cycle count, not the number of cycles remaining until the next VBlank. Fractional beam timing can make successive counts differ by one cycle. Reprogramming a beam-timing word with different bits immediately changes operational timing and restarts the beam; writing identical bits does not. These SYSTEM words describe programmed timing, not confirmation that a new image has been presented. When beam timing is stopped, both frame-timing words are zero; `TIME_MS` is not stopped with them.
 
 ### Software timing {#sec-system-software-timing}
 
@@ -211,12 +211,12 @@ depends on that work. Main RAM, VRAM and APU sample RAM remain shared storage.
 
 | Entry boundary | Condition before proceeding | Cartridge consequence |
 |---|---|---|
-| Producer boundary | GEO is no longer BUSY; IMGDEC has no scheduled decode batch | GEO may complete normally or report its normal error. IMGDEC need not finish the stream or empty its FIFOs. |
-| DMA boundary | No admitted block and no DMA service in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
+| Producer boundary | GEO is no longer BUSY; IMGDEC decoding is paused | GEO may complete normally or report its normal error. IMGDEC need not finish the stream or empty its FIFOs. |
+| DMA boundary | No block remains in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
 | GPU boundary | Ingress has stopped, no command completion is pending, readback is idle or its unread result is complete, and no commands remain queued for rendering | The completed unread result and words waiting behind it can be retained. An unfinished readback must complete before this boundary; the fence does not consume pixels. |
 
 At entry's first stage, new GEO CMD, DMA TRIGGER and GPU GP1 writes are held.
-IMGDEC lowers both DMA requests and stops after its scheduled decode batch.
+IMGDEC lowers both DMA requests and pauses after decoding already in progress.
 Shared RAM and other device words remain accessible under their normal rules.
 The ordinary request path allows CPU execution during producer quiescence;
 software observing SUPERVISOR_ACTIVE can therefore still be running before NMI.
@@ -229,17 +229,16 @@ The following preservation rules apply to that activated context:
 |---|---|---|
 | IRQ | Cartridge FLAGS and MASK are retained; supervisor FLAGS and MASK start at zero. Leave restores the retained cartridge words. | Supervisor pending bits are not merged into the restored cartridge word. A request explicitly directed to the retained cartridge bank can accumulate there. |
 | DMA | Channel register words and the next-channel arbitration position are retained. Supervisor channels start clear. Leave restores the cartridge channels and resumes arbitration. | Payload RAM is not copied. Quiescing one admitted block is not completion of the entire transfer. |
-| GPU | Cartridge drawing/display registers, both ingress FIFOs, partial packet/image-load/polyline assembly, and unread readback bytes, descriptor, cursor and GPUREAD latch are retained and restored. Supervisor starts with empty ingress and readback state. | Parked cartridge readback does not drive the supervisor DMA request. VRAM remains shared; restoring the cartridge bank does not undo supervisor writes to framebuffer or texture bytes. |
+| GPU | Cartridge drawing/display registers, both ingress FIFOs, partial packet/image-load/polyline assembly, unread readback pixels and read position, and the GPUREAD latch are retained and restored. Supervisor starts with empty ingress and readback state. | Retained cartridge readback does not drive the supervisor DMA request. VRAM remains shared; restoring the cartridge bank does not undo supervisor writes to framebuffer or texture bytes. |
 | PCRTC | Programmed and presented composition words are retained separately. | Beam timing words and beam phase are not part of this composition bank. |
 | GEO | The current job reaches a terminal phase; new CMD admission remains held until leave. | There is no separate supervisor GEO job/register bank. Its ordinary result and fault words remain meaningful. |
-| IMGDEC | Stream state remains in place at a scheduled-batch boundary and can resume on leave. | Quiescence is not stream DONE, and there is no separate supervisor decoder bank. |
-| APU | The voice clock is held after synchronization to the entry cycle; queued output samples are discarded. | Voice state is not reset or separately banked. Already scheduled sample-transfer work can still complete. |
+| IMGDEC | Decoding pauses with stream state retained and can resume on leave. | Quiescence is not stream DONE, and there is no separate supervisor decoder bank. |
+| APU | Playback pauses at supervisor entry, retaining the voice positions. | Voice state is not reset or separately banked. Sample-transfer work already in progress can still complete. |
 | INPUT | One shared register file, pending ARM request and sample sequence remain in use, including the BIOS monitor's captures. | There is no cartridge INPUT bank to restore on leave. Obtain a new sample on resumption; see [BIOS handoff and supervisor sampling](input.md#sec-input-bios-handoff-and-supervisor-sampling). |
 
-While the APU voice clock is held, voice playback position stays at the synchronized
-entry point. Leave reanchors voice timing and resumes playback from that
-position. The separate sample-transfer engine can finish accepted FIFO/RAM
-batches during the hold.
+While APU playback is paused, voice positions remain unchanged. Leave resumes
+playback from those positions. The separate sample-transfer engine can finish
+accepted FIFO/RAM batches during the pause.
 
 Supervisor PCRTC composition initially routes the cartridge's **presented**
 circuit-1 source and display words into circuit 2, copies its presented background

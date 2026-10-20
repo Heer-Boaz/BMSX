@@ -74,8 +74,8 @@ local result = chunk()
 `result` is 42. `compile_syntax` has no load-style returned-error wrapper; use
 `pcall(lua_compiler.compile_syntax, ...)` when a protected result is required.
 A generated symbol can be shared as a key, but its declarations and each use
-must be separate syntax nodes. Compilation annotates those occurrences in
-place, so construct a fresh tree for each attempt. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
+must be separate syntax nodes. Compilation consumes the tree and may modify
+its nodes, so construct a fresh tree for each attempt. The [factory reference](#sec-bios-loader-constructing-and-compiling-syntax-trees)
 specifies constructors, node ownership, result counts and diagnostics.
 
 ### Names, environments and captured bindings {#sec-bios-loader-name-binding-and-retained-dependencies}
@@ -136,14 +136,14 @@ even if a returned closure retains its code.
 
 Runtime-compiled procedures occupy the BIOS code arena in main RAM. One
 compilation places its root procedure, nested procedures, capture descriptors
-and instructions in one block. Closures retain the block and its associated
-constant Table while the code remains in use.
+and instructions in one block. Its closures retain the complete block and
+the constants needed to execute it.
 
 #### What keeps compiled code alive {#sec-bios-loader-what-keeps-compiled-code-alive}
 
-The root closure retains the compilation's constant-pool table, which owns the code allocation. That reference remains valid after the loader returns.
+The root closure retains the compilation's code allocation after the loader returns.
 
-Every child closure also retains the allocation owner, in addition to its required captures. An escaping child therefore keeps the entire compilation's code block alive, even if the root closure is no longer reachable or the child needs only some of the compilation's constants. Individual functions within that block are not reclaimed separately.
+Every child closure also retains the complete code allocation, in addition to its required captures. An escaping child therefore keeps the entire compilation's code block alive, even if the root closure is no longer reachable or the child needs only some of the compilation's constants. Individual functions within that block are not reclaimed separately.
 
 Keep a closure reachable while its compiled code is needed. Once all
 references retaining that compilation become unreachable, collection makes
@@ -175,7 +175,7 @@ environment or promise when an unreachable allocation will be reclaimed.
 
 #### Environments and borrowed bindings {#sec-bios-loader-environments-and-borrowed-bindings}
 
-When a compiled identifier requires an environment lookup, the constant pool retains the actual supplied environment value and the key. This is not a private copy of the environment. Supplying an environment that is never added to the constant pool does not guarantee that compilation will retain it.
+When a compiled identifier requires an environment lookup, its closure retains the actual supplied environment value, not a private copy. Supplying an environment that the compiled procedure never uses does not guarantee that the closure will retain it.
 
 An external binding retains its location and read/write accessors, not a copied binding value. Keeping those accessors alive does not extend the lifetime of a borrowed frame.
 
@@ -227,8 +227,8 @@ occurs. This is not an exact-mode-name or allowed-character check.
 | `""` or `"b"` | Reject before parsing. |
 
 Acceptance never selects a binary decoder. The scan uses one-based String
-codepoint positions, not UTF-8 byte offsets. Non-String values encounter the same
-length and String-codepoint operations, not a separate mode-type validator. A
+codepoint positions, not UTF-8 byte offsets. Non-String values undergo the same
+length and String-codepoint operations. A
 Table supplies its maintained length to the length operation. In particular,
 `false` reaches a length failure before parsing, with the reason String
 `"Attempted to get length of an unsupported value."`.
@@ -274,7 +274,7 @@ Program in this order:
 Generated environment-name accesses retain the supplied language value, not a
 copied set of globals. Environment-name reads and writes perform indexed operations
 directly against that value. `false` is a supplied environment, not an omission:
-it selects this route too. The loader does not add an environment-type check.
+it selects this route too; indexed operations on it follow the ordinary value-kind rules.
 Without an environment, generated global accesses use retained global-accessor
 function values and textual keys. Reassigning public `getglobal` or `setglobal`
 does not replace those retained dependencies.
@@ -321,9 +321,9 @@ for every shortened source call or general source-input acceptance.
 The retained protected-call primitive has a base charge of **4 cycles**, with
 zero additional primitive charge per argument or return value. This is an
 incremental protected-call charge, not the duration of `load`. It excludes the
-loader's own execution, mode scanning, parsing, semantic analysis, code
-generation, linking, allocations, callees, instruction reads and writes, and
-caller call/return work. No fixed total compilation time follows from it.
+loader's own execution, source processing, code preparation, storage allocation,
+callees, instruction reads and writes, and caller call/return work. No fixed
+total compilation time follows from it.
 
 ## Runtime-loaded source language {#sec-bios-loader-runtime-loaded-source-language}
 
@@ -526,7 +526,7 @@ The absence of a statement form does not reserve every associated spelling as a 
 
 Lexical and parse diagnostics use `[load:<chunk_name>] <message> at <line>:<column>`. Representative messages include `upper-case identifiers are not allowed`, `unfinished string`, `invalid numeric literal exponent`, `expected '<token name>'`, `unsupported expression`, and `expected assignment or function call`.
 
-The whole block is parsed before binding and compilation. Binding also rejects a misplaced `return`, `break` outside a loop, missing constant initializers, direct assignment to constants, duplicate function parameters, and member/index paths without a visible-name root. A function or expression requiring too many registers is rejected with `[load:<chunk_name>] function or expression needs too many registers`, without a source position appended by that diagnostic.
+The complete block must have valid syntax. Compilation also rejects a misplaced `return`, `break` outside a loop, missing constant initializers, direct assignment to constants, duplicate function parameters, and member/index paths without a visible-name root. A function or expression requiring too many registers is rejected with `[load:<chunk_name>] function or expression needs too many registers`, without a source position appended by that diagnostic.
 
 ## Constructing and compiling syntax trees {#sec-bios-loader-constructing-and-compiling-syntax-trees}
 
@@ -552,7 +552,7 @@ lua_compiler.compile_syntax(chunk, chunk_name, environment, external_scope)
 | `external_scope` | Optional external-name access interface, described below. |
 
 
-Successful compilation returns **one root callable closure**. It does not call that closure. The root has no syntax parameters. Compilation binds and compiles every nested function and links the resulting program; it skips text parsing, not the remaining compilation work. There is no `mode` argument on this entry point. Compilation errors raise directly: this is not an interface returning `nil, message` on failure.
+Successful compilation returns **one root callable closure**. It does not call that closure. The root has no syntax parameters, and its nested functions are compiled with it. This route accepts constructed syntax rather than text. There is no `mode` argument on this entry point. Compilation errors raise directly: this is not an interface returning `nil, message` on failure.
 
 ### Node ownership, lists, and locations {#sec-bios-loader-node-ownership-lists-and-locations}
 
@@ -562,7 +562,7 @@ Every tagged node has `kind`, `line = 1`, and `column = 1`, in addition to the f
 
 A node is an **owned syntax occurrence**. Construct a fresh node for every declaration, reference, expression, and statement occurrence. Do not put the same node into multiple positions or trees. Share a generated-symbol key when several occurrences must name the same binding, not the identifier node carrying that key.
 
-Binding and compilation annotate nodes in place. Do not recompile an already annotated tree, retain its nodes for another tree, or retry a failed compilation with the same tree. Failure can occur after annotations have been written. Construct a fresh tree for each compilation attempt.
+Compilation consumes the supplied syntax occurrences and may modify them, including before a failure. Do not recompile the tree, reuse its nodes in another tree, or retry a failed compilation with the same tree. Construct a fresh tree for each compilation attempt.
 
 All lists in this interface are ordinary consecutive, 1-based Tables. They are consumed through `#list` and `list[index]`; a packed table's `.n` field has no role. Pass `{}` for an empty statement, parameter, argument, return-expression, or clause list. There are no default empty lists or hole-filling rules.
 
@@ -592,7 +592,7 @@ The names below are members of `lua_compiler.syntax_factory`.
 | `nil_literal()` | `kind = s.nil_literal_expression`; no value field. |
 | `literal(value)` | Selects the number, string, or boolean constructor according to `type(value)`. |
 
-Supply the corresponding language value to each literal constructor. Number and string values become program constants or compiler-selected numeric immediates. Boolean emission uses the value’s truth of the stored value. `literal(nil)` is **not** equivalent to `nil_literal()`: the dispatch has no nil entry and raises during construction. Tables and functions are also outside `literal`'s dispatch. Use `nil_literal()` to construct nil.
+Supply the corresponding language value to each literal constructor. Number and String nodes supply those values; a Boolean node supplies the truth value of its stored `value`. `literal(nil)` is **not** equivalent to `nil_literal()`: it raises during construction, as do Table and function arguments to `literal`. Use `nil_literal()` to construct nil.
 
 ### Paths, calls, operators, and functions {#sec-bios-loader-paths-calls-operators-and-functions}
 
@@ -670,13 +670,13 @@ All 27 factory callables return one value. `compile_syntax` also returns exactly
 | Constructed use | Result handling |
 |---|---|
 | Call used in a single-value expression position | Requests one result. |
-| Call statement | Requests one result internally, then discards its temporary expression storage; the statement returns no language value. |
+| Call statement | Requests one result and discards it; the statement returns no language value. |
 | Final argument of another call | Expands the call's result tuple only when the final node is a call expression with truthy `expands_results`. |
 | Final expression of a return list | Uses the same call-kind and `expands_results` rule for tuple expansion. |
 | Fixed return list without a final expanding call | Returns its expression count. |
 | Empty return, or function fallthrough | Returns **one nil value**. |
 
-`call_expression` sets `expands_results = true`. To represent a final call restricted to one result, set that owned call node's **existing** `expands_results` field to `false` before compilation. There is no separate factory callable for this operation. It does not require a replacement node format or encoding helper.
+`call_expression` sets `expands_results = true`. To represent a final call restricted to one result, set that owned call node's `expands_results` field to `false` before compilation. There is no separate factory callable for this operation.
 
 ### Lexical names and captured bindings {#sec-bios-loader-lexical-names-and-captured-bindings}
 
@@ -684,11 +684,11 @@ Ordinary spelling strings obey lexical shadowing. Generated-symbol occurrences m
 
 Name resolution considers current locals and parameters, then visible enclosing bindings, which nested functions capture as upvalues. An unresolved **string** key then tries external names and finally the supplied environment or ordinary global access. An unresolved generated-symbol key raises instead of becoming a global.
 
-Nested functions inherit access to the supplied environment and external names. They do not acquire arbitrary locals from the BLua function that called `compile_syntax`. The synthetic root has no enclosing lexical function and an empty parameter list.
+Nested functions inherit access to the supplied environment and external names. They do not acquire arbitrary locals from the BLua function that called `compile_syntax`. The root has no enclosing lexical function and an empty parameter list.
 
 ### Environment and external-name access {#sec-bios-loader-environment-and-external-name-access}
 
-Every non-nil `environment` selects environment-name access. Generated reads and writes index the supplied value at execution; there is no environment-type check or snapshot of its entries. Without an explicit environment, named global access uses the compiler's captured global accessors, not mutable public replacement functions.
+Every non-nil `environment` selects environment-name access. Reads and writes index the supplied value at execution, under the ordinary indexing rules; its entries are not copied. Without an explicit environment, named global access uses the retained global accessors, not mutable public replacement functions.
 
 The consumed external access interface has this shape:
 
@@ -817,7 +817,7 @@ Semantic diagnostics use this form:
 Fresh factory nodes therefore report location `1:1`. Supplying a diagnostic chunk name is important: this route does not fill one in before error formatting.
 
 
-The following conditions explicitly raise during binding:
+The following conditions raise during compilation:
 
 | Condition | Rule |
 |---|---|
@@ -844,25 +844,14 @@ Excessive register requirements raise:
 ```
 
 
-Invalid `literal` dispatch raises during tree construction, before `compile_syntax` is called. Supply the node and argument forms listed in the factory tables, including
+Unsupported values passed to `literal` raise during tree construction, before `compile_syntax` is called. Supply the node and argument forms listed in the factory tables, including
 the call-statement and String operand restrictions. Incorrect node shapes
-can fail at a later binding or emission operation rather than at construction.
+can fail during compilation rather than at construction.
 
 
-Supply the constructor inputs listed above. The following fields are reserved
-for annotations written by BIOS compilation; do not supply precomputed values
-for them:
-
-| Area | Fields written by compilation |
-|---|---|
-| Name binding | `binding`, `upvalue`, `external_binding`, `environment_key`, `global_key`. |
-| Paths and constants | `key_value`, `constant_value`, `constant_index`, `accessor_constant_index`, `immediate_index`, `method_constant_index`, `immediate_number`. |
-| Numeric loops | `limit_local_slot`, `step_local_slot`, `zero_constant_index`. |
-| Functions | `semantic_state`, `local_count`, `function_address_constant_index`. |
-
-
-Compilation changes the owned syntax occurrences through these annotations.
-Construct a fresh tree for every attempt, including after failure.
+Supply the documented constructor fields, common location fields and
+`expands_results` field. Additional fields are reserved to BIOS
+compilation. Construct a fresh tree for every attempt, including after failure.
 
 ## Code-arena capacity and allocation {#sec-bios-loader-code-arena-capacity-and-allocation}
 
@@ -904,7 +893,7 @@ Reference arithmetic, not BLua source:
 These are emitted counts, not counts of user locals or source statements. The block calculation includes the 16-byte header and allocation rounding; a remainder smaller than 32 bytes is additionally consumed rather than split off.
 
 
-Each generated function has a ceiling of **16,384 total register slots**. This total includes required constants, the allocation owner where present, and temporaries. It is not a guarantee of 16,384 user locals or parameters, nor that every smaller programme will compile. Exceeding the ceiling raises:
+Each generated function has a ceiling of **16,384 total register slots**, including slots reserved for constants, code retention and intermediate expression values. It is not a guarantee of 16,384 user locals or parameters, nor that every smaller programme will compile. Exceeding the ceiling raises:
 
 ```
 [load:<chunk_name>] function or expression needs too many registers
@@ -913,10 +902,13 @@ Each generated function has a ceiling of **16,384 total register slots**. This t
 
 ### Allocation, collection, and failure {#sec-bios-loader-allocation-collection-and-failure}
 
-Allocation first tries the current candidate block. If that cannot satisfy the request, it scans the arena and combines adjacent reusable blocks, stopping at the first sufficiently large run. If that search fails, allocation performs synchronous garbage collection and makes one further scan with coalescing. Failure of that retry raises `runtime compiler memory exhausted`.
+Each compilation requires one contiguous block. Adjacent reusable blocks can
+be combined; reusable capacity separated by retained compilations cannot
+satisfy a larger contiguous request. Compilation may perform synchronous
+collection to reclaim unreachable allocations before raising
+`runtime compiler memory exhausted` if the request still cannot be satisfied.
 
-A load may perform collection before it returns. The second unsuccessful
-arena search raises the exhaustion error. Reserve compilation for a point
+A load may therefore perform collection before it returns. Reserve compilation for a point
 where its variable parsing, allocation and collection time can be accepted.
 
 The [language allocation budget](cpu.md#sec-cpu-language-allocation-and-lifetime) is

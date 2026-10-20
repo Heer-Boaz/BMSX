@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 690" role="img" aria-labelledby="gte-overview-title gte-overview-desc">
   <title id="gte-overview-title">Separate normal GTE and GTE_PLUS data paths</title>
-  <desc id="gte-overview-desc">Normal DATA and CONTROL operands enter geometry arithmetic independently. A normal COMMAND updates its selected DATA results and FIFOs, CONTROL FLAG, and nominal CYCLES duration during the command write. The separate PLUS operand latches feed VMAD3 arithmetic and a pending result set. The completion deadline controls publication of the PLUS result and flag latch.</desc>
+  <desc id="gte-overview-desc">Normal DATA and CONTROL operands enter geometry arithmetic independently. A normal COMMAND completes with its selected DATA results and FIFOs, CONTROL FLAG, and nominal CYCLES duration available. The separate PLUS command captures its operands at acceptance. VMAD3 runs with those operands unchanged and makes the PLUS results and flag visible together five system cycles after acceptance.</desc>
   <defs>
     <marker id="gte-overview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 Z" fill="#111"/>
@@ -58,19 +58,19 @@
     <text x="130" y="532" font-size="18">MUL_XY · MUL_Z</text>
     <text x="130" y="558" font-size="18">SCALAR</text>
     <text x="400" y="431" font-weight="bold">PLUS COMMAND</text>
-    <text x="400" y="505" font-weight="bold">VMAD3 arithmetic</text>
-    <text x="400" y="532" font-size="18">three signed lanes</text>
-    <text x="642.5" y="478" font-weight="bold">Pending set</text>
-    <text x="642.5" y="506" font-size="18">RESULT_XY</text>
-    <text x="642.5" y="532" font-size="18">RESULT_Z</text>
-    <text x="642.5" y="558" font-size="18">FLAG</text>
+    <text x="400" y="505" font-weight="bold">Capture operands</text>
+    <text x="400" y="532" font-size="18">at acceptance</text>
+    <text x="642.5" y="478" font-weight="bold">VMAD3</text>
+    <text x="642.5" y="506" font-size="18">three signed lanes</text>
+    <text x="642.5" y="532" font-size="18">operation in</text>
+    <text x="642.5" y="558" font-size="18">progress</text>
     <text x="860" y="478" font-size="18" font-weight="bold">Published latch</text>
     <text x="860" y="506" font-size="18">RESULT_XY</text>
     <text x="860" y="532" font-size="18">RESULT_Z</text>
     <text x="860" y="558" font-size="18">FLAG</text>
     <text x="750" y="500" font-size="17">all 3</text>
     <text x="750" y="537" font-size="17">words</text>
-    <text x="750" y="633" font-weight="bold">VMAD3 completion deadline</text>
+    <text x="750" y="633" font-weight="bold">VMAD3 completion</text>
     <text x="750" y="657" font-size="18">acceptance + 5 system cycles</text>
     <text x="20" y="624" text-anchor="start" font-size="19">PLUS CYCLES: busy + stored duration.</text>
     <text x="20" y="652" text-anchor="start" font-size="18">Completion clears busy; VMAD3 duration stays 5.</text>

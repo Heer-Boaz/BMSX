@@ -368,14 +368,14 @@ fetch records BadAddress and raises `AddressErrorLoad`. A new bus fault reading
 either the first word or the WIDE body raises `InstructionBusError`; the saved
 fetch PC is the instruction start, including the prefix address when the body
 read fails. Fetch exception entry has a one-cycle charge; an unfetched body is
-not dispatched with its nominal instruction cost.
+not executed with its nominal instruction cost.
 
 In ordinary sequential execution, an instruction's effects precede a fault
 fetching the following instruction. The completed instruction's effects remain
 in place; the saved fetch PC identifies the instruction whose fetch failed.
 
 Conditional-skip instructions decode the next instruction's full width and
-skip that whole instruction without executing its handler or charging its
+skip that whole instruction without executing it or charging its
 body's base cost. The skipped code can still cause a fetch exception while its
 width is determined. The branch section separately defines signed word
 relative targets; a branch instruction does not itself read its target.
@@ -579,7 +579,7 @@ Equality respects value kinds. Different kinds are unequal; there is no numeric-
 |---|---|
 | nil, false, or true | Equal to the same kind |
 | Number | Numeric equality; NaN is unequal, +0 equals −0 |
-| String | Same interned string identity |
+| String | Same String contents |
 | BuiltinFunction | Same builtin identifier |
 | Table, Closure, or Thread | Same reference identity |
 | Different kinds | False |
@@ -764,7 +764,7 @@ The output is not a lossless serialization: distinct inputs such as `999999.5` a
 
 ### Calling and returning values {#sec-cpu-calling-and-returning-values}
 
-Function calls use language value slots. A frame's register area follows its variable-argument area in the active thread's slot stack. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
+Function calls use language value slots. Each call has its own registers and saved variable arguments. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
 
 `CALL A,B,C` takes its callee from `R(A)`. Arguments occupy consecutive registers starting at `R(A+1)`, and returned values replace consecutive registers starting at `R(A)`.
 
@@ -848,7 +848,7 @@ Writes accept only table bases, including for integer and string-field forms. As
 
 ### Table entries and inherited reads {#sec-cpu-table-entries-and-inherited-reads}
 
-A Table maps admissible keys to non-nil values. Numeric and nonnumeric keys may coexist in the same Table. Array storage and hash storage are internal placement choices, not separate kinds of Table. Moving an entry between them does not change its key category.
+A Table maps admissible keys to non-nil values. Numeric and nonnumeric keys may coexist in the same Table. Array storage and hash storage hold entries of the same Table; they are not separate value kinds. Moving an entry between them does not change its key category.
 
 #### Keys and presence {#sec-cpu-keys-and-presence}
 
@@ -858,7 +858,7 @@ Nil is not an admissible key. Reading or writing with a nil key raises `INDEX_NI
 | --- | --- |
 | Boolean | `false` and `true` are distinct keys. |
 | Number | Numeric matching, with the zero and NaN rules below. |
-| String | String identifiers match; no conversion to a numeric key occurs. |
+| String | Matching String contents; no conversion to a numeric key occurs. |
 | Table, closure, thread | The same reference matches; separate objects do not match by contents. |
 | Builtin function | The same builtin identity matches. |
 
@@ -1183,20 +1183,17 @@ The branch itself performs no target-memory read or target-alignment check. Fetc
 ## Cycle accounting and execution boundaries {#sec-cpu-cycle-accounting-and-execution-boundaries}
 
 The instruction tables give **base charges**, not whole-program transfer rates.
-Before an admitted instruction executes, PC advances over its complete width
-and its base charge is deducted. Privilege, address alignment and write-ready
+When an instruction starts, PC advances over its complete width
+and its base charge is incurred. Privilege, address alignment and write-ready
 handling occur after that base charge. There is no refund when a store blocks;
 a later retry incurs its base charge again.
 
-An instruction's base charge is not subdivided at a device-event deadline.
-An admitted operation can carry system time past that deadline; due device work
-is then serviced against the advanced time. For example, a one-cycle `LOADK`
-followed by a successful two-cycle ordinary RAM `LOAD_MEM` consumes three
-cycles, even if a device deadline falls within that interval. A store whose
+For example, a one-cycle `LOADK` followed by a successful two-cycle ordinary
+RAM `LOAD_MEM` has a combined base charge of three cycles. Device events do
+not change those base charges. A store whose
 destination is not ready follows the [write-ready and retry rules](#sec-cpu-scalar-access-and-io).
-Eight-byte
-and counted accesses retain their specified ordered, potentially partial bus
-effects; the timing rule does not make them atomic.
+Eight-byte and counted accesses retain their specified ordered, potentially
+partial bus effects; their base charge does not make them atomic.
 
 Use the complete instruction charge when calculating a straight-line sequence.
 Use device status and interrupt protocols for synchronization, rather than
@@ -1219,7 +1216,7 @@ A `WIDE` instruction uses its body's base charge; the prefix does not add
 another base charge. These charges do not specify the cost of a source
 expression, total program execution time, or sustained memory bandwidth.
 
-The accounting rules above define admission, retries and additional work; the
+The accounting rules above define instruction charges, retries and additional work; the
 [memory instruction reference](#sec-cpu-memory-instruction-reference) gives the complete
 transfer-instruction table. [[DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, “Direct memory access”, under “Transfer timing and sharing the bus”]{.content-visible when-format="pdf"} supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
 
@@ -1245,9 +1242,9 @@ its additional builtin charge; device-specific command work and completion
 remain in the unit chapter.
 
 A blocked store writes nothing while it waits for the owning device's matching
-ready edge. Waiting advances machine time toward scheduled events rather than
-repeatedly polling and re-executing the store. IRQ HALT and CPU-held intervals
-also let due device work advance. A HALT therefore has neither a fixed elapsed
+ready edge. The CPU does not repeatedly execute the store while waiting.
+Console devices continue operating during this wait, IRQ HALT and CPU-held intervals.
+A HALT therefore has neither a fixed elapsed
 length nor the meaning of stopping every console device. The IRQ chapter
 supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 
@@ -1287,7 +1284,7 @@ CP0 holds exception and privilege state. Current privilege comes from **Status b
 ### CP0 fields {#sec-cpu-cp0-fields}
 
 
-For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field number, **not an RK operand**. Their handlers do not use `C`.
+For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field number, **not an RK operand**. These instructions do not use `C`.
 
 | Field number | Name | `MFC0` result | `MTC0` effect in supervisor mode |
 |---:|---|---|---|
@@ -1323,7 +1320,7 @@ defines installed memory-fault service.
 
 ### Exception return {#sec-cpu-exception-return}
 
-In supervisor mode, `RFE` requires the current frame to be an exception frame; otherwise it hard-halts. It samples the active EPC, closes the exception frame's open upvalues, removes that frame, and restores the register-stack top to the removed frame's vararg base.
+In supervisor mode, `RFE` requires the current frame to be an exception frame; otherwise it hard-halts. It samples the active EPC, closes the exception frame's open upvalues, and removes that frame together with its register and saved variable-argument slots.
 
 `RFE` replaces Status bits 0–3 with the former bits 2–5, retaining the higher bits. If a caller remains, its PC is assigned the sampled EPC. In particular, writing EPC before `RFE` changes this return target; `RFE` does not impose a separate alignment check on it.
 

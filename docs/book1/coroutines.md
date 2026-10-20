@@ -197,7 +197,7 @@ Ordinary call-result adjustment still applies. A fixed number of receiving varia
 
 **`coroutine.isyieldable([thread]) → boolean`** returns one boolean. With no argument it examines the active thread. With an argument it examines that thread; explicit nil is invalid and raises `Invalid argument.` Extra arguments are unused.
 
-The main thread is not yieldable. A selected thread carrying a hardware exception frame or an active `xpcall` error-handler continuation is also not yieldable. Ordinary `pcall` execution and the body protected by `xpcall` do not themselves forbid yielding. Executing the `xpcall` error handler does. Merely having an error-handler function stored somewhere does not affect the answer.
+The main thread is not yieldable. A selected thread carrying a hardware exception frame or an active `xpcall` error handler is also not yieldable. Ordinary `pcall` execution and the body protected by `xpcall` do not themselves forbid yielding. Executing the `xpcall` error handler does. Merely having an error-handler function stored somewhere does not affect the answer.
 
 **Yieldability does not check status and is not permission to resume.** An unstarted thread can report true. A normally completed or closed thread can also report true, and a failed thread may report true. None of those answers changes resume's requirement that the target be unstarted or suspended. Ask status when deciding whether a target can be resumed; ask yieldability about the selected context's yield restrictions.
 

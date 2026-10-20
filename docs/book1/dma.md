@@ -33,16 +33,16 @@ sample-RAM batch. Observe transport and device completion separately.
 | Completion requests | One IRQ source per channel |
 | Timing unit | 33,868,800 system cycles per second |
 
-An admitted block retains its addresses, count and CONTROL until its service
-edge. Its source words are read at that edge. Keep the source storage stable
-until its transfer completes. The receiving unit may continue processing after
-DMA has delivered the last word.
+An admitted block retains its addresses, count and CONTROL until it completes.
+Admission does not copy the source words. Keep the source storage stable until
+its transfer completes. The receiving unit may continue processing after DMA
+has delivered the last word.
 
-![Two programmed channels share one admitted block; payload is read at service](figures/dma-transfer.svg){#fig-dma-transfer}
+![Two programmed channels share one block transfer](figures/dma-transfer.svg){#fig-dma-transfer}
 
 The upper path selects and captures configuration. The lower path moves data
-at the service edge. Address/count writeback belongs to the serviced channel;
-CONTROL is not rewritten by block completion.
+between the selected endpoints. At block completion, address/count writeback
+belongs to that channel; CONTROL is not rewritten.
 
 ## Follow a buffer through a transfer {#sec-dma-follow-a-buffer-through-a-transfer}
 
@@ -72,7 +72,7 @@ With sixteen-word blocks, the controller first admits sixteen words, leaving
 four for a second block. After the first block, the addresses are S+64 and D+64
 and the remaining count is 4. The final block transfers those four words;
 software does not pad the array to sixteen more words. A smaller block changes
-the service and arbitration boundaries, not the address units or total count.
+the transfer and arbitration boundaries, not the address units or total count.
 
 ### A device port is a fixed endpoint {#sec-dma-a-device-port-is-a-fixed-endpoint}
 
@@ -377,28 +377,27 @@ Accepted START sets STATUS to exactly `00000001H`; finish sets it to exactly
 of clearing it. A later accepted START replaces DONE, and reset clears it.
 
 Address/count/CONTROL writes take effect in the programmed words on their
-accepted writes. This is distinct from the admission edge and the service
-edge described next. A register read is not a peek into the current word slot
-of an admitted block.
+accepted writes. An admitted block retains its captured configuration as
+described next. Register reads do not report per-word progress within a block.
 
 ## Programmed state and an admitted block {#sec-dma-programmed-state-and-an-admitted-block}
 
 ### Configuration is captured; source data is not {#sec-dma-configuration-is-captured-source-data-is-not}
 
 A transfer proceeds one block at a time. At admission the channel captures
-READ_ADDR, WRITE_ADDR, the full remaining TRANSFER_COUNT and CONTROL, and sets
-the service edge. The actual block contains the smaller of the remaining count
-and the programmed 1–16 words.
+READ_ADDR, WRITE_ADDR, the full remaining TRANSFER_COUNT and CONTROL. The actual
+block contains the smaller of the remaining count and the programmed 1–16 words.
 
-These captured values remain in force through service, including when software
-rewrites the programmed registers. Payload is read from the captured source
-address at service. This is the old/new-array hazard described under
+These captured values remain in force until block completion, including when
+software rewrites the programmed registers. The captured source address selects
+the storage to read, not a copy of its contents. This is the old/new-array
+hazard described under
 [Source reuse and result use](#sec-dma-source-reuse-and-result-use): admission
 captures the addresses, not the bytes stored at them.
 
-### What happens at service {#sec-dma-what-happens-at-service}
+### Word transfers and block writeback {#sec-dma-what-happens-at-service}
 
-The complete admitted block is serviced at its service edge; there are no separate per-word service edges. Within that service, each word has this order:
+Within a block, each word has this order:
 
 1. Read the mapped source word.
 2. Write that word to the mapped destination.
@@ -408,7 +407,7 @@ The complete admitted block is serviced at its service edge; there are no separa
 
 CONTROL bit 0 enables a four-byte source step; bit 1 enables a four-byte destination step. A disabled step leaves that address unchanged. Address addition and count subtraction wrap as unsigned 32-bit arithmetic. For example, a four-byte step from `0xFFFFFFFC` produces `0x00000000`.
 
-Only after the entire block are the resulting read address, write address and remaining count written back to the channel registers. Register values are therefore not a per-word progress display. Destination writes occur during service, not at admission. When the transfer ends, the final address/count words are published before DONE, and DONE is published before the completion IRQ.
+Only after the entire block are the resulting read address, write address and remaining count written back to the channel registers. Register values are therefore not a per-word progress display. When the transfer ends, the final address/count words are published before DONE, and DONE is published before the completion IRQ.
 
 Keep source contents unchanged until completion if the transfer must reproduce
 their original values. Admission alone neither releases the source nor makes
@@ -437,7 +436,7 @@ The three destination words all become `0x11111111`. The channel finishes with r
 
 BUSY does not reject address, count or CONTROL programming. It also does not turn those writes into edits of an admitted block.
 
-**Schematic active-block example.** Suppose admission captured read address `A`, write address `B`, count 5, three-word blocks and both increments enabled. Before service, software programs read address `X`, write address `Y`, count 9, and changes CONTROL to two-word blocks with a fixed source and incrementing destination. Assume both request gates remain asserted.
+**Schematic active-block example.** Suppose admission captured read address `A`, write address `B`, count 5, three-word blocks and both increments enabled. Before block completion, software programs read address `X`, write address `Y`, count 9, and changes CONTROL to two-word blocks with a fixed source and incrementing destination. Assume both request gates remain asserted.
 
 The admitted block still transfers three words using the old configuration. Its writeback replaces `X`, `Y` and 9 with `A + 12`, `B + 12` and 2. The changed CONTROL word remains. The next admission for this channel can therefore capture those resulting addresses and count together with the new CONTROL: two words, fixed source, incrementing destination.
 
@@ -472,7 +471,10 @@ IMGDEC's remaining quantities belong to its stream, not to the DMA channel. APU 
 
 Once admitted, a block retains its captured endpoints, count and CONTROL. A request dropping during a port access does not stop the remaining words of that block. Requests are tested again for a later admission, not between the words of an admitted block. Choose the block length to suit the destination's transfer contract; reducing the count or selecting FORCE does not make an otherwise invalid payload valid.
 
-The last read and last write of each admitted block carry BLOCK_END. GPU DMA ingress processes its staged words at this boundary; APU batch scheduling and IMGDEC decode/request updates also use their applicable end-of-block paths. The boundary is not necessarily channel completion.
+At the end of a block, the GPU can process the words collected in its DMA
+ingress. APU sample transfers and IMGDEC decoding can continue after DMA has
+delivered the block; their chapters specify the additional completion
+conditions. A block boundary is not necessarily channel completion.
 
 Source contents and overlapping ranges obey the ordered read/write behavior
 under [Programmed state and an admitted block](#sec-dma-programmed-state-and-an-admitted-block).
@@ -481,9 +483,14 @@ under [Programmed state and an admitted block](#sec-dma-programmed-state-and-an-
 
 DMA ownership compares an exact port address. An admitted channel owns its captured starting endpoint; another BUSY channel uses its programmed endpoint. This is not a range lock or a reservation of every register in the device. A channel waiting for a request can still own its configured port. Rewriting an admitted channel's address does not move that block's ownership to the new address.
 
-CPU writes to GP0 require no DMA write owner, empty DMA ingress, command-FIFO room, and ingress not stopped. APU transfer-data CPU writes require neither read nor write DMA ownership of that port. IMGDEC CPU writes require no DMA write owner, an active nonquiescing stream, input still expected, and FIFO room. Their DMA write-ready conditions differ: GP0 requires ingress not stopped; DMA write-ready is always asserted at the APU and IMGDEC data ports.
+CPU writes to GP0 require no DMA write owner, empty DMA ingress, command-FIFO room, and ingress not stopped. APU transfer-data CPU writes require neither read nor write DMA ownership of that port. IMGDEC CPU writes require no DMA write owner, an active nonquiescing stream, input still expected, and FIFO room. GP0 can also refuse a DMA write while ingress is stopped. The APU and IMGDEC data ports do not stall DMA writes; use their request gates and FIFO rules to select a valid block.
 
-A refused CPU store waits before writing and retries the instruction after release. DMA ownership release requires the same blocked address and no remaining read or write owner there; release itself does not deposit a word. Reads are different: GP0 and IMGDEC CPU reads while DMA read-owned return their retained data latches rather than consuming DMA's data. APU CPU reads return its data latch. Do not use these reads as evidence that the DMA source FIFO is empty or that a transfer has stopped.
+A refused CPU store waits until the addressed port accepts it; no write occurs
+while it waits. Releasing DMA ownership alone does not write a word. Reads are
+different: GP0 and IMGDEC CPU reads while DMA read-owned return their retained
+data latches rather than consuming DMA's data. APU CPU reads return its data
+latch. Do not use these reads as evidence that the DMA source FIFO is empty or
+that a transfer has stopped.
 
 ### Supervisor boundaries {#sec-dma-supervisor-boundaries}
 
@@ -504,7 +511,10 @@ The first unacknowledged fault retains the CODE, ADDR and ACCESS details; later 
 
 A DMA destination can also refuse a write through its DMA write-ready condition. That refusal raises no bus fault by itself, and counting still proceeds. DONE therefore means that the channel's count reached zero, not that every write was accepted, that no bus fault occurred, or that GPU, APU or IMGDEC work has finished. START while BUSY is ignored; DISABLED prevents a later admission but does not cancel an admitted block.
 
-DMA-unit reset cancels DMA service, discards the admitted block, clears all twelve mapped DMA words and request latches, and returns the next arbitration turn to channel 0. It preserves the installed timing configuration. These are reset effects, not a DMA CONTROL command or a device-port reset operation.
+DMA-unit reset cancels the transfer in progress, clears all twelve mapped DMA
+words and request latches, and returns the next arbitration turn to channel 0.
+These are reset effects, not a DMA CONTROL command or a device-port reset
+operation.
 
 ## Completion and interrupts {#sec-dma-completion-and-interrupts}
 
@@ -556,7 +566,12 @@ admitted_words = min(remaining_word_count, programmed_block_length)
 
 A short final block therefore uses its actual length, not the programmed maximum. Source and destination increment are independently enabled; an enabled endpoint advances four bytes per word, and a disabled endpoint repeats its address. Address arithmetic wraps at 32 bits.
 
-Admission captures the addresses, remaining count, complete control word, and actual block length, then establishes the block's completion deadline. An admitted block is nonpreemptible: another channel becoming ready, or a request dropping, does not interrupt it. Programming new values does not retime that block. At its deadline, the block performs its ordered word transfers and publishes the resulting addresses and remaining count. No intermediate per-word completion boundaries are provided.
+Admission captures the addresses, remaining count, complete control word and
+actual block length. These determine the block's duration. An admitted block
+is nonpreemptible: another channel becoming ready, or a request dropping, does
+not interrupt it. Programming new values does not retime that block. At block
+completion, the resulting addresses and remaining count are written back to
+the channel registers.
 
 ### Calculating a block's charge {#sec-dma-calculating-a-blocks-charge}
 
@@ -583,10 +598,8 @@ Block charge = max(1, sum of all span charges)
 ```
 
 “Both” refers to region kind, not matching addresses or cartridge slots. System-ROM-to-system-ROM uses the maximum rule, not addition. The one-cycle minimum applies once to the **whole block**, not to each word or each span. Consequently an all-I/O block costs one cycle regardless of its admitted word count. The cartridge charge applies throughout the cartridge aperture, including
-cartridge RAM and MMIO, not only ROM storage. Both sockets share the external
-transfer path: cartridge-to-cartridge costs add even when different socket
-request selectors choose its source and destination. Separate chip selects
-do not provide a second transfer bus.
+cartridge RAM and MMIO, not only ROM storage. Cartridge-to-cartridge costs add
+even when different socket request selectors choose its source and destination.
 
 ### Single-channel examples {#sec-dma-single-channel-examples}
 
@@ -676,7 +689,7 @@ A channel is eligible only when BUSY, its count is nonzero, and **both** its rea
 
 Take two incrementing RAM-to-RAM copies, each with count 20 and FORCE on both requests. Channel 0 programs block size 16; channel 1 programs block size 4. Assume no earlier bus work, continuously true requests, no mapping crossings, and no register rewrites. Let **A** be channel 0's first admission. Channel 1 starts after A but before channel 0's first deadline, so it cannot preempt that first block.
 
-| Block | Channel | Words | Charge | Service edge | Remaining count |
+| Block | Channel | Words | Charge | Block completion | Remaining count |
 |---:|---:|---:|---:|---|---:|
 | 1 | 0 | 16 | 34 | A + 34 | 4 |
 | 2 | 1 | 4 | 10 | A + 44 | 16 |

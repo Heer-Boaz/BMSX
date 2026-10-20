@@ -159,7 +159,8 @@ These are fragments of a source-specific protocol, not a replacement IRQ handler
 
 > **Caution — a pending bit alone need not wake HALT.** Maskable acceptance still requires a matching mask bit and `IEc = 1`. Do not wait for a source while disabling its delivery and expect its raw pending bit to suffice.
 
-Device timers continue to progress during HALT; parked CPU instructions do not execute. No fixed request-to-handler latency or guaranteed acceptance boundary after every source instruction is specified here.
+Device timing continues while the CPU is halted. No fixed request-to-handler
+latency is specified.
 
 ## Timing and service cost {#sec-irq-timing-and-service-cost}
 

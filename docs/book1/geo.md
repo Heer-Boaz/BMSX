@@ -210,7 +210,7 @@ Choose a command according to the operation and coordinate representation:
 | Installed main RAM | 4 MiB; addressed operand and result storage, not a private GEO payload buffer |
 | Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080bffffH; not an automatic operand destination |
 | System-cycle timebase | 33,868,800 cycles/s |
-| GEO work-credit rate | 16,384,000 outer-record units/s |
+| Outer-record processing rate | 16,384,000 outer records/s |
 
 Program source and destination addresses explicitly. The assigned workspace
 is available in main RAM; commands use the addresses supplied by the program.
@@ -463,7 +463,7 @@ No recovery step erases the earlier RAM results.
 | `+0x3c` | `0x08000060` | `FAULT` | RO | `0` | Bits 31:16: fault code. Bits 15:0: failing outer-record index, or rejection sentinel `0xffff`. |
 | Separate | `0x08010224` | `FAULT_ACK` | RW | `0` | Zero write does nothing. Any nonzero write acknowledges the local fault and immediately returns readback to zero; no individual acknowledgement bit is assigned. |
 
-The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The table offsets are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses: unaligned mapped word accesses and mapped byte or halfword writes fault. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
+The bank begins at `0x08000024` and occupies 16 consecutive 32-bit words. The table offsets are relative to that address. All bank words and the separate `FAULT_ACK` word reset to zero. Use aligned, mapped 32-bit accesses. The [CPU alignment check](memory.md#sec-memory-width-and-alignment) precedes mapped I/O; an ordinary misaligned word load or store takes an address-error exception. Mapped byte or halfword writes fault without operating the register. A mapped write to a read-only GEO word raises the memory `READ_ONLY` bus fault and does not change that word.
 
 Writable configuration words retain all written bits without controller-side masking or decoding. Do not assume that bits unused by a particular command read as zero. `CMD` also retains its complete written word. `CTRL` retains the written word except that bit 0 is cleared whenever written as one; it has no start, interrupt-enable, or reset bit.
 
@@ -474,24 +474,22 @@ allocating buffers, and keep results out of memory reserved for other uses.
 
 ## Processing rate and timing {#sec-geo-work-budget-and-timing}
 
-GEO accrues work credit at 16,384,000 units/s against the 33,868,800-Hz system
-timebase. One unit permits one outer record to run, including a record that
-faults. XFORM2 consumes one record per vertex span, SAT2 one per supplied pair,
-and OVERLAP2D one per candidate or full-pass outer instance.
+GEO processes outer records at a rate of 16,384,000 records/s against the
+33,868,800-Hz system timebase. Each attempted outer record, including one that
+faults, uses the same timing budget. XFORM2 counts one record per vertex span,
+SAT2 one per supplied pair, and OVERLAP2D one per candidate or full-pass outer
+instance.
 
-The cost within a record does not add credit units. In particular, an OVERLAP2D
+The work within a record adds no separate charge. In particular, an OVERLAP2D
 full-pass record can test several pairs and produce several contacts. Use the
 outer-record count, rather than vertex or contact count, for this timing budget.
 
-A fresh nonzero launch starts with no accumulated whole work units and no fractional carry. Idle time does not bank work. While busy, elapsed CPU cycles add credit at the ratio
+The rate is `16,384,000 / 33,868,800 = 640 / 1323` outer records per system
+cycle. Timing begins anew at each accepted launch; idle time does not shorten
+a later job. The processing budget for `N > 0` attempted outer records is
+`ceiling(N × 1323 / 640)` system cycles:
 
-`16,384,000 / 33,868,800 = 640 / 1323` work units per CPU cycle.
-
-Whole credit can be spent on outer records; the fractional remainder carries forward. Credit is capped by the number of records still remaining. GEO requests service at the first cycle that can fund the next outer record, or immediately when sufficient whole credit is already available. Service can process several records when several units have accrued.
-
-For a fresh, continuously accrued budget, the credit threshold for `N > 0` outer records is `ceiling(N × 1323 / 640)` CPU cycles:
-
-| Outer-record invocations funded | CPU-cycle credit threshold |
+| Attempted outer records | System-cycle budget |
 |---|---|
 | 1 | 3 |
 | 2 | 5 |
@@ -500,9 +498,9 @@ For a fresh, continuously accrued budget, the credit threshold for `N > 0` outer
 | 64 | 133 |
 | 640 | 1323 |
 
-The thresholds cover GEO work credit. CPU setup, delayed service and interrupt
-handling add to an operation's elapsed time; a fault, abort or rejection can
-terminate it early. The credit rate is fixed.
+The table covers GEO processing. CPU setup and interrupt handling add to an
+operation's elapsed time; a fault, abort or rejection can terminate it early.
+The processing rate is fixed.
 
 COUNT accepts the full unsigned 32-bit range. Per-record limits still apply:
 64 vertices for an XFORM2 span or SAT2/OVERLAP polygon, and 128 clipping vertices
@@ -538,7 +536,7 @@ After inspecting a fault, write any nonzero word to `FAULT_ACK`. This clears `ER
 
 Local fault acknowledgement and central interrupt acknowledgement are separate. `GEO_DONE` uses central bit 3 (`0x8`); `GEO_ERROR` uses bit 4 (`0x10`). Success raises only the done source; execution fault, abort, and rejection raise only the error source. Pending sources are recorded regardless of masking. The central IRQ registers are `FLAGS` at `0x08000000`, `ACK` at `0x08000004`, and `MASK` at `0x08000008`. Clear a pending source by writing its one bit to central `ACK`; that write leaves other pending sources untouched. Central `ACK` then reads zero. Masking a source does not clear it. `FAULT_ACK` does not clear central pending bits, and central acknowledgement does not release a sticky GEO fault. Use the interrupt-controller chapter for CPU interrupt entry.
 
-GEO reset cancels service, discards the active job and its credit, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
+GEO reset discards the active job, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
 
 ## XFORM2_BATCH: transform vertices and build bounds {#sec-geo-xform2_batch-transform-vertices-and-build-bounds}
 
@@ -893,11 +891,11 @@ For each clipping plane, processing starts with the last input vertex as S and v
 | Outside → inside | Intersection, then E |
 | Outside → outside | Nothing |
 
-For signed distances `sd` and `ed`, the intersection uses `t = sd / (sd−ed)` and `S + (E−S) × t`. The two clipping buffers exchange roles after each plane; processing stops if the input becomes empty. Vertices are not deduplicated.
+For signed distances `sd` and `ed`, the intersection uses `t = sd / (sd−ed)` and `S + (E−S) × t`. Clipping stops if the input becomes empty. Vertices are not deduplicated.
 
 A nonempty clipped polygon produces the arithmetic mean of its output vertices—not an area-weighted centroid. Duplicate vertices retain their weight. An empty clipped polygon does not cancel a successful separating-axis test: its point is `(meanA + meanB) / 2`. Clipping does not change normal or depth.
 
-The clipping workspace holds 128 vertices in each of two buffers; there is no explicit clipping-capacity fault. Zero-length edges are skipped, and zero projected overlap rejects contact. Non-finite values receive the stated arithmetic and comparisons, not a separate value-classification check.
+The clipping workspace holds 128 intermediate vertices; there is no explicit clipping-capacity fault. Zero-length edges are skipped, and zero projected overlap rejects contact. Non-finite values receive the stated arithmetic and comparisons, not a separate value-classification check.
 
 ### Output records and summary {#sec-geo-output-records-and-summary}
 

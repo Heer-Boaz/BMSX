@@ -198,12 +198,12 @@ Accepting a GP0 word and completing an assembled command are separate events.
 For a command with positive cost N ticks starting execution at cycle C:
 
 ```text
-Completion deadline = C + (N/2 rounded upward)
+Completion cycle = C + (N/2 rounded upward)
 ```
 
-Zero-cost work completes immediately. Queued execution continues from the prior
-command's deadline. CPU issue and GPU execution can overlap; construct their
-timeline when budgeting a frame. GP1 controls have no queued raster-cost
+Zero-cost work completes immediately. The next queued command can begin when
+the preceding command completes. CPU issue and GPU execution can overlap;
+construct their timeline when budgeting a frame. GP1 controls have no queued raster-cost
 interval. Use GPUSTAT to observe progress.
 
 For a fill with rounded width 32 and height 4, the command cost is
@@ -216,9 +216,8 @@ interval completes at cycle 50. The IRQ request can therefore be set while the
 GPU is not yet idle.
 
 An image-upload or readback command's one-tick cost does **not** mean its whole
-payload transfers in one cycle. Readback becomes pending at command execution
-completion and becomes consumable only when ready; GPUSTAT bit 27 reports that
-ready condition. Until then, GP0 reads return the retained GPUREAD value.
+payload transfers in one cycle. Readback becomes active at command completion,
+but its data is consumable only when ready; GPUSTAT bit 27 reports that condition. Until then, GP0 reads return the retained GPUREAD value.
 Neither command completion, idle status nor an IRQ marker acknowledges that a
 new picture has reached the display latch.
 
@@ -235,7 +234,7 @@ transaction. Misaligned accesses fault before the corresponding device operation
 The GPU has two thirty-two-bit programming ports. Their read and write meanings
 are different; neither address is an ordinary read/write register variable.
 
-| Address | Write operation | Read operation | Full-reset read at beam epoch zero |
+| Address | Write operation | Read operation | Full-reset read at the initial beam position |
 |---|---|---|---|
 | `0x0801023c` | GP0 command or payload word | GPUREAD latch or next permitted ready readback word | `0x00000000` |
 | `0x08010240` | GP1 control word | GPUSTAT | `0x14922000` |
@@ -300,10 +299,9 @@ repeated writes to the GP0 stream port.
 
 : {tbl-colwidths="[12,22,66]"}
 
-A GPUSTAT read first synchronizes already-due GPU command completions, then
-updates beam-derived fields and recomputes command/DMA conditions. Stored
-configuration readback, a retained request latch and current readiness are thus
-parts of the same returned word, not interchangeable kinds of completion.
+GPUSTAT reports the programmed configuration, interrupt-request latch, current
+beam fields and current command/DMA conditions. These share one returned word,
+but are not interchangeable kinds of completion.
 
 The GP1 mode fields are GPU register readback, not PCRTC beam-clock selectors.
 For bit 31, use the decoded display-start Y and the current PCRTC field. When
@@ -315,11 +313,9 @@ If the beam is stopped, bits 13 and 31 retain their existing values.
 
 ### Idle, DMA acceptance and CPU admission are different tests {#sec-gpu-idle-dma-acceptance-and-cpu-admission-are-different-tests}
 
-**Bit 26** is one only when readback is idle, no command-completion deadline is
-pending, both input FIFOs are empty, and no fixed-packet assembly, image-upload
-payload or open polyline remains. Retained completed commands awaiting
-presentation do not prevent this idle indication. It does not acknowledge a
-new displayed picture.
+**Bit 26** is one only when readback is idle, no command is executing, both
+input FIFOs are empty, and no incomplete fixed packet, image-upload payload or
+open polyline remains. It does not acknowledge a new displayed picture.
 
 **Bit 28** first requires idle readback, no system ingress stop and empty DMA
 ingress. After those requirements:
@@ -378,19 +374,17 @@ These control values are selected through GP1 commands. **GP1(00h)** restores
 the defaults above while preserving GPUREAD, the VRAM Y-extension latch and
 PCRTC configuration. It does not initialize or clear local memory.
 
-Full-device reset initializes VRAM with a deterministic pattern. GP1(00h)
-and PCRTC CSR RESET instead perform the command/reset transitions described
-below; accepted drawing and consumed upload data can still change pixels.
+GP1(00h) and PCRTC CSR RESET perform the command/reset transitions described
+below without clearing local memory; accepted drawing and consumed upload data
+can still change pixels.
 At cartridge entry the BIOS has already uploaded its system texture and used
 the terminal. Initialize the program's drawing and texture regions, preserving
 the [firmware VRAM reservation](memory.md#sec-memory-firmware-reservation-in-vram).
 
-Accepted GP1 changes appear immediately in programmed GPU state after due
-command completions have synchronized. Presented display/status/start/range
-and Y-extension values are copied at VBlank presentation instead of on every
-control write. Immediate GPUSTAT readback proves programmed state, not
-presentation-latch completion. PCRTC's separately programmed reading circuits,
-windows, timing and displayed latch remain a distinct interface.
+Accepted GP1 changes take effect immediately in programmed GPU state. GPUSTAT
+readback proves programmed state, not a display hand-off. PCRTC's separately
+programmed reading circuits, windows, timing and VBlank-entry display latch
+remain a distinct interface.
 
 ## GP1 control commands {#sec-gpu-gp1-control-commands}
 
@@ -407,9 +401,9 @@ packet stream: a control is not inserted between a GP0 packet's operands.
 
 The word is `(opcode << 24) OR (payload AND 0x00ffffff)`. Decode uses all eight
 opcode bits, not the low six. A payload bit outside a command's mask is ignored
-unless explicitly described as retained. An accepted GP1 write first synchronizes
-already-due GPU work, then applies its control to programmed state. It does not
-join the GP0 FIFO or acquire a separate queued raster-completion interval.
+unless explicitly described as retained. An accepted GP1 write applies its
+control directly to programmed state. It does not join the GP0 FIFO or acquire
+a separate queued raster-completion interval.
 
 An ordinary scalar word store has a two-system-cycle base cost, separate from
 instruction preparation and any admission wait. GP0 busy status does not by
@@ -446,28 +440,23 @@ status constant for that read.
 **Word:** `0x01000000`; all payload bits are ignored.
 
 Clear the GP0 FIFO, separate DMA ingress FIFO, incomplete fixed-packet/image
-header and polyline assembly, and cancel the pending command deadline. Drawing,
-display and DMA-direction registers are not reset. Neither GPUSTAT's interrupt
-request latch nor the system IRQ pending latch is acknowledged.
+header and polyline continuation state. Terminate any readback, discard its
+unread result and reset its pixel position and DMA request. Drawing, display and
+DMA-direction registers are not reset. Neither GPUSTAT's interrupt-request
+latch nor the system IRQ pending latch is acknowledged.
 
-A clear is **not a rollback of every previously accepted operation**. An accepted
-pending raster/upload target is completed where present. If an A0 upload has
-already consumed at least one payload word, its accepted partial payload is
-flushed; a header-only upload is discarded. The unaccepted remainder is not
-manufactured. Do not resume that abandoned image payload as though its header
-were still active: subsequent GP0 words begin a new stream.
+If an A0 upload has already consumed at least one payload word, the clear ends
+that upload using its consumed prefix and the current upload mask/address
+state. A header-only upload is discarded. Words still queued in the cleared
+FIFOs do not extend the consumed prefix, and missing payload pixels are not
+supplied. Subsequent GP0 words begin a new stream; do not resume the abandoned
+payload as though its header were still active.
 
-Readback cancellation depends on its phase:
-
-| Readback boundary | Clear effect |
-|---|---|
-| C0 has not activated | Remove an unexecuted C0 at the executed-command prefix boundary |
-| Readback pending | Remove C0 and following retained commands; preserve the prior command prefix |
-| Readback submitted or READY | Clear retained command state and reset the readback stream |
-
-Thus GP1(01h) can abandon a readback barrier; it is not equivalent to reading
-and consuming its remaining image words. Choose GP1(00h) instead only when the
-GPU register defaults are also wanted.
+This is not a general cancellation of accepted drawing or a local-memory undo.
+Already-performed writes remain, and accepted drawing or upload work can still
+change local memory. Abandoning readback is not equivalent to consuming its
+remaining image words. Choose GP1(00h) only when the GPU register defaults are
+also wanted.
 
 ### GP1(02h) — acknowledge the GPU request latch {#sec-gpu-gp102h-acknowledge-the-gpu-request-latch}
 
@@ -597,9 +586,9 @@ status reference; they are not command-completion flags.
 
 This selects address interpretation; it does not resize the installed local
 memory. It is a different latch from GP0 draw-mode's texture-page-Y-high bit.
-GP1(00h) preserves it; a full device reset clears it. Draw commands retain the
-Y-extension value when emitted, so a later gate change does not retroactively
-reinterpret already emitted drawing operands.
+GP1(00h) preserves it; a full device reset clears it. Draw commands latch the
+Y-extension value when they begin execution; a later gate change does not
+reinterpret those operands.
 
 ### Opcode boundaries and display visibility {#sec-gpu-opcode-boundaries-and-display-visibility}
 
@@ -608,11 +597,9 @@ catalog; the payload's low four bits select the query. Other eight-bit opcodes
 have no selected control action and do not raise an unknown-opcode exception.
 An opcode whose low six bits resemble a listed command does not alias it.
 
-GP1 control changes are visible immediately in programmed GPU state after due
-work synchronizes. Corresponding presented display/status/start/range and
-Y-extension values are copied at VBlank presentation, not by each GP1 write.
-GPUSTAT readback, an IRQ marker and GPU idle therefore do not acknowledge a
-newly displayed picture. PCRTC remains the separate interface for the actual
+GP1 control changes are visible immediately in programmed GPU state. GPUSTAT
+readback, an IRQ marker and GPU idle do not acknowledge a newly displayed
+picture. PCRTC remains the separate interface for the actual
 reading circuits, windows and beam timing.
 
 ## Query drawing state through GPUREAD {#sec-gpu-query-drawing-state-through-gpuread}
@@ -631,7 +618,7 @@ For example, `10000002H` and `1F000002H` both request selector `02H`. So does `1
 | `08H` | Constant `00000000H` |
 | `00H`,`01H`,`06H`,`09H–0FH` | Preserve the previous GPUREAD latch |
 
-The register answers are **raw stored words**, not expanded texture-window masks, separately sign-extended offset components or a displayed-picture snapshot. A supported query updates the shared GPUREAD latch immediately after already-due work synchronizes; it does not build a queue of answers. In particular, selector `00H` does not reset the GPU, and selector `01H` does not clear its stream: within a query they are unsupported selectors and leave the latch unchanged. An unsupported selector does not force zero or raise a query exception. Conversely, selector `08H` deliberately writes zero.
+The register answers are **raw stored words**, not expanded texture-window masks, separately sign-extended offset components or a displayed-picture snapshot. A supported query updates the shared GPUREAD latch immediately; it does not build a queue of answers. In particular, selector `00H` does not reset the GPU, and selector `01H` does not clear its stream: within a query they are unsupported selectors and leave the latch unchanged. An unsupported selector does not force zero or raise a query exception. Conversely, selector `08H` deliberately writes zero.
 
 GPUREAD also carries image-readback data. With no READY readback, a GP0 read returns the current latch. With a READY stream, a permitted read instead consumes the next packed image word and **replaces** that latch. Issuing a query does not consume, cancel or reserve the readback stream, and does not make its answer take priority over image data.
 
@@ -698,15 +685,23 @@ Treat RAM staging, GP0 command words, shared GPU local memory, and the PCRTC dis
 
 A queued drawing command retains its packet and drawing-context words, not texture or CLUT bytes. A VRAM-to-VRAM copy likewise reads its source from shared memory when executed. Preserve the contents required by earlier uses in the ordered command stream. A later, correctly ordered upload can change the contents for later uses; queue-time capture does not give earlier commands their own texture image. This ordering is not a promise that arbitrary source/destination aliasing or texture feedback is safe.
 
-DMA completion, a GP0 interrupt marker, GPU IDLE, and readback readiness answer different questions. DMA DONE follows the channel's mapped accesses; it does not itself establish successful GPU delivery, completed drawing, or display publication. The GP0 interrupt marker raises its retained request when reached in command order, but is not a display fence. GPU IDLE requires empty input, no incomplete command or upload, no pending command timing, and an idle readback port. It does not certify a particular frame's pixels or display publication.
+DMA completion, a GP0 interrupt marker, GPU IDLE, and readback readiness answer different questions. DMA DONE follows the channel's mapped accesses; it does not itself establish successful GPU delivery, completed drawing, or display publication. The GP0 interrupt marker raises its retained request when reached in command order, but is not a display fence. GPU IDLE requires empty input, no incomplete command or upload, no executing command, and an idle readback port. It does not certify a particular frame's pixels or display publication.
 
 Readback becomes active at its ordered command boundary and blocks further GP0 parsing until drained. READY means its pixels have been copied into readback storage, not that a DMA destination in RAM has already been filled. Draining GP0 and finishing any downstream DMA RAM writes are separate steps. See the [GP0 command-stream reference](#sec-gpu-frame-the-gp0-command-stream) and [DMA](dma.md#sec-dma) for their command and transfer interfaces.
 
 ### A display switch selects storage; it does not save it {#sec-memory-a-display-switch-selects-storage-it-does-not-save-it}
 
-PCRTC has programmed and retained presentation configuration, not two private pixel banks. Ordinary display configuration writes stage new words. At VBlank begin, presentation configuration is latched and the frame's command boundary is selected before the system VBlank interrupt is raised. The separate PCRTC VSINT interrupt is not this publication acknowledgement. Beam-timing writes can restart live timing immediately; do not treat them as ordinary deferred display-source switches.
+PCRTC has programmed and displayed configuration, not two private pixel banks.
+Ordinary display configuration writes stage new words. At VBlank entry, the
+displayed configuration is latched before the system VBlank interrupt is raised.
+The separate PCRTC VSINT interrupt is not this display-latch acknowledgement.
+Beam-timing writes can restart live timing immediately; do not treat them as
+ordinary deferred display-source switches.
 
-Before composing the selected source, commands through the published boundary are processed. Normally that boundary is the executed-command count; an active readback instead supplies its fence boundary. This is not an exact historical pixel version: later commands already applied to shared memory are not undone. Neither the boundary nor VBlank supplies an all-VRAM release, an atomic framebuffer snapshot, or a physical pixel-fetch deadline.
+Complete drawing before selecting its destination for display. A source switch
+selects addresses in shared local memory; it does not preserve a historical
+version of their pixels. VBlank neither releases every local-memory region nor
+copies an entire framebuffer.
 
 With a fixed format, pitch, geometry, and source offsets, switching to a disjoint region changes the selected addresses. It does not prove that every other reader has stopped using the old region. If the old region is later selected again, it supplies its then-current contents, not pixels saved by the earlier switch. See [PCRTC](pcrtc.md#sec-pcrtc) for source-address selection.
 
@@ -857,14 +852,9 @@ GP0 FIFO has room. Do not use the FIFO's free space or GPUSTAT bit 28 as permiss
 to interleave CPU words into that DMA-owned stream.
 
 DMA writes first enter a **separate sixteen-word ingress FIFO**, not sixteen
-extra CPU FIFO slots. For an admitted DMA block:
-
-1. Words before its `BLOCK_END` indication are staged without running the normal
-   GP0 pipeline for those writes.
-2. At block end, the GPU synchronizes already-due work and drains the staged
-   words toward the GP0 command FIFO.
-3. The GP0 parser interprets those words under its current packet phase, subject
-   to command-completion and readback barriers.
+extra CPU FIFO slots. At the end of an admitted DMA block, its words are handed
+to the GP0 command FIFO in order. They continue the current packet or payload,
+subject to command-completion and readback barriers.
 
 The DMA write-ready check at this boundary tests whether ingress is stopped.
 The DMA controller owns block sizing and admission; that limited check is not
@@ -874,7 +864,8 @@ additional GPU register map.
 
 ### A DMA block boundary is not a GP0 packet boundary {#sec-gpu-a-dma-block-boundary-is-not-a-gp0-packet-boundary}
 
-`BLOCK_END` is a transfer indication, not a GP0 opcode or polyline terminator.
+The end of a DMA block is a transfer boundary, not a GP0 opcode or polyline
+terminator.
 It does not supply missing packet fields, end an image payload or close an open
 polyline. The next supplied word still has the role required by the current
 [GP0 command-stream phase](#sec-gpu-frame-the-gp0-command-stream). Conversely, a DMA hand-off is
@@ -2002,8 +1993,7 @@ bit borrowed from another family.
 At a **command boundary**, opcode bytes `00H`, `04H–1EH`, `E0H` and `E7H–EFH`
 are discarded NOPs without a command-cost interval. The remaining unlisted
 values—`01H`, `03H` and `F0H–FFH`—are one-word ignored operations with a
-one-command-tick cost, not rejected opcodes. `01H` does not perform a texture-cache
-operation. These rules do not turn matching high bytes inside a packet into NOPs
+one-command-tick cost, not rejected opcodes. These rules do not turn matching high bytes inside a packet into NOPs
 or new commands.
 
 A packed word's role also determines its numerical interpretation. RGB consumes
@@ -2060,10 +2050,10 @@ polyline. Only after a legal termination can word 8 be interpreted as a new
 command.
 
 Finally, **word framing is not execution timing**. A positive-cost command of
-N ticks starting at system cycle C has an execution-completion deadline of
-`C + (N/2 rounded upward)`; zero-cost work completes immediately. Queued execution continues from the prior
-completion deadline, not from a later observation. These intervals do not tell
-how many words a packet contains or the cost of preparing and supplying them.
+N ticks starting at system cycle C completes at
+`C + (N/2 rounded upward)`; zero-cost work completes immediately. The next queued
+command can begin at that completion cycle without waiting for a status read. These
+intervals do not tell how many words a packet contains or the cost of preparing and supplying them.
 
 ## Flat untextured polygons — GP0(20H–23H,28H–2BH) {#sec-gpu-flat-untextured-polygons-gp020h23h28h2bh}
 
@@ -2122,9 +2112,9 @@ own size, area and coverage tests. Overlapping halves can write the same pixel
 twice; the GPU does not repair the four positions into a nonoverlapping outline.
 
 The packet uses the current drawing environment without replacing its values.
-At draw emission it retains the draw mode, texture window, drawing bounds,
-drawing offset, mask mode, Y-address gate and row-suppression parity. Later
-changes do not reinterpret that emitted draw. No texture-page field is present
+When its complete packet reaches execution, the draw latches the draw mode,
+texture window, drawing bounds, drawing offset, mask mode, Y-address gate and
+row-suppression parity. Later changes do not reinterpret that draw. No texture-page field is present
 in this packet. The GP0 packet also has no Z, W or GTE operation: projection,
 lighting, any three-dimensional clipping and draw ordering must already have
 provided the desired positions, color and sequence.
@@ -2217,9 +2207,9 @@ Each triangle has absolute double area 12 and contributes p=6:
 The first triangle actually covers nine samples and the second three, although
 their work estimates are both six. An in-area collinear triangle contributes
 zero work but still has its 46-tick setup. Convert ticks to the execution
-completion deadline using [Frame the GP0 command stream](#sec-gpu-frame-the-gp0-command-stream). These intervals do
+completion cycle using [Frame the GP0 command stream](#sec-gpu-frame-the-gp0-command-stream). These intervals do
 not include CPU packet preparation or input-store waits, and do not acknowledge
-local-memory presentation or display completion.
+a display hand-off.
 
 ## Gouraud untextured polygons — GP0(30H–33H,38H–3BH) {#sec-gpu-gouraud-untextured-polygons-gp030h33h38h3bh}
 
@@ -2270,11 +2260,11 @@ Words 3 and 5 do **not** execute E1/E2 commands. For this triangle, determinant 
 
 The blue steps represent −40×4096 and −30×4096. These intercepts include the half-color-unit bias, not a half-pixel coverage shift. At covered pixel `(41,25)`, plane evaluation gives `50800H,64800H,82800H`; extracting bits 19:12 yields RGB=(80,100,130). With dithering off, reduction gives RGB5=(10,12,16), packed `418AH`. The opaque, unchecked, unforced write replaces an existing `FFFFH` there with **`418AH`**, clearing its old bit 15.
 
-The command-work setup is `46+288=334` ticks. Its unclipped determinant gives estimated work `16>>1=8`, so total cost is **342 command ticks**, or 171 scheduled system cycles. Selecting `32H` or `33H` instead requests blending and makes the work estimate `8+((8+1)>>1)=12`, for 346 ticks/173 cycles with the other state unchanged. Its stored RGB then follows the configured blend calculation, not the opaque result above. These intervals exclude CPU packet preparation/issue and do not count exact stored pixels.
+The command-work setup is `46+288=334` ticks. Its unclipped determinant gives estimated work `16>>1=8`, so total cost is **342 command ticks**, or 171 system cycles. Selecting `32H` or `33H` instead requests blending and makes the work estimate `8+((8+1)>>1)=12`, for 346 ticks/173 cycles with the other state unchanged. Its stored RGB then follows the configured blend calculation, not the opaque result above. These intervals exclude CPU packet preparation/issue and do not count exact stored pixels.
 
 ### State and result boundary {#sec-gpu-state-and-result-boundary}
 
-The command retains draw mode, the Y-address-extension value, texture window, drawing bounds/offset, mask mode and skipped-row parity when emitted. Later state changes do not reinterpret that retained command. This untextured packet contains no environment update or texture-page selection. Semitransparent variants blend the five-bit source; mask checking can reject the write, and force-mask determines whether untextured output bit 15 is set instead of zero.
+The command captures draw mode, the Y-address-extension value, texture window, drawing bounds/offset, mask mode and skipped-row parity when its complete packet reaches execution. Later state changes do not reinterpret that retained command. This untextured packet contains no environment update or texture-page selection. Semitransparent variants blend the five-bit source; mask checking can reject the write, and force-mask determines whether untextured output bit 15 is set instead of zero.
 
 For general costs, the Gouraud setup is 334 ticks per triangle command or 370 per quad command, plus the separate triangle work estimates described in [Budget command work separately from issuing words](#sec-gpu-budget-command-work-separately-from-issuing-words). Timing uses ordinary signed-eleven-bit position-plus-offset sums, not the raster triangle shift.
 
@@ -2349,13 +2339,13 @@ new draw mode = (old draw mode AND NOT 09FFH)
                 OR (T1 attribute AND 09FFH)
 ```
 
-This changes the **persistent** draw mode before taking this polygon's own
-state snapshot. Bits 9,10,12,13 survive: dither enable, draw-to-displayed-field
+This changes the **persistent** draw mode before this polygon captures its
+drawing state. Bits 9,10,12,13 survive: dither enable, draw-to-displayed-field
 and rectangle X/Y flips are not supplied anew by T1. T2/T3 upper halves are
 ignored; their low U/V bytes remain required. None of these words starts an
 independent GP0 command, even if its high byte resembles E1.
 
-The emitted polygon retains its resulting draw mode and the current texture
+The polygon latches its resulting draw mode and the current texture
 window, area, offset, mask mode, Y gate and skipped-row parity. Later state
 changes do not reinterpret it. Conversely, its T1 page update remains current
 for later commands. A textured rectangle's T0 selects its CLUT, **not** a new
@@ -2562,12 +2552,12 @@ new draw mode = (old draw mode AND NOT 09ffH) OR (T1 attribute AND 09ffH)
 
 It preserves draw-mode bits 9, 10, 12 and 13. Other T1 attribute bits do not
 change them; T2/T3 upper halves do not select further pages. The update happens
-**before this polygon's own environment snapshot**, so it affects both this
+**before this polygon captures its drawing environment**, so it affects both this
 polygon and later commands that use current draw mode, including textured
 rectangles. Restore the desired page/blend/depth state explicitly when the next
 material differs.
 
-At emission, the polygon retains the resulting draw mode, Y extension, texture
+At execution start, the polygon latches the resulting draw mode, Y extension, texture
 window, drawing-area corners, drawing offset, mask mode and skipped-row parity.
 Later state writes do not reinterpret those operands. The command changes no
 other drawing-environment register; eligible covered pixels change local memory
@@ -2684,7 +2674,7 @@ Raw mode does not remove the textured or Gouraud setup charges.
 
 For the worked triangle there is no clipping or row skipping. Estimated work is
 `abs(42)>>1=21`, doubled for texturing to 42, then increased for the blend request
-to `42+((42+1)>>1)=63`. Total cost is **559 command ticks**, or **280 scheduled
+to `42+((42+1)>>1)=63`. Total cost is **559 command ticks**, or **280
 system cycles** from execution start. The raw 37H contrast has that same cost.
 The opaque 34H contrast instead costs `496+42=538` ticks, or 269 cycles. Clearing
 the fetched sample bit 15 does not remove the semitransparent opcode's work
@@ -2757,11 +2747,11 @@ The common offset is added to each byte, saturated to 0…255, then reduced by t
 
 ### State and command cost {#sec-gpu-state-and-command-cost}
 
-Draw state is retained when the complete command is emitted; later environment changes do not reinterpret it. Semitransparent forms blend admitted source pixels against their current destination. Mask checking can suppress the write; force-mask sets output bit 15, otherwise these untextured lines write zero there. The packet itself contains no drawing-environment update.
+Draw state is latched when the complete command reaches execution; later environment changes do not reinterpret it. Semitransparent forms blend admitted source pixels against their current destination. Mask checking can suppress the write; force-mask sets output bit 15, otherwise these untextured lines write zero there. The packet itself contains no drawing-environment update.
 
 Finite-line command work is the clipped **source bounding-box** estimate, not the generated or stored-sample count. Use ordinary signed-eleven-bit position-plus-offset sums, reject excessive source spans, and intersect the inclusive source bounding rectangle with the drawing area. Empty work costs zero ticks. Otherwise, with clipped dimensions W/H, active row suppression changes H to `max(1,H>>1)` and work is `max(W,H)`. Flat/Gouraud choice does not add a separate setup term.
 
-For the first packet, the source box is 5×8, clipped to 5×4. Skipping changes the timing height to 2, but `max(5,2)=5`: **five ticks/three scheduled system cycles**, despite only two stored samples. Without skipping it still costs five ticks, although four samples survive clipping. The flat dither example costs four ticks/two cycles. A nonempty zero-length finite line costs one tick, even if row suppression prevents its one store. These are queued command intervals, not CPU packet-supply time or physical raster bandwidth; finite lines do not acquire a polyline's initial 16-tick setup.
+For the first packet, the source box is 5×8, clipped to 5×4. Skipping changes the timing height to 2, but `max(5,2)=5`: **five ticks/three system cycles**, despite only two stored samples. Without skipping it still costs five ticks, although four samples survive clipping. The flat dither example costs four ticks/two cycles. A nonempty zero-length finite line costs one tick, even if row suppression prevents its one store. These are queued command intervals, not CPU packet-supply time or physical raster bandwidth; finite lines do not acquire a polyline's initial 16-tick setup.
 
 ## Flat and Gouraud polylines — GP0(48H–4FH,58H–5FH) {#sec-gpu-flat-and-gouraud-polylines-gp048h4fh58h5fh}
 
@@ -2804,7 +2794,7 @@ The complete eight-word example in [Frame the GP0 command stream](#sec-gpu-frame
 
 Moving the marker into word 6 would make it position data. Conversely, a matching full word in a continuation-color slot terminates **before** its low 24 bits can become a color. An opcode-looking or NOP-looking continuation word is not an escape to a command boundary.
 
-There is no fixed total polyline word count. Omitting termination leaves the continuation phase open; supplying a Gouraud color without its position leaves that pair unfinished. A pause while buffered words drain does not discard the retained endpoint. Termination does not undo segments already emitted. Each complete segment retains the drawing state present at its own emission; it does not wait for a final whole-polyline state snapshot.
+There is no fixed total polyline word count. Omitting termination leaves the continuation phase open; supplying a Gouraud color without its position leaves that pair unfinished. A pause while buffered words drain does not discard the retained endpoint. Termination does not undo segments already processed. Each segment captures drawing state when it begins execution; the GPU does not wait for the terminator to select one state for the whole polyline.
 
 ### Count the joint twice when blending {#sec-gpu-count-the-joint-twice-when-blending}
 
@@ -2833,7 +2823,7 @@ These are the results after both segments' pixel writes. The stated mask setting
 
 Use the finite-line source-bounding-box estimate for each segment: ordinary decoded position-plus-offset sums, reject inclusive spans over 1024×512, then intersect with drawing bounds. Empty intersection gives zero work. Otherwise, with clipped dimensions W/H, row suppression changes H to `max(1,H>>1)` and work is `max(W,H)`.
 
-The **initial polyline segment adds 16 setup ticks**; later continuation segments use work alone. Each example box is 4×1, giving **20 ticks/10 scheduled system cycles** for the initial segment and **4 ticks/2 cycles** for the continuation. The terminator adds no segment. An initial segment with zero work still has its 16-tick setup; a zero-work continuation does not repeat it. Gouraud color, blending and dithering add no separate line-cost term. These are queued command intervals, not CPU word-supply costs, physical raster bandwidth or presentation acknowledgement.
+The **initial polyline segment adds 16 setup ticks**; later continuation segments use work alone. Each example box is 4×1, giving **20 ticks/10 system cycles** for the initial segment and **4 ticks/2 cycles** for the continuation. The terminator adds no segment. An initial segment with zero work still has its 16-tick setup; a zero-work continuation does not repeat it. Gouraud color, blending and dithering add no separate line-cost term. These are queued command intervals, not CPU word-supply costs, physical raster bandwidth or presentation acknowledgement.
 
 ## Drawing rectangles — GP0(60H–7FH) {#sec-gpu-drawing-rectangles-gp060h7fh}
 
@@ -2871,7 +2861,7 @@ T0 has U in bits 7:0, V in 15:8 and a CLUT attribute in 31:16. CLUT X is `(attri
 
 Add the signed drawing offset to the decoded origin, then wrap that origin to signed eleven bits. Extend right/down by the selected size; do not repeatedly wrap the destination extent. Clip against the inclusive drawing area. Textured rectangles anchor U/V at the original, unclipped origin. Independent X/Y flip settings change their steps to −1 instead of +1; they neither reverse destination coverage nor move the anchor automatically to the opposite texture edge. Left/top clipping advances U/V, and suppressed rows still advance V. See [Keep a clipped or flipped rectangle on its texture](#sec-gpu-keep-a-clipped-or-flipped-rectangle-on-its-texture) for the four independent flip choices.
 
-Every complete rectangle retains its drawing-state snapshot. Later environment changes do not reinterpret it. Neither untextured nor textured rectangles dither, even with the draw-mode dither setting enabled. The normal transparent-sample, blending and destination-mask rules still apply: fetched `0000H` skips the write, while `8000H` is processed black; textured semitransparency needs both the opcode request and sample bit 15. Mask checking tests the old destination; forcing sets output bit 15.
+Every rectangle captures drawing state when its complete packet reaches execution. Later environment changes do not reinterpret it. Neither untextured nor textured rectangles dither, even with the draw-mode dither setting enabled. The normal transparent-sample, blending and destination-mask rules still apply: fetched `0000H` skips the write, while `8000H` is processed black; textured semitransparency needs both the opcode request and sample bit 15. Mask checking tests the old destination; forcing sets output bit 15.
 
 ### Complete untextured and textured packets {#sec-gpu-complete-untextured-and-textured-packets}
 
@@ -2915,7 +2905,7 @@ Y=23 still consumes V=`EEH` despite being suppressed, so Y=24 uses `EDH`, not `E
 
 ### Command cost {#sec-gpu-command-cost-4}
 
-Use ordinary signed-eleven-bit position-plus-offset sums for timing, **not** the raster origin's rewrapped sum. Both examples have clipped W=5,H=4 before row suppression and H′=2 after it. The untextured row cost is q=5: **16+5×2=26 ticks, 13 scheduled system cycles**. Palette8 is below both texture thresholds, adding W=5 row ticks: q=10 and **16+10×2=36 ticks, 18 cycles**. Raw texture does not remove that overhead. The cost remains 36 ticks despite only two successful texture writes.
+Use ordinary signed-eleven-bit position-plus-offset sums for timing, **not** the raster origin's rewrapped sum. Both examples have clipped W=5,H=4 before row suppression and H′=2 after it. The untextured row cost is q=5: **16+5×2=26 ticks, 13 system cycles**. Palette8 is below both texture thresholds, adding W=5 row ticks: q=10 and **16+10×2=36 ticks, 18 cycles**. Raw texture does not remove that overhead. The cost remains 36 ticks despite only two successful texture writes.
 
 In general add `(W+1)>>1` to row cost when semitransparency **or** mask checking is enabled, once even when both are enabled. The wider/greater-area texture branches are listed in [Budget command work separately from issuing words](#sec-gpu-budget-command-work-separately-from-issuing-words); use clipped H **before** row halving to select them. An empty rectangle still costs 16 ticks/eight cycles. For example, replacing the textured packet's S with `00060000H` gives width zero and no samples, not a 1024-column image. These intervals exclude CPU word preparation/supply and do not acknowledge presentation.
 
@@ -3014,14 +3004,14 @@ For decoded W/H, the cost is:
 ticks = 46 + ((W >> 3) + 9)×H
 ```
 
-The worked packet costs `46+(4+9)×4=98` command ticks, or **49 scheduled system
+The worked packet costs `46+(4+9)×4=98` command ticks, or **49 system
 cycles** from execution start. Disabling row suppression would write 128 words
 instead of 64 but would not change that cost. Likewise, changing only S to
 `00040000H` makes width zero and writes nothing, yet still costs 82 ticks/41
 cycles; S=`00000011H` makes height zero and costs 46 ticks/23 cycles.
 
 These intervals exclude preparation and issue of the three words and are not a
-physical fill-rate specification. Use the execution-deadline conversion in
+physical fill-rate specification. Use the command-duration conversion in
 [Budget command work separately from issuing words](#sec-gpu-budget-command-work-separately-from-issuing-words). Do not
 apply the signed-position-plus-offset or clipped-area work rules of drawing
 primitives to this fill calculation.
@@ -3053,7 +3043,10 @@ For each pixel, X wraps within its 1024-word row, without carrying into Y. Gener
 
 Upload applies the retained destination-mask mode but ignores drawing offset, drawing area, row suppression, blending and dithering. Check-mask tests the destination's **old** bit 15 and rejects the entire write when set. Otherwise force-mask sets output bit 15; without force-mask, all sixteen source bits pass through. In particular, source `0000H` is an ordinary raw write, not texture transparency, and `8000H` is ordinary raw data rather than a blend request.
 
-A normal upload becomes one retained command after the counted payload has been assembled. Its mask mode and Y-address state are snapshotted when the complete upload—or a flushed partial upload—is emitted, not supplied by an extra payload flag. Apparent E commands inside the image cannot change that state.
+A normal upload captures its mask mode and Y-address state when its counted
+payload has been consumed. If a stream clear ends a partial upload, those
+settings are captured at that clear. No extra payload flag supplies them, and
+apparent E commands inside the image cannot change the state.
 
 ### A 3×3 upload across both address boundaries {#sec-gpu-a-33-upload-across-both-address-boundaries}
 
@@ -3094,7 +3087,7 @@ As a separate trial from the same old-memory table, suppose only payload words 4
 
 ### Supply cost is separate from command cost {#sec-gpu-supply-cost-is-separate-from-command-cost}
 
-A normal upload has **one command tick** of scheduled command cost, giving one system cycle, independently of image area. That is not a bound on preparing, admitting or supplying its header/payload, nor on making the resulting pixels available for presentation.
+A normal upload costs **one command tick**, or one system cycle, independently of image area. That is not a bound on preparing, admitting or supplying its header/payload, nor on making the resulting pixels available for presentation.
 
 Supply CPU words to the **same fixed GP0 port**, or transfer the stream by DMA
 as described in [Hand a GP0 stream between CPU and DMA](#sec-gpu-hand-a-gp0-stream-between-cpu-and-dma).
@@ -3140,36 +3133,26 @@ Source X uses ten bits. Source Y and every generated row use the request's
 nine-bit or ten-bit Y mask. X wraps within its 1024-word row, without carrying
 into the next row. The source coordinates, normalized dimensions and Y-extension
 value belong to the retained request; a later gate write does not retarget an
-already emitted request. The raw word representation and address distinction
+already executing request. The raw word representation and address distinction
 are described in [Organize local memory for drawing and display](#sec-gpu-organize-local-memory-for-drawing-and-display).
 
-### Execution, submission and READY are separate {#sec-gpu-execution-submission-and-ready-are-separate}
+### Command completion and data readiness are separate {#sec-gpu-execution-submission-and-ready-are-separate}
 
-The command has a **one-command-tick** execution interval. At its scheduled
-completion, it activates a pending readback with cursor zero and a command-count
-fence identifying the required command prefix through this request. That scheduled interval
-is not the time to return all W×H pixels.
+The command has a **one-command-tick** execution interval. At completion it
+activates readback, starting with the first pixel of the requested rectangle.
+Earlier commands must finish their ordered memory operations before the source
+pixels are read. Later commands cannot execute until readback has been drained
+or cleared.
 
-The request progresses through three distinct states:
-
-| State | Meaning for the request |
-|---|---|
-| Pending | Waiting for read work to be submitted at its exact completed-command fence |
-| Submitted | The ordered read work has been claimed; its matching completion is still required |
-| READY | Data is available for permitted GPUREAD consumption; GPUSTAT bit 27 is set |
-
-The fence ensures the required earlier work is performed before pixel extraction.
-The count and these phases are ordering state, not extra request words or
-additional directly addressed registers. Later packets cannot execute past a
-non-idle readback. Do not replace READY with the command's one-tick deadline,
-GPU idle, or acceptance of the third header word. No fixed C0-to-READY latency
-or sustained readout rate is specified by that command cost.
+Wait for GPUSTAT bit 27 to report **READY** before consuming image data. Packet
+acceptance, the command's one-tick interval and GPU idle are not substitutes for
+that indication. No fixed C0-to-READY latency or sustained readout rate is
+specified by the command cost.
 
 ### Read ownership, latch and counted release {#sec-gpu-read-ownership-latch-and-counted-release}
 
 Use complete word reads and the port rules in
-[GP0, GPUREAD, GP1 and GPUSTAT](#sec-gpu-gp0-gpuread-gp1-and-gpustat). A GP0 read first synchronizes
-already-due command work. If no readback is READY, it returns the retained
+[GP0, GPUREAD, GP1 and GPUSTAT](#sec-gpu-gp0-gpuread-gp1-and-gpustat). If no readback is READY, a GP0 read returns the retained
 GPUREAD latch without consuming a pixel; it does not necessarily return zero.
 If READY and DMA does not own GP0's read port, a CPU read consumes the next
 packed word and replaces the latch. A DMA read may consume its stream; a CPU
@@ -3232,8 +3215,8 @@ current latch without consuming one of these five words.
 
 For the same request, start with the GPU request latch clear and place the whole
 GP0 marker word `1F000000H` immediately after the three-word header. It is the
-next command, not data for this readback. It cannot execute while the readback
-is pending, submitted or READY, including after only four of the five reads.
+next command, not data for this readback. It cannot execute until the readback
+is drained or cleared, including after only four of the five reads.
 
 Let R be the cycle when the permitted final read resumes processing, with this
 marker the only queued follow-up. The marker executes in that resumed processing,
@@ -3244,10 +3227,10 @@ controller latches follows [GP1 control commands](#sec-gpu-gp1-control-commands)
 
 ### Clearing is an abort, not counted consumption {#sec-gpu-clearing-is-an-abort-not-counted-consumption}
 
-GP1(01h) can abandon readback; retained-command effects depend on whether the
-request is unactivated, pending, submitted or READY. It is not equivalent to
-consuming the remaining words and is not a rollback of all earlier accepted
-work. Use the phase-dependent clear description in
+GP1(01h) terminates readback and discards the unread result, resetting its pixel
+position and DMA request. This is not equivalent to consuming the remaining
+words and does not undo earlier local-memory writes or guarantee cancellation
+of accepted drawing. See
 [GP1 control commands](#sec-gpu-gp1-control-commands). GP1(00h) also clears the stream but
 preserves the GPUREAD latch and Y-extension value; neither resetting that GPU
 register state nor reading an old latch proves local memory was erased.
@@ -3264,7 +3247,7 @@ H = ((((S >> 16) AND FFFFH) − 1) AND 1FFH) + 1
 
 This is packet notation and integer mathematics. Each XY has raw X in its low ten bits and raw Y in its upper half through the selected Y-address gate. They are not signed primitive positions. W is 1…1024 and H is 1…512: S=`00000000H` requests **1024×512**, not an empty copy. The 1024-row Y-address setting does not enlarge that 512-row maximum transfer height. After the fourth packet word, the next word is another command, not image data.
 
-The complete packet retains its mask mode and Y-address state when emitted; later environment changes do not reinterpret it. Source/destination X wrap within their respective 1024-word rows, and generated Y values wrap through the selected 512- or 1024-row period. Drawing offset, drawing area, row suppression, blending and dithering do not affect this raw operation.
+The copy captures mask mode and Y-address state when its complete packet reaches execution; later environment changes do not reinterpret it. Source/destination X wrap within their respective 1024-word rows, and generated Y values wrap through the selected 512- or 1024-row period. Drawing offset, drawing area, row suppression, blending and dithering do not affect this raw operation.
 
 Check-mask rejects a write when the destination's **old** bit 15 is set. Otherwise force-mask sets output bit 15; with forcing clear, all sixteen source bits are copied. Source `0000H` is writable raw data, not texture transparency. A set source bit 15 is also data: it does not prevent reading or request blending.
 
@@ -3325,7 +3308,7 @@ Destination protection can change which source values cascade. As a separate tri
 
 ### Command cost {#sec-gpu-command-cost-5}
 
-Copy costs **2×W×H command ticks**, using normalized dimensions, without drawing-area clipping or a mask-hit reduction. Thus the horizontal packet costs six ticks/three scheduled system cycles. The 3×3 packet costs **18 ticks/nine cycles**, both with and without the protected-word contrast. S=zero costs 1,048,576 ticks/524,288 cycles, although the packet still contains only four words.
+Copy costs **2×W×H command ticks**, using normalized dimensions, without drawing-area clipping or a mask-hit reduction. Thus the horizontal packet costs six ticks/three system cycles. The 3×3 packet costs **18 ticks/nine cycles**, both with and without the protected-word contrast. S=zero costs 1,048,576 ticks/524,288 cycles, although the packet still contains only four words.
 
 Use the normalized raw-image dimensions for this cost. Budget CPU issue or
 DMA transport separately, and use the traversal rules above when the source
@@ -3362,7 +3345,7 @@ and other drawing state used for that primitive. Place E1 before the primitive
 whose mode it selects; later E1 commands leave that primitive's latched state
 unchanged.
 
-Textured polygons have another persistent mode producer. T1's upper attribute half updates current mode **before that polygon takes its snapshot**:
+Textured polygons have another persistent mode producer. T1's upper attribute half updates current mode **before that polygon captures its drawing state**:
 
 ```text
 new mode = (old mode AND NOT 09FFH) OR (T1 attribute AND 09FFH)
@@ -3404,7 +3387,7 @@ The new mode selects page (128,0), palette8 and additive blend selection 1; the 
 | `1BDFH`, direct depth 3 | X=(960+140) AND 3FFH=76, Y=768+7=775 |
 | `12A2H`, palette8 | X=128+(140>>1)=198, Y=7; even U selects the low index byte, then the T0-selected CLUT |
 
-These are lookup inputs, not a claim that a particular polygon vertex is covered. A draw emitted before the merge retains `1BDFH`; the polygon carrying T1 retains `12A2H`; a following textured rectangle also uses `12A2H` until another mode producer changes it.
+These are lookup inputs, not a claim that a particular polygon vertex is covered. A draw executing before the merge retains `1BDFH`; the polygon carrying T1 retains `12A2H`; a following textured rectangle also uses `12A2H` until another mode producer changes it.
 
 ### Check only the status bits which echo draw mode {#sec-gpu-check-only-the-status-bits-which-echo-draw-mode}
 
@@ -3431,7 +3414,7 @@ Each command below is **one GP0 word**, formed by ORing its opcode word with the
 | `E5000000H OR parameter` | `003FFFFFH` | Drawing offset: signed X 10:0, signed Y 21:11 |
 | `E6000000H OR parameter` | `00000003H` | Bit 0 force output bit 15; bit 1 reject writes over old destination bit 15 |
 
-These update programmed drawing state when the ordered GP0 parser **executes** the command, not merely when its word is accepted at the port. The effect occurs at the start of a one-command-tick interval; its completion deadline is one system cycle later. An environment command is not itself a retained drawing primitive. CPU preparation/admission waits and display completion are separate costs/events.
+These update programmed drawing state when the ordered GP0 parser **executes** the command, not merely when its word is accepted at the port. The effect occurs at the start of a one-command-tick interval and completes one system cycle later. An environment command changes state rather than drawing pixels. CPU preparation/admission waits and display completion are separate costs/events.
 
 ### E2 replaces texture-coordinate bits {#sec-gpu-e2-replaces-texture-coordinate-bits}
 
@@ -3480,7 +3463,7 @@ For example, U=`ADH`,V=`09H` becomes **`A5H,09H`**: U changes while V already ha
 
 The drawing area is five columns by four rows, half-open X=[13,18)/Y=[22,26). Raw Y values 534/537 are retained, not destroyed by the 512-row decode. With the 1024-row gate, those same corner words instead select Y=534…537. The offset's raw fields are `7FEH/7FDH`, decoding to −2/−3; a supplied coordinate (16,27) has ordinary offset sum (14,24), inside the selected 512-period area.
 
-After a drawing packet has actually been **emitted** under this state, execute:
+After a complete drawing packet has reached **execution** under this state, issue:
 
 ```text
 E2000000H, E400640CH, E5000000H, E6000000H
@@ -3488,19 +3471,19 @@ E2000000H, E400640CH, E5000000H, E6000000H
 
 Current state now has an identity window, zero offset and no destination-mask controls. The unchanged left limit is 13, but the new right limit is 12, so its X drawing interval is empty. A later drawing primitive that uses the area sees that empty interval.
 
-The already-emitted draw still retains window `8061H`, the earlier two corner words, offset `3FEFFEH`, mask mode 3 and its 512-row Y gate. Later environment writes do not retroactively change those operands. For a pending draw, use its actual command or segment emission as the snapshot boundary, not merely acceptance of its first word. This distinction is why a current-state status observation is not a readout of every queued draw's retained state.
+The earlier draw still retains window `8061H`, the earlier two corner words, offset `3FEFFEH`, mask mode 3 and its 512-row Y gate. Later environment writes do not retroactively change those operands. Drawing state is captured when the command or segment begins execution, not merely when its first word is accepted. This distinction is why a current-state status observation is not a readout of every queued draw's retained state.
 
 ## Budget command work separately from issuing words {#sec-gpu-budget-command-work-separately-from-issuing-words}
 
-A command's work cost is measured in **command ticks**, not packet words or stored pixels. For N positive ticks starting execution at system cycle C, its completion deadline is:
+A command's work cost is measured in **command ticks**, not packet words or stored pixels. For N positive ticks starting execution at system cycle C, its completion cycle is:
 
 ```text
-deadline = C + ((N + 1) >> 1)
+completion cycle = C + ((N + 1) >> 1)
 ```
 
 Zero-tick work completes immediately. Round each command's interval separately:
-two one-tick commands occupy two system cycles. Queued work continues from the
-preceding deadline even when completion is observed late.
+two one-tick commands occupy two system cycles. The next queued command can
+begin when its predecessor completes, without waiting for a status read.
 
 The following equations use integer arithmetic. `>>1` and `>>2` discard low bits; drawing-area right/bottom limits are inclusive. A retained skipped-row parity is either active or inactive. The cost equations do not count the exact rows, transparent texels, destination-mask hits or stored pixels.
 
@@ -3568,7 +3551,7 @@ With no semitransparency, mask check or skipping, these nonempty examples expose
 | Direct 16-bit | 129×1 | 512 | 657 | 329 |
 | 4-bit palette | 129×1 | 129 | 274 | 137 |
 
-At W=64, Q=2. Enabling skipping on the 64×33 palette8 case keeps its overhead 128 and q=192, but uses H′=16: `16+192×16=3088` ticks/1544 cycles. It must not switch to the lower-area branch. These thresholds specify command cost, not a physical texture-cache capacity. Even H=1 remains H′=1 when skipping is active; do not infer one stored row from that minimum cost.
+At W=64, Q=2. Enabling skipping on the 64×33 palette8 case keeps its overhead 128 and q=192, but uses H′=16: `16+192×16=3088` ticks/1544 cycles. It must not switch to the lower-area branch. These thresholds specify command cost, not a storage capacity. Even H=1 remains H′=1 when skipping is active; do not infer one stored row from that minimum cost.
 
 **Fill and raw transfers.** For fill, decode rounded width `w=((rawWidth AND 3FFH)+15) AND NOT 15` and height `h=rawHeight AND 1FFH`:
 
@@ -3579,9 +3562,9 @@ copy ticks = 2×W×H
 
 Copy W/H use image normalization: `W=((rawWidth−1) AND 3FFH)+1`, `H=((rawHeight−1) AND 1FFH)+1`. A 32×4 fill costs 98 ticks/49 cycles; a 3×5 copy costs 30 ticks/15 cycles. Fill cost is unchanged by suppressed rows. Even raw fill width=0,height=4 costs 82 ticks/41 cycles although it writes no pixels. Conversely, zero image dimensions select a 1024×512 copy, costing 1,048,576 ticks/524,288 cycles—not an empty operation.
 
-Upload emission and the readback command each cost one tick, independently of area. That is not the time to supply an upload payload, move the data or make readback ready. Readback has separate pending/submitted/ready phases and stops queued parsing while nonidle.
+Upload execution and the readback command each cost one tick, independently of area. That is not the time to supply an upload payload, move the data or make readback ready. Active readback blocks later commands until it is drained or cleared.
 
-E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; their selected register/IRQ effect occurs at parser execution, before that completion deadline. Boundary-discarded NOPs have no queued cost interval. GP1 controls have no separate queued raster-cost interval. For example, an IRQ behind a 32×4 fill starting at cycle 0 executes and raises at 49, then completes at 50; the IRQ does not prove presentation has finished.
+E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; their selected register/IRQ effect occurs when execution begins, before command completion. Boundary-discarded NOPs have no queued cost interval. GP1 controls have no separate queued raster-cost interval. For example, an IRQ behind a 32×4 fill starting at cycle 0 executes and raises at 49, then completes at 50; the IRQ does not prove presentation has finished.
 
 Finally, budget the **CPU work**. A scalar word issue has two base CPU cycles;
 include address/value preparation, control flow and admission waits as well.
@@ -3598,7 +3581,7 @@ CPU issue/polling and GPU work overlap.
 
 The schedule includes address setup, loads and stores, status tests, taken
 branches and return. Use the instruction sequence of the program being timed
-when applying the same method to another implementation.
+when applying the same method to another routine.
 
 ### Define the interval and initial state {#sec-gpu-define-the-interval-and-initial-state}
 
@@ -3830,9 +3813,9 @@ These are admitted DMA charges, not end-to-end measurements. They exclude CPU pr
 
 ### Keep completion boundaries separate {#sec-gpu-keep-completion-boundaries-separate}
 
-DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word staging buffer; block-end processing advances the pipeline. GP0 parsing consumes the counted A0 payload and emits the retained upload command. Neither channel DONE nor packet acceptance alone establishes command completion.
+DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
 
-After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes pending deadlines, FIFO contents, partial packets, image transfers, polylines, and readback. GPU and controller acknowledgements remain separate.
+After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
 
 Wait for READY before reading image data. Consuming the last word clears
 READY and its DMA request, allowing parsing to advance to the queued marker.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 460" role="img" aria-labelledby="apu-title apu-desc">
   <title id="apu-title">APU command capture and sample datapath</title>
-  <desc id="apu-desc">The staging bank supplies command captures to a sixteen-entry FIFO. Service applies commands to sixteen slot banks. Selected-window writes instead edit a slot bank directly. Slot configuration controls the per-slot source, cursor, interpolation, filter and gain. Live source bytes feed the sample path, which also supports square generation. Sixteen slot contributions sum before final signed sixteen-bit stereo output saturation.</desc>
+  <desc id="apu-desc">The staging bank supplies command captures to a sixteen-entry FIFO. Commands execute against sixteen slot banks. Selected-window writes instead edit a slot bank directly. Slot configuration controls the per-slot source, cursor, interpolation, filter and gain. Live source bytes feed the sample path, which also supports square generation. Sixteen slot contributions sum before final signed sixteen-bit stereo output saturation.</desc>
   <defs><marker id="apu-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#111"/></marker></defs>
   <g fill="#fff" stroke="#111" stroke-width="2">
     <rect x="10" y="15" width="230" height="75"/>
@@ -24,7 +24,7 @@
   <g fill="#111" font-family="sans-serif" font-size="22" text-anchor="middle">
     <text x="125" y="46">Command staging</text><text x="125" y="75">21 raw words</text>
     <text x="475" y="46">CMD 1–5: capture</text><text x="475" y="75">FIFO: 16 entries</text>
-    <text x="850" y="46">Command service</text><text x="850" y="75">16 slot banks</text>
+    <text x="850" y="46">Command execution</text><text x="850" y="75">16 slot banks</text>
     <text x="850" y="161">Selected-window writes</text><text x="850" y="187">direct live edits</text>
     <text x="125" y="302">Live source bytes</text><text x="125" y="331">ROM / sample RAM</text>
     <text x="500" y="293">Per slot: source and cursor</text><text x="500" y="322">Interpolation / square</text><text x="500" y="352">Q14 filter → Q12 gain</text>
