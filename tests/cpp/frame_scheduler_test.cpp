@@ -199,6 +199,96 @@ void testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant() {
 	require(completedState.logicalTickRunTargetSequence == 0, "completed operation clears its target");
 }
 
+void testRawCycleGrantsStayExactAcrossSplitAdmissionAndPacedCarry() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 0), "zero without retained work does not complete a tick");
+	require(!runtime.frameLoop.frameActive, "zero without retained work opens no frame");
+	constexpr std::array<bmsx::i64, 3> grants = {55, 149, 220};
+	bmsx::i64 total = 0;
+	for (const auto grant : grants) {
+		total += grant;
+		require(!scheduler.runCyclesToNextLogicalTick(runtime, grant), "small raw grants stop before VBlank");
+		require(runtime.frameLoop.frameState.cycleBudgetGranted == total, "split raw admission retains exact integer grants");
+		require(runtime.frameLoop.frameState.cycleBudgetRemaining == 0, "small grants are exhausted");
+		require(scheduler.captureState().cycleGrantRemainder == 0.0, "raw cycles never enter fractional pacing");
+	}
+	scheduler.run(runtime, 0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	const auto remainder = scheduler.captureState().cycleGrantRemainder;
+	require(remainder == 0.5, "paced execution retains a fractional cycle");
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 55), "raw admission resumes the partial frame");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 479, "the explicit grant is exact beside paced fractional carry");
+	require(scheduler.captureState().cycleGrantRemainder == remainder, "raw admission leaves paced fractional carry unchanged");
+	scheduler.run(runtime, 0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 480, "paced execution retains its own fractional carry");
+}
+
+void testRawCycleGrantExceedsPacedLimitsAndResumesRetainedTicks() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	const bmsx::i64 grant = bmsx::PSX_CPU_FREQ_HZ;
+	require(scheduler.runCyclesToNextLogicalTick(runtime, grant), "large raw grant reaches the first tick");
+	require(scheduler.lastTickSequence == 1, "raw execution exposes only one tick");
+	require(scheduler.lastTickBudgetGranted == grant, "the explicit grant is not clamped by paced catch-up");
+	require(scheduler.captureState().carriedCycleBudget == grant - runtime.machine.scheduler.nowCycles(), "every unspent raw cycle carries");
+	bool completed = true;
+	for (int step = 0; completed && step < 100; ++step) {
+		const auto before = scheduler.lastTickSequence;
+		const auto carry = scheduler.captureState().carriedCycleBudget;
+		completed = scheduler.runCyclesToNextLogicalTick(runtime, 0);
+		require(scheduler.lastTickSequence == before + (completed ? 1 : 0), "each resume exposes at most one retained tick");
+		require(runtime.frameLoop.frameState.cycleBudgetGranted == carry, "zero-grant resumption admits no extra cycles");
+	}
+	require(!completed, "the original grant is exhausted");
+	require(runtime.machine.scheduler.nowCycles() == grant, "all explicit cycles execute");
+	require(runtime.frameLoop.frameState.cycleBudgetRemaining == 0, "no active budget remains");
+	require(scheduler.captureState().carriedCycleBudget == 0, "no carried budget remains");
+	require(scheduler.captureState().cycleGrantRemainder == 0.0, "raw grants produce no fractional pacing carry");
+}
+
+void testRawCycleAdmissionRetainsSplitGrantsDuringSubmittedReadback() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	auto& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(0x00010001u);
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 55), "readback suspends raw execution");
+	const auto& output = gpu.readDeviceOutput();
+	auto& readback = output.readbackPort;
+	require(readback.claimReadback(output.commandBuffer.executedCommandCount), "backend submits the readback");
+	const auto blockedAt = runtime.machine.scheduler.nowCycles();
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 149), "new admission does not complete blocked execution");
+	require(runtime.machine.scheduler.nowCycles() == blockedAt, "admission does not advance blocked hardware");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 204, "split explicit grants are retained during backend work");
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 0), "zero grant waits for submitted work");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 204, "waiting does not regrant cycles");
+	readback.completeReadback(readback.token());
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 0), "completed readback resumes only accepted work");
+	require(runtime.machine.scheduler.nowCycles() == 204, "both explicit grants execute after completion");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 204, "resumption does not duplicate the explicit grants");
+	require(runtime.frameLoop.frameState.cycleBudgetRemaining == 0, "the accepted grant is exhausted");
+	require(scheduler.captureState().cycleGrantRemainder == 0.0, "readback resumption does not enter fractional pacing");
+}
+
+void testRawCycleAdmissionDoesNotQueueWhileHistoryHoldsExecution() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	runtime.history.mode = bmsx::HistoryMode::Reviewing;
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 55), "history review blocks raw admission");
+	require(!runtime.frameLoop.frameActive, "history review opens no frame");
+	runtime.history.mode = bmsx::HistoryMode::Disabled;
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 55), "small grant stops before VBlank");
+	runtime.history.checkpointPending = true;
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 149), "pending checkpoint blocks raw admission");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 55, "history hold queues no explicit grant");
+	require(runtime.machine.scheduler.nowCycles() == 55, "history hold advances no hardware");
+}
+
 void testScheduledBoundedTickRetainsPartialMachineProgress() {
 	TickRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
@@ -928,6 +1018,10 @@ int main() {
 	testRuntimeResetNotification();
 	testBoundedLogicalTickRetainsCycleCarry();
 	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
+	testRawCycleGrantsStayExactAcrossSplitAdmissionAndPacedCarry();
+	testRawCycleGrantExceedsPacedLimitsAndResumesRetainedTicks();
+	testRawCycleAdmissionRetainsSplitGrantsDuringSubmittedReadback();
+	testRawCycleAdmissionDoesNotQueueWhileHistoryHoldsExecution();
 	testScheduledBoundedTickRetainsPartialMachineProgress();
 	testScheduledBoundedTickExposesEveryCatchUpBoundary();
 	testScheduledBoundedTickResumesBackendFenceWithAcceptedHostGrant();

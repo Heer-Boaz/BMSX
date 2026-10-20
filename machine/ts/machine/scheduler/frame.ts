@@ -236,6 +236,23 @@ export class FrameSchedulerState {
 		return true;
 	}
 
+	/** Admit an exact cycle grant, then stop at the next tick or backend fence. Zero resumes retained work. */
+	public runCyclesToNextLogicalTick(cycleGrant: number): boolean {
+		const runtime = this.runtime;
+		if (runtime.history.executionPaused) return false;
+		if (runtime.frameLoop.frameActive) {
+			const frameState = runtime.frameLoop.frameState;
+			frameState.cycleBudgetRemaining += cycleGrant;
+			frameState.cycleBudgetGranted += cycleGrant;
+		} else {
+			const carry = this.carriedCycleBudget;
+			if (carry !== 0 || cycleGrant !== 0) {
+				this.beginScheduledFrame(carry + cycleGrant, carry);
+			}
+		}
+		return this.runScheduledToNextLogicalTick(0);
+	}
+
 	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {
 		const runtime = this.runtime;
 		const targetSequence = this.lastTickSequence + 1;

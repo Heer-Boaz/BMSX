@@ -237,6 +237,21 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant)
 	return true;
 }
 
+bool FrameSchedulerState::runCyclesToNextLogicalTick(Runtime& runtime, i64 cycleGrant) {
+	if (runtime.history.executionPaused()) return false;
+	if (runtime.frameLoop.frameActive) {
+		FrameState& frameState = runtime.frameLoop.frameState;
+		frameState.cycleBudgetRemaining += cycleGrant;
+		frameState.cycleBudgetGranted += cycleGrant;
+	} else {
+		const i64 carry = m_carriedCycleBudget;
+		if (carry != 0 || cycleGrant != 0) {
+			beginScheduledFrame(runtime, carry + cycleGrant, carry);
+		}
+	}
+	return runScheduledToNextLogicalTick(runtime, 0.0);
+}
+
 bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {
 	const i64 targetSequence = lastTickSequence + 1;
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {

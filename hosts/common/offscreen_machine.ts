@@ -60,11 +60,11 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 		const runtime = this.runtime;
 		this.serviceBackend();
 		const before = runtime.frameScheduler.lastTickSequence;
-		let completed = runtime.frameScheduler.runScheduledToNextLogicalTick(cycles / runtime.timing.cpuCyclesPerMillisecond);
+		let completed = runtime.frameScheduler.runCyclesToNextLogicalTick(cycles);
 		while (runtime.machine.gxGpu.backendServicePending()) {
 			this.serviceBackend();
 			if (!completed) {
-				completed = runtime.frameScheduler.runScheduledToNextLogicalTick(0);
+				completed = runtime.frameScheduler.runCyclesToNextLogicalTick(0);
 			}
 		}
 		this.presentation.syncAfterRuntimeUpdate(runtime, before);

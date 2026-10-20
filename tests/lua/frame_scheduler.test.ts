@@ -626,6 +626,89 @@ test('bounded logical-tick execution resumes a backend fence without granting an
 	assert.equal(scheduler.captureState().logicalTickRunTargetSequence, 0);
 });
 
+test('raw cycle grants stay exact across split admission and paced fractional carry', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameActive, false, 'zero without retained work opens no frame');
+	for (const [grant, total] of [[55, 55], [149, 204], [220, 424]]) {
+		assert.equal(scheduler.runCyclesToNextLogicalTick(grant), false);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, total);
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+		assert.equal(scheduler.captureState().cycleGrantRemainder, 0, 'raw cycles never enter fractional pacing');
+	}
+	scheduler.run(0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	const remainder = scheduler.captureState().cycleGrantRemainder;
+	assert.equal(remainder, 0.5);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 479);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, remainder);
+	scheduler.run(0.5 / runtime.timing.cpuCyclesPerMillisecond);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 480, 'paced execution retains its own fractional carry');
+});
+
+test('raw cycle grants exceed paced catch-up limits and expose every retained tick with zero-grant resumes', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const grant = PSX_CPU_FREQ_HZ;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(grant), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, grant);
+	assert.equal(scheduler.captureState().carriedCycleBudget, grant - runtime.machine.scheduler.nowCycles);
+	let completed = true;
+	for (let step = 0; completed && step < 100; step++) {
+		const before = scheduler.lastTickSequence;
+		const carry = scheduler.captureState().carriedCycleBudget;
+		completed = scheduler.runCyclesToNextLogicalTick(0);
+		assert.equal(scheduler.lastTickSequence, before + (completed ? 1 : 0));
+		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, carry, 'resumption admits no extra cycles');
+	}
+	assert.equal(completed, false, 'the original grant is exhausted');
+	assert.equal(runtime.machine.scheduler.nowCycles, grant);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(scheduler.captureState().carriedCycleBudget, 0);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, 0);
+});
+
+test('raw cycle admission retains split grants during a submitted readback and resumes without regranting', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0(0x00010001);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const blockedAt = runtime.machine.scheduler.nowCycles;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(149), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, blockedAt, 'admission does not advance blocked hardware');
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(scheduler.captureState().cycleGrantRemainder, 0);
+});
+
+test('raw cycle admission does not queue grants while history holds execution', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	runtime.history.mode = HistoryMode.Reviewing;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	assert.equal(runtime.frameLoop.frameActive, false);
+	runtime.history.mode = HistoryMode.Disabled;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(55), false);
+	runtime.history.checkpointPending = true;
+	assert.equal(scheduler.runCyclesToNextLogicalTick(149), false);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 55);
+	assert.equal(runtime.machine.scheduler.nowCycles, 55);
+});
+
 test('scheduled bounded execution waits for host time and retains partial machine progress', () => {
 	const { runtime } = createTickRuntime();
 	const scheduler = runtime.frameScheduler;

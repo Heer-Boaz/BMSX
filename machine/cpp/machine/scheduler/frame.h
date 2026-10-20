@@ -46,6 +46,8 @@ public:
 	void run(Runtime& runtime, f64 hostDeltaMs);
 	bool runToNextLogicalTick(Runtime& runtime);
 	bool runToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
+	// Admit an exact cycle grant, then stop at the next tick or backend fence. Zero resumes retained work.
+	bool runCyclesToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	bool runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs);
 	InstructionStepResult stepInstruction(Runtime& runtime, f64 hostDeltaMs);
 	// Reconcile backend suspension without executing or admitting another tick.
