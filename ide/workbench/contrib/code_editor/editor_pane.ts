@@ -153,7 +153,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public override update(deltaSeconds: number): void {
 		this.editor.completion.processPending(deltaSeconds);
 		const pointer = editorPointerState.lastPointerSnapshot;
-		const blocked = this.editor.actionPrompt.visible || this.editor.quickInput.visible || this.editor.contextMenu.visible || editorChromeState.openMenuId !== null;
+		const blocked = this.editor.actionPrompt.visible || this.editor.quickInput.visible || this.editor.contextMenu.visible;
 		if (pointer !== null && !blocked) {
 			const bounds = getCodeAreaBounds();
 			if (editorPointerState.pointerSelecting && (pointer.pressedButtons & PointerButton.Primary) !== 0) {

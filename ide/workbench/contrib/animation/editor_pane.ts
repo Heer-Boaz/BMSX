@@ -85,7 +85,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		}, run: () => this.editProperty() });
 		this.focusTarget.registerCommand('animation.more', { isEnabled: () => true, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'animation.more')!.bounds;
-			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['animation.context'], commands, true);
+			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['animation.context'], commands, { selectFirst: true });
 		} });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },

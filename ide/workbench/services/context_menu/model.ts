@@ -1,14 +1,22 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import { EDITOR_COMMAND_PRESENTATION } from '../../../commands/catalog';
+import { editorCommandTitle } from '../../../commands/catalog';
+import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../../input/keyboard/command_keybindings';
 import type { EditorCommandId } from '../../../common/commands';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 
+export type ContextMenuPlacement = 'point' | 'below';
+
 export type ContextMenuRow = {
 	readonly command: EditorCommandId | undefined;
-	readonly label: string;
+	label: string;
+	readonly keybinding: string | undefined;
+	keybindingWidth: number;
+	active: boolean;
+	labelWidth: number;
+	font: object | undefined;
 	enabled: boolean;
 	top: number;
 	bottom: number;
@@ -25,21 +33,32 @@ export class ContextMenuModel {
 	public rowHeight = 0;
 	private anchorX = 0;
 	private anchorY = 0;
+	private placement: ContextMenuPlacement = 'point';
 	private width = -1;
 	private height = -1;
 	private font: object | undefined;
 
-	public setItems(items: readonly WorkbenchMenuItem[], x: number, y: number): void {
+	public setItems(items: readonly WorkbenchMenuItem[], x: number, y: number, shortTitles = false, placement: ContextMenuPlacement = 'point'): void {
 		this.rows.length = 0;
 		for (const item of items) this.rows.push({
 			command: item.type === 'command' ? item.command : undefined,
-			label: item.type === 'command' ? EDITOR_COMMAND_PRESENTATION[item.command].title.toUpperCase() : '',
+			label: item.type === 'command' ? editorCommandTitle(item.command, false, shortTitles).toUpperCase() : '',
+			keybinding: item.type === 'command' ? EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command) : undefined,
+			keybindingWidth: 0, labelWidth: 0, active: false, font: undefined,
 			enabled: false, top: 0, bottom: 0,
 		});
 		this.anchorX = x;
 		this.anchorY = y;
+		this.placement = placement;
 		this.selectedIndex = -1;
 		this.viewport.scrollbar.setScroll(0);
+		this.font = undefined;
+	}
+
+	public setLabel(row: ContextMenuRow, label: string): void {
+		if (row.label === label) return;
+		row.label = label;
+		row.font = undefined;
 		this.font = undefined;
 	}
 
@@ -55,10 +74,15 @@ export class ContextMenuModel {
 			row.top = contentHeight;
 			contentHeight += row.command === undefined ? 5 : this.rowHeight;
 			row.bottom = contentHeight;
-			contentWidth = Math.max(contentWidth, measure(row.label));
+			if (row.font !== font) {
+				row.labelWidth = measure(row.label);
+				row.keybindingWidth = row.keybinding === undefined ? 0 : measure(row.keybinding);
+				row.font = font;
+			}
+			contentWidth = Math.max(contentWidth, row.labelWidth + (row.keybinding === undefined ? 0 : CONTEXT_MENU_PADDING * 2 + row.keybindingWidth));
 		}
-		const menuWidth = Math.min(width - 4, contentWidth + CONTEXT_MENU_PADDING * 2 + SCROLLBAR_WIDTH + 2);
-		const menuHeight = Math.min(height - 4, contentHeight + 2);
+		const menuWidth = Math.min(width - 4, contentWidth + CONTEXT_MENU_PADDING * 3 + Math.max(lineHeight >> 1, 2) + SCROLLBAR_WIDTH + 2);
+		const menuHeight = Math.min(this.placement === 'below' ? height - this.anchorY - 2 : height - 4, contentHeight + 2);
 		const left = clamp(this.anchorX, 2, width - menuWidth - 2);
 		const top = clamp(this.anchorY, 2, height - menuHeight - 2);
 		write_rect_bounds(this.bounds, left, top, left + menuWidth, top + menuHeight);

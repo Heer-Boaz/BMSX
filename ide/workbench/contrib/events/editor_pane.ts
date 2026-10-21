@@ -70,7 +70,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			const input = this.input, viewport = input.viewport;
 			const top = viewport.offsetTop + input.selected * input.layout.rowHeight;
 			this.contextMenu.show(viewport.bounds.left + 4, Math.max(viewport.bounds.top, Math.min(viewport.bounds.bottom, top)),
-				WORKBENCH_MENUS['events.context'], this, true);
+				WORKBENCH_MENUS['events.context'], this, { selectFirst: true });
 		} });
 		this.scroll.focusTarget.clipboard = { copy: () => {
 			const record = this.input.projection.rows[this.input.selected];
@@ -125,7 +125,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			}
 			case 'events.more': {
 				const bounds = input.actions.items.find(item => item.command === 'events.more')!.bounds;
-				this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['events.context'], this, true); break;
+				this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['events.context'], this, { selectFirst: true }); break;
 			}
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': {
 				if (command !== 'events.goToFrame') {

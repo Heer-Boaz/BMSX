@@ -2,7 +2,6 @@ import type { Value } from '../../../machine/ts/machine/cpu/value';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { typeSourceText } from './studio_scene_authoring';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -23,8 +22,8 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	const x = guest.readStringMember(player, 'x'), y = guest.readStringMember(player, 'y');
 	const enemy = member('enemy_002_01');
 	await test.click(editorChromeState.menuEntryBounds.view);
-	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'actorLab')!;
-	await test.click(item.bounds);
+	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'actorLab')!;
+	await test.clickContextCommand(item.command!);
 	const picker = ide.editor.quickInput;
 	check(picker.visible, 'Actor Lab offers the actual running instances');
 	await typeSourceText(test, 'd');

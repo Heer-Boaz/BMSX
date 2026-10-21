@@ -1,6 +1,5 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { check, type StudioFixture } from './studio_fixture';
@@ -105,8 +104,8 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 
 export async function presentCommandPalette(test: StudioFixture): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.view);
-	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'commandPalette')!;
-	await test.click(item.bounds);
+	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'commandPalette')!;
+	await test.clickContextCommand(item.command!);
 	check(test.ide.editor.quickInput.visible, 'palette: the actual View menu also exposes Command Palette');
 	await test.frame();
 }

@@ -52,6 +52,7 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'F10', command: 'menubar.focus', modifiers: NO_MODIFIERS },
 	{ code: 'KeyN', command: 'createResource', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'ContextMenu', command: 'contextMenu', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('contextMenu') !== undefined },
 	{ code: 'F10', command: 'contextMenu', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS }, when: () => inputFocus.getCommand('contextMenu') !== undefined },

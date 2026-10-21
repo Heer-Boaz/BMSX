@@ -118,7 +118,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			run: () => {
 				this.focus();
 				const view = this.input.view, bounds = view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds;
-				const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS[BEHAVIOR_ACTION_MENUS[view.presentation.kind]], this.commands, true);
+				const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS[BEHAVIOR_ACTION_MENUS[view.presentation.kind]], this.commands, { selectFirst: true });
 				lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) });
 			},
 		});
@@ -352,7 +352,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			menu = presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
 		} else menu = 'behaviorLens.property.context';
-		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, keyboard);
+		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, { selectFirst: keyboard });
 		lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) });
 	}
 

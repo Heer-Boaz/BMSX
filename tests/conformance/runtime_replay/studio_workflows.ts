@@ -35,7 +35,6 @@ import { testScenePlacementIdentity } from './studio_scene_identity';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
-import { TOP_BAR_MENUS } from '../../../ide/workbench/ui/top_bar/menu';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { IO_INP_KEYS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
@@ -131,7 +130,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(model.buffer.getText() === firstInstalledSource && editorSearchState.field.text === pendingQuery,
 		'focus: modal keyboard scope blocks both document and field history');
 	await click(editorChromeState.menuEntryBounds.edit);
-	check(editorChromeState.openMenuId === null && test.ide.editor.actionPrompt.visible,
+	check(test.ide.editor.menubar.activeMenu === undefined && test.ide.editor.actionPrompt.visible,
 		'focus: modal pointer scope blocks underlying editor commands');
 	await press('Enter');
 	await until(() => tasks.ready && ide.sources.currentBlua32Media !== oldMedia && !ide.debugger.plans.controlActive,
@@ -326,17 +325,16 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	await click(editorChromeState.menuEntryBounds.run);
-	check(editorChromeState.openMenuId === 'run', 'Run menu opens through its visible pointer hit target');
-	const pauseItem = TOP_BAR_MENUS.run.items[0];
-	const continueItem = TOP_BAR_MENUS.run.items[1];
-	if (pauseItem.type !== 'command' || continueItem.type !== 'command') throw new Error('Run menu must start with Pause and Continue commands');
-	check(pauseItem.active && !pauseItem.disabled, 'checked Pause remains enabled as a toggle');
-	check(continueItem.disabled, 'debugger Continue is not a second host-pause button');
-	await click(pauseItem.bounds, 8);
+	check(test.ide.editor.menubar.activeMenu === 'run', 'Run menu opens through its visible pointer hit target');
+	const pauseItem = test.ide.editor.contextMenu.model.rows[0];
+	const continueItem = test.ide.editor.contextMenu.model.rows[1];
+	check(pauseItem.active && pauseItem.enabled, 'checked Pause remains enabled as a toggle');
+	check(!continueItem.enabled, 'debugger Continue is not a second host-pause button');
+	await test.clickContextCommand('pause', 8);
 	check(!execution.userPaused && !ide.editor.isActive, 'one held pointer press resumes without repeatedly toggling');
 	await press('ControlRight', 'ShiftRight');
 	await click(editorChromeState.menuEntryBounds.run);
-	await click(pauseItem.bounds, 8);
+	await test.clickContextCommand('pause', 8);
 	check(execution.userPaused && ide.editor.isActive, 'pointer Pause does not close or replace the IDE');
 	await click(editorChromeState.menuEntryBounds.run);
 	await testCapturedSourceApply(test);

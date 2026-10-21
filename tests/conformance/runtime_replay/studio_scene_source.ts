@@ -4,7 +4,6 @@ import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated_modules';
 import { buildSceneSourceDocument } from '../../../ide/workbench/contrib/scene_editor/source';
@@ -13,9 +12,9 @@ import { check, type StudioFixture } from './studio_fixture';
 
 export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorInput> {
 	await test.click(editorChromeState.menuEntryBounds.view);
-	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'sceneEditor')!;
-	check(!item.disabled, 'scene: the actual View menu admits the Lua document');
-	await test.click(item.bounds);
+	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'sceneEditor')!;
+	check(item.enabled, 'scene: the actual View menu admits the Lua document');
+	await test.clickContextCommand(item.command!);
 	const input = getActiveTab();
 	if (input.kind !== 'scene_editor') throw new Error('scene: View command must open the Scene Editor');
 	return input;

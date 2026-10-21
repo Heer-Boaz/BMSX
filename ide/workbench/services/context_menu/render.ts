@@ -13,7 +13,6 @@ export function layoutContextMenu(menu: ContextMenuController): void {
 
 export function drawContextMenu(menu: ContextMenuController): void {
 	if (!menu.visible) return;
-	layoutContextMenu(menu);
 	const model = menu.model;
 	const bounds = model.bounds;
 	api.fill_rect(bounds.left + 2, bounds.top + 2, bounds.right + 2, bounds.bottom + 2, 0, constants.COLOR_MENU_SHADOW);
@@ -33,7 +32,14 @@ export function drawContextMenu(menu: ContextMenuController): void {
 		}
 		const selected = index === model.selectedIndex && row.enabled;
 		if (selected) api.fill_rect(view.bounds.left, top, view.bounds.right, bottom, 0, constants.COLOR_MENU_SELECTION_BACKGROUND);
-		api.blit_text_inline_with_font(row.label, view.bounds.left + CONTEXT_MENU_PADDING, top + 2, 0,
+		const markerSize = Math.max(editorViewState.lineHeight >> 1, 2);
+		if (row.active) api.fill_rect(view.bounds.left + CONTEXT_MENU_PADDING, top + ((model.rowHeight - markerSize) >> 1),
+			view.bounds.left + CONTEXT_MENU_PADDING + markerSize, top + ((model.rowHeight - markerSize) >> 1) + markerSize, 0,
+			!row.enabled ? constants.COLOR_MENU_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT);
+		api.blit_text_inline_with_font(row.label, view.bounds.left + CONTEXT_MENU_PADDING * 2 + markerSize, top + 2, 0,
+			!row.enabled ? constants.COLOR_MENU_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT, font);
+		if (row.keybinding !== undefined) api.blit_text_inline_with_font(row.keybinding,
+			view.bounds.right - CONTEXT_MENU_PADDING - row.keybindingWidth, top + 2, 0,
 			!row.enabled ? constants.COLOR_MENU_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT, font);
 	}
 	api.popClipRect();

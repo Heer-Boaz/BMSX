@@ -120,6 +120,7 @@ export class IdeCommandController {
 			case 'copy': case 'cut': case 'paste':
 				void executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
 				return;
+			case 'menubar.focus': this.editor.menubar.toggleFocus(); return;
 			case 'navigateBack':
 				void this.editor.navigation.goBackward();
 				return;
@@ -370,12 +371,13 @@ export class IdeCommandController {
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
+			case 'menubar.focus': return this.editor.isActive && !this.editor.actionPrompt.visible && !this.editor.quickInput.visible;
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
 			case 'terminal': return this.editor.terminal.canOpen;
 			case 'conversations': return this.editor.observedConversation.available;
 			case 'copy': case 'cut': case 'paste':
-				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
+				return context?.clipboard?.[command] !== undefined && (command === 'copy' || !context.clipboard.readOnly)
 					&& (command !== 'paste' || this.editor.clipboard.canRead);
 			case 'hot-resume':
 				return this.hotResumes.acceptingRequests && !this.execution.launchPending;

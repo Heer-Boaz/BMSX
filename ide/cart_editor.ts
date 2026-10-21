@@ -170,9 +170,10 @@ import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { drawEditorGroupWatermark } from './workbench/render/editor_group_watermark';
 import { renderTabBar } from './workbench/render/tab_bar';
-import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
+import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTabBar } from './workbench/ui/tab/layout';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
+import { MenubarController } from './workbench/ui/top_bar/controller';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
@@ -233,6 +234,7 @@ export type CartEditor = TextInputHost & {
 	readonly actionPrompt: ActionPrompt;
 	readonly quickInput: QuickInputController;
 	readonly contextMenu: ContextMenuController;
+	readonly menubar: MenubarController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly aemEditor: AemEditorController;
 	readonly luaPrograms: LuaProgramController;
@@ -303,6 +305,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture);
 	public readonly quickInput: QuickInputController;
 	public readonly contextMenu: ContextMenuController;
+	public readonly menubar: MenubarController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly aemEditor: AemEditorController;
 	public readonly luaPrograms: LuaProgramController;
@@ -437,6 +440,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+		this.menubar = new MenubarController(this.contextMenu, this.commands);
 		this.quickInput = new QuickInputController(this.contextMenu);
 		this.resourceEditors = createResourceEditorResolver(
 			this.sources,
@@ -756,11 +760,12 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.editorPanes.activePane?.update(deltaSeconds);
 		this.runtimeTimeline.update();
-		layoutTopBar(this.commands, this.chromeRenderContext);
+		layoutTopBar(this.chromeRenderContext);
+		this.menubar.update();
 		this.quickInput.update();
 		this.actionPrompt.update();
-		layoutContextMenu(this.contextMenu);
 		this.contextMenu.update();
+		layoutContextMenu(this.contextMenu);
 	}
 
 	public updateViewport(viewport: Viewport): void {
@@ -777,7 +782,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
-		renderTopBar(this.chromeRenderContext);
+		renderTopBar(this.chromeRenderContext, this.menubar);
 		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
 		const activePane = this.editorPanes.activePane;
@@ -787,7 +792,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtimeTimeline.draw(this.overlayRenderer);
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault, activePane, this.luaEvaluation, this.serverConnectionState);
-		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();
 		this.actionPrompt.draw();

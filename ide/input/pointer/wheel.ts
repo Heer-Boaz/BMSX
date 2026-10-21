@@ -23,7 +23,6 @@ export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnap
 		editor.contextMenu.handleWheel(event.deltaY);
 		return true;
 	}
-	if (editorChromeState.openMenuId !== null) return true;
 	if (handleHoverTooltipWheel(event)) return true;
 	if (point_in_rect(event.viewportX, event.viewportY, editorChromeState.tabBarBounds)) {
 		editorChromeState.tabScrollControl.cancelPointer();

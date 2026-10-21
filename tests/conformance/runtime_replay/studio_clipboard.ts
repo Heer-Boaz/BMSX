@@ -6,7 +6,6 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS } from '../../../ide/workbench/ui/top_bar/menu';
 import { createStudioFixture } from './studio_fixture';
 import { createStudioRenderer } from './studio_renderer';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -24,7 +23,11 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 	await test.press('ControlLeft', 'Home'); await test.press('ShiftLeft', 'End');
 	return {
 		frame: test.frame,
-		menu() { return { header: editorChromeState.menuEntryBounds.edit, items: TOP_BAR_MENUS.edit.items }; },
+		menu() {
+			const menu = test.ide.editor.contextMenu.model, viewport = menu.viewport;
+			return { header: editorChromeState.menuEntryBounds.edit, items: menu.rows.map(row => ({ command: row.command,
+				bounds: { left: viewport.bounds.left, right: viewport.bounds.right, top: viewport.offsetTop + row.top, bottom: viewport.offsetTop + row.bottom } })) };
+		},
 		async capture(name: string) { await test.frame(); await renderer.capture!(name); },
 		async command(command: 'copy' | 'cut' | 'paste' | 'findLocal' | 'lineJump' | 'commandPalette' | 'rename' | 'assistant') {
 			test.ide.editor.commands.execute(command); await test.frame();

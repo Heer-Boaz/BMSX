@@ -183,7 +183,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		const input = this.input;
 		input.running = false;
 		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command));
-		const lifetime = this.contextMenu.show(x, y, items, this.commands, keyboard);
+		const lifetime = this.contextMenu.show(x, y, items, this.commands, { selectFirst: keyboard });
 		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) });
 	}
 	public handleWheel(event: WheelInputSnapshot): void {

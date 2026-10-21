@@ -29,7 +29,7 @@ export function openCodeContextMenu(editor: CartEditor, row: number, column: num
 			}
 			editor.commands.execute(command);
 		},
-	}, keyboard);
+	}, { selectFirst: keyboard });
 	lifetime.add({ dispose: model.onDidChangeContent(() => editor.contextMenu.hide()) });
 }
 

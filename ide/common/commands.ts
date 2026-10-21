@@ -134,6 +134,7 @@ export type EditorCommandId =
 	| 'server.connection'
 	| 'cartMap.source'
 	| 'contextMenu'
+	| 'menubar.focus'
 	| 'navigateBack'
 	| 'navigateForward'
 	| 'sourceEditReview.apply'

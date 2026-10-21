@@ -14,7 +14,6 @@ import { editorPointerState } from '../../ide/input/pointer/state';
 import { inputFocus } from '../../ide/input/focus';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 
 test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
 	const clock = new VirtualHeadlessClock();
@@ -75,7 +74,7 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	let activePane = { handleWheel: (event: WheelInputSnapshot) => firstPane.push(event) };
 	// Only the routing dependencies are replaced; this is not a RuntimeCartEditor/UI fixture.
 	const editor = {
-		quickInput: { visible: false }, contextMenu: { visible: false },
+		quickInput: { visible: false }, contextMenu: { visible: false, handleWheel() {} },
 		resourcePanel: { getBounds: () => null, isVisible: () => false },
 		editorPanes: { get activePane() { return activePane; } },
 	} as unknown as CartEditor;
@@ -108,9 +107,10 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 	const focusedGame = inputFocus.createTarget();
 	focusedGame.guestInput = { bounds: { left: 250, top: 40, right: 390, bottom: 250 }, recipient: input };
 	focusedGame.focus();
-	t.after(() => { inputFocus.setTarget(null); editorChromeState.openMenuId = null; input.dispose(); });
+	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
 	let sourceScroll = 0;
-	const editor = { quickInput: { visible: false }, contextMenu: { visible: false },
+	const popup = { visible: false, handleWheel() {} };
+	const editor = { quickInput: { visible: false }, contextMenu: popup,
 		resourcePanel: { getBounds: () => null, isVisible: () => false },
 		editorPanes: { activePane: { handleWheel: (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; } } },
 	} as unknown as CartEditor;
@@ -118,10 +118,10 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 		viewportX: event.x, viewportY: event.y, valid: true, insideViewport: true,
 		deltaX: event.deltaX, deltaY: event.deltaY, modifiers: event.modifiers,
 	}));
-	editorChromeState.openMenuId = 'file';
+	popup.visible = true;
 	remote.apply([{ type: 'pointer', x: 100, y: 100 }, { type: 'wheel', deltaY: 2 }]);
 	assert.equal(sourceScroll, 0);
-	editorChromeState.openMenuId = null;
+	popup.visible = false;
 	remote.apply([{ type: 'wheel', deltaY: 0.25 }]);
 	assert.equal(sourceScroll, 0.25);
 	assert.equal(inputFocus.target, focusedGame, 'scrolling another surface does not steal keyboard focus');

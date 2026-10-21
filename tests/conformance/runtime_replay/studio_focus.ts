@@ -5,17 +5,16 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated_modules';
 import { check, type StudioFixture } from './studio_fixture';
 
 async function historyMenu(test: StudioFixture, command: 'undo' | 'redo'): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.edit);
-	check(editorChromeState.openMenuId === 'edit', 'focus: real Edit menu opens');
-	const item = TOP_BAR_MENUS.edit.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === command)!;
-	check(!item.disabled, `focus: ${command} menu reflects the focused control's history`);
-	await test.click(item.bounds);
+	check(test.ide.editor.menubar.activeMenu === 'edit', 'focus: real Edit menu opens');
+	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
+	check(item.enabled, `focus: ${command} menu reflects the focused control's history`);
+	await test.clickContextCommand(item.command!);
 }
 
 /** Arrange real source views; every edit, history action, rename opening and tab switch below uses physical input. */
@@ -167,8 +166,8 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('Escape');
 
 	await click(editorChromeState.menuEntryBounds.view);
-	const scenarioLabItem = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'scenarioLab')!;
-	await click(scenarioLabItem.bounds);
+	const scenarioLabItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
+	await test.clickContextCommand(scenarioLabItem.command!);
 	check(getActiveTab().kind === 'scenario_lab' && !activeCodeEditor.focusTarget.hasFocus && model.canRedo,
 		'focus: real non-code view takes input ownership while the source retains redoable history');
 	const viewTarget = inputFocus.target;
@@ -227,6 +226,6 @@ export async function presentStudioFocus(test: StudioFixture): Promise<void> {
 	await test.press('ControlLeft', 'KeyA');
 	for (const key of ['KeyP', 'KeyO', 'KeyS']) await test.press(key);
 	await test.click(editorChromeState.menuEntryBounds.edit);
-	check(editorSearchState.field.focusTarget.hasFocus && editorChromeState.openMenuId === 'edit', 'focus: final menu preserves the real input target');
+	check(test.ide.editor.contextMenu.focusTarget.commandContext === editorSearchState.field.focusTarget && test.ide.editor.menubar.activeMenu === 'edit', 'focus: final menu preserves the real input target');
 	await test.frame();
 }

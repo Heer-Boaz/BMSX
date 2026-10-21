@@ -36,7 +36,7 @@ function fixture(t: TestContext) {
 		},
 	};
 	const show = (items = ITEMS, keyboard = false) => {
-		const lifetime = menu.show(200, 130, items, commands, keyboard);
+		const lifetime = menu.show(200, 130, items, commands, { selectFirst: keyboard });
 		menu.model.layout(384, 288, 8, FONT, measure); menu.update();
 		return lifetime;
 	};
@@ -122,9 +122,9 @@ test('menu geometry stays within tiny viewport, retains layout and scrolls every
 	const counted = (text: string) => { measured += 1; return measure(text); };
 	model.layout(128, 80, 8, FONT, counted); f.menu.update();
 	assert.ok(model.bounds.left >= 0 && model.bounds.top >= 0 && model.bounds.right <= 128 && model.bounds.bottom <= 80);
-	assert.equal(measured, 40);
+	assert.equal(measured, 0, 'resizing reuses the row label measurements from the original layout');
 	for (let i = 0; i < 100; i += 1) model.layout(128, 80, 8, FONT, counted);
-	assert.equal(measured, 40, 'unchanged frames neither remeasure nor allocate row geometry');
+	assert.equal(measured, 0, 'unchanged frames neither remeasure nor allocate row geometry');
 	f.press('End'); assert.equal(model.selectedIndex, 39);
 	const last = model.rows[39];
 	assert.ok(model.viewport.offsetTop + last.bottom <= model.viewport.bounds.bottom);

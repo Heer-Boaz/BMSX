@@ -1,6 +1,7 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
-import type { EditorCommandRunner } from '../../../common/commands';
+import { editorCommandTitle } from '../../../commands/catalog';
+import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
@@ -9,10 +10,20 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
-import { ContextMenuModel } from './model';
+import { ContextMenuModel, type ContextMenuPlacement } from './model';
+
+export type ContextMenuOptions = {
+	readonly selectFirst?: boolean;
+	readonly placement?: ContextMenuPlacement;
+	readonly shortTitles?: boolean;
+	readonly onNavigate?: (direction: 1 | -1) => void;
+};
+
+type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: EditorCommandId): boolean };
 
 type ContextMenuSession = {
-	readonly commands: EditorCommandRunner;
+	readonly commands: ContextMenuCommandRunner;
+	readonly options: ContextMenuOptions;
 	readonly returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 };
@@ -44,22 +55,22 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public get visible(): boolean { return this.session !== undefined; }
 
 	/** The caller attaches source/target invalidation to the returned popup lifetime. */
-	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: EditorCommandRunner,
-		selectFirst = false): DisposableStore {
-		this.hide();
+	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: ContextMenuCommandRunner,
+		options: ContextMenuOptions = {}): DisposableStore {
+		const origin = this.session === undefined ? this.focus.target : this.session.returnFocus;
+		this.hide(false);
 		this.capture.cancel();
-		const origin = this.focus.target;
 		this.focusTarget.focus();
 		const returnFocus = this.focus.resolveTarget(origin);
 		this.focusTarget.commandContext = returnFocus === null ? this.focusTarget : returnFocus.commandContext;
 		const disposables = new DisposableStore();
-		this.session = { commands, returnFocus, disposables };
-		this.model.setItems(items, x, y);
+		this.session = { commands, returnFocus, disposables, options };
+		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
 		this.pointerY = y;
-		this.pointerKnown = !selectFirst;
+		this.pointerKnown = !options.selectFirst;
 		this.update();
-		if (selectFirst) this.model.selectNext(1);
+		if (options.selectFirst) this.model.selectNext(1);
 		return disposables;
 	}
 
@@ -80,7 +91,15 @@ export class ContextMenuController implements PointerCaptureTarget {
 			this.cancelPointer();
 			this.revision = this.model.viewport.revision;
 		}
-		for (const row of this.model.rows) row.enabled = row.command !== undefined && this.session.commands.isEnabled(row.command);
+		for (const row of this.model.rows) {
+			if (row.command === undefined) continue;
+			row.enabled = this.session.commands.isEnabled(row.command);
+			const active = this.session.commands.isActive?.(row.command) === true;
+			if (active !== row.active) {
+				row.active = active;
+				this.model.setLabel(row, editorCommandTitle(row.command, active, this.session.options.shortTitles).toUpperCase());
+			}
+		}
 		if (this.pressedIndex >= 0 && !this.model.rows[this.pressedIndex].enabled) this.cancelPointer();
 		if (this.model.selectedIndex >= 0 && !this.model.rows[this.model.selectedIndex].enabled) this.model.selectNext(1);
 	}
@@ -158,6 +177,13 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (input.modifiers !== KeyModifier.none) {
 			if (this.triggerKey !== undefined) this.cancelPointer();
 			return false;
+		}
+		const navigate = this.session!.options.onNavigate;
+		if (navigate !== undefined && (isKeyDown('ArrowLeft', input) || isKeyDown('ArrowRight', input))) {
+			consumeIdeKey(input.code, input);
+			this.cancelPointer();
+			navigate(input.code === 'ArrowLeft' ? -1 : 1);
+			return true;
 		}
 		if (ACCEPT_KEYS.includes(input.code as typeof ACCEPT_KEYS[number]) && !input.consumed) {
 			if (input.down && !input.repeat && this.triggerKey === undefined && this.model.selectedIndex >= 0) {

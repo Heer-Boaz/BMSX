@@ -76,7 +76,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.label = 'Hide';
 		this.inspector.onContextMenu = (x, y, keyboard) => {
 			this.input.running = false;
-			const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.property.context'], this.commands, keyboard);
+			const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.property.context'], this.commands, { selectFirst: keyboard });
 			lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 		};
 		this.focusTarget.next = this.actions.focusTarget;
@@ -117,7 +117,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				run: () => {
 					const bar = this.input.presentation === 'outline' ? this.input.actionBar : this.input.stateGraphActions;
 					const bounds = bar.items.find(item => item.command === 'actorLab.more')!.bounds;
-					const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, true);
+					const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: true });
 					lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 				},
 			});
@@ -400,7 +400,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('actorLab.details');
 			else if (result === WorkbenchGraphPointerResult.ContextMenu) {
 				this.input.running = false;
-				const lifetime = this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, false);
+				const lifetime = this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: false });
 				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 			}
 			return result !== WorkbenchGraphPointerResult.Outside;
@@ -415,7 +415,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			this.input.rememberSelection();
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 				this.input.running = false;
-				const lifetime = this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, false);
+				const lifetime = this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: false });
 				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 			} else if (workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX)) {
 				const node = this.input.outline.rows[index];

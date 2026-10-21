@@ -2,7 +2,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -79,12 +78,12 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('PageDown');
 	check(picker.model.list.selectionIndex >= picker.model.firstVisibleIndex, 'quick pick: keyboard selection is revealed after wheel scrolling');
 	await click(editorChromeState.menuEntryBounds.view, 8);
-	check(!picker.visible && editorChromeState.openMenuId === null && inputFocus.target === x.field.focusTarget,
+	check(!picker.visible && test.ide.editor.menubar.activeMenu === undefined && inputFocus.target === x.field.focusTarget,
 		'quick pick: one outside held click cancels without clicking through into the View menu');
 
 	await click(editorChromeState.menuEntryBounds.view);
-	const scenarioItem = TOP_BAR_MENUS.view.items.find((item): item is TopBarMenuItem => item.type === 'command' && item.command === 'scenarioLab')!;
-	await click(scenarioItem.bounds);
+	const scenarioItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
+	await test.clickContextCommand(scenarioItem.command!);
 	const scenario = getActiveTab();
 	check(scenario.kind === 'scenario_lab', 'quick pick: actual Scenario Lab is active');
 	const scenarioFocus = inputFocus.target;

@@ -48,7 +48,6 @@ import type { EditorCommandId } from '../../../ide/common/commands';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -213,11 +212,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');
-		if (editorChromeState.openMenuId !== 'run') await click(editorChromeState.menuEntryBounds.run);
-		check(editorChromeState.openMenuId === 'run', 'Run menu opens through its visible pointer target');
-		const item = TOP_BAR_MENUS.run.items.find((item): item is TopBarMenuItem => item.type === 'command' && item.command === command);
-		check(!item.disabled, `Run-menu command must be enabled: ${command}`);
-		await click(item.bounds);
+		if (ide.editor.menubar.activeMenu !== 'run') await click(editorChromeState.menuEntryBounds.run);
+		check(ide.editor.menubar.activeMenu === 'run', 'Run menu opens through its visible pointer target');
+		const item = ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
+		check(item.enabled, `Run-menu command must be enabled: ${command}`);
+		await clickContextCommand(item.command!);
 	};
 	const runPaletteCommand = async (label: string): Promise<void> => {
 		await press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -236,7 +235,13 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		const row = menu.model.rows.find(row => row.command === command)!;
 		check(menu.visible && row !== undefined && row.enabled, `menu command must be available: ${command}`);
 		const viewport = menu.model.viewport;
-		const top = viewport.offsetTop + row.top, bottom = viewport.offsetTop + row.bottom;
+		let top = viewport.offsetTop + row.top, bottom = viewport.offsetTop + row.bottom;
+		const delta = top < viewport.bounds.top ? top - viewport.bounds.top : bottom > viewport.bounds.bottom ? bottom - viewport.bounds.bottom : 0;
+		if (delta !== 0) {
+			movePointer(viewport.bounds); await frame();
+			remote.apply([{ type: 'wheel', deltaY: delta / menu.model.rowHeight }]); await frame();
+			top = viewport.offsetTop + row.top; bottom = viewport.offsetTop + row.bottom;
+		}
 		check(top >= viewport.bounds.top && bottom <= viewport.bounds.bottom, `menu command must be visible: ${command}`);
 		await click({ left: viewport.bounds.left, right: viewport.bounds.right, top, bottom }, heldFrames);
 	};

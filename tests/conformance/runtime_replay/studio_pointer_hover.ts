@@ -17,11 +17,11 @@ export async function testStudioPointerHover(test: StudioFixture, scene: SceneEd
 	check(scene.actionBar.hoveredCommand === null, 'A09: Source → chrome sends leave');
 	movePointer(source.bounds); await frame();
 	await click(editorChromeState.menuEntryBounds.file);
-	check(editorChromeState.openMenuId === 'file', 'A09: actual menu is open');
+	check(test.ide.editor.menubar.activeMenu === 'file', 'A09: actual menu is open');
 	movePointer(source.bounds); await frame();
 	check(scene.actionBar.hoveredCommand === null, 'A09: an open menu excludes underlying hover, not only clicks');
 	await click(editorChromeState.menuEntryBounds.file);
-	check(editorChromeState.openMenuId === null, 'A09: closing the menu restores the underlying route');
+	check(test.ide.editor.menubar.activeMenu === undefined, 'A09: closing the menu restores the underlying route');
 	await frame();
 	movePointer(source.bounds); await frame();
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');

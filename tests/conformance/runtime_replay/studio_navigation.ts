@@ -3,7 +3,6 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab, closeTab } from '../../../ide/workbench/ui/tabs';
-import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { EditorViewCommandId } from '../../../ide/common/commands';
 import { check, type StudioFixture } from './studio_fixture';
@@ -11,9 +10,9 @@ import { chooseBehavior } from './studio_behavior_picker';
 
 async function openView(test: StudioFixture, command: EditorViewCommandId): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.view);
-	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === command)!;
-	check(!item.disabled, `navigation: ${command} is enabled from ${getActiveTab().kind}`);
-	await test.click(item.bounds);
+	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
+	check(item.enabled, `navigation: ${command} is enabled from ${getActiveTab().kind}`);
+	await test.clickContextCommand(item.command!);
 }
 
 async function chooseSource(test: StudioFixture, path: string): Promise<void> {

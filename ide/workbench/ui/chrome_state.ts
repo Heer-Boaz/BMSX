@@ -13,13 +13,11 @@ type EditorChromeState = {
 	runtimeTimelineHeight: number;
 	editorRightInset: number;
 	menuEntryBounds: Record<MenuId, RectBounds>;
-	menuDropdownBounds: RectBounds;
 	tabBarBounds: RectBounds;
 	tabViewportBounds: RectBounds;
 	tabActions: WorkbenchActionBarState;
 	tabScrollbar: Scrollbar;
 	tabScrollControl: ScrollbarPointerControl;
-	openMenuId: MenuId | null;
 	tabButtonBounds: Map<EditorTabId, RectBounds>;
 	tabCloseButtonBounds: Map<EditorTabId, RectBounds>;
 	tabHoverId: EditorTabId | null;
@@ -42,13 +40,11 @@ export const editorChromeState: EditorChromeState = {
 		run: create_rect_bounds(),
 		view: create_rect_bounds(),
 	},
-	menuDropdownBounds: null,
 	tabBarBounds: create_rect_bounds(),
 	tabViewportBounds: create_rect_bounds(),
 	tabActions: createWorkbenchActionBar('editorTabs.title'),
 	tabScrollbar,
 	tabScrollControl: new ScrollbarPointerControl(pointerCapture),
-	openMenuId: null,
 	tabButtonBounds: new Map<EditorTabId, RectBounds>(),
 	tabCloseButtonBounds: new Map<EditorTabId, RectBounds>(),
 	tabHoverId: null,
