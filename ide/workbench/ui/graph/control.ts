@@ -4,7 +4,7 @@ import { dragScrollSpeed } from '../drag_scroll';
 import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
-import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
+import type { PointerPosition, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
@@ -203,7 +203,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		}
 	}
 
-	private updateDrag(snapshot: PointerSnapshot): void {
+	private updateDrag(snapshot: PointerPosition): void {
 		const view = this.inputValue!;
 		const drag = this.drag!;
 		const feedback = drag.feedback;

@@ -200,7 +200,7 @@ test('wheel and host-time edge scrolling refresh canvas position without changin
 	const position = f.pointer(180, 160);
 	f.capture.dispatch(position, false, 20);
 	const feedback = f.interaction.feedback!;
-	f.control.handleWheel({ ...position, deltaX: 14 / 16, deltaY: 6 / 16, modifiers: KeyModifier.none, spaceDown: false });
+	f.control.handleWheel({ viewportX: position.viewportX, viewportY: position.viewportY, valid: true, insideViewport: true, deltaX: 14 / 16, deltaY: 6 / 16, modifiers: KeyModifier.none });
 	assert.deepEqual(feedback.points, [194, 166, 242, 55]);
 	assert.equal(f.interaction.starts.length, 1);
 	assert.equal(f.interaction.overs, 2);

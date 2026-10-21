@@ -70,6 +70,7 @@ export class CompletionController {
 	private readonly clampPositionScratch = { row: 0, column: 0 };
 	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
+	private maxVisibleItems = constants.COMPLETION_POPUP_MAX_VISIBLE;
 	public readonly popupBoundsScratch = create_rect_bounds();
 
 	protected isCompletionContextActive(): boolean {
@@ -186,6 +187,18 @@ export class CompletionController {
 	public enterCommitsCompletion = false;
 
 	// Public API for editor integration
+	public layoutPopup(availableHeight: number, lineHeight: number): void {
+		const available = availableHeight - constants.COMPLETION_POPUP_PADDING_Y * 2 + constants.COMPLETION_POPUP_ITEM_SPACING;
+		const capacity = Math.min(constants.COMPLETION_POPUP_MAX_VISIBLE, Math.max(1, Math.trunc(available / (lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING))));
+		if (capacity === this.maxVisibleItems) return;
+		this.maxVisibleItems = capacity;
+		const session = this.completionSession;
+		if (session !== null) {
+			session.maxVisibleItems = capacity;
+			this.ensureCompletionSelectionVisible(session);
+		}
+	}
+
 	public closeSession(): void {
 		this.completionSession = null;
 		this.popupBounds = null;
@@ -777,7 +790,7 @@ export class CompletionController {
 			displayOffset: 0,
 			anchorRow: cursor.row,
 			anchorColumn: cursor.column,
-			maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+			maxVisibleItems: this.maxVisibleItems,
 			filterCache: new Map(),
 			trigger,
 			navigationCaptured: trigger === 'manual',
@@ -890,7 +903,7 @@ export class CompletionController {
 		const upperBound = offset + visible - 1;
 		if (session.selectionIndex > upperBound) offset = session.selectionIndex - visible + 1;
 		if (offset < 0) offset = 0;
-		const maxOffset = session.filteredItems.length - visible;
+		const maxOffset = Math.max(0, session.filteredItems.length - visible);
 		if (offset > maxOffset) offset = maxOffset;
 		session.displayOffset = offset;
 	}

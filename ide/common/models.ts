@@ -212,18 +212,20 @@ export type EditorContextToken = {
 	endColumn: number;
 };
 
-export type PointerSnapshot = PointerButtons & {
+export type PointerPosition = {
 	viewportX: number;
 	viewportY: number;
 	insideViewport: boolean;
 	valid: boolean;
 };
 
-/** Event-time editing context; ordinary controls only need PointerSnapshot geometry. */
+export type PointerSnapshot = PointerPosition & PointerButtons;
+
+/** Event-time editing context for pointer gestures. */
 export type PointerInputSnapshot = PointerSnapshot & { modifiers: KeyModifier; spaceDown: boolean };
 
 /** A wheel occurrence keeps its event-time target, modifiers and fractional movement. */
-export type WheelInputSnapshot = PointerInputSnapshot & { deltaX: number; deltaY: number };
+export type WheelInputSnapshot = PointerPosition & { modifiers: KeyModifier; deltaX: number; deltaY: number };
 
 export type InlineInputOptions = {
 	allowSpace: boolean;

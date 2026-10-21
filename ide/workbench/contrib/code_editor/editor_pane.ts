@@ -147,6 +147,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
 		refreshViewportLayout();
+		this.editor.completion.layoutPopup(bounds.bottom - bounds.top, editorViewState.lineHeight);
 	}
 
 	public override update(deltaSeconds: number): void {
@@ -175,6 +176,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public draw(): void {
+		this.editor.completion.layoutPopup(this.contentBounds.bottom - this.contentBounds.top, editorViewState.lineHeight);
 		renderInlineWidgets();
 		const renameActive = renameController.isActive();
 		renderCodeArea(

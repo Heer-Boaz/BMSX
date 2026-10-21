@@ -445,6 +445,11 @@ export class HostOverlayMenu {
 			: this.page === HostOverlayPage.Rewind ? HostMenuExecution.Rewind : HostMenuExecution.Live;
 	}
 
+	/** Options and rewind own host input; the keyboard remains an editing producer. */
+	public get exclusiveInput(): boolean {
+		return this.page !== HostOverlayPage.Closed && this.page !== HostOverlayPage.Keyboard;
+	}
+
 	/** Host frontends and physical shortcuts enter the same frame-boundary transition. */
 	public readonly requestToggleMenu = (): void => { this.pendingRequest |= HostOverlayRequest.ToggleMenu; };
 	public readonly requestToggleKeyboard = (): void => { this.pendingRequest |= HostOverlayRequest.ToggleKeyboard; };
@@ -895,6 +900,7 @@ export class HostOverlayMenu {
 				: HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
 		this.input.getGlobalShortcutRegistry().cancelControlShortcutGestures();
 		this.uiInput.reset(sources, MENU_KEYBOARD_BUTTONS);
+		this.input.setForegroundInput(this.uiInput, this.exclusiveInput);
 		this.input.getGlobalShortcutRegistry().setGamepadControlShortcutMask(
 			next === HostOverlayPage.Keyboard ? KEYBOARD_HOST_SHORTCUT_MASK : null,
 		);

@@ -161,7 +161,7 @@ test('scrollbar track clicks and wheel use the same position; resize removing th
 	f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Primary;
 	f.control.handlePointer(f.pointer, 0);
 	assert.ok(f.view.scrollX > 0);
-	f.control.handleWheel({ ...f.pointer, deltaX: -40 / 16, deltaY: 20 / 16, modifiers: KeyModifier.none, spaceDown: false });
+	f.control.handleWheel({ viewportX: f.pointer.viewportX, viewportY: f.pointer.viewportY, valid: true, insideViewport: true, deltaX: -40 / 16, deltaY: 20 / 16, modifiers: KeyModifier.none });
 	assert.equal(f.view.scrollX, f.view.horizontalScrollbar.getScroll());
 	assert.equal(f.capture.dispatch(f.pointer, false, 20), false, 'wheel ends a thumb gesture');
 	f.control.handlePointer(f.pointer, 40);

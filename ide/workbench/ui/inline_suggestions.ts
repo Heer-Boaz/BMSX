@@ -1,6 +1,6 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerPosition, PointerSnapshot } from '../../common/models';
 import * as colors from '../../common/constants';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
@@ -108,7 +108,7 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 	}
 	public cancelPointer(): void { pointerCapture.release(this); this.pressedItem = undefined; }
 	public onPointerLeave(): void { this.model.list.hoverIndex = -1; }
-	public handleWheel(pointer: PointerSnapshot, delta: number): boolean {
+	public handleWheel(pointer: PointerPosition, delta: number): boolean {
 		if (!this.visible || !point_in_rect(pointer.viewportX, pointer.viewportY, this.bounds)) return false;
 		this.cancelPointer(); this.scrollbarPointer.cancelPointer();
 		this.model.viewport.scrollbar.setScroll(this.model.viewport.scrollTop + delta * this.model.rowHeight); return true;

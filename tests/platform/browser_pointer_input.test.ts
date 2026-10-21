@@ -19,7 +19,7 @@ export function start() {
 		get textTarget() { return inputFocus.target?.textInput; },
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 		dispatchKey(event) { inputFocus.handleKeyboard(event); return event.consumed; },
-		cancelInput() { inputFocus.cancelKeyboard(); },
+		cancelInput() { inputFocus.cancelInput(); },
 	};
 	const clock = new BrowserHostClock();
 	const hub = new BrowserInputHub(canvas, canvas, clock, undefined, 'ScrollLock');

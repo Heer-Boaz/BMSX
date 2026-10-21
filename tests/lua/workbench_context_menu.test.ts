@@ -84,7 +84,7 @@ test('keyboard skips separators/disabled commands, preserves selection without p
 	f.press('Home'); assert.equal(f.menu.model.selectedIndex, 0);
 	f.press('End'); assert.equal(f.menu.model.selectedIndex, 3);
 	f.focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
-	f.focus.cancelKeyboard();
+	f.focus.cancelInput();
 	f.focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
 	assert.deepEqual(f.executed, [], 'host cancellation revokes the armed command without accepting it');
 	f.press('Enter'); assert.deepEqual(f.executed, ['save']);

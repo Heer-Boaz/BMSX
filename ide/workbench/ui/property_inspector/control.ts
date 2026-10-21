@@ -4,7 +4,7 @@ import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandId } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerPosition, PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -212,7 +212,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		return this.scroll.handlePointer(snapshot);
 	}
 
-	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean { return this.scroll.handleWheel(snapshot, delta); }
+	public handleWheel(snapshot: PointerPosition, delta: number): boolean { return this.scroll.handleWheel(snapshot, delta); }
 
 	private handleKeyboard(input: KeyInputEvent): boolean {
 		if (input.modifiers !== KeyModifier.none) { this.triggerKey = undefined; return false; }

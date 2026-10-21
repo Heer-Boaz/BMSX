@@ -201,7 +201,7 @@ export class BrowserInputHub implements InputSource {
 	private keyboardCapture: ((code: string) => boolean) = null;
 	private nativeKeyHandler: ((event: KeyboardEvent) => boolean) | undefined;
 	private nativePointerHandler: ((event: PointerInputEvent) => void) | undefined;
-	private nativeWheelHandler: ((event: WheelInputEvent) => void) | undefined;
+	private nativeWheelHandler: ((event: WheelInputEvent) => boolean) | undefined;
 	private readonly nativeWheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 	private canvasButtons = 0;
 	private readonly nativePointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
@@ -395,7 +395,7 @@ export class BrowserInputHub implements InputSource {
 		this.nativePointerHandler = handler;
 	}
 
-	setNativeWheelHandler(handler: ((event: WheelInputEvent) => void) | undefined): void {
+	setNativeWheelHandler(handler: ((event: WheelInputEvent) => boolean) | undefined): void {
 		this.nativeWheelHandler = handler;
 	}
 
@@ -707,8 +707,10 @@ export class BrowserInputHub implements InputSource {
 		this.sink.inputAxis1('pointer:0', 'pointer_wheel', event.deltaY, now);
 		const unitsPerStep = event.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? 120
 			: event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : 1;
-		this.sink.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY / unitsPerStep, now);
-		if (this.nativeWheelHandler === undefined) return;
+		if (this.nativeWheelHandler === undefined) {
+			this.sink.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY / unitsPerStep, now);
+			return;
+		}
 		const wheel = this.nativeWheel;
 		wheel.x = event.clientX;
 		wheel.y = event.clientY;
@@ -722,7 +724,7 @@ export class BrowserInputHub implements InputSource {
 		wheel.modifiers = (event.shiftKey ? KeyModifier.shift : 0) | (event.ctrlKey ? KeyModifier.ctrl : 0)
 			| (event.altKey ? KeyModifier.alt : 0) | (event.metaKey ? KeyModifier.meta : 0);
 		wheel.timestamp = now;
-		this.nativeWheelHandler(wheel);
+		if (!this.nativeWheelHandler(wheel)) this.sink.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY / unitsPerStep, now);
 	};
 
 	private onContextMenu = (event: MouseEvent) => {

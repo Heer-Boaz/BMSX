@@ -14,6 +14,7 @@ import { editorPointerState } from '../../ide/input/pointer/state';
 import { inputFocus } from '../../ide/input/focus';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 
 test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
 	const clock = new VirtualHeadlessClock();
@@ -28,6 +29,7 @@ test('remote wheel preserves ordering, fractions and source-time context before 
 		events.push({ ...event, pane });
 		scroll[pane] += event.deltaY;
 		assert.equal(input.getPlayerInput(1).pollFrame, 0);
+		return false;
 	});
 	clock.advance(17);
 	remote.apply([
@@ -81,7 +83,6 @@ test('public wheel router delivers each occurrence to its current pane using sup
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	const first: WheelInputSnapshot = {
 		viewportX: 100, viewportY: 100, valid: true, insideViewport: true,
-		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, spaceDown: false,
 		deltaX: 0.125, deltaY: 0.25, modifiers: KeyModifier.shift,
 	};
 	handleEditorWheelInput(editor, first);
@@ -97,4 +98,38 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	handleEditorWheelInput(editor, { ...first, viewportY: 5 });
 	assert.equal(secondPane.length, 1, 'wheel over non-scrolling chrome does not reach the active editor');
 	editorPointerState.lastPointerSnapshot = null;
+});
+
+test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not keyboard focus', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	editorViewState.viewportWidth = 400; editorViewState.viewportHeight = 300;
+	refreshWorkbenchLayout();
+	const focusedGame = inputFocus.createTarget();
+	focusedGame.guestInput = { bounds: { left: 250, top: 40, right: 390, bottom: 250 }, recipient: input };
+	focusedGame.focus();
+	t.after(() => { inputFocus.setTarget(null); editorChromeState.openMenuId = null; input.dispose(); });
+	let sourceScroll = 0;
+	const editor = { quickInput: { visible: false }, contextMenu: { visible: false },
+		resourcePanel: { getBounds: () => null, isVisible: () => false },
+		editorPanes: { activePane: { handleWheel: (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; } } },
+	} as unknown as CartEditor;
+	const remote = new RemoteInput(input, clock, undefined, undefined, event => handleEditorWheelInput(editor, {
+		viewportX: event.x, viewportY: event.y, valid: true, insideViewport: true,
+		deltaX: event.deltaX, deltaY: event.deltaY, modifiers: event.modifiers,
+	}));
+	editorChromeState.openMenuId = 'file';
+	remote.apply([{ type: 'pointer', x: 100, y: 100 }, { type: 'wheel', deltaY: 2 }]);
+	assert.equal(sourceScroll, 0);
+	editorChromeState.openMenuId = null;
+	remote.apply([{ type: 'wheel', deltaY: 0.25 }]);
+	assert.equal(sourceScroll, 0.25);
+	assert.equal(inputFocus.target, focusedGame, 'scrolling another surface does not steal keyboard focus');
+	remote.apply([{ type: 'pointer', x: 300, y: 100 }, { type: 'wheel', deltaY: 1 }]);
+	assert.equal(sourceScroll, 0.25);
+	input.pollInput();
+	const snapshot = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(snapshot.pointerWheelQ16, 65536, 'only the guest-owned wheel occurrence reaches the machine');
+	assert.equal(input.getPlayerInput(1).getRawButtonState('pointer_wheel', 'pointer').value, 3.25);
 });

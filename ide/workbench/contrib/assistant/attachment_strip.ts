@@ -1,6 +1,6 @@
 import { showEditorMessage } from '../../../common/feedback_state';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerPosition, PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
@@ -91,7 +91,7 @@ export class AssistantAttachmentStrip {
 		}
 		return true;
 	}
-	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean {
+	public handleWheel(snapshot: PointerPosition, delta: number): boolean {
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
 		this.first = Math.max(0, Math.min(this.attachments!.images.length - this.columns, this.first + delta));
 		return true;

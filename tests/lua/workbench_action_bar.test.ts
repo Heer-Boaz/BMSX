@@ -167,7 +167,7 @@ test('Enter, NumpadEnter and Space pair down/up once; holding does not repeat', 
 test('keyboard navigation, blur, Escape, input replacement and disable revoke a trigger', t => {
 	const f = fixture(t);
 	for (const cancel of [
-		() => f.press('ArrowRight'), () => f.press('Escape'), () => f.focus.cancelKeyboard(), () => f.content.focus(),
+		() => f.press('ArrowRight'), () => f.press('Escape'), () => f.focus.cancelInput(), () => f.content.focus(),
 		() => { f.enabled.clear(); f.bar.update(); },
 		() => { f.bar.clearInput(); f.bar.setInput(f.state, f.content); },
 	]) {

@@ -120,7 +120,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 	const rowHeight = controller.getItemLayout(0).height;
 	const delta = rowHeight / editorViewState.lineHeight / 4;
 	for (let step = 1; step <= 4; step++) {
-		assert.equal(controller.handlePointerWheel(delta), true);
+		assert.equal(controller.handlePointerWheel(delta, bounds), true);
 		assert.equal(controller.getScrollIndex(), step === 4 ? 1 : 0);
 	}
 	const overlay = createHostOverlayFixture(160, 100);
@@ -128,7 +128,35 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 	controller.draw(bounds); overlay.renderer.endFrame();
 	assert.equal(controller.getSelectionIndex(), 0);
 	assert.equal(controller.getScrollIndex(), 1);
-	controller.handlePointerWheel(-delta);
+	controller.handlePointerWheel(-delta, bounds);
 	assert.equal(controller.getScrollIndex(), 0);
+	assert.equal(controller.getSelectionIndex(), 0);
+});
+
+test('Problems wheel prepares current variable-height layout after show, resize and diagnostic refresh without painting', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const model = new EditorTextModel({ domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
+	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
+	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
+	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };
+	const controller = new ProblemsPanelController();
+	controller.show(); controller.setDiagnostics(diagnostics, coverage);
+	t.after(() => { controller.hide(); model.dispose(); });
+	const wide = { left: 0, top: 0, right: 320, bottom: 100 };
+	assert.equal(controller.getCachedLayout(), null);
+	assert.equal(controller.handlePointerWheel(1, wide), true);
+	assert.equal(controller.getScrollIndex(), 1, 'first wheel after showing and installing diagnostics is not dropped');
+	const wideHeight = controller.getItemLayout(1).height;
+	const narrow = { ...wide, right: 80 };
+	controller.setFixedHeightPx(90);
+	assert.equal(controller.getCachedLayout(), null);
+	assert.equal(controller.handlePointerWheel(1, narrow), true);
+	const narrowHeight = controller.getItemLayout(1).height;
+	assert.ok(narrowHeight > wideHeight);
+	assert.equal(controller.getScrollIndex(), 1, 'one line must not skip a multiline diagnostic');
+	controller.setDiagnostics(diagnostics, coverage);
+	assert.equal(controller.getCachedLayout(), null);
+	assert.equal(controller.handlePointerWheel(narrowHeight / editorViewState.lineHeight - 1, narrow), true);
+	assert.equal(controller.getScrollIndex(), 2, 'fractional progress survives invalidation and crosses the actual wrapped height');
 	assert.equal(controller.getSelectionIndex(), 0);
 });

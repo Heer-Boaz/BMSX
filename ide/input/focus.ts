@@ -32,6 +32,7 @@ export class InputFocusTarget {
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();
 	private readonly blurListeners = new Set<() => void>();
 	private readonly focusListeners = new Set<() => void>();
+	private inputCancellationListeners: Set<() => void> | undefined;
 	public clipboard: ClipboardTarget | undefined;
 	public textInput: TextInputTarget | undefined;
 	private keyboardHandler: ((input: KeyInputEvent) => void) | undefined;
@@ -77,6 +78,13 @@ export class InputFocusTarget {
 		return () => this.focusListeners.delete(listener);
 	}
 
+	/** Input can be revoked without blurring or committing the control's draft. */
+	public onDidCancelInput(listener: () => void): () => void {
+		const listeners = this.inputCancellationListeners ??= new Set();
+		listeners.add(listener);
+		return () => listeners.delete(listener);
+	}
+
 	/** The control owner binds its input handler before making it focusable. */
 	public bindKeyboard(handler: (input: KeyInputEvent) => void, cancel?: () => void): () => void {
 		this.keyboardHandler = handler;
@@ -84,7 +92,12 @@ export class InputFocusTarget {
 		return () => { this.keyboardHandler = undefined; this.keyboardCancellation = undefined; };
 	}
 
-	public cancelKeyboard(): void { this.keyboardCancellation?.(); }
+	public cancelInput(): void {
+		this.keyboardCancellation?.();
+		if (this.inputCancellationListeners !== undefined) {
+			for (const listener of this.inputCancellationListeners) listener();
+		}
+	}
 
 	public bindGamepad(handler: (input: PlayerInput) => void): () => void {
 		this.gamepadHandler = handler;
@@ -105,6 +118,7 @@ export class InputFocusTarget {
 	}
 
 	public didBlur(): void {
+		this.cancelInput();
 		for (const listener of this.blurListeners) listener();
 	}
 
@@ -173,7 +187,7 @@ export class InputFocusService {
 		if (this.targetValue !== null) this.targetValue.handleGamepad(input);
 	}
 
-	public cancelKeyboard(): void { this.targetValue?.cancelKeyboard(); }
+	public cancelInput(): void { this.targetValue?.cancelInput(); }
 
 	/** The containing view programs its focus order, excluding disabled controls. */
 	public moveFocus(backward: boolean): boolean {

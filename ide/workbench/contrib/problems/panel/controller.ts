@@ -179,8 +179,9 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		return handleProblemsPanelPointerInput(this, editorPanes, snapshot, justPressed, bounds);
 	}
 
-	public handlePointerWheel(deltaRows: number): boolean {
-		if (!this.visible || this.cachedLayout === null || this.diagnostics.length === 0) return false;
+	public handlePointerWheel(deltaRows: number, bounds: RectBounds): boolean {
+		if (!this.visible || this.diagnostics.length === 0) return false;
+		this.prepareLayout(bounds);
 		let index = this.getScrollIndex();
 		let offset = (this.scrollPosition - index) * this.getItemLayout(index).height + deltaRows * editorViewState.lineHeight;
 		while (offset < 0 && index > 0) {

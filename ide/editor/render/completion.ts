@@ -1,4 +1,3 @@
-import { clamp } from '../../../machine/ts/common/clamp';
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import {
@@ -89,14 +88,6 @@ function drawCompletionPopupCore(
 	if (maxAllowedWidth <= 0) return null;
 	const maxAllowedHeight = bounds.codeBottom - bounds.codeTop;
 	if (maxAllowedHeight <= 0) return null;
-	const maxVisibleByHeight = (() => {
-		const available = maxAllowedHeight - constants.COMPLETION_POPUP_PADDING_Y * 2 + constants.COMPLETION_POPUP_ITEM_SPACING;
-		const stride = lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING;
-		return Math.max(1, Math.floor(available / stride));
-	})();
-	session.maxVisibleItems = Math.min(constants.COMPLETION_POPUP_MAX_VISIBLE, maxVisibleByHeight);
-	const maxStartIndex = Math.max(0, session.filteredItems.length - session.maxVisibleItems);
-	session.displayOffset = clamp(session.displayOffset, 0, maxStartIndex);
 	const startIndex = session.displayOffset | 0;
 	const visibleCount = Math.min(session.filteredItems.length, session.maxVisibleItems);
 	const endIndex = Math.min(session.filteredItems.length, startIndex + visibleCount + (session.displayOffset > startIndex ? 1 : 0));

@@ -37,11 +37,13 @@ test('native text input stays ordered independently of render/input polling', as
 			public setSelection(start: number, end: number) { this.select(start, end); }
 		}
 		let target: Target | undefined = new Target();
+		let blocked = false;
 		const host = {
-			get textTarget() { return target; },
+			get textTarget() { return blocked ? undefined : target; },
 			cancelInput() {},
 			onDidChangeTarget(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
 			dispatchKey(event: { code: string; down: boolean; modifiers: number; repeat: boolean }) {
+				if (blocked) return false;
 				keyboard.push({ code: event.code, down: event.down, modifiers: event.modifiers, repeat: event.repeat });
 				if (!event.down || target === undefined) return false;
 				if (event.code === 'KeyA' && (event.modifiers & 10) !== 0) { target.select(0, target.text.length); return true; }
@@ -61,7 +63,7 @@ test('native text input stays ordered independently of render/input polling', as
 		const input = new api.BrowserTextInput(canvas, host);
 		hub.setNativeKeyHandler(input.handleKey);
 		const clipboard = new api.BrowserClipboard();
-		clipboard.bindInput(hub, () => target === undefined ? undefined : {
+		clipboard.bindInput(hub, () => blocked || target === undefined ? undefined : {
 			get readOnly() { return target!.readOnly; },
 			copy: () => target!.text.slice(target!.start, target!.end),
 			cut: () => target!.replaceText(target!.start, target!.end, ''),
@@ -75,6 +77,7 @@ test('native text input stays ordered independently of render/input polling', as
 		}
 		(globalThis as any).textFixture = {
 			reset(text = '', start = text.length, end = start) {
+				blocked = false;
 				target = new Target(); target.text = text; target.start = start; target.end = end;
 				edits.length = keyboard.length = rawKeys.length = native.length = 0; clipboardPastes = 0;
 				for (const listener of listeners) listener();
@@ -94,6 +97,7 @@ test('native text input stays ordered independently of render/input polling', as
 			external(text: string) { target!.text = text; target!.select(text.length); target!.revision++; input.refresh(); },
 			windowed() { target!.windowed = true; input.refresh(true); },
 			detach() { target = undefined; for (const listener of listeners) listener(); },
+			block(value: boolean) { blocked = value; for (const listener of listeners) listener(); },
 			readOnly() { target!.readOnly = true; target!.revision++; input.refresh(); },
 		};
 }`;
@@ -217,6 +221,33 @@ export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, lo
 		assert.equal((await read()).edits.length, 1);
 		await page.keyboard.insertText('?');
 		assert.equal((await read()).text, 'changed source?');
+	});
+	await t.test('temporary host exclusion retires composition and clipboard admission, then restores the same control', async () => {
+		await reset('retained');
+		await cdp.send('Input.imeSetComposition', { text: 'pending', selectionStart: 7, selectionEnd: 7 });
+		await page.evaluate(() => {
+			(globalThis as any).retiredTextarea = document.querySelector('textarea');
+			(globalThis as any).textFixture.block(true);
+		});
+		assert.equal(await page.locator('textarea').count(), 0, 'native admission ends in the owner-change callback, not a frame later');
+		await page.evaluate(() => navigator.clipboard.writeText('blocked paste'));
+		await page.keyboard.press('Control+a'); await page.keyboard.press('Control+x'); await page.keyboard.press('Control+v');
+		await page.keyboard.type('ignored');
+		await page.evaluate(() => {
+			const stale = (globalThis as any).retiredTextarea as HTMLTextAreaElement;
+			stale.value = 'late candidate';
+			stale.dispatchEvent(new CompositionEvent('compositionend', { data: 'late candidate' }));
+			stale.dispatchEvent(new InputEvent('input', { data: 'late candidate' }));
+		});
+		assert.equal((await read()).text, 'retained');
+		assert.deepEqual((await read()).edits, []);
+		assert.equal((await read()).clipboardPastes, 0);
+		await page.evaluate(() => (globalThis as any).textFixture.block(false));
+		assert.equal(await page.locator('textarea').count(), 1);
+		assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('textarea')), true);
+		assert.equal(await page.evaluate(() => document.querySelector('textarea') === (globalThis as any).retiredTextarea), false);
+		await page.keyboard.insertText('!');
+		assert.equal((await read()).text, 'retained!');
 	});
 	await t.test('composition confirmation keys cannot also submit to the focused host control', async () => {
 		await reset();

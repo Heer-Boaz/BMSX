@@ -19,7 +19,7 @@ export class RemoteInput {
 		private readonly clock: HostClock,
 		private readonly editingKey: ((code: string, down: boolean) => void) | undefined = undefined,
 		private readonly editingPointer: ((event: PointerInputEvent) => void) | undefined = undefined,
-		private readonly editingWheel: ((event: WheelInputEvent) => void) | undefined = undefined,
+		private readonly editingWheel: ((event: WheelInputEvent) => boolean) | undefined = undefined,
 	) {}
 
 	public apply(events: readonly HostControlInputEvent[]): void {
@@ -43,9 +43,9 @@ export class RemoteInput {
 					this.pointer.x = event.x; this.pointer.y = event.y;
 					this.publishPointer(timestamp, 0, 0, 0);
 					break;
-				case 'wheel':
+				case 'wheel': {
 					this.input.inputAxis1('pointer:0', 'pointer_wheel', event.deltaY, timestamp);
-					this.input.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY, timestamp);
+					let consumed = false;
 					if (this.editingWheel !== undefined) {
 						const wheel = this.wheel, keys = this.pressedKeys;
 						wheel.x = this.pointer.x; wheel.y = this.pointer.y;
@@ -55,9 +55,11 @@ export class RemoteInput {
 								| (keys.has('AltLeft') || keys.has('AltRight') ? KeyModifier.alt : 0)
 								| (keys.has('MetaLeft') || keys.has('MetaRight') ? KeyModifier.meta : 0);
 						wheel.timestamp = timestamp;
-						this.editingWheel(wheel);
+						consumed = this.editingWheel(wheel);
 					}
+					if (!consumed) this.input.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY, timestamp);
 					break;
+				}
 				default:
 					throw new Error('Unknown host-control input event.');
 			}

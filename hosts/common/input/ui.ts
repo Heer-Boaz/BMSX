@@ -2,6 +2,7 @@ import { Input } from './manager';
 import { ButtonRepeat } from './button_repeat';
 import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT, InputControllerGamepadAxis, InputControllerGamepadButtonBit } from '../../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../../machine/ts/render/video_presenter';
+import type { KeyInputEvent } from './text';
 
 export const enum HostUiInputSource { None = 0, Keyboard = 1, Gamepad = 2, LeftStick = 4, Pointer = 8 }
 const SOURCE_COUNT = Input.PLAYERS_MAX + 1;
@@ -20,6 +21,8 @@ const KEYBOARD_BINDINGS = [
 	{ mask: 1 << InputControllerGamepadButtonBit.Left, code: 'ArrowLeft' },
 	{ mask: 1 << InputControllerGamepadButtonBit.Right, code: 'ArrowRight' },
 ] as const;
+const KEYBOARD_BINDING_INDEX_BY_CODE = new Map<string, number>();
+for (let index = 0; index < KEYBOARD_BINDINGS.length; index++) KEYBOARD_BINDING_INDEX_BY_CODE.set(KEYBOARD_BINDINGS[index].code, index);
 
 /** Physical UI input lifetime, independent of page actions and guest ICU state. */
 export class HostUiInput {
@@ -44,6 +47,22 @@ export class HostUiInput {
 	private readonly repeats: ButtonRepeat[] = Array.from({ length: SOURCE_COUNT * BUTTON_COUNT }, () => new ButtonRepeat());
 
 	public constructor(private readonly input: Input, private readonly presenter: VideoPresenter) {}
+
+	/** Ordered physical events share the menu's sampled entry/exit capture lifetime. */
+	public capturesKeyboardEvent(event: KeyInputEvent): boolean {
+		const index = KEYBOARD_BINDING_INDEX_BY_CODE.get(event.code);
+		if (index === undefined) return false;
+		const bit = 1 << index;
+		// A fresh DOWN starts a new physical press; only repeats/UP can finish
+		// the prior capture, including after cancellation with no synthetic UP.
+		const captured = (event.repeat || !event.down) && (this.exitCapturedKeyboardKeys & bit) !== 0
+			|| (this.sources & HostUiInputSource.Keyboard) !== 0 && (this.keyboardButtons & KEYBOARD_BINDINGS[index].mask) !== 0;
+		if (!event.down || !event.repeat) {
+			this.exitCapturedKeyboardKeys &= ~bit;
+			if (this.exitCapturedKeyboardKeys === 0) this.exitCapturedSources &= ~HostUiInputSource.Keyboard;
+		}
+		return captured;
+	}
 
 	public reset(nextSources: HostUiInputSource, nextKeyboardButtons: number): void {
 		this.captureLeavingSources(this.sources & ~nextSources);

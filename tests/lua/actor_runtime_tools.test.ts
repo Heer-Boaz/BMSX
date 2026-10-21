@@ -368,6 +368,32 @@ return world`));
 	assert.equal(input.outline.rows[input.outline.selectionIndex].element.node.path, selected.path);
 });
 
+test('Actor Lab topology anchoring retains fractional progress through small wheel occurrences', t => {
+	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+function add_earlier() machine.states.earlier = machine.states.idle; machine.state_ids[3] = 'earlier' end
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest), outline = input.outline;
+	projection.update(); outline.updateLayout(0, 0, 160, 10, 10, 8); projection.layout();
+	const anchor = outline.rows.find(row => row.element.node.name === 'idle')!;
+	const originalIndex = outline.rows.indexOf(anchor);
+	outline.scroll = originalIndex + 0.25;
+	input.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('add_earlier') as Closure, []);
+	assert.equal(projection.update(), true);
+	outline.updateLayout(0, 0, 160, 10, 10, 8); projection.layout();
+	const shiftedIndex = outline.rows.indexOf(anchor);
+	assert.equal(shiftedIndex, originalIndex + 1);
+	assert.equal(outline.scroll, shiftedIndex + 0.25);
+	for (let step = 2; step <= 4; step++) {
+		outline.scroll += 0.25;
+		input.invalidate(); f.guest.invalidate('execution'); projection.update();
+		outline.updateLayout(0, 0, 160, 10, 10, 8); projection.layout();
+		assert.equal(outline.scroll, shiftedIndex + step * 0.25);
+	}
+});
+
 test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
 	const f = fixture(); t.after(() => f.stop.dispose());
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];

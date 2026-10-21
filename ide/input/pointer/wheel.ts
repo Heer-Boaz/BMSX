@@ -13,27 +13,30 @@ import { inputFocus } from '../focus';
 import { getWorkbenchEditorBounds } from '../../workbench/common/layout';
 
 /** Route each occurrence while its geometry, modifiers and UI owner are current. */
-export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot): void {
-	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0
-		|| inputFocus.target?.guestInput !== undefined) return;
+export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot): boolean {
+	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0) return true;
 	if (editor.quickInput.visible) {
 		editor.quickInput.handleWheel(event.deltaY);
-		return;
+		return true;
 	}
 	if (editor.contextMenu.visible) {
 		editor.contextMenu.handleWheel(event.deltaY);
-		return;
+		return true;
 	}
-	if (handleHoverTooltipWheel(event)) return;
+	if (editorChromeState.openMenuId !== null) return true;
+	if (handleHoverTooltipWheel(event)) return true;
 	if (point_in_rect(event.viewportX, event.viewportY, editorChromeState.tabBarBounds)) {
 		editorChromeState.tabScrollControl.cancelPointer();
 		const bar = editorChromeState.tabScrollbar;
 		const delta = event.deltaX === 0 ? event.deltaY : event.deltaX;
 		bar.setScroll(bar.getScroll() + delta * editorViewState.charAdvance * 4);
-		return;
+		return true;
 	}
-	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return;
+	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return true;
+	const guest = inputFocus.target?.guestInput;
+	if (guest !== undefined && point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
 	if (point_in_rect(event.viewportX, event.viewportY, getWorkbenchEditorBounds())) editor.editorPanes.activePane?.handleWheel(event);
+	return true;
 }
 
 function handleHoverTooltipWheel(event: WheelInputSnapshot): boolean {
@@ -61,6 +64,6 @@ function handleProblemsPanelWheel(event: WheelInputSnapshot): boolean {
 	if (!problemsPanel.isVisible) return false;
 	const bounds = getProblemsPanelBounds();
 	if (bounds === null || !point_in_rect(event.viewportX, event.viewportY, bounds)) return false;
-	problemsPanel.handlePointerWheel(event.deltaY);
+	problemsPanel.handlePointerWheel(event.deltaY, bounds);
 	return true;
 }

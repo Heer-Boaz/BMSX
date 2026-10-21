@@ -35,10 +35,10 @@ export function executeClipboardAction(clipboard: Clipboard, action: ClipboardAc
 }
 
 async function pasteClipboard(clipboard: Clipboard, target: ClipboardTarget): Promise<void> {
-	// Browser permission UI can outlive this control. Blur cancels the edit,
-	// including switching documents that share a retained source-editor target.
+	// Browser permission UI can outlive input ownership, including a host modal
+	// that preserves focus or documents sharing a retained source-editor target.
 	let cancelled = false;
-	const unbind = inputFocus.target!.onDidBlur(() => { cancelled = true; });
+	const unbind = inputFocus.target!.onDidCancelInput(() => { cancelled = true; });
 	try {
 		const contents = await clipboard.read();
 		if (!cancelled && !target.readOnly) target.paste!(contents);

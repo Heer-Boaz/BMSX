@@ -241,12 +241,13 @@ export type CartEditor = TextInputHost & {
 	readonly play: PlayController;
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
+	readonly acceptsInput: boolean;
 	readonly fontVariant: Parameters<typeof setFontVariant>[1];
 	activate: () => void;
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
 	dispatchPointer: (event: PointerInputEvent) => void;
-	dispatchWheel: (event: WheelInputEvent) => void;
+	dispatchWheel: (event: WheelInputEvent) => boolean;
 	tickInput: () => void;
 	update: (deltaSeconds: number) => void;
 	draw: () => void;
@@ -272,7 +273,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly pointerSnapshot: PointerInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false };
 	private readonly wheelSnapshot: WheelInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
-		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false, deltaX: 0, deltaY: 0 };
+		modifiers: 0, deltaX: 0, deltaY: 0 };
 	public get guestInputRecipient(): InputRecipient | null {
 		if (!this.isActive) return this.input;
 		const viewport = inputFocus.target?.guestInput;
@@ -326,6 +327,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
 	private readonly unsubscribeTextModelChanged: () => void;
 	private readonly unsubscribeDiagnosticsChanged: () => void;
+	private readonly unbindHostInput: () => void;
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
@@ -566,14 +568,16 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);
 		publishDiagnostics();
 		this.input.setEditingInput(this);
+		this.unbindHostInput = input.onDidChangeEditingInputEnabled(() => inputFocus.notifyTargetChanged());
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
+	public get acceptsInput(): boolean { return this.isActive && this.input.editingInputEnabled; }
 	public get clipboardTarget(): ClipboardTarget | undefined {
-		return this.isActive ? inputFocus.target?.clipboard : undefined;
+		return this.acceptsInput ? inputFocus.target?.clipboard : undefined;
 	}
 	public get textTarget(): TextInputTarget | undefined {
-		return this.isActive ? inputFocus.target?.textInput : undefined;
+		return this.acceptsInput ? inputFocus.target?.textInput : undefined;
 	}
 	public onDidChangeTarget(listener: () => void): () => void {
 		const focus = inputFocus.onDidChangeTarget(listener);
@@ -581,7 +585,9 @@ export class RuntimeCartEditor implements CartEditor {
 		return () => { focus(); active(); };
 	}
 	public dispatchKey(event: KeyInputEvent): boolean {
+		if (this.input.capturesEditingKey(event)) { event.consumed = true; return true; }
 		if (!this.isActive) return false;
+		if (!this.acceptsInput) { event.consumed = true; return true; }
 		this.pointerSnapshot.modifiers = event.modifiers;
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		if (this.actionPrompt.visible) this.actionPrompt.focusTarget.handleKeyboard(event);
@@ -589,7 +595,7 @@ export class RuntimeCartEditor implements CartEditor {
 		return event.consumed;
 	}
 	public dispatchPointer(event: PointerInputEvent): void {
-		if (!this.isActive) return;
+		if (!this.acceptsInput) return;
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
 		if (event.cancelledButtons !== 0) pointerCapture.cancelButtons(event.cancelledButtons);
@@ -607,19 +613,21 @@ export class RuntimeCartEditor implements CartEditor {
 		this.pointerSnapshot.justPressedButtons = 0;
 		this.pointerSnapshot.justReleasedButtons = 0;
 		pointerHover.clear();
-		inputFocus.cancelKeyboard();
+		inputFocus.cancelInput();
 	}
 
-	public dispatchWheel(event: WheelInputEvent): void {
-		if (!this.isActive || this.actionPrompt.visible) return;
+	public dispatchWheel(event: WheelInputEvent): boolean {
+		if (!this.isActive) return false;
+		if (!this.acceptsInput || this.actionPrompt.visible) return true;
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorWheelEvent(this.display, event, this.wheelSnapshot);
 		const view = activeCodeEditor.view;
 		const row = view?.scrollRow, column = view?.scrollColumn;
-		handleEditorWheelInput(this, this.wheelSnapshot);
+		const consumed = handleEditorWheelInput(this, this.wheelSnapshot);
 		if (view !== null && (row !== view.scrollRow || column !== view.scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
+		return consumed;
 	}
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
@@ -719,6 +727,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public tickInput(): void {
+		if (!this.acceptsInput) return;
 		const playerInput = this.input.getPlayerInput(1);
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		const codeView = activeCodeEditor.view;
@@ -785,6 +794,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.unbindHostInput();
 		this.input.setEditingInput(undefined);
 		this.assistant.dispose();
 		this.observedConversation.dispose();

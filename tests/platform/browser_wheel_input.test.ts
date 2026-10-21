@@ -15,9 +15,11 @@ export function start() {
 	const hub = new BrowserInputHub(canvas, canvas, clock, undefined, 'ScrollLock');
 	const input = new Input(clock, hub, -1);
 	const events = [];
-	hub.setNativeWheelHandler(event => events.push({ ...event, pollFrame: input.getPlayerInput(1).pollFrame }));
+	let captured = false;
+	hub.setNativeWheelHandler(event => { events.push({ ...event, pollFrame: input.getPlayerInput(1).pollFrame }); return captured; });
 	globalThis.wheelFixture = {
 		read: () => events.splice(0),
+		capture: value => { captured = value; },
 		sample() {
 			hub.poll(123); input.pollInput();
 			const snapshot = createInputControllerSnapshot();
@@ -75,5 +77,18 @@ export function start() {
 	const trusted = await page.evaluate(() => (globalThis as any).wheelFixture.read());
 	assert.equal(trusted.length, 1);
 	assert.deepEqual([trusted[0].x, trusted[0].y, trusted[0].deltaX, trusted[0].deltaY], [450, 340, 0.5, 0.25]);
+	await sample();
+	await page.evaluate(() => {
+		(globalThis as any).wheelFixture.capture(true);
+		document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { clientX: 250, clientY: 200, deltaY: 120, bubbles: true }));
+	});
+	const captured = await sample();
+	assert.equal(captured.raw, 120, 'physical source state remains observable');
+	assert.equal(captured.wheel, 0, 'a GUI-owned occurrence is not also delivered to the guest attachment');
+	await page.evaluate(() => {
+		(globalThis as any).wheelFixture.capture(false);
+		document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { clientX: 250, clientY: 200, deltaY: 120, bubbles: true }));
+	});
+	assert.equal((await sample()).wheel, 65536, 'an unclaimed occurrence retains the original guest representation');
 	assert.deepEqual(errors, []);
 });

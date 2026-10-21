@@ -3,7 +3,7 @@ import type { TestStopInspection } from '../../../testing/stop_inspection';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerPosition, PointerSnapshot } from '../../../common/models';
 import type { EditorCommandId } from '../../../common/commands';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -145,7 +145,7 @@ export class ScenarioTargetInspection {
 		}
 		return true;
 	}
-	public handleWheel(pointer: PointerSnapshot, delta: number): boolean {
+	public handleWheel(pointer: PointerPosition, delta: number): boolean {
 		if (this.details.visible) return this.details.handleWheel(pointer, delta * editorViewState.font.lineHeight);
 		const tree = this.model!.tree;
 		if (!workbenchListContainsPosition(tree, pointer.viewportX, pointer.viewportY)) return false;

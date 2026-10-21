@@ -5,7 +5,7 @@ import type { PointerInputEvent, WheelInputEvent } from '../../../hosts/common/i
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { endTabDrag } from '../../workbench/ui/tab/drag';
-import type { PointerInputSnapshot, WheelInputSnapshot, PointerSnapshot } from '../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot, PointerPosition } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { EditorDisplay } from '../../common/viewport';
@@ -29,7 +29,7 @@ export function projectEditorWheelEvent(display: EditorDisplay, event: WheelInpu
 	snapshot.modifiers = event.modifiers;
 }
 
-function projectEditorPointerPosition(display: EditorDisplay, x: number, y: number, snapshot: PointerSnapshot): void {
+function projectEditorPointerPosition(display: EditorDisplay, x: number, y: number, snapshot: PointerPosition): void {
 	const result = mapDisplayPointToViewport(display.measureDisplay(), editorViewState.viewportWidth, editorViewState.viewportHeight, x, y, mapped);
 	snapshot.viewportX = mapped.x;
 	snapshot.viewportY = mapped.y;

@@ -29,6 +29,7 @@ export class ActorProjection {
 	private statusName = '';
 	private statusDefinition = '';
 	private scrollAnchor: WorkbenchTreeNode<ActorRow> | undefined;
+	private scrollAnchorOffset = 0;
 	private revealStart = -1;
 	private revealEnd = -1;
 	private readonly activeRows: WorkbenchTreeNode<ActorRow>[] = [];
@@ -60,7 +61,9 @@ export class ActorProjection {
 		if (changed || wasPresent !== input.actorPresent || !input.actorPresent && input.outline.roots.length !== 0) {
 			const outline = input.outline;
 			const selected = outline.rows[outline.selectionIndex];
-			this.scrollAnchor = outline.rows[outline.scroll | 0];
+			const scroll = outline.scroll, firstRow = scroll | 0;
+			this.scrollAnchor = outline.rows[firstRow];
+			this.scrollAnchorOffset = scroll - firstRow;
 			this.children(null, input.runtime.roots);
 			rebuildWorkbenchTreeRows(outline, selected === undefined ? null : selected);
 			if (outline.selectionIndex === -1 && input.selectionPath !== undefined) {
@@ -119,7 +122,7 @@ export class ActorProjection {
 		const outline = this.input.outline;
 		if (this.scrollAnchor !== undefined) {
 			const index = outline.rows.indexOf(this.scrollAnchor);
-			if (index !== -1) outline.scroll = index;
+			if (index !== -1) outline.scroll = index + this.scrollAnchorOffset;
 			this.scrollAnchor = undefined;
 		}
 		if (this.revealStart !== -1) {

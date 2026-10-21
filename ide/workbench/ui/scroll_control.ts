@@ -1,6 +1,6 @@
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerPosition, PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
@@ -53,7 +53,7 @@ export class WorkbenchScrollControl {
 		return true;
 	}
 
-	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean {
+	public handleWheel(snapshot: PointerPosition, delta: number): boolean {
 		const view = this.input!;
 		if (!snapshot.valid || !snapshot.insideViewport
 			|| (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)

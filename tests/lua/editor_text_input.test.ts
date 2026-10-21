@@ -24,7 +24,7 @@ test('the actual focused text field preserves virtual text, edits and submission
 	const host: TextInputHost = {
 		get textTarget() { return inputFocus.target?.textInput; },
 		dispatchKey(event) { inputFocus.handleKeyboard(event); return event.consumed; },
-		cancelInput() { inputFocus.cancelKeyboard(); },
+		cancelInput() { inputFocus.cancelInput(); },
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 	};
 	input.setEditingInput(host); field.focusTarget.focus();

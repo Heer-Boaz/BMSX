@@ -46,7 +46,7 @@ test('modal owns focus until Escape is released, then returns it to the invoking
 	f.key('Escape', true);
 	for (let index = 0; index < 10; index++) f.frame();
 	assert.equal(f.prompt.visible, true);
-	f.focus.cancelKeyboard();
+	f.focus.cancelInput();
 	f.key('Escape', false);
 	assert.equal(f.prompt.visible, true, 'host cancellation revokes the armed Escape without faking a release');
 	f.press('Escape');

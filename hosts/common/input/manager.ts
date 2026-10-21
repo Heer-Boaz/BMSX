@@ -35,8 +35,9 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 import type { InputControllerPlayback } from './controller_playback';
 import type { InputRecipient } from './channel';
-import { KeyInputEvent, KeyModifier, type TextInputHost } from './text';
+import { KeyInputEvent, KeyInputSource, KeyModifier, type TextInputHost } from './text';
 import { CHARACTER_MAP } from './character_map';
+import type { HostUiInput } from './ui';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 
@@ -132,6 +133,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly deviceBindingList: DeviceBinding[] = [];
 	private readonly keyboardInput: KeyboardInput;
 	private editingInput: TextInputHost | undefined;
+	private foregroundInput: HostUiInput | undefined;
+	private foregroundExclusive = false;
+	private readonly editingInputListeners = new Set<() => void>();
 	private readonly inputControllerPointerHandlers: PointerInput[] = [];
 	public readonly connectedGamepads: GamepadInput[] = [];
 	public controllerPortRevision = 0;
@@ -338,6 +342,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 */
 	public dispose(): void {
 		this.editingInput = undefined;
+		this.foregroundInput = undefined;
+		this.foregroundExclusive = false;
+		this.editingInputListeners.clear();
 		this.guestInputRecipient = null;
 		this.globalShortcuts.reset();
 		// Remove all player inputs
@@ -393,23 +400,46 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.editingInput = host;
 	}
 
+	/** Foreground UI may own the host exclusively or remain a virtual typing producer. */
+	public get editingInputEnabled(): boolean { return !this.foregroundExclusive; }
+
+	public onDidChangeEditingInputEnabled(listener: () => void): () => void {
+		this.editingInputListeners.add(listener);
+		return () => this.editingInputListeners.delete(listener);
+	}
+
+	/** Retain the real UI input owner, including its held physical captures after closing. */
+	public setForegroundInput(input: HostUiInput, exclusive: boolean): void {
+		this.foregroundInput = input;
+		if (this.foregroundExclusive === exclusive) return;
+		this.foregroundExclusive = exclusive;
+		if (exclusive) this.editingInput?.cancelInput();
+		for (const listener of this.editingInputListeners) listener();
+	}
+
+	/** An independent virtual occurrence is not the foreground UI's physical key hold. */
+	public capturesEditingKey(event: KeyInputEvent): boolean {
+		return event.source === KeyInputSource.Physical && this.foregroundInput !== undefined
+			&& this.foregroundInput.capturesKeyboardEvent(event);
+	}
+
 	/** Publishes a virtual key transition without changing its guest sampling lifetime. */
 	public setVirtualKeyboardKey(code: string, down: boolean): void {
 		this.keyboardInput.setVirtualKey(code, down);
-		this.dispatchEditingKey(code, down);
+		this.dispatchEditingKey(code, down, KeyInputSource.Virtual);
 	}
 
 	/** Another contact can activate a key already held by an independent source. */
 	public activateVirtualKeyboardKey(code: string): void {
-		this.dispatchEditingKey(code, true);
+		this.dispatchEditingKey(code, true, KeyInputSource.Virtual);
 	}
 
 	/** Authored key-code producers supply editing actions separately from raw button samples. */
-	public dispatchEditingKey(code: string, down: boolean): void {
+	public dispatchEditingKey(code: string, down: boolean, source = KeyInputSource.Physical): void {
 		const host = this.editingInput;
 		if (host === undefined) return;
 		const modifiers = this.keyboardInput.liveModifiers;
-		const event = new KeyInputEvent(code, modifiers, false, down);
+		const event = new KeyInputEvent(code, modifiers, false, down, source);
 		if (host.dispatchKey(event) || !down || (modifiers & (KeyModifier.ctrl | KeyModifier.alt | KeyModifier.meta)) !== 0) return;
 		const target = host.textTarget;
 		const character = CHARACTER_MAP[code];

@@ -11,9 +11,12 @@ export interface ModifierState {
 	readonly modifiers: KeyModifier;
 }
 
+export const enum KeyInputSource { Physical, Virtual }
+
 export class KeyInputEvent implements ModifierState {
 	public consumed = false;
-	public constructor(public readonly code: string, public readonly modifiers: KeyModifier, public readonly repeat = false, public readonly down = true) {}
+	public constructor(public readonly code: string, public readonly modifiers: KeyModifier, public readonly repeat = false,
+		public readonly down = true, public readonly source = KeyInputSource.Physical) {}
 }
 
 /** Native editing context. Offsets and selections use UTF-16, like editor buffers. */

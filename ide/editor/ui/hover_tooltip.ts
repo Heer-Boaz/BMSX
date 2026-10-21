@@ -2,7 +2,7 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerPosition } from '../../common/models';
 import { ensureVisualLines, measureText } from '../common/text/layout';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
 import { point_in_rect } from '../../../machine/ts/common/rect';
@@ -149,7 +149,7 @@ export function isPointInHoverTooltip(x: number, y: number): boolean {
 	return point_in_rect(x, y, tooltip.bubbleBounds);
 }
 
-export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeHoverTooltip): boolean {
+export function pointerHitsHoverTarget(snapshot: PointerPosition, tooltip: CodeHoverTooltip): boolean {
 	if (!snapshot.valid || !snapshot.insideViewport) {
 		return false;
 	}

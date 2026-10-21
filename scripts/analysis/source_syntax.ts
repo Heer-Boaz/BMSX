@@ -1,5 +1,20 @@
 import ts from 'typescript';
 
+/** Return the last comment character, preserving offsets into the original source. */
+function skipSourceComment(text: string, index: number): number {
+	if (text[index + 1] === '/') {
+		let end = index + 2;
+		while (end < text.length && text[end] !== '\n' && text[end] !== '\r') end += 1;
+		return end - 1;
+	}
+	if (text[index + 1] === '*') {
+		const end = text.indexOf('*/', index + 2);
+		if (end === -1) throw new Error('Unterminated block comment in source declaration.');
+		return end + 1;
+	}
+	return index;
+}
+
 export function readDelimitedBody(text: string, openIndex: number): string {
 	const open = text[openIndex];
 	const close = open === '(' ? ')' : open === '[' ? ']' : open === '<' ? '>' : '}';
@@ -16,6 +31,10 @@ export function readDelimitedBody(text: string, openIndex: number): string {
 			} else if (char === quote) {
 				quote = '';
 			}
+			continue;
+		}
+		if (char === '/') {
+			index = skipSourceComment(text, index);
 			continue;
 		}
 		if (char === '"' || char === '\'') {
@@ -53,6 +72,10 @@ export function splitTopLevel(text: string): string[] {
 			} else if (char === quote) {
 				quote = '';
 			}
+			continue;
+		}
+		if (char === '/') {
+			index = skipSourceComment(text, index);
 			continue;
 		}
 		if (char === '"' || char === '\'') {
