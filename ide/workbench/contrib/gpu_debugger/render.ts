@@ -58,8 +58,8 @@ export class GpuDebugCanvas {
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		api.blit_text_inline_with_font(view.heading, left, bounds.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		if (input.selected.sequence < 0) {
-			api.blit_text_inline_with_font('No GPU operations observed.', left, this.plot.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
-			api.blit_text_inline_with_font('Play or step the existing runtime.', left, this.plot.top + line + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			api.blit_text_inline_with_font(input.filter === '' ? 'No GPU operations observed.' : 'No matching operations.', left, this.plot.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			if (input.filter === '') api.blit_text_inline_with_font('Play or step the existing runtime.', left, this.plot.top + line + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		} else {
 			api.blit_rect(this.plot.left, this.plot.top, this.plot.right, this.plot.bottom, 0, colors.COLOR_TAB_BORDER);
 			api.pushClipRect(this.plot.left + 1, this.plot.top + line + 2, this.plot.right - 1, this.plot.bottom - 1);
@@ -89,7 +89,7 @@ export class GpuDebugCanvas {
 }
 
 export function drawGpuDebugger(input: GpuDebuggerInput, view: GpuDebugPresentation, canvas: GpuDebugCanvas,
-	rows: readonly GpuOperationRow[], words: readonly GpuWordRow[]): void {
+	rows: readonly GpuOperationRow[], words: readonly GpuWordRow[], diagramFocused: boolean): void {
 	const { layout, list } = input, font = layout.font!.renderFont();
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	renderWorkbenchActionBar(input.actions, font);
@@ -100,7 +100,13 @@ export function drawGpuDebugger(input: GpuDebuggerInput, view: GpuDebugPresentat
 		api.blit_text_inline_with_font(row.label, list.bounds.left + 2, row.top, 0, selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 	}
 	api.popClipRect(); list.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
-	if (input.view !== 'words') canvas.draw(input, view, font);
+	if (input.view !== 'words') {
+		canvas.draw(input, view, font);
+		if (diagramFocused) {
+			const bounds = input.visualBounds;
+			api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
+		}
+	}
 	else {
 		api.blit_text_inline_with_font(view.heading, input.visualBounds.left + 4, input.visualBounds.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		const bounds = input.words.bounds;

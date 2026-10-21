@@ -50,7 +50,10 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 		}
 		const changed = this.projection.update(this.history, this.filter);
 		const rows = this.projection.rows;
-		if (this.following && rows.length > 0) this.copySelection(rows[rows.length - 1]);
+		if (this.following) {
+			if (rows.length > 0) this.copySelection(rows[rows.length - 1]);
+			else if (this.selected.sequence >= 0) this.clearSelection();
+		}
 		return changed;
 	}
 }

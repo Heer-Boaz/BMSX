@@ -84,8 +84,10 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			this.contextMenu.show(this.input.list.bounds.left, this.input.list.bounds.top, WORKBENCH_MENUS['gpu.context'], this, { selectFirst: true });
 		} });
 		this.list.focusTarget.commandContext = this.focusTarget; this.words.focusTarget.commandContext = this.focusTarget;
-		this.actions.focusTarget.previous = this.list.focusTarget; this.actions.focusTarget.next = this.list.focusTarget;
-		this.list.focusTarget.previous = this.actions.focusTarget; this.list.focusTarget.next = this.actions.focusTarget;
+		// The pane's keyboard target owns the non-scrolling diagram.
+		this.actions.focusTarget.previous = this.focusTarget; this.actions.focusTarget.next = this.list.focusTarget;
+		this.list.focusTarget.previous = this.actions.focusTarget; this.list.focusTarget.next = this.focusTarget;
+		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.list.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
@@ -96,13 +98,27 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list); this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.contextMenu.hide(); this.inspector.hide(); this.actions.clearInput(); this.list.clearInput(); this.words.clearInput(); this.wordsActive = false;
+		this.input.running = false; this.contextMenu.hide(); this.inspector.hide(); this.actions.clearInput(); this.list.clearInput(); this.setWordsActive(false);
 		this.presentation.reset(); this.labels.clear(); this.rows.length = 0; this.wordRows.length = 0; super.clearInput();
 	}
 	public override dispose(): void { if (this.hasInput) this.clearInput(); this.inspector.dispose(); this.actions.dispose(); this.list.dispose(); this.words.dispose(); super.dispose(); }
 	private synchronizeSelection(): void {
 		const input = this.input;
 		if (this.presentation.update(input.selected, input.selectionRevision, input.view)) this.diagramDirty = true;
+	}
+	/** The optional word viewport's attachment and tab links share one lifetime. */
+	private setWordsActive(active: boolean): void {
+		if (active === this.wordsActive) return;
+		if (active) {
+			this.words.setInput(this.input.words);
+			this.list.focusTarget.next = this.words.focusTarget; this.words.focusTarget.previous = this.list.focusTarget;
+			this.words.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.words.focusTarget;
+			if (this.focusTarget.hasFocus) this.words.focusTarget.focus();
+		} else {
+			this.words.clearInput();
+			this.list.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
+		}
+		this.wordsActive = active;
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		if (!this.hasInput || this.inspector.visible) return false;
@@ -145,13 +161,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		this.list.lineStep = layout.rowHeight; this.words.lineStep = layout.rowHeight;
 		if (input.following && input.projection.rows.length > 0) list.scrollbar.reveal(list.contentHeight - layout.rowHeight, list.contentHeight, 0);
 		const wordsActive = input.view === 'words';
-		if (wordsActive !== this.wordsActive) {
-			if (wordsActive) {
-				this.words.setInput(words); this.list.focusTarget.next = this.words.focusTarget; this.words.focusTarget.previous = this.list.focusTarget;
-				this.words.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.words.focusTarget;
-			} else { this.words.clearInput(); this.list.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.list.focusTarget; }
-			this.wordsActive = wordsActive;
-		}
+		this.setWordsActive(wordsActive);
 		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont());
 		input.actions.items[0].checked = input.following; this.actions.update();
 		if (selectedChanged || layoutChanged) this.canvas.layout(input, this.presentation, layout.font!.renderFont());
@@ -194,7 +204,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		}
 		this.wordRows.length = count; this.wordFirst = first; this.wordLast = end; this.wordOffset = words.offsetTop; this.wordRevision = input.selectionRevision;
 	}
-	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGpuDebugger(this.input, this.presentation, this.canvas, this.rows, this.wordRows); }
+	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGpuDebugger(this.input, this.presentation, this.canvas, this.rows, this.wordRows, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
@@ -207,7 +217,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			} else if (this.wordsActive && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.words.bounds)) {
 				const index = Math.trunc((snapshot.viewportY - input.words.offsetTop) / input.layout.rowHeight);
 				if (index < input.selected.wordCount) { input.selectedWord = index; input.following = false; }
-			} else if (point_in_rect(snapshot.viewportX, snapshot.viewportY, input.visualBounds)) {
+			} else if (!this.wordsActive && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.visualBounds)) {
+				this.focusTarget.focus();
 				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY); if (point >= 0) { input.selectedPoint = point; input.following = false; }
 			}
 		}

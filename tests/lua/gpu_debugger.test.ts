@@ -89,6 +89,40 @@ test('GPU input owns emitted words and latched state while pinning across ring r
 	assert.equal(history.observing, false);
 });
 
+test('GPU following retires excluded selections once while pinned evidence survives filtering', () => {
+	const { input, issue } = fixture();
+	issue(); input.update();
+	assert.equal(input.selected.sequence, 2);
+	input.selectedPoint = 1; input.selectedWord = 2;
+	const revision = input.selectionRevision;
+	input.filter = 'no matching operation'; input.update();
+	assert.equal(input.following, true);
+	assert.equal(input.projection.rows.length, 0);
+	assert.equal(input.selected.sequence, -1);
+	assert.equal(input.selected.wordCount, 0);
+	assert.equal(input.selectedPoint, 0);
+	assert.equal(input.selectedWord, 0);
+	assert.equal(input.selectionRevision, revision + 1);
+	input.update();
+	assert.equal(input.selectionRevision, revision + 1, 'waiting does not repeatedly invalidate the empty selection');
+	input.filter = 'polygon'; input.update();
+	assert.equal(input.selected.sequence, 0, 'restoring matches follows the newest matching operation');
+	input.filter = ''; input.update();
+	assert.equal(input.selected.sequence, 2);
+	input.select(0);
+	const pinnedRevision = input.selectionRevision;
+	input.filter = 'no matching operation'; input.update();
+	assert.equal(input.following, false);
+	assert.equal(input.projection.rows.length, 0);
+	assert.equal(input.selected.sequence, 0, 'filtering does not retire explicitly pinned evidence');
+	assert.equal(input.selectionRevision, pinnedRevision);
+	input.following = true; input.update();
+	assert.equal(input.selected.sequence, -1, 'Follow adopts the empty projection rather than the old pin');
+	input.update();
+	assert.equal(input.selectionRevision, pinnedRevision + 1);
+	input.dispose();
+});
+
 test('GPU operation projection filters emitted metadata without retaining reused ring slots', () => {
 	const { history, input, issue } = fixture(), projection = new GpuOperationProjection();
 	issue();

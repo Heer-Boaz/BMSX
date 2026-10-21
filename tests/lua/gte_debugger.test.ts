@@ -79,6 +79,39 @@ test('GTE input follows by owned copy, pins across ring reuse and distinguishes 
 	assert.equal(history.observing, false);
 });
 
+test('GTE following retires excluded selections once while pinned evidence survives filtering', () => {
+	const { input } = fixture();
+	input.update();
+	assert.equal(input.selected.sequence, 2);
+	input.selectedPoint = 1;
+	const revision = input.selectionRevision;
+	input.filter = 'no matching command'; input.update();
+	assert.equal(input.following, true);
+	assert.equal(input.projection.rows.length, 0);
+	assert.equal(input.selected.sequence, -1);
+	assert.equal(input.selected.image, null);
+	assert.equal(input.selectedPoint, 0);
+	assert.equal(input.selectionRevision, revision + 1);
+	input.update();
+	assert.equal(input.selectionRevision, revision + 1, 'waiting does not repeatedly invalidate the empty selection');
+	input.filter = 'RTPT'; input.update();
+	assert.equal(input.selected.sequence, 0, 'restoring matches follows the newest matching command');
+	input.filter = ''; input.update();
+	assert.equal(input.selected.sequence, 2);
+	input.select(0);
+	const pinnedRevision = input.selectionRevision;
+	input.filter = 'no matching command'; input.update();
+	assert.equal(input.following, false);
+	assert.equal(input.projection.rows.length, 0);
+	assert.equal(input.selected.sequence, 0, 'filtering does not retire explicitly pinned evidence');
+	assert.equal(input.selectionRevision, pinnedRevision);
+	input.following = true; input.update();
+	assert.equal(input.selected.sequence, -1, 'Follow adopts the empty projection rather than the old pin');
+	input.update();
+	assert.equal(input.selectionRevision, pinnedRevision + 1);
+	input.dispose();
+});
+
 test('GTE projection incrementally filters metadata and does not retain reused slots', () => {
 	const { history, input, issue } = fixture(), projection = new GteCommandProjection();
 	projection.update(history, 'RTPT');

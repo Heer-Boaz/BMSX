@@ -53,7 +53,11 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 			if (this.following) this.clearSelection();
 		}
 		const changed = this.projection.update(this.history, this.filter);
-		if (this.following && this.projection.rows.length > 0) this.copySelection(this.projection.rows[this.projection.rows.length - 1]);
+		if (this.following) {
+			const rows = this.projection.rows;
+			if (rows.length > 0) this.copySelection(rows[rows.length - 1]);
+			else if (this.selected.sequence >= 0) this.clearSelection();
+		}
 		return changed;
 	}
 }

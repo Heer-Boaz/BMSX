@@ -96,8 +96,10 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			this.contextMenu.show(this.input.list.bounds.left, this.input.list.bounds.top, WORKBENCH_MENUS['gte.context'], this, { selectFirst: true });
 		} });
 		this.scroll.focusTarget.commandContext = this.focusTarget;
-		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.scroll.focusTarget;
-		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
+		// The pane's keyboard target owns the non-scrolling diagram.
+		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
+		this.scroll.focusTarget.next = this.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
+		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.scroll.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
@@ -243,7 +245,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		}
 		if (this.inspector.visible) { this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, this.contentBounds); this.inspector.update(); }
 	}
-	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGteDebugger(this.input, this.presentation, this.canvas, this.rows); }
+	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGteDebugger(this.input, this.presentation, this.canvas, this.rows, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
@@ -254,6 +256,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				const index = Math.trunc((snapshot.viewportY - this.input.list.offsetTop) / this.input.layout.rowHeight);
 				if (index < this.input.projection.rows.length) this.input.select(this.input.projection.rows[index]);
 			} else if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.visualBounds)) {
+				this.focusTarget.focus();
 				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY);
 				if (point >= 0) { this.input.following = false; this.input.selectedPoint = point; }
 			}

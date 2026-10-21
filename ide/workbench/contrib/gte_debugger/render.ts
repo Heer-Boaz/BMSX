@@ -55,8 +55,8 @@ export class GteDebugCanvas {
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		api.blit_text_inline_with_font(view.heading, left, bounds.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		if (input.selected.sequence < 0) {
-			api.blit_text_inline_with_font('No GTE events observed.', left, this.plotTop + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
-			api.blit_text_inline_with_font('Play or step the existing runtime.', left, this.plotTop + line + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			api.blit_text_inline_with_font(input.filter === '' ? 'No GTE events observed.' : 'No matching events.', left, this.plotTop + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			if (input.filter === '') api.blit_text_inline_with_font('Play or step the existing runtime.', left, this.plotTop + line + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		} else {
 			api.blit_rect(left, this.plotTop, bounds.right - 4, this.plotBottom, 0, colors.COLOR_TAB_BORDER);
 			if (this.axisLabel !== '') api.blit_text_inline_with_font(this.axisLabel, left + 2, this.plotTop + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
@@ -85,7 +85,7 @@ export class GteDebugCanvas {
 	}
 }
 
-export function drawGteDebugger(input: GteDebuggerInput, view: GteDebugPresentation, canvas: GteDebugCanvas, rows: readonly GteCommandRow[]): void {
+export function drawGteDebugger(input: GteDebuggerInput, view: GteDebugPresentation, canvas: GteDebugCanvas, rows: readonly GteCommandRow[], diagramFocused: boolean): void {
 	const { layout, list } = input, font = layout.font!.renderFont();
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	renderWorkbenchActionBar(input.actions, font);
@@ -97,4 +97,8 @@ export function drawGteDebugger(input: GteDebuggerInput, view: GteDebugPresentat
 	}
 	api.popClipRect(); list.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	canvas.draw(input, view, font);
+	if (diagramFocused) {
+		const bounds = input.visualBounds;
+		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
+	}
 }
