@@ -44,6 +44,7 @@ import {
 	GX_GPU_COMMAND_DRAW_POLYLINE,
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_SKIPPED_LINE_NONE,
 	GX_GPU_READBACK_IDLE,
@@ -51,6 +52,7 @@ import {
 	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
 	GxGpuCommandBuffer,
+	type GxGpuCommandBufferView,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VRAM_X_ADDRESS_PERIOD,
@@ -256,6 +258,7 @@ import {
 	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
 } from '../../machine/ts/spec/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -650,6 +653,117 @@ function runGpuAtNextDeadline(gpu: GxGpu, scheduler: DeviceScheduler): number {
 }
 
 const standaloneCommandBufferDma = createGpu().dma;
+
+test('GX-GPU operation observer borrows actual packet words and latched state identically for CPU and DMA', () => {
+	const packets = [
+		[0xe1001a55], [0xe2001234], [0xe3000801], [0xe4002008], [0xe5000fff], [0xe6000003],
+		[0x24010203, 0x00010002, 0x00100020, 0x00030004, 0x01650030, 0x00050006, 0x00400050],
+		[0x0200ffff, 0, 0x00010001], [0x600000ff, 0x00010002, 0x00030004],
+		[0x40010203, 0x00010002, 0x00030004], [0x80000000, 0, 0x00010002, 0x00010001],
+		[0xa0000000, 0, 0x00010002, 0xfeedbeef], [0xc0000000, 0, 0x00010002],
+	];
+	const histories: unknown[][] = [];
+	for (const dma of [false, true]) {
+		const baseline = createGpu(), observed = createGpu();
+		const records: { kind: number; opcode: number; words: number[]; state: number[]; cycle: number }[] = [];
+		observed.gpu.setOperationObserver({ emitted(buffer, index, cycle) {
+			assert.equal(buffer.commandCount, index + 1);
+			assert.ok(buffer.executedCommandCount <= index, 'notification precedes operation timing/completion');
+			const start = buffer.commandWordStart[index];
+			records.push({ kind: buffer.commandKind[index], opcode: buffer.commandOpcode[index], cycle,
+				words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])),
+				state: [buffer.commandDrawModeWord[index], buffer.commandVramYAddressExtensionWord[index],
+					buffer.commandTextureWindowWord[index], buffer.commandDrawingAreaTopLeftWord[index],
+					buffer.commandDrawingAreaBottomRightWord[index], buffer.commandDrawingOffsetWord[index],
+					buffer.commandMaskBitModeWord[index], buffer.commandSkippedLineParity[index]],
+			});
+		} });
+		for (const target of [baseline, observed]) {
+			stopPcrtc(target.memory, target.gpu, target.scheduler);
+			target.scheduler.advanceTo(0x100000000 + 10);
+			target.gpu.writeGp1((GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24) | 3);
+			for (const packet of packets) {
+				for (let index = 0; index < packet.length; index += 1) {
+					if (dma) target.memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA | (index + 1 === packet.length ? MAPPED_BUS_DMA_BLOCK_END : 0));
+					else target.memory.writeMappedU32LE(IO_GX_GPU_GP0, packet[index]);
+				}
+				target.scheduler.advanceTo(target.scheduler.currentNowCycles() + 100000);
+				target.gpu.onService(target.scheduler.currentNowCycles());
+			}
+		}
+		assert.deepEqual(records.map(record => record.kind), [GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_COMMAND_FILL_RECTANGLE,
+			GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+			GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_COMMAND_READ_VRAM_TO_CPU]);
+		assert.deepEqual(records.map(record => record.words), packets.slice(6));
+		assert.deepEqual(records[0].state, [gxGpuPolygonDrawModeWord(0x1a55, 0x0165), 1, 0x1234, 0x0801, 0x2008, 0x0fff, 3, GX_GPU_SKIPPED_LINE_NONE]);
+		assert.ok(records[0].cycle > 0xffffffff, 'logical start retains full machine cycle');
+		assert.deepEqual(observed.gpu.captureSaveState(), baseline.gpu.captureSaveState());
+		assert.equal(observed.scheduler.currentNowCycles(), baseline.scheduler.currentNowCycles());
+		assert.equal(observed.scheduler.nextDeadline(), baseline.scheduler.nextDeadline());
+		assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+		assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
+		histories.push(records);
+		observed.gpu.setOperationObserver(null);
+	}
+	assert.deepEqual(histories[0], histories[1]);
+});
+
+test('GX-GPU observer reports delayed logical starts, normalized polyline segments and consumed upload prefix', () => {
+	const { gpu, memory, scheduler } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	const events: { kind: number; words: number[]; cycle: number; callbackCycle: number }[] = [];
+	gpu.setOperationObserver({ emitted(buffer, index, cycle) {
+		const start = buffer.commandWordStart[index];
+		events.push({ kind: buffer.commandKind[index], cycle, callbackCycle: scheduler.currentNowCycles(),
+			words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])) });
+	} });
+	for (const word of [0x020000ff, 0, 0x00040020, 0x480000ff, 0x00010002, 0x00020003, 0x00030004, 0x50005000]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	assert.equal(events.length, 1, 'queued words are not emitted operations yet');
+	scheduler.advanceTo(1000);
+	gpu.onService(1000);
+	assert.deepEqual(events.map(event => event.kind), [GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_COMMAND_DRAW_POLYLINE, GX_GPU_COMMAND_DRAW_LINE]);
+	assert.equal(events[1].cycle, 49);
+	assert.equal(events[1].callbackCycle, 1000, 'service can materialize an earlier logical operation start');
+	assert.deepEqual(events[2].words, [0x480000ff, 0x00020003, 0x00030004]);
+	for (const word of [0xa0000000, 0x00010002, 0x00010004, 0x22221111]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	assert.equal(events.length, 3, 'incomplete upload is not emitted');
+	memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_CLEAR_FIFO << 24);
+	assert.deepEqual(events[3], { kind: GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, words: [0xa0000000, 0x00010002, 0x00010004, 0x22221111], cycle: 1000, callbackCycle: 1000 });
+	assert.equal(events.length, 4, 'clear emits only the actually consumed upload prefix');
+	gpu.setOperationObserver(null);
+});
+
+test('GX-GPU observer attach, detach, restore and reset do not synthesize operations', () => {
+	const { gpu, memory, scheduler } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	for (const word of [0x020000ff, 0, 0x00040020, 0x6000ff00, 0x00010002]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const saved = gpu.captureSaveState();
+	const events: number[][] = [];
+	const observer = { emitted(buffer: GxGpuCommandBufferView, index: number) {
+		const start = buffer.commandWordStart[index];
+		events.push(Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])));
+	} };
+	gpu.setOperationObserver(observer);
+	gpu.setOperationObserver(null);
+	gpu.setOperationObserver(observer);
+	assert.equal(events.length, 0);
+	memory.writeMappedU32LE(IO_GX_GPU_GP0, 0x00030004);
+	gpu.restoreSaveState(saved);
+	assert.equal(events.length, 0, 'restore is not replayed emission');
+	scheduler.advanceTo(1000);
+	gpu.onService(1000);
+	assert.equal(events.length, 0, 'restored incomplete packet waits for actual final word');
+	memory.writeMappedU32LE(IO_GX_GPU_GP0, 0x00030004);
+	assert.deepEqual(events, [[0x6000ff00, 0x00010002, 0x00030004]]);
+	gpu.reset();
+	assert.equal(events.length, 1, 'reset does not emit or erase the host observer');
+	for (const word of [0x020000ff, 0, 0x00010001]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	assert.equal(events.length, 2);
+	gpu.setOperationObserver(null);
+	completeGpuCommands(gpu);
+	for (const word of [0x020000ff, 0, 0x00010001]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	assert.equal(events.length, 2, 'detached future emissions are not delivered');
+});
 
 test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuSigned11(0x000003ff), 1023);

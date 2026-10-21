@@ -212,6 +212,14 @@ struct GxGpuSaveState : GxGpuState {
 	std::vector<u8> vramBytes;
 };
 
+// Emitted backend operation, not every GP0 word or completion. The buffer is
+// borrowed for the callback only: no mutation, device synchronization, or guest
+// execution. Retained evidence must copy the indexed words.
+struct GxGpuOperationObserver {
+	void (*emitted)(void* context, const GxGpuCommandBuffer& buffer, size_t index, i64 startCycle) = nullptr;
+	void* context = nullptr;
+};
+
 class GxGpu {
 public:
 	GxGpu(
@@ -221,6 +229,7 @@ public:
 		DeviceScheduler& scheduler,
 		DmaController& dmaController,
 		u32 vramByteCount);
+	void setOperationObserver(GxGpuOperationObserver observer);
 	void reset();
 	GxGpuState captureState();
 	void restoreState(const GxGpuState& state);
@@ -283,6 +292,7 @@ public:
 	void leaveSupervisorContext();
 
 private:
+	GxGpuOperationObserver m_operationObserver;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;

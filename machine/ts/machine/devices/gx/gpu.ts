@@ -53,6 +53,7 @@ import {
 	GxGpuCommandBuffer,
 	GxGpuReadbackContext,
 	type GxGpuCommandBufferState,
+	type GxGpuCommandBufferView,
 } from './gpu_command_buffer';
 import {
 	GX_GPU_COMMAND_TICKS_PER_CPU_CYCLE,
@@ -341,7 +342,17 @@ export type GxGpuSaveState = GxGpuState & {
 	vramBytes: Uint8Array;
 };
 
+/**
+ * Observes an emitted backend operation, not every GP0 word or its completion.
+ * The buffer is borrowed for this callback only; do not mutate it, synchronize
+ * devices, or execute guest code. Retained evidence must copy the indexed words.
+ */
+export type GxGpuOperationObserver = {
+	emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number): void;
+};
+
 export class GxGpu {
+	private operationObserver: GxGpuOperationObserver | null = null;
 	private gp0Word = 0;
 	private gp1Word = 0;
 	private displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
@@ -489,6 +500,10 @@ export class GxGpu {
 			this.memory.mapIoRead(address, this, GxGpu.readPcrtcThunk);
 			this.memory.mapIoWrite(address, this, GxGpu.writePcrtcThunk);
 		}
+	}
+
+	public setOperationObserver(observer: GxGpuOperationObserver | null): void {
+		this.operationObserver = observer;
 	}
 
 	public reset(): void {
@@ -1843,6 +1858,9 @@ export class GxGpu {
 			this.maskBitModeWord,
 			this.skippedLineParity,
 		);
+		if (this.operationObserver !== null) {
+			this.operationObserver.emitted(this.commandBuffer, this.commandBuffer.commandCount - 1, nowCycles);
+		}
 		this.startCommandTiming(
 			gxGpuCommandTicks(
 				kind,

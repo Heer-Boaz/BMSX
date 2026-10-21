@@ -120,6 +120,148 @@ bmsx::u32 gxGpuVramDigest(std::span<const bmsx::u8> bytes) {
 	return digest;
 }
 
+struct ObservedGpuOperation {
+	bmsx::u8 kind;
+	bmsx::u8 opcode;
+	std::vector<bmsx::u32> words;
+	std::array<bmsx::u32, 8> state;
+	bmsx::i64 cycle;
+	bmsx::i64 callbackCycle;
+	bool operator==(const ObservedGpuOperation&) const = default;
+};
+
+struct GpuOperationLog {
+	GpuHarness& harness;
+	std::vector<ObservedGpuOperation> events;
+	static void emitted(void* context, const bmsx::GxGpuCommandBuffer& buffer, size_t index, bmsx::i64 cycle) {
+		auto& log = *static_cast<GpuOperationLog*>(context);
+		require(buffer.commandCount == index + 1u && buffer.executedCommandCount <= index,
+			"GPU operation callback observes the pushed operation before timing/completion");
+		const size_t start = buffer.commandWordStart[index];
+		log.events.push_back({buffer.commandKind[index], buffer.commandOpcode[index],
+			std::vector<bmsx::u32>(buffer.words.begin() + start, buffer.words.begin() + start + buffer.commandWordCount[index]),
+			{buffer.commandDrawModeWord[index], buffer.commandVramYAddressExtensionWord[index], buffer.commandTextureWindowWord[index],
+				buffer.commandDrawingAreaTopLeftWord[index], buffer.commandDrawingAreaBottomRightWord[index], buffer.commandDrawingOffsetWord[index],
+				buffer.commandMaskBitModeWord[index], buffer.commandSkippedLineParity[index]}, cycle, log.harness.scheduler.currentNowCycles()});
+	}
+};
+
+void testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma() {
+	const std::vector<std::vector<bmsx::u32>> packets{
+		{0xe1001a55u}, {0xe2001234u}, {0xe3000801u}, {0xe4002008u}, {0xe5000fffu}, {0xe6000003u},
+		{0x24010203u, 0x00010002u, 0x00100020u, 0x00030004u, 0x01650030u, 0x00050006u, 0x00400050u},
+		{0x0200ffffu, 0u, 0x00010001u}, {0x600000ffu, 0x00010002u, 0x00030004u},
+		{0x40010203u, 0x00010002u, 0x00030004u}, {0x80000000u, 0u, 0x00010002u, 0x00010001u},
+		{0xa0000000u, 0u, 0x00010002u, 0xfeedbeefu}, {0xc0000000u, 0u, 0x00010002u},
+	};
+	std::vector<ObservedGpuOperation> cpuEvents;
+	for (const bool dma : {false, true}) {
+		GpuHarness baseline, observed;
+		GpuOperationLog log{observed, {}};
+		observed.gpu.setOperationObserver({&GpuOperationLog::emitted, &log});
+		for (auto* target : {&baseline, &observed}) {
+			stopPcrtc(*target);
+			target->scheduler.advanceTo(0x100000000ll + 10);
+			target->gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 3u);
+			for (const auto& packet : packets) {
+				for (size_t index = 0u; index < packet.size(); index += 1u) {
+					if (dma) target->memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
+						| (index + 1u == packet.size() ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
+					else target->memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, packet[index]);
+				}
+				target->scheduler.advanceTo(target->scheduler.currentNowCycles() + 100000);
+				target->gpu.onService(target->scheduler.currentNowCycles());
+			}
+		}
+		const std::array<bmsx::u8, 7> kinds{bmsx::GX_GPU_COMMAND_DRAW_POLYGON, bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
+			bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, bmsx::GX_GPU_COMMAND_DRAW_LINE, bmsx::GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+			bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, bmsx::GX_GPU_COMMAND_READ_VRAM_TO_CPU};
+		require(log.events.size() == kinds.size(), "GPU observer excludes state traffic and emits every backend operation kind");
+		for (size_t index = 0u; index < kinds.size(); index += 1u) {
+			require(log.events[index].kind == kinds[index] && log.events[index].words == packets[index + 6u], "GPU observer retains actual raw operation words");
+		}
+		require(log.events[0].state == std::array<bmsx::u32, 8>{bmsx::gxGpuPolygonDrawModeWord(0x1a55u, 0x0165u), 1u,
+			0x1234u, 0x0801u, 0x2008u, 0x0fffu, 3u, bmsx::GX_GPU_SKIPPED_LINE_NONE}, "GPU observer sees T1-updated draw mode and all latched raw state");
+		require(log.events[0].cycle > 0xffffffffll, "GPU observer preserves full logical start cycle");
+		const auto expected = baseline.gpu.captureSaveState(), actual = observed.gpu.captureSaveState();
+		const auto& a = actual.commandBuffer;
+		const auto& e = expected.commandBuffer;
+		require(a.commandCount == e.commandCount && a.executedCommandCount == e.executedCommandCount
+			&& a.presentCommandCount == e.presentCommandCount && a.wordCount == e.wordCount && a.words == e.words
+			&& a.commandKind == e.commandKind && a.commandOpcode == e.commandOpcode && a.commandWordStart == e.commandWordStart
+			&& a.commandWordCount == e.commandWordCount && a.commandDrawModeWord == e.commandDrawModeWord
+			&& a.commandVramYAddressExtensionWord == e.commandVramYAddressExtensionWord && a.commandTextureWindowWord == e.commandTextureWindowWord
+			&& a.commandDrawingAreaTopLeftWord == e.commandDrawingAreaTopLeftWord && a.commandDrawingAreaBottomRightWord == e.commandDrawingAreaBottomRightWord
+			&& a.commandDrawingOffsetWord == e.commandDrawingOffsetWord && a.commandMaskBitModeWord == e.commandMaskBitModeWord
+			&& a.commandSkippedLineParity == e.commandSkippedLineParity && a.readbackPhase == e.readbackPhase
+			&& a.readbackFenceCommandCount == e.readbackFenceCommandCount && a.readbackPixelBytes == e.readbackPixelBytes,
+			"GPU observer leaves backend raw buffer and readback state identical");
+		require(actual.vramBytes == expected.vramBytes && actual.gp0Word == expected.gp0Word && actual.statusWord == expected.statusWord
+			&& actual.gp0CommandWords == expected.gp0CommandWords && actual.gp0FifoWords == expected.gp0FifoWords
+			&& actual.gp0DmaIngressWords == expected.gp0DmaIngressWords && actual.pendingCommandCycles == expected.pendingCommandCycles
+			&& actual.pendingCommandTargetCount == expected.pendingCommandTargetCount && actual.drawModeWord == expected.drawModeWord,
+			"GPU observer leaves saved VRAM, ingress, registers and timing identical");
+		require(observed.scheduler.currentNowCycles() == baseline.scheduler.currentNowCycles() && observed.scheduler.nextDeadline() == baseline.scheduler.nextDeadline()
+			&& observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes()
+			&& observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining, "GPU observer leaves cycles, scheduler and guest heap unchanged");
+		if (dma) require(log.events == cpuEvents, "CPU and DMA packet ingress produce identical observed operations");
+		else cpuEvents = log.events;
+		observed.gpu.setOperationObserver({});
+	}
+}
+
+void testOperationObserverReportsDelayedPolylineAndPartialUpload() {
+	GpuHarness harness;
+	stopPcrtc(harness);
+	GpuOperationLog log{harness, {}};
+	harness.gpu.setOperationObserver({&GpuOperationLog::emitted, &log});
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00040020u, 0x480000ffu, 0x00010002u, 0x00020003u, 0x00030004u, 0x50005000u}) {
+		harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+	}
+	require(log.events.size() == 1u, "queued GPU words are not emitted operations yet");
+	harness.scheduler.advanceTo(1000);
+	harness.gpu.onService(1000);
+	require(log.events.size() == 3u && log.events[1].kind == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE
+		&& log.events[2].kind == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GPU observer sees polyline head and normalized segment separately");
+	require(log.events[1].cycle == 49 && log.events[1].callbackCycle == 1000, "GPU logical start precedes lazy late service callback");
+	require(log.events[2].words == std::vector<bmsx::u32>{0x480000ffu, 0x00020003u, 0x00030004u}, "GPU observer sees retained endpoint-normalized segment");
+	for (const bmsx::u32 word : {0xa0000000u, 0x00010002u, 0x00010004u, 0x22221111u}) harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+	require(log.events.size() == 3u, "incomplete GPU upload is not emitted");
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
+	require(log.events.size() == 4u && log.events[3].kind == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM
+		&& log.events[3].words == std::vector<bmsx::u32>{0xa0000000u, 0x00010002u, 0x00010004u, 0x22221111u}
+		&& log.events[3].cycle == 1000, "GPU clear emits only consumed upload prefix");
+	harness.gpu.setOperationObserver({});
+}
+
+void testOperationObserverAttachRestoreResetAreNotEmissions() {
+	GpuHarness harness;
+	stopPcrtc(harness);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00040020u, 0x6000ff00u, 0x00010002u}) harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+	const auto saved = harness.gpu.captureSaveState();
+	GpuOperationLog log{harness, {}};
+	harness.gpu.setOperationObserver({&GpuOperationLog::emitted, &log});
+	harness.gpu.setOperationObserver({});
+	harness.gpu.setOperationObserver({&GpuOperationLog::emitted, &log});
+	require(log.events.empty(), "GPU attach and detach do not synthesize operations");
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0x00030004u);
+	harness.gpu.restoreSaveState(saved);
+	require(log.events.empty(), "GPU restore does not replay emitted operations");
+	harness.scheduler.advanceTo(1000);
+	harness.gpu.onService(1000);
+	require(log.events.empty(), "GPU restored incomplete packet waits for actual last word");
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, 0x00030004u);
+	require(log.events.size() == 1u && log.events[0].words == std::vector<bmsx::u32>{0x6000ff00u, 0x00010002u, 0x00030004u}, "GPU actual post-restore packet completion emits once");
+	harness.gpu.reset();
+	require(log.events.size() == 1u, "GPU reset does not emit");
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+	require(log.events.size() == 2u, "GPU reset retains host observer configuration");
+	harness.gpu.setOperationObserver({});
+	completeGpuCommands(harness);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+	require(log.events.size() == 2u, "GPU detached observer receives no future emissions");
+}
+
 void testPcrtcSintStopsBeamAndReleaseStartsFreshLineEpoch() {
 	bmsx::GxGpuPcrtc pcrtc;
 	pcrtc.reset(0);
@@ -4807,6 +4949,9 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 } // namespace
 
 int main() {
+	testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma();
+	testOperationObserverReportsDelayedPolylineAndPartialUpload();
+	testOperationObserverAttachRestoreResetAreNotEmissions();
 	testPcrtcSintStopsBeamAndReleaseStartsFreshLineEpoch();
 	testPcrtcAcceptsCycleZeroAndCoalescesSubCycleFields();
 	testPcrtcRetainsFrameBudgetsAboveSignedCpuSlice();

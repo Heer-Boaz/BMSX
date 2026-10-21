@@ -1283,6 +1283,10 @@ void GxGpu::emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 c
 	pushGpuCommand(kind, opcode, wordStart, commandWordCount, commandStartCycle);
 }
 
+void GxGpu::setOperationObserver(GxGpuOperationObserver observer) {
+	m_operationObserver = observer;
+}
+
 void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle) {
 	m_commandBuffer.pushCommand(
 		kind,
@@ -1297,6 +1301,9 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		m_drawingOffsetWord,
 		m_maskBitModeWord,
 		m_skippedLineParity);
+	if (m_operationObserver.emitted != nullptr) {
+		m_operationObserver.emitted(m_operationObserver.context, m_commandBuffer, m_commandBuffer.commandCount - 1u, commandStartCycle);
+	}
 	beginCommandCompletion(
 		gxGpuCommandTicks(
 			kind,
