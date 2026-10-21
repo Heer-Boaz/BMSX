@@ -41,7 +41,7 @@ export class GamePanel {
 
 	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient) {
 		this.gameInput = new GameInputControl(this.focusTarget, recipient);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.focusTarget.registerCommand('gameView.playback', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { commands.transport.togglePlayback(); } });
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {

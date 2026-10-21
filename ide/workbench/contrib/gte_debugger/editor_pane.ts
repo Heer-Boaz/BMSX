@@ -55,7 +55,7 @@ const PLUS_VIEWS: GteViewChoice[] = [
 ];
 
 export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
+	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly presentation = new GteDebugPresentation();
@@ -251,7 +251,8 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
-		if (snapshot.valid && snapshot.insideViewport && (justPressed || secondary)) {
+		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.contentBounds)) {
 			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.list.bounds)) {
 				const index = Math.trunc((snapshot.viewportY - this.input.list.offsetTop) / this.input.layout.rowHeight);
 				if (index < this.input.projection.rows.length) this.input.select(this.input.projection.rows[index]);
@@ -260,8 +261,8 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY);
 				if (point >= 0) { this.input.following = false; this.input.selectedPoint = point; }
 			}
+			if (secondary) { this.input.following = false; this.refreshSource(); this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gte.context'], this); return true; }
 		}
-		if (secondary) { this.input.following = false; this.refreshSource(); this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gte.context'], this); return true; }
 		return this.scroll.handlePointer(snapshot);
 	}
 	private navigate(event: KeyInputEvent): boolean {

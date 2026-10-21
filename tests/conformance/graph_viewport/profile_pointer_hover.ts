@@ -27,7 +27,7 @@ const focus = new InputFocusService(), capture = new PointerCaptureService(), ho
 const parent = focus.createTarget(), state = createWorkbenchActionBar('sourceEditReview.title');
 layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null);
 const commands = { isEnabled: () => true, execute: () => assert.fail('hover must not execute') };
-const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, parent);
+const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, parent, () => parent.focus());
 bar.setInput(state, parent);
 const bounds = state.items[0].bounds;
 const pointer = { valid: true, insideViewport: true, viewportX: bounds.left + 2, viewportY: bounds.top + 2,

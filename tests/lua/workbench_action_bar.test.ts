@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
 		isEnabled: command => enabled.has(command),
 		execute: command => { calls.push(command); onExecute(command); },
 	};
-	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content);
+	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content, () => content.focus());
 	bar.setInput(state, content); bar.update();
 	content.next = bar.focusTarget; content.previous = bar.focusTarget;
 	bar.focusTarget.next = content; bar.focusTarget.previous = content;
@@ -149,6 +149,43 @@ test('toolbar is one focus stop, with roving enabled actions and content Escape'
 	assert.equal(f.state.hasFocus, false);
 	f.focus.moveFocus(true); assert.equal(f.state.focusedIndex, 2, 're-entry remembers the last focused action');
 	f.focus.moveFocus(true); assert.equal(f.focus.target, f.content);
+});
+
+test('Escape returns to owner content independently of command context and popup focus', t => {
+	const f = fixture(t), content = f.focus.createTarget(f.content), context = f.focus.createTarget();
+	content.bindKeyboard(() => {});
+	let cancelled = 0;
+	const bar = new WorkbenchActionBarControl(f.focus, f.capture, f.hover, f.commands, f.content, () => {
+		assert.equal(f.state.pressedCommand, null);
+		assert.equal(f.capture.active, false);
+		cancelled++; content.focus();
+	});
+	bar.setInput(f.state, context);
+	t.after(() => bar.dispose());
+	bar.focusTarget.focus(); f.key('Space', true); f.press('Escape');
+	assert.equal(f.focus.target, content);
+	assert.equal(bar.focusTarget.commandContext, context);
+	f.key('Space', false); assert.deepEqual(f.calls, []);
+	const popup = f.focus.createTarget();
+	bar.focusTarget.focus(); popup.focus(); bar.focusTarget.focus(); f.press('Escape');
+	assert.equal(f.focus.target, content, 'returning from a popup never becomes the toolbar cancel destination');
+	assert.equal(cancelled, 2);
+	bar.focusTarget.focus(); bar.clearInput();
+	assert.equal(f.focus.target, f.content, 'teardown releases to the structural parent, not the command context');
+	assert.equal(cancelled, 2, 'teardown is not an Escape action');
+	bar.setInput(f.state, context); popup.focus(); bar.clearInput();
+	assert.equal(f.focus.target, popup, 'retiring an unfocused toolbar cannot steal another control focus');
+});
+
+test('a global toolbar can cancel its own command scope into editor content', t => {
+	const f = fixture(t);
+	const bar = new WorkbenchActionBarControl(f.focus, f.capture, f.hover, f.commands, null, () => f.content.focus());
+	bar.setInput(f.state, bar.focusTarget);
+	t.after(() => bar.dispose());
+	bar.focusTarget.focus(); f.press('Escape');
+	assert.equal(f.focus.target, f.content);
+	bar.focusTarget.focus(); bar.clearInput();
+	assert.equal(f.focus.target, null, 'global chrome detach has no structural focus parent');
 });
 
 test('Enter, NumpadEnter and Space pair down/up once; holding does not repeat', t => {

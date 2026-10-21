@@ -111,7 +111,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly frameNavigation: RuntimeFrameNavigation,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget);
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.more', {
 			isEnabled: () => this.input.view.presentation.kind !== 'outline' && !this.inspector.visible && !this.sourceEditReview.visible,

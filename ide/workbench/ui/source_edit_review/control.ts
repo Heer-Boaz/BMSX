@@ -44,7 +44,7 @@ export class WorkbenchSourceEditReview {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.visible;
 		this.pointer = new WorkbenchPropertyTreePointer(hover);
-		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
+		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget, () => this.focusTarget.focus());
 		this.focusTarget.next = this.actionControl.focusTarget;
 		this.focusTarget.previous = this.actionControl.focusTarget;
 		this.actionControl.focusTarget.next = this.focusTarget;

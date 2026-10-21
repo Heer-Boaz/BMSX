@@ -23,7 +23,7 @@ import { layoutEditReviewRows } from './projection';
 
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<WorkspaceEditReviewInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
+	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {
 		super(resourcePanel);

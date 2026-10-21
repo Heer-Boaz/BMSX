@@ -86,8 +86,9 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController) {
 		super(resources);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
-		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget,
+			() => (this.input.showingImage ? this.image : this.bytes).focusTarget.focus());
 		for (const target of [this.focusTarget, this.inspector.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.commandContext = this.focusTarget;

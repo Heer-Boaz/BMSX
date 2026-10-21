@@ -44,7 +44,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState) {
 		super(resources);
 		this.gridFocus.commandContext = this.focusTarget;
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.registerCommand('cartMap.source', { isEnabled: () => true, run: () => controller.openSource(this.input) });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),

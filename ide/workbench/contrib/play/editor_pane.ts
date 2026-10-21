@@ -40,7 +40,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 	public constructor(resourcePanel: ResourcePanelController, commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		navigation: EditorNavigationController) {
 		super(resourcePanel);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.focusTarget.registerCommand('play.more', { isEnabled: () => true, run: () => {

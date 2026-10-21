@@ -91,7 +91,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 				&& this.selectedDetailsRow() !== undefined,
 			run: () => this.openDetails(this.selectedDetailsRow()!),
 		});
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;
 		this.resultsFocus.next = this.split.focusTarget;

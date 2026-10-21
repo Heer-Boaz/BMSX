@@ -70,7 +70,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController) {
 		super(resourcePanel);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());
 		this.inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.label = 'Hide';
@@ -169,6 +169,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override get showsGameFrame(): boolean { return true; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.controller.viewport.transport; }
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
+	public override focus(): void {
+		if (this.boundGraph === undefined) super.focus();
+		else this.graph.focusTarget.focus();
+	}
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {
 			const selected = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;

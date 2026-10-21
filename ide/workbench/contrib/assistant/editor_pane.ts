@@ -48,7 +48,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private imagesVisible = false;
 	private contentTop = 0;
 	private readonly references = new AssistantReferences();
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
+	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly transcriptView: AssistantTranscriptControl;
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;

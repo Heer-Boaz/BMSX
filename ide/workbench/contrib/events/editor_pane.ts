@@ -35,7 +35,7 @@ const COMMANDS = ['events.clear', 'events.filter', 'events.details', 'events.goT
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
 export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
+	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly labels = new Map<number, { timeline: string; tick: string; event: string }>();

@@ -12,7 +12,8 @@ import type { WorkbenchActionBarState } from './action_bar';
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
 
-/** One composite control; input-owned geometry outlives physical gestures. */
+/** One composite control; input-owned geometry outlives physical gestures.
+ * The owner chooses content focus on Escape; command scope and teardown parent are separate. */
 export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private input: WorkbenchActionBarState | undefined;
@@ -25,7 +26,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private readonly cancelPress = () => this.cancelPointer();
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null) {
+		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null,
+		private readonly focusContent: () => void) {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), this.cancelPress);
@@ -49,8 +51,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public clearInput(): void {
 		this.hover.release(this);
 		this.cancelPointer();
-		if (this.focusTarget.hasFocus && this.focusTarget.commandContext !== this.focusTarget) this.focusTarget.commandContext.focus();
-		else this.focusTarget.release();
+		this.focusTarget.release();
 		this.input = undefined;
 	}
 
@@ -159,7 +160,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		if (isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input);
 			this.cancelPointer();
-			this.focusTarget.commandContext.focus();
+			this.focusContent();
 			return;
 		}
 		const state = this.input!;

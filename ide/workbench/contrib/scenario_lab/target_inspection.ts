@@ -47,7 +47,7 @@ export class ScenarioTargetInspection {
 	public constructor(private readonly parent: InputFocusTarget, private readonly commands: IdeCommandController) {
 		this.focus = inputFocus.createTarget(parent);
 		this.details = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focus);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus, () => this.focus.focus());
 		this.focus.next = this.actions.focusTarget; this.focus.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focus; this.actions.focusTarget.previous = this.focus;
 		this.unbindKeyboard = this.focus.bindKeyboard(input => this.keyboard(input));

@@ -43,7 +43,7 @@ const VIEWS: { label: string; description: string; detail: string; view: GpuDebu
 
 /** Controls project owned operation evidence; all execution remains with the shared transport. */
 export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
+	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, false));
 	private readonly words = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, true));
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
@@ -92,7 +92,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
-	public override focus(): void { (this.inspector.visible ? this.inspector : this.list).focusTarget.focus(); }
+	public override focus(): void { (this.inspector.visible ? this.inspector : this.wordsActive ? this.words : this.list).focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.wordRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list); this.update();
@@ -210,7 +210,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
-		if (snapshot.valid && snapshot.insideViewport && (justPressed || secondary)) {
+		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.contentBounds)) {
 			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
 				const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight);
 				if (index < input.projection.rows.length) input.select(input.projection.rows[index]);
@@ -221,8 +222,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 				this.focusTarget.focus();
 				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY); if (point >= 0) { input.selectedPoint = point; input.following = false; }
 			}
+			if (secondary) { input.following = false; this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gpu.context'], this); return true; }
 		}
-		if (secondary) { input.following = false; this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gpu.context'], this); return true; }
 		return this.wordsActive && this.words.handlePointer(snapshot) || this.list.handlePointer(snapshot);
 	}
 	private navigate(event: KeyInputEvent, rawWords: boolean): boolean {

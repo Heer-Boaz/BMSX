@@ -57,7 +57,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		super(resources);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
 		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });

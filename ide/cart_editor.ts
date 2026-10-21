@@ -443,9 +443,9 @@ export class RuntimeCartEditor implements CartEditor {
 			debuggerExecution,
 		);
 		this.completion = new EditorCompletionController(sources, guest, fault, runtime);
-		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null);
+		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null, () => this.editorPanes.activePane?.focus());
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
-		this.runtimeTimeline = new RuntimeTimelineControl(this.commands);
+		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorPanes.activePane?.focus());
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 		this.menubar = new MenubarController(this.contextMenu, this.commands);

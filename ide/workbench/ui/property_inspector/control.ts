@@ -56,7 +56,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			const selected = this.model.selectionIndex;
 			return selected < 0 ? null : this.model.rows[selected].element.value;
 		} };
-		this.actions = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget, () => this.focusTarget.focus());
 		this.focusTarget.next = this.actions.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget;

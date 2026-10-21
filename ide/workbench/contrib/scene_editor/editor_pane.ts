@@ -52,7 +52,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		private readonly sources: RuntimeSourceState,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, INTEGER_INPUT_FORMAT, value => {

@@ -34,8 +34,8 @@ export class RuntimeTimelineControl {
 	private transport: RuntimeTransport | undefined;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
-	public constructor(private readonly commands: IdeCommandController) {
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null);
+	public constructor(private readonly commands: IdeCommandController, focusContent: () => void) {
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, focusContent);
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
 		this.actions.focusTarget.next = this.slider.focusTarget;
