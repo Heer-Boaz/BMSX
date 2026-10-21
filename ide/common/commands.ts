@@ -103,7 +103,7 @@ export type EditorCommandId =
 	| 'assistant.copy'
 	| 'workspaceEditReview.apply'
 	| 'workspaceEditReview.discard'
-	| 'runtime.pause' | 'runtime.present' | 'runtime.resume'
+	| 'runtime.pause' | 'runtime.present' | 'runtime.accept' | 'runtime.resume'
 	| 'gameView.playback'
 	| 'gameView.togglePanel' | 'gameView.closePanel'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'

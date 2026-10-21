@@ -237,12 +237,14 @@ export class WorkspaceRuntimeTools {
 			case 'studio_read_debug_source': return { kind: 'runtime' as const, data: this.debugSources.read(request.source) };
 			case 'studio_set_breakpoints': return { kind: 'runtime' as const, data: this.debugSources.setBreakpoints(request.source, request.lines) };
 			case 'studio_step_frames':
-			case 'studio_seek_history': {
+			case 'studio_seek_history':
+			case 'studio_finish_history_review': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
 				const operation = request.name === 'studio_step_frames'
 					? this.navigation.step(request.direction, request.count, signal)
-					: this.navigation.seek(request.cycles, signal);
+					: request.name === 'studio_seek_history' ? this.navigation.seek(request.cycles, signal)
+					: this.navigation.finishReview(request.destination, signal);
 				return operation.completion.then(result => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...result } }));
 			}
 			case 'studio_pause_runtime':

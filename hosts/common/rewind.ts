@@ -23,6 +23,7 @@ export class HostRewind {
 	public stopped = false;
 	private request = RewindRequest.None;
 	private requestedCycles = 0;
+	private seekIsCurrent: (() => boolean) | undefined;
 	private afterSeek = RewindRequest.None;
 	private playbackActive = false;
 	private playbackTimeResetPending = false;
@@ -97,10 +98,11 @@ export class HostRewind {
 		}
 	}
 
-	public seekTo(cycles: number): void {
+	public seekTo(cycles: number, isCurrent?: () => boolean): void {
 		this.revision += 1;
 		const history = this.runtime.history;
 		this.requestedCycles = clamp(cycles, history.earliestCycles, history.latestCycles);
+		this.seekIsCurrent = isCurrent;
 		this.request = RewindRequest.Seek;
 		this.afterSeek = RewindRequest.None;
 		this.playbackActive = false;
@@ -111,9 +113,9 @@ export class HostRewind {
 		this.audioOutput.muteRewind(true);
 	}
 
-	public returnToPresent(): void {
+	public returnToPresent(isCurrent?: () => boolean): void {
 		if (!this.active) return;
-		this.seekTo(this.runtime.history.latestCycles);
+		this.seekTo(this.runtime.history.latestCycles, isCurrent);
 		this.afterSeek = RewindRequest.Resume;
 	}
 
@@ -152,7 +154,7 @@ export class HostRewind {
 		await this.presenter.backend.finishGxGpuReadbacks();
 		// Navigation may change while the submitted readback completes. Only the
 		// latest user intent is applied, after all old callbacks have finished.
-		if (this.request === RewindRequest.Seek) {
+		if (this.request === RewindRequest.Seek && (this.seekIsCurrent === undefined || this.seekIsCurrent())) {
 			this.request = RewindRequest.None;
 			this.runtime.history.beginSeek(this.requestedCycles);
 			this.presentationPending = this.runtime.history.mode === HistoryMode.Reviewing;

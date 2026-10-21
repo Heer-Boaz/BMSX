@@ -243,17 +243,33 @@ position; no client/provider polling, timers, or simulated UI actions. Cancellat
 must not stop a newer user intent. History seeks select retained video boundaries,
 report any boundary selection, and preserve the recorded future.
 
+Ending review is separate from playback. `studio_finish_history_review` takes
+the explicit target and `destination`: `here` accepts the inspected machine
+state and discards its retained future; `present` reconstructs the latest retained
+state without discarding it. Both leave requested pause set, await the host
+transition and outstanding GPU/checkpoint work, and report the actual final
+history range and review state even after interruption or failure. Cancellation
+retires pending intent, never restores a future already discarded by the history
+owner. `history.canFinishReview` reports admission availability. Ordinary
+Return to Present and the palette-only Use This Point use the same operation;
+Continue from Here remains an explicit playback action.
+
+This keeps future invalidation with the history owner, as in
+[MAME's rewind implementation](https://github.com/mamedev/mame/blob/master/src/emu/save.cpp),
+and command adapters with the shared execution owner, as in
+[VS Code's debugger commands](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugCommands.ts).
+
 | Representation | TS owner | C++ owner | Change |
 | --- | --- | --- | --- |
 | Machine cycles / video sequence | scheduler / frame scheduler integer counters | same counters | none |
 | Retained timeline | RuntimeHistory / InputJournal | RuntimeHistory / InputJournal | none |
 | Restore provenance | RuntimeRestoreOrigin enum at applyRuntimeSaveState | same native enum | publish existing origin in restore callback rather than infer it from UI state |
-| Host navigation intent | HostExecutionControl / HostRewind | native frontend owns its own controls | retain command revisions; no emulated-state representation change |
+| Host navigation intent | HostExecutionControl / HostRewind; queued seek rechecks operation authority after its asynchronous GPU fence | native frontend owns its controls; GPU fence is synchronous | retain command revisions; no emulated-state representation change |
 | Awaitable Studio operation | frame-navigation service | no native Studio service | owner lifecycle, not a new execution loop |
 
-Hot-path inventory: `runWorkbenchHostFrame` advances pending navigation completion
-once after the existing frame work; idle navigation returns immediately without
-allocations. `HostExecutionControl` and `HostRewind` change intent revisions only
+Hot-path inventory: `runWorkbenchHostFrame` and Play retire superseded navigation
+before host work and settle outcomes after it; idle navigation returns immediately
+without allocations. `HostExecutionControl` and `HostRewind` change intent revisions only
 on explicit commands. `applyRuntimeSaveState` (TS/C++) forwards its already-owned
 restore origin on state replacement. No per-instruction hooks, new snapshot
 copies, register conversions, or extra guest evaluations are introduced.

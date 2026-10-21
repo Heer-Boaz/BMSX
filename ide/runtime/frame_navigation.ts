@@ -8,7 +8,9 @@ import type { RuntimeFaultState } from './fault_state';
 import type { SuspendedGuestSession } from './suspended_guest';
 
 type Position = { cycles: number; videoTick: number };
-type NavigationRequest = { kind: 'frames'; direction: -1 | 1; count: number } | { kind: 'seek'; cycles: number };
+type NavigationRequest = { kind: 'frames'; direction: -1 | 1; count: number } | { kind: 'seek'; cycles: number }
+	| { kind: 'finish-review'; destination: 'here' | 'present' };
+type HistoryPosition = { reviewing: boolean; earliestCycles: number; latestCycles: number };
 export type FrameNavigationResult = {
 	status: 'completed' | 'stopped' | 'interrupted' | 'replaced' | 'failed';
 	reason?: string;
@@ -16,6 +18,7 @@ export type FrameNavigationResult = {
 	before: Position;
 	after: Position;
 	completedFrames: number;
+	history: HistoryPosition;
 };
 
 export class FrameNavigationOperation {
@@ -26,13 +29,13 @@ export class FrameNavigationOperation {
 	public executionRevision = 0;
 	public rewindRevision = 0;
 	public frameStartTick = 0;
-	public replay = false;
+	public ownsRewind = false;
 	public cancelling = false;
 	public detach: (() => void) | undefined;
 	public constructor(public readonly request: NavigationRequest, public readonly before: Position) {}
-	public finish(status: FrameNavigationResult['status'], after: Position, reason?: string): void {
+	public finish(status: FrameNavigationResult['status'], after: Position, history: HistoryPosition, reason?: string): void {
 		this.detach?.();
-		this.result = { status, reason, request: this.request, before: this.before, after, completedFrames: this.completedFrames };
+		this.result = { status, reason, request: this.request, before: this.before, after, completedFrames: this.completedFrames, history };
 		this.resolve(this.result);
 	}
 }
@@ -41,6 +44,9 @@ export class FrameNavigationOperation {
 export class RuntimeFrameNavigation {
 	public active: FrameNavigationOperation | undefined;
 	private closing = false;
+	/** The host rechecks operation authority after asynchronous GPU work, before replacing machine state. */
+	private readonly isCurrent = (): boolean => this.active !== undefined
+		&& this.active.executionRevision === this.execution.revision && this.active.rewindRevision === this.rewind.revision;
 	public constructor(
 		private readonly runtime: Runtime,
 		private readonly execution: HostExecutionControl,
@@ -62,11 +68,13 @@ export class RuntimeFrameNavigation {
 			? this.rewind.available && this.rewind.frameStepCycles(-1) < this.rewind.positionCycles
 			: this.debuggerState.source.stop === undefined && this.fault.faultSnapshot === null);
 	}
+	public get canFinishReview(): boolean { return this.available && this.rewind.active; }
 	public historyState() {
 		const history = this.runtime.history;
 		return { available: this.rewind.available, earliestCycles: history.earliestCycles, latestCycles: history.latestCycles,
 			reviewing: this.rewind.active, positionCycles: this.runtime.machine.scheduler.currentNowCycles(),
-			canStepBack: this.canStep(-1), canStepForward: this.canStep(1), operationActive: this.active !== undefined };
+			canStepBack: this.canStep(-1), canStepForward: this.canStep(1), canFinishReview: this.canFinishReview,
+			operationActive: this.active !== undefined };
 	}
 
 	private position(): Position {
@@ -89,8 +97,8 @@ export class RuntimeFrameNavigation {
 		if (!this.canStep(direction)) throw new Error('Frame navigation is not available in the current runtime state.');
 		const operation = this.accept({ kind: 'frames', direction, count }, signal);
 		if (direction < 0) {
-			operation.replay = true;
-			this.rewind.seekTo(this.rewind.frameStepCycles(-1, count));
+			operation.ownsRewind = true;
+			this.rewind.seekTo(this.rewind.frameStepCycles(-1, count), this.isCurrent);
 			operation.executionRevision = this.execution.revision;
 			operation.rewindRevision = this.rewind.revision;
 		} else this.issueFrame(operation);
@@ -101,16 +109,27 @@ export class RuntimeFrameNavigation {
 		const history = this.runtime.history;
 		if (cycles < history.earliestCycles || cycles > history.latestCycles) throw new Error('Requested cycles are outside the retained history range.');
 		const operation = this.accept({ kind: 'seek', cycles }, signal);
-		operation.replay = true;
-		this.rewind.seekTo(cycles);
+		operation.ownsRewind = true;
+		this.rewind.seekTo(cycles, this.isCurrent);
+		operation.executionRevision = this.execution.revision;
+		operation.rewindRevision = this.rewind.revision;
+		return operation;
+	}
+	/** End review without starting gameplay. The history owner alone commits or rejoins the recording. */
+	public finishReview(destination: 'here' | 'present', signal?: AbortSignal): FrameNavigationOperation {
+		if (!this.canFinishReview) throw new Error('History review cannot be finished in the current runtime state.');
+		const operation = this.accept({ kind: 'finish-review', destination }, signal);
+		operation.ownsRewind = true;
+		if (destination === 'here') this.rewind.resumeHere();
+		else this.rewind.returnToPresent(this.isCurrent);
 		operation.executionRevision = this.execution.revision;
 		operation.rewindRevision = this.rewind.revision;
 		return operation;
 	}
 	private issueFrame(operation: FrameNavigationOperation): void {
 		operation.frameStartTick = this.runtime.frameScheduler.lastTickSequence;
-		operation.replay = this.rewind.active && this.rewind.frameStepCycles(1) > this.rewind.positionCycles;
-		if (operation.replay) this.rewind.stepFrame(1);
+		operation.ownsRewind = this.rewind.active;
+		if (this.rewind.active && this.rewind.frameStepCycles(1) > this.rewind.positionCycles) this.rewind.stepFrame(1);
 		else {
 			if (this.rewind.active) this.rewind.resumeHere();
 			this.execution.requestFrameStep();
@@ -134,16 +153,19 @@ export class RuntimeFrameNavigation {
 		// A newer timeline selection may replace our replay intent without replacing
 		// our pending live tick (and vice versa). Release each owner independently.
 		if (operation.executionRevision === this.execution.revision) this.execution.finishFrameStep();
-		if (operation.replay && operation.rewindRevision === this.rewind.revision) this.rewind.pauseSeek();
+		if (operation.ownsRewind && operation.rewindRevision === this.rewind.revision) this.rewind.pauseSeek();
 	}
 
+	/** Retire superseded commands before the host can execute a queued seek or branch. */
+	public beforeHostFrame(): void {
+		const operation = this.active;
+		if (operation !== undefined && !this.isCurrent()) this.cancel(operation);
+	}
 	/** Composition calls once after ordinary host execution, faults and presentation. */
 	public afterHostFrame(): void {
+		this.beforeHostFrame();
 		const operation = this.active;
 		if (operation === undefined) return;
-		if (operation.executionRevision !== this.execution.revision || operation.rewindRevision !== this.rewind.revision) {
-			this.cancel(operation); return;
-		}
 		if (this.tasks.failure !== undefined || this.fault.hostFrameFailure !== undefined) {
 			this.stopOwnedCommands(operation);
 			this.finish('failed', this.tasks.failure !== undefined ? String(this.tasks.failure.error) : 'host-frame-failed'); return;
@@ -154,12 +176,18 @@ export class RuntimeFrameNavigation {
 			if (!this.rewind.seeking) this.finish('interrupted', 'cancelled');
 			return;
 		}
-		if (this.debuggerState.source.stop !== undefined || this.fault.faultSnapshot !== null || operation.replay && this.rewind.stopped) {
-			this.execution.finishFrameStep();
+		const finishingReview = operation.request.kind === 'finish-review';
+		// Accepting an already inspected state executes nothing, including at an existing debugger/fault stop.
+		const acceptsCurrent = finishingReview && operation.request.destination === 'here';
+		if (!acceptsCurrent && (this.debuggerState.source.stop !== undefined || this.fault.faultSnapshot !== null
+			|| operation.ownsRewind && this.rewind.active && this.rewind.stopped)) {
+			this.stopOwnedCommands(operation);
 			this.finish('stopped', this.fault.faultSnapshot !== null ? 'guest-fault' : this.debuggerState.source.stop !== undefined ? 'debugger' : 'replay-stopped'); return;
 		}
 		if (this.execution.frameStepPending || this.rewind.seeking || this.rewind.playing) return;
-		if (operation.request.kind === 'seek') { this.finish('completed'); return; }
+		// A return seek may be settled while its subsequent Resume command is still queued.
+		if (finishingReview && this.rewind.active) return;
+		if (operation.request.kind !== 'frames') { this.finish('completed'); return; }
 		if (operation.request.direction < 0) {
 			operation.completedFrames = operation.before.videoTick - this.runtime.frameScheduler.lastTickSequence;
 			if (operation.completedFrames === operation.request.count) this.finish('completed');
@@ -174,7 +202,7 @@ export class RuntimeFrameNavigation {
 	}
 
 	public didRestore(origin: RuntimeRestoreOrigin): void {
-		if (origin === RuntimeRestoreOrigin.HistorySeek && this.active?.replay) return;
+		if (origin === RuntimeRestoreOrigin.HistorySeek && this.active?.ownsRewind) return;
 		this.didReset();
 	}
 	public didReset(): void {
@@ -193,7 +221,9 @@ export class RuntimeFrameNavigation {
 	private finish(status: FrameNavigationResult['status'], reason?: string): void {
 		const operation = this.active!;
 		this.active = undefined;
-		operation.finish(status, this.position(), reason);
+		const history = this.runtime.history;
+		operation.finish(status, this.position(), { reviewing: this.rewind.active,
+			earliestCycles: history.earliestCycles, latestCycles: history.latestCycles }, reason);
 	}
 	public dispose(): void {
 		this.closing = true;

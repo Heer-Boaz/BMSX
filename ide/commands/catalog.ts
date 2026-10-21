@@ -163,6 +163,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'gameView.closePanel': { category: 'View', title: 'Close Game Panel', shortTitle: 'X' },
 	'runtime.pause': { category: 'Run', title: 'Pause Runtime' },
 	'runtime.present': { category: 'Run', title: 'Return to Present', shortTitle: 'Back' },
+	'runtime.accept': { category: 'Run', title: 'Use This Point' },
 	'runtime.resume': { category: 'Run', title: 'Continue from Here', shortTitle: 'OK' },
 	'gameView.playback': { category: 'Game', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },

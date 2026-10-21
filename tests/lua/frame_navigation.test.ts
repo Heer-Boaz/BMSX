@@ -24,6 +24,7 @@ async function fixture(t: TestContext) {
 	runtime.onStateReset = () => { navigation.didReset(); f.guest.invalidate('heap-replaced'); resetRuntimeDebuggerExecution(f.debuggerState); };
 	execution.setPauseReason(HostPauseReason.Workbench, true);
 	const frame = async () => {
+		navigation.beforeHostFrame();
 		rewind.service(true);
 		if (tasks.ready && !rewind.active && !execution.executionBlocked() && f.debuggerState.source.stop === undefined) {
 			executeHostUpdate(session, runtime, presenter, audio, presentation, 30000);
@@ -209,15 +210,150 @@ test('event timelines branch on live resume, not on seeking or returning to pres
 	await f.settle(f.navigation.step(1, 8));
 	await f.settle(f.navigation.step(-1, 3));
 	assert.equal(transitions.mock.callCount(), 0);
-	f.rewind.returnToPresent();
-	for (let tick = 0; tick < 100 && f.rewind.active; tick++) await f.frame();
+	await f.settle(f.navigation.finishReview('present'));
 	assert.equal(f.rewind.active, false);
 	assert.equal(transitions.mock.callCount(), 0);
 	await f.settle(f.navigation.step(-1, 3));
-	f.rewind.resumeHere();
-	for (let tick = 0; tick < 100 && f.rewind.active; tick++) await f.frame();
+	await f.settle(f.navigation.finishReview('here'));
 	assert.equal(f.rewind.active, false);
 	assert.equal(transitions.mock.callCount(), 1);
 	await f.settle(f.navigation.step(1, 2));
 	assert.equal(transitions.mock.callCount(), 1);
+});
+
+test('finish review returns to present or accepts the selected state without a live tick', async t => {
+	const f = await fixture(t);
+	assert.equal(f.navigation.canFinishReview, false);
+	assert.throws(() => f.navigation.finishReview('here'), /cannot be finished/);
+	const live = await f.settle(f.navigation.step(1, 8));
+	const back = await f.settle(f.navigation.step(-1, 3));
+	assert.equal(f.navigation.canFinishReview, true);
+	const present = f.navigation.finishReview('present');
+	// Seeking completion alone must not publish success before the queued Resume.
+	for (let i = 0; i < 100 && f.rewind.seeking; i++) await f.frame();
+	assert.equal(present.result, undefined);
+	assert.equal(f.rewind.active, true);
+	const returned = await f.settle(present);
+	assert.equal(returned.status, 'completed'); assert.deepEqual(returned.after, live.after);
+	assert.equal(returned.history.latestCycles, live.after.cycles); assert.equal(returned.history.reviewing, false);
+	assert.equal(f.execution.userPaused, true); assert.equal(f.debuggerExecution.canResume('continue'), true);
+	assert.deepEqual((await f.settle(f.navigation.step(-1, 3))).after, back.after);
+	const accepted = await f.settle(f.navigation.finishReview('here'));
+	assert.equal(accepted.status, 'completed'); assert.deepEqual(accepted.before, back.after);
+	assert.deepEqual(accepted.after, back.after); assert.equal(accepted.history.latestCycles, back.after.cycles);
+	assert.equal(accepted.history.reviewing, false); assert.equal(f.execution.userPaused, true);
+	assert.equal(f.debuggerExecution.canResume('continue'), true);
+	for (let i = 0; i < 4; i++) await f.frame();
+	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), accepted.after.cycles);
+});
+
+for (const destination of ['here', 'present'] as const) test(`cancelling ${destination} before host execution preserves future and newer user intent`, async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const before = f.inspection.status(), lifetime = new AbortController();
+	const operation = f.navigation.finishReview(destination, lifetime.signal);
+	lifetime.abort();
+	const result = await f.settle(operation);
+	assert.equal(result.status, 'interrupted'); assert.equal(result.reason, 'cancelled');
+	assert.equal(result.after.cycles, before.cycles); assert.equal(result.history.latestCycles, before.history.latestCycles);
+	assert.equal(result.history.reviewing, true); assert.equal(f.execution.userPaused, true);
+	const superseded = f.navigation.finishReview(destination);
+	f.rewind.seekTo(f.runtime.history.earliestCycles);
+	f.navigation.cancel(superseded);
+	assert.equal((await superseded.completion).reason, 'superseded'); assert.equal(f.rewind.seeking, true);
+});
+
+test('return cancellation across the restore fence cannot leave a pending exit behind', async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const before = f.inspection.status(), lifetime = new AbortController();
+	let release!: () => void;
+	const wait = new Promise<void>(resolve => { release = resolve; });
+	t.mock.method(f.presenter.backend, 'finishGxGpuReadbacks', () => wait);
+	const operation = f.navigation.finishReview('present', lifetime.signal);
+	f.rewind.service(true); await Promise.resolve(); lifetime.abort(); release(); await f.tasks.join();
+	const result = await f.settle(operation);
+	assert.equal(result.status, 'interrupted'); assert.equal(result.after.cycles, before.cycles);
+	assert.equal(result.history.latestCycles, before.history.latestCycles);
+	for (let i = 0; i < 4; i++) await f.frame();
+	assert.equal(f.rewind.active, true); assert.equal(f.runtime.machine.scheduler.currentNowCycles(), before.cycles);
+});
+
+test('a newer pause retires a queued branch before the next host frame can discard future', async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const end = f.runtime.history.latestCycles, before = f.runtime.machine.scheduler.currentNowCycles();
+	const operation = f.navigation.finishReview('here');
+	f.execution.setPauseReason(HostPauseReason.Requested, true);
+	await f.frame();
+	assert.equal((await operation.completion).reason, 'superseded');
+	assert.equal(f.runtime.history.latestCycles, end, 'a superseded queued branch must not consume the recorded future');
+	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), before); assert.equal(f.rewind.active, true);
+});
+
+test('a newer pause across the GPU restore fence prevents stale machine replacement', async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const before = f.inspection.status();
+	let release!: () => void;
+	const wait = new Promise<void>(resolve => { release = resolve; });
+	t.mock.method(f.presenter.backend, 'finishGxGpuReadbacks', () => wait);
+	const operation = f.navigation.finishReview('present');
+	f.navigation.beforeHostFrame(); f.rewind.service(true); await Promise.resolve();
+	f.execution.setPauseReason(HostPauseReason.Requested, true);
+	release(); await f.tasks.join();
+	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), before.cycles, 'supersession must be checked before replacing the heap');
+	assert.equal(f.runtime.frameScheduler.lastTickSequence, before.videoTick);
+	const result = await f.settle(operation);
+	assert.equal(result.status, 'interrupted'); assert.equal(result.reason, 'superseded');
+	assert.equal(result.history.latestCycles, before.history.latestCycles); assert.equal(result.history.reviewing, true);
+});
+
+test('accepting here preserves an existing debugger stop and guest fault without executing it', async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	f.debuggerState.source.install(f.debuggerState.sources.currentBlua32Media, [new Map([[0, 0]]), new Map(), new Map()]);
+	f.debuggerState.source.shouldStop(-1, 0);
+	f.fault.faultSnapshot = { message: 'retained fault', resource: { domain: 0, path: 'entry.lua' }, line: 1, column: 1, details: { luaStack: [] } };
+	f.rewind.stopped = true;
+	const stop = f.debuggerState.source.stop, fault = f.fault.faultSnapshot;
+	const result = await f.settle(f.navigation.finishReview('here'));
+	assert.equal(result.status, 'completed'); assert.deepEqual(result.before, result.after);
+	assert.equal(result.history.reviewing, false); assert.equal(f.debuggerState.source.stop, stop);
+	assert.equal(f.fault.faultSnapshot, fault); assert.equal(f.execution.userPaused, true);
+});
+
+test('a replay stop interrupts return rather than leaving a delayed commit', async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const end = f.runtime.history.latestCycles, operation = f.navigation.finishReview('present');
+	f.debuggerState.source.install(f.debuggerState.sources.currentBlua32Media, [new Map([[0, 0]]), new Map(), new Map()]);
+	f.debuggerState.source.shouldStop(-1, 0);
+	f.navigation.afterHostFrame();
+	assert.equal((await operation.completion).status, 'stopped');
+	for (let i = 0; i < 4; i++) await f.frame();
+	assert.equal(f.rewind.active, true); assert.equal(f.runtime.history.latestCycles, end);
+	assert.equal(f.execution.userPaused, true);
+});
+
+for (const failCapture of [false, true]) test(`branch checkpoint ${failCapture ? 'failure' : 'cancellation'} reports committed history without rollback`, async t => {
+	const f = await fixture(t);
+	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
+	const before = f.inspection.status(), lifetime = new AbortController();
+	let release!: () => void;
+	const wait = new Promise<void>(resolve => { release = resolve; });
+	t.mock.method(f.presenter.backend, 'captureGxGpuVramSnapshot', async () => {
+		await wait;
+		if (failCapture) throw new Error('branch checkpoint failed');
+	});
+	const operation = f.navigation.finishReview('here', lifetime.signal);
+	f.rewind.service(true); await Promise.resolve();
+	assert.equal(f.rewind.active, false); assert.equal(f.runtime.history.latestCycles, before.cycles);
+	f.navigation.afterHostFrame(); assert.equal(operation.result, undefined, 'receipt awaits the branch checkpoint');
+	if (!failCapture) lifetime.abort();
+	release(); await f.tasks.join();
+	const result = await f.settle(operation);
+	assert.equal(result.status, failCapture ? 'failed' : 'interrupted'); assert.deepEqual(result.after, result.before);
+	assert.equal(result.history.reviewing, false); assert.equal(result.history.latestCycles, before.cycles);
+	assert.ok(result.history.latestCycles < before.history.latestCycles); assert.equal(f.execution.userPaused, true);
 });

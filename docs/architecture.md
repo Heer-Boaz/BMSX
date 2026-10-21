@@ -293,6 +293,11 @@ to reconstruct missing metadata. See the
 [source debugger](studio_source_debugger.md) and
 [runtime tools](studio_runtime_tools.md).
 
+Finite frame/history navigation owns admission, cancellation and settled
+outcomes for both UI commands and native tools. Ending review either accepts
+the inspected point or returns to the retained present through the existing
+host rewind owner; it retains requested pause independently of playback intent.
+
 Inspection borrows expire on execution, state replacement and target retirement.
 Retained display selection is not a live guest handle. Studio source editing,
 review, Save, installation, guest execution and result publication each retain

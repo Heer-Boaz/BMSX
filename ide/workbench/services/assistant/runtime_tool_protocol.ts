@@ -19,6 +19,7 @@ export type RuntimeToolRequest =
 	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game' | 'studio_reboot_runtime' | 'studio_hot_resume'; target: string }
 	| { name: 'studio_step_frames'; target: string; direction: -1 | 1; count: number }
 	| { name: 'studio_seek_history'; target: string; cycles: number }
+	| { name: 'studio_finish_history_review'; target: string; destination: 'here' | 'present' }
 	| { name: 'studio_read_runtime_stack'; inspection: string; start: number; count: number }
 	| { name: 'studio_read_frame_scopes'; frame: string }
 	| { name: 'studio_read_runtime_values'; reference: string; start: number; count: number };
@@ -26,6 +27,7 @@ const NO_FIELDS: string[] = [];
 const TARGET_FIELDS = ['target'];
 const STEP_FIELDS = ['target', 'direction', 'count'];
 const SEEK_FIELDS = ['target', 'cycles'];
+const REVIEW_FIELDS = ['target', 'destination'];
 const VALUES_FIELDS = ['reference', 'start', 'count'];
 const STACK_FIELDS = ['inspection', 'start', 'count'];
 const FRAME_FIELDS = ['frame'];
@@ -44,6 +46,8 @@ export const STUDIO_RUNTIME_TOOLS = [
 		inputSchema: { type: 'object', properties: { target: { type: 'string' }, direction: { type: 'string', enum: ['forward', 'backward'] }, count: { type: 'integer', minimum: 1 } }, required: STEP_FIELDS, additionalProperties: false } },
 	{ name: 'studio_seek_history', description: 'Seek within the authoring target\'s retained cycle range from studio_runtime_status.history. Selects the retained video boundary at or before the requested cycles; returns requested and actual positions after reconstruction settles. Rejects cycles outside retention rather than silently clamping. Preserves the recorded future and leaves review paused. Awaits completion or an explicit stop/interruption/failure; do not poll.',
 		inputSchema: { type: 'object', properties: { target: { type: 'string' }, cycles: { type: 'integer', minimum: 0 } }, required: SEEK_FIELDS, additionalProperties: false } },
+	{ name: 'studio_finish_history_review', description: 'Explicitly leave a settled history review on the authoring target, keeping it user-paused. destination=here accepts the currently inspected machine state and discards its recorded future; destination=present reconstructs the latest retained state and preserves that future. Neither starts live gameplay or takes an extra live frame. Use canFinishReview from studio_runtime_status.history. Awaits the actual transition, GPU work and any branch checkpoint, not command acceptance. Reports actual before/after cycles, video ticks and history even on interruption or failure. Cancellation before commit prevents the branch; completed physical effects are never rolled back. A return can stop at a debugger stop or guest fault. Continue/Step remains a separate explicit action. No polling is needed.',
+		inputSchema: { type: 'object', properties: { target: { type: 'string' }, destination: { type: 'string', enum: ['here', 'present'] } }, required: REVIEW_FIELDS, additionalProperties: false } },
 	{ name: 'studio_capture_game', description: 'See the retained completed game frame of a paused authoring target as an image. Awaits already admitted history readback, but rejects active execution, mutation or a target changed before capture. Native scanout size, after device quantization and before CRT/IDE overlays. Returns frame-publication cycles/video tick separately from the current machine observation: the last completed image can precede the stopped CPU. Does not run the guest, refresh the frame or capture the chat UI. Use on demand, not polling.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick, execution/inspection availability, retained-history range and latest ordinary Boot/Reboot and Hot Resume operations. hostFrameFailure carries the original host diagnostic/stack separately from a guest fault, even when suspended inspection is unavailable. Operation outcomes are historical, not current project-file equality. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
@@ -92,6 +96,13 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 				throw new StudioToolInputError('History seek requires the target and non-negative integer machine cycles');
 			}
 			return { name, target: value.target, cycles: value.cycles as number };
+		}
+		case 'studio_finish_history_review': {
+			const value = toolArguments(input, REVIEW_FIELDS);
+			if (typeof value.target !== 'string' || value.destination !== 'here' && value.destination !== 'present') {
+				throw new StudioToolInputError('Finishing history review requires the target and destination here/present');
+			}
+			return { name, target: value.target, destination: value.destination };
 		}
 		case 'studio_hot_resume':
 		case 'studio_reboot_runtime':

@@ -50,11 +50,33 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	await test.runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Next Frame completes');
 	check(runtime.frameScheduler.lastTickSequence === uiBefore + 1 && getActiveTab().kind === 'game_view', 'ordinary command steps and opens Game View');
+	const uiPresent = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
+	const retainedLatest = runtime.history.latestCycles;
 	await test.runPaletteCommand('Run: Previous Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Previous Frame completes');
 	check(runtime.frameScheduler.lastTickSequence === uiBefore && test.execution.userPaused, 'ordinary previous frame reviews the preceding boundary');
+	check(!ide.debuggerExecution.canResume('continue'), 'Continue is unavailable during ordinary history review');
+	ide.editor.commands.execute('runtime.present');
+	const presentOperation = ide.frameNavigation.active!;
+	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Return to Present completes');
+	const present = await presentOperation.completion;
+	check(present.status === 'completed' && present.completedFrames === 0 && present.request.kind === 'finish-review'
+		&& present.request.destination === 'present' && present.after.cycles === uiPresent.cycles && present.after.videoTick === uiPresent.videoTick,
+		'ordinary Return to Present restores the recording end without an extra live frame');
+	check(!test.rewind.active && runtime.history.latestCycles === retainedLatest && test.execution.userPaused && ide.debuggerExecution.canResume('continue'),
+		'ordinary Return to Present preserves future, stays paused and enables Continue');
+	await test.runPaletteCommand('Run: Previous Frame');
+	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary review reopens');
+	const acceptedAt = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
+	await test.runPaletteCommand('Run: Use This Point');
+	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Use This Point completes');
+	check(cycles() === acceptedAt.cycles && runtime.frameScheduler.lastTickSequence === acceptedAt.videoTick,
+		'ordinary Use This Point does not execute an extra live frame');
+	check(!test.rewind.active && runtime.history.latestCycles === acceptedAt.cycles && runtime.history.latestCycles < retainedLatest
+		&& test.execution.userPaused && ide.debuggerExecution.canResume('continue'),
+		'ordinary Use This Point truncates future, stays paused and enables Continue');
 	await frame();
 	await renderer.capture!('ordinary-frame-controls');
 	await renderer.finish(); await ide.editor.shutdown();
-	return { navigation: 'pass', before, after, stopped, target: ide.inspection.target };
+	return { navigation: 'pass', before, after, stopped, ordinaryReview: { present, acceptedAt }, target: ide.inspection.target };
 }

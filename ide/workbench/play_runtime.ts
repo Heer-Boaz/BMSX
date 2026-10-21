@@ -142,6 +142,7 @@ export class PlayRuntimeSession implements PlaySession {
 
 	private advancePlay(hostDeltaMs: number): void {
 		const runtime = this.target.runtime, presentation = this.target.presentation;
+		this.navigation.beforeHostFrame();
 		this.debuggerExecution.beforeHostFrame();
 		const existingFault = readSupervisorFaultReport(runtime);
 		if (existingFault !== undefined) {

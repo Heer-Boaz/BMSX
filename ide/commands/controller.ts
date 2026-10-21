@@ -269,8 +269,9 @@ export class IdeCommandController {
 				this.selectedTransport.pause();
 				return;
 			case 'runtime.present':
-				this.execute('runtime.pause', target);
-				this.selectedTransport.rewind.returnToPresent();
+			case 'runtime.accept':
+				inputFocus.executeCommand('runtime.pause', target);
+				this.selectedTransport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
 				return;
 			case 'runtime.resume':
 				inputFocus.executeCommand(command, this.editor.editorPanes.activePane?.runtimeControlContext);
@@ -507,6 +508,8 @@ export class IdeCommandController {
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
 			case 'runtime.present':
+			case 'runtime.accept':
+				return this.selectedTransport.navigation.canFinishReview;
 			case 'runtime.resume':
 				return this.selectedTransport.rewind.active && this.selectedTransport.navigation.active === undefined
 					&& this.selectedTransport.playbackEnabled;

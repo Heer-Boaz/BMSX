@@ -23,6 +23,7 @@ export function advanceStudioFrame(
 	hostMenuInput = HostMenuInput.Inactive, menuPaused = false,
 ): HostFramePresentation {
 	const logOutput = workbench.logOutput;
+	workbench.frameNavigation.beforeHostFrame();
 	workbench.debuggerExecution.beforeHostFrame();
 	workbench.scenarioRuns.advance();
 	screen.beginHostFrame();
