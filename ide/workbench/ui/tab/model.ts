@@ -4,6 +4,7 @@ import type { HostErrorInput } from '../../contrib/host_error/editor_input';
 import type { RomInspectorInput } from '../../contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../contrib/events/editor_input';
+import type { GteDebuggerInput } from '../../contrib/gte_debugger/editor_input';
 import type { AemEditorInput } from '../../contrib/aem/editor_input';
 import type { LuaProgramInput } from '../../contrib/lua_program/editor_input';
 import type { ConversationObserverInput } from '../../contrib/conversations/editor_input';
@@ -25,6 +26,7 @@ export type EditorInput =
 	| HostErrorInput
 	| RomInspectorInput
 	| EventViewerInput
+	| GteDebuggerInput
 	| ConversationObserverInput
 	| TerminalInput
 	| CodeEditorInput

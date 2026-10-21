@@ -1,5 +1,8 @@
 import type { HotResumeService } from '../execution/hot_resume';
 import type { RuntimeEventHistory } from '../../../runtime/event_history';
+import { GteCommandSnapshot, type RuntimeGteHistory } from '../../../runtime/gte_history';
+import type { IDisposable } from '../../../common/lifecycle';
+import { encodeGteCommand } from './gte_tool_protocol';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import { DebuggerSourceContext } from './debugger_sources';
@@ -18,11 +21,12 @@ export class WorkspaceRuntimeTools {
 	private readonly debugSources: DebuggerSourceContext;
 	private inspection: RuntimeInspection | undefined;
 	private actors: ActorRuntimeInspection | undefined;
+	private gteObservation: IDisposable | undefined;
 	private disposed = false;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -31,6 +35,45 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_gte_history':
+			case 'studio_read_gte_commands':
+			case 'studio_seek_gte_command': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('GTE history requires this authoring target.');
+				requestSignal?.throwIfAborted();
+				const history = this.gte;
+				if (request.name === 'studio_gte_history') {
+					if (request.action === 'start' && this.gteObservation === undefined) this.gteObservation = history.observe();
+					else if (request.action === 'stop') { this.gteObservation?.dispose(); this.gteObservation = undefined; }
+					else if (request.action === 'clear') history.clear();
+					return { kind: 'runtime' as const, data: { target: this.owner.target, observing: history.observing,
+						observingInContext: this.gteObservation !== undefined, generation: history.generation,
+						firstSequence: history.firstSequence, endSequence: history.endSequence,
+						total: history.count, capacity: history.capacity, expired: history.expired } };
+				}
+				if (request.generation !== history.generation) throw new StudioToolInputError('GTE history generation changed; read the current generation.');
+				if (request.sequence < history.firstSequence) throw new StudioToolInputError('GTE command sequence expired; read the retained sequence window.');
+				if (request.sequence > history.endSequence || request.name === 'studio_seek_gte_command' && request.sequence === history.endSequence) {
+					throw new StudioToolInputError('GTE command sequence is beyond the published history.');
+				}
+				if (request.name === 'studio_seek_gte_command') {
+					const record = history.at(request.sequence), sequence = record.sequence, cycles = record.cycles;
+					if (!history.canSeek(record)) throw new StudioToolInputError('The GTE command has no reachable frame in the retained physical recording.');
+					const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+					const operation = this.navigation.seek(cycles, signal);
+					return operation.completion.then(result => ({ kind: 'runtime' as const, data: { target: this.owner.target,
+						generation: request.generation, sequence, requestedCommandCycles: cycles, ...result } }));
+				}
+				const count = Math.min(request.count, history.endSequence - request.sequence), commands = [];
+				if (count !== 0) {
+					const snapshot = new GteCommandSnapshot();
+					for (let offset = 0; offset < count; offset++) {
+						history.copy(request.sequence + offset, snapshot);
+						commands.push(encodeGteCommand(snapshot, history.canSeek(snapshot)));
+					}
+				}
+				return { kind: 'runtime' as const, data: { target: this.owner.target, generation: history.generation,
+					firstSequence: history.firstSequence, endSequence: history.endSequence, commands } };
+			}
 			case 'studio_event_history':
 			case 'studio_read_events':
 			case 'studio_seek_event': {
@@ -201,6 +244,7 @@ export class WorkspaceRuntimeTools {
 		this.disposed = true;
 		this.lifetime.abort();
 		this.debugSources.dispose();
+		this.gteObservation?.dispose(); this.gteObservation = undefined;
 		this.connection.removeEventListener('abort', this.onDisconnect);
 		this.inspection?.dispose(); this.inspection = undefined;
 		this.actors = undefined;

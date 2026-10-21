@@ -6,4 +6,4 @@ export type BehaviorLensTabId = `behavior:${string}`;
 export type ScenarioLabTabId = 'scenario-lab';
 export type SceneEditorTabId = `scene:${string}`;
 export type ActorLabTabId = 'actor-lab' | `actor-lab:${string}`;
-export type EditorTabId = 'play-session' | `animation:${string}` | 'host-error' | `rom-inspector:${number}` | `map:${string}` | 'events' | `aem:${string}` | `program:${string}` | CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'terminal' | ActorLabTabId | 'game-view' | 'assistant' | 'codex-conversations' | `edit-review:${number}`;
+export type EditorTabId = 'play-session' | `animation:${string}` | 'host-error' | `rom-inspector:${number}` | `map:${string}` | 'events' | 'gte-debugger' | `aem:${string}` | `program:${string}` | CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'terminal' | ActorLabTabId | 'game-view' | 'assistant' | 'codex-conversations' | `edit-review:${number}`;

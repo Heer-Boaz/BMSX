@@ -42,6 +42,7 @@ import { clearHoverTooltip } from '../editor/contrib/hover/controller';
 import { RuntimeLuaEvaluation } from '../runtime/lua_evaluation';
 import { RuntimeInspectionService } from '../runtime/inspection';
 import { RuntimeEventHistory } from '../runtime/event_history';
+import { RuntimeGteHistory } from '../runtime/gte_history';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -52,6 +53,7 @@ export class RuntimeIdeState {
 	public lastIdeInputFrame = -1;
 	public readonly debugger: RuntimeDebuggerState;
 	public readonly events: RuntimeEventHistory;
+	public readonly gte: RuntimeGteHistory;
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly guest: SuspendedGuestSession;
 	public readonly scenarioRuns: ScenarioRunService;
@@ -93,6 +95,7 @@ export class RuntimeIdeState {
 		observeConversation?: ConversationObserverFactory,
 	) {
 		this.events = new RuntimeEventHistory(runtime, sources);
+		this.gte = new RuntimeGteHistory(runtime, sources);
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.guest = new SuspendedGuestSession(runtime);
@@ -101,7 +104,7 @@ export class RuntimeIdeState {
 		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.guest, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
-		this.hotResumes.onDidApply = () => this.events.beginTimeline();
+		this.hotResumes.onDidApply = () => { this.events.beginTimeline(); this.gte.didInstall(); };
 		this.boots = new BootService(editorTextModelService, sources, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, sources, clock);
@@ -129,6 +132,7 @@ export class RuntimeIdeState {
 			this.guest,
 			this.debugger,
 			this.events,
+			this.gte,
 			this.runtimeTasks,
 			execution,
 			rewind,
@@ -171,15 +175,17 @@ export class RuntimeIdeState {
 		};
 		runtime.onStateRestored = origin => {
 			this.events.didRestore(origin);
+			this.gte.didRestore(origin);
 			this.frameNavigation.didRestore(origin);
 			invalidateToolingState(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
 		runtime.history.onWillResumeRecording = branched => {
-			if (branched) this.events.beginTimeline();
+			if (branched) { this.events.beginTimeline(); this.gte.beginTimeline(); }
 		};
 		runtime.history.onWillEndReview = () => this.guest.willEndHistoryReview();
 		runtime.onStateReset = () => {
 			this.events.beginTimeline();
+			this.gte.didInstall();
 			this.frameNavigation.didReset();
 			invalidateToolingState('heap-replaced');
 		};

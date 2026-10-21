@@ -144,6 +144,7 @@ function createEditorPanes() {
 		host_error: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(),
 		rom_inspector: () => new RecordingEditorPane<RomInspectorInput>(),
 		event_viewer: () => new RecordingEditorPane<EventViewerInput>(),
+		gte_debugger: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(),
 		terminal: () => new RecordingEditorPane<TerminalInput>(),
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
 		game_view: () => new RecordingEditorPane<GameViewInput>(),

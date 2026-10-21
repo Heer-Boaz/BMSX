@@ -3,6 +3,7 @@ import { decodeActorToolRequest, STUDIO_ACTOR_TOOLS, type ActorToolRequest } fro
 import { StudioToolInputError, toolArguments } from './tool_input';
 import { decodeTerminalToolRequest, STUDIO_TERMINAL_TOOLS, type TerminalToolRequest } from './terminal_tool_protocol';
 import { decodeEventToolRequest, STUDIO_EVENT_TOOLS, type EventToolRequest } from './event_tool_protocol';
+import { decodeGteToolRequest, STUDIO_GTE_TOOLS, type GteToolRequest } from './gte_tool_protocol';
 import type { BootOperation } from '../execution/boot';
 import type { HotResumeOperation } from '../execution/hot_resume';
 
@@ -11,6 +12,7 @@ export type RuntimeToolRequest =
 	| DebuggerToolRequest
 	| TerminalToolRequest
 	| EventToolRequest
+	| GteToolRequest
 	| { name: 'studio_runtime_status' }
 	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game' | 'studio_reboot_runtime' | 'studio_hot_resume'; target: string }
 	| { name: 'studio_step_frames'; target: string; direction: -1 | 1; count: number }
@@ -32,6 +34,7 @@ export const STUDIO_RUNTIME_TOOLS = [
 	...STUDIO_TERMINAL_TOOLS,
 	...STUDIO_DEBUGGER_TOOLS,
 	...STUDIO_EVENT_TOOLS,
+	...STUDIO_GTE_TOOLS,
 	{ name: 'studio_hot_resume', description: 'Build and admit current Lua working copies through ordinary Hot Resume, preserving relocatable live state instead of physically resetting the game. Rejects unsupported edits rather than rebooting. Does not Save, rebuild assets, approve reviews, close the IDE or resume unrestricted gameplay. Returns after build/relocation admission, with operation ID, captured document versions, applied flag and actual completion if already available. The ordinary debugger scheduler runs any supervisor-return/init plan behind the workbench and stops before gameplay; init breakpoints remain active and can be continued with studio_resume_debugger. waiting-for-user/initializing are NOT completed: read studio_runtime_status.hotResume for the outcome. Frame/history navigation is unavailable during this mutation. Request cancellation prevents queued admission; an admitted physical plan remains workspace-owned on disconnect. History is retired at installation/supervisor admission. Use on explicit request, never as a retry loop.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_reboot_runtime', description: 'Build/install current Lua program sources and physically reset this authoring target using the ordinary Studio Reboot service. Destructive to current gameplay state and retained history; this is NOT Hot Resume. Captures all retained writable program documents at admission, then reads remaining workspace source overrides. Later typing does not enter this build. Does not Save, approve a review, rebuild YAML assets, close the IDE or resume gameplay. Returns the actual build rejection, infrastructure failure, cancellation or physical reset, including captured document versions and whether installation/reset occurred. Reset is NOT successful game initialization or a passing test: inspect installed debug source, then use explicit debugger/frame execution or run an isolated scenario. Stop before installation prevents the queued reset; completed effects are never rolled back. Use on explicit request, not polling.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_step_frames', description: 'Advance or rewind an explicit number of physical video boundaries on the authoring target. Awaits completed/stopped/interrupted/replaced/failed outcome with actual before/after cycles and video ticks; not merely command acceptance. Keeps the target paused and preserves recorded input/future. Forward stepping beyond the recording end executes live input. Stops at retained-history start, debugger stop or guest fault. Not source/instruction stepping or a guarantee that gameplay ran once per video tick. No polling is needed; request cancellation or context retirement cancels owned navigation.',
@@ -54,6 +57,7 @@ export const STUDIO_RUNTIME_TOOLS = [
 export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeToolRequest {
 	switch (name) {
 		case 'studio_event_history': case 'studio_read_events': case 'studio_seek_event': return decodeEventToolRequest(name, input);
+		case 'studio_gte_history': case 'studio_read_gte_commands': case 'studio_seek_gte_command': return decodeGteToolRequest(name, input);
 		case 'studio_list_actors': case 'studio_read_actor_tree': case 'studio_read_actor_node': case 'studio_list_actor_operations':
 		case 'studio_actor_action': case 'studio_call_actor_method': case 'studio_actor_execution_status': case 'studio_control_actor': return decodeActorToolRequest(name, input);
 		case 'studio_runtime_status': toolArguments(input, NO_FIELDS); return { name };

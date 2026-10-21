@@ -21,6 +21,7 @@ export type EditorViewCommandId =
 	| 'hostError'
 	| 'romInspector'
 	| 'events'
+	| 'gteDebugger'
 	| 'terminal'
 	| 'conversations'
 	| 'assistant'
@@ -80,6 +81,7 @@ export type EditorPlayCommandId =
 export type EditorCommandId =
 	| 'romInspector.assets' | 'romInspector.structure' | 'romInspector.code' | 'romInspector.sort' | 'romInspector.source' | 'romInspector.content' | 'romInspector.zoom' | 'romInspector.collision'
 	| 'events.clear' | 'events.filter' | 'events.details' | 'events.goToFrame' | 'events.previousFrame' | 'events.nextFrame' | 'events.more'
+	| 'gte.follow' | 'gte.view' | 'gte.details' | 'gte.source' | 'gte.goToFrame' | 'gte.filter' | 'gte.clear' | 'gte.more'
 	| 'resources.import'
 	| 'projects.createCartridge'
 	| 'conversations.history' | 'conversations.older'

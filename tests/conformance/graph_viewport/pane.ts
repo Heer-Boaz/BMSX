@@ -59,7 +59,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	const panes = new EditorPanes({ play_session: () => { throw new Error('Play is not part of the graph viewport fixture'); },
 		code_editor: () => pane, behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused, cart_map: unused,
 		animation: unused, host_error: unused,
-		rom_inspector: unused, event_viewer: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused });
+		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused });
 	const group = new EditorTabGroupModel();
 	group.initialize(inputs[0]);
 	for (let index = 1; index < inputs.length; index += 1) group.add(inputs[index]);

@@ -1,4 +1,5 @@
 import { RuntimeEventHistory } from '../../ide/runtime/event_history';
+import { RuntimeGteHistory } from '../../ide/runtime/gte_history';
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -38,6 +39,7 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const execution = new HostExecutionControl(audio);
 	const tasks = new RuntimeTaskQueue(audio, presenter);
 	const events = new RuntimeEventHistory(runtime, sources);
+	const gteHistory = new RuntimeGteHistory(runtime, sources);
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const fault = createRuntimeFaultState();
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audio, { log() {} });
@@ -54,5 +56,5 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	hotResumes.onDidApply = () => events.beginTimeline();
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { events, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { events, gteHistory, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }
