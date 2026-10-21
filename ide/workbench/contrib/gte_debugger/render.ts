@@ -20,6 +20,7 @@ export class GteDebugCanvas {
 	private plotTop = 0;
 	private plotBottom = 0;
 	private axisLabel = '';
+	private connectPoints = false;
 	public layout(view: GteDebugPresentation, bounds: RectBounds, font: BFont): void {
 		const width = bounds.right - bounds.left - 8;
 		this.explanation.length = 0; this.flagLines.length = 0;
@@ -28,10 +29,11 @@ export class GteDebugCanvas {
 		this.plotTop = bounds.top + font.lineHeight + 6;
 		this.plotBottom = Math.max(this.plotTop + 16, bounds.bottom - (this.explanation.length + this.flagLines.length + Math.max(view.points.length, view.colors.length)) * font.lineHeight - 16);
 		this.points.length = 0; this.outline.length = 0; this.axisLabel = '';
+		this.connectPoints = view.connectPoints;
 		if (view.points.length === 0) return;
 		let left = view.points[0].x, right = left, top = view.points[0].y, bottom = top;
 		for (const point of view.points) { left = Math.min(left, point.x); right = Math.max(right, point.x); top = Math.min(top, point.y); bottom = Math.max(bottom, point.y); }
-		this.axisLabel = `X ${left}..${right}  Y ${top}..${bottom}`;
+		this.axisLabel = `${view.horizontalAxis} ${left}..${right}  ${view.verticalAxis} ${top}..${bottom}`;
 		const scale = Math.min(Math.max(1, width - 32) / Math.max(1, right - left), Math.max(1, this.plotBottom - this.plotTop - font.lineHeight - 24) / Math.max(1, bottom - top));
 		const centerX = (bounds.left + bounds.right) / 2, centerY = (this.plotTop + font.lineHeight + this.plotBottom) / 2;
 		for (const point of view.points) {
@@ -39,7 +41,7 @@ export class GteDebugCanvas {
 			target.x = centerX + (point.x - (left + right) / 2) * scale; target.y = centerY + (point.y - (top + bottom) / 2) * scale;
 			this.points.push(target); this.outline.push(target.x, target.y);
 		}
-		if (this.points.length === 3) this.outline.push(this.points[0].x, this.points[0].y);
+		if (this.connectPoints) this.outline.push(this.points[0].x, this.points[0].y);
 	}
 	public hit(x: number, y: number): number {
 		for (let index = this.points.length - 1; index >= 0; index--) {
@@ -53,12 +55,12 @@ export class GteDebugCanvas {
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		api.blit_text_inline_with_font(view.heading, left, bounds.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		if (input.selected.sequence < 0) {
-			api.blit_text_inline_with_font('No normal GTE commands observed.', left, this.plotTop + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			api.blit_text_inline_with_font('No GTE events observed.', left, this.plotTop + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 			api.blit_text_inline_with_font('Play or step the existing runtime.', left, this.plotTop + line + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		} else {
 			api.blit_rect(left, this.plotTop, bounds.right - 4, this.plotBottom, 0, colors.COLOR_TAB_BORDER);
 			if (this.axisLabel !== '') api.blit_text_inline_with_font(this.axisLabel, left + 2, this.plotTop + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
-			if (this.points.length === 3) api.polyline(this.outline, 0, 0, 0, 1, colors.COLOR_RESOURCE_VIEWER_TEXT);
+			if (this.connectPoints) api.polyline(this.outline, 0, 0, 0, 1, colors.COLOR_RESOURCE_VIEWER_TEXT);
 			for (let index = 0; index < this.points.length; index++) {
 				const point = this.points[index], selected = index === input.selectedPoint;
 				if (selected) api.blit_rect(point.x - 5, point.y - 5, point.x + 6, point.y + 6, 0, colors.COLOR_FOCUS_BORDER);

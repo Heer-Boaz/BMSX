@@ -187,6 +187,15 @@ export type GxGteCommandObserver = {
 	after(commandWord: number, busSignals: MappedBusSignals, nominalCycles: number, dataRegisterWords: ArrayLike<number>, controlRegisterWords: ArrayLike<number>): void;
 };
 
+/** Separate acceptance and publication observations of the raw PLUS registerfile.
+ * Words are borrowed read-only during the callback. Publication can be observed
+ * without acceptance after attachment/restore; the deadline may precede the
+ * lazy publication cycle. Never synchronize, mutate, or execute from callbacks. */
+export type GxGtePlusObserver = {
+	accepted(commandWord: number, busSignals: MappedBusSignals, acceptedCycle: number, completionCycle: number, plusRegisterWords: ArrayLike<number>): void;
+	published(completionCycle: number, publicationCycle: number, plusRegisterWords: ArrayLike<number>): void;
+};
+
 export class GxGte {
 	private readonly dataRegisterWords = new Uint32Array(GX_GTE_DATA_REGISTER_COUNT);
 	private readonly controlRegisterWords = new Uint32Array(GX_GTE_CONTROL_REGISTER_COUNT);
@@ -205,6 +214,7 @@ export class GxGte {
 	private plusPendingResultZ = 0;
 	private plusPendingFlag = 0;
 	private commandObserver: GxGteCommandObserver | null = null;
+	private plusObserver: GxGtePlusObserver | null = null;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -325,12 +335,15 @@ export class GxGte {
 	}
 
 	private publishPlusCompletion(): void {
+		const completionCycle = this.plusCompletionCycle;
 		this.plusRegisterWords[GX_GTE_PLUS_RESULT_XY] = this.plusPendingResultXy;
 		this.plusRegisterWords[GX_GTE_PLUS_RESULT_Z] = this.plusPendingResultZ;
 		this.plusRegisterWords[GX_GTE_PLUS_FLAG] = this.plusPendingFlag;
 		this.plusRegisterWords[GX_GTE_PLUS_CYCLES] &= ~GX_GTE_PLUS_CYCLES_BUSY;
 		this.plusCompletionCycle = 0;
 		this.cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
+		const observer = this.plusObserver;
+		if (observer !== null) observer.published(completionCycle, this.scheduler.currentNowCycles(), this.plusRegisterWords);
 	}
 
 
@@ -389,6 +402,21 @@ export class GxGte {
 			return;
 		}
 		context.plusRegisterWords[index] = value;
+	}
+
+	public setPlusObserver(observer: GxGtePlusObserver | null): void {
+		this.plusObserver = observer;
+		this.memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, this, observer === null
+			? GxGte.writePlusRegisterThunk : GxGte.writeObservedPlusCommandThunk);
+	}
+
+	private static writeObservedPlusCommandThunk(context: GxGte, addr: number, value: number, busSignals: MappedBusSignals): void {
+		const observer = context.plusObserver!, previousCompletionCycle = context.plusCompletionCycle;
+		GxGte.writePlusRegisterThunk(context, addr, value);
+		// Rejected busy writes keep the deadline; every accepted command advances it.
+		if (context.plusCompletionCycle !== previousCompletionCycle) {
+			observer.accepted(value, busSignals, context.scheduler.currentNowCycles(), context.plusCompletionCycle, context.plusRegisterWords);
+		}
 	}
 
 	private static plusCommandWriteReadyThunk(

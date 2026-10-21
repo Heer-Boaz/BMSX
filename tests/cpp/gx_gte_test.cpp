@@ -573,6 +573,185 @@ void testPlusActiveCpuSliceCompletionEdge() {
 	require(!harness.scheduler.hasDueTimer(), "GTE+ active-slice completion has no timer");
 }
 
+struct PlusObservation {
+	bool accepted;
+	bmsx::u32 command;
+	bmsx::MappedBusSignals bus;
+	bmsx::i64 cycle;
+	bmsx::i64 deadline;
+	std::array<bmsx::u32, bmsx::GX_GTE_PLUS_REGISTER_COUNT> words;
+};
+
+struct PlusTrace {
+	std::vector<PlusObservation> records;
+	static void accepted(void* context, bmsx::u32 command, bmsx::MappedBusSignals bus, bmsx::i64 cycle, bmsx::i64 deadline,
+		const std::array<bmsx::u32, bmsx::GX_GTE_PLUS_REGISTER_COUNT>& words) {
+		static_cast<PlusTrace*>(context)->records.push_back({true, command, bus, cycle, deadline, words});
+	}
+	static void published(void* context, bmsx::i64 deadline, bmsx::i64 cycle,
+		const std::array<bmsx::u32, bmsx::GX_GTE_PLUS_REGISTER_COUNT>& words) {
+		static_cast<PlusTrace*>(context)->records.push_back({false, words[bmsx::GX_GTE_PLUS_COMMAND], 0u, cycle, deadline, words});
+	}
+};
+
+void testPlusAcceptanceAndLazyPublicationObservation() {
+	GteHarness baseline, observed;
+	PlusTrace trace;
+	observed.gte.setPlusObserver({PlusTrace::accepted, PlusTrace::published, &trace});
+	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	for (auto* harness : {&baseline, &observed}) {
+		auto& memory = harness->memory;
+		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(10u, static_cast<bmsx::u32>(-20)));
+		memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
+		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(99u, 88u));
+		memory.writeMappedU32LE(commandAddress, 0x41u);
+		// The F64 second word reaches COMMAND without its direct-store interlock.
+		memory.writeMappedF64LE(commandAddress - bmsx::IO_WORD_SIZE, 0x1p-1042);
+		require(!harness->scheduler.hasDueTimer(), "observation adds no PLUS completion timer");
+		harness->scheduler.advanceTo(20);
+	}
+	require(trace.records.size() == 1u, "busy and DMA writes do not produce acceptance");
+	require(trace.records[0].command == 0xdeadbe01u && trace.records[0].bus == bmsx::MAPPED_BUS_MASTER_CPU, "accepted raw PLUS command and bus");
+	require(trace.records[0].cycle == 0 && trace.records[0].deadline == 5, "acceptance and completion deadline");
+	require(trace.records[0].words[bmsx::GX_GTE_PLUS_ADD_XY] == pack16(10u, static_cast<bmsx::u32>(-20)), "acceptance captures current operands");
+	require(trace.records[0].words[bmsx::GX_GTE_PLUS_RESULT_XY] == 0u
+		&& trace.records[0].words[bmsx::GX_GTE_PLUS_CYCLES] == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | 5u), "acceptance retains previous published results and sets busy");
+	for (auto* harness : {&baseline, &observed}) {
+		auto& memory = harness->memory;
+		require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE)
+			== pack16(10u, static_cast<bmsx::u32>(-20)), "lazy publication retains accepted operands");
+		memory.writeMappedF64LE(commandAddress - bmsx::IO_WORD_SIZE, 0x1p-1042);
+		harness->scheduler.advanceTo(25);
+		memory.writeMappedU32LE(commandAddress, 0x41u);
+		harness->scheduler.advanceTo(30);
+		require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0x81000000u, "invalid PLUS flags publish independently");
+		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+	}
+	const std::array<bmsx::i64, 6> cycles{0, 20, 20, 25, 25, 30}, deadlines{5, 5, 25, 25, 26, 26};
+	require(trace.records.size() == cycles.size(), "exact PLUS acceptance/publication count");
+	for (size_t index = 0; index < cycles.size(); index++) {
+		require(trace.records[index].accepted == ((index & 1u) == 0u)
+			&& trace.records[index].cycle == cycles[index] && trace.records[index].deadline == deadlines[index], "PLUS actual event ordering and lazy timing");
+	}
+	require(trace.records[1].words[bmsx::GX_GTE_PLUS_ADD_XY] == pack16(99u, 88u)
+		&& trace.records[1].words[bmsx::GX_GTE_PLUS_RESULT_XY] == pack16(10u, static_cast<bmsx::u32>(-20)), "publication inputs can already describe next job");
+	require(trace.records[1].words[bmsx::GX_GTE_PLUS_CYCLES] == 5u, "publication clears busy and retains nominal duration");
+	require(trace.records[2].command == 1u, "idle F64 secondary COMMAND word accepted");
+	require(trace.records[4].command == 0x41u, "PLUS decodes full low byte rather than normal low six bits");
+	require(trace.records[5].words[bmsx::GX_GTE_PLUS_RESULT_XY] == pack16(99u, 88u), "invalid command preserves published results");
+	const auto actual = observed.gte.captureState(), expected = baseline.gte.captureState();
+	require(actual.plusRegisterWords == expected.plusRegisterWords && actual.plusPendingCycles == expected.plusPendingCycles
+		&& actual.dataRegisterWords == expected.dataRegisterWords && actual.controlRegisterWords == expected.controlRegisterWords,
+		"observed PLUS physical state matches baseline");
+	observed.gte.setPlusObserver({});
+}
+
+void testPlusObservationAttachmentRestoreAndReset() {
+	GteHarness harness;
+	PlusTrace trace;
+	const bmsx::GxGtePlusObserver observer{PlusTrace::accepted, PlusTrace::published, &trace};
+	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	harness.memory.writeMappedU32LE(commandAddress, 1u);
+	harness.gte.setPlusObserver(observer);
+	harness.gte.setPlusObserver({});
+	harness.scheduler.advanceTo(10);
+	harness.gte.setPlusObserver(observer);
+	require(trace.records.empty() && !harness.scheduler.hasDueTimer(), "reattachment does not publish or invent pending acceptance");
+	harness.memory.readMappedU32LE(commandAddress);
+	require(trace.records.size() == 1u && !trace.records[0].accepted && trace.records[0].cycle == 10
+		&& trace.records[0].deadline == 5, "publication can be observed without acceptance after an observation gap");
+	harness.memory.writeMappedU32LE(commandAddress, 1u);
+	require(!harness.memory.mappedWriteReady(commandAddress), "PLUS interlock arms service before state capture");
+	harness.scheduler.advanceTo(12);
+	const auto saved = harness.gte.captureState();
+	require(saved.plusPendingCycles == 3u && saved.plusInterlockArmed && trace.records.size() == 2u, "not-due capture preserves pending interval without publication");
+	GteHarness restored;
+	restored.scheduler.setNowCycles(100);
+	restored.gte.setPlusObserver(observer);
+	restored.gte.restoreState(saved);
+	require(trace.records.size() == 2u && restored.scheduler.nextDeadline() == 103, "restore rearms real deadline without synthesizing acceptance");
+	restored.scheduler.advanceTo(105);
+	restored.memory.readMappedU32LE(commandAddress);
+	require(trace.records.size() == 3u && !trace.records[2].accepted && trace.records[2].cycle == 105
+		&& trace.records[2].deadline == 103, "restored publication retains rebased deadline and actual materialization cycle");
+	require(!restored.scheduler.hasDueTimer(), "lazy synchronization retires the armed service");
+	restored.memory.writeMappedU32LE(commandAddress, 1u);
+	restored.scheduler.advanceTo(108);
+	require(!restored.memory.mappedWriteReady(commandAddress), "reset test has an armed PLUS service");
+	restored.gte.reset();
+	restored.scheduler.advanceTo(200);
+	restored.memory.readMappedU32LE(commandAddress);
+	require(trace.records.size() == 4u && !restored.scheduler.hasDueTimer(), "reset cancels work without fabricating publication");
+	restored.memory.writeMappedU32LE(commandAddress, 1u);
+	restored.scheduler.advanceTo(210);
+	restored.gte.captureState();
+	require(trace.records.size() == 6u && !trace.records[5].accepted && trace.records[5].cycle == 210
+		&& trace.records[5].deadline == 205, "ordinary capture can materialize overdue work exactly once");
+	restored.gte.captureState();
+	require(trace.records.size() == 6u, "repeated capture does not duplicate publication");
+	constexpr bmsx::i64 highCycle = 0x100000000ll;
+	restored.scheduler.advanceTo(highCycle + 10);
+	restored.memory.writeMappedU32LE(commandAddress, 1u);
+	restored.scheduler.advanceTo(highCycle + 20);
+	restored.memory.readMappedU32LE(commandAddress);
+	require(trace.records.size() == 8u && trace.records[6].accepted && trace.records[6].cycle == highCycle + 10
+		&& trace.records[6].deadline == highCycle + 15 && !trace.records[7].accepted && trace.records[7].cycle == highCycle + 20
+		&& trace.records[7].deadline == highCycle + 15, "absolute PLUS observation cycles retain their upper bits");
+	harness.gte.setPlusObserver({});
+	restored.gte.setPlusObserver({});
+}
+
+void testPlusObservationPreservesCpuInterlock() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(5u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
+	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	image.constants.emplace_back(static_cast<bmsx::f64>(commandAddress));
+	image.constants.emplace_back(static_cast<bmsx::f64>(1));
+	GteHarness baseline(image), observed(image);
+	PlusTrace trace;
+	observed.gte.setPlusObserver({PlusTrace::accepted, PlusTrace::published, &trace});
+	for (auto* harness : {&baseline, &observed}) {
+		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted && harness->cpu.isMemoryWriteBlocked(), "second PLUS store interlocks before acceptance");
+		require(1000 - harness->cpu.instructionBudgetRemaining == 6, "two loads and two attempted stores cost six cycles");
+		harness->scheduler.advanceTo(6);
+		require(harness->scheduler.nextDeadline() == 9, "interlock retains first command deadline");
+		harness->scheduler.advanceTo(9);
+		require(harness->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GTE, "actual scheduled GTE service wakes CPU");
+		harness->gte.onService();
+		require(!harness->cpu.isMemoryWriteBlocked(), "actual publication releases interlock");
+		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "retried PLUS store and return finish");
+		require(1000 - harness->cpu.instructionBudgetRemaining == 4, "retried store and return retain ordinary cycle cost");
+		harness->scheduler.advanceTo(16);
+		harness->memory.readMappedU32LE(commandAddress);
+	}
+	const std::array<bmsx::i64, 4> cycles{4, 9, 11, 16}, deadlines{9, 9, 16, 16};
+	require(trace.records.size() == cycles.size(), "one acceptance per actual retried store, one publication per job");
+	for (size_t index = 0; index < cycles.size(); index++) {
+		require(trace.records[index].accepted == ((index & 1u) == 0u) && trace.records[index].cycle == cycles[index]
+			&& trace.records[index].deadline == deadlines[index], "PLUS observed interlock cycle sequence matches hardware schedule");
+	}
+	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining
+		&& observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed CPU budget and heap match baseline");
+	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
+	require(std::ranges::equal(actual.snapshot.words(), expected.snapshot.words())
+		&& std::ranges::equal(actual.snapshot.objectWords(), expected.snapshot.objectWords())
+		&& actual.lastPc == expected.lastPc && actual.completionValues == expected.completionValues,
+		"observed CPU heap, registers and execution results match baseline");
+	const auto actualGte = observed.gte.captureState(), expectedGte = baseline.gte.captureState();
+	require(actualGte.plusRegisterWords == expectedGte.plusRegisterWords && actualGte.plusPendingCycles == expectedGte.plusPendingCycles
+		&& actualGte.dataRegisterWords == expectedGte.dataRegisterWords && actualGte.controlRegisterWords == expectedGte.controlRegisterWords,
+		"observed PLUS final physical state matches baseline");
+	observed.gte.setPlusObserver({});
+}
+
 void testPlusCpuBurstSaveRestoreInterlock() {
 	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
 	const uint32_t firstAddXy = pack16(1u, 2u);
@@ -1410,6 +1589,9 @@ int main() {
 	testPlusRetainsOldLatchesUntilCompletion();
 	testPlusCommandAdmission();
 	testPlusActiveCpuSliceCompletionEdge();
+	testPlusAcceptanceAndLazyPublicationObservation();
+	testPlusObservationAttachmentRestoreAndReset();
+	testPlusObservationPreservesCpuInterlock();
 	testPlusCpuBurstSaveRestoreInterlock();
 	testNclip();
 	testOp();

@@ -7,7 +7,7 @@ import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
-import { GteCommandProjection, type GteDebugView } from './presentation';
+import { GteCommandProjection, type GteDebugPlane, type GteDebugView } from './presentation';
 
 /** A retained observation session. Source navigation detaches its pane, not its lease. */
 export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_debugger'> {
@@ -23,6 +23,7 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	public running = false;
 	public filter = '';
 	public view: GteDebugView = 'auto';
+	public plane: GteDebugPlane = 'xy';
 	public selectedPoint = 0;
 	public selectionRevision = 0;
 	private generation = -1;

@@ -174,12 +174,16 @@ void GxGte::synchronizePlusCompletion() {
 }
 
 void GxGte::publishPlusCompletion() {
+	const i64 completionCycle = m_plusCompletionCycle;
 	m_plusRegisterWords[GX_GTE_PLUS_RESULT_XY] = m_plusPendingResultXy;
 	m_plusRegisterWords[GX_GTE_PLUS_RESULT_Z] = m_plusPendingResultZ;
 	m_plusRegisterWords[GX_GTE_PLUS_FLAG] = m_plusPendingFlag;
 	m_plusRegisterWords[GX_GTE_PLUS_CYCLES] &= ~GX_GTE_PLUS_CYCLES_BUSY;
 	m_plusCompletionCycle = 0;
 	m_cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
+	if (m_plusObserver.published != nullptr) {
+		m_plusObserver.published(m_plusObserver.context, completionCycle, m_scheduler.currentNowCycles(), m_plusRegisterWords);
+	}
 }
 
 
@@ -249,6 +253,23 @@ void GxGte::writePlusRegisterThunk(void* context, u32 addr, u32 value, MappedBus
 		return;
 	}
 	gte.m_plusRegisterWords[index] = value;
+}
+
+void GxGte::setPlusObserver(GxGtePlusObserver observer) {
+	m_plusObserver = observer;
+	m_memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, this, observer.accepted == nullptr
+		? &GxGte::writePlusRegisterThunk : &GxGte::writeObservedPlusCommandThunk);
+}
+
+void GxGte::writeObservedPlusCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals) {
+	GxGte& gte = *static_cast<GxGte*>(context);
+	const GxGtePlusObserver observer = gte.m_plusObserver;
+	const i64 previousCompletionCycle = gte.m_plusCompletionCycle;
+	writePlusRegisterThunk(context, addr, value, busSignals);
+	// Rejected busy writes keep the deadline; every accepted command advances it.
+	if (gte.m_plusCompletionCycle != previousCompletionCycle) {
+		observer.accepted(observer.context, value, busSignals, gte.m_scheduler.currentNowCycles(), gte.m_plusCompletionCycle, gte.m_plusRegisterWords);
+	}
 }
 
 bool GxGte::plusCommandWriteReadyThunk(void* context, u32, MappedBusSignals busSignals) {

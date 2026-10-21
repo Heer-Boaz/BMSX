@@ -281,9 +281,11 @@ review, Save, installation, guest execution and result publication each retain
 their own admission/completion owner. UI panes and assistant transports consume
 those owners rather than creating alternate execution or persistence paths.
 
-Normal GTE observation exposes paired raw command operands/results at the device
-boundary. Studio owns the optional bounded history, installed-source identities,
-selection and diagrams; it does not rerun device arithmetic or infer GPU
+GTE observation exposes paired normal-command operands/results and distinct
+PLUS acceptance/publication events at their device owners. Inspection never
+synchronizes pending work. Studio owns the optional bounded history, retained
+acceptance provenance, installed-source identities, selection and diagrams;
+it does not rerun device arithmetic, reconstruct unobserved operands or infer GPU
 submission from GTE results. Retained evidence navigates through the existing
 physical frame history with its original checkpoint provenance. The hardware
 interface remains specified by [the GTE reference](book1/gte.md).

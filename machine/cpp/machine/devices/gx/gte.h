@@ -137,6 +137,17 @@ struct GxGteCommandObserver {
 	void* context = nullptr;
 };
 
+// Separate acceptance and publication observations of the raw PLUS registerfile.
+// Words are borrowed read-only during the callback. Publication can be observed
+// without acceptance after attachment/restore; the deadline may precede the
+// lazy publication cycle. Never synchronize, mutate, or execute from callbacks.
+struct GxGtePlusObserver {
+	void (*accepted)(void*, u32, MappedBusSignals, i64, i64,
+		const std::array<u32, GX_GTE_PLUS_REGISTER_COUNT>&) = nullptr;
+	void (*published)(void*, i64, i64, const std::array<u32, GX_GTE_PLUS_REGISTER_COUNT>&) = nullptr;
+	void* context = nullptr;
+};
+
 class GxGte {
 public:
 	GxGte(Memory& memory, CPU& cpu, DeviceScheduler& scheduler);
@@ -148,6 +159,7 @@ public:
 	void writeControlRegister(u32 index, u32 value);
 	u32 execute(u32 opcode);
 	void setCommandObserver(GxGteCommandObserver observer);
+	void setPlusObserver(GxGtePlusObserver observer);
 	GxGteState captureState();
 	void restoreState(const GxGteState& state);
 
@@ -173,6 +185,7 @@ private:
 	u32 m_plusPendingResultZ = 0;
 	u32 m_plusPendingFlag = 0;
 	GxGteCommandObserver m_commandObserver;
+	GxGtePlusObserver m_plusObserver;
 
 	void setFlag(u32 flag);
 	static u32 withFlagError(u32 flag);
@@ -259,6 +272,7 @@ private:
 	static u32 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static u32 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writePlusRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void writeObservedPlusCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool plusCommandWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	void synchronizePlusCompletion();
 	void publishPlusCompletion();

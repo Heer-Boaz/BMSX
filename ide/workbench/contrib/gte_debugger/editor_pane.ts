@@ -36,16 +36,22 @@ import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GteDebuggerInput } from './editor_input';
-import { GteDebugPresentation, gteCommandName, type GteDebugView } from './presentation';
+import { GteDebugPresentation, gteCommandName, type GteDebugPlane, type GteDebugView } from './presentation';
 import { drawGteDebugger, GteDebugCanvas, type GteCommandRow } from './render';
 
 const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.goToFrame', 'gte.filter', 'gte.clear', 'gte.more'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
-const VIEWS: { label: string; description: string; detail: string; view: GteDebugView }[] = [
+type GteViewChoice = { label: string; description: string; detail: string; view: GteDebugView; plane?: GteDebugPlane };
+const VIEWS: GteViewChoice[] = [
 	{ label: 'Automatic', description: 'Relevant output for the selected command', detail: '', view: 'auto' },
 	{ label: 'Input XY', description: 'Raw input XY plane; XYZ in numeric rows', detail: '', view: 'input' },
 	{ label: 'Projected SXY', description: 'Actual projection or NCLIP operands', detail: '', view: 'projected' },
 	{ label: 'Output RGB', description: 'Actual color FIFO result', detail: '', view: 'color' },
+];
+const PLUS_VIEWS: GteViewChoice[] = [
+	{ label: 'Vector XY', description: 'ADD, MUL and actual result; raw XYZ in rows', detail: '', view: 'input', plane: 'xy' },
+	{ label: 'Vector XZ', description: 'Depth plane; raw XYZ in rows', detail: '', view: 'input', plane: 'xz' },
+	{ label: 'Vector YZ', description: 'Depth plane; raw XYZ in rows', detail: '', view: 'input', plane: 'yz' },
 ];
 
 export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
@@ -121,7 +127,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	/** Input events may select and inspect another command before the next host frame. */
 	private synchronizeSelection(): void {
 		const input = this.input;
-		if (this.presentation.update(input.selected, input.selectionRevision, input.view)) this.diagramDirty = true;
+		if (this.presentation.update(input.selected, input.selectionRevision, input.view, input.plane)) this.diagramDirty = true;
 		if (this.sourceSnapshot !== input.selected || this.sourceRevision !== input.selectionRevision) {
 			this.sourceSnapshot = input.selected; this.sourceRevision = input.selectionRevision;
 			this.cacheSource();
@@ -163,8 +169,13 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const input = this.input;
 		switch (command) {
 			case 'gte.follow': input.following = true; break;
-			case 'gte.view': this.quickInput.pick('GTE VIEW', 'Choose captured data', () => new TextQuickPickProvider(VIEWS, VIEWS.findIndex(item => item.view === input.view)), item => { input.view = item.view; }); break;
-			case 'gte.filter': this.quickInput.input('Filter GTE commands', 'Opcode name; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
+			case 'gte.view': {
+				const plus = input.selected.kind !== 'normal', choices = plus ? PLUS_VIEWS : VIEWS;
+				this.quickInput.pick('GTE VIEW', 'Choose captured data', () => new TextQuickPickProvider(choices, choices.findIndex(item => plus ? item.plane === input.plane : item.view === input.view)), item => {
+					input.view = item.view; if (item.plane !== undefined) input.plane = item.plane;
+				}); break;
+			}
+			case 'gte.filter': this.quickInput.input('Filter GTE events', 'Opcode or PLUS phase; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
 			case 'gte.clear': input.clear(); break;
 			case 'gte.more': { input.following = false; this.refreshSource(); const bounds = input.actions.items[2].bounds; this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['gte.context'], this); break; }
 			case 'gte.source': this.openSource(); break;
@@ -177,9 +188,9 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				input.following = false;
 				this.refreshSource();
 				const source = this.sourceLocation, properties = this.presentation.details(input.selected).slice();
-				properties.splice(1, 0, { label: 'Issuing source', value: source === undefined || this.sourceUnavailable ? 'Source unavailable' : `${source.range.path}:${source.range.start.line}:${source.range.start.column}`,
-					description: this.sourceChanged ? 'Source changed since this command was compiled. Source navigation is disabled.' : 'Location belongs to the captured installed program.', warning: this.sourceChanged });
-				this.inspector.show({ title: `GTE COMMAND #${input.selected.sequence}`, items: properties, canOpenSource: () => source !== undefined && !this.sourceChanged && !this.sourceUnavailable,
+				properties.splice(1, 0, { label: input.selected.kind === 'normal' ? 'Issuing source' : 'Acceptance source', value: source === undefined || this.sourceUnavailable ? 'Source unavailable' : `${source.range.path}:${source.range.start.line}:${source.range.start.column}`,
+					description: this.sourceChanged ? 'Source changed since this command was compiled. Source navigation is disabled.' : input.selected.kind === 'normal' ? 'Location belongs to the captured installed program.' : 'Location belongs to the observed command acceptance, not an instruction which later synchronized publication.', warning: this.sourceChanged });
+				this.inspector.show({ title: `GTE EVENT #${input.selected.sequence}`, items: properties, canOpenSource: () => source !== undefined && !this.sourceChanged && !this.sourceUnavailable,
 					openSource: () => this.openSource() }); break;
 			}
 		}
@@ -212,7 +223,10 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			for (let index = first, y = list.offsetTop + first * layout.rowHeight; index < end && y < list.bounds.bottom; index++, y += layout.rowHeight) {
 				const sequence = input.projection.rows[index];
 				let label = this.labels.get(sequence);
-				if (label === undefined) { label = truncateMeasuredText(`#${sequence} ${gteCommandName(input.history.at(sequence).commandWord)}`, list.bounds.right - list.bounds.left - 4, measureTextRange); this.labels.set(sequence, label); }
+				if (label === undefined) {
+					const record = input.history.at(sequence);
+					label = truncateMeasuredText(`#${sequence} ${gteCommandName(record.commandWord, record.kind)}`, list.bounds.right - list.bounds.left - 4, measureTextRange); this.labels.set(sequence, label);
+				}
 				const row = this.rows[count];
 				if (row === undefined) this.rows.push({ sequence, top: y, label });
 				else { row.sequence = sequence; row.top = y; row.label = label; }
