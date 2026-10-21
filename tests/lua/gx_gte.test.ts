@@ -12,9 +12,10 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
+import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -244,6 +245,127 @@ test('GX-GTE MMIO exposes PSX COP2 data/control registers and command execution'
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_DATA0 + 11 * IO_WORD_SIZE), 256);
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_DATA0 + 14 * IO_WORD_SIZE), pack16(161, 122));
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_CONTROL0 + 31 * IO_WORD_SIZE), 0);
+});
+
+test('GX-GTE command observation brackets only actual normal MMIO writes with borrowed raw words', () => {
+	const baseline = createGte(), observed = createGte();
+	for (const { gte } of [baseline, observed]) {
+		setupIdentityProjection(gte);
+		gte.writeDataRegister(0, pack16(64, 32));
+		gte.writeDataRegister(1, 512);
+		gte.writeDataRegister(2, pack16(-32, 16));
+		gte.writeDataRegister(3, 256);
+		gte.writeDataRegister(4, pack16(10, -20));
+		gte.writeDataRegister(5, 1024);
+		gte.writeDataRegister(15, 0x12345678);
+		gte.writeControlRegister(31, 0x1000);
+	}
+	const records: { phase: string; command: number; bus: number; cycles: number; data: number[]; control: number[] }[] = [];
+	observed.gte.setCommandObserver({
+		before(command, bus, data, control) {
+			records.push({ phase: 'before', command, bus, cycles: observed.memory.readMappedU32LE(IO_GX_GTE_CYCLES),
+				data: Array.from(data), control: Array.from(control) });
+		},
+		after(command, bus, cycles, data, control) {
+			assert.equal(observed.memory.readMappedU32LE(IO_GX_GTE_CYCLES), cycles, 'after follows nominal cycle publication');
+			records.push({ phase: 'after', command, bus, cycles, data: Array.from(data), control: Array.from(control) });
+		},
+	});
+	const command = 0xa5f80030;
+	for (const { memory } of [baseline, observed]) memory.writeMappedU32LE(IO_GX_GTE_COMMAND, command);
+	assert.deepEqual(records.map(record => [record.phase, record.command, record.bus, record.cycles]), [
+		['before', command, MAPPED_BUS_MASTER_CPU, 0], ['after', command, MAPPED_BUS_MASTER_CPU, GX_GTE_CYCLES_RTPT],
+	]);
+	assert.equal(records[0].data[0], pack16(64, 32));
+	assert.equal(records[0].data[14], 0x12345678);
+	assert.equal(records[0].data[15], 0, 'backing alias slot is not SXYP readback');
+	assert.equal(records[0].control[31], 0x1000);
+	assert.deepEqual(records[1].data.slice(12, 15), [pack16(192, 136), pack16(128, 136), pack16(162, 115)]);
+	assert.deepEqual(records[1].data.slice(17, 20), [512, 256, 1024]);
+	assert.equal(records[1].control[31], 0);
+	assert.equal(observed.gte.readDataRegister(15), records[1].data[14]);
+	assert.equal(records[0].data[14], 0x12345678, 'copied evidence survives register mutation');
+	const bus = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END;
+	for (const { memory } of [baseline, observed]) memory.writeMappedDmaU32LE(IO_GX_GTE_COMMAND, 0x12340000, bus);
+	assert.deepEqual(records.slice(2).map(record => [record.phase, record.command, record.bus, record.cycles]), [
+		['before', 0x12340000, bus, GX_GTE_CYCLES_RTPT], ['after', 0x12340000, bus, 0],
+	]);
+	assert.deepEqual(records[2].data, records[3].data, 'unknown function still records an unchanged result');
+	assert.deepEqual(records[2].control, records[3].control);
+	for (const { gte } of [baseline, observed]) gte.execute(GX_GTE_FN_NCLIP);
+	assert.equal(records.length, 4, 'direct datapath calls are not COMMAND writes');
+	observed.gte.setCommandObserver(null);
+	for (const { memory } of [baseline, observed]) memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GTE_SF | GX_GTE_FN_RTPS);
+	assert.equal(records.length, 4, 'detaching restores ordinary command dispatch');
+	assert.deepEqual(observed.gte.captureState(), baseline.gte.captureState());
+	assert.equal(observed.scheduler.currentNowCycles(), baseline.scheduler.currentNowCycles());
+});
+
+test('GX-GTE normal inspection and command observation do not publish an overdue PLUS result', () => {
+	const { memory, gte, scheduler } = createGte();
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(5, 6));
+	memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	assert.equal(memory.mappedWriteReady(commandAddress), false, 'waiting CPU store arms PLUS service');
+	scheduler.advanceTo(GX_GTE_PLUS_CYCLES_VMAD3);
+	let callbacks = 0;
+	gte.setCommandObserver({ before() { callbacks++; }, after() { callbacks++; } });
+	for (let index = 0; index < 32; index++) {
+		gte.readDataRegister(index);
+		gte.readControlRegister(index);
+	}
+	memory.writeMappedU32LE(IO_GX_GTE_COMMAND, 0);
+	gte.setCommandObserver(null);
+	assert.equal(callbacks, 2);
+	assert.equal(scheduler.currentNowCycles(), GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(scheduler.hasDueTimer(), true, 'normal observation leaves overdue PLUS publication scheduled');
+	assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GTE);
+	gte.onService();
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(5, 6));
+});
+
+test('GX-GTE observation preserves guest CPU state, heap and cycles and exposes the WIDE instruction start', () => {
+	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.LOADK, 1, 0, 1);
+	writeInstruction(code, 2, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE);
+	writeInstruction(code, 4, OpCode.RET, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code,
+		functions: [{ firstWord: 0, wordCount: 5, maxStack: 2 }],
+		constants: [IO_GX_GTE_COMMAND, GTE_SF | GX_GTE_FN_RTPS], functionIds: ['observed_gte_store'] });
+	const baseline = createGte(), observed = createGte();
+	for (const { cpu, gte } of [baseline, observed]) {
+		cpu.memory.installSystemRom(image.romBytes);
+		cpu.reset();
+		setupIdentityProjection(gte);
+		gte.writeDataRegister(0, pack16(64, 32));
+		gte.writeDataRegister(1, 512);
+	}
+	const expectedPc = image.image.header.textAddress + 2 * INSTRUCTION_BYTES;
+	let instructionObservations = 0;
+	observed.cpu.setInstructionObserver({ points: [new Set([expectedPc]), new Set(), new Set()],
+		observe() { instructionObservations++; } });
+	const positions: { pc: number; lastPc: number; domain: number; cycles: number }[] = [];
+	observed.gte.setCommandObserver({
+		before(_command, bus) {
+			assert.equal(bus, MAPPED_BUS_MASTER_CPU);
+			assert.equal(observed.scheduler.isCpuSliceActive(), true);
+			positions.push({ pc: observed.cpu.readCurrentInstructionPc(), lastPc: observed.cpu.lastPc,
+				domain: observed.cpu.readLastExecutionDomain(), cycles: observed.scheduler.currentNowCycles() });
+		},
+		after() { assert.equal(observed.scheduler.currentNowCycles(), positions[0].cycles); },
+	});
+	for (const { scheduler } of [baseline, observed]) assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
+	assert.equal(instructionObservations, 1, 'device observation does not replace CPU instruction observation');
+	assert.equal(positions.length, 1);
+	assert.equal(positions[0].pc, expectedPc);
+	assert.equal(positions[0].lastPc, expectedPc + INSTRUCTION_BYTES);
+	assert.equal(positions[0].domain, -1);
+	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
+	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
+	assert.deepEqual(observed.gte.captureState(), baseline.gte.captureState());
 });
 
 test('GX-GTE+ VMAD3 executes three signed Q4.12 lanes through raw MMIO words', () => {

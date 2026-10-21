@@ -317,6 +317,8 @@ public:
 	int getFrameDepth() const { return static_cast<int>(m_activeThread->frames.size()); }
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
+	// Instruction start (including WIDE), inspected only during CPU execution.
+	u32 readCurrentInstructionPc() const;
 	u32 readFrameFunctionAddress(int frameIndex) const;
 	u32 readFramePc(int frameIndex) const;
 	u32 readFrameCallSitePc(int childFrameIndex) const;

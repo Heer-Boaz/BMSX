@@ -210,6 +210,20 @@ void GxGte::writeCommandThunk(void* context, u32 addr, u32 value, MappedBusSigna
 	gte.m_memory.writeIoU32(IO_GX_GTE_CYCLES, gte.m_lastCycles);
 }
 
+void GxGte::setCommandObserver(GxGteCommandObserver observer) {
+	m_commandObserver = observer;
+	m_memory.mapIoWrite(IO_GX_GTE_COMMAND, this, observer.before == nullptr
+		? &GxGte::writeCommandThunk : &GxGte::writeObservedCommandThunk);
+}
+
+void GxGte::writeObservedCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals) {
+	GxGte& gte = *static_cast<GxGte*>(context);
+	const GxGteCommandObserver observer = gte.m_commandObserver;
+	observer.before(observer.context, value, busSignals, gte.m_dataRegisterWords, gte.m_controlRegisterWords);
+	writeCommandThunk(context, addr, value, busSignals);
+	observer.after(observer.context, value, busSignals, gte.m_lastCycles, gte.m_dataRegisterWords, gte.m_controlRegisterWords);
+}
+
 u32 GxGte::readCyclesThunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGte& gte = *static_cast<GxGte*>(context);

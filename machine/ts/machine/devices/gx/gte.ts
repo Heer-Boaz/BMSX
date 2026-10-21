@@ -179,6 +179,14 @@ export type GxGteState = {
 	plusPendingFlag: number;
 };
 
+/** Host-only observation of actual normal COMMAND writes. Raw backing words are
+ * borrowed read-only during each callback; alias slots are not port readbacks.
+ * Observers must not retain the arrays, mutate the machine, or execute guest code. */
+export type GxGteCommandObserver = {
+	before(commandWord: number, busSignals: MappedBusSignals, dataRegisterWords: ArrayLike<number>, controlRegisterWords: ArrayLike<number>): void;
+	after(commandWord: number, busSignals: MappedBusSignals, nominalCycles: number, dataRegisterWords: ArrayLike<number>, controlRegisterWords: ArrayLike<number>): void;
+};
+
 export class GxGte {
 	private readonly dataRegisterWords = new Uint32Array(GX_GTE_DATA_REGISTER_COUNT);
 	private readonly controlRegisterWords = new Uint32Array(GX_GTE_CONTROL_REGISTER_COUNT);
@@ -196,6 +204,7 @@ export class GxGte {
 	private plusPendingResultXy = 0;
 	private plusPendingResultZ = 0;
 	private plusPendingFlag = 0;
+	private commandObserver: GxGteCommandObserver | null = null;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -344,6 +353,19 @@ export class GxGte {
 	private static writeCommandThunk(context: GxGte, _addr: number, value: number): void {
 		context.lastCycles = context.execute(value);
 		context.memory.writeIoU32(IO_GX_GTE_CYCLES, context.lastCycles);
+	}
+
+	public setCommandObserver(observer: GxGteCommandObserver | null): void {
+		this.commandObserver = observer;
+		this.memory.mapIoWrite(IO_GX_GTE_COMMAND, this, observer === null
+			? GxGte.writeCommandThunk : GxGte.writeObservedCommandThunk);
+	}
+
+	private static writeObservedCommandThunk(context: GxGte, addr: number, value: number, busSignals: MappedBusSignals): void {
+		const observer = context.commandObserver!;
+		observer.before(value, busSignals, context.dataRegisterWords, context.controlRegisterWords);
+		GxGte.writeCommandThunk(context, addr, value);
+		observer.after(value, busSignals, context.lastCycles, context.dataRegisterWords, context.controlRegisterWords);
 	}
 
 	private static readCyclesThunk(context: GxGte, _addr: number): number {

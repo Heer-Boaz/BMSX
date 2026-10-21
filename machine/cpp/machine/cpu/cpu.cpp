@@ -2766,6 +2766,10 @@ ExecutionDomainId CPU::readLastExecutionDomain() const {
 	return m_lastExecutionDomainId;
 }
 
+u32 CPU::readCurrentInstructionPc() const {
+	return m_currentInstructionPc;
+}
+
 u32 CPU::readFrameFunctionAddress(int frameIndex) const {
 	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->functionAddress;
 }

@@ -2,6 +2,7 @@
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
@@ -10,6 +11,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -17,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -209,6 +212,180 @@ void testMmioExecution() {
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0 + 11u * bmsx::IO_WORD_SIZE) == 256u, "MMIO GTE IR3");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0 + 14u * bmsx::IO_WORD_SIZE) == pack16(161u, 122u), "MMIO GTE SXY2");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CONTROL0 + 31u * bmsx::IO_WORD_SIZE) == 0u, "MMIO GTE FLAG");
+}
+
+struct CommandObservation {
+	bool after;
+	bmsx::u32 command;
+	bmsx::MappedBusSignals bus;
+	bmsx::u32 cycles;
+	std::array<bmsx::u32, bmsx::GX_GTE_DATA_REGISTER_COUNT> data;
+	std::array<bmsx::u32, bmsx::GX_GTE_CONTROL_REGISTER_COUNT> control;
+};
+
+struct CommandTrace {
+	bmsx::Memory& memory;
+	std::vector<CommandObservation> records;
+
+	static void before(void* context, bmsx::u32 command, bmsx::MappedBusSignals bus,
+		const std::array<bmsx::u32, bmsx::GX_GTE_DATA_REGISTER_COUNT>& data,
+		const std::array<bmsx::u32, bmsx::GX_GTE_CONTROL_REGISTER_COUNT>& control) {
+		auto& trace = *static_cast<CommandTrace*>(context);
+		trace.records.push_back({false, command, bus, trace.memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES), data, control});
+	}
+
+	static void after(void* context, bmsx::u32 command, bmsx::MappedBusSignals bus, bmsx::u32 cycles,
+		const std::array<bmsx::u32, bmsx::GX_GTE_DATA_REGISTER_COUNT>& data,
+		const std::array<bmsx::u32, bmsx::GX_GTE_CONTROL_REGISTER_COUNT>& control) {
+		auto& trace = *static_cast<CommandTrace*>(context);
+		require(trace.memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == cycles, "observation follows nominal cycle publication");
+		trace.records.push_back({true, command, bus, cycles, data, control});
+	}
+};
+
+void testCommandObservation() {
+	GteHarness baseline, observed;
+	for (auto* harness : {&baseline, &observed}) {
+		auto& gte = harness->gte;
+		setupIdentityProjection(gte);
+		gte.writeDataRegister(0u, pack16(64u, 32u));
+		gte.writeDataRegister(1u, 512u);
+		gte.writeDataRegister(2u, pack16(static_cast<bmsx::u32>(-32), 16u));
+		gte.writeDataRegister(3u, 256u);
+		gte.writeDataRegister(4u, pack16(10u, static_cast<bmsx::u32>(-20)));
+		gte.writeDataRegister(5u, 1024u);
+		gte.writeDataRegister(15u, 0x12345678u);
+		gte.writeControlRegister(31u, 0x1000u);
+	}
+	CommandTrace trace{observed.memory, {}};
+	observed.gte.setCommandObserver({CommandTrace::before, CommandTrace::after, &trace});
+	constexpr bmsx::u32 command = 0xa5f80030u;
+	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, command);
+	require(trace.records.size() == 2u, "one before/after pair per actual command write");
+	const auto& before = trace.records[0];
+	const auto& after = trace.records[1];
+	require(!before.after && after.after, "command observation order");
+	require(before.command == command && after.command == command, "full raw command observed");
+	require(before.bus == bmsx::MAPPED_BUS_MASTER_CPU && after.bus == bmsx::MAPPED_BUS_MASTER_CPU, "CPU bus origin");
+	require(before.cycles == 0u && after.cycles == bmsx::GX_GTE_CYCLES_RTPT, "normal command nominal cycles");
+	require(before.data[0] == pack16(64u, 32u) && before.data[14] == 0x12345678u, "actual input and prior FIFO observed");
+	require(before.data[15] == 0u, "backing alias slot is not SXYP port readback");
+	require(before.control[31] == 0x1000u && after.control[31] == 0u, "command resets and publishes FLAG");
+	require(after.data[12] == pack16(192u, 136u) && after.data[13] == pack16(128u, 136u)
+		&& after.data[14] == pack16(162u, 115u), "RTPT matched three projected vertices");
+	require(after.data[17] == 512u && after.data[18] == 256u && after.data[19] == 1024u, "RTPT matched three depths");
+	require(observed.gte.readDataRegister(15u) == after.data[14], "owner retains port alias semantics");
+	constexpr bmsx::MappedBusSignals bus = bmsx::MAPPED_BUS_MASTER_DMA | bmsx::MAPPED_BUS_DMA_BLOCK_END;
+	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedDmaU32LE(bmsx::IO_GX_GTE_COMMAND, 0x12340000u, bus);
+	require(trace.records.size() == 4u, "invalid command has a before/after pair");
+	require(!trace.records[2].after && trace.records[3].after, "invalid command observation order");
+	require(trace.records[2].command == 0x12340000u && trace.records[3].command == 0x12340000u, "invalid raw command retained");
+	require(trace.records[2].bus == bus && trace.records[3].bus == bus, "DMA bus strobes retained");
+	require(trace.records[2].cycles == bmsx::GX_GTE_CYCLES_RTPT && trace.records[3].cycles == 0u, "invalid nominal cycle publication");
+	require(trace.records[2].data == trace.records[3].data && trace.records[2].control == trace.records[3].control, "invalid command leaves raw registers unchanged");
+	for (auto* harness : {&baseline, &observed}) harness->gte.execute(bmsx::GX_GTE_FN_NCLIP);
+	require(trace.records.size() == 4u, "direct datapath calls are not COMMAND writes");
+	observed.gte.setCommandObserver({});
+	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, GTE_SF | bmsx::GX_GTE_FN_RTPS);
+	require(trace.records.size() == 4u, "detaching restores ordinary command dispatch");
+	require(trace.records[0].data[14] == 0x12345678u, "copied evidence survives register mutation");
+	const auto actual = observed.gte.captureState(), expected = baseline.gte.captureState();
+	require(actual.dataRegisterWords == expected.dataRegisterWords && actual.controlRegisterWords == expected.controlRegisterWords
+		&& actual.plusRegisterWords == expected.plusRegisterWords, "observed raw register state matches baseline");
+	require(actual.mac0 == expected.mac0 && actual.mac1 == expected.mac1 && actual.mac2 == expected.mac2
+		&& actual.mac3 == expected.mac3 && actual.currentSf == expected.currentSf && actual.lastCycles == expected.lastCycles,
+		"observed accumulator and command state matches baseline");
+	require(observed.scheduler.currentNowCycles() == baseline.scheduler.currentNowCycles(), "observation consumes no guest time");
+}
+
+void testCommandObservationLeavesPlusPending() {
+	GteHarness harness;
+	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(5u, 6u));
+	harness.memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	require(!harness.memory.mappedWriteReady(commandAddress), "waiting CPU store arms PLUS service");
+	harness.scheduler.advanceTo(bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	CommandTrace trace{harness.memory, {}};
+	harness.gte.setCommandObserver({CommandTrace::before, CommandTrace::after, &trace});
+	for (bmsx::u32 index = 0; index < 32u; index++) {
+		harness.gte.readDataRegister(index);
+		harness.gte.readControlRegister(index);
+	}
+	harness.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, 0u);
+	harness.gte.setCommandObserver({});
+	require(trace.records.size() == 2u, "normal command observed while PLUS pending");
+	require(harness.scheduler.currentNowCycles() == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "inspection does not advance scheduler");
+	require(harness.scheduler.hasDueTimer(), "normal observation leaves overdue PLUS publication scheduled");
+	require(harness.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GTE, "PLUS service remains owned by scheduler");
+	harness.gte.onService();
+	require(harness.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE)
+		== pack16(5u, 6u), "PLUS result publishes through its own service");
+}
+
+void testCommandObservationPreservesCpu() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(5u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	image.functions.push_back({.firstWord = 0u, .wordCount = 5u, .maxStack = 2u});
+	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_COMMAND));
+	image.constants.emplace_back(static_cast<bmsx::f64>(GTE_SF | bmsx::GX_GTE_FN_RTPS));
+	GteHarness baseline(image), observed(image);
+	for (auto* harness : {&baseline, &observed}) {
+		setupIdentityProjection(harness->gte);
+		harness->gte.writeDataRegister(0u, pack16(64u, 32u));
+		harness->gte.writeDataRegister(1u, 512u);
+	}
+	const auto expectedPc = observed.systemRom.textAddress + 2u * bmsx::INSTRUCTION_BYTES;
+	int instructionObservations = 0;
+	bmsx::InstructionObserverBinding instructionObserver;
+	instructionObserver.points[0].insert(expectedPc);
+	instructionObserver.context = &instructionObservations;
+	instructionObserver.observe = [](void* context, bmsx::ExecutionDomainId, bmsx::u32, const bmsx::Value*) {
+		++*static_cast<int*>(context);
+	};
+	observed.cpu.setInstructionObserver(std::move(instructionObserver));
+	struct Position {
+		GteHarness& harness;
+		bmsx::u32 expectedPc;
+		bmsx::i64 cycles = 0;
+		int observations = 0;
+		static void before(void* context, bmsx::u32, bmsx::MappedBusSignals bus,
+			const std::array<bmsx::u32, bmsx::GX_GTE_DATA_REGISTER_COUNT>&,
+			const std::array<bmsx::u32, bmsx::GX_GTE_CONTROL_REGISTER_COUNT>&) {
+			auto& position = *static_cast<Position*>(context);
+			auto& harness = position.harness;
+			require(bus == bmsx::MAPPED_BUS_MASTER_CPU && harness.scheduler.isCpuSliceActive(), "source attribution observes an actual CPU store");
+			require(harness.cpu.readCurrentInstructionPc() == position.expectedPc, "WIDE instruction start PC");
+			require(harness.cpu.lastPc == position.expectedPc + bmsx::INSTRUCTION_BYTES, "lastPc identifies the body word, not WIDE start");
+			require(harness.cpu.readLastExecutionDomain() == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "issuing CPU execution domain");
+			position.cycles = harness.scheduler.currentNowCycles();
+			position.observations++;
+		}
+		static void after(void* context, bmsx::u32, bmsx::MappedBusSignals, bmsx::u32,
+			const std::array<bmsx::u32, bmsx::GX_GTE_DATA_REGISTER_COUNT>&,
+			const std::array<bmsx::u32, bmsx::GX_GTE_CONTROL_REGISTER_COUNT>&) {
+			auto& position = *static_cast<Position*>(context);
+			require(position.harness.scheduler.currentNowCycles() == position.cycles, "observation charges no guest cycles");
+		}
+	} position{observed, expectedPc};
+	observed.gte.setCommandObserver({Position::before, Position::after, &position});
+	for (auto* harness : {&baseline, &observed}) require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "observed CPU program completes normally");
+	require(position.observations == 1 && instructionObservations == 1, "device observer preserves CPU instruction observer");
+	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining, "observed CPU cycle budget matches baseline");
+	require(observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed guest heap matches baseline");
+	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
+	require(std::ranges::equal(actual.snapshot.words(), expected.snapshot.words())
+		&& std::ranges::equal(actual.snapshot.objectWords(), expected.snapshot.objectWords()), "observed CPU heap and register snapshot matches baseline");
+	require(actual.lastPc == expected.lastPc && actual.lastExecutionDomainId == expected.lastExecutionDomainId
+		&& actual.completionValues == expected.completionValues, "observed CPU execution result matches baseline");
+	const auto actualGte = observed.gte.captureState(), expectedGte = baseline.gte.captureState();
+	require(actualGte.dataRegisterWords == expectedGte.dataRegisterWords && actualGte.controlRegisterWords == expectedGte.controlRegisterWords
+		&& actualGte.lastCycles == expectedGte.lastCycles, "observed GTE result matches baseline");
 }
 
 void testPlusVmad3Mmio() {
@@ -1223,6 +1400,9 @@ void testRtpsUnrResultSaturatesWithoutDivideOverflow() {
 int main() {
 	testRtpsIdentityProjection();
 	testMmioExecution();
+	testCommandObservation();
+	testCommandObservationLeavesPlusPending();
+	testCommandObservationPreservesCpu();
 	testPlusVmad3Mmio();
 	testPlusVmad3ShiftAndSaturation();
 	testPlusUnknownCommand();

@@ -2028,6 +2028,11 @@ export class CPU implements MappedPageInvalidator {
 		return this.lastExecutionDomainId;
 	}
 
+	/** Instruction start (including WIDE), inspected only during CPU execution. */
+	public readCurrentInstructionPc(): number {
+		return this.currentInstructionPc;
+	}
+
 	public readFrameFunctionAddress(frameIndex: number): number {
 		return this.activeThread.frames[frameIndex].functionAddress;
 	}

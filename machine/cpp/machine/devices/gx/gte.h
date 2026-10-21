@@ -126,6 +126,17 @@ struct GxGteState {
 	u32 plusPendingFlag = 0;
 };
 
+// Host-only observation of actual normal COMMAND writes. Raw backing words are
+// borrowed read-only during each callback; alias slots are not port readbacks.
+// Observers must not retain the arrays, mutate the machine, or execute guest code.
+struct GxGteCommandObserver {
+	void (*before)(void*, u32, MappedBusSignals, const std::array<u32, GX_GTE_DATA_REGISTER_COUNT>&,
+		const std::array<u32, GX_GTE_CONTROL_REGISTER_COUNT>&) = nullptr;
+	void (*after)(void*, u32, MappedBusSignals, u32, const std::array<u32, GX_GTE_DATA_REGISTER_COUNT>&,
+		const std::array<u32, GX_GTE_CONTROL_REGISTER_COUNT>&) = nullptr;
+	void* context = nullptr;
+};
+
 class GxGte {
 public:
 	GxGte(Memory& memory, CPU& cpu, DeviceScheduler& scheduler);
@@ -136,6 +147,7 @@ public:
 	u32 readControlRegister(u32 index) const;
 	void writeControlRegister(u32 index, u32 value);
 	u32 execute(u32 opcode);
+	void setCommandObserver(GxGteCommandObserver observer);
 	GxGteState captureState();
 	void restoreState(const GxGteState& state);
 
@@ -160,6 +172,7 @@ private:
 	u32 m_plusPendingResultXy = 0;
 	u32 m_plusPendingResultZ = 0;
 	u32 m_plusPendingFlag = 0;
+	GxGteCommandObserver m_commandObserver;
 
 	void setFlag(u32 flag);
 	static u32 withFlagError(u32 flag);
@@ -242,6 +255,7 @@ private:
 	static u32 readControlRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeControlRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static void writeCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void writeObservedCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static u32 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static u32 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writePlusRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
