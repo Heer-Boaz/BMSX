@@ -11,10 +11,12 @@ export class WorkspaceHttpSession {
 	#token = randomBytes(32).toString('base64url');
 	#authorization = Buffer.from(`Bearer ${this.#token}`);
 	#hostnames;
+	#workspaceRoot;
 
-	constructor(host) {
+	constructor(host, workspaceRoot) {
 		const machine = hostname().toLowerCase();
 		this.#hostnames = new Set(['localhost', host.toLowerCase(), machine, `${machine}.local`]);
+		this.#workspaceRoot = workspaceRoot;
 	}
 
 	admitOrigin(req) {
@@ -39,7 +41,7 @@ export class WorkspaceHttpSession {
 		if (req.headers['x-bmsx-client'] !== 'studio') throw new HttpError(403, 'Workspace bootstrap requires the Studio client header.');
 		if (req.method !== 'GET') throw new HttpError(405, 'Workspace bootstrap requires GET.');
 		res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-			.end(JSON.stringify({ workspaceToken: this.#token }));
+			.end(JSON.stringify({ workspaceToken: this.#token, workspaceRoot: this.#workspaceRoot }));
 	}
 
 	authorize(req) {

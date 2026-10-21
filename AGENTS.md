@@ -92,3 +92,30 @@
   performance.
 - If the owner or representation is wrong, stop. Do not extract, wrap, rename,
   or relocate the bad code.
+
+## Studio-backed development and debugging
+
+- For external conversations asked to work through the live IDE/Studio, discover
+  and call the native `studio_list_sessions` tool. Explicitly select the intended
+  window, open its tool context and read its runtime status before editing or
+  executing anything.
+  An empty window list is a real state, not permission to select another target.
+  An embedded Studio assistant instead uses its already-bound domain tools and
+  window context; it must not create an external client or another conversation.
+- Configured MCP entries, a listening HTTP server, direct SDK/RPC calls and
+  previous test results do not prove that this conversation has native tools.
+  Missing or failing native tools block the requested Studio workflow: report
+  the failure immediately. Do not silently substitute Playwright/key-chord
+  automation, shell-driven MCP, a headless emulator, external source writes or
+  another assistant conversation. A different workflow requires explicit user
+  agreement.
+- Use `npm run codex:studio -- [--server <origin>] [-- <codex arguments>]` for a
+  Studio-dependent CLI session; `-- resume <thread-id>` continues the same
+  conversation. It requires the existing server's real native MCP connection.
+  Ordinary Codex work and standalone Studio remain usable without that server.
+  An already running client must use its supported configuration reload or
+  restart/resume; repository changes cannot inject tools into an active turn.
+- Once native tools are available, use the shared source/review/Save, build,
+  debugger and runtime owners. Browser interaction may validate the visible UI,
+  but screenshots are not a substitute for frame/history, actor or GTE/GPU
+  observations. State precisely which surface was actually exercised.

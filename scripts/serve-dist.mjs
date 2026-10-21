@@ -77,7 +77,7 @@ const MIME = new Map(Object.entries({
 }));
 
 const projectRoot = await realpath(process.cwd());
-const workspaceSession = new WorkspaceHttpSession(host);
+const workspaceSession = new WorkspaceHttpSession(host, projectRoot);
 // The existing plain-Node entry owns its TypeScript support, not a separate launch mode.
 // Constructing the endpoint starts no process and opens no account profile.
 await import('tsx');
@@ -299,6 +299,7 @@ server.listen(port, host, () => {
 	}
 	console.log(`Studio APIs: same-origin, session-authorized; ${PROCESS_SCOPE_SUPPORTED ? 'Codex starts on Connect' : `embedded Codex unavailable on ${process.platform}`}`);
 	console.log(`Studio MCP: http://127.0.0.1:${port}/__bmsx__/mcp (existing CLI conversations; no Studio login required)`);
+	console.log(`Studio Codex: npm run codex:studio -- --server http://127.0.0.1:${port} (requires native Studio tools)`);
 	if ((host === '0.0.0.0' || host === '::') && ips.length) {
 		console.log('On your LAN:');
 		for (const ip of ips) console.log(`  http://${ip}:${port}/`);

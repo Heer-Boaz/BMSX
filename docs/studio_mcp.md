@@ -14,25 +14,56 @@ assistant. Its login, history, queue, interruption and dynamic tools remain.
 2. Open the desired game in Studio, including from a trusted LAN browser/phone.
    Keep the page open. Do not connect/sign into the Studio assistant merely to
    expose tools.
-3. From the repository root, start Codex or `codex resume` the existing thread.
-   The checked-in `.codex/config.toml` registers `bmsx` on port 8080. A running
-   client must reload its MCP configuration or restart/resume; editing the file
-   cannot add tools to an already negotiated model request.
-4. Ask Codex to list the Studio windows, select the right one, and use its tools.
+3. Start a Studio-dependent Codex session with the existing server address:
+   ```sh
+   npm run codex:studio
+   npm run codex:studio -- -- resume <thread-id>
+   npm run codex:studio -- --server http://127.0.0.1:8095 -- resume <thread-id>
+   ```
+   `scripts/dev/studio-codex.mjs` resolves this repository independently of the
+   caller's working directory and starts the ordinary Codex executable/profile.
+   It derives MCP and admission from that one address and requires an enabled,
+   live native connection before a model turn. It does not accept a cached
+   catalog as connection evidence, start a server, proxy MCP, create a separate
+   login or start another assistant. The normal Codex arguments follow `--`.
+4. Ask Codex to call its native `studio_list_sessions`, select the intended
+   Studio window explicitly, open its context and inspect runtime status.
+   Configuration inspection or a successful external SDK call is not evidence
+   that the model received these tools.
    The same conversation continues in the CLI. It is not copied or forked.
 
-The URL and `http_headers_helper` in `.codex/config.toml` must name the same
-server. Change both if using another port or host. The helper path is relative
-to the CLI working directory, so the supplied configuration is for launching
-from this repository's root. Project configuration requires Codex's normal
-workspace trust. No user-wide configuration is modified.
+The checked-in `.codex/config.toml` also registers the usual port 8080 for
+ordinary Codex clients launched from the repository root. That registration is
+optional so non-Studio work remains possible while the server is off. For a
+Studio-dependent conversation or a different port, use the entrypoint above
+rather than editing two endpoint settings or assuming an optional connection
+succeeded. The entrypoint supplies the ordinary headers helper with the selected
+server as a quoted non-secret argument and fixes the native working directory.
+Other native configuration, including tool filters, is preserved; only the
+Studio connection settings are owned by this entrypoint. The helper inherits no
+arbitrary environment variables. An explicit
+`studio-mcp-headers.mjs <server> <server-workspace-root>` invocation supports
+clients whose local and remote workspace paths differ; otherwise it expects
+the real local working directory. Admission rejects a server for another
+workspace before returning its bearer headers. No token is stored or logged.
+Project configuration still requires Codex's normal workspace trust. No
+user-wide configuration is modified.
+
+Missing native tools, a failed connection and an empty Studio window list are
+different outcomes. Report the actual outcome before proceeding. Do not replace
+missing tools with keyboard scripts, screenshots, shell-driven MCP or a headless
+emulator and call that native Studio development. A running client must use its
+supported MCP reload or restart/resume; changing configuration or starting a
+server cannot inject tools into an already negotiated model turn. Codex's
+`/mcp` displays status; do not invent a `/mcp reload` command.
 
 Browser-host startup still requires secure, cross-origin-isolated delivery for
 audio. A plain HTTP LAN URL does not meet that requirement; localhost does.
 This deployment limitation is separate from MCP/API LAN admission.
 
-The helper obtains the existing server capability from `GET /__bmsx__/session`
-and returns it through Codex's native headers-helper interface. It never reads
+The helper obtains the existing server capability and workspace identity from
+`GET /__bmsx__/session` and returns headers through Codex's native headers-helper
+interface only after checking the selected workspace. It never reads
 or copies `auth.json`, logs into OpenAI, or writes a token to configuration or
 disk. Do not paste the helper's output into messages or diagnostics.
 
@@ -153,6 +184,13 @@ Studio conversation --------------------> WorkspaceToolService
   Studio capabilities; exposing them does not install MCP into the emulated console.
 
 ## Validation
+
+`node --test tests/platform/studio_codex_startup.test.mjs` exercises the explicit
+native startup boundary, separately from the runtime/browser suite below. The
+upstream mechanisms are Codex's [live MCP readiness and required-server
+admission](https://github.com/openai/codex/blob/main/codex-rs/config/src/mcp_types.rs)
+and its [headers-helper process lifecycle](https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/http_headers.rs).
+No alternate protocol implementation or local tool catalog is introduced.
 
 `npm run test:studio-mcp` builds the product and ROMs, then runs the ordinary server
 against an isolated authored workspace and real Chromium. It covers external Lua

@@ -36,7 +36,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	const opened: string[] = [];
 	const api = new CodexHttpApi({ ...options, profileDirectory, workspaceRoot: root, openLoginPage: url => { opened.push(url); },
 		tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
-	const authority = new WorkspaceHttpSession('127.0.0.1');
+	const authority = new WorkspaceHttpSession('127.0.0.1', root);
 	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[], opened };
 	const server = createServer(async (request, response) => {
 		try {

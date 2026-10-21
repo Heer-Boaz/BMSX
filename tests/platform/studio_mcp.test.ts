@@ -113,7 +113,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	// Native Codex MCP discovery/calls, using the installed executable and no account or model requests.
 	const model = await createCodexModelFixture(t, []);
 	const codex = await createCodexContractFixture(t, model.url, { mcp: { url: endpoint,
-		headersHelper: `node ${JSON.stringify(resolve('scripts/dev/studio-mcp-headers.mjs'))} ${f.address}` } });
+		headersHelper: `node ${JSON.stringify(resolve('scripts/dev/studio-mcp-headers.mjs'))} ${f.address} ${JSON.stringify(f.root)}` } });
 	const threadId = await codex.startThread();
 	const native = await codex.request('mcpServer/tool/call', { threadId, server: 'bmsx', tool: 'studio_list_sessions', arguments: {} });
 	console.log('native Codex MCP session discovery', JSON.stringify(native));

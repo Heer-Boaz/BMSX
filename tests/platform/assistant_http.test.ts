@@ -28,7 +28,7 @@ async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Arr
 	const model = await createCodexModelFixture(t, steps);
 	const api = new CodexHttpApi({ profileDirectory: profile, workspaceRoot: root, openLoginPage: () => assert.fail('No browser is opened in the transport fixture'),
 		provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools }, buildJobs);
-	const authority = new WorkspaceHttpSession('127.0.0.1');
+	const authority = new WorkspaceHttpSession('127.0.0.1', root);
 	const requests = new Map<string, number>();
 	const server = createServer(async (request, response) => {
 		try {
