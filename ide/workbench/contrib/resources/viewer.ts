@@ -214,7 +214,7 @@ export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity:
 	}
 	const scrollLimit = viewer.content.lines.length - capacity;
 	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
-	viewer.scroll = clamp((scroll + 0.5) | 0, 0, maxScroll);
+	viewer.scroll = clamp(scroll, 0, maxScroll);
 }
 
 function appendResourceViewerLine(target: string[], entry: string): void {

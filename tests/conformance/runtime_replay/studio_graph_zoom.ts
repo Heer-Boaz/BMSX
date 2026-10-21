@@ -1,11 +1,10 @@
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { editorPointerState } from '../../../ide/input/pointer/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Real menu, palette, pointer and source-navigation flows on either diagram kind. */
 export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
-	const { frame, click, press, runPaletteCommand, movePointer, setKey, input, clock, ide } = test;
+	const { frame, click, press, runPaletteCommand, movePointer, setKey, ide } = test;
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || (lens.view.presentation.kind !== 'graph' && lens.view.presentation.kind !== 'state-graph')) throw new Error('zoom probe requires an actual Studio diagram');
 	const graph = lens.view.presentation;
@@ -40,7 +39,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const pointer = editorPointerState.lastPointerSnapshot!;
 	const pointerX = viewport.viewportToGraphX(pointer.viewportX), pointerY = viewport.viewportToGraphY(pointer.viewportY);
 	setKey('ControlLeft', true);
-	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP, clock.now()); await frame();
+	test.remote.apply([{ type: 'wheel', deltaY: 1 }]); await frame();
 	setKey('ControlLeft', false); await frame();
 	check(viewport.zoom === 2 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(pointer.viewportY) - pointerY) < 1e-7, 'zoom: Ctrl-wheel uses the actual pointer, not the canvas center');

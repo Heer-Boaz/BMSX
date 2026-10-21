@@ -140,11 +140,12 @@ function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
 		);
 		return;
 	}
-	const endCandidate = pane.scroll + layout.visibleRowCount;
+	const firstRow = pane.scroll | 0;
+	const endCandidate = firstRow + layout.visibleRowCount;
 	const end = endCandidate < pane.rows.length ? endCandidate : pane.rows.length;
-	for (let rowIndex = pane.scroll; rowIndex < end; rowIndex += 1) {
+	for (let rowIndex = firstRow; rowIndex < end; rowIndex += 1) {
 		const row = pane.rows[rowIndex];
-		const y = layout.contentTop + (rowIndex - pane.scroll) * layout.rowHeight;
+		const y = layout.contentTop + (rowIndex - firstRow) * layout.rowHeight;
 		const selected = state.focus === 'tests' && rowIndex === pane.selectionIndex;
 		if (rowIndex === pane.hoverIndex) {
 			api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, constants.HIGHLIGHT_OVERLAY);
@@ -185,11 +186,12 @@ function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 		);
 		return;
 	}
-	const endCandidate = pane.scroll + layout.visibleRowCount;
+	const firstRow = pane.scroll | 0;
+	const endCandidate = firstRow + layout.visibleRowCount;
 	const end = endCandidate < pane.rows.length ? endCandidate : pane.rows.length;
-	for (let rowIndex = pane.scroll; rowIndex < end; rowIndex += 1) {
+	for (let rowIndex = firstRow; rowIndex < end; rowIndex += 1) {
 		const row = pane.rows[rowIndex];
-		const y = layout.contentTop + (rowIndex - pane.scroll) * layout.rowHeight;
+		const y = layout.contentTop + (rowIndex - firstRow) * layout.rowHeight;
 		const selected = state.focus === 'results' && rowIndex === pane.selectionIndex;
 		if (rowIndex === pane.hoverIndex) {
 			api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, constants.HIGHLIGHT_OVERLAY);

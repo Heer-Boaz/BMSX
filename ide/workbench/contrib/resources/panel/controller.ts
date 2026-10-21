@@ -261,17 +261,17 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	setScroll(scroll: number): void {
 		const layout = this.prepareLayout();
-		this.scroll = clamp(scroll | 0, 0, layout ? layout.maxVerticalScroll : 0);
+		this.scroll = clamp(scroll, 0, layout ? layout.maxVerticalScroll : 0);
 	}
 
 	setHScroll(scroll: number): void {
 		const layout = this.prepareLayout();
-		this.hscroll = clamp(scroll | 0, 0, layout ? layout.maxHorizontalScroll : 0);
+		this.hscroll = clamp(scroll, 0, layout ? layout.maxHorizontalScroll : 0);
 	}
 
 	scrollBy(amount: number): void {
 		const layout = this.prepareLayout();
-		this.scroll = clamp(this.scroll + (amount | 0), 0, layout ? layout.maxVerticalScroll : 0);
+		this.scroll = clamp(this.scroll + amount, 0, layout ? layout.maxVerticalScroll : 0);
 		this.ensureSelectionVisible();
 		this.clampHScroll();
 	}

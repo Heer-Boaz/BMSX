@@ -38,7 +38,7 @@ export function drawCodeAreaRows(
 ): CursorScreenInfo {
 	let cursorInfo: CursorScreenInfo = null;
 	for (let i = 0; i < viewport.rows; i += 1) {
-		const visualIndex = activeCodeEditor.view.scrollRow + i;
+		const visualIndex = (activeCodeEditor.view.scrollRow | 0) + i;
 		const rowY = viewport.codeTop + i * editorViewState.lineHeight;
 		if (rowY >= viewport.contentBottom) {
 			break;
@@ -72,7 +72,7 @@ export function drawCodeAreaRows(
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
+		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
 		if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 			columnStart = segment.startColumn;
 		}

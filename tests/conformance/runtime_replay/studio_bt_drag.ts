@@ -1,5 +1,4 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
@@ -98,10 +97,10 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	const wheelVersion = model.version;
 	await begin(children()[0], children()[2], false);
 	const scroll = viewport.scrollY;
-	test.input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP, test.clock.now());
+	test.remote.apply([{ type: 'wheel', deltaY: 1 }]);
 	await frame();
 	check(viewport.scrollY !== scroll, 'BT drag: physical wheel reaches the captured graph');
-	test.input.inputAxis1('pointer:0', 'pointer_wheel', -WHEEL_SCROLL_STEP, test.clock.now());
+	test.remote.apply([{ type: 'wheel', deltaY: -1 }]);
 	await frame();
 	unchanged(wheelVersion, 'BT drag: wheel refreshes preview without a document edit');
 	await release();

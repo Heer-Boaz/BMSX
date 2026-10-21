@@ -65,7 +65,7 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 	await press('ShiftLeft', 'Tab');
 	movePointer(point(startX, startY)); await frame();
 	setKey('ShiftLeft', true);
-	test.input.inputAxis1('pointer:0', 'pointer_wheel', 120, test.clock.now()); await frame();
+	test.remote.apply([{ type: 'wheel', deltaY: 3 }]); await frame();
 	setKey('ShiftLeft', false); await frame();
 	check(view.scrollX !== x && view.scrollY === y, 'graph navigation: Shift-wheel pans horizontally');
 	view.scrollX = x; view.scrollY = y;

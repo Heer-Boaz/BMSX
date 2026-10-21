@@ -71,9 +71,9 @@ export function executeBehaviorLensNavigation(
 	switch (command) {
 		case 'up': return selectRow(state, outline, selectionIndex - 1);
 		case 'down': return selectRow(state, outline, selectionIndex + 1);
-		case 'page-up': return selectRow(state, outline, selectionIndex < 0 ? outline.scroll : selectionIndex - outline.layout.visibleRowCount);
+		case 'page-up': return selectRow(state, outline, selectionIndex < 0 ? (outline.scroll | 0) : selectionIndex - outline.layout.visibleRowCount);
 		case 'page-down': return selectRow(state, outline, selectionIndex < 0
-			? outline.scroll + outline.layout.visibleRowCount - 1 : selectionIndex + outline.layout.visibleRowCount);
+			? (outline.scroll | 0) + outline.layout.visibleRowCount - 1 : selectionIndex + outline.layout.visibleRowCount);
 		case 'home': return selectRow(state, outline, 0);
 		case 'end': return selectRow(state, outline, outline.rows.length - 1);
 		case 'left': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : collapseOrSelectParent(state, outline, selectionIndex);

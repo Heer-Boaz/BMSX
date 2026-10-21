@@ -1,10 +1,8 @@
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
-import { clamp } from '../../../../../machine/ts/common/clamp';
 import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
-import { editorViewState } from '../../../../editor/ui/view/state';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 
 export function handleProblemsPanelPointerInput(
@@ -75,48 +73,5 @@ export function handleProblemsPanelPointerInput(
 	controller.setSelectionIndex(diagnosticIndex);
 	controller.revealSelection(layout, availableWidth);
 	gotoDiagnostic(editorPanes, diagnostics[diagnosticIndex]);
-	return true;
-}
-
-export function handleProblemsPanelWheelInput(
-	controller: ProblemsPanelController,
-	direction: number,
-	steps: number,
-): boolean {
-	const layout = controller.getCachedLayout();
-	if (!controller.isVisible || !layout) {
-		return false;
-	}
-	const diagnostics = controller.getDiagnostics();
-	const panelWidth = controller.resolvePanelWidth();
-	let advance = 0;
-	let pixels = steps * editorViewState.lineHeight;
-	let diagnosticIndex = controller.getScrollIndex();
-	if (direction > 0) {
-		while (diagnosticIndex < diagnostics.length - 1 && pixels > 0) {
-			pixels -= controller.getItemLayout(diagnosticIndex, panelWidth).height;
-			diagnosticIndex += 1;
-			advance += 1;
-		}
-	} else if (direction < 0) {
-		diagnosticIndex -= 1;
-		while (diagnosticIndex >= 0 && pixels > 0) {
-			pixels -= controller.getItemLayout(diagnosticIndex, panelWidth).height;
-			diagnosticIndex -= 1;
-			advance += 1;
-		}
-	}
-	if (advance === 0) {
-		advance = 1;
-	}
-	const newScroll = clamp(
-		controller.getScrollIndex() + (direction > 0 ? advance : -advance),
-		0,
-		diagnostics.length - 1,
-	);
-	if (newScroll === controller.getScrollIndex()) {
-		return false;
-	}
-	controller.setScrollIndex(newScroll);
 	return true;
 }

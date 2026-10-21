@@ -1,10 +1,9 @@
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
@@ -310,20 +309,18 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 		return true;
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
-		if (pointer === null) return;
-		const delta = direction * steps * this.input.layout.rowHeight * 3;
-		if (this.input.showingImage && this.image.handleWheel(pointer, delta, -direction * steps, input.modifiers)) {
-			input.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
-		}
-		if (!this.input.showingImage && (input.modifiers & KeyModifier.shift) !== 0 && pointer.valid && pointer.insideViewport
-			&& (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.bytes.bounds) || point_in_rect(pointer.viewportX, pointer.viewportY, this.input.horizontalTrack))) {
+	public handleWheel(event: WheelInputSnapshot): void {
+		const lineStep = this.input.layout.rowHeight * 3;
+		if (this.input.showingImage && this.image.handleWheel(event, lineStep)) return;
+		if (!this.input.showingImage && event.valid && event.insideViewport
+			&& (point_in_rect(event.viewportX, event.viewportY, this.input.bytes.bounds) || point_in_rect(event.viewportX, event.viewportY, this.input.horizontalTrack))) {
+			const deltaX = event.deltaX === 0 && (event.modifiers & KeyModifier.shift) !== 0 ? event.deltaY : event.deltaX;
 			this.horizontal.cancelPointer();
-			this.input.horizontal.setScroll(this.input.horizontal.getScroll() + delta);
-			input.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
+			this.input.horizontal.setScroll(this.input.horizontal.getScroll() + deltaX * lineStep);
+			if ((event.modifiers & KeyModifier.shift) !== 0) return;
 		}
-		if (this.inspector.handleWheel(pointer, delta)
-			|| this.list.handleWheel(pointer, delta) || !this.input.showingImage && this.bytes.handleWheel(pointer, delta)) input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+		const deltaY = event.deltaY * lineStep;
+		if (!this.inspector.handleWheel(event, deltaY) && !this.list.handleWheel(event, deltaY) && !this.input.showingImage) this.bytes.handleWheel(event, deltaY);
 	}
 	public draw(): void {
 		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport);

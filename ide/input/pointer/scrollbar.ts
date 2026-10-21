@@ -25,7 +25,7 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
+			activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(scroll, editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
@@ -34,7 +34,7 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 				activeCodeEditor.view.scrollColumn = 0;
 				break;
 			}
-			activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), editorViewState.cachedMaxScrollColumn);
+			activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(scroll, editorViewState.cachedMaxScrollColumn);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}

@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { inputFocus } from '../../ide/input/focus';
+import { api } from '../../ide/runtime/overlay_api';
+import { AssistantAttachments } from '../../ide/workbench/contrib/assistant/attachments';
+import { AssistantAttachmentStrip } from '../../ide/workbench/contrib/assistant/attachment_strip';
+import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
+
+test('attachment wheel keeps a continuous viewport, leaves selection alone and hit-tests partially visible thumbnails', t => {
+	const attachments = new AssistantAttachments();
+	attachments.add(Array.from({ length: 4 }, () => ({ read: () => new Promise<never>(() => {}) })));
+	const cache = new ImagePreviewCache(async () => { throw new Error('pending images must not decode'); });
+	const strip = new AssistantAttachmentStrip(cache, () => { throw new Error('pending images must not open'); });
+	t.after(() => { strip.clearInput(); cache.dispose(); });
+	editorViewState.font = new EditorFont('tiny');
+	for (const method of ['blit_rect', 'pushClipRect', 'popClipRect', 'blit_text_inline_with_font'] as const) t.mock.method(api, method, () => {});
+	const fill = t.mock.method(api, 'fill_rect', () => {});
+	strip.setInput(attachments);
+	strip.layout(0, 0, 100, 10);
+	assert.equal(strip.selected, 3);
+	const pointer = { viewportX: 75, viewportY: 10, valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
+	assert.equal(strip.handleWheel(pointer, -2.5), true);
+	strip.layout(0, 0, 100, 10);
+	strip.draw();
+	assert.equal(strip.selected, 3, 'wheel scrolling must not change the selected image');
+	assert.equal(fill.mock.calls[0].arguments[0], -50, 'the first thumbnail retains its fractional visible offset');
+	strip.handlePointer({ ...pointer, pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary });
+	assert.equal(strip.selected, 1, 'the pointer must address the visible half-offset strip');
+	inputFocus.handleKeyboard(new KeyInputEvent('ArrowRight', KeyModifier.none));
+	assert.equal(strip.selected, 2);
+	fill.mock.resetCalls();
+	strip.draw();
+	assert.equal(fill.mock.calls[0].arguments[0], 0, 'keyboard selection reveals the selected image');
+});

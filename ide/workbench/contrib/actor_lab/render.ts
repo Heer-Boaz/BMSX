@@ -32,8 +32,9 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 		api.popClipRect();
 	} else {
 		api.pushClipRect(tree.contentLeft, tree.contentTop, tree.contentRight, tree.contentBottom);
-		for (let visible = 0; input.actorPresent && visible < tree.visibleRowCount && outline.scroll + visible < outline.rows.length; visible += 1) {
-			const index = outline.scroll + visible;
+		const firstRow = outline.scroll | 0;
+		for (let visible = 0; input.actorPresent && visible < tree.visibleRowCount && firstRow + visible < outline.rows.length; visible += 1) {
+			const index = firstRow + visible;
 			const row = outline.rows[index];
 			const top = tree.contentTop + visible * tree.rowHeight;
 			if (index === outline.selectionIndex) api.fill_rect(tree.contentLeft, top, tree.contentRight, top + tree.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);

@@ -29,7 +29,7 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 		const input = this.input!;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, input.overview.bounds)) return false;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) === 0) return true;
-		const list = input.tracks, index = list.scroll + ((snapshot.viewportY - list.layout.contentTop) / list.layout.rowHeight | 0);
+		const list = input.tracks, index = (list.scroll | 0) + ((snapshot.viewportY - list.layout.contentTop) / list.layout.rowHeight | 0);
 		if (index >= list.rows.length) return true;
 		this.focus.focus();
 		if (index !== list.selectionIndex) this.controller.selectTrack(input, index);

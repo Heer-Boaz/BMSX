@@ -1,0 +1,100 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { Input } from '../../hosts/common/input/manager';
+import { RemoteInput } from '../../hosts/common/input/remote';
+import { KeyModifier } from '../../hosts/common/input/text';
+import type { WheelInputEvent } from '../../hosts/common/input/pointer_event';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
+import type { CartEditor } from '../../ide/cart_editor';
+import type { WheelInputSnapshot } from '../../ide/common/models';
+import { handleEditorWheelInput } from '../../ide/input/pointer/wheel';
+import { editorPointerState } from '../../ide/input/pointer/state';
+import { inputFocus } from '../../ide/input/focus';
+import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+
+test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
+	const clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const events: Array<WheelInputEvent & { pane: number }> = [];
+	let pane = 0;
+	const scroll = [0, 0];
+	const remote = new RemoteInput(input, clock, undefined, event => {
+		if (event.pressedButtons !== 0) pane = 1;
+	}, event => {
+		events.push({ ...event, pane });
+		scroll[pane] += event.deltaY;
+		assert.equal(input.getPlayerInput(1).pollFrame, 0);
+	});
+	clock.advance(17);
+	remote.apply([
+		{ type: 'pointer', x: 120, y: 80 },
+		{ type: 'key', code: 'ShiftRight', down: true },
+		{ type: 'wheel', deltaY: 0.25 },
+		{ type: 'key', code: 'ShiftRight', down: false },
+		{ type: 'button', button: 'primary', down: true },
+		{ type: 'pointer', x: 240, y: 160 },
+		{ type: 'wheel', deltaY: 0.5 },
+		{ type: 'key', code: 'ControlLeft', down: true },
+		{ type: 'wheel', deltaY: -0.25 },
+		{ type: 'key', code: 'ControlLeft', down: false },
+	]);
+	assert.deepEqual(events, [
+		{ x: 120, y: 80, deltaX: 0, deltaY: 0.25, modifiers: KeyModifier.shift, timestamp: 17, pane: 0 },
+		{ x: 240, y: 160, deltaX: 0, deltaY: 0.5, modifiers: KeyModifier.none, timestamp: 17, pane: 1 },
+		{ x: 240, y: 160, deltaX: 0, deltaY: -0.25, modifiers: KeyModifier.ctrl, timestamp: 17, pane: 1 },
+	]);
+	assert.deepEqual(scroll, [0.25, 0.25]);
+	const snapshot = createInputControllerSnapshot();
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(snapshot.pointerWheelQ16, 0x8000);
+	assert.equal(snapshot.pointerXQ16, 240 * 65536);
+	assert.equal(snapshot.pointerYQ16, 160 * 65536);
+	assert.equal(input.getPlayerInput(1).getRawButtonState('pointer_wheel', 'pointer').value, 0.5);
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(snapshot.pointerWheelQ16, 0);
+	assert.equal(events.length, 3);
+	assert.deepEqual(scroll, [0.25, 0.25]);
+});
+
+test('public wheel router delivers each occurrence to its current pane using supplied geometry and modifiers', () => {
+	inputFocus.setTarget(null);
+	editorViewState.viewportWidth = 400;
+	editorViewState.viewportHeight = 300;
+	editorViewState.headerHeight = 20;
+	editorViewState.tabBarTotalHeight = 10;
+	refreshWorkbenchLayout();
+	const firstPane: WheelInputSnapshot[] = [], secondPane: WheelInputSnapshot[] = [];
+	let activePane = { handleWheel: (event: WheelInputSnapshot) => firstPane.push(event) };
+	// Only the routing dependencies are replaced; this is not a RuntimeCartEditor/UI fixture.
+	const editor = {
+		quickInput: { visible: false }, contextMenu: { visible: false },
+		resourcePanel: { getBounds: () => null, isVisible: () => false },
+		editorPanes: { get activePane() { return activePane; } },
+	} as unknown as CartEditor;
+	editorPointerState.lastPointerSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
+	const first: WheelInputSnapshot = {
+		viewportX: 100, viewportY: 100, valid: true, insideViewport: true,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, spaceDown: false,
+		deltaX: 0.125, deltaY: 0.25, modifiers: KeyModifier.shift,
+	};
+	handleEditorWheelInput(editor, first);
+	activePane = { handleWheel: event => secondPane.push(event) };
+	const second = { ...first, deltaX: -0.125, deltaY: -0.25, modifiers: KeyModifier.ctrl };
+	handleEditorWheelInput(editor, second);
+	assert.deepEqual(firstPane, [first]);
+	assert.deepEqual(secondPane, [second]);
+	assert.equal(firstPane[0], first);
+	assert.equal(secondPane[0], second);
+	assert.equal(firstPane[0].modifiers, KeyModifier.shift);
+	assert.equal(secondPane[0].modifiers, KeyModifier.ctrl);
+	handleEditorWheelInput(editor, { ...first, viewportY: 5 });
+	assert.equal(secondPane.length, 1, 'wheel over non-scrolling chrome does not reach the active editor');
+	editorPointerState.lastPointerSnapshot = null;
+});

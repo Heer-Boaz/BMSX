@@ -2,8 +2,7 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import { inputFocus } from '../../../input/focus';
@@ -51,7 +50,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.tree;
-			this.openContextMenu(tree.layout.contentLeft + 8, tree.layout.contentTop + (tree.selectionIndex - tree.scroll) * tree.layout.rowHeight, true);
+			this.openContextMenu(tree.layout.contentLeft + 8, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0)) * tree.layout.rowHeight, true);
 		} });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.history.canUndo(this.input.workingCopy) : this.input.workingCopy.history.canRedo(this.input.workingCopy)),
@@ -109,11 +108,10 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['aem.context'], this.commands, keyboard);
 		lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
-		if (pointer === null) return;
+	public handleWheel(event: WheelInputSnapshot): void {
 		const tree = this.input.tree, layout = tree.layout;
-		if (pointer.viewportX < layout.contentLeft || pointer.viewportX >= layout.contentRight || pointer.viewportY < layout.contentTop || pointer.viewportY >= layout.contentBottom) return;
-		scrollWorkbenchList(tree, direction * steps * 3); input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+		if (event.viewportX < layout.contentLeft || event.viewportX >= layout.contentRight || event.viewportY < layout.contentTop || event.viewportY >= layout.contentBottom) return;
+		scrollWorkbenchList(tree, event.deltaY * 3);
 	}
 }
 const NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'], ['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;

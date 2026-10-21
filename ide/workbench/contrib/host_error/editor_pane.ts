@@ -1,6 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { forEachWrappedMeasuredRange } from '../../../common/text';
 import { measureTextRange } from '../../../editor/common/text/layout';
@@ -64,8 +63,7 @@ export class HostErrorPane extends FullWidthWorkbenchEditorPane<HostErrorInput> 
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean { return this.scroll.handlePointer(snapshot); }
 	public handleKeyboard(): void {}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, player: PlayerInput): void {
-		if (pointer !== null && this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight))
-			player.inputHandlers.pointer.consumeButton('pointer_wheel');
+	public handleWheel(event: WheelInputSnapshot): void {
+		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

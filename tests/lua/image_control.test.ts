@@ -75,21 +75,49 @@ test('image scrollbar capture does not take focus and wheel modifiers route thro
 	assert.equal(f.capture.active, false);
 	f.view.horizontal.setScroll(200); f.view.vertical.setScroll(100);
 	const pointer = f.pointer(80, 70);
-	assert.equal(f.control.handleWheel(pointer, 25, -1, KeyModifier.none), true);
+	const wheel = { ...pointer, deltaX: 0, deltaY: 25 / 16, modifiers: KeyModifier.none, spaceDown: false };
+	assert.equal(f.control.handleWheel(wheel), true);
 	assert.equal(f.view.vertical.getScroll(), 125);
-	assert.equal(f.control.handleWheel(pointer, 40, -1, KeyModifier.shift), true);
+	assert.equal(f.control.handleWheel({ ...wheel, deltaY: 2.5, modifiers: KeyModifier.shift }), true);
 	assert.equal(f.view.horizontal.getScroll(), 240);
 	const transform = f.view.transform;
 	const sourceX = (80 - transform.offsetX) / transform.scale;
 	const sourceY = (70 - transform.offsetY) / transform.scale;
-	assert.equal(f.control.handleWheel(pointer, -40, 1, KeyModifier.ctrl), true);
+	assert.equal(f.control.handleWheel({ ...wheel, deltaY: -1, modifiers: KeyModifier.ctrl }), true);
 	assert.equal(f.view.scale, 2);
 	assert.equal((80 - f.view.transform.offsetX) / f.view.scale, sourceX);
 	assert.equal((70 - f.view.transform.offsetY) / f.view.scale, sourceY);
-	assert.equal(f.control.handleWheel(pointer, 40, -1, KeyModifier.meta), true);
+	assert.equal(f.control.handleWheel({ ...wheel, deltaY: 1, modifiers: KeyModifier.meta }), true);
 	assert.equal(f.view.scale, 1);
 	assert.equal(f.focus.target, f.parent);
-	assert.equal(f.control.handleWheel({ ...pointer, viewportX: 10 }, 40, -1, KeyModifier.none), false);
+	assert.equal(f.control.handleWheel({ ...wheel, viewportX: 10 }), false);
+});
+
+test('fractional image wheel pans both axes and zooms continuously around the source pixel', t => {
+	const f = fixture(t);
+	const wheel = { ...f.pointer(80, 70), deltaX: 0.125, deltaY: -0.25, modifiers: KeyModifier.none, spaceDown: false };
+	f.control.handleWheel(wheel);
+	assert.equal(f.view.horizontal.getScroll(), 202);
+	assert.equal(f.view.vertical.getScroll(), 96);
+	f.control.handleWheel({ ...wheel, modifiers: KeyModifier.shift });
+	assert.equal(f.view.horizontal.getScroll(), 204, 'already-horizontal trackpad input is not remapped a second time');
+	assert.equal(f.view.vertical.getScroll(), 92);
+	const sourceX = (wheel.viewportX - f.view.transform.offsetX) / f.view.scale;
+	const sourceY = (wheel.viewportY - f.view.transform.offsetY) / f.view.scale;
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta]) {
+		f.control.handleWheel({ ...wheel, deltaX: 0, deltaY: -0.5, modifiers: modifier });
+		assert.ok(Math.abs(f.view.scale - Math.SQRT2) < 1e-10);
+		assert.ok(Math.abs((wheel.viewportX - f.view.transform.offsetX) / f.view.scale - sourceX) < 1e-10);
+		assert.ok(Math.abs((wheel.viewportY - f.view.transform.offsetY) / f.view.scale - sourceY) < 1e-10);
+		f.control.handleWheel({ ...wheel, deltaX: 0, deltaY: 0.5, modifiers: modifier });
+		assert.ok(Math.abs(f.view.scale - 1) < 1e-10);
+	}
+	f.view.setScale('fit');
+	f.control.handleWheel({ ...wheel, deltaY: 0, modifiers: KeyModifier.ctrl });
+	assert.equal(f.view.mode, 'fit', 'horizontal-only wheel does not replace Fit with a numeric scale');
+	f.view.setScale(1.25);
+	f.view.zoomBySteps(1);
+	assert.equal(f.view.scale, 2, 'keyboard/menu zoom still selects the next exact pixel preset');
 });
 
 test('image navigation and zoom consume real keyboard edges only through image focus', t => {

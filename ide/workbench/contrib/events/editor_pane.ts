@@ -4,7 +4,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
 import * as colors from '../../../common/constants';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -260,7 +260,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		return false;
 	}
 	public handleKeyboard(input: KeyInputEvent): void { this.navigate(input); }
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (pointer !== null) (this.inspector.visible ? this.inspector : this.scroll).handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+	public handleWheel(event: WheelInputSnapshot): void {
+		(this.inspector.visible ? this.inspector : this.scroll).handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

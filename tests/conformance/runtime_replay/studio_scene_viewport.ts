@@ -1,5 +1,5 @@
 import { SCENE_VIEWPORT_SOURCE } from '../../fixtures/studio/scene_viewport';
-import { SCROLLBAR_WIDTH, WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
+import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { inputFocus } from '../../../ide/input/focus';
@@ -87,7 +87,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	};
 	const wheel = async (steps: number) => {
 		movePointer(scene.details.bounds); await frame();
-		test.input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP * steps, test.clock.now());
+		test.remote.apply([{ type: 'wheel', deltaY: steps }]);
 		await frame();
 	};
 	const visible = (index: number) => {

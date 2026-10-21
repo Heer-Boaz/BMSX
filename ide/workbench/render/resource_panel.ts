@@ -32,7 +32,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 
 	const verticalScrollbar = controller.resourceVertical;
 	verticalScrollbar.layout(layout.verticalTrack, itemCount, capacity, controller.scroll);
-	controller.scroll = (verticalScrollbar.getScroll() + 0.5) | 0;
+	controller.scroll = verticalScrollbar.getScroll();
 
 	const horizontalScrollbar = controller.resourceHorizontal;
 	const horizontalContentWidth = controller.maxLineWidth > layout.availableWidth
@@ -44,12 +44,12 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		layout.availableWidth,
 		controller.hscroll,
 	);
-	controller.hscroll = horizontalScrollbar.getScroll() | 0;
+	controller.hscroll = horizontalScrollbar.getScroll();
 
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = layout.contentTop;
-	const scrollStart = controller.scroll;
+	const scrollStart = controller.scroll | 0;
 	const scrollEndCandidate = scrollStart + capacity;
 	const scrollEnd = scrollEndCandidate < itemCount ? scrollEndCandidate : itemCount;
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
@@ -134,7 +134,7 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 	}
 	if (capacity <= 0) {
 		if (viewer.content.lines.length > 0) {
-			const lineIndex = viewer.scroll < viewer.content.lines.length ? viewer.scroll : viewer.content.lines.length - 1;
+			const lineIndex = viewer.scroll < viewer.content.lines.length ? viewer.scroll | 0 : viewer.content.lines.length - 1;
 			const line = viewer.content.lines[lineIndex] ?? '';
 			const bottomLineY = bounds.bottom - editorViewState.lineHeight;
 			const fallbackY = textTop < bottomLineY ? textTop : bottomLineY;
@@ -147,7 +147,7 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 		}
 		return;
 	}
-	const start = viewer.scroll;
+	const start = viewer.scroll | 0;
 	const endCandidate = start + capacity;
 	const end = endCandidate < totalLines ? endCandidate : totalLines;
 	if (viewer.content.lines.length === 0) {

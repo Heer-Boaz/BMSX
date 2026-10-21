@@ -1,4 +1,4 @@
-import { PointerButton, type PointerInputEvent } from './pointer_event';
+import { PointerButton, type PointerInputEvent, type WheelInputEvent } from './pointer_event';
 import { KeyModifier } from './text';
 import type { HostClock } from '../clock';
 import type { HostControlInputEvent } from '../control/protocol';
@@ -12,12 +12,14 @@ export class RemoteInput {
 	private readonly pressedButtons = new Map<string, number>();
 	private readonly pointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
+	private readonly wheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 
 	public constructor(
 		private readonly input: InputEventSink,
 		private readonly clock: HostClock,
 		private readonly editingKey: ((code: string, down: boolean) => void) | undefined = undefined,
 		private readonly editingPointer: ((event: PointerInputEvent) => void) | undefined = undefined,
+		private readonly editingWheel: ((event: WheelInputEvent) => void) | undefined = undefined,
 	) {}
 
 	public apply(events: readonly HostControlInputEvent[]): void {
@@ -44,6 +46,17 @@ export class RemoteInput {
 				case 'wheel':
 					this.input.inputAxis1('pointer:0', 'pointer_wheel', event.deltaY, timestamp);
 					this.input.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY, timestamp);
+					if (this.editingWheel !== undefined) {
+						const wheel = this.wheel, keys = this.pressedKeys;
+						wheel.x = this.pointer.x; wheel.y = this.pointer.y;
+						wheel.deltaY = event.deltaY;
+						wheel.modifiers = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? KeyModifier.shift : 0)
+							| (keys.has('ControlLeft') || keys.has('ControlRight') ? KeyModifier.ctrl : 0)
+								| (keys.has('AltLeft') || keys.has('AltRight') ? KeyModifier.alt : 0)
+								| (keys.has('MetaLeft') || keys.has('MetaRight') ? KeyModifier.meta : 0);
+						wheel.timestamp = timestamp;
+						this.editingWheel(wheel);
+					}
 					break;
 				default:
 					throw new Error('Unknown host-control input event.');

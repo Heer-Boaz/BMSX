@@ -7,13 +7,12 @@ import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isCtrlDown, isShiftDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -426,21 +425,15 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 		return true;
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
-		if (this.inspector.visible && pointer !== null && this.inspector.handleWheel(pointer, direction * steps * editorViewState.lineHeight * 3)) {
-			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-		}
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.inspector.visible && this.inspector.handleWheel(event, event.deltaY * editorViewState.lineHeight * 3)) return;
 		if (this.input.presentation === 'graph') {
-			const distance = direction * steps * 16, horizontal = isShiftDown(input);
-			if (pointer === null || !this.graph.handleWheel(pointer, horizontal ? distance : 0, horizontal ? 0 : distance,
-				isCtrlDown(input) ? -direction * steps : 0)) return;
+			if (!this.graph.handleWheel(event)) return;
 		} else {
-			if (pointer === null || !workbenchListContainsPosition(this.input.outline, pointer.viewportX, pointer.viewportY)) return;
-			scrollWorkbenchList(this.input.outline, direction * steps * 3);
+			if (!workbenchListContainsPosition(this.input.outline, event.viewportX, event.viewportY)) return;
+			scrollWorkbenchList(this.input.outline, event.deltaY * 3);
 		}
 		this.input.follow.stop();
-		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
 	private handleGraphKeyboard(player: KeyInputEvent): void {

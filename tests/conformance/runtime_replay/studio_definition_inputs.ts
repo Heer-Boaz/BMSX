@@ -4,7 +4,7 @@ import { editorTextModelService } from '../../../ide/editor/model/model_service'
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { SCROLLBAR_WIDTH, WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
+import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -85,7 +85,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	check(bar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 		'A04: independent definition tabs use one bounded row, not the entire editor viewport');
 	test.movePointer(editorChromeState.tabBarBounds); await frame();
-	test.input.inputAxis1('pointer:0', 'pointer_wheel', -100 * WHEEL_SCROLL_STEP, test.clock.now()); await frame();
+	test.remote.apply([{ type: 'wheel', deltaY: -100 }]); await frame();
 	for (let index = 0; index < 8; index += 1) await frame();
 	check(bar.getScroll() === 0 && getActiveTab() === second && inputFocus.target === focus,
 		'A04: physical wheel scroll persists without switching editors or stealing focus');

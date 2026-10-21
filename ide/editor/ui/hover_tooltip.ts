@@ -31,7 +31,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	ensureVisualLines();
 	const visibleRows = editorViewState.cachedVisibleRowCount;
 	const visualIndex = editorViewState.layout.positionToVisualIndex(tooltip.row, tooltip.startColumn);
-	const relativeRow = visualIndex - activeCodeEditor.view.scrollRow;
+	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
 		return;
@@ -44,7 +44,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
 	if (editorViewState.wordWrapEnabled) {
 		if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 			columnStart = segment.startColumn;
@@ -67,9 +67,9 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 	const maxOffset = Math.max(0, content.length - maxVisible);
 	tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
-	const visibleCount = Math.max(1, Math.min(maxVisible, content.length - tooltip.scrollOffset));
+	const visibleCount = Math.max(1, Math.min(maxVisible, content.length - (tooltip.scrollOffset | 0)));
 	tooltip.visibleLineCount = visibleCount;
-	const visibleStart = tooltip.scrollOffset;
+	const visibleStart = tooltip.scrollOffset | 0;
 	const visibleEnd = visibleStart + visibleCount;
 	let maxLineWidth = 0;
 	for (let i = visibleStart; i < visibleEnd; i += 1) {

@@ -1,3 +1,5 @@
+import { clamp } from '../../../../../machine/ts/common/clamp';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
@@ -21,7 +23,7 @@ import { drawProblemsPanelSurface } from './render';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
-import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './pointer';
+import { handleProblemsPanelPointerInput } from './pointer';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { inputFocus } from '../../../../input/focus';
 
@@ -40,7 +42,8 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private diagnostics: readonly EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
 	private selectionIndex = -1;
 	private hoverIndex = -1;
-	private scrollIndex = 0;
+	/** Continuous diagnostic-row position; item lookup uses getScrollIndex(). */
+	private scrollPosition = 0;
 	private readonly layout = createProblemsPanelLayout();
 	private readonly itemLayouts = new ScratchBuffer<ProblemsPanelItemLayout>(createProblemsPanelItemLayout);
 	private cachedLayout: PanelLayout = null;
@@ -74,7 +77,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public show(): void {
 		if (this.visible) return;
 		this.visible = true;
-		this.scrollIndex = 0; // open at top
+		this.scrollPosition = 0; // open at top
 		this.hoverIndex = -1;
 		this.selectionIndex = -1; // no implicit selection on open
 		this.cachedLayout = null;
@@ -113,12 +116,9 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public getScrollIndex(): number {
-		return this.scrollIndex;
+		return this.scrollPosition | 0;
 	}
 
-	public setScrollIndex(index: number): void {
-		this.scrollIndex = index;
-	}
 
 	public getCachedLayout(): PanelLayout {
 		return this.cachedLayout;
@@ -162,9 +162,6 @@ export class ProblemsPanelController implements PointerHoverTarget {
 			return;
 		}
 		const layout = this.prepareLayout(bounds);
-		if (this.isFocused && this.selectionIndex >= 0) {
-			this.revealSelection(layout, this.lastAvailableWidth);
-		}
 		drawProblemsPanelSurface(
 			this,
 			bounds,
@@ -182,8 +179,23 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		return handleProblemsPanelPointerInput(this, editorPanes, snapshot, justPressed, bounds);
 	}
 
-	public handlePointerWheel(direction: number, steps: number): boolean {
-		return handleProblemsPanelWheelInput(this, direction, steps);
+	public handlePointerWheel(deltaRows: number): boolean {
+		if (!this.visible || this.cachedLayout === null || this.diagnostics.length === 0) return false;
+		let index = this.getScrollIndex();
+		let offset = (this.scrollPosition - index) * this.getItemLayout(index).height + deltaRows * editorViewState.lineHeight;
+		while (offset < 0 && index > 0) {
+			index -= 1;
+			offset += this.getItemLayout(index).height;
+		}
+		while (index < this.diagnostics.length - 1 && offset >= this.getItemLayout(index).height) {
+			offset -= this.getItemLayout(index).height;
+			index += 1;
+		}
+		const position = clamp(index + offset / this.getItemLayout(index).height, 0, this.diagnostics.length - 1);
+		if (position === this.scrollPosition) return false;
+		this.scrollPosition = position;
+		this.hoverIndex = -1;
+		return true;
 	}
 
 	public handleKeyboard(playerInput: KeyInputEvent, editorPanes: EditorPanes): void {
@@ -208,7 +220,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		const viewportHeight = layout.contentBottom - layout.contentTop;
 		let usedHeight = 0;
 		let count = 0;
-		for (let index = this.scrollIndex; index < this.diagnostics.length; index += 1) {
+		for (let index = this.getScrollIndex(); index < this.diagnostics.length; index += 1) {
 			const itemHeight = this.getItemLayout(index, availableWidth).height;
 			if (usedHeight + itemHeight > viewportHeight) {
 				break;
@@ -222,15 +234,15 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public revealSelection(layout: PanelLayout, availableWidth: number): void {
 		const selectionIndex = this.selectionIndex;
 		if (selectionIndex === -1) {
-			this.scrollIndex = clampProblemsPanelScrollIndex(this.scrollIndex, this.diagnostics.length);
+			this.scrollPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 			return;
 		}
-		if (selectionIndex < this.scrollIndex) {
-			this.scrollIndex = selectionIndex;
+		if (selectionIndex < this.getScrollIndex()) {
+			this.scrollPosition = selectionIndex;
 			return;
 		}
 		const viewportHeight = layout.contentBottom - layout.contentTop;
-		let nextScrollIndex = this.scrollIndex;
+		let nextScrollIndex = this.getScrollIndex();
 		let usedHeight = 0;
 		for (let index = nextScrollIndex; index <= selectionIndex; index += 1) {
 			const itemHeight = this.getItemLayout(index, availableWidth).height;
@@ -243,12 +255,12 @@ export class ProblemsPanelController implements PointerHoverTarget {
 				nextScrollIndex += 1;
 			}
 		}
-		this.scrollIndex = clampProblemsPanelScrollIndex(nextScrollIndex, this.diagnostics.length);
+		if (nextScrollIndex !== this.getScrollIndex()) this.scrollPosition = clampProblemsPanelScrollIndex(nextScrollIndex, this.diagnostics.length);
 	}
 
 	private ensureSelectionValidity(): void {
 		this.selectionIndex = findProblemsPanelPreferredSelection(this.diagnostics, this.selectionIndex);
-		this.scrollIndex = clampProblemsPanelScrollIndex(this.scrollIndex, this.diagnostics.length);
+		this.scrollPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 	}
 }
 

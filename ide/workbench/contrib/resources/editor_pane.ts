@@ -4,8 +4,7 @@ import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -64,14 +63,8 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		handleResourceViewerInput(playerInput, resource);
 	}
 
-	public handleWheel(
-		direction: number,
-		steps: number,
-		_activePointer: PointerSnapshot | null,
-		playerInput: PlayerInput,
-	): void {
-		scrollResourceViewer(this.input.view, direction * steps);
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	public handleWheel(event: WheelInputSnapshot): void {
+		scrollResourceViewer(this.input.view, event.deltaY);
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {

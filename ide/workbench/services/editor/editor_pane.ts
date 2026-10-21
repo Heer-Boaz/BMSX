@@ -1,7 +1,7 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
@@ -70,12 +70,7 @@ export abstract class EditorPane<TInput extends EditorInput> {
 		gotoModifierActive: boolean,
 	): void;
 
-	public abstract handleWheel(
-		direction: number,
-		steps: number,
-		activePointer: PointerSnapshot | null,
-		playerInput: PlayerInput,
-	): void;
+	public abstract handleWheel(event: WheelInputSnapshot): void;
 
 	public abstract drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void;
 }

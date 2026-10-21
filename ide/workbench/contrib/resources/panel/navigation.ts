@@ -2,7 +2,7 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { ResourceBrowserItem } from '../../../../common/models';
 
 export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number, lineHeight: number, itemCount: number): number {
-	const index = scroll + ((relativeY / lineHeight) | 0);
+	const index = (scroll | 0) + ((relativeY / lineHeight) | 0);
 	return index >= 0 && index < itemCount ? index : -1;
 }
 
@@ -25,10 +25,10 @@ export function ensureResourcePanelSelectionScroll(selectionIndex: number, scrol
 	if (selectionIndex < 0) {
 		return currentScroll;
 	}
-	if (selectionIndex < currentScroll) {
+	if (selectionIndex < (currentScroll | 0)) {
 		return selectionIndex;
 	}
-	const overflow = selectionIndex - (currentScroll + capacity - 1);
+	const overflow = selectionIndex - ((currentScroll | 0) + capacity - 1);
 	if (overflow <= 0) {
 		return currentScroll;
 	}

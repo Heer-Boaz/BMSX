@@ -16,6 +16,7 @@ export type CodeEditorViewState = {
 	selectionAnchorScratch: Position;
 	desiredColumn: number;
 	desiredDisplayOffset: number;
+	/** Continuous viewport position, projected to a visual row at layout/render boundaries. */
 	scrollRow: number;
 	scrollColumn: number;
 };

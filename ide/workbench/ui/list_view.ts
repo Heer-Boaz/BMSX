@@ -21,6 +21,7 @@ export type WorkbenchListState<
 > = {
 	readonly rows: Row[];
 	selectionIndex: number;
+	/** Continuous row position; renderers and hit testing project to row indices. */
 	scroll: number;
 	hoverIndex: number;
 	readonly layout: Layout;
@@ -52,7 +53,7 @@ export function workbenchListRowIndexAtPosition<Row>(
 	}
 	const layout = state.layout;
 	const visibleIndex = ((viewportY - layout.contentTop) / layout.rowHeight) | 0;
-	const rowIndex = state.scroll + visibleIndex;
+	const rowIndex = (state.scroll | 0) + visibleIndex;
 	return rowIndex < state.rows.length ? rowIndex : -1;
 }
 
@@ -82,9 +83,9 @@ export function scrollWorkbenchList<Row>(state: WorkbenchListState<Row>, delta: 
 }
 
 export function revealWorkbenchListSelection<Row>(state: WorkbenchListState<Row>): void {
-	if (state.selectionIndex < state.scroll) {
+	if (state.selectionIndex < (state.scroll | 0)) {
 		state.scroll = state.selectionIndex;
-	} else if (state.selectionIndex >= state.scroll + state.layout.visibleRowCount) {
+	} else if (state.selectionIndex >= (state.scroll | 0) + state.layout.visibleRowCount) {
 		state.scroll = state.selectionIndex - state.layout.visibleRowCount + 1;
 	}
 	clampWorkbenchListScroll(state);

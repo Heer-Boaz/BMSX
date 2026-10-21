@@ -177,7 +177,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
-	const relativeRow = visualIndex - activeCodeEditor.view.scrollRow;
+	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
 	}
@@ -187,7 +187,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	}
 	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
 	if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 		columnStart = segment.startColumn;
 	}
@@ -231,7 +231,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	ensureVisualLines();
 	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
-	const visibleStart = activeCodeEditor.view.scrollRow;
+	const visibleStart = activeCodeEditor.view.scrollRow | 0;
 	const visibleEnd = visibleStart + visibleRows - 1;
 	if (visualIndex < visibleStart) {
 		overlay.layout = null;

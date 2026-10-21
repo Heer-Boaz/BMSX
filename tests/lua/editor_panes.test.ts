@@ -15,8 +15,7 @@ import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { PlayerInput } from '../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
@@ -100,12 +99,7 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.pointerCount += 1;
 	}
 
-	public handleWheel(
-		_direction: number,
-		_steps: number,
-		_activePointer: PointerSnapshot | null,
-		_playerInput: PlayerInput,
-	): void {
+	public handleWheel(_event: WheelInputSnapshot): void {
 		this.wheelCount += 1;
 	}
 
@@ -316,8 +310,7 @@ test('same-input navigation blurs the old control before changing selection, whi
 
 test('editor pane hot paths dispatch directly to the retained active pane', () => {
 	const harness = createEditorPanes();
-	const playerInput = {} as PlayerInput;
-	const snapshot = {} as PointerSnapshot;
+	const snapshot = {} as PointerInputSnapshot;
 	harness.editorPanes.openEditor(resourceInput());
 
 	const activePane = harness.editorPanes.activePane;
@@ -325,7 +318,7 @@ test('editor pane hot paths dispatch directly to the retained active pane', () =
 	activePane.draw();
 	activePane.handleKeyboard(new KeyInputEvent('KeyA', KeyModifier.none));
 	activePane.handlePointer({ ...snapshot, modifiers: KeyModifier.none, spaceDown: false }, true, false, 42, false);
-	activePane.handleWheel(1, 3, snapshot, playerInput);
+	activePane.handleWheel({ ...snapshot, deltaX: 0, deltaY: 3 });
 	activePane.drawStatusBar({ left: 14, top: 280, right: 384, bottom: 288 }, 0xffffffff);
 
 	const pane = harness.resourcePane();

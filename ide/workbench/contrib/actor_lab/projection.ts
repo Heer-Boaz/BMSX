@@ -60,7 +60,7 @@ export class ActorProjection {
 		if (changed || wasPresent !== input.actorPresent || !input.actorPresent && input.outline.roots.length !== 0) {
 			const outline = input.outline;
 			const selected = outline.rows[outline.selectionIndex];
-			this.scrollAnchor = outline.rows[outline.scroll];
+			this.scrollAnchor = outline.rows[outline.scroll | 0];
 			this.children(null, input.runtime.roots);
 			rebuildWorkbenchTreeRows(outline, selected === undefined ? null : selected);
 			if (outline.selectionIndex === -1 && input.selectionPath !== undefined) {
@@ -126,7 +126,7 @@ export class ActorProjection {
 			let visibleActive = false;
 			for (const row of this.activeRows) {
 				const index = outline.rows.indexOf(row);
-				if (index >= outline.scroll && index < outline.scroll + outline.layout.visibleRowCount) { visibleActive = true; break; }
+				if (index >= (outline.scroll | 0) && index < (outline.scroll | 0) + outline.layout.visibleRowCount) { visibleActive = true; break; }
 			}
 			outline.scrollbar.revealRange(this.revealStart, this.revealEnd);
 			if (this.activeRows.length !== 0 && !visibleActive && this.revealEnd - this.revealStart > outline.layout.visibleRowCount)

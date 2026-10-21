@@ -17,9 +17,10 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 	api.blit_text_inline_with_font(input.mapKind === 'pietious' ? 'ROOMS / OBJECTS' : 'STAGE / MARKERS', layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.blit_text_inline_with_font(layout.selectionTitle, layout.gridLeft + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.pushClipRect(tree.layout.contentLeft, tree.layout.contentTop, tree.layout.contentRight, tree.layout.contentBottom);
-	const end = Math.min(tree.rows.length, tree.scroll + tree.layout.visibleRowCount);
-	for (let index = tree.scroll; index < end; index++) {
-		const node = tree.rows[index], y = tree.layout.contentTop + (index - tree.scroll) * rowHeight;
+	const firstRow = tree.scroll | 0;
+	const end = Math.min(tree.rows.length, firstRow + tree.layout.visibleRowCount);
+	for (let index = firstRow; index < end; index++) {
+		const node = tree.rows[index], y = tree.layout.contentTop + (index - firstRow) * rowHeight;
 		const x = tree.layout.contentLeft + node.depth * tree.layout.indentWidth;
 		const selected = index === tree.selectionIndex;
 		const textColor = selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : node.element.diagnostic === null ? color : colors.COLOR_STATUS_WARNING;

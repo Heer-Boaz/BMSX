@@ -1,6 +1,6 @@
-import { type PointerInputEvent } from '../hosts/common/input/pointer_event';
-import type { PointerInputSnapshot } from './common/models';
-import { projectEditorPointerEvent } from './input/pointer/frame';
+import { type PointerInputEvent, type WheelInputEvent } from '../hosts/common/input/pointer_event';
+import type { PointerInputSnapshot, WheelInputSnapshot } from './common/models';
+import { projectEditorPointerEvent, projectEditorWheelEvent } from './input/pointer/frame';
 import type { InputRecipient } from '../hosts/common/input/channel';
 import { AnimationEditorController } from './workbench/contrib/animation/controller';
 import { AnimationEditorPane } from './workbench/contrib/animation/editor_pane';
@@ -246,6 +246,7 @@ export type CartEditor = TextInputHost & {
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
 	dispatchPointer: (event: PointerInputEvent) => void;
+	dispatchWheel: (event: WheelInputEvent) => void;
 	tickInput: () => void;
 	update: (deltaSeconds: number) => void;
 	draw: () => void;
@@ -270,6 +271,8 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	private readonly pointerSnapshot: PointerInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false };
+	private readonly wheelSnapshot: WheelInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false, deltaX: 0, deltaY: 0 };
 	public get guestInputRecipient(): InputRecipient | null {
 		if (!this.isActive) return this.input;
 		const viewport = inputFocus.target?.guestInput;
@@ -606,6 +609,18 @@ export class RuntimeCartEditor implements CartEditor {
 		pointerHover.clear();
 		inputFocus.cancelKeyboard();
 	}
+
+	public dispatchWheel(event: WheelInputEvent): void {
+		if (!this.isActive || this.actionPrompt.visible) return;
+		editorRuntimeState.currentTimeMs = event.timestamp;
+		projectEditorWheelEvent(this.display, event, this.wheelSnapshot);
+		const view = activeCodeEditor.view;
+		const row = view?.scrollRow, column = view?.scrollColumn;
+		handleEditorWheelInput(this, this.wheelSnapshot);
+		if (view !== null && (row !== view.scrollRow || column !== view.scrollColumn)) {
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
+		}
+	}
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
 	public activate(): void {
@@ -709,13 +724,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const codeView = activeCodeEditor.view;
 		const scrollRow = codeView?.scrollRow;
 		const scrollColumn = codeView?.scrollColumn;
-		const modalInput = this.actionPrompt.visible;
-		if (!modalInput) {
-			handleEditorWheelInput(this, playerInput);
-		}
 		if (this.actionPrompt.visible) return;
-		// A dialog closed by this pointer batch must not dispatch its keys to the restored control.
-		if (modalInput) return;
 		inputFocus.handleGamepad(playerInput);
 		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);

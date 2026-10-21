@@ -21,3 +21,13 @@ export type PointerInputEvent = {
 	readonly spaceDown: boolean;
 	readonly timestamp: number;
 };
+
+/** Host UI wheel movement in logical steps; positive axes scroll right/down. */
+export type WheelInputEvent = {
+	readonly x: number;
+	readonly y: number;
+	readonly deltaX: number;
+	readonly deltaY: number;
+	readonly modifiers: KeyModifier;
+	readonly timestamp: number;
+};

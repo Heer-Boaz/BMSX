@@ -63,7 +63,7 @@ export class WorkbenchPropertyEdit<T> {
 	private layout(): void {
 		const { tree, row } = this.binding!;
 		revealWorkbenchListSelection(tree);
-		const top = tree.layout.contentTop + (tree.rows.indexOf(row) - tree.scroll) * tree.layout.rowHeight;
+		const top = tree.layout.contentTop + (tree.rows.indexOf(row) - (tree.scroll | 0)) * tree.layout.rowHeight;
 		write_rect_bounds(this.bounds, row.element.displayValueLeft - 3, top, tree.layout.contentRight - 2, top + tree.layout.rowHeight);
 		this.control.layout(this.bounds.right - this.bounds.left);
 	}

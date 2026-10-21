@@ -96,20 +96,10 @@ function drawCompletionPopupCore(
 	})();
 	session.maxVisibleItems = Math.min(constants.COMPLETION_POPUP_MAX_VISIBLE, maxVisibleByHeight);
 	const maxStartIndex = Math.max(0, session.filteredItems.length - session.maxVisibleItems);
-	let startIndex = clamp(session.displayOffset, 0, maxStartIndex);
-	const selectionIndex = session.selectionIndex;
-	if (selectionIndex >= 0) {
-		if (selectionIndex < startIndex) {
-			startIndex = selectionIndex;
-		} else if (selectionIndex >= startIndex + session.maxVisibleItems) {
-			startIndex = selectionIndex - session.maxVisibleItems + 1;
-		}
-		startIndex = clamp(startIndex, 0, maxStartIndex);
-	}
-	session.displayOffset = startIndex;
-	const endIndex = Math.min(session.filteredItems.length, startIndex + session.maxVisibleItems);
-	const visibleCount = endIndex - startIndex;
-	if (visibleCount <= 0) return null;
+	session.displayOffset = clamp(session.displayOffset, 0, maxStartIndex);
+	const startIndex = session.displayOffset | 0;
+	const visibleCount = Math.min(session.filteredItems.length, session.maxVisibleItems);
+	const endIndex = Math.min(session.filteredItems.length, startIndex + visibleCount + (session.displayOffset > startIndex ? 1 : 0));
 	const maxTextWidth = Math.max(0, maxAllowedWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
 	let maxLineWidth = 0;
 	for (let i = 0; i < session.filteredItems.length; i += 1) {
@@ -147,10 +137,10 @@ function drawCompletionPopupCore(
 	outBounds.right = popupRight;
 	outBounds.bottom = popupBottom;
 	const maxLabelWidth = Math.max(0, popupWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
-	for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
-		const itemIndex = startIndex + drawIndex;
+	api.pushClipRect(popupLeft + 1, popupTop + 1, popupRight - 1, popupBottom - 1);
+	for (let itemIndex = startIndex; itemIndex < endIndex; itemIndex += 1) {
 		const item = session.filteredItems[itemIndex];
-		const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
+		const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + (itemIndex - session.displayOffset) * (lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
 		const isSelected = itemIndex === session.selectionIndex;
 		const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
 		if (isSelected) {
@@ -162,6 +152,7 @@ function drawCompletionPopupCore(
 		const label = truncateWithMeasure(item.label, maxLabelWidth, measure);
 		draw(label, textX, lineTop, labelColor);
 	}
+	api.popClipRect();
 	return outBounds;
 }
 

@@ -1,7 +1,6 @@
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { pointerHover } from '../../../ide/input/pointer/hover';
-import type { PlayerInput } from '../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../ide/common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../ide/common/models';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -39,8 +38,8 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public handlePointer(snapshot: PointerInputSnapshot, _justPressed: boolean, _secondary: boolean, now: number): void {
 		this.result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
 	}
-	public handleWheel(direction: number, steps: number, snapshot: PointerSnapshot | null, input: PlayerInput): void {
-		if (snapshot !== null && this.graph.handleWheel(snapshot, 0, direction * steps * 16)) input.inputHandlers.pointer!.consumeButton('pointer_wheel');
+	public handleWheel(event: WheelInputSnapshot): void {
+		this.graph.handleWheel(event);
 	}
 	public drawStatusBar(): void {}
 }

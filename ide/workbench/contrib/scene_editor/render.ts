@@ -21,10 +21,11 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 	api.blit_text_inline_with_font('PROPERTIES', layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.pushClipRect(outline.layout.contentLeft, outline.layout.contentTop, outline.layout.contentRight, outline.layout.contentBottom);
 	if (outline.roots.length === 0) api.blit_text_inline_with_font('NO DIRECT SCENE DEFINITIONS', 4, outline.layout.contentTop + 2, 0, color, font);
-	const end = Math.min(outline.rows.length, outline.scroll + outline.layout.visibleRowCount);
-	for (let index = outline.scroll; index < end; index += 1) {
+	const firstRow = outline.scroll | 0;
+	const end = Math.min(outline.rows.length, firstRow + outline.layout.visibleRowCount);
+	for (let index = firstRow; index < end; index += 1) {
 		const node = outline.rows[index];
-		const y = outline.layout.contentTop + (index - outline.scroll) * rowHeight;
+		const y = outline.layout.contentTop + (index - firstRow) * rowHeight;
 		const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth;
 		if (index === outline.selectionIndex) api.fill_rect(outline.layout.contentLeft, y,
 			outline.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);

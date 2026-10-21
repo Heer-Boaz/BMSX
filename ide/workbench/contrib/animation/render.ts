@@ -14,9 +14,10 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 	renderWorkbenchActionBar(input.actionBar, font.renderFont());
 	const list = input.tracks;
 	const layout = list.layout;
+	const firstRow = list.scroll | 0;
 	api.pushClipRect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.contentBottom);
-	for (let index = list.scroll; index < Math.min(list.rows.length, list.scroll + layout.visibleRowCount); index++) {
-		const top = layout.contentTop + (index - list.scroll) * layout.rowHeight;
+	for (let index = firstRow; index < Math.min(list.rows.length, firstRow + layout.visibleRowCount); index++) {
+		const top = layout.contentTop + (index - firstRow) * layout.rowHeight;
 		const selected = index === list.selectionIndex;
 		if (selected) api.fill_rect(layout.contentLeft, top, layout.contentRight, top + layout.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 		drawEditorText(font, list.rows[index].text, layout.contentLeft + 2, top + 2, 0, selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : text);

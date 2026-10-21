@@ -1,7 +1,7 @@
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { handleCodeAreaSelectionPointer } from '../../../input/pointer/code/selection';
 import { inputFocus } from '../../../input/focus';
-import { isCtrlDown, isMetaDown } from '../../../input/keyboard/key_input';
+import { isCtrlDown, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
@@ -9,19 +9,18 @@ import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_erro
 import { pointerHover } from '../../../input/pointer/hover';
 import { codeAreaHover, updateCodeAreaPointerFeedback } from '../../../input/pointer/code/feedback';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { CodeEditorTextInput } from './native_text_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, scrollRows, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, scrollRows, scrollColumns, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -235,31 +234,14 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		);
 	}
 
-	public handleWheel(
-		direction: number,
-		steps: number,
-		activePointer: PointerSnapshot | null,
-		playerInput: PlayerInput,
-	): void {
-		if (this.editor.completion.handlePointerWheel(
-			direction,
-			steps,
-			activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null,
-		)) {
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-		}
-		const pointer = editorPointerState.lastPointerSnapshot;
-		if (pointer !== null) {
-			const bounds = getCodeAreaBounds();
-			if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
-				playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-				return;
-			}
-		}
-		scrollRows(direction * steps);
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.editor.completion.handlePointerWheel(event)) return;
+		const bounds = getCodeAreaBounds();
+		if (!event.valid || !event.insideViewport || event.viewportY < bounds.codeTop || event.viewportY >= bounds.codeBottom || event.viewportX < bounds.codeLeft || event.viewportX >= bounds.codeRight) return;
+		const horizontal = isShiftDown(event) && event.deltaX === 0;
+		scrollColumns(horizontal ? event.deltaY : event.deltaX);
+		if (!horizontal) scrollRows(event.deltaY);
 		editorCaretState.cursorRevealSuspended = true;
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {

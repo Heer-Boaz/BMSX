@@ -14,7 +14,7 @@ import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ScenarioLabNavigationSelection } from './navigation_selection';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -212,18 +212,10 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		return true;
 	}
 
-	public handleWheel(
-		direction: number,
-		steps: number,
-		activePointer: PointerSnapshot | null,
-		playerInput: PlayerInput,
-	): void {
-		if (this.targetInspection.model !== undefined) {
-			if (activePointer === null || !this.targetInspection.handleWheel(activePointer, direction * steps * 3)) return;
-		} else if (this.inspector.visible) {
-			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
-		} else this.controller.handleWheel(this.input.view, direction, steps, activePointer);
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.targetInspection.model !== undefined) this.targetInspection.handleWheel(event, event.deltaY * 3);
+		else if (this.inspector.visible) this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
+		else this.controller.handleWheel(this.input.view, event);
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {

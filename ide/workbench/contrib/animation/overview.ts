@@ -19,14 +19,14 @@ export class AnimationOverview {
 		write_rect_bounds(this.bounds, left, top, right, bottom); this.layoutRevision++;
 	}
 	public update(input: AnimationEditorInput): void {
-		const list = input.tracks, keys = input.keys;
-		if (this.document === input.document && this.revision === keys.revision && this.scroll === list.scroll && this.projectedLayout === this.layoutRevision) return;
-		this.document = input.document; this.revision = keys.revision; this.scroll = list.scroll; this.projectedLayout = this.layoutRevision;
-		const count = Math.min(list.rows.length - list.scroll, list.layout.visibleRowCount);
+		const list = input.tracks, keys = input.keys, firstRow = list.scroll | 0;
+		if (this.document === input.document && this.revision === keys.revision && this.scroll === firstRow && this.projectedLayout === this.layoutRevision) return;
+		this.document = input.document; this.revision = keys.revision; this.scroll = firstRow; this.projectedLayout = this.layoutRevision;
+		const count = Math.min(list.rows.length - firstRow, list.layout.visibleRowCount);
 		for (let visible = 0; visible < count; visible++) {
 			let geometry = this.lanes[visible];
 			if (geometry === undefined) { geometry = { index: 0, top: 0, dots: [], cells: [], label: '' }; this.lanes.push(geometry); }
-			const index = list.scroll + visible, row = list.rows[index];
+			const index = firstRow + visible, row = list.rows[index];
 			geometry.index = index; geometry.top = list.layout.contentTop + visible * list.layout.rowHeight;
 			geometry.dots.length = 0; geometry.cells.length = 0; geometry.label = '';
 			if (row.frames) {

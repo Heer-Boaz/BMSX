@@ -1,5 +1,6 @@
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -199,7 +200,7 @@ test('wheel and host-time edge scrolling refresh canvas position without changin
 	const position = f.pointer(180, 160);
 	f.capture.dispatch(position, false, 20);
 	const feedback = f.interaction.feedback!;
-	f.control.handleWheel(position, 14, 6);
+	f.control.handleWheel({ ...position, deltaX: 14 / 16, deltaY: 6 / 16, modifiers: KeyModifier.none, spaceDown: false });
 	assert.deepEqual(feedback.points, [194, 166, 242, 55]);
 	assert.equal(f.interaction.starts.length, 1);
 	assert.equal(f.interaction.overs, 2);

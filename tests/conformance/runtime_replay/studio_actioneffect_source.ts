@@ -1,7 +1,6 @@
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { inputFocus } from '../../../ide/input/focus';
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
@@ -152,7 +151,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(tree.rows.length > tree.layout.visibleRowCount, 'ActionEffect controls: authored requirements exceed the actual property viewport');
 	test.movePointer({ left: 200, right: 202, top: tree.layout.contentTop + 4, bottom: tree.layout.contentTop + 6 });
 	await frame();
-	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP * 2, clock.now());
+	test.remote.apply([{ type: 'wheel', deltaY: 2 }]);
 	await frame();
 	check(tree.scroll > 0, 'ActionEffect controls: physical wheel scrolls the property list');
 	await press('End');

@@ -152,6 +152,7 @@ async function startBrowserStudio(): Promise<void> {
 		const textInput = new BrowserTextInput(document.getElementById('gamescreen') as HTMLCanvasElement, ide.editor);
 		options.browserInput.setNativeKeyHandler(textInput.handleKey);
 		options.browserInput.setNativePointerHandler(event => ide.editor.dispatchPointer(event));
+		options.browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
 		if (workspace.kind === 'http') ide.editor.importFiles = (directory, signal) => importWorkspaceFiles(httpSession(workspace.baseUrl), directory, signal);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.device.select(audioOutput);
@@ -172,6 +173,8 @@ async function startBrowserStudio(): Promise<void> {
 			persistWorkspaceSessionLocally();
 			if (!event.persisted) {
 				options.browserInput.setNativeKeyHandler(undefined);
+				options.browserInput.setNativePointerHandler(undefined);
+				options.browserInput.setNativeWheelHandler(undefined);
 				textInput.dispose();
 				browserFiles?.close();
 			}

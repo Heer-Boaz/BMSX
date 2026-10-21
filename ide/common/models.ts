@@ -222,6 +222,9 @@ export type PointerSnapshot = PointerButtons & {
 /** Event-time editing context; ordinary controls only need PointerSnapshot geometry. */
 export type PointerInputSnapshot = PointerSnapshot & { modifiers: KeyModifier; spaceDown: boolean };
 
+/** A wheel occurrence keeps its event-time target, modifiers and fractional movement. */
+export type WheelInputSnapshot = PointerInputSnapshot & { deltaX: number; deltaY: number };
+
 export type InlineInputOptions = {
 	allowSpace: boolean;
 	/** Reject an entire multiline paste instead of silently changing its contents. */

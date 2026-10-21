@@ -38,6 +38,7 @@ export class AssistantAttachmentStrip {
 			for (const key of ['ArrowLeft', 'ArrowRight'] as const) if (isKeyJustPressed(key, input)) {
 				consumeIdeKey(key, input);
 				this.selected = Math.max(0, Math.min(this.attachments!.images.length - 1, this.selected + (key === 'ArrowLeft' ? -1 : 1)));
+				this.revealSelection();
 			}
 		});
 	}
@@ -46,7 +47,8 @@ export class AssistantAttachmentStrip {
 	public layout(left: number, top: number, right: number, rowHeight: number): void {
 		this.rowHeight = rowHeight;
 		const count = this.attachments!.images.length;
-		if (this.labels.length !== count) {
+		const countChanged = this.labels.length !== count;
+		if (countChanged) {
 			if (count > this.labels.length) this.selected = count - 1;
 			this.labels.length = 0;
 			for (let index = 0; index < count; index++) this.labels.push(`${index + 1}/${count}`);
@@ -54,14 +56,15 @@ export class AssistantAttachmentStrip {
 		this.columns = Math.max(1, Math.trunc((right - left) / 100));
 		this.tileWidth = (right - left) / this.columns;
 		this.selected = Math.max(0, Math.min(this.selected, this.attachments!.images.length - 1));
-		this.first = Math.max(0, Math.min(this.first, this.selected, count - this.columns));
-		if (this.selected >= this.first + this.columns) this.first = this.selected - this.columns + 1;
+		this.first = Math.max(0, Math.min(this.first, count - this.columns));
+		if (countChanged) this.revealSelection();
 		write_rect_bounds(this.bounds, left, top, right, top + rowHeight * 5 + 4);
 	}
 	public draw(): void {
 		const { left, top, bottom } = this.bounds;
 		const images = this.attachments!.images, font = editorViewState.font.renderFont();
-		for (let index = this.first; index < Math.min(images.length, this.first + this.columns); index++) {
+		api.pushClipRect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom);
+		for (let index = this.first | 0; index < Math.min(images.length, this.first + this.columns); index++) {
 			const x = left + (index - this.first) * this.tileWidth, right = x + this.tileWidth - 4;
 			const selected = index === this.selected && this.focusTarget.hasFocus;
 			api.fill_rect(x, top, right, bottom, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
@@ -74,11 +77,12 @@ export class AssistantAttachmentStrip {
 			api.fill_rect(right - this.rowHeight - 2, bottom - this.rowHeight - 1, right - 1, bottom - 1, 0, colors.COLOR_STATUS_BACKGROUND);
 			api.blit_text_inline_with_font('x', right - this.rowHeight, bottom - this.rowHeight, 0, colors.COLOR_STATUS_TEXT, font);
 		}
+		api.popClipRect();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
-			const index = this.first + Math.trunc((snapshot.viewportX - this.bounds.left) / this.tileWidth);
+			const index = (this.first + (snapshot.viewportX - this.bounds.left) / this.tileWidth) | 0;
 			if (index >= this.attachments!.images.length) return true;
 			this.selected = index; this.focusTarget.focus();
 			const right = this.bounds.left + (index - this.first + 1) * this.tileWidth - 4;
@@ -89,12 +93,17 @@ export class AssistantAttachmentStrip {
 	}
 	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean {
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
-		this.selected = Math.max(0, Math.min(this.attachments!.images.length - 1, this.selected + delta));
+		this.first = Math.max(0, Math.min(this.attachments!.images.length - this.columns, this.first + delta));
 		return true;
+	}
+	private revealSelection(): void {
+		if (this.selected < this.first) this.first = this.selected;
+		else if (this.selected >= this.first + this.columns) this.first = this.selected - this.columns + 1;
 	}
 	private removeSelected(): void {
 		this.attachments!.remove(this.selected);
 		this.selected = Math.max(0, Math.min(this.selected, this.attachments!.images.length - 1));
+		this.revealSelection();
 		if (this.attachments!.images.length === 0) this.focusTarget.next!.focus();
 	}
 	private openSelected(): void {

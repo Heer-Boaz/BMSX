@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerSnapshot, WheelInputSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
@@ -88,16 +88,20 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 		this.cancelPointer();
 	}
 
-	public handleWheel(snapshot: PointerSnapshot, delta: number, zoomSteps: number, modifiers: KeyModifier): boolean {
+	public handleWheel(snapshot: WheelInputSnapshot, pixelStep = 16): boolean {
 		const view = this.input!;
 		if (!snapshot.valid || !snapshot.insideViewport
 			|| (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.horizontal.getTrack())
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.vertical.getTrack()))) return false;
 		this.cancelPointer();
-		if ((modifiers & (KeyModifier.ctrl | KeyModifier.meta)) !== 0) view.zoomBySteps(zoomSteps, snapshot.viewportX, snapshot.viewportY);
-		else if ((modifiers & KeyModifier.shift) !== 0) view.pan(delta, 0);
-		else view.pan(0, delta);
+		if ((snapshot.modifiers & (KeyModifier.ctrl | KeyModifier.meta)) !== 0) {
+			view.zoomByWheel(-snapshot.deltaY, snapshot.viewportX, snapshot.viewportY);
+		} else if ((snapshot.modifiers & KeyModifier.shift) !== 0 && snapshot.deltaX === 0) {
+			view.pan(snapshot.deltaY * pixelStep, 0);
+		} else {
+			view.pan(snapshot.deltaX * pixelStep, snapshot.deltaY * pixelStep);
+		}
 		return true;
 	}
 

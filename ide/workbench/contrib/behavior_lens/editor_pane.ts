@@ -6,7 +6,6 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { BehaviorLensNavigationSelection } from './navigation_selection';
-import { isCtrlDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
@@ -14,7 +13,7 @@ import { scrollWorkbenchList } from '../../ui/list_view';
 import { acceptBehaviorGraphSelection } from './graph_navigation';
 import { acceptStateGraphSelection } from './state_graph_navigation';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -397,33 +396,22 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		} else {
 			const list = presentation.kind === 'properties' ? presentation.tree : presentation;
 			this.openContextMenu(list.layout.contentLeft + 8, list.layout.contentTop
-				+ (Math.max(0, list.selectionIndex - list.scroll) + 1) * list.layout.rowHeight, true);
+				+ (Math.max(0, list.selectionIndex - (list.scroll | 0)) + 1) * list.layout.rowHeight, true);
 		}
 	}
 
-	public handleWheel(
-		direction: number,
-		steps: number,
-		activePointer: PointerSnapshot | null,
-		playerInput: PlayerInput,
-	): void {
+	public handleWheel(event: WheelInputSnapshot): void {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view, this.contentBounds);
 		if (this.inspector.visible) {
-			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
-		} else if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(direction * steps * 3);
+			this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
+		} else if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(event.deltaY * 3);
 		else if (view.presentation.kind === 'properties') {
 			if (this.propertyEdit.active) this.focus();
 			this.properties.cancel();
-			scrollWorkbenchList(view.presentation.tree, direction * steps * 3);
-		}
-		else if (view.presentation.kind !== 'outline') {
-			const distance = direction * steps * 16;
-			const horizontal = isShiftDown(playerInput);
-			if (activePointer === null || !this.graph.handleWheel(activePointer, horizontal ? distance : 0, horizontal ? 0 : distance,
-				isCtrlDown(playerInput) ? -direction * steps : 0)) return;
-		} else scrollWorkbenchList(view.presentation, direction * steps * 3);
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+			scrollWorkbenchList(view.presentation.tree, event.deltaY * 3);
+		} else if (view.presentation.kind !== 'outline') this.graph.handleWheel(event);
+		else scrollWorkbenchList(view.presentation, event.deltaY * 3);
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {

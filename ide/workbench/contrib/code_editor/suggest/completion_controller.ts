@@ -19,6 +19,7 @@ import {
 	EditContext,
 	LuaCompletionItem,
 	LuaCompletionKind,
+	type WheelInputSnapshot,
 } from '../../../../common/models';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { resourceIdentityKey } from '../../../../common/resource';
@@ -245,55 +246,12 @@ export class CompletionController {
 		return preview;
 	}
 
-	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number }): boolean {
+	public handlePointerWheel(event: WheelInputSnapshot): boolean {
 		const session = this.completionSession;
-		if (!session || session.filteredItems.length === 0) {
-			return false;
-		}
-		if (session.trigger !== 'manual') {
-			return false;
-		}
-		if (pointer && !point_in_rect(pointer.x, pointer.y, this.popupBounds)) {
-			return false;
-		}
-		const total = session.filteredItems.length;
-		if (total === 0) {
-			return pointer !== null || this.popupBounds !== null;
-		}
-		const unit = direction >= 0 ? 1 : -1;
-		const stepCount = Math.max(1, steps);
-		let moved = false;
-		for (let i = 0; i < stepCount; i += 1) {
-			let nextIndex = session.selectionIndex;
-			if (nextIndex < 0) {
-				nextIndex = unit > 0 ? 0 : total - 1;
-			} else {
-				const candidate = nextIndex + unit;
-				if (candidate < 0) {
-					if (nextIndex === 0) {
-						continue;
-					}
-					nextIndex = 0;
-				} else if (candidate >= total) {
-					if (nextIndex === total - 1) {
-						continue;
-					}
-					nextIndex = total - 1;
-				} else {
-					nextIndex = candidate;
-				}
-			}
-			if (nextIndex !== session.selectionIndex) {
-				session.selectionIndex = nextIndex;
-				session.navigationCaptured = true;
-				this.ensureCompletionSelectionVisible(session);
-				moved = true;
-			}
-		}
-		if (moved) {
-			return true;
-		}
-		return pointer !== null;
+		if (session === null || session.trigger !== 'manual' || this.popupBounds === null) return false;
+		if (!event.valid || !event.insideViewport || !point_in_rect(event.viewportX, event.viewportY, this.popupBounds)) return false;
+		session.displayOffset = clamp(session.displayOffset + event.deltaY, 0, Math.max(0, session.filteredItems.length - session.maxVisibleItems));
+		return true;
 	}
 
 	public processPending(deltaSeconds: number): void {

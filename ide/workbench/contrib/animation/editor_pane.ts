@@ -1,8 +1,7 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -188,20 +187,15 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		if (justPressed) { this.focus(); this.controller.selectTrack(this.input, index); }
 		return true;
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, player: PlayerInput): void {
-		if (pointer === null) return;
-		if (this.imageBitmap !== undefined && this.image.handleWheel(pointer, direction * steps * 16, -direction * steps, player.modifiers)) {
-			player.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
-		}
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.imageBitmap !== undefined && this.image.handleWheel(event, 16)) return;
 		const list = this.input.tracks, details = this.input.details;
-		if (this.input.keys.unit !== undefined && (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.overview.bounds)
-			|| point_in_rect(pointer.viewportX, pointer.viewportY, this.input.keys.range.bounds) || point_in_rect(pointer.viewportX, pointer.viewportY, this.input.keys.curve.bounds))) {
-			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.input.keys.zoom(pointer.viewportX, direction > 0 ? 1.25 : 0.8);
-			player.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
+		if (this.input.keys.unit !== undefined && (point_in_rect(event.viewportX, event.viewportY, this.input.overview.bounds)
+			|| point_in_rect(event.viewportX, event.viewportY, this.input.keys.range.bounds) || point_in_rect(event.viewportX, event.viewportY, this.input.keys.curve.bounds))) {
+			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.input.keys.zoom(event.viewportX, 1.25 ** event.deltaY);
+			return;
 		}
-		if (workbenchListRowIndexAtPosition(list, pointer.viewportX, pointer.viewportY) !== -1) scrollWorkbenchList(list, direction * steps * 3);
-		else if (workbenchListRowIndexAtPosition(details, pointer.viewportX, pointer.viewportY) !== -1) scrollWorkbenchList(details, direction * steps * 3);
-		else return;
-		player.inputHandlers.pointer?.consumeButton('pointer_wheel');
+		if (workbenchListRowIndexAtPosition(list, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(list, event.deltaY * 3);
+		else if (workbenchListRowIndexAtPosition(details, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(details, event.deltaY * 3);
 	}
 }

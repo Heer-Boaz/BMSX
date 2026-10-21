@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
@@ -130,7 +130,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 		return super.handleViewPointer(snapshot, justPressed, now);
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (this.details.visible && pointer !== null) this.details.handleWheel(pointer, direction * steps * editorViewState.font.lineHeight);
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.details.visible) this.details.handleWheel(event, event.deltaY * editorViewState.font.lineHeight);
 	}
 }

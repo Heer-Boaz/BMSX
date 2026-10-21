@@ -14,8 +14,7 @@ import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/ed
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
-import type { PlayerInput } from '../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { activateCodeEditorTab, applyActiveCodeTabSelection } from '../../ide/workbench/ui/code_tab/activation';
 import type {
@@ -68,12 +67,7 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	): void {
 	}
 
-	public handleWheel(
-		_direction: number,
-		_steps: number,
-		_activePointer: PointerSnapshot | null,
-		_playerInput: PlayerInput,
-	): void {
+	public handleWheel(_event: WheelInputSnapshot): void {
 	}
 
 	public drawStatusBar(_bounds: Readonly<RectBounds>, _textColor: number): void {

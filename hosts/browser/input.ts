@@ -1,5 +1,5 @@
 import { KeyModifier } from '../common/input/text';
-import type { PointerInputEvent } from '../common/input/pointer_event';
+import type { PointerInputEvent, WheelInputEvent } from '../common/input/pointer_event';
 import { mapDisplayPointToViewport } from '../../machine/ts/render/video_output';
 import { clipboardAction, type ClipboardAction } from '../common/clipboard';
 import {
@@ -23,6 +23,7 @@ import { sonyGamepadProductId } from './sony_gamepad_hid';
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
 const MAX_GAMEPAD_EFFECT_MS = 5000;
+const UI_WHEEL_PIXELS_PER_STEP = 40;
 // Pointer Events report 1x1 when contact geometry is unavailable. This authored
 // 28px touch envelope bridges adjacent gamepad buttons without enlarging mouse/pen input.
 const ESTIMATED_TOUCH_HALF_SIZE = 14;
@@ -200,6 +201,8 @@ export class BrowserInputHub implements InputSource {
 	private keyboardCapture: ((code: string) => boolean) = null;
 	private nativeKeyHandler: ((event: KeyboardEvent) => boolean) | undefined;
 	private nativePointerHandler: ((event: PointerInputEvent) => void) | undefined;
+	private nativeWheelHandler: ((event: WheelInputEvent) => void) | undefined;
+	private readonly nativeWheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 	private canvasButtons = 0;
 	private readonly nativePointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
@@ -388,8 +391,12 @@ export class BrowserInputHub implements InputSource {
 		this.nativeKeyHandler = handler;
 	}
 
-	setNativePointerHandler(handler: (event: PointerInputEvent) => void): void {
+	setNativePointerHandler(handler: ((event: PointerInputEvent) => void) | undefined): void {
 		this.nativePointerHandler = handler;
+	}
+
+	setNativeWheelHandler(handler: ((event: WheelInputEvent) => void) | undefined): void {
+		this.nativeWheelHandler = handler;
 	}
 
 	/** Foreground host UI owns new contacts inside its actual displayed surface. */
@@ -701,6 +708,21 @@ export class BrowserInputHub implements InputSource {
 		const unitsPerStep = event.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? 120
 			: event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : 1;
 		this.sink.inputAxis1('pointer:0', 'pointer_attachment_wheel', event.deltaY / unitsPerStep, now);
+		if (this.nativeWheelHandler === undefined) return;
+		const wheel = this.nativeWheel;
+		wheel.x = event.clientX;
+		wheel.y = event.clientY;
+		// UI units are independent of the guest attachment's wheel representation.
+		const scaleX = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 1
+			: event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.surface.clientWidth / UI_WHEEL_PIXELS_PER_STEP : 1 / UI_WHEEL_PIXELS_PER_STEP;
+		const scaleY = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 1
+			: event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.surface.clientHeight / UI_WHEEL_PIXELS_PER_STEP : 1 / UI_WHEEL_PIXELS_PER_STEP;
+		wheel.deltaX = event.deltaX * scaleX;
+		wheel.deltaY = event.deltaY * scaleY;
+		wheel.modifiers = (event.shiftKey ? KeyModifier.shift : 0) | (event.ctrlKey ? KeyModifier.ctrl : 0)
+			| (event.altKey ? KeyModifier.alt : 0) | (event.metaKey ? KeyModifier.meta : 0);
+		wheel.timestamp = now;
+		this.nativeWheelHandler(wheel);
 	};
 
 	private onContextMenu = (event: MouseEvent) => {

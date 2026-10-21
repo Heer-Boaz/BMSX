@@ -15,7 +15,7 @@ export class ScrollableWorkbenchTree<Element> implements WorkbenchTreeState<Elem
 	public readonly layout: WorkbenchTreeLayout = {
 		contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0, indentWidth: 0, twistieWidth: 0,
 	};
-	public get scroll(): number { return this.scrollbar.getScroll() | 0; }
+	public get scroll(): number { return this.scrollbar.getScroll(); }
 	public set scroll(value: number) { this.scrollbar.setScroll(value); }
 	public updateLayout(left: number, top: number, right: number, bottom: number, rowHeight: number, indent: number): void {
 		layoutWorkbenchList(this.layout, left, top, right - SCROLLBAR_WIDTH, bottom, rowHeight);

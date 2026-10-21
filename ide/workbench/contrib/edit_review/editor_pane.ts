@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import { truncateMeasuredText } from '../../../common/text';
@@ -115,7 +115,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		return this.actions.handlePointer(snapshot) || this.scroll.handlePointer(snapshot);
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (pointer !== null) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+	public handleWheel(event: WheelInputSnapshot): void {
+		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

@@ -6,6 +6,7 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
@@ -160,7 +161,7 @@ test('scrollbar track clicks and wheel use the same position; resize removing th
 	f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Primary;
 	f.control.handlePointer(f.pointer, 0);
 	assert.ok(f.view.scrollX > 0);
-	f.control.handleWheel(f.pointer, -40, 20);
+	f.control.handleWheel({ ...f.pointer, deltaX: -40 / 16, deltaY: 20 / 16, modifiers: KeyModifier.none, spaceDown: false });
 	assert.equal(f.view.scrollX, f.view.horizontalScrollbar.getScroll());
 	assert.equal(f.capture.dispatch(f.pointer, false, 20), false, 'wheel ends a thumb gesture');
 	f.control.handlePointer(f.pointer, 40);

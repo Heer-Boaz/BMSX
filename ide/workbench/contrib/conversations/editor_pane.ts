@@ -1,7 +1,7 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { measureTextRange } from '../../../editor/common/text/layout';
 import { measureStyledText } from '../../../editor/render/markdown';
@@ -70,7 +70,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 			|| snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
 	public handleKeyboard(_input: KeyInputEvent): void {} // The transcript focus target owns selection and scroll keys.
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (!this.preview.visible && pointer !== null) this.transcriptView.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (!this.preview.visible) this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

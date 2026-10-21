@@ -1,7 +1,6 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -181,14 +180,13 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		}
 		return index >= 0;
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
-		if (pointer === null) return;
-		if (workbenchListContainsPosition(this.input.tree, pointer.viewportX, pointer.viewportY)) scrollWorkbenchList(this.input.tree, direction * steps * 3);
-		else if (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.grid.bounds)) {
-			const grid = this.input.grid, scroll = isShiftDown(input) ? grid.horizontal : grid.vertical;
-			scroll.setScroll(scroll.getScroll() + direction * steps * grid.cellSize * 3);
-		} else return;
-		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (workbenchListContainsPosition(this.input.tree, event.viewportX, event.viewportY)) scrollWorkbenchList(this.input.tree, event.deltaY * 3);
+		else if (point_in_rect(event.viewportX, event.viewportY, this.input.grid.bounds)) {
+			const grid = this.input.grid, horizontal = isShiftDown(event) && event.deltaX === 0, step = grid.cellSize * 3;
+			grid.horizontal.setScroll(grid.horizontal.getScroll() + (event.deltaX + (horizontal ? event.deltaY : 0)) * step);
+			if (!horizontal) grid.vertical.setScroll(grid.vertical.getScroll() + event.deltaY * step);
+		}
 	}
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {

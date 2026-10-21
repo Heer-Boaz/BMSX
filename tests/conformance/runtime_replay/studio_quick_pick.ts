@@ -7,14 +7,13 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { check, type StudioFixture } from './studio_fixture';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { testStudioQuickInputInteraction } from './studio_quick_input_interaction';
 
 /** No direct picker calls: physical workbench shortcut, pointer, clipboard and navigation. */
 export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
-	const { ide, harness, press, click, frame, until, input, clock, clipboard, cycles, setPointerButton } = test;
+	const { ide, harness, press, click, frame, until, clipboard, cycles, setPointerButton } = test;
 	console.info('STUDIO: workbench-owned quick input from real non-code panes');
 	harness.openLuaSource('scenes/root.lua');
 	const model = harness.getActiveEditorDocument().model;
@@ -73,7 +72,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyA');
 	await press('Backspace');
 	const outlineScroll = scene.outline.scroll;
-	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP * 3, clock.now());
+	test.remote.apply([{ type: 'wheel', deltaY: 3 }]);
 	await frame();
 	await frame();
 	check(picker.model.viewport.scrollTop > 0 && scene.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');

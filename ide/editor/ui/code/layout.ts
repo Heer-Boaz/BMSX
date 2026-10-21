@@ -399,7 +399,7 @@ export class CodeLayout {
 	}
 
 	public clampVisualIndex(visualLineCount: number, index: number): number {
-		return clamp(index, 0, Math.max(0, visualLineCount - 1));
+		return clamp(index | 0, 0, Math.max(0, visualLineCount - 1));
 	}
 
 	public clampSegmentStart(lineLength: number, segmentStartColumn: number): number {
@@ -1030,7 +1030,7 @@ export class CodeLayout {
 		const clampedByTotal = clamp(clampedVisual, 0, total - 1);
 		const rowCount = this.rowVisualLinePrefix.length;
 		if (rowCount === 0) {
-			const fallback = this.visualLines[clampedByTotal];
+			const fallback = this.visualLines[clampedByTotal | 0];
 			return fallback ? fallback.row : -1;
 		}
 		let low = 0;

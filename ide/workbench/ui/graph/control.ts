@@ -1,10 +1,10 @@
-import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { dragScrollSpeed } from '../drag_scroll';
 import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
@@ -305,18 +305,19 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		return activate ? WorkbenchGraphPointerResult.Activate : WorkbenchGraphPointerResult.Selection;
 	}
 
-	public handleWheel(snapshot: PointerSnapshot, deltaX: number, deltaY: number, zoomSteps = 0): boolean {
+	public handleWheel(snapshot: WheelInputSnapshot, pixelStep = 16): boolean {
 		const view = this.inputValue!;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.canvas)) return false;
 		this.update();
-		if (zoomSteps !== 0) {
+		if ((snapshot.modifiers & (KeyModifier.ctrl | KeyModifier.meta)) !== 0) {
 			this.cancelPointer();
-			view.zoomBySteps(zoomSteps, snapshot.viewportX, snapshot.viewportY);
+			view.zoomByWheel(-snapshot.deltaY, snapshot.viewportX, snapshot.viewportY);
 			this.update();
 			return true;
 		}
 		if (this.gesture !== Gesture.Drag && this.gesture !== Gesture.PendingDrag) this.cancelPointer();
-		view.pan(deltaX, deltaY);
+		if ((snapshot.modifiers & KeyModifier.shift) !== 0 && snapshot.deltaX === 0) view.pan(snapshot.deltaY * pixelStep, 0);
+		else view.pan(snapshot.deltaX * pixelStep, snapshot.deltaY * pixelStep);
 		if (this.gesture === Gesture.Drag) this.updateDrag(snapshot);
 		return true;
 	}

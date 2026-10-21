@@ -1,5 +1,7 @@
 import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { BrowserInputHub } from '../../../hosts/browser/input';
+import { BrowserTextInput } from '../../../hosts/browser/text_input';
+import { RemoteInput } from '../../../hosts/common/input/remote';
 import { HOST_SUPERVISOR_KEY_CODE } from '../../../hosts/common/input/shortcuts';
 import { decodeImage, encodePngImage } from '../../../hosts/browser/image';
 import type { AssistantConnectionFactory } from '../../../hosts/common/assistant_protocol';
@@ -46,7 +48,6 @@ import type { EditorCommandId } from '../../../ide/common/commands';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 
 export function check(condition: boolean, message: string): void {
@@ -99,7 +100,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const clipboard = nativeClipboard ? browserClipboard! : new HeadlessClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, decodeImage, display, input,
 		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
-	if (browserInput) { browserClipboard!.bindInput(browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure); browserInput.setKeyboardCapture(input.shouldCaptureKey); }
+	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
+		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
+	let textInput: BrowserTextInput | undefined;
+	if (browserInput !== undefined) {
+		textInput = new BrowserTextInput(canvas, ide.editor);
+		browserClipboard!.bindInput(browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
+		browserInput.setKeyboardCapture(input.shouldCaptureKey);
+		browserInput.setNativeKeyHandler(textInput.handleKey);
+		browserInput.setNativePointerHandler(event => ide.editor.dispatchPointer(event));
+		browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
+	}
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
 	const history = runtime.history;
@@ -107,6 +118,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const frame = async () => {
 		clock.advance(runtime.timing.frameDurationMs);
 		runWorkbenchHostFrame(session, runtime, presenter, input, audio, output, log, ide, screen, menu, clock.now());
+		textInput?.refresh();
 		if (ide.editor.isActive) {
 			const viewport = ide.overlayRenderer.viewportSize;
 			check(presenter.viewportSize.x === viewport.width && presenter.viewportSize.y === viewport.height,
@@ -122,12 +134,12 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		for (let index = 0; index < 8000 && !predicate(); index += 1) await frame();
 		check(predicate(), `${message}: cycles=${cycles()} ready=${tasks.ready} pause=${execution.userPaused} editor=${ide.editor.isActive} control=${ide.debugger.plans.controlActive} mutation=${ide.debugger.plans.mutationActive} history=${history.mode}`);
 	};
-	let pressId = 0;
 	const setKey = (key: string, down: boolean) => {
-		input.inputButton('keyboard:0', key, down, down ? 1 : 0, clock.now(), ++pressId);
+		remote.apply([{ type: 'key', code: key, down }]);
 	};
+	const pointerButtons = { pointer_primary: 'primary', pointer_secondary: 'secondary', pointer_aux: 'aux' } as const;
 	const setPointerButton = (button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux', down: boolean) => {
-		input.inputButton('pointer:0', button, down, down ? 1 : 0, clock.now(), ++pressId);
+		remote.apply([{ type: 'button', button: pointerButtons[button], down }]);
 	};
 	const press = async (...keys: string[]) => {
 		for (const key of keys) setKey(key, true);
@@ -149,9 +161,10 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const movePointer = (bounds: RectBounds) => {
 		const displayRect = display.measureDisplay();
 		const viewport = ide.overlayRenderer.viewportSize;
-		input.inputAxis2('pointer:0', 'pointer_position',
-			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
-			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
+		remote.apply([{ type: 'pointer',
+			x: displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
+			y: displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2),
+		}]);
 	};
 	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
 		// Like Playwright's stable-position actionability check, resolve pointer
@@ -190,7 +203,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		if (delta !== 0) {
 			movePointer(viewport); await frame();
 			const steps = Math.sign(delta) * Math.ceil(Math.abs(delta) / (editorViewState.charAdvance * 4));
-			input.inputAxis1('pointer:0', 'pointer_wheel', steps * WHEEL_SCROLL_STEP, clock.now());
+			remote.apply([{ type: 'wheel', deltaY: steps }]);
 			await frame();
 		}
 		const left = Math.max(viewport.left, bounds.left), right = Math.min(viewport.right, bounds.right);
@@ -241,7 +254,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		throw new Error('real title actor missing');
 	};
 	audio.device.select(audio);
-	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
+	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
 		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
 }
 

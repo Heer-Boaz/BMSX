@@ -86,6 +86,12 @@ export class WorkbenchImageViewport {
 		this.setScale(IMAGE_ZOOM_LEVELS[clamp(index, 0, last)], anchorX, anchorY);
 	}
 
+	/** Wheel distance is continuous; command zoom keeps its exact pixel-scale presets. */
+	public zoomByWheel(steps: number, anchorX: number, anchorY: number): void {
+		if (steps === 0) return;
+		this.setScale(clamp(this.scaleValue * 2 ** steps, IMAGE_ZOOM_LEVELS[0], IMAGE_ZOOM_LEVELS[IMAGE_ZOOM_LEVELS.length - 1]), anchorX, anchorY);
+	}
+
 	public pan(dx: number, dy: number): void {
 		this.horizontal.setScroll(this.horizontal.getScroll() + dx);
 		this.vertical.setScroll(this.vertical.getScroll() + dy);

@@ -67,11 +67,12 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 		return;
 	}
 
-	const endCandidate = outline.scroll + listLayout.visibleRowCount;
+	const firstRow = outline.scroll | 0;
+	const endCandidate = firstRow + listLayout.visibleRowCount;
 	const end = endCandidate < outline.rows.length ? endCandidate : outline.rows.length;
-	for (let rowIndex = outline.scroll; rowIndex < end; rowIndex += 1) {
+	for (let rowIndex = firstRow; rowIndex < end; rowIndex += 1) {
 		const row = outline.rows[rowIndex];
-		const y = listLayout.contentTop + (rowIndex - outline.scroll) * listLayout.rowHeight;
+		const y = listLayout.contentTop + (rowIndex - firstRow) * listLayout.rowHeight;
 		if (state.sourceMatchRowKeys.has(row.node.rowKey)) {
 			api.fill_rect(layout.left, y, layout.right, y + listLayout.rowHeight, 0, constants.REFERENCES_MATCH_OVERLAY);
 		}

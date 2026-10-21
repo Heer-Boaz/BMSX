@@ -9,7 +9,7 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureStyledText } from '../../../editor/render/markdown';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
@@ -252,9 +252,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		}
 		this.composer.handleKeyboard(input);
 	}
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (this.preview.visible) return;
-		if (pointer !== null && this.input.attachments.images.length > 0 && this.attachments.handleWheel(pointer, direction * steps)) return;
-		if (pointer !== null && !this.references.suggestions.handleWheel(pointer, direction * steps)) this.transcriptView.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.input.attachments.images.length > 0 && this.attachments.handleWheel(event, event.deltaX !== 0 ? event.deltaX : event.deltaY)) return;
+		if (!this.references.suggestions.handleWheel(event, event.deltaY)) this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

@@ -74,7 +74,7 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		this.scrollY = y * zoom - anchorY + this.bounds.top;
 	}
 
-	/** Signed wheel/command steps share one sequence, including after endpoint saturation. */
+	/** Discrete commands retain exact pixel-scale presets, including after endpoint saturation. */
 	public zoomBySteps(steps: number, anchorX?: number, anchorY?: number): void {
 		if (steps === 0) return;
 		const last = GRAPH_ZOOM_LEVELS.length - 1;
@@ -89,6 +89,11 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 			index += steps + 1;
 		}
 		this.setZoom(GRAPH_ZOOM_LEVELS[clamp(index, 0, last)], anchorX, anchorY);
+	}
+
+	/** Smooth wheel distance never indexes the discrete command-preset sequence. */
+	public zoomByWheel(steps: number, anchorX: number, anchorY: number): void {
+		this.setZoom(this.zoomValue * 2 ** steps, anchorX, anchorY);
 	}
 
 	/** The domain owner supplies the proven correspondence, or no selection. */

@@ -1,144 +1,66 @@
 import type { CartEditor } from '../../cart_editor';
-import type { PlayerInput } from '../../../hosts/common/input/player';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import * as constants from '../../common/constants';
-import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
+import { problemsPanel, getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
-import type { PointerSnapshot } from '../../common/models';
-import { getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
+import type { WheelInputSnapshot } from '../../common/models';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../editor/ui/hover_tooltip';
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal } from '../../workbench/input/keyboard/resource_viewer_input';
-import { editorPointerState } from './state';
 import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { inputFocus } from '../focus';
+import { getWorkbenchEditorBounds } from '../../workbench/common/layout';
 
-export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerInput): void {
-	if (inputFocus.target?.guestInput !== undefined) return;
-	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
-	if (wheelState.consumed) {
-		return;
-	}
-	const delta = wheelState.value;
-	if (!delta) {
-		return;
-	}
-	const magnitude = Math.abs(delta);
-	const steps = ~~(magnitude / constants.WHEEL_SCROLL_STEP);
-	const direction = delta > 0 ? 1 : -1;
+/** Route each occurrence while its geometry, modifiers and UI owner are current. */
+export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot): void {
+	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0
+		|| inputFocus.target?.guestInput !== undefined) return;
 	if (editor.quickInput.visible) {
-		editor.quickInput.handleWheel(direction * steps);
-		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
+		editor.quickInput.handleWheel(event.deltaY);
 		return;
 	}
 	if (editor.contextMenu.visible) {
-		editor.contextMenu.handleWheel(direction * steps);
-		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
+		editor.contextMenu.handleWheel(event.deltaY);
 		return;
 	}
-	const pointer = editorPointerState.lastPointerSnapshot;
-	const activePointer = pointer !== null && pointer.valid && pointer.insideViewport ? pointer : null;
-	if (handleHoverTooltipWheel(direction, steps, activePointer, playerInput)) {
-		return;
-	}
-	if (activePointer !== null && point_in_rect(activePointer.viewportX, activePointer.viewportY, editorChromeState.tabBarBounds)) {
+	if (handleHoverTooltipWheel(event)) return;
+	if (point_in_rect(event.viewportX, event.viewportY, editorChromeState.tabBarBounds)) {
 		editorChromeState.tabScrollControl.cancelPointer();
 		const bar = editorChromeState.tabScrollbar;
-		bar.setScroll(bar.getScroll() + direction * steps * editorViewState.charAdvance * 4);
-		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
+		const delta = event.deltaX === 0 ? event.deltaY : event.deltaX;
+		bar.setScroll(bar.getScroll() + delta * editorViewState.charAdvance * 4);
 		return;
 	}
-	if (handleResourcePanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
-		return;
-	}
-	if (handleProblemsPanelWheel(editor, direction, steps, activePointer, playerInput)) {
-		return;
-	}
-	editor.editorPanes.activePane?.handleWheel(direction, steps, activePointer, playerInput);
+	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return;
+	if (point_in_rect(event.viewportX, event.viewportY, getWorkbenchEditorBounds())) editor.editorPanes.activePane?.handleWheel(event);
 }
 
-function handleHoverTooltipWheel(
-	direction: number,
-	steps: number,
-	activePointer: PointerSnapshot,
-	playerInput: PlayerInput
-): boolean {
-	if (!hoverState.tooltip) {
-		return false;
-	}
+function handleHoverTooltipWheel(event: WheelInputSnapshot): boolean {
 	const tooltip = hoverState.tooltip;
-	const pointerInTooltip = activePointer !== null && isPointInHoverTooltip(activePointer.viewportX, activePointer.viewportY);
-	const pointerInTarget = activePointer !== null && pointerHitsHoverTarget(activePointer, tooltip);
-	const allowTooltipScroll = pointerInTooltip || pointerInTarget || activePointer === null;
-	if (allowTooltipScroll && adjustHoverTooltipScroll(direction * steps)) {
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		return true;
+	if (tooltip === null) return false;
+	const inside = isPointInHoverTooltip(event.viewportX, event.viewportY);
+	if (inside || pointerHitsHoverTarget(event, tooltip)) {
+		return adjustHoverTooltipScroll(event.deltaY) || inside;
 	}
-	if (!pointerInTooltip) {
-		return false;
-	}
-	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	return false;
+}
+
+function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event: WheelInputSnapshot): boolean {
+	const bounds = resourcePanel.getBounds();
+	if (!resourcePanel.isVisible() || bounds === null || !point_in_rect(event.viewportX, event.viewportY, bounds)) return false;
+	const horizontal = isShiftDown(event) && event.deltaX === 0;
+	const deltaX = horizontal ? event.deltaY : event.deltaX;
+	const deltaY = horizontal ? 0 : event.deltaY;
+	if (deltaX !== 0) scrollResourceBrowserHorizontal(resourcePanel, deltaX * editorViewState.charAdvance * 4);
+	if (deltaY !== 0) resourcePanel.setScroll(resourcePanel.scroll + deltaY);
 	return true;
 }
 
-function handleResourcePanelWheel(
-	resourcePanel: ResourcePanelController,
-	direction: number,
-	steps: number,
-	activePointer: PointerSnapshot,
-	playerInput: PlayerInput
-): boolean {
-	const panelBounds = resourcePanel.getBounds();
-	const pointerInPanel = resourcePanel.isVisible()
-		&& panelBounds !== null
-		&& activePointer !== null
-		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, panelBounds);
-	if (!pointerInPanel) {
-		return false;
-	}
-	if (isShiftDown(playerInput)) {
-		const horizontalPixels = direction * steps * editorViewState.charAdvance * 4;
-		scrollResourceBrowserHorizontal(resourcePanel, horizontalPixels);
-		resourcePanel.ensureSelectionVisible();
-	} else {
-		resourcePanel.scrollBy(direction * steps);
-	}
-	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-	return true;
-}
-
-function handleProblemsPanelWheel(
-	editor: CartEditor,
-	direction: number,
-	steps: number,
-	activePointer: PointerSnapshot,
-	playerInput: PlayerInput
-): boolean {
-	if (!problemsPanel.isVisible) {
-		return false;
-	}
+function handleProblemsPanelWheel(event: WheelInputSnapshot): boolean {
+	if (!problemsPanel.isVisible) return false;
 	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return false;
-	}
-	let allowScroll = false;
-	if (activePointer === null) {
-		allowScroll = problemsPanel.isFocused;
-	} else if (point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds)) {
-		allowScroll = true;
-	}
-	if (problemsPanel.isFocused) {
-		for (let i = 0; i < steps; i += 1) {
-			void problemsPanel.handleKeyboardCommand(editor.editorPanes, direction > 0 ? 'down' : 'up');
-		}
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		return true;
-	}
-	if (!allowScroll || !problemsPanel.handlePointerWheel(direction, steps)) {
-		return false;
-	}
-	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	if (bounds === null || !point_in_rect(event.viewportX, event.viewportY, bounds)) return false;
+	problemsPanel.handlePointerWheel(event.deltaY);
 	return true;
 }

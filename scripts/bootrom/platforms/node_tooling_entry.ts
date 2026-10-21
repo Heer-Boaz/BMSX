@@ -223,7 +223,8 @@ async function main(): Promise<void> {
 			await fs.mkdir(captureDirectory, { recursive: true });
 			const control = new HostControlSession(new RemoteInput(input, clock,
 				ide ? input.dispatchEditingKey.bind(input) : undefined,
-				ide ? event => ide.editor.dispatchPointer(event) : undefined), videoBackend, captureDirectory, ide ? clipboard : undefined);
+				ide ? event => ide.editor.dispatchPointer(event) : undefined,
+				ide ? event => ide.editor.dispatchWheel(event) : undefined), videoBackend, captureDirectory, ide ? clipboard : undefined);
 			const finished = Promise.withResolvers<void>();
 			const server = new HostControlServer(request => control.execute(request), () => control.disconnect(), finished.resolve);
 			const port = await server.listen(options.mode.port);

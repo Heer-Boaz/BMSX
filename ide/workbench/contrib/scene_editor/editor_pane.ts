@@ -5,8 +5,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -231,15 +230,9 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		return index >= 0;
 	}
 
-	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
-		if (pointer === null) return;
-		if (this.details.handleWheel(pointer, direction * steps * this.details.lineStep * 3)) {
-			layoutSceneEditor(this.input, false, false, this.contentBounds);
-			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		} else if (workbenchListContainsPosition(this.input.outline, pointer.viewportX, pointer.viewportY)) {
-			scrollWorkbenchList(this.input.outline, direction * steps * 3);
-			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		}
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.details.handleWheel(event, event.deltaY * this.details.lineStep * 3)) layoutSceneEditor(this.input, false, false, this.contentBounds);
+		else if (workbenchListContainsPosition(this.input.outline, event.viewportX, event.viewportY)) scrollWorkbenchList(this.input.outline, event.deltaY * 3);
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {

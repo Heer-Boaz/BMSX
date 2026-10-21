@@ -1,5 +1,6 @@
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -256,8 +257,8 @@ test('model replacement cancels a pan; empty-space clicks and wheel are bounded 
 	view.setModel({ ...model }, null);
 	assert.equal(capture.dispatch(pointer(100, 95, true), false, 2), true);
 	assert.equal(view.scrollX, 0);
-	assert.equal(control.handleWheel(pointer(120, 30), 0, 10), false);
-	assert.equal(control.handleWheel(pointer(60, 60), 0, 10), true);
+	assert.equal(control.handleWheel({ ...pointer(120, 30), deltaX: 0, deltaY: 10 / 16, modifiers: KeyModifier.none, spaceDown: false }), false);
+	assert.equal(control.handleWheel({ ...pointer(60, 60), deltaX: 0, deltaY: 10 / 16, modifiers: KeyModifier.none, spaceDown: false }), true);
 	assert.equal(view.scrollY, 10);
 	control.dispose();
 });
@@ -337,13 +338,13 @@ test('zoomed route hits keep a three-screen-pixel tolerance and four-sided canva
 test('zoom commands belong to graph focus; wheel zoom is pointer anchored and revokes pending capture', () => {
 	const f = dragFixture();
 	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
-	assert.equal(f.control.handleWheel(pointer(60, 60), 0, 0, 1), true);
+	assert.equal(f.control.handleWheel({ ...pointer(60, 60), deltaX: 0, deltaY: -1, modifiers: KeyModifier.ctrl, spaceDown: false }), true);
 	assert.equal(f.view.zoom, 2);
 	assert.equal(f.view.viewportToGraphX(60), x);
 	assert.equal(f.view.viewportToGraphY(60), y);
 	assert.equal(f.capture.dispatch(pointer(70, 60, true), false, 20), false, 'zoom revokes the press, even before its drag threshold');
 	assert.equal(f.counts.starts, 0);
-	assert.equal(f.control.handleWheel(pointer(121, 60), 0, 0, 1), false);
+	assert.equal(f.control.handleWheel({ ...pointer(121, 60), deltaX: 0, deltaY: -1, modifiers: KeyModifier.ctrl, spaceDown: false }), false);
 	f.focus.executeCommand('graph.resetZoom');
 	assert.equal(f.view.zoom, 1);
 	assert.equal(f.focus.getCommand('graph.resetZoom')!.isEnabled(), false);
@@ -390,13 +391,38 @@ test('pixel steps consume arbitrary view scales directionally and multi-notch wh
 	}
 	f.view.setZoom(1);
 	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
-	f.control.handleWheel(pointer(60, 60), 0, 0, 3);
+	f.control.handleWheel({ ...pointer(60, 60), deltaX: 0, deltaY: -3, modifiers: KeyModifier.ctrl, spaceDown: false });
 	assert.equal(f.view.zoom, 4);
-	f.control.handleWheel(pointer(60, 60), 0, 0, -3);
+	f.control.handleWheel({ ...pointer(60, 60), deltaX: 0, deltaY: 2, modifiers: KeyModifier.ctrl, spaceDown: false });
 	assert.equal(f.view.zoom, 1);
 	assert.equal(f.view.viewportToGraphX(60), x);
 	assert.equal(f.view.viewportToGraphY(60), y);
 	f.control.dispose();
+});
+
+test('graph wheel keeps fractional two-axis motion and continuous anchored zoom separate from command presets', () => {
+	const { view } = fixture();
+	const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
+	control.setInput(view);
+	const wheel = { ...pointer(60, 60), deltaX: 0.125, deltaY: -0.25, modifiers: KeyModifier.none, spaceDown: false };
+	control.handleWheel(wheel);
+	assert.deepEqual([view.scrollX, view.scrollY], [2, -4]);
+	control.handleWheel({ ...wheel, deltaX: 0, modifiers: KeyModifier.shift });
+	assert.deepEqual([view.scrollX, view.scrollY], [-2, -4]);
+	control.handleWheel({ ...wheel, modifiers: KeyModifier.shift });
+	assert.deepEqual([view.scrollX, view.scrollY], [0, -8], 'native horizontal input retains both axes rather than receiving another Shift remap');
+	const x = view.viewportToGraphX(60), y = view.viewportToGraphY(60);
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta]) {
+		control.handleWheel({ ...wheel, deltaX: 0, deltaY: -0.5, modifiers: modifier });
+		assert.ok(Math.abs(view.zoom - Math.SQRT2) < 1e-10);
+		assert.ok(Math.abs(view.viewportToGraphX(60) - x) < 1e-10);
+		assert.ok(Math.abs(view.viewportToGraphY(60) - y) < 1e-10);
+		control.handleWheel({ ...wheel, deltaX: 0, deltaY: 0.5, modifiers: modifier });
+		assert.ok(Math.abs(view.zoom - 1) < 1e-10);
+	}
+	view.setZoom(1.25); view.zoomBySteps(1);
+	assert.equal(view.zoom, 2);
+	control.dispose();
 });
 
 test('zoom changes cancel an accepted drag without mutating source; a new drag uses inverse-scaled offsets', () => {
@@ -591,7 +617,7 @@ test('wheel scrolling during a drag refreshes insertion feedback without replaci
 	const f = dragFixture();
 	const position = pointer(60, 60, true);
 	f.capture.dispatch(position, false, 20);
-	assert.equal(f.control.handleWheel(position, 10, 4), true);
+	assert.equal(f.control.handleWheel({ ...position, deltaX: 10 / 16, deltaY: 4 / 16, modifiers: KeyModifier.none, spaceDown: false }), true);
 	assert.deepEqual([f.view.scrollX, f.view.scrollY], [10, 4]);
 	assert.equal(f.control.dragFeedback, f.feedback);
 	assert.equal(f.counts.overs, 2);

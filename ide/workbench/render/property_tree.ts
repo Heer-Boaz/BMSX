@@ -8,11 +8,12 @@ export function drawWorkbenchPropertyTree<Element extends WorkbenchPropertyEleme
 	const font = layout.font!;
 	api.fill_rect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.pushClipRect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.contentBottom);
-	const end = Math.min(state.rows.length, state.scroll + layout.visibleRowCount);
-	for (let index = state.scroll; index < end; index += 1) {
+	const firstRow = state.scroll | 0;
+	const end = Math.min(state.rows.length, firstRow + layout.visibleRowCount);
+	for (let index = firstRow; index < end; index += 1) {
 		const node = state.rows[index];
 		const element = node.element;
-		const y = layout.contentTop + (index - state.scroll) * layout.rowHeight;
+		const y = layout.contentTop + (index - firstRow) * layout.rowHeight;
 		const x = layout.contentLeft + node.depth * layout.indentWidth;
 		const selected = index === state.selectionIndex;
 		if (element.kind === 'group') api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
