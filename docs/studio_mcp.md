@@ -67,6 +67,14 @@ interface only after checking the selected workspace. It never reads
 or copies `auth.json`, logs into OpenAI, or writes a token to configuration or
 disk. Do not paste the helper's output into messages or diagnostics.
 
+To diagnose admission without printing its capability, run from the repository:
+```sh
+node scripts/dev/studio-mcp-headers.mjs http://127.0.0.1:8080 >/dev/null
+```
+Success exits silently. Failure reports on stderr and exits nonzero; the
+five-second deadline includes connection establishment and the response body.
+This diagnoses admission only, not this conversation's native tool availability.
+
 **Trust boundary:** this is the existing local/trusted-LAN development server,
 not a new per-user network authentication system. Everyone admitted by that
 server can access its workspace and live Studio tools. Keep it off untrusted

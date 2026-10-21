@@ -18,9 +18,10 @@ const disabledFeatures = ['shell_tool', 'unified_exec', 'plugins', 'apps', 'brow
 
 function run(command, args, env, cwd = root) {
 	return new Promise(resolve => {
+		const started = performance.now();
 		const child = execFile(command, args, { cwd, env, detached: true, maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
 			clearTimeout(deadline);
-			resolve({ code: error === null ? 0 : error.code, signal: error?.signal, stdout, stderr });
+			resolve({ code: error === null ? 0 : error.code, signal: error?.signal, stdout, stderr, elapsedMs: performance.now() - started });
 		});
 		const deadline = setTimeout(() => process.kill(-child.pid, 'SIGKILL'), 25000);
 		child.stdin.end();
@@ -131,6 +132,35 @@ supports_websockets = false
 		assert.equal(result.signal, null, 'offline failure must not require deadline termination');
 		assert.equal(model.requests.length, 2);
 		assert.match(result.stderr, /bmsx|MCP|mcp/);
+	});
+
+	await t.test('a stalled TLS connection releases the helper before native MCP startup expires', async t => {
+		const sockets = new Set();
+		const stalled = createServer(socket => {
+			sockets.add(socket);
+			socket.on('data', () => {});
+			socket.on('error', () => {});
+			socket.once('close', () => sockets.delete(socket));
+		});
+		stalled.listen(0, '127.0.0.1'); await once(stalled, 'listening');
+		t.after(async () => {
+			for (const socket of sockets) socket.destroy();
+			await new Promise(resolve => stalled.close(resolve));
+		});
+		const origin = `https://127.0.0.1:${stalled.address().port}`;
+		const [helper, native] = await Promise.all([
+			run(process.execPath, [headersHelper, origin], env),
+			run(process.execPath, [launcher, '--server', origin, '--', ...nativeFlags, ...execFlags,
+				'Work through Studio.'], env),
+		]);
+		for (const result of [helper, native]) {
+			assert.equal(result.code, 1, result.stderr);
+			assert.equal(result.signal, null, 'admission failure must close its socket without deadline termination');
+			assert.ok(result.elapsedMs < 8500, `admission retained its connection for ${result.elapsedMs} ms`);
+		}
+		assert.equal(helper.stdout, '', 'failed admission must not emit capability headers');
+		assert.doesNotMatch(native.stderr, /MCP HTTP headers helper timed out/);
+		assert.equal(model.requests.length, 2, 'required admission failure must precede any model request');
 	});
 
 	await t.test('after a failed connection the same native conversation resumes with Studio tools', async () => {
