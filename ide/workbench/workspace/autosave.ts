@@ -5,7 +5,8 @@ import {
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
-import { getTextSnapshot } from '../../editor/text/source_text';
+import { captureWorkspaceDirtySources } from '../services/working_copy/source_recovery';
+import { publishWorkspaceDirtySources, pruneWorkspaceDirtySources } from '../../workspace/source_recovery_store';
 import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceDirtyRecordPath,
@@ -47,39 +48,11 @@ export function commitWorkspaceSessionLocally(
 	let dirtyFiles: PersistedDirtyEntry[];
 	let generationDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	if (rebuildDirtyFiles) {
-		dirtyFiles = [];
-		const records = new Map<string, WorkspaceRecord>();
-		generationDirtyRecords = records;
-		for (const model of editorTextModelService.models) {
-			if (!model.dirty) {
-				continue;
-			}
-			const resource = model.resource;
-			const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
-			const dirtyPath = buildWorkspaceDirtyEntryPath(
-				projectRootPath,
-				resource.domain,
-				resource.path,
-			);
-			const text = getTextSnapshot(model.buffer);
-			let record = workspaceDirtyRecords.get(dirtyPath);
-			if (!record || record.contents !== text) {
-				record = createWorkspaceRecord(clock, text);
-				writeLocalWorkspaceRecord(
-					storage,
-					projectRootPath,
-					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
-					record,
-				);
-				workspaceDirtyRecords.set(dirtyPath, record);
-			}
-			dirtyFiles.push({
-				domain: resource.domain,
-				path: resource.path,
-				updatedAt: record.updatedAt,
-			});
-			records.set(dirtyPath, record);
-		}
+		const generation = captureWorkspaceDirtySources(editorTextModelService, sources, clock, workspaceDirtyRecords,
+			(root, path, record) => writeLocalWorkspaceRecord(storage, root, path, record));
+		dirtyFiles = generation.dirtyFiles;
+		generationDirtyRecords = generation.dirtyRecords;
+		for (const [path, record] of generation.dirtyRecords) workspaceDirtyRecords.set(path, record);
 	} else {
 		dirtyFiles = previousGeneration.payload.dirtyFiles;
 		generationDirtyRecords = previousGeneration.dirtyRecords;
@@ -153,28 +126,9 @@ export async function syncWorkspaceSessionRemotely(
 	generation: WorkspaceSessionGeneration,
 ): Promise<void> {
 	const dirtyRecordsChanged = workspaceState.remoteDirtyRecords !== generation.dirtyRecords;
-	let remoteDirtyVersions: Map<string, number>;
 	if (dirtyRecordsChanged) {
-		remoteDirtyVersions = new Map<string, number>();
-		if (workspaceState.remotePayload) {
-			for (const entry of workspaceState.remotePayload.dirtyFiles) {
-				const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
-				const dirtyPath = buildWorkspaceDirtyEntryPath(
-					projectRootPath,
-					entry.domain,
-					entry.path,
-				);
-				remoteDirtyVersions.set(dirtyPath, entry.updatedAt);
-			}
-		}
-		for (const [dirtyPath, record] of generation.dirtyRecords) {
-			if (remoteDirtyVersions.get(dirtyPath) !== record.updatedAt) {
-				await workspaceRecords.write(
-					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
-					record,
-				);
-			}
-		}
+		await publishWorkspaceDirtySources(sources, generation.payload.dirtyFiles, generation.dirtyRecords,
+			workspaceState.remotePayload?.dirtyFiles ?? []);
 	}
 
 	const statePath = joinWorkspacePaths(
@@ -185,12 +139,6 @@ export async function syncWorkspaceSessionRemotely(
 	await workspaceRecords.write(statePath, generation.stateRecord);
 
 	if (dirtyRecordsChanged) {
-		for (const [dirtyPath, updatedAt] of remoteDirtyVersions!) {
-			if (generation.dirtyRecords.get(dirtyPath)?.updatedAt !== updatedAt) {
-				await workspaceRecords.delete(
-					buildWorkspaceDirtyRecordPath(dirtyPath, updatedAt),
-				);
-			}
-		}
+		await pruneWorkspaceDirtySources(sources, workspaceState.remotePayload?.dirtyFiles ?? [], generation.payload.dirtyFiles);
 	}
 }

@@ -38,7 +38,7 @@ export class WorkspaceToolService {
 		private readonly actors: ActorExecutionService, private readonly behaviors: BehaviorSourceDocuments,
 		private readonly saves: TextFileSaveService, private readonly boots: BootService, private readonly hotResumes: HotResumeService,
 		private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory, private readonly gpu: RuntimeGpuHistory,
-		private readonly clock: HostClock, private readonly revealTestRun?: (run: ScenarioRun) => void) {
+		private readonly clock: HostClock, public revealTestRun?: (run: ScenarioRun) => void) {
 		this.unbindWorkspace = models.onWillClear(() => this.clear());
 	}
 

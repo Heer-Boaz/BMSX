@@ -77,13 +77,12 @@ export class TextFileSaveService {
 		try {
 			switch (model.mode) {
 				case 'lua':
-					({ persistence } = await saveLuaResourceSource(this.clock, this.sources, resource, snapshot.source));
+					({ persistence } = await saveLuaResourceSource(this.clock, this.sources, resource, snapshot.source, model.persistedBaseline));
 					break;
 				case 'yaml':
 				case 'aem': {
-					const root = runtimeSourceProjectRootPath(this.sources, resource.domain);
-					const path = resolveWorkspacePath(resource.path, root);
-					({ persistence } = await persistWorkspaceSourceFile(this.clock, path, snapshot.source));
+					const path = resolveWorkspacePath(resource.path, runtimeSourceProjectRootPath(this.sources, resource.domain));
+					({ persistence } = await persistWorkspaceSourceFile(this.clock, path, snapshot.source, model.persistedBaseline));
 					break;
 				}
 			}

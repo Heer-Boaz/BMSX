@@ -29,9 +29,9 @@ export class WorkspaceRecords {
 	}
 
 	/** overwrite=false admits a new file atomically in the owning filesystem. */
-	public write(relativePath: string, record: WorkspaceRecord, overwrite = true): Promise<WorkspaceRecordPersistence> {
+	public write(relativePath: string, record: WorkspaceRecord, overwrite = true, expectedSource?: string | null): Promise<WorkspaceRecordPersistence> {
 		return this.enqueue(relativePath, async () => {
-			await this.provider.write(relativePath, record, overwrite);
+			await this.provider.write(relativePath, record, overwrite, expectedSource);
 			return { status: this.provider.persistence };
 		});
 	}

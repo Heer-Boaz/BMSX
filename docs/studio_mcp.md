@@ -1,7 +1,8 @@
 # Studio tools from an existing CLI conversation
 
 The ordinary BMSX development server exposes Streamable HTTP MCP at
-`/__bmsx__/mcp`. A live Studio window registers its workbench with that server.
+`/__bmsx__/mcp`. A browser window or an explicitly started server-owned Studio
+registers its workbench with that server.
 The CLI keeps its own conversation, authentication and history; Studio supplies
 tools, not a second model process. This is **additional** to the embedded Studio
 assistant. Its login, history, queue, interruption and dynamic tools remain.
@@ -11,9 +12,10 @@ assistant. Its login, history, queue, interruption and dynamic tools remain.
 1. Build and serve Studio with the existing development-server workflow. After
    changing server code, restart that server; after changing the browser bundle,
    reload the Studio page. There is no separate MCP or Studio server command.
-2. Open the desired game in Studio, including from a trusted LAN browser/phone.
-   Keep the page open. Do not connect/sign into the Studio assistant merely to
-   expose tools.
+2. Choose a frontend: open the desired game in a browser/phone and keep its page
+   open, or explicitly start a headless Studio from a completed workspace build
+   through the native MCP tools below. The latter creates no browser and captures
+   no desktop input. Neither needs the embedded assistant to connect or sign in.
 3. Start a Studio-dependent Codex session with the existing server address:
    ```sh
    npm run codex:studio
@@ -27,7 +29,7 @@ assistant. Its login, history, queue, interruption and dynamic tools remain.
    catalog as connection evidence, start a server, proxy MCP, create a separate
    login or start another assistant. The normal Codex arguments follow `--`.
 4. Ask Codex to call its native `studio_list_sessions`, select the intended
-   Studio window explicitly, open its context and inspect runtime status.
+   Studio session explicitly, open its context and inspect runtime status.
    Configuration inspection or a successful external SDK call is not evidence
    that the model received these tools.
    The same conversation continues in the CLI. It is not copied or forked.
@@ -49,10 +51,11 @@ workspace before returning its bearer headers. No token is stored or logged.
 Project configuration still requires Codex's normal workspace trust. No
 user-wide configuration is modified.
 
-Missing native tools, a failed connection and an empty Studio window list are
+Missing native tools, a failed connection and an empty Studio session list are
 different outcomes. Report the actual outcome before proceeding. Do not replace
-missing tools with keyboard scripts, screenshots, shell-driven MCP or a headless
-emulator and call that native Studio development. A running client must use its
+missing tools with keyboard scripts, screenshots, shell-driven MCP or a test
+harness and call that native Studio development. A real headless Studio is an
+explicit native MCP target, not a substitute workflow. A running client must use its
 supported MCP reload or restart/resume; changing configuration or starting a
 server cannot inject tools into an already negotiated model turn. Codex's
 `/mcp` displays status; do not invent a `/mcp reload` command.
@@ -82,12 +85,53 @@ networks. Host/origin checks and the per-server bearer capability apply to MCP
 and window streams just as they apply to the workspace API. Studio on a phone
 still uses the same server; it does not need a phone-local OAuth callback.
 
+## Headless Studio
+
+`studio_start_headless {requestId, buildRequestId, sourceAccess}` creates a full
+Studio workbench from an exact completed build. `requestId` is a fresh UUID;
+`sourceAccess` must explicitly be `review` or `edit`. Reuse the same UUID and
+payload to reconcile an interrupted start, not to request a second runtime.
+Select the returned session explicitly and read its runtime status. Published
+media boots unchanged; source application remains an explicit Hot Resume/reboot.
+
+The server hosts one isolated worker realm per Studio. It has the shared source
+models, compound Undo/Redo, Save, debugger, frame navigation, rewind, event/GTE/GPU
+inspection and physical frame pump. It does not construct a hidden browser,
+canvas editor, clipboard, chat or test-harness input driver. Its GPU is the
+existing software backend; this is not evidence of browser GPU parity.
+
+Source-edit authority and proposal-approval policy are separate from host kind.
+`edit` permits ordinary Save and receipt-bound `studio_edit_history` on that
+connection. A browser still presents proposals for user approval. A background
+session can explicitly resolve its own proposal with
+`studio_resolve_review {toolContext, review, decision}` only when edit authority
+was granted. `review` cannot approve, Save or change history. Apply, Save and code
+installation remain separate operations. Use fresh contexts/receipts after edits.
+
+Each background Studio stores source-only recovery under
+`<project>/.bmsx/studio/<requestId>/`; it never loads or rewrites the human
+frontend's session, tabs or drafts. Canonical source files are shared. Save
+compares its acknowledged source baseline at the server-owned publication
+boundary; stale writes fail and leave the working copy dirty. Worker and browser
+writes share that owner rather than racing independent filesystem writers.
+
+`studio_close_headless {session, discardUnsaved:false}` refuses a dirty session
+and returns the affected resources. `true` explicitly discards only that
+session's unsaved recovery. Accepted Saves drain first. Closing a context or MCP
+client does not close its Studio. Normal server shutdown preserves dirty recovery
+and joins accepted work; it never silently saves source or closes a browser.
+Recovered background drafts retain their original saved/persisted baseline. If a
+canonical file changed or disappeared meanwhile, the draft remains dirty and
+Save reports a conflict instead of replacing or recreating that file.
+
 ## Tool context lifecycle
 
-1. `studio_list_sessions` returns window IDs, titles and URLs. Zero windows is a
-   real empty result, not a request to start another Studio or another Codex.
+1. `studio_list_sessions` returns session IDs, host kind, titles and source-edit
+   authority (browser sessions also include their URL). An empty list is real;
+   creating a separate Studio requires explicit workflow agreement, never
+   automatic target selection or another Codex conversation.
 2. `studio_open_context {session}` captures tool authority on the selected
-   window. Its result contains `toolContext`. Opening does not pause the game,
+   session. Its result contains `toolContext`. Opening does not pause the game,
    evaluate Lua or start an assistant.
 3. Pass `toolContext` to domain tools. All existing Studio tool definitions are
    exposed from the shared catalog: authored/unsaved sources and diagnostics,
@@ -171,7 +215,7 @@ existing tool handles continue to name only their original window.
 ```
 CLI conversation -> official MCP HTTP transport -> StudioSessions
                                                   |
-                                             live Studio window
+                                       browser / hosted StudioWorkbench
                                                   |
 Studio conversation --------------------> WorkspaceToolService
                                                   |
@@ -180,9 +224,10 @@ Studio conversation --------------------> WorkspaceToolService
                            editor / debugger / Terminal / runtime owners
 ```
 
-- Node owns MCP sessions, window routing, request correlation and backpressure.
-  It imports no IDE domain services; server composition supplies the shared catalog.
-- Browser composition injects the review-opening action and connects the HTTP
+- Node owns MCP sessions, explicit target lifetimes, routing, request correlation
+  and backpressure. Server composition supplies the shared catalog; its worker
+  composition creates the actual shared `StudioWorkbench` domain services.
+- Browser composition injects the user-review action and connects the HTTP
   transport to the workbench's shared tool owner. The protocol carries data, not
   arbitrary provider RPC, configuration, filesystem paths or closures.
 - `WorkspaceToolService` owns tool-context lifetimes. Embedded turns and external

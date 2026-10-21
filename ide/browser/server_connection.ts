@@ -5,7 +5,7 @@ import type { StudioServerConnectionState } from '../workbench/common/server_con
 import type { WorkspaceToolService } from '../workbench/services/assistant/tool_service';
 import type { WorkspaceEditProposal } from '../workbench/services/working_copy/workspace_edit';
 import { StudioAdmissionError, type StudioHttpSession } from './http_session';
-import { StudioToolRequests } from './tool_connection';
+import { StudioToolRequests } from '../workbench/services/assistant/tool_requests';
 
 class AdmissionFailure extends Error {
 	public constructor(message: string, public readonly permanent: boolean) { super(message); }
@@ -105,7 +105,7 @@ export class StudioServerConnection {
 
 	private async receive(parent: AbortSignal, recovered: () => void): Promise<void> {
 		const attempt = new AbortController(), signal = AbortSignal.any([parent, attempt.signal]);
-		const requests = new StudioToolRequests(this.tools, this.showReview);
+		const requests = new StudioToolRequests(this.tools, { sourceAccess: 'edit', reviewApproval: 'user', showReview: this.showReview });
 		let watchdog = setTimeout(() => attempt.abort(new Error('Studio registration timed out')), STUDIO_CONNECT_MS);
 		let admission: Promise<string>;
 		try {

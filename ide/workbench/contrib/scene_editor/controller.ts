@@ -6,7 +6,7 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { RuntimeResource } from '../../../common/resource';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { getActiveTab, setActiveTab } from '../../ui/tabs';
@@ -26,7 +26,7 @@ export class SceneEditorController {
 	) {}
 
 	public openResource(resource: RuntimeResource): void {
-		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const id = `scene:${resourceIdentityKey(resource)}` as const;
 		let input = editorTabGroup.findById(id);
 		if (input === undefined) {

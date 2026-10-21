@@ -3,7 +3,7 @@ import { SYSTEM_RESOURCE_DOMAIN, CARTRIDGE_RESOURCE_DOMAINS, type ResourceDomain
 import type { EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
 import { readLuaSourceRange } from '../../../language/lua/source_edits';
 import { parseLuaFieldValueEdit } from '../../../language/lua/field_value_edit';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../working_copy/text_file_model';
 import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
 import type { BehaviorRegistrationSource, BehaviorSourceNode } from '../../contrib/behavior_lens/model';
@@ -109,7 +109,7 @@ export class WorkspaceBehaviorTools {
 		if (registration === undefined) throw new StudioToolInputError('Behavior handle does not belong to this source context');
 		const capture = (path: string) => {
 			const resource = resolveRuntimeResource(this.sources, { domain: registration.resource.domain, path })!;
-			return this.context.read(this.context.models.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource)));
+			return this.context.read(resolveLuaTextFileModel(this.context.models, this.sources, resource));
 		};
 		const root = capture(registration.resource.path);
 		const document = this.documents.get(root.model);

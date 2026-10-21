@@ -1,5 +1,6 @@
 import { BUILD_TOOLS, callBuildTool } from '../builds/tools';
 import type { StudioBuildJobs } from '../builds/jobs';
+import { buildRequestId } from '../builds/api';
 import type { WorkspaceProjects } from '../workspace/projects';
 import { PROJECT_TOOLS, decodeCartridgeTarget } from '../workspace/projects_api';
 import { randomUUID } from 'node:crypto';
@@ -11,27 +12,40 @@ import { imageDataUrlContent } from '../../common/image';
 import type { StudioToolDefinition, StudioToolResult } from '../../common/studio_tools';
 import type { StudioSessions } from './sessions';
 
-const INSTRUCTIONS = 'BMSX Studio tools operate on live Studio windows, independently of this conversation. '
+const INSTRUCTIONS = 'BMSX Studio tools operate on explicit browser or server-owned headless Studio sessions, independently of this conversation. '
 	+ 'Successful results expose the domain value as structuredContent.result and matching JSON text. Images are separate image blocks. '
-	+ 'Workspace build tools need no toolContext and do not install media. For live window tools, first call studio_list_sessions, then studio_open_context with the chosen session ID. Pass the returned toolContext to every domain tool. '
+	+ 'Workspace builds and headless session management need no toolContext. Builds do not install media. Start a headless Studio explicitly from a completed build when a separate workspace is wanted; never choose another target because the session list is empty. '
+	+ 'For live Studio tools, first call studio_list_sessions, then studio_open_context with the chosen session ID. Pass the returned toolContext to every domain tool. '
 	+ 'Handles and source receipts belong to that context; never guess them. Close the context when finished. '
 	+ 'Open a new context after source changes, workspace replacement or disconnection; do not replay mutations. '
 	+ 'External context lifetime is explicit, not bound to CLI conversation turns. '
-	+ 'Edit proposals open the ordinary Studio review pane and require human approval. studio_read_review observes that proposal, not a Save acknowledgement. '
+	+ 'Source access and proposal approval are explicit session capabilities, not inferred from its host kind. User-approved proposals remain in the ordinary Studio review pane. studio_resolve_review can apply only with sourceAccess=edit and reviewApproval=agent. studio_read_review observes that proposal, not a Save acknowledgement. '
 	+ 'Keep its context open until review settles. Use a fresh context to check source/Save status afterwards. '
-	+ 'Neither listing windows nor opening a context starts Codex, signs in, pauses the game or executes Lua. '
-	+ 'Multiple contexts may inspect the same window; physical execution admission remains with Studio.';
+	+ 'Neither listing sessions nor opening a context starts Codex, signs in, pauses the game or executes Lua. '
+	+ 'Multiple contexts may inspect the same Studio; physical execution admission remains with Studio.';
 
 const MANAGEMENT_TOOLS: Tool[] = [
-	{ name: 'studio_list_sessions', description: 'List connected Studio windows. Select the actual window explicitly; no first-window or active-chat routing.',
+	{ name: 'studio_list_sessions', description: 'List connected browser and server-owned headless Studio sessions, including source access and proposal approval authority. Select the actual target explicitly; no first-window or active-chat routing.',
 		inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true, openWorldHint: false } },
 	{ name: 'studio_open_context', description: 'Open a tool context on a listed Studio session. Captures source authority and owns inspection handles and finite operations, independently of any chat. No guest execution. Returns the context required by domain tools.',
 		inputSchema: { type: 'object', properties: { session: { type: 'string' } }, required: ['session'], additionalProperties: false } },
 	{ name: 'studio_close_context', description: 'Release a tool context, cancel its unfinished operations and invalidate pending reviews. Does not stop another context, undo completed work or roll back accepted Saves.',
 		inputSchema: { type: 'object', properties: { toolContext: { type: 'string' } }, required: ['toolContext'], additionalProperties: false } },
-	{ name: 'studio_read_review', description: 'Read the current state of a proposal created in this context. Approval remains in the ordinary Studio review pane. Applied means source edits were accepted, not proof of Save or installed code. Do not busy-poll.',
+	{ name: 'studio_read_review', description: 'Read the current state of a proposal created in this context. Approval follows the session\'s explicit reviewApproval capability; user approval remains in the ordinary Studio review pane. Applied means source edits were accepted, not proof of Save or installed code. Do not busy-poll.',
 		inputSchema: { type: 'object', properties: { toolContext: { type: 'string' }, review: { type: 'string' } }, required: ['toolContext', 'review'], additionalProperties: false },
 		annotations: { readOnlyHint: true, openWorldHint: false } },
+	{ name: 'studio_resolve_review', description: 'Explicitly resolve a source proposal from this context. Apply requires sourceAccess=edit and reviewApproval=agent; user-owned review cannot be approved by a model. Any context can discard its own proposal. Applies through ordinary Studio source/Undo ownership, without Saving or installing code. Read fresh source receipts in a new tool context afterwards.',
+		inputSchema: { type: 'object', properties: { toolContext: { type: 'string' }, review: { type: 'string' }, decision: { type: 'string', enum: ['apply', 'discard'] } },
+			required: ['toolContext', 'review', 'decision'], additionalProperties: false } },
+];
+
+const HEADLESS_TOOLS: Tool[] = [
+	{ name: 'studio_start_headless', description: 'Start a real server-owned headless Studio from an exact completed workspace build, with separate documents, Undo, runtime, debugger and history but no browser window or desktop input. Specify sourceAccess=review or edit explicitly. The caller-created requestId UUID identifies one start for this server lifetime; reuse the same ID and payload to reconcile a lost reply, never blindly create a second instance. A previously closed instance stays closed. Startup and accepted source Saves outlive an MCP request. Does not create a Codex conversation or auto-apply proposals. Select the returned session with studio_open_context and inspect actual runtime status.',
+		inputSchema: { type: 'object', properties: { requestId: { type: 'string' }, buildRequestId: { type: 'string' }, sourceAccess: { type: 'string', enum: ['review', 'edit'] } },
+			required: ['requestId', 'buildRequestId', 'sourceAccess'], additionalProperties: false } },
+	{ name: 'studio_close_headless', description: 'Close an explicitly identified server-owned headless Studio, never a human browser window. Specify discardUnsaved=false to refuse while source documents are dirty and return their identities; true explicitly discards those unsaved drafts. Accepted Saves still drain before shutdown. Closing invalidates its contexts and unfinished operations; it never rolls back completed source writes.',
+		inputSchema: { type: 'object', properties: { session: { type: 'string' }, discardUnsaved: { type: 'boolean' } },
+			required: ['session', 'discardUnsaved'], additionalProperties: false } },
 ];
 
 type Context = { session: string; lifetime: AbortController };
@@ -46,7 +60,7 @@ export class StudioMcpApi {
 	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[],
 		private readonly builds?: StudioBuildJobs, private readonly projects?: WorkspaceProjects) {
 		this.names = new Set(definitions.map(tool => tool.name));
-		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : BUILD_TOOLS), ...(projects === undefined ? [] : PROJECT_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
+		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : [...HEADLESS_TOOLS, ...BUILD_TOOLS]), ...(projects === undefined ? [] : PROJECT_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
 			inputSchema: { ...tool.inputSchema, type: 'object' as const,
 				properties: { toolContext: { type: 'string', description: 'Context returned by studio_open_context.' }, ...tool.inputSchema.properties },
 				required: ['toolContext', ...tool.inputSchema.required] } }))];
@@ -85,6 +99,16 @@ export class StudioMcpApi {
 	private async call(client: Client, name: string, input: Record<string, unknown>, signal: AbortSignal): Promise<CallToolResult> {
 		try {
 			signal.throwIfAborted();
+			if (this.builds !== undefined && name === 'studio_start_headless') {
+				if (input.sourceAccess !== 'review' && input.sourceAccess !== 'edit') throw new Error('sourceAccess must explicitly be review or edit');
+				return toolResult({ success: true, data: await this.sessions.startHeadless({ requestId: buildRequestId(input.requestId),
+					buildRequestId: buildRequestId(input.buildRequestId), sourceAccess: input.sourceAccess }) });
+			}
+			if (this.builds !== undefined && name === 'studio_close_headless') {
+				if (typeof input.session !== 'string') throw new Error('session must identify a listed headless Studio');
+				if (input.discardUnsaved !== true && input.discardUnsaved !== false) throw new Error('Specify discardUnsaved: true or false');
+				return toolResult({ success: true, data: await this.sessions.closeHeadless(input.session, input.discardUnsaved) });
+			}
 			if (name === 'studio_create_cartridge' && this.projects !== undefined) {
 				return toolResult({ success: true, data: await this.projects.createCartridge(decodeCartridgeTarget(input.target)) });
 			}
@@ -108,8 +132,13 @@ export class StudioMcpApi {
 				return toolResult({ success: true, data: { toolContext: input.toolContext, status: 'closed' } });
 			}
 			const operationSignal = AbortSignal.any([signal, context.lifetime.signal]);
-			if (name === 'studio_read_review') {
+			if (name === 'studio_read_review' || name === 'studio_resolve_review') {
 				if (typeof input.review !== 'string') throw new Error('review must be returned by a proposal');
+				if (name === 'studio_resolve_review') {
+					if (input.decision !== 'apply' && input.decision !== 'discard') throw new Error('decision must be apply or discard');
+					return toolResult(await this.sessions.invoke(context.session, { type: 'resolve-review', context: input.toolContext,
+						review: input.review, decision: input.decision }, operationSignal));
+				}
 				return toolResult(await this.sessions.invoke(context.session, { type: 'review', context: input.toolContext, review: input.review }, operationSignal));
 			}
 			if (!this.names.has(name)) throw new Error(`Unknown Studio tool: ${name}`);

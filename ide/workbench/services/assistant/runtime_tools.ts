@@ -8,7 +8,6 @@ import { encodeGteCommand } from './gte_tool_protocol';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import { DebuggerSourceContext } from './debugger_sources';
-import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
 import type { RuntimeInspection, RuntimeInspectionService } from '../../../runtime/inspection';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -233,7 +232,6 @@ export class WorkspaceRuntimeTools {
 				if (request.name === 'studio_list_debug_sources') return { kind: 'runtime' as const, data: this.debugSources.list() };
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
 				const operation = this.debuggerExecution.resume(request.mode, 'workbench', signal);
-				clearExecutionStopHighlights();
 				return operation.completion.then(result => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...result } }));
 			}
 			case 'studio_read_debug_source': return { kind: 'runtime' as const, data: this.debugSources.read(request.source) };

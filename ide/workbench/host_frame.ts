@@ -1,7 +1,6 @@
 import { HostPauseReason } from '../../hosts/common/execution_control';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import { beginHostFrame, HostFrameAction, HostFrameRunResult, type HostFramePresentation, prepareHostUpdate, presentHostPresentation } from '../../hosts/common/host_frame';
-import { executeHostUpdate } from '../../hosts/common/machine_step';
+import { beginHostFrame, HostFrameAction, HostFrameRunResult, type HostFramePresentation, presentHostPresentation } from '../../hosts/common/host_frame';
 import { type HostFrameSession } from '../../hosts/common/frame_session';
 import { HostMenuExecution, HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { Input } from '../../hosts/common/input/manager';
@@ -10,20 +9,11 @@ import type { RenderPresentationState } from '../../hosts/common/presentation_st
 import type { SystemOutputLog } from '../../hosts/common/system_output_log';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
 import { performReboot } from '../commands/actions';
-import { activateEditor } from './overlay_modes';
-import { handleSupervisorFault } from './runtime_errors';
-import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
 import * as workbenchMode from './mode';
-import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
-import {
-	didExecuteRuntimeDebuggerPlan,
-	didFaultRuntimeDebuggerPlan,
-	willExecuteRuntimeDebuggerPlan,
-	runtimeDebuggerExecutionRequested,
-} from '../runtime/debugger_state';
+import { runtimeDebuggerExecutionRequested } from '../runtime/debugger_state';
+import { advanceStudioFrame, finishStudioFrame } from './frame';
 
 function executeWorkbenchHostMenuAction(
 	ide: RuntimeIdeState,
@@ -41,7 +31,7 @@ function executeWorkbenchHostMenuAction(
 			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput);
 			void operation.completion.then(result => {
 				if (result.status === 'reset' && ide.boots.latestOperation === operation) screen.reset(presenter, runtime);
-			}).catch(error => workbenchMode.surfaceHostFrameError(ide, ide.logOutput, error));
+			}).catch(error => ide.failHostFrame(error));
 			return true;
 		}
 		case HostMenuInput.ExitGame:
@@ -127,7 +117,9 @@ export function runWorkbenchHostFrame(
 	currentTime: number,
 ): HostFrameRunResult {
 	let hostDeltaMs = 0;
-	let systemOutputDrained = false;
+	ide.frame.outputDrained = false;
+	let presented = false;
+	let menuPaused = false;
 	try {
 		hostDeltaMs = beginHostFrame(
 			session,
@@ -137,7 +129,7 @@ export function runWorkbenchHostFrame(
 		);
 		const hostMenuInput = hostOverlayMenu.tickInput();
 		const menuExecution = hostOverlayMenu.executionMode;
-		const menuPaused = menuExecution === HostMenuExecution.Paused;
+		menuPaused = menuExecution === HostMenuExecution.Paused;
 		audioOutput.muteMenu(menuPaused || (menuExecution === HostMenuExecution.Rewind && !session.rewind.playing));
 		if (hostMenuInput === HostMenuInput.ExitGame) {
 			return HostFrameRunResult.ExitRequested;
@@ -169,86 +161,10 @@ export function runWorkbenchHostFrame(
 		audioOutput.device.select(play?.ready === true && playEnabled
 			&& ide.editor.editorPanes.activePane?.runtimeTransport === play.transport ? play.audio : audioOutput);
 
-		ide.debuggerExecution.beforeHostFrame();
-		ide.scenarioRuns.advance();
-		screen.beginHostFrame();
-		const collectHistory = !ide.debugger.plans.mutationActive;
-		if (!menuPaused) {
-			// Seek and recorded-frame stepping can execute inside service(), before the ordinary update.
-			if (session.rewind.seeking || session.rewind.playing) ide.guest.invalidate();
-			session.rewind.service(collectHistory);
-			if (session.rewind.playing && !session.execution.executionBlocked() && ide.fault.hostFrameFailure === undefined) {
-				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
-				session.syncMachineOutput(runtime, audioOutput);
-			}
-		}
-		if (ide.debugger.stopPresentationPending) {
-			session.execution.finishFrameStep();
-			activateEditor(ide.editor, ide.sources, runtime, audioOutput);
-			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, error));
-		}
-		const runtimeReady = ide.runtimeTasks.ready && ide.fault.hostFrameFailure === undefined && !session.rewind.active
-			&& !ide.debugger.plans.controlSuspended;
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);
-		let action: HostFrameAction;
-		const machineWillAdvance = (
-			hostMenuInput === HostMenuInput.Inactive
-			&& !session.execution.executionBlocked(runtimeDebuggerExecutionRequested(ide.debugger))
-			&& runtimeReady
-		);
-		action = prepareHostUpdate(
-			session,
-			runtime,
-			runtimeReady,
-			hostMenuInput,
-			runtimeDebuggerExecutionRequested(ide.debugger),
-		);
-		if (action === HostFrameAction.Execute) {
-			if (ide.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(ide.debugger);
-			ide.guest.invalidate();
-			executeHostUpdate(session, runtime, presenter, audioOutput, screen, hostDeltaMs);
-			systemOutput.flush(runtime, logOutput, ide.luaEvaluation.receiveOutput);
-			systemOutputDrained = true;
-			const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-				IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-			);
-			if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
-				session.execution.finishFrameStep();
-				ide.fault.supervisorFaultSequence = supervisorFaultSequence;
-				ide.debugger.plans.faultCompletionBatches(supervisorFaultSequence);
-				handleSupervisorFault(
-					logOutput,
-					ide.fault,
-					ide.sources,
-					runtime,
-					ide.guest,
-				);
-				if (ide.debugger.plans.controlActive) {
-					didFaultRuntimeDebuggerPlan(ide.debugger);
-				}
-			} else {
-				if (ide.debugger.plans.controlActive) didExecuteRuntimeDebuggerPlan(ide.debugger);
-				ide.debugger.plans.pruneCompletedCompletionBatches();
-			}
-			if (ide.debugger.stopPresentationPending) {
-				session.execution.finishFrameStep();
-				activateEditor(
-					ide.editor,
-					ide.sources,
-					runtime,
-					audioOutput,
-				);
-				void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-					.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, error));
-			}
-			action = HostFrameAction.PresentPending;
-		}
-		ide.microtasks.flush();
-		if (machineWillAdvance) {
-			syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
-		}
+		let action = advanceStudioFrame(session, runtime, presenter, audioOutput, systemOutput, ide, screen,
+			hostDeltaMs, hostMenuInput, menuPaused);
 		if (hostMenuInput !== HostMenuInput.Active && ide.overlayRenderer.active) {
 			runWorkbenchOverlay(ide, screen, hostDeltaMs);
 			ide.microtasks.flush();
@@ -267,15 +183,10 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 
-		// A call/recovery can end in this slice. Admit its new recording checkpoint
-		// before stopped-operation observers settle, not a frame after their receipt.
-		if (!menuPaused && ide.runtimeTasks.ready && (runtime.history.checkpointPending
-			|| collectHistory !== !ide.debugger.plans.mutationActive)) {
-			session.rewind.service(!ide.debugger.plans.mutationActive);
-		}
+		presented = true;
 	} catch (error) {
 		session.execution.finishFrameStep();
-		workbenchMode.surfaceHostFrameError(ide, logOutput, error);
+		ide.failHostFrame(error);
 		presentWorkbenchError(
 			session,
 			runtime,
@@ -286,13 +197,6 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 	}
-	input.setFrameDurationMs(runtime.timing.frameDurationMs);
-	ide.frameNavigation.afterHostFrame();
-	ide.debuggerExecution.afterHostFrame();
-	if (!systemOutputDrained) {
-		systemOutput.flush(runtime, logOutput, ide.luaEvaluation.receiveOutput);
-	}
-	ide.luaEvaluation.afterHostFrame();
-	ide.actorExecution.afterHostFrame();
+	finishStudioFrame(session, runtime, input, systemOutput, ide, menuPaused, presented);
 	return HostFrameRunResult.Continue;
 }

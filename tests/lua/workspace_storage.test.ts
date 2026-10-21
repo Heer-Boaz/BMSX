@@ -1232,11 +1232,11 @@ test('failed dirty PUT retains the local generation and converges on an explicit
 
 	await runWorkspaceAutosaveTick();
 	assert.equal(server.files.get(dirtyRecordPath)!.contents, '-- dirty edit');
-	assert.deepEqual(JSON.parse(server.files.get(statePath)!.contents).dirtyFiles, [{
-		domain: TEST_DOMAIN,
-		path: 'src/foo.lua',
-		updatedAt: server.files.get(dirtyRecordPath)!.updatedAt,
-	}]);
+	const dirtyFiles = JSON.parse(server.files.get(statePath)!.contents).dirtyFiles;
+	assert.equal(dirtyFiles.length, 1);
+	assert.equal(dirtyFiles[0].domain, TEST_DOMAIN);
+	assert.equal(dirtyFiles[0].path, 'src/foo.lua');
+	assert.equal(dirtyFiles[0].updatedAt, server.files.get(dirtyRecordPath)!.updatedAt);
 });
 
 test('local session write failure reports once, keeps recovery and schedules no reconnect or blind retry', async t => {

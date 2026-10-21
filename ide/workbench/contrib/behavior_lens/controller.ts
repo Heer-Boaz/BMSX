@@ -3,7 +3,7 @@ import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { editorTabGroup, type EditorOpenOptions } from '../../ui/tab/group_model';
@@ -78,7 +78,7 @@ export class BehaviorLensController {
 	public openDefinition(registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
 		return captureNavigation(() => {
 			const resource = resolveRuntimeResource(this.sources, registration.resource)!;
-			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
 			let input: BehaviorLensInput | undefined;
 			for (const candidate of editorTabGroup.tabs) {
@@ -110,7 +110,7 @@ export class BehaviorLensController {
 	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
 		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, path => {
 			const resource = resolveRuntimeResourceForContext(this.sources, model.resource.domain, path)!;
-			return editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			return resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		}), this.createGraphLayoutEngine);
 	}
 

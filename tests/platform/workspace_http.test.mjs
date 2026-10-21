@@ -94,6 +94,22 @@ test('file imports preserve binary bytes, reject replacement and use the same wo
 	assert.equal(await readFile(join(root, 'source.lua'), 'utf8'), 'return 1');
 });
 
+test('concurrent Studio Saves compare the acknowledged source, not the latest file read', async t => {
+	const { request, session, root } = await fixture(t), headers = await session();
+	const put = (path, contents, expectedSource) => request('/__bmsx__/lua', { method: 'PUT',
+		headers: { ...headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ path, contents, expectedSource, updatedAt: Date.now() }) });
+	const results = await Promise.all([put('source.lua', 'first edit', 'return 1'), put('source.lua', 'second edit', 'return 1')]);
+	assert.deepEqual(results.map(response => response.status).sort(), [204, 409]);
+	const acknowledged = results[0].status === 204 ? 'first edit' : 'second edit';
+	assert.equal(await readFile(join(root, 'source.lua'), 'utf8'), acknowledged);
+	assert.equal((await put('source.lua', 'stale edit', 'return 1')).status, 409);
+	assert.equal((await put('source.lua', 'next edit', acknowledged)).status, 204);
+	assert.equal((await put('missing.lua', 'create', null)).status, 204);
+	assert.equal((await put('missing.lua', 'replace unexpectedly', null)).status, 409);
+	assert.equal((await put('removed.lua', 'recreate unexpectedly', 'old source')).status, 409);
+});
+
 test('cross-origin, opaque-origin, rebinding and preflight requests cannot acquire or use workspace authority', async t => {
 	const { request, session, address, root } = await fixture(t);
 	const authorized = await session();

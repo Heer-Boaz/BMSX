@@ -1,14 +1,10 @@
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
-import type { ResourceDomain } from '../../common/resource';
 import type { WorkspaceRecord } from '../../workspace/records';
 import type { SerializedEditorGroup } from '../services/editor/editor_serialization';
 
-export type PersistedDirtyEntry = {
-	domain: ResourceDomain;
-	path: string;
-	updatedAt: number;
-};
+import type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
+export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
 
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: PersistedDirtyEntry[];

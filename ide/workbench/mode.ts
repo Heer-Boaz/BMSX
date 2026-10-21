@@ -13,7 +13,7 @@ import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
-import { LogLevel, type LogOutput } from '../../hosts/common/log';
+import { type LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../workspace/record_provider';
@@ -23,7 +23,6 @@ import * as constants from '../common/constants';
 import {
 	HOST_IDE_BUTTON,
 } from '../../hosts/common/input/shortcuts';
-import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { api as overlay_api } from '../runtime/overlay_api';
 import {
 	developmentCartridgeSource,
@@ -44,7 +43,6 @@ import type { WorkspaceRecord } from '../workspace/records';
 import {
 	workspaceDirtyRecords,
 } from './workspace/state';
-import { openHostError } from './contrib/host_error/editor_input';
 import {
 	toggleEditor,
 } from './overlay_modes';
@@ -123,7 +121,6 @@ export async function initializeIdeFeatures(
 		connectAssistant,
 		observeConversation,
 	);
-	seedDefaultLuaBuiltins();
 	audioOutput.muteUi(state.editor.executionSuspended);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
@@ -188,21 +185,6 @@ export function tickIdeInput(state: RuntimeIdeState, input: Input): void {
 	}
 	state.lastIdeInputFrame = pollFrame;
 	state.editor.tickInput();
-}
-
-export function surfaceHostFrameError(
-	state: RuntimeIdeState,
-	logOutput: LogOutput,
-	error: unknown,
-): void {
-	state.overlayRenderer.abandonFrame();
-	const stack = error instanceof Error ? error.stack ?? error.toString() : String(error);
-	state.fault.hostFrameFailure = stack;
-	state.hotResumes.failPending(error);
-	state.boots.failPending(error);
-	logOutput.log(LogLevel.Error, stack);
-	openHostError(state.editor.editorPanes, stack);
-	state.editor.activate();
 }
 
 export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {

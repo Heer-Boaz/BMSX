@@ -32,16 +32,12 @@ import type { WorkspaceBuilds } from './workbench/services/builds';
 import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ImportWorkspaceFiles } from './workbench/services/file_import';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
-import type { PlayService } from './workbench/services/play/service';
 import { PlayController } from './workbench/contrib/play/controller';
 import { PlayEditorPane } from './workbench/contrib/play/editor_pane';
 import { ObservedConversation } from './workbench/services/assistant/observed_conversation';
 import { ConversationObserverPane } from './workbench/contrib/conversations/editor_pane';
-import { WorkspaceToolService } from './workbench/services/assistant/tool_service';
-import type { ActorExecutionService } from './workbench/contrib/actor_lab/execution';
-import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
-import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
-import type { GameImageCapture, ImageDecoder } from '../hosts/common/image';
+import type { WorkspaceToolService } from './workbench/services/assistant/tool_service';
+import type { ImageDecoder } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
 import { BiosTerminal } from './runtime/bios_terminal';
 import type { RuntimeLuaEvaluation } from './runtime/lua_evaluation';
@@ -51,7 +47,6 @@ import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
 import { AssistantChatCommands } from './workbench/contrib/assistant/chat_commands';
 import type { StudioServerConnectionState } from './workbench/common/server_connection';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
-import type { HotResumeService } from './workbench/services/execution/hot_resume';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
@@ -71,12 +66,9 @@ import { SceneEditorController } from './workbench/contrib/scene_editor/controll
 import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
 import { clearHoverTooltip } from './editor/contrib/hover/controller';
-import type { HostRewind } from '../hosts/common/rewind';
-import type { HostExecutionControl } from '../hosts/common/execution_control';
 import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
-import type { RuntimeInspectionService } from './runtime/inspection';
 import type { Clipboard, ClipboardTarget } from '../hosts/common/clipboard';
 import type { HostClock } from '../hosts/common/clock';
 import type { LogOutput } from '../hosts/common/log';
@@ -88,11 +80,9 @@ import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
 import type { ResourceIdentity } from './common/resource';
-import { discardRuntimeDebuggerPlans, type RuntimeDebuggerState } from './runtime/debugger_state';
+import { type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
-import type { RuntimeTaskQueue } from '../hosts/common/runtime_task_queue';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
-import { clearBackgroundTasks, runBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from './common/text';
 import { assertMonospace, measureText } from './editor/common/text/layout';
@@ -162,11 +152,8 @@ import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
-import { BehaviorSourceDocuments } from './workbench/contrib/behavior_lens/source_documents';
+import type { StudioWorkbench } from './workbench/workbench';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
-import type { ScenarioRunService } from './workbench/services/testing/scenario_runs';
-import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
-import type { BootService } from './workbench/services/execution/boot';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, initializeTabs, setActiveTab } from './workbench/ui/tabs';
 import { editorTabGroup } from './workbench/ui/tab/group_model';
@@ -364,9 +351,14 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly assistantCommands: AssistantChatCommands;
 	public readonly observedConversation: ObservedConversation;
 	public readonly tools: WorkspaceToolService;
+	public readonly events: RuntimeEventHistory;
+	public readonly gte: RuntimeGteHistory;
+	public readonly gpu: RuntimeGpuHistory;
+	public readonly diagnostics: ResourceDiagnosticsService;
+	private readonly luaEvaluation: RuntimeLuaEvaluation;
 
 	public constructor(
-		runtime: Runtime,
+		private readonly workbench: StudioWorkbench,
 		presenter: VideoPresenter,
 		display: EditorDisplay,
 		input: Input,
@@ -377,37 +369,22 @@ export class RuntimeCartEditor implements CartEditor {
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		fontVariant: Parameters<typeof setFontVariant>[1],
-		sources: RuntimeSourceState,
-		fault: RuntimeFaultState,
-		guest: SuspendedGuestSession,
-		debuggerState: RuntimeDebuggerState,
-		public readonly events: RuntimeEventHistory,
-		public readonly gte: RuntimeGteHistory,
-		public readonly gpu: RuntimeGpuHistory,
-		runtimeTasks: RuntimeTaskQueue,
-		execution: HostExecutionControl,
-		rewind: HostRewind,
 		overlayRenderer: OverlayRenderer,
-		private readonly scenarioRuns: ScenarioRunService,
-		private readonly playSessions: PlayService,
-		private readonly textFileSaves: TextFileSaveService,
-		private readonly hotResumes: HotResumeService,
-		private readonly boots: BootService,
-		public readonly diagnostics: ResourceDiagnosticsService,
-		private readonly luaEvaluation: RuntimeLuaEvaluation,
-		private readonly actorExecution: ActorExecutionService,
-		runtimeInspection: RuntimeInspectionService,
-		private readonly frameNavigation: RuntimeFrameNavigation,
-		private readonly debuggerExecution: RuntimeDebuggerExecution,
-		gameCapture: GameImageCapture,
 		decodeImage: ImageDecoder,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 		observeConversation?: ConversationObserverFactory,
 	) {
-		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
+		const { runtime, sources, fault, guest, debugger: debuggerState, events, gte, gpu, runtimeTasks, execution,
+			rewind, scenarioRuns, play: playSessions, textFileSaves, hotResumes, boots, diagnostics, luaEvaluation,
+			actorExecution, frameNavigation, debuggerExecution } = workbench;
+		this.events = events; this.gte = gte; this.gpu = gpu;
+		this.diagnostics = diagnostics;
+		this.luaEvaluation = luaEvaluation;
+		const behaviorSources = workbench.behaviorSources;
 		this.terminal = new BiosTerminal(runtime, input, guest, debuggerState, runtimeTasks, execution, rewind, fault);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, gte, gpu, clock, run => this.scenarioLab.revealRun(run));
+		this.tools = workbench.tools;
+		this.tools.revealTestRun = run => this.scenarioLab.revealRun(run);
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -458,9 +435,9 @@ export class RuntimeCartEditor implements CartEditor {
 			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu),
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
-			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
-			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
-			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu, this.sources, this.navigation),
+			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
+			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
+			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation),
 			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
@@ -508,7 +485,7 @@ export class RuntimeCartEditor implements CartEditor {
 			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport });
 
 		const behaviorRegistrations = behaviorSources.registrations;
-		this.play = new PlayController(this, this.playSessions, scenarioRuns, sources);
+		this.play = new PlayController(this, playSessions, scenarioRuns, sources);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
@@ -733,7 +710,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.actionPrompt.close();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
-		clearBackgroundTasks();
 		this.diagnostics.setEnabled(false);
 		editorRuntimeState.lastReportedSemanticError = null;
 		if (wasActive) this.leaveRenderTargets();
@@ -756,7 +732,6 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public update(deltaSeconds: number): void {
 		editorRuntimeState.currentTimeMs = this.clock.now();
-		runBackgroundTasks(this.clock);
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		layoutTabBar(this.chromeRenderContext);
@@ -812,32 +787,14 @@ export class RuntimeCartEditor implements CartEditor {
 		this.input.setEditingInput(undefined);
 		this.assistant.dispose();
 		this.observedConversation.dispose();
-		this.tools.dispose();
-		this.events.dispose();
-		this.gte.dispose();
-		this.gpu.dispose();
-		this.frameNavigation.dispose();
-		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
 		this.unbindSourceStop();
 		this.actionPrompt.dispose();
 		this.terminal.discard();
-		const evaluationDrained = this.luaEvaluation.shutdown();
-		const actorsDrained = this.actorExecution.shutdown();
-		this.scenarioRuns.dispose();
-		await this.playSessions.dispose();
+		await this.workbench.shutdown();
 		this.play.dispose();
 		this.actorLab.dispose();
-		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
-		const executionDrained = this.hotResumes.shutdown();
-		const bootsDrained = this.boots.shutdown();
-		discardRuntimeDebuggerPlans(this.debuggerState);
-		await this.textFileSaves.shutdown();
-		await executionDrained;
-		await bootsDrained;
-		await evaluationDrained;
-		await actorsDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

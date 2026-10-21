@@ -5,6 +5,7 @@ import { resolveRuntimeLuaSource, resolveRuntimeResource, runtimeSourceProjectRo
 import { loadWorkspaceSourceFile, readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { getTextSnapshotFingerprint, type TextSnapshotFingerprint } from '../../../editor/text/source_text';
+import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 
 export type TextFileModelSnapshot = {
 	readonly resource: ResourceIdentity;
@@ -46,7 +47,10 @@ export function resolveLuaTextFileModel(
 ): EditorTextModel {
 	const source = resolveRuntimeLuaSource(sources, resource);
 	if (!source) throw new Error(`Missing Lua source for '${resource.path}'.`);
-	return models.retain(resource, 'lua', readWorkspaceLuaSourceText(source.registry, source.record), source.record.base_src);
+	const canonical = workspaceCanonicalSourceCache.get(source.record.normalized_source_path);
+	const savedSource = canonical === undefined ? source.record.base_src : canonical.contents;
+	return models.retain(resource, 'lua', readWorkspaceLuaSourceText(source.registry, source.record), savedSource,
+		canonical === undefined ? null : canonical.contents);
 }
 
 /** Source admission for editable source formats; no view/group side effects. */
@@ -67,8 +71,8 @@ export function resolveTextFileModel(
 				const source = await loadWorkspaceSourceFile(resolveWorkspacePath(resource.path, root));
 				// A workspace file overlays the packaged authored base, just as for Lua.
 				// IO errors propagate; they never select another source authority.
-				if (source !== null) return source.contents;
-				if (resource.source.sourcemeta !== undefined) return resource.source.sourcemeta.text;
+				if (source !== null) return { source: source.contents, persistedBaseline: source.contents };
+				if (resource.source.sourcemeta !== undefined) return { source: resource.source.sourcemeta.text, persistedBaseline: null };
 				throw new Error(`Source for '${resource.path}' is unavailable.`);
 			});
 		}

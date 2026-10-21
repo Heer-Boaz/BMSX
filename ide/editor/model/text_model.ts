@@ -76,6 +76,7 @@ export class EditorTextModel {
 	private savedStateId = 0;
 	private resourceValue: RuntimeResource;
 	private lastSavedSourceValue: string;
+	private persistedBaselineValue: string | null;
 	private lastContentEditAtMsValue = -1;
 	private lastHistoryKey: string | null = null;
 	private lastHistoryTimestamp = 0;
@@ -92,7 +93,8 @@ export class EditorTextModel {
 	/** Stable source identity for markers/history, without ROM asset metadata. */
 	public readonly identity: ResourceIdentity;
 
-	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService(), savedSource = source) {
+	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService(),
+		savedSource = source, persistedBaseline: string | null = savedSource) {
 		this.history.register(this);
 		this.resourceValue = resource;
 		this.identity = { domain: resource.domain, path: resource.path };
@@ -100,6 +102,7 @@ export class EditorTextModel {
 		this.language = textLanguageConfiguration(mode, resource.path);
 		this.pieceTree = new PieceTreeBuffer(source);
 		this.lastSavedSourceValue = savedSource;
+		this.persistedBaselineValue = persistedBaseline;
 		if (source !== savedSource) {
 			this.currentStateId = this.nextStateId;
 			this.nextStateId += 1;
@@ -137,6 +140,9 @@ export class EditorTextModel {
 	public get lastSavedSource(): string {
 		return this.lastSavedSourceValue;
 	}
+
+	/** The acknowledged canonical file contents, or an absent file. Recovery preserves this independently of current disk bytes. */
+	public get persistedBaseline(): string | null { return this.persistedBaselineValue; }
 
 	public get lastContentEditAtMs(): number {
 		return this.lastContentEditAtMsValue;
@@ -400,6 +406,7 @@ export class EditorTextModel {
 		const wasDirty = this.dirty;
 		this.savedStateId = snapshot.stateId;
 		this.lastSavedSourceValue = snapshot.source;
+		this.persistedBaselineValue = snapshot.source;
 		this.emitDirtyChange(wasDirty);
 		for (const listener of this.saveListeners) {
 			listener();

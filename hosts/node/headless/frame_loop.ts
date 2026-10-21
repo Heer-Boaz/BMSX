@@ -1,7 +1,7 @@
 import type { FrameLoop } from '../../common/frame_loop';
 import type { HostClock, MonoTime } from '../../common/clock';
-import { GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED } from 'bmsx/machine/devices/gx/gpu_pcrtc';
-import { HZ_SCALE } from 'bmsx/spec/bmsx/timing';
+import { GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED } from '../../../machine/ts/machine/devices/gx/gpu_pcrtc';
+import { HZ_SCALE } from '../../../machine/ts/spec/bmsx/timing';
 import type { VirtualHeadlessClock } from './clock';
 
 export const HEADLESS_DEFAULT_FRAME_INTERVAL_MS =

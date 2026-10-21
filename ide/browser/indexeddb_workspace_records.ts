@@ -114,9 +114,19 @@ export class IndexedDbWorkspaceRecordProvider implements WorkspaceRecordProvider
 		});
 	}
 
-	public async write(path: string, record: WorkspaceRecord, overwrite: boolean): Promise<void> {
+	public async write(path: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {
 		await this.transaction('readwrite', (records, entries, abort) => {
-			admitFile(entries, path, overwrite, () => records.put(record, path), abort);
+			const publish = () => admitFile(entries, path, overwrite, () => records.put(record, path), abort);
+			if (expectedSource === undefined) publish();
+			else {
+				const read = records.get(path);
+				read.onsuccess = () => {
+					const current: WorkspaceRecord | undefined = read.result;
+					if ((current === undefined ? null : current.contents) !== expectedSource) {
+						abort(new Error(`Source changed outside this Studio: ${path}`));
+					} else publish();
+				};
+			}
 			return () => undefined;
 		});
 	}

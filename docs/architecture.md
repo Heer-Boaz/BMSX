@@ -248,6 +248,24 @@ recipes and acceptance commands are not reproduced here as dated setup logs.
 
 ## Studio ownership
 
+`StudioWorkbench` owns authoring documents and the physical target's source,
+execution, inspection and tool services without an editor view. Browser
+composition adds `RuntimeCartEditor`; the Node Studio server composes the same
+workbench in an isolated worker realm. Process-local source/model owners are
+never swapped between live sessions. The shared Studio frame pump owns physical
+operation ordering; frontends supply input and presentation policy around it.
+
+`hosts/node/studio` is Studio application/server composition, not the standalone
+Node player host. It owns explicit hosted-session lifetime and MCP routing, not
+another debugger, compiler, source model or machine loop. Standalone Node player
+roots and host execution services remain independent of Studio composition.
+
+Source-edit capabilities and review approval policy belong to a tool connection,
+not its host kind. Recovery generations belong to their explicit Studio session;
+frontend layout/session storage remains separate. Canonical source publication
+is shared by browser and worker clients, with saved-baseline preconditions at
+the filesystem owner. Working-copy acknowledgement follows that publication.
+
 ### Source and editor state
 
 Resource-owned text models are the canonical authored source. Undo, saved

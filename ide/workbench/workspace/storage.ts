@@ -45,6 +45,7 @@ import {
 } from './models';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
+import { loadWorkspaceDirtySources } from '../../workspace/source_recovery_store';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 let editor: CartEditor = null;
@@ -116,22 +117,6 @@ async function readWorkspaceRecordVersion(
 	return record;
 }
 
-function loadWorkspaceDirtyRecords(
-	storage: KeyValueStorage,
-	runtimeSources: RuntimeSourceState,
-	payload: WorkspaceAutosavePayload,
-): Promise<Array<readonly [string, WorkspaceRecord]>> {
-	return Promise.all(payload.dirtyFiles.map(entry => {
-		const projectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
-		const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, entry.domain, entry.path);
-		return readWorkspaceRecordVersion(
-			storage,
-			projectRootPath,
-			buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
-		).then(record => [dirtyPath, record] as const);
-	}));
-}
-
 export async function initializeWorkspaceStorage(
 	workspaceStorage: KeyValueStorage,
 	workspaceClock: HostClock,
@@ -167,8 +152,8 @@ export async function initializeWorkspaceStorage(
 	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
 	const payload = record === null ? null : record === remoteRecord ? remotePayload : localPayload;
 	// An incomplete generation is an error, not permission to discard unsaved edits or rewrite the manifest.
-	const loadedRecords = payload ? await loadWorkspaceDirtyRecords(storage, runtimeSources, payload) : [];
-	const generationDirtyRecords = new Map<string, WorkspaceRecord>(loadedRecords);
+	const generationDirtyRecords = payload ? await loadWorkspaceDirtySources(runtimeSources, payload.dirtyFiles,
+		(root, path) => readWorkspaceRecordVersion(storage, root, path)) : new Map<string, WorkspaceRecord>();
 	const replacedLocalPayload = record === remoteRecord && localRecord ? localPayload : null;
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
 	if (replacedLocalPayload) {

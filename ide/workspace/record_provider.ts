@@ -4,7 +4,7 @@ export interface WorkspaceRecordProvider {
 	read(relativePath: string): Promise<WorkspaceRecord | null>;
 	readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null>;
 	/** overwrite=false is an exclusive create in the owning store, not a read-before-write check. */
-	write(relativePath: string, record: WorkspaceRecord, overwrite: boolean): Promise<void>;
+	write(relativePath: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void>;
 	delete(relativePath: string): Promise<void>;
 }
 

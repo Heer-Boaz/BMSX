@@ -4,18 +4,44 @@ import { link, mkdir, open, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const WORKSPACE_SAVE_DIRECTORY = '.bmsx/saves';
+const publications = new Map();
+
+/** Server-backed Studio frontends and workers share this filesystem publication queue. */
+function enqueuePublication(destination, operation) {
+	const previous = publications.get(destination);
+	const result = previous === undefined ? operation() : previous.then(operation);
+	const tail = result.then(() => undefined, () => undefined);
+	publications.set(destination, tail);
+	void tail.then(() => { if (publications.get(destination) === tail) publications.delete(destination); });
+	return result;
+}
+
+export function publishWorkspaceRecord(destination, stagingDirectory, record, overwrite, expectedSource) {
+	return enqueuePublication(destination, () => publishSource(destination, stagingDirectory, record, overwrite, expectedSource));
+}
+
+export function deleteWorkspaceRecord(destination) {
+	return enqueuePublication(destination, () => rm(destination, { force: true }));
+}
 
 /** Publish complete source bytes and their timestamp together, outside the ROM input set until commit. */
-export async function publishWorkspaceRecord(destination, stagingDirectory, record, overwrite) {
+async function publishSource(destination, stagingDirectory, record, overwrite, expectedSource) {
 	let mode;
 	if (overwrite) {
 		let previous;
-		try { previous = await open(destination, constants.O_WRONLY | constants.O_NOFOLLOW); }
+		try { previous = await open(destination, (expectedSource === undefined ? constants.O_WRONLY : constants.O_RDWR) | constants.O_NOFOLLOW); }
 		catch (error) { if (error.code !== 'ENOENT') throw error; }
 		if (previous !== undefined) {
 			// Replacing an inode must not bypass its write permission or discard executable bits.
-			try { mode = (await previous.stat()).mode & 0o7777; }
+			try {
+				mode = (await previous.stat()).mode & 0o7777;
+				if (expectedSource !== undefined && await previous.readFile('utf8') !== expectedSource) {
+					throw Object.assign(new Error(`Source changed outside this Studio: ${destination}`), { code: 'ESTALE' });
+				}
+			}
 			finally { await previous.close(); }
+		} else if (expectedSource !== undefined && expectedSource !== null) {
+			throw Object.assign(new Error(`Source removed outside this Studio: ${destination}`), { code: 'ESTALE' });
 		}
 	}
 	await mkdir(stagingDirectory, { recursive: true });

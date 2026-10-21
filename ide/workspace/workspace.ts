@@ -22,6 +22,7 @@ import {
 import {
 	deleteWorkspaceLuaSourceOverride,
 	setWorkspaceLuaSourceOverride,
+	workspaceCanonicalSourceCache,
 } from './cache';
 import { createWorkspaceRecord, workspaceRecords, type WorkspaceRecord } from './records';
 import { joinWorkspacePaths, normalizeRelativeWorkspacePath, stripProjectRootPrefix } from './path';
@@ -82,6 +83,7 @@ export async function saveLuaResourceSource(
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	source: string,
+	expectedSource?: string | null,
 ): Promise<WorkspaceSourceSaveResult> {
 	const target = resolveEditableLuaSource(sources, identity);
 	const registry = target.registry;
@@ -95,6 +97,7 @@ export async function saveLuaResourceSource(
 		clock,
 		workspacePath,
 		source,
+		expectedSource,
 	);
 	const { record } = result;
 	asset.src = source;
@@ -123,6 +126,7 @@ export async function createLuaResource(
 	const record = createWorkspaceRecord(clock, contents);
 	const asset = createWorkspaceLuaSourceRecord(registry, path, record);
 	await workspaceRecords.write(path, record, false);
+	workspaceCanonicalSourceCache.set(path, record);
 	if (runtimeLuaSourceRegistry(sources, request.domain) !== registry) {
 		throw new Error(`Created '${path}', but its project was closed before catalog admission.`);
 	}

@@ -37,7 +37,7 @@
 		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
-		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts", "ide/workbench/play_runtime.ts"] },
+		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "hosts/node/studio/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts", "ide/workbench/frame.ts", "ide/workbench/play_runtime.ts"] },
 		{ "name": "ts-ide", "paths": ["ide/**"] },
 		{ "name": "ts-host-execution", "paths": ["hosts/common/execution_control.ts", "hosts/common/rewind.ts", "hosts/common/frame_session.ts", "hosts/common/machine_step.ts"] },
 		{ "name": "ts-host-presentation", "paths": ["hosts/common/presentation_state.ts"] },

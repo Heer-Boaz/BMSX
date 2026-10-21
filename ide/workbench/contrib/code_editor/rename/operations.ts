@@ -4,7 +4,7 @@ import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
-import { resourceSourceForChunk } from '../../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 import { captureCodeEditorViewSnapshot } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -78,7 +78,7 @@ export class CrossFileRenameManager {
 		const result = new Map<EditorTextModel, EditorModelEdit>();
 		for (const [path, locations] of ranges) {
 			const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
-			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			if (currentSnapshot !== info.snapshot || getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
 				throw new EditorWorkspaceEditConflict(model);
 			}

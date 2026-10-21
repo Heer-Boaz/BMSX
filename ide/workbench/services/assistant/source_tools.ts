@@ -30,6 +30,7 @@ export type SourceToolResult =
 	| BehaviorToolReadResult
 	| { kind: 'sources'; data: readonly ToolSourceResource[] }
 	| { kind: 'source'; data: ToolSourceReceipt }
+	| { kind: 'source-history'; data: { receipt: string; direction: 'undo' | 'redo'; changed: boolean; version: number; dirty: boolean } }
 	| { kind: 'diagnostics'; data: ToolSourceDiagnostics }
 	| { kind: 'source-save'; data: { receipt: string; operation: number } & ReturnType<typeof encodeSourceSaveResult> }
 	| { kind: 'source-status'; data: { receipt: string; version: number; dirty: boolean; runtime: ReturnType<typeof getTextFileRuntimeSourceStatus>;
@@ -86,6 +87,14 @@ export class WorkspaceSourceTools {
 		}
 		const request = decodeSourceToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_edit_history': {
+				const receipt = this.receipts.get(request.receipt);
+				if (receipt === undefined) throw new StudioToolInputError('History requires a receipt read in this context.');
+				const model = receipt.captured.model;
+				const record = this.models.history[request.direction](model);
+				return { kind: 'source-history', data: { receipt: request.receipt, direction: request.direction,
+					changed: record !== null, version: model.version, dirty: model.dirty } };
+			}
 			case 'studio_propose_source': {
 				if (runtimeLuaSourceRegistry(this.sources, request.domain) === undefined) throw new StudioToolInputError('The selected source domain has no project.');
 				return this.offer(new WorkspaceEditProposal(request.title, this.context, { kind: 'create', clock: this.clock, sources: this.sources,

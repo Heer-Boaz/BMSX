@@ -1,16 +1,20 @@
-import type { StudioToolOperation, StudioToolReply, StudioToolResult } from '../../hosts/common/studio_tools';
-import type { WorkspaceToolContext, WorkspaceToolService } from '../workbench/services/assistant/tool_service';
-import type { WorkspaceEditProposal } from '../workbench/services/working_copy/workspace_edit';
+import type { StudioReviewApproval, StudioSourceAccess, StudioToolOperation, StudioToolReply, StudioToolResult } from '../../../../hosts/common/studio_tools';
+import type { WorkspaceToolContext, WorkspaceToolService } from './tool_service';
+import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 
 type Context = { lifetime: AbortController; tools: WorkspaceToolContext; reviews: Map<string, WorkspaceEditProposal> };
+type ToolAuthority = {
+	sourceAccess: StudioSourceAccess;
+	reviewApproval: StudioReviewApproval;
+	showReview?: (proposal: WorkspaceEditProposal) => void;
+};
 
 /** Tool authority belongs to one registration. Recovery never transfers these contexts. */
 export class StudioToolRequests {
 	private readonly lifetime = new AbortController();
 	private readonly contexts = new Map<string, Context>();
 	private readonly requests = new Map<string, AbortController>();
-	public constructor(private readonly tools: WorkspaceToolService,
-		private readonly showReview: (proposal: WorkspaceEditProposal) => void) {}
+	public constructor(private readonly tools: WorkspaceToolService, private readonly authority: ToolAuthority) {}
 
 	public cancel(request: string): void { this.requests.get(request)?.abort(); }
 	public release(id: string): void {
@@ -35,16 +39,28 @@ export class StudioToolRequests {
 				const context = this.contexts.get(operation.context);
 				if (!context) throw new Error('Studio tool context is closed');
 				const signal = AbortSignal.any([request.signal, context.lifetime.signal, this.lifetime.signal]);
-				if (operation.type === 'review') {
+				if (operation.type === 'review' || operation.type === 'resolve-review') {
 					const proposal = context.reviews.get(operation.review);
 					if (!proposal) throw new Error('Review does not belong to this tool context');
+					if (operation.type === 'resolve-review') {
+						if (operation.decision === 'apply') {
+							if (this.authority.sourceAccess !== 'edit' || this.authority.reviewApproval !== 'agent') {
+								throw new Error('This tool connection cannot approve source proposals.');
+							}
+							await proposal.apply();
+						} else proposal.dispose();
+					}
 					result = { success: true, data: { review: operation.review, state: proposal.state, reason: proposal.reason } };
 				} else {
+					if (this.authority.sourceAccess !== 'edit'
+						&& (operation.name === 'studio_save_source' || operation.name === 'studio_edit_history')) {
+						throw new Error('This tool connection has no source-edit authority.');
+					}
 					const value = await context.tools.execute(operation.name, operation.arguments, signal);
 					if (signal.aborted) { if (value.kind === 'proposal') value.proposal.dispose(); return; }
 					if (value.kind === 'proposal') {
 						context.reviews.set(value.data.review, value.proposal);
-						this.showReview(value.proposal);
+						this.authority.showReview?.(value.proposal);
 					}
 					result = { success: true, data: value.data, images: value.kind === 'image' ? value.images : undefined };
 				}

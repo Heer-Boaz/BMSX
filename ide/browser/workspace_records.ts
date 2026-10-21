@@ -25,14 +25,15 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 		return response.json();
 	}
 
-	public async write(relativePath: string, record: WorkspaceRecord, overwrite: boolean): Promise<void> {
+	public async write(relativePath: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {
 		const response = await this.session.request(WORKSPACE_FILE_ENDPOINT, {
 			method: 'PUT',
 			headers: overwrite ? { 'Content-Type': 'application/json' }
 				: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
-			body: JSON.stringify({ path: relativePath, ...record }),
+			body: JSON.stringify({ path: relativePath, ...record, expectedSource }),
 		});
 		if (response.status === 412) throw new Error(`File already exists: ${relativePath}`);
+		if (response.status === 409) throw new Error(`Source changed outside this Studio: ${relativePath}`);
 		if (!response.ok) throw new Error(`[WorkspaceStorage] Failed to write '${relativePath}': ${await response.text()}`);
 	}
 

@@ -16,6 +16,8 @@ type ModelContentChangeListener = (
 ) => void;
 type ModelListener = (model: EditorTextModel) => void;
 
+export type ResolvedTextModelSource = { readonly source: string; readonly persistedBaseline: string | null };
+
 /** Resource-keyed lifetime owner for editable text models. */
 export class EditorTextModelService {
 	public readonly history = new EditorUndoRedoService();
@@ -47,11 +49,12 @@ export class EditorTextModelService {
 		return this.modelsByResource.get(resourceIdentityKey(identity));
 	}
 
-	public retain(resource: RuntimeResource, mode: EditorDocumentMode, source: string, savedSource = source): EditorTextModel {
+	public retain(resource: RuntimeResource, mode: EditorDocumentMode, source: string, savedSource = source,
+		persistedBaseline: string | null = savedSource): EditorTextModel {
 		const key = resourceIdentityKey(resource);
 		let model = this.modelsByResource.get(key);
 		if (model === undefined) {
-			model = new EditorTextModel(resource, mode, source, this.history, savedSource);
+			model = new EditorTextModel(resource, mode, source, this.history, savedSource, persistedBaseline);
 			this.register(model);
 		} else {
 			model.refreshResource(resource);
@@ -60,7 +63,7 @@ export class EditorTextModelService {
 	}
 
 	/** Coalesce asynchronous source reads without creating an editor input or tab. */
-	public resolve(resource: RuntimeResource, mode: EditorDocumentMode, readSource: () => Promise<string>): Promise<EditorTextModel> {
+	public resolve(resource: RuntimeResource, mode: EditorDocumentMode, readSource: () => Promise<ResolvedTextModelSource>): Promise<EditorTextModel> {
 		const model = this.get(resource);
 		if (model !== undefined) {
 			model.refreshResource(resource);
@@ -72,7 +75,7 @@ export class EditorTextModelService {
 			const generation = this.generation;
 			pending = readSource().then(source => {
 				if (generation !== this.generation) throw new Error(`Model resolution for '${resource.path}' was cancelled by workspace teardown.`);
-				return this.retain(resource, mode, source);
+				return this.retain(resource, mode, source.source, source.source, source.persistedBaseline);
 			}).finally(() => {
 				if (this.pendingResolutions.get(key) === pending) this.pendingResolutions.delete(key);
 			});

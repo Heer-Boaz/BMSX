@@ -11,6 +11,7 @@ export type SourceToolRequest =
 	| { name: 'studio_read_source'; resource: string }
 	| { name: 'studio_read_diagnostics'; receipt: string }
 	| { name: 'studio_read_source_status' | 'studio_save_source'; receipt: string }
+	| { name: 'studio_edit_history'; receipt: string; direction: 'undo' | 'redo' }
 	| { name: 'studio_propose_edits'; title: string; files: { receipt: string; edits: SourceToolEdit[] }[] };
 
 const NO_FIELDS: string[] = [];
@@ -23,6 +24,8 @@ const CREATE_FIELDS = ['title', 'domain', 'path', 'source'];
 
 export const STUDIO_SOURCE_TOOLS = [
 	...STUDIO_BEHAVIOR_TOOLS,
+	{ name: 'studio_edit_history', description: 'Undo or redo through the ordinary resource/workspace history, using a current source receipt. Compound edits preserve their cross-file dependencies. Requires source-edit authority, independently of the Studio host; does not Save or install. A changed source retires this context: open a new context and read fresh receipts afterwards.',
+		inputSchema: { type: 'object', properties: { receipt: { type: 'string' }, direction: { type: 'string', enum: ['undo', 'redo'] } }, required: ['receipt', 'direction'], additionalProperties: false } },
 	{ name: 'studio_propose_source', description: 'Propose one new Lua source file, including _assert.lua Scenario Lab suites, for explicit Studio review. Choose an installed source domain from studio_list_sources (-1 BIOS, 0/1 cart) and a path relative to its project folder. No file or working copy is created before approval. Apply uses ordinary exclusive workspace creation: existing files are never overwritten. Creation persists source and opens its editor; it does not compile, install, execute or build assets. Closing/discarding a pending review writes nothing. Once creation is accepted its write completes independently of the proposing turn. Read fresh source handles after approval. Use studio_propose_edits for existing files.',
 		inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 1 }, domain: { type: 'integer', enum: [-1, 0, 1] }, path: { type: 'string', minLength: 1 }, source: { type: 'string' } }, required: CREATE_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_source_status', description: 'Read current working-copy dirty state, its relation to installed code/assets and the latest ordinary Studio Save acknowledgement for a current source receipt. Save status is historical: workspace acknowledges the project filesystem, browser acknowledges the browser-owned workspace. A pending Save is not success. Runtime applied only compares source with the installed revision, not successful initialization. YAML compares exact packaged source metadata, not live guest objects; changed source requires an asset rebuild and missing metadata is untracked. Source-only Lua tests are not installed program modules. This does not save, build, execute or refresh expired source authority.',
@@ -45,6 +48,13 @@ export const STUDIO_SOURCE_TOOLS = [
 
 export function decodeSourceToolRequest(name: string, input: unknown): SourceToolRequest {
 	switch (name) {
+		case 'studio_edit_history': {
+			const value = toolArguments(input, ['receipt', 'direction']);
+			if (typeof value.receipt !== 'string' || value.direction !== 'undo' && value.direction !== 'redo') {
+				throw new StudioToolInputError('History requires a source receipt and undo/redo direction.');
+			}
+			return { name, receipt: value.receipt, direction: value.direction };
+		}
 		case 'studio_propose_source': {
 			const value = toolArguments(input, CREATE_FIELDS);
 			if (typeof value.title !== 'string' || value.title.length === 0 || typeof value.path !== 'string'

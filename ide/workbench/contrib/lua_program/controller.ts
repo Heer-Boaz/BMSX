@@ -9,7 +9,7 @@ import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../.
 import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
@@ -56,7 +56,7 @@ export class LuaProgramController {
 	}
 	public openOccurrence(occurrence: LuaProgramOccurrence): LuaProgramInput {
 		const resource = resolveRuntimeResource(this.sources, occurrence.resource)!;
-		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
 		let input = editorTabGroup.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
 			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
@@ -109,7 +109,7 @@ export class LuaProgramController {
 			let model = input.sourceModels.get(file.file);
 			if (model === undefined) {
 				const resource = resolveRuntimeResourceForContext(this.sources, input.workingCopy.resource.domain, file.file)!;
-				model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+				model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 				input.sourceModels.set(file.file, model);
 			}
 			return model;

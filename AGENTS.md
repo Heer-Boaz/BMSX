@@ -97,9 +97,9 @@
 
 - For external conversations asked to work through the live IDE/Studio, discover
   and call the native `studio_list_sessions` tool. Explicitly select the intended
-  window, open its tool context and read its runtime status before editing or
+  Studio session, open its tool context and read its runtime status before editing or
   executing anything.
-  An empty window list is a real state, not permission to select another target.
+  An empty session list is a real state, not permission to select another target.
   An embedded Studio assistant instead uses its already-bound domain tools and
   window context; it must not create an external client or another conversation.
 - Configured MCP entries, a listening HTTP server, direct SDK/RPC calls and
@@ -109,6 +109,12 @@
   automation, shell-driven MCP, a headless emulator, external source writes or
   another assistant conversation. A different workflow requires explicit user
   agreement.
+- A real headless Studio is a native session, not a substitute emulator/test
+  workflow. When the user requests a background Studio, create it explicitly
+  through `studio_start_headless` from a completed workspace build, select that
+  session and follow the same context/status workflow. Never open a foreground
+  browser or capture desktop input as an implicit substitute. Source-edit rights
+  and review approval are explicit capabilities, not inferred from host kind.
 - Use `npm run codex:studio -- [--server <origin>] [-- <codex arguments>]` for a
   Studio-dependent CLI session; `-- resume <thread-id>` continues the same
   conversation. It requires the existing server's real native MCP connection.

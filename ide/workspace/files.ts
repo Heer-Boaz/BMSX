@@ -62,9 +62,10 @@ export async function persistWorkspaceSourceFile(
 	clock: HostClock,
 	workspacePath: string,
 	source: string,
+	expectedSource?: string | null,
 ): Promise<WorkspaceSourceSaveResult> {
 	const record = createWorkspaceRecord(clock, source);
-	const persistence = await workspaceRecords.write(workspacePath, record);
+	const persistence = await workspaceRecords.write(workspacePath, record, true, expectedSource);
 	workspaceCanonicalSourceCache.set(workspacePath, record);
 	return { record, persistence };
 }

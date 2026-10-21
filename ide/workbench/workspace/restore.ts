@@ -1,6 +1,5 @@
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
-	resolveRuntimeResource,
 	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from '../../runtime/sources';
@@ -12,7 +11,7 @@ import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { workspaceDirtyRecords } from './state';
 import { editorTabGroup } from '../ui/tab/group_model';
-import { resolveTextFileModel } from '../services/working_copy/text_file_model';
+import { restoreWorkspaceDirtyModels } from '../services/working_copy/source_recovery';
 import {
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
@@ -29,25 +28,11 @@ export async function applyWorkspaceAutosavePayload(
 	clearCodeEditorInputs();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
-	await resolveDirtyFileModels(sources, payload.dirtyFiles);
-	hydrateDirtyFiles(sources, payload.dirtyFiles);
+	await restoreWorkspaceDirtyModels(editorTextModelService, sources, payload.dirtyFiles, workspaceDirtyRecords);
 	await editorTabGroup.deserialize(payload.editorGroup, editor.editorInputSerializers);
 	const active = editorTabGroup.activeTab;
 	if (active !== null) editor.editorPanes.openEditor(active);
 	debuggerState.breakpoints.restore(payload.breakpoints);
-}
-
-async function resolveDirtyFileModels(
-	sources: RuntimeSourceState,
-	entries: PersistedDirtyEntry[],
-): Promise<void> {
-	for (const entry of entries) {
-		const resource = resolveRuntimeResource(sources, entry);
-		if (!resource) {
-			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
-		}
-		await resolveTextFileModel(editorTextModelService, sources, resource);
-	}
 }
 
 export function hydrateDirtyFiles(

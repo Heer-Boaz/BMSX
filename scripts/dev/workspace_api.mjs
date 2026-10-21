@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
-import { open, readdir, unlink } from 'node:fs/promises';
+import { open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
+import { deleteWorkspaceRecord, publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
 import { HttpError } from './http_security.mjs';
 import { resolveRootedPath } from './rooted_path.mjs';
 
@@ -31,19 +31,22 @@ export async function handleWorkspaceRequest(root, req, res, url) {
 		const chunks = [];
 		for await (const chunk of req) chunks.push(chunk);
 		const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+		if (payload.expectedSource !== undefined && payload.expectedSource !== null && typeof payload.expectedSource !== 'string') {
+			throw new HttpError(400, 'Invalid source precondition.');
+		}
 		const path = await resolveRootedPath(root, payload.path, true);
 		const staging = await resolveRootedPath(root, join(dirname(payload.path), WORKSPACE_SAVE_DIRECTORY), true);
-		try { await publishWorkspaceRecord(path, staging, payload, req.headers['if-none-match'] !== '*'); }
+		try { await publishWorkspaceRecord(path, staging, payload, req.headers['if-none-match'] !== '*', payload.expectedSource); }
 		catch (error) {
 			if (error.code === 'EEXIST') throw new HttpError(412, 'File already exists.');
+			if (error.code === 'ESTALE') throw new HttpError(409, 'Source changed outside this Studio.');
 			throw error;
 		}
 		res.writeHead(204).end();
 		return;
 	}
 	if (req.method === 'DELETE') {
-		try { await unlink(await resolveRootedPath(root, url.searchParams.get('path'))); }
-		catch (error) { if (error.code !== 'ENOENT') throw error; }
+		await deleteWorkspaceRecord(await resolveRootedPath(root, url.searchParams.get('path')));
 		res.writeHead(204).end();
 		return;
 	}
