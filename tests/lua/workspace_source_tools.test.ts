@@ -5,7 +5,7 @@ import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_le
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { getEventListeners } from 'node:events';
-import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorTextModelService, editorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
 import { resourceIdentityKey, type RuntimeResource } from '../../ide/common/resource';
 import { WorkspaceSourceTools } from '../../ide/workbench/services/assistant/source_tools';
 import { StudioToolInputError } from '../../ide/workbench/services/assistant/tool_input';
@@ -137,12 +137,12 @@ test('resource handles and read receipts from another connection/context cannot 
 
 test('YAML admission delayed past teardown cannot capture a model from a replacement workspace', async t => {
 	const f = fixture(t);
-	let resolve!: (source: string) => void;
-	const pending = f.models.resolve(f.yaml, 'yaml', () => new Promise(done => { resolve = done; }));
+	const source = Promise.withResolvers<ResolvedTextModelSource>();
+	const pending = f.models.resolve(f.yaml, 'yaml', () => source.promise);
 	const resource = (await f.list()).find(source => source.path === f.yaml.path)!;
 	const reading = f.tools.execute('studio_read_source', { resource: resource.resource });
 	f.models.clear();
-	resolve(f.yamlSource);
+	source.resolve({ source: f.yamlSource, persistedBaseline: f.yamlSource });
 	await assert.rejects(reading, /workspace teardown/);
 	await assert.rejects(pending, /workspace teardown/);
 	assert.equal(f.models.get(f.yaml), undefined);

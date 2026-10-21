@@ -139,6 +139,9 @@ Save reports a conflict instead of replacing or recreating that file.
    game image capture, frame/history navigation, Scenario Lab and behavior tools.
    Availability still follows each actual runtime/editor owner's state. For
    example, Lua cannot run during BIOS startup and rewind requires retained history.
+   `studio_runtime_status.hostFrameFailure` exposes the original host diagnostic
+   and stack independently of the guest `fault`, including when inspection is
+   blocked by that host failure. Reading status does not execute Lua.
 4. `studio_close_context {toolContext}` releases receipts/inspection handles,
    interrupts that context's unfinished operations and invalidates pending reviews.
    It does not undo completed execution, accepted Saves or another client's work.

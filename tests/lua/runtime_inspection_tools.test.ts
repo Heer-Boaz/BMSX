@@ -88,6 +88,22 @@ test('tool admission rejects unknown targets/fields, has prompt-local lifetimes 
 	for (const count of [0, -1, 1.5, '2']) assert.throws(() => decodeRuntimeToolRequest('studio_read_runtime_values', { reference, start: 0, count }));
 });
 
+test('runtime status exposes the retained host stack without inventing a guest fault or executing Lua', async t => {
+	const f = fixture(), lifetime = new AbortController();
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
+	t.after(() => { tools.dispose(); f.presenter.dispose(); });
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	const failure = new TypeError('presenter failed');
+	f.fault.hostFrameFailure = failure.stack;
+	const result = await tools.execute('studio_runtime_status', {});
+	assert.ok('hostFrameFailure' in result.data);
+	assert.equal(result.data.hostFrameFailure, failure.stack);
+	assert.equal(result.data.canInspect, false);
+	assert.equal(result.data.fault, undefined);
+	assert.deepEqual(f.fault.lastLuaCallStack, []);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+});
+
 for (const abortRequest of [false, true]) test(`Reboot tool retires queued installation on ${abortRequest ? 'request' : 'prompt'} cancellation`, async t => {
 	const f = fixture(), lifetime = new AbortController(), request = new AbortController(), gate = Promise.withResolvers<void>();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);

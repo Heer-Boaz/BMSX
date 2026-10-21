@@ -64,6 +64,7 @@ export class RuntimeInspectionService {
 			cycles: this.runtime.machine.scheduler.currentNowCycles(), videoTick: this.runtime.frameScheduler.lastTickSequence,
 			paused: this.execution.paused, userPaused: this.execution.userPaused, debuggerStopped: this.debuggerState.source.stop !== undefined,
 			stop, fault: fault === null ? undefined : { message: fault.message, resource: fault.resource, line: fault.line, column: fault.column },
+			hostFrameFailure: this.fault.hostFrameFailure,
 			operationActive: this.debuggerExecution.active !== undefined || this.navigation.active !== undefined || !this.tasks.ready || this.debuggerState.plans.controlActive,
 			history: this.navigation.historyState(),
 			rewindActive: this.rewind.active, canInspect: this.canInspect };
