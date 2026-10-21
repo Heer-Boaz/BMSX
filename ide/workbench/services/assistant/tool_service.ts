@@ -3,6 +3,7 @@ import type { PublishedBuildOpenResult } from '../builds';
 import { decodeWorkspaceToolRequest } from './workspace_tool_protocol';
 import type { HotResumeService } from '../execution/hot_resume';
 import type { RuntimeEventHistory } from '../../../runtime/event_history';
+import type { RuntimeGpuHistory } from '../../../runtime/gpu_history';
 import type { RuntimeGteHistory } from '../../../runtime/gte_history';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
@@ -36,7 +37,7 @@ export class WorkspaceToolService {
 		private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution,
 		private readonly actors: ActorExecutionService, private readonly behaviors: BehaviorSourceDocuments,
 		private readonly saves: TextFileSaveService, private readonly boots: BootService, private readonly hotResumes: HotResumeService,
-		private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory,
+		private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory, private readonly gpu: RuntimeGpuHistory,
 		private readonly clock: HostClock, private readonly revealTestRun?: (run: ScenarioRun) => void) {
 		this.unbindWorkspace = models.onWillClear(() => this.clear());
 	}
@@ -47,7 +48,7 @@ export class WorkspaceToolService {
 		const context = new WorkspaceToolContext(
 			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves, this.clock),
 			new WorkspaceTestTools(this.testRuns, connection, this.revealTestRun),
-			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.luaEvaluation, this.debuggerExecution, this.actors, this.boots, this.hotResumes, this.events, this.gte, connection),
+			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.luaEvaluation, this.debuggerExecution, this.actors, this.boots, this.hotResumes, this.events, this.gte, this.gpu, connection),
 			connection, () => this.contexts.delete(context), this.openBuild);
 		this.contexts.add(context);
 		return context;

@@ -1,4 +1,6 @@
 import type { HotResumeService } from '../execution/hot_resume';
+import type { RuntimeGpuHistory } from '../../../runtime/gpu_history';
+import { encodeGpuOperation } from './gpu_tool_protocol';
 import type { RuntimeEventHistory } from '../../../runtime/event_history';
 import { GteCommandSnapshot, type RuntimeGteHistory } from '../../../runtime/gte_history';
 import type { IDisposable } from '../../../common/lifecycle';
@@ -22,11 +24,12 @@ export class WorkspaceRuntimeTools {
 	private inspection: RuntimeInspection | undefined;
 	private actors: ActorRuntimeInspection | undefined;
 	private gteObservation: IDisposable | undefined;
+	private gpuObservation: IDisposable | undefined;
 	private disposed = false;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly gte: RuntimeGteHistory, private readonly gpu: RuntimeGpuHistory, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -35,6 +38,46 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_gpu_history':
+			case 'studio_read_gpu_operations':
+			case 'studio_read_gpu_words':
+			case 'studio_seek_gpu_operation': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('GPU history requires this authoring target.');
+				requestSignal?.throwIfAborted();
+				const history = this.gpu;
+				if (request.name === 'studio_gpu_history') {
+					if (request.action === 'start' && this.gpuObservation === undefined) this.gpuObservation = history.observe();
+					else if (request.action === 'stop') { this.gpuObservation?.dispose(); this.gpuObservation = undefined; }
+					else if (request.action === 'clear') history.clear();
+					return { kind: 'runtime' as const, data: { target: this.owner.target, observing: history.observing,
+						observingInContext: this.gpuObservation !== undefined, generation: history.generation,
+						firstSequence: history.firstSequence, endSequence: history.endSequence, total: history.count,
+						capacity: history.capacity, wordCount: history.wordCount, wordCapacity: history.wordCapacity, expired: history.expired } };
+				}
+				if (request.generation !== history.generation) throw new StudioToolInputError('GPU history generation changed; read the current generation.');
+				if (request.sequence < history.firstSequence) throw new StudioToolInputError('GPU operation sequence expired; read the retained sequence window.');
+				if (request.sequence > history.endSequence || request.name !== 'studio_read_gpu_operations' && request.sequence === history.endSequence) throw new StudioToolInputError('GPU operation sequence is beyond the published history.');
+				if (request.name === 'studio_read_gpu_operations') {
+					const count = Math.min(request.count, history.endSequence - request.sequence), operations = [];
+					for (let offset = 0; offset < count; offset++) {
+						const record = history.at(request.sequence + offset); operations.push(encodeGpuOperation(record, history.canSeek(record)));
+					}
+					return { kind: 'runtime' as const, data: { target: this.owner.target, generation: history.generation, firstSequence: history.firstSequence, endSequence: history.endSequence, operations } };
+				}
+				const record = history.at(request.sequence);
+				if (request.name === 'studio_read_gpu_words') {
+					if (request.offset > record.wordCount) throw new StudioToolInputError('GPU word offset is beyond this operation.');
+					const count = Math.min(request.count, record.wordCount - request.offset), words = new Array<number>(count);
+					history.copyWords(request.sequence, request.offset, words);
+					return { kind: 'runtime' as const, data: { target: this.owner.target, generation: history.generation,
+						sequence: request.sequence, offset: request.offset, nextOffset: request.offset + count, wordCount: record.wordCount, words } };
+				}
+				if (!history.canSeek(record)) throw new StudioToolInputError('The GPU operation has no reachable frame in the retained physical recording.');
+				const sequence = record.sequence, cycles = record.cycles;
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				return this.navigation.seek(cycles, signal).completion.then(result => ({ kind: 'runtime' as const,
+					data: { target: this.owner.target, generation: request.generation, sequence, requestedObservationCycles: cycles, ...result } }));
+			}
 			case 'studio_gte_history':
 			case 'studio_read_gte_commands':
 			case 'studio_seek_gte_command': {
@@ -245,6 +288,7 @@ export class WorkspaceRuntimeTools {
 		this.lifetime.abort();
 		this.debugSources.dispose();
 		this.gteObservation?.dispose(); this.gteObservation = undefined;
+		this.gpuObservation?.dispose(); this.gpuObservation = undefined;
 		this.connection.removeEventListener('abort', this.onDisconnect);
 		this.inspection?.dispose(); this.inspection = undefined;
 		this.actors = undefined;

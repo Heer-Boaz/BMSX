@@ -290,6 +290,15 @@ submission from GTE results. Retained evidence navigates through the existing
 physical frame history with its original checkpoint provenance. The hardware
 interface remains specified by [the GTE reference](book1/gte.md).
 
+GPU inspection observes emitted operations at the parser/command-buffer owner,
+before borrowed packet storage can be retired. Studio owns bounded event and
+word retention, detached selections and paged exports. It consumes captured
+drawing state rather than synchronizing the device or reconstructing historical
+textures from current VRAM. No issuing CPU source or GTE ancestry is inferred.
+Logical device start and actual host observation retain separate cycle
+identities; shared frame navigation uses the latter's checkpoint provenance.
+See [the GPU reference](book1/gpu.md) for the programming interface.
+
 ### Workspace services and assistants
 
 Workspace filesystem/browser storage, source saving and session recovery have

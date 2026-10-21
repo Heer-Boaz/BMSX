@@ -14,6 +14,8 @@ import type { SuspendedGuestSession } from './runtime/suspended_guest';
 import type { RuntimeEventHistory } from './runtime/event_history';
 import { EventViewerInput } from './workbench/contrib/events/editor_input';
 import { EventViewerPane } from './workbench/contrib/events/editor_pane';
+import { GpuDebuggerPane } from './workbench/contrib/gpu_debugger/editor_pane';
+import type { RuntimeGpuHistory } from './runtime/gpu_history';
 import { GteDebuggerPane } from './workbench/contrib/gte_debugger/editor_pane';
 import type { RuntimeGteHistory } from './runtime/gte_history';
 import { AemEditorController } from './workbench/contrib/aem/controller';
@@ -200,6 +202,7 @@ const EDITOR_TARGET_HEIGHT = 288;
 export type CartEditor = TextInputHost & {
 	readonly events: RuntimeEventHistory;
 	readonly gte: RuntimeGteHistory;
+	readonly gpu: RuntimeGpuHistory;
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
 	importFiles: ImportWorkspaceFiles | undefined;
@@ -380,6 +383,7 @@ export class RuntimeCartEditor implements CartEditor {
 		debuggerState: RuntimeDebuggerState,
 		public readonly events: RuntimeEventHistory,
 		public readonly gte: RuntimeGteHistory,
+		public readonly gpu: RuntimeGpuHistory,
 		runtimeTasks: RuntimeTaskQueue,
 		execution: HostExecutionControl,
 		rewind: HostRewind,
@@ -403,7 +407,7 @@ export class RuntimeCartEditor implements CartEditor {
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
 		this.terminal = new BiosTerminal(runtime, input, guest, debuggerState, runtimeTasks, execution, rewind, fault);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, gte, clock, run => this.scenarioLab.revealRun(run));
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, gte, gpu, clock, run => this.scenarioLab.revealRun(run));
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -455,6 +459,7 @@ export class RuntimeCartEditor implements CartEditor {
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
+			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
 			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu, this.sources, this.navigation),
 			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
@@ -810,6 +815,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.tools.dispose();
 		this.events.dispose();
 		this.gte.dispose();
+		this.gpu.dispose();
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();

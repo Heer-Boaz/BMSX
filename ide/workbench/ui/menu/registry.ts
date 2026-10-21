@@ -6,9 +6,9 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -31,6 +31,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'events.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'gte.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'gpu.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'assistant.turn': readonly WorkbenchMenuCommandItem[];
 	readonly 'workspaceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
@@ -229,6 +230,18 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'romInspector.code' },
 		{ type: 'command', command: 'romInspector.sort' },
 	],
+	'gpu.title': [
+		{ type: 'command', command: 'gpu.follow' },
+		{ type: 'command', command: 'gpu.view' },
+		{ type: 'command', command: 'gpu.more' },
+	],
+	'gpu.context': [
+		{ type: 'command', command: 'gpu.details' },
+		{ type: 'command', command: 'gpu.goToFrame' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'gpu.filter' },
+		{ type: 'command', command: 'gpu.clear' },
+	],
 	'gte.title': [
 		{ type: 'command', command: 'gte.follow' },
 		{ type: 'command', command: 'gte.view' },
@@ -309,6 +322,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'events' },
 		{ type: 'command', command: 'romInspector' },
 		{ type: 'command', command: 'gteDebugger' },
+		{ type: 'command', command: 'gpuDebugger' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'gameView.togglePanel' },
 		{ type: 'command', command: 'actorLab' },

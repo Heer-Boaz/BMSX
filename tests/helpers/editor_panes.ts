@@ -94,6 +94,7 @@ export function createTestEditorPanes(): EditorPanes {
 		rom_inspector: () => new TestEditorPane<RomInspectorInput>(activateViewInput),
 		event_viewer: () => new TestEditorPane<EventViewerInput>(activateViewInput),
 		gte_debugger: () => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(activateViewInput),
+		gpu_debugger: () => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(activateViewInput),
 		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
 		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),

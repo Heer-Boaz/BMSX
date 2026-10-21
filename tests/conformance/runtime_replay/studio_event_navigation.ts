@@ -125,7 +125,7 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	// ordinary UI changes its projection. No fake replay or backend is installed.
 	const lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(ide.inspection, ide.frameNavigation, ide.gameCapture, ide.luaEvaluation,
-		ide.debuggerExecution, ide.actorExecution, ide.boots, ide.hotResumes, ide.events, ide.gte, lifetime.signal);
+		ide.debuggerExecution, ide.actorExecution, ide.boots, ide.hotResumes, ide.events, ide.gte, ide.gpu, lifetime.signal);
 	const generation = ide.events.generation;
 	const reply = tools.execute('studio_seek_event', { target: ide.inspection.target, generation, sequence: previous.sequence });
 	const operation = ide.frameNavigation.active!;

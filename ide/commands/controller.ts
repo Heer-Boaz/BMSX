@@ -220,6 +220,7 @@ export class IdeCommandController {
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
+			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear': case 'gpu.more':
 			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
 			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear': case 'gte.more':
 			case 'assistant.send':
@@ -471,6 +472,7 @@ export class IdeCommandController {
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
+			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear': case 'gpu.more':
 			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
 			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear': case 'gte.more':
 			case 'assistant.send':

@@ -628,7 +628,7 @@ return world`), false), cpu = f.runtime.machine.cpu;
 
 test('conversation admission binds all actor handles to its own stop and prompt lifetime', async () => {
 	const f = fixture(), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	assert.throws(() => tools.execute('studio_list_actors', { inspection: 'foreign', start: 0, count: 1 }), /current suspended/);
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);

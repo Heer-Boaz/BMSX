@@ -12,7 +12,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
-		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, lifetime.signal);
+		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	const events = f.events, target = f.inspection.target;
 	t.after(() => { lifetime.abort(); events.dispose(); });
 	assert.throws(() => tools.execute('studio_event_history', { target: 'foreign', action: 'status' }), /authoring target/);
@@ -68,7 +68,7 @@ test('event navigation is admitted by recording provenance and cancelled by the 
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
-		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, lifetime.signal);
+		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	t.after(() => { lifetime.abort(); f.events.dispose(); f.presenter.dispose(); });
 	const history = runtime.history;
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });

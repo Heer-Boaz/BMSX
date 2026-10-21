@@ -2,6 +2,7 @@ import type { RuntimeFaultState } from '../runtime/fault_state';
 import { openHostError } from '../workbench/contrib/host_error/editor_input';
 import { openRomInspector } from '../workbench/contrib/rom_inspector/quick_access';
 import { openEventViewer } from '../workbench/contrib/events/editor_input';
+import { openGpuDebugger } from '../workbench/contrib/gpu_debugger/editor_input';
 import { openGteDebugger } from '../workbench/contrib/gte_debugger/editor_input';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 import { openAssistant } from '../workbench/contrib/assistant/editor_input';
@@ -23,6 +24,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'romInspector':
 		case 'events':
 		case 'gteDebugger':
+		case 'gpuDebugger':
 		case 'terminal':
 		case 'assistant':
 		case 'conversations':
@@ -60,6 +62,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'hostError': openHostError(editor.editorPanes, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
 		case 'events': openEventViewer(editor.editorPanes, editor.events); return;
+		case 'gpuDebugger': openGpuDebugger(editor.editorPanes, editor.gpu); return;
 		case 'gteDebugger': openGteDebugger(editor.editorPanes, editor.gte); return;
 		case 'terminal':
 			editor.terminal.open();

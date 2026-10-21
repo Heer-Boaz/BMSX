@@ -198,7 +198,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	public override update(): void {
 		const input = this.input, { layout, list } = input;
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds) || this.freshLayout;
-		this.freshLayout = false; input.update();
+		this.freshLayout = false; const projectionChanged = input.update();
 		const top = layout.top + layout.rowHeight + 10, split = layout.left + Math.trunc((layout.right - layout.left) * 0.30);
 		list.layout(layout.left + 4, top, split, layout.bottom, input.projection.rows.length * layout.rowHeight);
 		write_rect_bounds(input.visualBounds, split + 4, top, layout.right - 4, layout.bottom);
@@ -218,7 +218,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const first = Math.max(0, Math.trunc(list.scrollTop / layout.rowHeight));
 		const end = Math.min(input.projection.rows.length, first + Math.trunc(list.height / layout.rowHeight) + 2);
 		const firstSequence = input.projection.rows[first] ?? -1, lastSequence = input.projection.rows[end - 1] ?? -1;
-		if (layoutChanged || firstSequence !== this.rowFirst || lastSequence !== this.rowLast || this.listOffset !== list.offsetTop) {
+		if (layoutChanged || projectionChanged || firstSequence !== this.rowFirst || lastSequence !== this.rowLast || this.listOffset !== list.offsetTop) {
 			let count = 0;
 			for (let index = first, y = list.offsetTop + first * layout.rowHeight; index < end && y < list.bounds.bottom; index++, y += layout.rowHeight) {
 				const sequence = input.projection.rows[index];

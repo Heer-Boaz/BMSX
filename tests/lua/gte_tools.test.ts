@@ -41,7 +41,7 @@ function fixture(t: TestContext, program = PROGRAM) {
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
-		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, lifetime.signal);
+		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	const issue = cpu.getGlobalByKey(cpu.stringPool.find('issue')!) as Closure;
 	t.after(() => { lifetime.abort(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
 	return { ...f, tools, lifetime, cpu, issue, target: f.inspection.target };
@@ -62,7 +62,7 @@ test('GTE tool leases are explicit, idempotent and prompt-local without stopping
 	assert.equal(gteHistory.generation, generation, 'repeated start does not acquire or reset again');
 	const secondLifetime = new AbortController();
 	const second = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
-		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, gteHistory, secondLifetime.signal);
+		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, gteHistory, f.gpuHistory, secondLifetime.signal);
 	t.after(() => secondLifetime.abort());
 	await second.execute('studio_gte_history', { target, action: 'start' });
 	assert.equal(gteHistory.generation, generation, 'another context joins the same active session');
