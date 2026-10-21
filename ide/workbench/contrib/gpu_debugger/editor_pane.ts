@@ -71,6 +71,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController) {
 		super(resources);
+		this.list.onWillScroll = this.words.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.running = commands.transport.togglePlayback(); } });
 		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
@@ -233,8 +234,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	}
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event, false); }
 	public handleWheel(event: WheelInputSnapshot): void {
-		const input = this.input;
-		if (!this.inspector.visible && event.deltaY !== 0) input.following = false;
-		(this.inspector.visible ? this.inspector : this.wordsActive && point_in_rect(event.viewportX, event.viewportY, input.words.bounds) ? this.words : this.list).handleWheel(event, event.deltaY * input.layout.rowHeight);
+		const delta = event.deltaY * this.input.layout.rowHeight;
+		if (this.inspector.visible) this.inspector.handleWheel(event, delta);
+		else if (!this.wordsActive || !this.words.handleWheel(event, delta)) this.list.handleWheel(event, delta);
 	}
 }

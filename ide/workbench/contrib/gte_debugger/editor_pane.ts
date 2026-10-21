@@ -82,6 +82,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		private readonly contextMenu: ContextMenuController, private readonly sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController) {
 		super(resources);
+		this.scroll.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { this.input.running = commands.transport.togglePlayback(); } });
@@ -280,7 +281,6 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	}
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event); }
 	public handleWheel(event: WheelInputSnapshot): void {
-		if (!this.inspector.visible && event.deltaY !== 0 && point_in_rect(event.viewportX, event.viewportY, this.input.list.bounds)) this.input.following = false;
 		(this.inspector.visible ? this.inspector : this.scroll).handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

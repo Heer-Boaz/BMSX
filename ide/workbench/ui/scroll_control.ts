@@ -12,6 +12,8 @@ import { ScrollbarPointerControl } from './scrollbar_pointer';
 export class WorkbenchScrollControl {
 	public readonly focusTarget: InputFocusTarget;
 	public lineStep = 0;
+	/** Admitted user scrolling, including a thumb press; layout/reveal never calls this. */
+	public onWillScroll: (() => void) | undefined;
 	private input: WorkbenchScrollViewport | null = null;
 	private readonly pointer: ScrollbarPointerControl;
 	private readonly unbindKeyboard: () => void;
@@ -47,7 +49,7 @@ export class WorkbenchScrollControl {
 	/** Child hits run first. Background focus is distinct from non-focusing scrollbar capture. */
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const view = this.input!;
-		if (this.pointer.handlePointer(snapshot, view.scrollbar)) return true;
+		if (this.pointer.handlePointer(snapshot, view.scrollbar, this.onWillScroll)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) return false;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.focusTarget.focus();
 		return true;
@@ -59,6 +61,7 @@ export class WorkbenchScrollControl {
 			|| (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.scrollbar.getTrack()))) return false;
 		this.cancelPointer();
+		if (delta !== 0) this.onWillScroll?.();
 		view.scrollbar.setScroll(view.scrollTop + delta);
 		return true;
 	}
@@ -69,6 +72,7 @@ export class WorkbenchScrollControl {
 			if (!isKeyDown(code, input)) continue;
 			consumeIdeKey(code, input);
 			this.cancelPointer();
+			this.onWillScroll?.();
 			switch (code) {
 				case 'ArrowUp': view.scrollbar.setScroll(view.scrollTop - this.lineStep); break;
 				case 'ArrowDown': view.scrollbar.setScroll(view.scrollTop + this.lineStep); break;

@@ -74,6 +74,58 @@ test('thumb capture travels outside its track without focusing or accepting a dr
 	f.pointer(121, 65, 0, 0, PRIMARY);
 });
 
+test('user scrolling suspends following before capture, while programmatic reveal does not', t => {
+	const f = fixture(t);
+	let following = true, gestures = 0;
+	f.control.onWillScroll = () => { following = false; gestures += 1; };
+	const update = () => {
+		if (following) f.view.scrollbar.reveal(390, 400, 0);
+	};
+	update();
+	assert.equal(f.view.scrollTop, 300);
+	assert.equal(gestures, 0);
+	f.pointer(121, 120, PRIMARY, PRIMARY);
+	assert.equal(following, false, 'grabbing the thumb suspends following before any pointer movement');
+	assert.equal(f.view.scrollTop, 300);
+	assert.equal(f.focus.target, f.parent);
+	f.pointer(121, 45, PRIMARY);
+	update();
+	assert.equal(f.view.scrollTop, 0, 'the next content update does not undo captured scrolling');
+	f.pointer(121, 45, 0, 0, PRIMARY);
+	assert.equal(gestures, 1, 'capture movement and release do not start another gesture');
+	following = true;
+	update();
+	f.pointer(121, 65, 0, PRIMARY, PRIMARY);
+	update();
+	assert.equal(f.view.scrollTop, 90, 'a coalesced track click also leaves follow mode');
+	assert.equal(f.capture.active, false);
+	assert.equal(gestures, 2);
+	following = true;
+	f.view.layout(20, 30, 123, 130, 50);
+	f.pointer(121, 65, PRIMARY, PRIMARY);
+	assert.equal(following, true, 'a hidden thumb is not a scroll gesture');
+	assert.equal(gestures, 2);
+});
+
+test('scroll intent belongs to the admitted viewport, including wheel over its track', t => {
+	const f = fixture(t);
+	let gestures = 0;
+	f.control.onWillScroll = () => { gestures += 1; };
+	f.control.handleWheel(f.pointer(40, 50), 0);
+	assert.equal(gestures, 0);
+	assert.equal(f.control.handleWheel(f.pointer(10, 50), 40), false);
+	assert.equal(gestures, 0);
+	assert.equal(f.control.handleWheel(f.pointer(121, 50), 40), true);
+	assert.equal(f.view.scrollTop, 40);
+	assert.equal(gestures, 1);
+	f.pointer(40, 50, PRIMARY, PRIMARY);
+	assert.equal(gestures, 1, 'background focus is not a scroll gesture');
+	f.view.layout(20, 30, 123, 130, 500);
+	f.view.scrollbar.setScroll(100);
+	f.view.scrollbar.reveal(390, 400, 0);
+	assert.equal(gestures, 1, 'range refinement and owner-driven positioning are not user input');
+});
+
 test('virtual height refinement retains the gesture, its sensitivity and the corrected reading anchor', t => {
 	const f = fixture(t);
 	f.pointer(121, 35, PRIMARY, PRIMARY); f.pointer(121, 55, PRIMARY);
@@ -104,6 +156,8 @@ test('geometry change, blocking, lost input, cancel and detach end capture witho
 
 test('wheel routes only inside this viewport and leaves focused values alone', t => {
 	const f = fixture(t);
+	let gestures = 0;
+	f.control.onWillScroll = () => { gestures += 1; };
 	assert.equal(f.control.handleWheel(f.pointer(40, 50), 40), true);
 	assert.equal(f.view.scrollTop, 40); assert.equal(f.focus.target, f.parent);
 	assert.equal(f.control.handleWheel(f.pointer(10, 50), 40), false);
@@ -122,6 +176,7 @@ test('wheel routes only inside this viewport and leaves focused values alone', t
 	press('ArrowUp'); assert.equal(f.view.scrollTop, 130);
 	press('End'); assert.equal(f.view.scrollTop, 300);
 	press('Home'); assert.equal(f.view.scrollTop, 0);
+	assert.equal(gestures, 5, 'one admitted wheel and four keyboard scrolls');
 });
 
 test('a coalesced track click completes immediately; empty/clipped areas never focus or capture', t => {

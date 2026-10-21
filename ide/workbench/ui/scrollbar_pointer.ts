@@ -26,9 +26,12 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 	};
 
 	/** Track hits consume pointer input without taking keyboard focus. */
-	public handlePointer(snapshot: PointerSnapshot, scrollbar: Scrollbar): boolean {
+	public handlePointer(snapshot: PointerSnapshot, scrollbar: Scrollbar, onDragStart?: () => void): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, scrollbar.getTrack())) return false;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && scrollbar.isVisible()) this.beginDrag(snapshot, scrollbar);
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && scrollbar.isVisible()) {
+			onDragStart?.();
+			this.beginDrag(snapshot, scrollbar);
+		}
 		return true;
 	}
 
