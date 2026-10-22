@@ -33,10 +33,10 @@ test('pointer capture delivers movement and a physical release, detached before 
 	capture.cancel();
 });
 
-test('modal, invalid/outside pointer or consumed/lost input cancels; none authorizes a drop', () => {
+test('modal, invalid pointer or consumed/lost input cancels; none authorizes a drop', () => {
 	for (const [snapshot, blocked, released, consumed] of [
 		[held, true, false, false], [{ ...held, valid: false }, false, true, false],
-		[{ ...held, insideViewport: false }, false, true, false], [{ ...held, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false, false, true],
+		[{ ...held, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false, false, true],
 	] as const) {
 		const capture = new PointerCaptureService();
 		let stops = 0;
@@ -49,6 +49,48 @@ test('modal, invalid/outside pointer or consumed/lost input cancels; none author
 		assert.equal(stops, 1);
 		assert.equal(capture.dispatch(held, false, 40), false);
 	}
+});
+
+test('native capture continues outside the viewport and only physical release completes it', () => {
+	const capture = new PointerCaptureService();
+	let moves = 0, releases = 0;
+	capture.capture({ handleCapturedPointer() { moves++; }, releaseCapturedPointer() { releases++; }, cancelPointer() { assert.fail('outside coordinates are not capture loss'); } });
+	capture.dispatch({ ...held, insideViewport: false, viewportX: -12 }, false, 1);
+	capture.dispatch({ ...held, insideViewport: false, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 2);
+	assert.equal(moves, 1); assert.equal(releases, 1);
+});
+
+test('a surface route outlives its initiating control until all physical buttons are up', () => {
+	const capture = new PointerCaptureService(), scope = Symbol('window');
+	const first = { ...held, justPressedButtons: PointerButton.Primary };
+	capture.beginRoute(scope, first);
+	let releases = 0;
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() { releases++; }, cancelPointer() {} });
+	capture.dispatch({ ...held, pressedButtons: PointerButton.Primary | PointerButton.Secondary, justPressedButtons: PointerButton.Secondary }, false, 1, scope);
+	const primaryUp = { ...held, pressedButtons: PointerButton.Secondary, justReleasedButtons: PointerButton.Primary };
+	capture.dispatch(primaryUp, false, 2, scope);
+	capture.endRoute(primaryUp);
+	assert.equal(releases, 1); assert.equal(capture.active, false); assert.equal(capture.routeScope, scope);
+	capture.endRoute({ ...held, pressedButtons: 0, justReleasedButtons: PointerButton.Secondary });
+	assert.equal(capture.routeScope, undefined);
+});
+
+test('retirement cancels only the owning scope and drains its remaining hold without retargeting', () => {
+	const capture = new PointerCaptureService(), scope = Symbol('first'), other = Symbol('second');
+	capture.beginRoute(scope, { ...held, justPressedButtons: PointerButton.Primary });
+	let cancels = 0;
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() { assert.fail('cancel must not commit'); }, cancelPointer() { cancels++; } });
+	capture.cancelScope(other);
+	assert.equal(capture.active, true);
+	capture.cancelScope(scope);
+	assert.equal(cancels, 1); assert.equal(capture.draining, true);
+	capture.beginRoute(other, { ...held, pressedButtons: PointerButton.Primary | PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
+	assert.equal(capture.routeScope, undefined);
+	assert.equal(capture.dispatch(held, false, 1, other), true);
+	assert.equal(capture.dispatch({ ...held, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 2, other), true);
+	assert.equal(capture.draining, false);
+	capture.beginRoute(other, { ...held, justPressedButtons: PointerButton.Primary });
+	assert.equal(capture.routeScope, other);
 });
 
 test('capture replacement detaches before notifying the old owner; stale releases cannot release the new owner', () => {
@@ -86,4 +128,23 @@ test('capture latches each initiating button; another release cannot finish it a
 		assert.equal(cancels, 1, 'lost/consumed input has no release edge');
 		assert.equal(releases, 1);
 	}
+});
+
+test('admission interruption drains an unowned physical hold; source loss clears that drain immediately', () => {
+	const capture = new PointerCaptureService();
+	const scope = Symbol('new admitted surface');
+	capture.interrupt(true);
+	capture.beginRoute(scope, { ...held, pressedButtons: PointerButton.Primary | PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
+	assert.equal(capture.routeScope, undefined);
+	assert.equal(capture.dispatch(held, false, 0, scope), true);
+	capture.interrupt(false);
+	assert.equal(capture.draining, false);
+	capture.beginRoute(scope, { ...held, justPressedButtons: PointerButton.Primary });
+	assert.equal(capture.routeScope, scope);
+	capture.cancelButtons(PointerButton.Primary);
+	assert.equal(capture.routeScope, undefined);
+	assert.equal(capture.draining, true);
+	assert.equal(capture.dispatch({ ...held, pressedButtons: PointerButton.Secondary }, false, 0, scope), true);
+	assert.equal(capture.dispatch({ ...held, pressedButtons: 0 }, false, 0, scope), true);
+	assert.equal(capture.draining, false);
 });

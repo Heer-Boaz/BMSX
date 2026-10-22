@@ -121,9 +121,9 @@ export class ActorWatches {
 	public dispose(): void { for (const actor of this.actors) actor.tree.dispose(); this.actors.length = 0; this.pins.length = 0; }
 
 	/** Discarded-future identities cannot bind to new allocations on a live branch. */
-	public resumeHistory(current: ActorRuntimeTree, domain: ResourceDomain): void {
+	public resumeHistory(current: ActorRuntimeTree, domain: ResourceDomain, otherTree?: ActorRuntimeTree, otherDomain?: ResourceDomain): void {
 		for (const actor of this.actors) {
-			const tree = this.resolveActor(actor, current, domain);
+			const tree = this.resolveActor(actor, current, domain, otherTree, otherDomain);
 			for (const group of actor.nodes) {
 				const node = tree === undefined || group.pins.every(pin => pin.retired)
 					? undefined : resolveActorTarget(tree.roots, group.target, this.guest);
@@ -144,7 +144,7 @@ export class ActorWatches {
 	}
 
 	public refresh(current: ActorRuntimeTree, domain: ResourceDomain, historical: boolean, selected: ActorNode | undefined,
-		selectedProperties: readonly RuntimeInspectionProperty[]): boolean {
+		selectedProperties: readonly RuntimeInspectionProperty[], otherTree?: ActorRuntimeTree, otherDomain?: ResourceDomain): boolean {
 		if (!this.dirty) return false;
 		this.dirty = false;
 		const compareChanges = this.observationPending;
@@ -152,7 +152,7 @@ export class ActorWatches {
 		let changed = this.membershipChanged;
 		this.membershipChanged = false;
 		for (const actor of this.actors) {
-			const tree = this.resolveActor(actor, current, domain);
+			const tree = this.resolveActor(actor, current, domain, otherTree, otherDomain);
 			for (const group of actor.nodes) {
 				const node = tree === undefined || group.pins.every(pin => pin.retired)
 					? undefined : resolveActorTarget(tree.roots, group.target, this.guest);
@@ -177,12 +177,14 @@ export class ActorWatches {
 		return changed;
 	}
 
-	private resolveActor(actor: WatchedActor, current: ActorRuntimeTree, domain: ResourceDomain): ActorRuntimeTree | undefined {
+	private resolveActor(actor: WatchedActor, current: ActorRuntimeTree, domain: ResourceDomain,
+		otherTree?: ActorRuntimeTree, otherDomain?: ResourceDomain): ActorRuntimeTree | undefined {
 		if (actor.nodes.every(node => node.pins.every(pin => pin.retired))) return;
 		const target = actor.target;
 		const world = runtimeWorld(this.sources, this.guest, target.domain);
 		if (world === undefined || world.hashId !== target.worldHashId) return;
 		if (domain === target.domain && current.roots[0]?.hashId === target.actorHashId) return current;
+		if (otherDomain === target.domain && otherTree?.roots[0]?.hashId === target.actorHashId) return otherTree;
 		actor.tree.update(this.sources, this.guest, target.domain, findWorldActor(this.guest, world, target.actorHashId));
 		return actor.tree;
 	}

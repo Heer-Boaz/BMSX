@@ -202,7 +202,7 @@ export class BrowserInputHub implements InputSource {
 	private nativeKeyHandler: ((event: KeyboardEvent) => boolean) | undefined;
 	private nativePointerHandler: ((event: PointerInputEvent) => void) | undefined;
 	private nativeWheelHandler: ((event: WheelInputEvent) => boolean) | undefined;
-	private readonly nativeWheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
+	private readonly nativeWheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, attachmentDeltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 	private canvasButtons = 0;
 	private readonly nativePointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
@@ -275,6 +275,7 @@ export class BrowserInputHub implements InputSource {
 		ownerWindow.addEventListener('pointermove', pointerMove, { passive: false, capture: true });
 		ownerWindow.addEventListener('pointerup', pointerUp, { passive: false, capture: true });
 		ownerWindow.addEventListener('pointercancel', pointerCancel, { passive: false, capture: true });
+		ownerWindow.addEventListener('lostpointercapture', pointerCancel, { passive: false, capture: true });
 		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
 		surface.addEventListener('wheel', this.onWheel, { passive: false });
 		gestureSurface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
@@ -293,6 +294,7 @@ export class BrowserInputHub implements InputSource {
 			ownerWindow.removeEventListener('pointermove', pointerMove, true);
 			ownerWindow.removeEventListener('pointerup', pointerUp, true);
 			ownerWindow.removeEventListener('pointercancel', pointerCancel, true);
+			ownerWindow.removeEventListener('lostpointercapture', pointerCancel, true);
 			surface.removeEventListener('pointerleave', this.onPointerLeave);
 			surface.removeEventListener('wheel', this.onWheel);
 			gestureSurface.removeEventListener('contextmenu', this.onContextMenu);
@@ -721,6 +723,7 @@ export class BrowserInputHub implements InputSource {
 			: event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.surface.clientHeight / UI_WHEEL_PIXELS_PER_STEP : 1 / UI_WHEEL_PIXELS_PER_STEP;
 		wheel.deltaX = event.deltaX * scaleX;
 		wheel.deltaY = event.deltaY * scaleY;
+		wheel.attachmentDeltaY = event.deltaY / unitsPerStep;
 		wheel.modifiers = (event.shiftKey ? KeyModifier.shift : 0) | (event.ctrlKey ? KeyModifier.ctrl : 0)
 			| (event.altKey ? KeyModifier.alt : 0) | (event.metaKey ? KeyModifier.meta : 0);
 		wheel.timestamp = now;

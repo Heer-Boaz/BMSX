@@ -4,7 +4,7 @@ import type { PointerPosition, PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService } from '../../input/pointer/capture';
+import { type PointerCaptureScope, type PointerCaptureService } from '../../input/pointer/capture';
 import type { WorkbenchScrollViewport } from './scroll_viewport';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
 
@@ -19,7 +19,7 @@ export class WorkbenchScrollControl {
 	private readonly unbindKeyboard: () => void;
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget,
-		keyboard?: (input: KeyInputEvent) => boolean, scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE, cancelKeyboard?: () => void) {
+		keyboard?: (input: KeyInputEvent) => boolean, scope?: PointerCaptureScope, cancelKeyboard?: () => void) {
 		this.pointer = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== null;

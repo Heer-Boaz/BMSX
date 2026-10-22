@@ -12,6 +12,7 @@ import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection'
 import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
+import { rects_intersect } from '../../../machine/ts/common/rect';
 
 /** Real host routing and latched ICU words, alongside ordinary cartridge gameplay. */
 export async function runStudioGameInput(test: StudioFixture) {
@@ -118,7 +119,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('Enter');
 	const actor = getActiveTab();
 	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	await click(actor.previewBounds);
+	await click(test.visiblePreviewPoint(actor.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !ide.editor.executionSuspended,
 		'Actor Lab preview shares guest focus and releases the authoring hold');
 	setKey('KeyZ', true);
@@ -188,17 +189,19 @@ export async function runStudioGameInput(test: StudioFixture) {
 	test.setPointerButton('pointer_secondary', false); await frame();
 	check(!actor.running && actor.actorHashId === ide.editor.actorLab.viewportPicker.hit.hashId && actor.actorHashId !== 0,
 		'inspecting the hovered live actor is the explicit pause and selection action');
+	const previewPlacement = JSON.stringify(actor.previewBounds);
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
 	const inspector = actorPane.inspector, details = actor.details;
-	check(actorPane.showsGameFrame && inspector.visible && actor.detailsOpen,
-		'instance Details remain beside the embedded game preview');
+	check(actorPane.showsGameFrame && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
+		'instance Details attach as a separate floating window over the full game preview');
 	await press('ArrowDown');
 	const selectedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
 	const selectedActorPath = JSON.stringify(actor.selectionPath);
-	check(actor.previewBounds.bottom < actor.detailsBounds.top, 'game and Details occupy separate visible surfaces');
-	await test.capture?.('actor-details-adjacent');
-	await click(actor.previewBounds);
+	check(JSON.stringify(actor.previewBounds) === previewPlacement && rects_intersect(actor.previewBounds, actor.detailsWindow.bounds),
+		'floating Details overlap the preview without subtracting any preview height');
+	await test.capture?.('actor-details-floating');
+	await click(test.visiblePreviewPoint(actor.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && ide.editor.guestInputRecipient !== null
 		&& inspector.visible && actor.details === details && JSON.stringify(actor.selectionPath) === selectedActorPath,
 		'visible Actor Lab preview takes game input without replacing Details or actor selection');
@@ -206,6 +209,28 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await until(() => (runtime.machine.memory.readIoU32(keyAddress) & keyMask) !== 0,
 		'Actor Lab game input still reaches the ICU beside open Details');
 	await test.releaseGuestKey('KeyZ');
+	// A gesture begun in the visible preview stays with the game across the window.
+	test.movePointer(test.visiblePreviewPoint(actor.previewBounds)); await frame();
+	test.setPointerButton('pointer_primary', true); await frame();
+	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	check((sample.pointerButtons & 1) !== 0, 'a visible preview press establishes the guest gesture');
+	test.movePointer(actor.detailsWindow.client); await frame();
+	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	check((sample.pointerButtons & 1) !== 0 && inputFocus.target?.guestInput?.bounds === actor.previewBounds,
+		'guest pointer capture crosses floating Details without a stray UI press');
+	await test.capture?.('actor-guest-drag-over-details');
+	test.setPointerButton('pointer_primary', false); await frame();
+	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	check(sample.pointerButtons === 0 && inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
+		'releasing above Details ends only the guest gesture and preserves the property selection');
+	const header = actor.detailsWindow.header;
+	test.movePointer({ left: header.left + 6, right: header.left + 6, top: header.top + 6, bottom: header.top + 6 });
+	test.setPointerButton('pointer_secondary', true); await frame();
+	test.movePointer(test.visiblePreviewPoint(actor.previewBounds)); await frame();
+	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	check(sample.pointerButtons === 0 && inputFocus.target?.guestInput === undefined,
+		'a new window-owned press remains UI input when it crosses back over the preview');
+	test.setPointerButton('pointer_secondary', false); await frame();
 	await press('ShiftLeft', 'F1');
 	const detailsHeld = cycles();
 	await frame(); await frame();
@@ -224,26 +249,49 @@ export async function runStudioGameInput(test: StudioFixture) {
 		&& inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
 		'rewind refreshes Details and preserves actor and property selection');
 	await test.capture?.('actor-details-rewound');
-	await click({ left: actor.detailsSplit.bounds.left + 1, right: actor.detailsSplit.bounds.left + 2,
-		top: actor.detailsSplit.position, bottom: actor.detailsSplit.position + 1 });
-	const sashFocus = inputFocus.target, initialRatio = actor.detailsSplit.ratio;
-	await press('ArrowDown');
-	check(actor.detailsSplit.ratio > initialRatio, 'visible Details sash owns its focused resize keys');
-	const hiddenRatio = actor.detailsSplit.ratio;
-	await click(inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.bounds);
-	check(!inspector.visible && !actor.detailsOpen && inputFocus.target !== sashFocus,
-		'pointer Hide releases the focused Details sash instead of parking focus on an invisible control');
-	await press('ArrowDown');
-	check(actor.detailsSplit.ratio === hiddenRatio, 'the hidden Details sash cannot consume resize keys');
+	await click(actor.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!.bounds);
+	const lockedSubject = details!.subject, lockedPath = details!.subjectPath;
+	check(details!.locked, 'the floating titlebar exposes the subject lock from the first instance');
+	await press('Escape'); await press('ArrowDown');
+	check(details!.locked && details!.subject === lockedSubject && details!.subjectPath === lockedPath
+		&& JSON.stringify(actor.selectionPath) !== selectedActorPath,
+		'Escape returns to tree navigation while locked Details retain the exact inspected subject');
+	await test.capture?.('actor-details-locked-tree-navigation');
+	await click(actor.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!.bounds);
+	check(!details!.locked && details!.subject !== lockedSubject, 'unlock immediately follows the current tree selection');
+	const expandedRequest = { ...actor.detailsWindow.requestedBounds };
+	await click(actor.detailsActions.items.find(item => item.command === 'window.collapse')!.bounds);
+	check(actor.detailsWindow.collapsed && actor.detailsWindow.open && actorPane.detailsWindow.clientSurface === undefined
+		&& actor.detailsWindow.bounds.bottom === actor.detailsWindow.header.bottom
+		&& JSON.stringify(actor.detailsWindow.requestedBounds) === JSON.stringify(expandedRequest),
+		'collapse retires the client surface while retaining subject, open intent and expanded requested placement');
+	await test.capture?.('actor-details-collapsed');
+	await click(test.visiblePreviewPoint(actor.previewBounds));
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && actor.detailsWindow.collapsed,
+		'collapsed Details expose their old client area to the game preview');
+	await click(actor.detailsActions.items.find(item => item.command === 'window.collapse')!.bounds);
+	check(!actor.detailsWindow.collapsed && actorPane.detailsWindow.clientSurface !== undefined,
+		'the same titlebar expands and reattaches Details without replacing its subject model');
+	const resizeBefore = { ...actor.detailsWindow.bounds };
+	test.movePointer({ left: resizeBefore.left + 1, right: resizeBefore.left + 1,
+		top: resizeBefore.bottom - 2, bottom: resizeBefore.bottom - 2 });
+	test.setPointerButton('pointer_primary', true); await frame();
+	test.movePointer({ left: resizeBefore.left + 13, right: resizeBefore.left + 13,
+		top: resizeBefore.bottom - 14, bottom: resizeBefore.bottom - 14 });
+	await frame(); test.setPointerButton('pointer_primary', false); await frame();
+	check(actor.detailsWindow.bounds.left > resizeBefore.left && actor.detailsWindow.bounds.bottom < resizeBefore.bottom,
+		'actual window edge hit testing resizes the client through central pointer capture');
+	const resizedRequest = JSON.stringify(actor.detailsWindow.requestedBounds);
+	await click(actor.detailsActions.items.find(item => item.command === 'window.hide')!.bounds);
+	check(!inspector.visible && !actor.detailsWindow.open && actorPane.detailsWindow.surface === undefined,
+		'Hide actually detaches Details and retires its chrome input');
 	await runPaletteCommand('Actor Lab: Inspect Instance');
-	await click({ left: actor.detailsSplit.bounds.left + 1, right: actor.detailsSplit.bounds.left + 2,
-		top: actor.detailsSplit.position, bottom: actor.detailsSplit.position + 1 });
-	await press('ArrowUp');
-	check(actor.detailsSplit.ratio < hiddenRatio, 'reopening Details reattaches the same sash input owner');
-	await runPaletteCommand('Actor Lab: Inspect Instance');
+	check(actorPane.detailsWindow.visible && JSON.stringify(actor.detailsWindow.requestedBounds) === resizedRequest,
+		'reopening restores the same requested window placement instead of an old split');
 	await press('Escape');
-	check(actorPane.showsGameFrame && !inspector.visible && !actor.detailsOpen,
-		'explicitly closing Details leaves the preview visible');
+	check(actorPane.showsGameFrame && inspector.visible && actor.detailsWindow.open,
+		'Escape returns focus to the tree without closing modeless Details');
+	await click(actor.detailsActions.items.find(item => item.command === 'window.hide')!.bounds);
 	await press('ShiftLeft', 'Tab');
 	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
 

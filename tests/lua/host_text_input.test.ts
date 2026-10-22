@@ -28,6 +28,7 @@ function fixture(text = '', offset = 0) {
 	const host: TextInputHost = {
 		textTarget: target,
 		dispatchKey(event) { events.push(event); return false; },
+		cancelPointerInput() {},
 		cancelInput() {},
 		onDidChangeTarget: () => () => {},
 	};
@@ -160,11 +161,13 @@ test('attaching an editing recipient leaves every guest keyboard sample unchange
 
 test('global and keyboard resets cancel host keyboard gestures without treating pointer reset as keyboard cancellation', t => {
 	const f = fixture('ab'); t.after(() => f.input.dispose());
-	let cancellations = 0;
+	let cancellations = 0, pointerCancellations = 0;
 	f.host.cancelInput = () => { cancellations += 1; };
+	f.host.cancelPointerInput = () => { pointerCancellations += 1; };
 	f.input.setEditingInput(f.host);
 	f.input.resetInput('pointer:0');
 	assert.equal(cancellations, 0);
+	assert.equal(pointerCancellations, 1, 'pointer retirement uses its own input-lifetime capability');
 	f.input.resetInput('keyboard:0');
 	assert.equal(cancellations, 1);
 	f.input.resetInput();

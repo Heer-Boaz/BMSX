@@ -93,7 +93,8 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const editing: TextInputHost = {
 		get textTarget() { return inputFocus.target?.textInput; },
 		dispatchKey(event) { inputFocus.handleKeyboard(event); return event.consumed; },
-		cancelInput() { pointerCapture.cancel(); inputFocus.cancelInput(); },
+		cancelPointerInput() { pointerCapture.interrupt(input.pointerButtonsDown); },
+		cancelInput() { this.cancelPointerInput(); inputFocus.cancelInput(); },
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 	};
 	const nativeText = new BrowserTextInput(canvas, editing);

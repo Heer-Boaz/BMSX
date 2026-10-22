@@ -1,9 +1,10 @@
 import type { RgbaImage } from '../../../machine/ts/render/image';
 import type { ImageDecoder } from '../../../hosts/common/image';
 import { HostBitmap } from '../../../machine/ts/render/host_overlay/bitmap';
+import type { IDisposable } from '../../common/lifecycle';
 import { api } from '../../runtime/overlay_api';
 
-export type ImagePreview = { bitmap?: HostBitmap; error?: string; epoch: number; retired: boolean };
+export type ImagePreview = { bitmap?: HostBitmap; error?: string; epoch: number; retained: number; retired: boolean };
 
 /** Viewport-owned decoded images. Encoded message URLs remain in the conversation. */
 export class ImagePreviewCache {
@@ -14,7 +15,7 @@ export class ImagePreviewCache {
 	public use(url: string, decoded?: RgbaImage): ImagePreview {
 		let entry = this.images.get(url);
 		if (entry === undefined) {
-			const pending: ImagePreview = { epoch: this.epoch, retired: false };
+			const pending: ImagePreview = { epoch: this.epoch, retained: 0, retired: false };
 			entry = pending; this.images.set(url, entry);
 			if (decoded !== undefined) pending.bitmap = new HostBitmap(decoded);
 			else void this.decode(url, 512, 512).then(image => {
@@ -24,8 +25,14 @@ export class ImagePreviewCache {
 		entry.epoch = this.epoch;
 		return entry;
 	}
+	/** An attached image surface can outlive the thumbnail's viewport usage. */
+	public retain(url: string): IDisposable {
+		const entry = this.use(url);
+		entry.retained++;
+		return { dispose() { entry.retained--; } };
+	}
 	public endFrame(): void {
-		for (const [url, entry] of this.images) if (entry.epoch !== this.epoch) {
+		for (const [url, entry] of this.images) if (entry.epoch !== this.epoch && entry.retained === 0) {
 			entry.retired = true; entry.bitmap?.dispose(); this.images.delete(url);
 		}
 	}

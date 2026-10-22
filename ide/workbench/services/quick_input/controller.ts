@@ -21,7 +21,7 @@ import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provide
 import { drawQuickInput, layoutQuickInput } from './render';
 
 type QuickInputSession = {
-	readonly returnFocus: InputFocusTarget | null;
+	returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 } & ({ readonly kind: 'pick'; readonly accept: (itemIndex: number) => void }
 	| { readonly kind: 'input'; readonly accept: () => Promise<void> });
@@ -55,7 +55,10 @@ export class QuickInputController implements PointerCaptureTarget {
 		justPressed: false, pointerPressed: false, doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
 	};
 
-	public constructor(private readonly contextMenu: ContextMenuController) {
+	public constructor(private readonly contextMenu: ContextMenuController,
+		private readonly onDidChangeVisibility: () => void = () => {},
+		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
+		this.field.focusTarget.scope.surfaceScope = this.pointerScope;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
@@ -64,10 +67,11 @@ export class QuickInputController implements PointerCaptureTarget {
 			else { this.message = ''; this.labelsDirty = true; }
 			resetBlink();
 		});
-		this.field.focusTarget.onDidBlur(() => { this.hide(false); });
+		this.field.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.hide(false); });
 	}
 
 	public get visible(): boolean { return this.session !== null; }
+	public get invocationOrigin(): InputFocusTarget | null { return this.session!.returnFocus; }
 	public get inputBox(): boolean { return this.session?.kind === 'input'; }
 
 	public pick<T extends QuickPickItem>(
@@ -83,17 +87,19 @@ export class QuickInputController implements PointerCaptureTarget {
 		const origin = inputFocus.target;
 		// A provider observes the invoking control after its ordinary blur policy,
 		// never the previous popup's query or an unaccepted property draft.
-		this.field.focusTarget.focus();
-		const returnFocus = inputFocus.resolveTarget(origin);
 		const disposables = new DisposableStore();
+		const session: QuickInputSession = { kind: 'pick', returnFocus: origin, disposables, accept: index => accept(provider.items[index]) };
+		this.session = session;
+		this.field.focusTarget.focus();
+		const returnFocus = session.returnFocus = inputFocus.resolveTarget(origin);
 		const provider = provide(returnFocus, disposables);
-		this.session = { kind: 'pick', returnFocus, disposables, accept: index => accept(provider.items[index]) };
 		this.title = title;
 		this.placeholder = placeholder;
 		this.model.setInput(provider);
 		this.labelsDirty = true;
 		setFieldText(this.field, '', true);
 		this.update();
+		this.onDidChangeVisibility();
 		resetBlink();
 	}
 
@@ -109,10 +115,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.contextMenu.hide();
 		pointerCapture.cancel();
 		const origin = inputFocus.target;
-		this.field.focusTarget.focus();
-		const returnFocus = inputFocus.resolveTarget(origin);
 		const session: QuickInputSession = {
-			kind: 'input', returnFocus, disposables: new DisposableStore(),
+			kind: 'input', returnFocus: origin, disposables: new DisposableStore(),
 			accept: async () => {
 				if (this.field.readOnly) return; // One outstanding submission per input session.
 				this.field.readOnly = true;
@@ -136,11 +140,14 @@ export class QuickInputController implements PointerCaptureTarget {
 			},
 		};
 		this.session = session;
+		this.field.focusTarget.focus();
+		session.returnFocus = inputFocus.resolveTarget(origin);
 		this.title = title;
 		this.placeholder = placeholder;
 		this.labelsDirty = true;
 		setFieldText(this.field, value, true);
 		this.update();
+		this.onDidChangeVisibility();
 		resetBlink();
 		return session.disposables;
 	}
@@ -158,8 +165,10 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.message = '';
 		this.field.readOnly = false;
 		this.field.pointerSelecting = false;
-		if (restoreFocus) inputFocus.setTarget(session.returnFocus);
-		else this.field.focusTarget.release();
+		if (this.field.focusTarget.hasFocus || this.acceptsFocusTransfer(inputFocus.target)) {
+			inputFocus.setTarget(restoreFocus ? session.returnFocus : null);
+		}
+		this.onDidChangeVisibility();
 	}
 
 	public accept(): void | Promise<void> {

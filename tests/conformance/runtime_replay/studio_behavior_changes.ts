@@ -30,7 +30,7 @@ export async function testBehaviorValueChanges(test: StudioFixture) {
 		check(inspector.visible && inspector.model.rows.every(row => !row.element.valueChanged), 'opening a live instance starts neutral');
 		const index = inspector.model.rows.findIndex(row => {
 			const identity = (row.element as RuntimeInspectionProperty).identity;
-			return kind === 'bt' ? identity?.section === 'blackboard' && identity.key?.scalar === 1
+			return kind === 'bt' ? identity?.section === 'blackboard' && row.element.label === 'BLACKBOARD / count'
 				: kind === 'fsm' ? identity?.section === 'instance' && identity.field === 'data'
 				: identity?.section === 'world' && identity.field === 'gameplay_time_ms';
 		});

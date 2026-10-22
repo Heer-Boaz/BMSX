@@ -25,13 +25,18 @@ export class ActionPrompt implements PointerCaptureTarget {
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
 
-	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService) {
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
+		private readonly onDidChangeVisibility: () => void = () => {},
+		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
 		this.focusTarget = focus.createTarget();
+		this.focusTarget.scope.surfaceScope = this.pointerScope;
+		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
-		this.unbindBlur = this.focusTarget.onDidBlur(() => this.close());
+		this.unbindBlur = this.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.close(); });
 	}
 
 	public get visible(): boolean { return this.action !== undefined; }
+	public get invocationOrigin(): InputFocusTarget | null { return this.returnFocus; }
 
 	public show(action: ActionPromptAction): Promise<ActionPromptChoice> {
 		this.close();
@@ -42,15 +47,17 @@ export class ActionPrompt implements PointerCaptureTarget {
 		this.view.update(action);
 		const result = new Promise<ActionPromptChoice>(resolve => { this.resolve = resolve; });
 		this.focusTarget.focus();
+		this.onDidChangeVisibility();
 		return result;
 	}
 
-	public close(choice: ActionPromptChoice = 'cancel'): void {
+	public close(choice: ActionPromptChoice = 'cancel', restoreFocus = true): void {
 		if (!this.visible) return;
 		const resolve = this.resolve!, returnFocus = this.returnFocus;
 		this.action = undefined; this.resolve = undefined; this.returnFocus = null;
 		this.cancelPointer();
-		if (this.focusTarget.hasFocus) this.focus.setTarget(returnFocus);
+		if (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)) this.focus.setTarget(restoreFocus ? returnFocus : null);
+		this.onDidChangeVisibility();
 		resolve(choice);
 	}
 

@@ -11,6 +11,7 @@ import { renameController } from '../contrib/code_editor/rename/controller';
 import type { EditorFont } from '../../editor/ui/view/font';
 
 const editorBounds = create_rect_bounds();
+const workArea = create_rect_bounds();
 const statusBounds = create_rect_bounds();
 export const STATUS_BAR_CONNECTION_WIDTH = 14;
 
@@ -24,6 +25,9 @@ export type WorkbenchChromeLayout = {
 
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
 export function getWorkbenchEditorBounds(): Readonly<RectBounds> { return editorBounds; }
+
+/** Floating root windows may cover panels, but never permanent header/status chrome. */
+export function getWorkbenchWorkArea(): Readonly<RectBounds> { return workArea; }
 
 /** Permanent connection chrome has its own slot, independent of the active editor or feedback. */
 export function getWorkbenchStatusBounds(): RectBounds {
@@ -258,12 +262,18 @@ function writeInlineBarLayout(): void {
 	inlineBarLayout.codeViewportTop = top;
 }
 
-export function refreshWorkbenchLayout(): void {
+export function refreshWorkbenchLayout(): boolean {
 	writeInlineBarLayout();
 	editorViewState.codeAreaTop = inlineBarLayout.codeViewportTop;
 	editorViewState.codeAreaBottom = editorViewState.viewportHeight - bottomMargin();
-	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
-		editorViewState.viewportWidth - editorChromeState.editorRightInset, editorViewState.codeAreaBottom);
+	const left = editorViewState.codeAreaLeft, top = topMargin();
+	const right = editorViewState.viewportWidth - editorChromeState.editorRightInset, bottom = editorViewState.codeAreaBottom;
+	const workBottom = editorViewState.viewportHeight - statusAreaHeight();
+	const workChanged = workArea.top !== top || workArea.right !== editorViewState.viewportWidth || workArea.bottom !== workBottom;
+	write_rect_bounds(workArea, 0, top, editorViewState.viewportWidth, workBottom);
+	const changed = workChanged || editorBounds.left !== left || editorBounds.top !== top || editorBounds.right !== right || editorBounds.bottom !== bottom;
+	write_rect_bounds(editorBounds, left, top, right, bottom);
+	return changed;
 }
 
 function getInlineBarBounds(barIndex: number): BarBounds | null {

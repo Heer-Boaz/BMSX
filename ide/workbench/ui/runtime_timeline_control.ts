@@ -3,7 +3,7 @@ import { write_rect_bounds } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import type { IdeCommandController } from '../../commands/controller';
 import { editorViewState } from '../../editor/ui/view/state';
-import { inputFocus, type InputFocusTarget } from '../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../input/focus';
 import { pointerCapture } from '../../input/pointer/capture';
 import { pointerHover } from '../../input/pointer/hover';
 import type { FrameNavigationOperation } from '../../runtime/frame_navigation';
@@ -21,6 +21,7 @@ const ACTIONS = [TimelineAction.Previous, TimelineAction.Playback, TimelineActio
 
 /** Docked host timeline. Ordinary controls feed the existing finite navigation owner. */
 export class RuntimeTimelineControl {
+	public readonly focusScope: InputFocusScope;
 	private readonly style: TimelineStyle = { panel: 0, track: 0, accent: 0, text: 0, disabled: 0, highlight: 0, highlightText: 0,
 		z: 0, actions: ['<|', '>', '|>', '', 'OK', 'BACK'], pauseLabel: '||', visibleActions: 0x0f };
 	private readonly view = new HostRewindTimeline(this.style);
@@ -36,6 +37,7 @@ export class RuntimeTimelineControl {
 	private seekOperation: FrameNavigationOperation | undefined;
 	public constructor(private readonly commands: IdeCommandController, focusContent: () => void) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, focusContent);
+		this.focusScope = this.actions.focusTarget.scope;
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
 		this.actions.focusTarget.next = this.slider.focusTarget;

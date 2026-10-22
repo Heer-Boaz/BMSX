@@ -11,12 +11,15 @@ import type { PointerCaptureService, PointerCaptureTarget } from '../../../input
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { ContextMenuModel, type ContextMenuPlacement } from './model';
+import { layoutContextMenu } from './render';
 
 export type ContextMenuOptions = {
 	readonly selectFirst?: boolean;
 	readonly placement?: ContextMenuPlacement;
 	readonly shortTitles?: boolean;
 	readonly onNavigate?: (direction: 1 | -1) => void;
+	/** Actual invoking control; pointer toolbars may retain focus in another control. */
+	readonly invocationOrigin?: InputFocusTarget;
 };
 
 type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: EditorCommandId): boolean };
@@ -24,7 +27,9 @@ type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: Edito
 type ContextMenuSession = {
 	readonly commands: ContextMenuCommandRunner;
 	readonly options: ContextMenuOptions;
-	readonly returnFocus: InputFocusTarget | null;
+	readonly invocationOrigin: InputFocusTarget | null;
+	returnFocus: InputFocusTarget | null;
+	commandOrigin: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 };
 
@@ -44,8 +49,10 @@ export class ContextMenuController implements PointerCaptureTarget {
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
 
-	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService) {
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
+		private readonly onDidChangeVisibility: (lifetime?: DisposableStore) => void = () => {}) {
 		this.focusTarget = focus.createTarget();
+		this.focusTarget.scope.surfaceScope = this.pointerScope;
 		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
 		this.scroll.setInput(this.model.viewport);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
@@ -53,6 +60,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public get visible(): boolean { return this.session !== undefined; }
+	public get invocationOrigin(): InputFocusTarget | null { return this.session!.invocationOrigin; }
 
 	/** The caller attaches source/target invalidation to the returned popup lifetime. */
 	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: ContextMenuCommandRunner,
@@ -60,17 +68,25 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const origin = this.session === undefined ? this.focus.target : this.session.returnFocus;
 		this.hide(false);
 		this.capture.cancel();
-		this.focusTarget.focus();
-		const returnFocus = this.focus.resolveTarget(origin);
-		this.focusTarget.commandContext = returnFocus === null ? this.focusTarget : returnFocus.commandContext;
 		const disposables = new DisposableStore();
-		this.session = { commands, returnFocus, disposables, options };
+		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
+		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: origin, commandOrigin: invocationOrigin, disposables, options };
+		this.session = session;
 		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
 		this.pointerY = y;
 		this.pointerKnown = !options.selectFirst;
+		// The source session owns its presentation attachment. It must already
+		// exist when the focus owner evaluates the popup's surface admission.
+		this.onDidChangeVisibility(disposables);
+		this.focusTarget.focus();
+		const returnFocus = session.returnFocus = this.focus.resolveTarget(origin);
+		const commandOrigin = session.commandOrigin = options.invocationOrigin === undefined ? returnFocus : this.focus.resolveTarget(invocationOrigin);
+		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin.commandContext;
 		this.update();
 		if (options.selectFirst) this.model.selectNext(1);
+		layoutContextMenu(this);
+		this.revision = this.model.viewport.revision;
 		return disposables;
 	}
 
@@ -83,6 +99,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		session.disposables.dispose();
 		if (restoreFocus && this.focusTarget.hasFocus) this.focus.setTarget(session.returnFocus);
 		this.focusTarget.commandContext = this.focusTarget;
+		this.onDidChangeVisibility();
 	}
 
 	public update(): void {
@@ -93,7 +110,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		}
 		for (const row of this.model.rows) {
 			if (row.command === undefined) continue;
-			row.enabled = this.session.commands.isEnabled(row.command);
+			row.enabled = this.session.commands.isEnabled(row.command, this.session.commandOrigin);
 			const active = this.session.commands.isActive?.(row.command) === true;
 			if (active !== row.active) {
 				row.active = active;
@@ -108,10 +125,10 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const index = this.model.selectedIndex;
 		if (index < 0) return;
 		const command = this.model.rows[index].command!;
-		const commands = this.session!.commands;
-		if (!commands.isEnabled(command)) return;
+		const { commands, commandOrigin } = this.session!;
+		if (!commands.isEnabled(command, commandOrigin)) return;
 		this.hide();
-		commands.execute(command);
+		commands.execute(command, commandOrigin);
 	}
 
 	public cancelPointer(): void { this.capture.release(this); this.pressedIndex = -1; this.triggerKey = undefined; }

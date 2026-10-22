@@ -19,6 +19,7 @@ export function start() {
 		get textTarget() { return inputFocus.target?.textInput; },
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 		dispatchKey(event) { inputFocus.handleKeyboard(event); return event.consumed; },
+		cancelPointerInput() {},
 		cancelInput() { inputFocus.cancelInput(); },
 	};
 	const clock = new BrowserHostClock();
@@ -27,6 +28,8 @@ export function start() {
 	const text = new BrowserTextInput(canvas, host);
 	hub.setNativeKeyHandler(text.handleKey);
 	const events = [];
+	let pointerId = 0;
+	window.addEventListener('pointerdown', event => { pointerId = event.pointerId; }, { capture: true });
 	const focusAtReturn = [];
 	hub.setNativePointerHandler(event => {
 		events.push({ ...event });
@@ -42,7 +45,10 @@ export function start() {
 		focusAtReturn.push(document.activeElement?.tagName);
 	});
 	fields[0].focusTarget.focus();
-	globalThis.pointerFixture = { state: () => ({ texts: fields.map(field => field.text), events: events.splice(0), focusAtReturn: focusAtReturn.splice(0) }) };
+	globalThis.pointerFixture = {
+		state: () => ({ texts: fields.map(field => field.text), events: events.splice(0), focusAtReturn: focusAtReturn.splice(0) }),
+		releaseCapture: () => canvas.releasePointerCapture(pointerId),
+	};
 }`;
 	const bundle = await build({ stdin: { contents: fixture, resolveDir: process.cwd(), loader: 'ts' }, bundle: true,
 		platform: 'browser', format: 'iife', globalName: 'fixture', write: false, tsconfig: 'tsconfig.base.json' });
@@ -80,5 +86,25 @@ export function start() {
 	const cancelled = await state();
 	assert.equal(cancelled.events.filter((event: { cancelledButtons: number }) => event.cancelledButtons === 1).length, 1);
 	assert.ok(cancelled.events.every((event: { releasedButtons: number }) => event.releasedButtons === 0), 'cancellation is never a drop');
+	// Lose a real DOM capture while the physical mouse remains down. A later
+	// window move/up must not manufacture the successful release we did not get.
+	await page.mouse.move(80, 60);
+	await page.mouse.down();
+	await page.mouse.move(81, 60); // Process the browser's pending capture before losing it.
+	await state();
+	await page.evaluate(() => (globalThis as any).pointerFixture.releaseCapture());
+	await page.mouse.move(100, 60);
+	const lost = await state();
+	assert.equal(lost.events.filter((event: { cancelledButtons: number }) => event.cancelledButtons === 1).length, 1);
+	assert.ok(lost.events.every((event: { releasedButtons: number }) => event.releasedButtons === 0));
+	await page.mouse.up();
+	assert.ok((await state()).events.every((event: { releasedButtons: number }) => event.releasedButtons === 0),
+		'the release after capture loss cannot finish the cancelled gesture');
+	await page.mouse.click(80, 60);
+	const fresh = await state();
+	assert.equal(fresh.events.filter((event: { pressedButtons: number }) => event.pressedButtons === 1).length, 1);
+	assert.equal(fresh.events.filter((event: { releasedButtons: number }) => event.releasedButtons === 1).length, 1);
+	assert.ok(fresh.events.every((event: { cancelledButtons: number }) => event.cancelledButtons === 0),
+		'the normal pointerup-generated lostcapture cannot cancel an already completed contact');
 	assert.deepEqual(errors, []);
 });

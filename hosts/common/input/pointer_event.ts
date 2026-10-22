@@ -28,6 +28,8 @@ export type WheelInputEvent = {
 	readonly y: number;
 	readonly deltaX: number;
 	readonly deltaY: number;
+	/** Guest attachment logical steps, distinct from UI scrolling units. */
+	readonly attachmentDeltaY: number;
 	readonly modifiers: KeyModifier;
 	readonly timestamp: number;
 };

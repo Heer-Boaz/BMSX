@@ -40,6 +40,7 @@ test('native text input stays ordered independently of render/input polling', as
 		let blocked = false;
 		const host = {
 			get textTarget() { return blocked ? undefined : target; },
+			cancelPointerInput() {},
 			cancelInput() {},
 			onDidChangeTarget(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
 			dispatchKey(event: { code: string; down: boolean; modifiers: number; repeat: boolean }) {

@@ -1,4 +1,5 @@
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
+import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
@@ -31,6 +32,7 @@ export class GamePanel {
 	private readonly frame = create_rect_bounds();
 	private readonly split = new WorkbenchSplitView(0.58);
 	private readonly focusTarget = inputFocus.createTarget(null);
+	public readonly focusScope = this.focusTarget.scope;
 	private readonly gameInput: GameInputControl;
 	private readonly sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar = createWorkbenchActionBar('gamePanel.title');
@@ -39,8 +41,8 @@ export class GamePanel {
 	private measuredFont = editorViewState.font;
 	private headerBottom = 0;
 
-	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient) {
-		this.gameInput = new GameInputControl(this.focusTarget, recipient);
+	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient, presenter: VideoPresenter) {
+		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.focusTarget.registerCommand('gameView.playback', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { commands.transport.togglePlayback(); } });

@@ -4,8 +4,19 @@ import type { PlayerInput } from '../../hosts/common/input/player';
 import type { KeyInputEvent, TextInputTarget } from '../../hosts/common/input/text';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { InputRecipient } from '../../hosts/common/input/channel';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import type { FrameBitmap } from '../../hosts/common/frame_bitmap';
+import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope } from './pointer/capture';
 
-export type GuestInputBinding = { bounds: Readonly<RectBounds>; readonly recipient: InputRecipient };
+export type GuestInputPresentation =
+	| { readonly kind: 'direct'; readonly presenter: VideoPresenter }
+	| { readonly kind: 'offscreen'; readonly frames: FrameBitmap };
+
+export type GuestInputBinding = {
+	bounds: Readonly<RectBounds>;
+	readonly recipient: InputRecipient;
+	readonly presentation: GuestInputPresentation;
+};
 
 export type FocusCommand = {
 	isEnabled(): boolean;
@@ -16,6 +27,12 @@ export type FocusCommand = {
 export interface InputEdit {
 	readonly pending: boolean;
 	commit(): boolean;
+}
+
+/** Shared membership and reactivation state; focus return and command origin stay independent. */
+export class InputFocusScope {
+	public lastFocused: InputFocusTarget | null = null;
+	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {}
 }
 
 /** A retained canvas control, not a document or an editor-input classification. */
@@ -30,7 +47,7 @@ export class InputFocusTarget {
 	public next: InputFocusTarget | null = null;
 	public previous: InputFocusTarget | null = null;
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();
-	private readonly blurListeners = new Set<() => void>();
+	private readonly blurListeners = new Set<(next: InputFocusTarget | null) => void>();
 	private readonly focusListeners = new Set<() => void>();
 	private inputCancellationListeners: Set<() => void> | undefined;
 	public clipboard: ClipboardTarget | undefined;
@@ -42,6 +59,7 @@ export class InputFocusTarget {
 	public constructor(
 		private readonly owner: InputFocusService,
 		public readonly parent: InputFocusTarget | null,
+		public readonly scope: InputFocusScope,
 	) {
 	}
 
@@ -68,7 +86,7 @@ export class InputFocusTarget {
 		return this.commands.get(command);
 	}
 
-	public onDidBlur(listener: () => void): () => void {
+	public onDidBlur(listener: (next: InputFocusTarget | null) => void): () => void {
 		this.blurListeners.add(listener);
 		return () => this.blurListeners.delete(listener);
 	}
@@ -117,9 +135,9 @@ export class InputFocusTarget {
 		this.gamepadHandler?.(input);
 	}
 
-	public didBlur(): void {
+	public didBlur(next: InputFocusTarget | null): void {
 		this.cancelInput();
-		for (const listener of this.blurListeners) listener();
+		for (const listener of this.blurListeners) listener(next);
 	}
 
 	public didFocus(): void {
@@ -131,6 +149,13 @@ export class InputFocusTarget {
 export class InputFocusService {
 	private targetValue: InputFocusTarget | null = null;
 	private readonly changeListeners = new Set<() => void>();
+	private scopeAdmission: ((scope: InputFocusScope) => boolean) | undefined;
+
+	/** The frontend supplies structural admission; focus retains its own authoritative state. */
+	public bindScopeAdmission(admit: (scope: InputFocusScope) => boolean): () => void {
+		this.scopeAdmission = admit;
+		return () => { this.scopeAdmission = undefined; };
+	}
 
 	public onDidChangeTarget(listener: () => void): () => void {
 		this.changeListeners.add(listener);
@@ -142,23 +167,31 @@ export class InputFocusService {
 		for (const listener of this.changeListeners) listener();
 	}
 
-	public createTarget(parent: InputFocusTarget | null = null): InputFocusTarget {
-		return new InputFocusTarget(this, parent);
+	public createTarget(parent: InputFocusTarget | null = null,
+		scope: InputFocusScope = parent === null ? new InputFocusScope() : parent.scope): InputFocusTarget {
+		return new InputFocusTarget(this, parent, scope);
 	}
 
 	public get target(): InputFocusTarget | null {
 		return this.targetValue;
 	}
 
+	public get admittedTarget(): InputFocusTarget | null {
+		const target = this.targetValue;
+		return target !== null && (target.canFocus === undefined || target.canFocus())
+			&& (this.scopeAdmission === undefined || this.scopeAdmission(target.scope)) ? target : null;
+	}
+
 	public setTarget(target: InputFocusTarget | null): void {
 		target = this.resolveTarget(target);
+		if (target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
 		const previous = this.targetValue;
 		if (previous === target) { this.notifyTargetChanged(); return; }
 		// Like Godot's Viewport, detach before notifying the departing control.
 		this.targetValue = null;
-		if (previous !== null) previous.didBlur();
+		if (previous !== null) previous.didBlur(target);
 		this.targetValue = target;
-		if (target !== null) target.didFocus();
+		if (target !== null) { target.scope.lastFocused = target; target.didFocus(); }
 		this.notifyTargetChanged();
 	}
 
@@ -180,11 +213,11 @@ export class InputFocusService {
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
-		if (this.targetValue !== null) this.targetValue.handleKeyboard(input);
+		this.admittedTarget?.handleKeyboard(input);
 	}
 
 	public handleGamepad(input: PlayerInput): void {
-		if (this.targetValue !== null) this.targetValue.handleGamepad(input);
+		this.admittedTarget?.handleGamepad(input);
 	}
 
 	public cancelInput(): void { this.targetValue?.cancelInput(); }

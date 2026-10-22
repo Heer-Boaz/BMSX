@@ -165,6 +165,15 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			y: displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2),
 		}]);
 	};
+	/** A preview click must hit its actual content surface, not an occluding tool window. */
+	const visiblePreviewPoint = (bounds: Readonly<RectBounds>): RectBounds => {
+		for (let y = bounds.top + 1; y < bounds.bottom; y += 1) {
+			for (let x = bounds.left + 1; x < bounds.right; x += 1) {
+				if (ide.editor.surfaces.hitTest(x, y) === ide.editor.paneSurface) return { left: x, top: y, right: x, bottom: y };
+			}
+		}
+		throw new Error('The embedded preview has no unobscured pointer target');
+	};
 	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
 		// Like Playwright's stable-position actionability check, resolve pointer
 		// coordinates after browser layout, not just our accelerated machine tick.
@@ -260,7 +269,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

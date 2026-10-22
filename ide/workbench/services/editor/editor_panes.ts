@@ -4,7 +4,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
 import { inputFocus } from '../../../input/focus';
-import { pointerCapture } from '../../../input/pointer/capture';
+import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../../input/pointer/capture';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
 export type EditorPaneFactories = {
@@ -69,9 +69,10 @@ export class EditorPanes {
 		if (activePane === null) {
 			return;
 		}
-		pointerCapture.cancel();
-		inputFocus.setTarget(null);
+		pointerCapture.cancelScope(WORKBENCH_POINTER_SCOPE);
+		if (inputFocus.target?.scope.surfaceScope === WORKBENCH_POINTER_SCOPE) inputFocus.setTarget(null);
 		activePane.clearInput();
+		if (inputFocus.target?.scope.surfaceScope === WORKBENCH_POINTER_SCOPE) inputFocus.setTarget(null);
 		this.activePaneValue = null;
 		for (const listener of this.clearListeners) listener();
 	}

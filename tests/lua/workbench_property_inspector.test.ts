@@ -300,3 +300,26 @@ test('persistent details return focus without dismissal and skip an empty action
 	assert.equal(opened, 1);
 	assert.equal(f.inspector.visible, true);
 });
+
+test('client inspector leaves chrome to its window, preserves sibling capture and returns focus to explicit owner', () => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const tree = focus.createTarget(); tree.bindKeyboard(() => {}); tree.focus();
+	const client = focus.createTarget(tree); client.bindKeyboard(() => {});
+	const inspector = new WorkbenchPropertyInspector<InspectedProperty>(focus, capture, hover, client, 'client');
+	let cancelled = 0;
+	const sibling = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled += 1; } };
+	capture.capture(sibling);
+	inspector.show({ title: 'NO SECOND HEADER', items: [{ label: 'Value', value: '42', description: '', warning: false }],
+		dismissible: false, focusReturn: tree, canOpenSource: () => true, openSource() {} });
+	assert.equal(capture.active, true); assert.equal(cancelled, 0);
+	const font = new Font({ variant: 'tiny' });
+	const bounds = { left: 20, top: 40, right: 220, bottom: 220 };
+	inspector.layout(font, (s, a, b) => font.measure(s.slice(a, b)), s => font.measure(s), bounds);
+	assert.equal(inspector.model.viewport.bounds.top, bounds.top);
+	assert.equal(inspector.actionBar.items.some(item => item.visible), false);
+	const escape = new KeyInputEvent('Escape', 0, false, true);
+	focus.handleKeyboard(escape);
+	assert.equal(escape.consumed, true); assert.equal(focus.target, tree);
+	assert.equal(inspector.visible, true);
+	inspector.dispose(); capture.cancel();
+});

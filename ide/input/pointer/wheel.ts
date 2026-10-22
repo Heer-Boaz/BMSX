@@ -10,20 +10,29 @@ import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { inputFocus } from '../focus';
-import { getWorkbenchEditorBounds } from '../../workbench/common/layout';
+import type { WheelInputEvent } from '../../../hosts/common/input/pointer_event';
+import { projectGuestPointer } from './guest';
+import { DisplayPointMappingResult } from '../../../machine/ts/render/video_output';
 
-/** Route each occurrence while its geometry, modifiers and UI owner are current. */
-export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot): boolean {
+const guestPoint = { x: 0, y: 0 };
+
+/** Pointer and wheel use the same retained paint/target structure. */
+export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot, native: WheelInputEvent): boolean {
 	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0) return true;
-	if (editor.quickInput.visible) {
-		editor.quickInput.handleWheel(event.deltaY);
-		return true;
+	const surface = editor.surfaces.hitTest(event.viewportX, event.viewportY);
+	// A selected opaque surface owns an unhandled wheel too. Only its actual
+	// controller can explicitly admit this occurrence to a guest viewport.
+	if (surface?.handleWheel?.(event) !== false) return true;
+	const focused = inputFocus.admittedTarget;
+	const guest = focused?.guestInput;
+	if (guest !== undefined && focused!.scope.surfaceScope === surface.captureScope
+		&& projectGuestPointer(guest, event.viewportX, event.viewportY, guestPoint) === DisplayPointMappingResult.Inside) {
+		guest.recipient.pointerContribution.admitWheel(guestPoint.x, guestPoint.y, native.attachmentDeltaY);
 	}
-	if (editor.contextMenu.visible) {
-		editor.contextMenu.handleWheel(event.deltaY);
-		return true;
-	}
-	if (handleHoverTooltipWheel(event)) return true;
+	return true;
+}
+
+export function handleWorkbenchChromeWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
 	if (point_in_rect(event.viewportX, event.viewportY, editorChromeState.tabBarBounds)) {
 		editorChromeState.tabScrollControl.cancelPointer();
 		const bar = editorChromeState.tabScrollbar;
@@ -32,9 +41,15 @@ export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnap
 		return true;
 	}
 	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return true;
-	const guest = inputFocus.target?.guestInput;
+	const guest = inputFocus.admittedTarget?.guestInput;
+	return guest === undefined || !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
+}
+
+export function handleWorkbenchPaneWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
+	if (handleHoverTooltipWheel(event)) return true;
+	const guest = inputFocus.admittedTarget?.guestInput;
 	if (guest !== undefined && point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
-	if (point_in_rect(event.viewportX, event.viewportY, getWorkbenchEditorBounds())) editor.editorPanes.activePane?.handleWheel(event);
+	editor.editorPanes.activePane?.handleWheel(event);
 	return true;
 }
 

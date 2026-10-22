@@ -2,8 +2,8 @@
 
 ## Purpose and design boundary
 
-This is the proposed workbench-wide window model, not a description of an
-implemented window system. It covers ordinary workbench content, floating tool
+This specifies the workbench-wide window model and its ownership boundaries.
+It covers ordinary workbench content, floating tool
 windows, contained subwindows, anchored popups and modal surfaces in one Studio
 canvas. Actor Lab Details is the first new window, not the limit of the model.
 Existing menus, Quick Input, prompts and local overlays are concrete design
@@ -48,32 +48,29 @@ clipping and event targeting. BMSX must supply those relationships explicitly
 for its canvas. Copying their service names without this structural owner
 would not reproduce their architecture.
 
-## Current owners and architectural gaps
+## Integration owners
 
-The migration changes composition and admission at their existing owners while
-preserving the content, rendering and physical-input responsibilities below.
+Composition and admission belong to the existing owners below; content,
+rendering and physical input retain their own domain responsibilities.
 
-| Concern | Live owner | Required change |
+| Concern | Live owner | Responsibility |
 | --- | --- | --- |
-| UI composition | [`RuntimeCartEditor`](../ide/cart_editor.ts), [`RuntimeIdeState`](../ide/workbench/state.ts) | Compose one frontend surface owner; do not add UI requirements to the viewless `StudioWorkbench`. |
-| Root geometry | [`common/layout.ts`](../ide/workbench/common/layout.ts), [`EditorPanes`](../ide/workbench/services/editor/editor_panes.ts) | Keep split/pane geometry; publish retained content-root surfaces. |
-| Paint order | `RuntimeCartEditor.draw` | Replace independent root overlay call ordering with the shared surface order. |
-| Pointer and wheel order | [`dispatch.ts`](../ide/input/pointer/dispatch.ts), [`wheel.ts`](../ide/input/pointer/wheel.ts) | Replace independent overlay priority lists with routing over that same order. |
-| Focus and command origin | [`InputFocusService`](../ide/input/focus.ts) | Retain the owner; add explicit surface membership and focus scopes. Its `parent` is a focus-return relationship, not a visual tree. |
-| Gesture continuation | [`PointerCaptureService`](../ide/input/pointer/capture.ts) | Generalise its single-button/control state to one routed physical gesture with scoped continuation and cancellation. |
+| UI composition | [`RuntimeCartEditor`](../ide/cart_editor.ts), [`RuntimeIdeState`](../ide/workbench/state.ts) | Compose the frontend surface owner, separately from the viewless `StudioWorkbench`. |
+| Root geometry | [`common/layout.ts`](../ide/workbench/common/layout.ts), [`EditorPanes`](../ide/workbench/services/editor/editor_panes.ts) | Publish layout-owned split/pane bounds and retained content-root surfaces. |
+| Paint order | `RuntimeCartEditor.draw` | Traverse the retained surface order. |
+| Pointer and wheel order | [`dispatch.ts`](../ide/input/pointer/dispatch.ts), [`wheel.ts`](../ide/input/pointer/wheel.ts) | Route through the same ordered structure. |
+| Focus and command origin | [`InputFocusService`](../ide/input/focus.ts) | Own explicit surface membership and focus scopes. Its `parent` is a focus-return relationship, not a visual tree. |
+| Gesture continuation | [`PointerCaptureService`](../ide/input/pointer/capture.ts) | Own the routed physical gesture, scoped continuation and cancellation. |
 | Hover | [`PointerHoverService`](../ide/input/pointer/hover.ts) | Revoke covered/retired hover immediately, including cached Actor preview picking. |
 | Rendering | [`OverlayRenderer`](../ide/runtime/overlay_renderer.ts), [`overlay_api`](../ide/runtime/overlay_api.ts) | Reuse pooled commands, clip/transform stacks and publication. No second display list or rasterizer. |
-| Physical input | [`Input`](../hosts/common/input/manager.ts), [`PointerInput`](../hosts/common/input/pointer.ts), [`InputChannel`](../hosts/common/input/channel.ts) | Separate focus-derived keyboard/controller admission from routed guest-pointer admission. |
+| Physical input | [`Input`](../hosts/common/input/manager.ts), [`PointerInput`](../hosts/common/input/pointer.ts), [`InputChannel`](../hosts/common/input/channel.ts) | Own separate focus-derived keyboard/controller and routed guest-pointer contributions. |
 | Platform delivery | [`BrowserInput`](../hosts/browser/input.ts), [`RemoteInput`](../hosts/common/input/remote.ts) | Keep event production/native contact capture; share the admission result at the common input owner. |
-| Feature content | Existing pane/controllers, [`WorkbenchPropertyInspector`](../ide/workbench/ui/property_inspector/control.ts) | Remain content owners; stop owning unrelated root capture/focus cancellation. |
+| Feature content | Existing pane/controllers, [`WorkbenchPropertyInspector`](../ide/workbench/ui/property_inspector/control.ts) | Own content data, actions, layout and control input; retirement stays scoped to the owning surface. |
 | Scoped resources | [`DisposableStore`](../ide/common/lifecycle.ts) | Reuse attachment lifetimes rather than inventing a second disposal framework. |
 
-Today, painting, pointer dispatch, wheel dispatch and keyboard special cases
-each determine overlay precedence independently. The guest input recipient is
-derived from keyboard focus and gates keys, pointer and pads together. Pane
-detachment and inspector opening can cancel global capture. Those behaviours
-cannot be preserved behind a new floating-panel facade: they conflict with
-independent windows and must change at their owners.
+The surface structure composes paint, pointer, wheel and focus admission;
+feature owners retain their actual content-specific operations. A floating
+control consumes those relationships instead of building another input stack.
 
 ## Model: surfaces, windows and relationships
 
@@ -182,12 +179,10 @@ for the underlying pane remain blocked until dismissal. An unrelated pane or
 window stays usable. Dismissal restores focus only while the lightbox family
 still owns it. A confirmation action is not a requirement for modality.
 
-Existing conversation and assistant panes use the same lightbox but enforce
-wheel blocking differently: the conversation pane excludes transcript scrolling
-while it is open, whereas the assistant pane still forwards wheel input to
-attachments, suggestions or transcript scrolling. Slice A moves this exclusion
-to the shared admission boundary and tests both consumers, rather than adding
-another pane-local visibility check.
+Conversation and assistant panes consume that same lightbox boundary. It
+excludes wheel and underlying-pane commands in both consumers; neither
+contribution implements a separate visibility guard. The same image-overlay
+interaction remains consistent regardless of the pane that opened it.
 
 The routed result is a surface and then a control within that surface. If no
 control handles a hit on an opaque window, the event still belongs to the
@@ -291,8 +286,8 @@ old physical buttons are up.
 Leaving a window or the canvas does not itself cancel an otherwise valid
 captured gesture. Native capture may continue delivering outside coordinates;
 layout still constrains the window. Actual platform capture loss/cancellation
-ends the gesture. This replaces the current cancellation on `insideViewport`
-becoming false; it does not create another native capture implementation.
+ends the gesture. `insideViewport` becoming false is not cancellation;
+platform adapters continue to own native capture.
 
 With no gesture, hover and picking visit only the top eligible content. Showing
 or raising an occluding surface immediately revokes lower hover, even when the
@@ -321,9 +316,8 @@ existing guest gesture is the exception: it continues over an ordinary tool
 window even if keyboard focus subsequently changes. A gesture started in a
 tool never leaks into the game.
 
-The current single `guestInputRecipient` cannot express this. The common `Input`
-owner must retain separate focus-derived keyboard/controller and routed-pointer
-recipients. Each recipient also has a host-owned admitted pointer contribution:
+The common `Input` owner retains separate focus-derived keyboard/controller and
+routed-pointer recipients. Each recipient has a host-owned admitted pointer contribution:
 button levels, last admitted position and the current host update's wheel.
 The raw snapshot writer receives the actual recipient, gates keys/pads by focus,
 and reads that recipient's contribution; `InputChannel` uses the same writer.
@@ -398,7 +392,7 @@ samples reflect the changed admission.
 | Guest pointer contribution and device data | Common host `Input` / recipient lifetime; `PointerInput` owns encoding. UI mask-to-device conversion belongs here, not in windows or carts. |
 | Raw guest words/Q16 coordinates | Existing `InputControllerSnapshot` producer and machine consumer, unchanged in TypeScript and C++. |
 
-The native C++ player has no Studio surface counterpart. This proposal changes
+The native C++ player has no Studio surface counterpart. This model changes
 host admission, not the TS/C++ machine ABI. An implementation that instead
 changes snapshot or device semantics must stop for a separate mirrored
 representation/callsite review.

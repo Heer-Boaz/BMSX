@@ -13,8 +13,7 @@ import { createFrameRuntime } from './frame_runtime';
 import { createHostOverlayFixture } from './host_overlay';
 
 /** Production host owners with an offscreen presenter and a device-free audio sink. */
-export function createHostFrameFixture() {
-	const runtime = createFrameRuntime();
+export function createHostFrameFixture(runtime = createFrameRuntime()) {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const sink = new DiscardingAudioSink();

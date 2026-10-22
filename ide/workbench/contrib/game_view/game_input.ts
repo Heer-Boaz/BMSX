@@ -6,8 +6,9 @@ import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
+import { pointerCapture } from '../../../input/pointer/capture';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
-import type { GuestInputBinding } from '../../../input/focus';
+import type { GuestInputBinding, GuestInputPresentation } from '../../../input/focus';
 
 /** Focus and input lifetime of one embedded scanout viewport. */
 export class GameInputControl {
@@ -15,24 +16,27 @@ export class GameInputControl {
 	private readonly unbindKeyboard: () => void;
 	private binding: GuestInputBinding | undefined;
 
-	public constructor(parent: InputFocusTarget, private readonly recipient: InputRecipient) {
+	public constructor(parent: InputFocusTarget, private readonly recipient: InputRecipient,
+		private readonly presentation: GuestInputPresentation) {
 		this.focusTarget = inputFocus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.focusTarget.guestInput !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (player.modifiers === KeyModifier.shift && isKeyJustPressed('F1', player)) {
 				consumeIdeKey('F1', player);
+				if (this.binding !== undefined) pointerCapture.cancelGuest(this.binding);
 				this.focusTarget.release();
 			}
 		});
 	}
 
 	public setInput(bounds: Readonly<RectBounds>): void {
-		if (this.binding === undefined) this.binding = { bounds, recipient: this.recipient };
+		if (this.binding === undefined) this.binding = { bounds, recipient: this.recipient, presentation: this.presentation };
 		else this.binding.bounds = bounds;
 		this.focusTarget.guestInput = this.binding;
 	}
 
 	public clearInput(): void {
+		if (this.binding !== undefined) pointerCapture.cancelGuest(this.binding);
 		this.focusTarget.release();
 		this.focusTarget.guestInput = undefined;
 	}

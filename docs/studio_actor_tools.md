@@ -18,27 +18,26 @@ Their transport validation/compatibility policies are not copied into BMSX
 runtime reads.
 
 The [cartlib inspection contract](cartlib_inspection_contract.md) governs these
-read-only field accesses. The live owners were checked before this change: World `_objects` is admitted
-membership, not a heap census; WorldObject owns component ordering and the
-class-table index; FSM instances retain their own states/definitions; BT retains
+read-only field accesses. World `_objects` is admitted membership, not a heap
+census; WorldObject owns component ordering and the class-table index; FSM
+instances retain their own states/definitions; BT retains
 its own blackboard layout and compiler-owned execution memory; ActionEffects
 retain their granted instance and definition. No separate authored scene graph,
 same-name source match, source re-execution or source-derived runtime object is
 introduced. Source tools and instance tools remain distinct.
 
-| Data | TypeScript representation | C++ representation | This change |
+| Data | TypeScript representation | C++ representation | Boundary |
 | --- | --- | --- | --- |
 | World/component membership | guest Tables and class-table keys | guest Tables and class-table keys, same cartlib | no producer/ABI change |
 | Value identity and kind | `Table.hashId`, `ValueTag` through `SuspendedGuestSession` | guest table identity/tags | no machine change |
 | Activity predicates | guest tags: only nil/false are false | same CPU guest truth predicate | central suspended-reader predicate; no CPU change |
 | FSM/BT/effect/timeline state | actual retained cartlib instance fields | same cartlib and guest fields | shared readers; mutations call existing Lua APIs |
-| Inspection identity | stop-scoped IDE handles | no IDE projection | new IDE feature, not a native Terminal change |
+| Inspection identity | stop-scoped IDE handles | no IDE projection | IDE-only inspection, separate from native Terminal |
 | Execution/rewind | existing host invalidation before execution/heap replacement | existing native runtime owners | no CPU hook; IDE observes explicit call entry and active operation status |
 
-There are **no mirrored runtime edits**. Existing hot-path callsites are the
-ordinary Actor pane's dirty refresh after a CPU slice, plus the existing
-`runWorkbenchHostFrame`/guest-call/restore invalidation boundaries. No instruction,
-renderer, compiler, cartlib scheduler or native Terminal callsite changes.
+The ordinary Actor pane refreshes dirty readback after a CPU slice.
+`runWorkbenchHostFrame`, guest calls and restore operations own invalidation;
+Actor tooling adds no instruction, renderer, compiler or cartlib-scheduler hook.
 An unchanged Actor pane still reuses rows/labels; closed panes do no tree work.
 Tools walk no actor until requested, reconcile a requested actor once per
 suspension, cache its flattened paging index and format a node's properties once.
@@ -86,6 +85,10 @@ These interaction patterns inform the view; they do not require guest tracing.
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
   remains an explicit guest operation, not machine-history rewind.
 
+[Event-to-frame navigation](studio_event_viewer.md) shares the physical rewind
+owner. A selected event payload is not a live Actor handle and does not select
+an actor by emitter display text.
+
 ## Pick in the live preview
 
 Hovering a standard sprite outlines its visible rectangle and shows its actual
@@ -93,17 +96,16 @@ instance identifier (and prefab definition when present), also while the game
 has input focus. Hover alone neither pauses nor changes selection. With Studio
 input focus, right-click inspects that actor through the ordinary Actor Lab
 selection path and pauses the view. Primary click still focuses the game and
-reaches HID; while game focus is active, **all** pointer buttons belong to the
-game. Shift+F1 releases that focus before an inspection click.
+reaches HID. With game input focus, pointer buttons within the unobscured
+preview belong to the game. Shift+F1 releases that focus before an inspection
+click.
 The hover rectangle uses the ordinary neutral border; the accent frame still
 means game input focus. There is no new permanent toolbar, selection mode, or
 guest shortcut.
 
-The [windowing transition](workbench_windowing_design.md#guest-pointer-admission-is-a-host-input-boundary)
-replaces focus-wide pointer admission with the visible-preview rule: a new
-gesture belongs to the frontmost admitted surface under the pointer. With game
-input focus, pointer buttons within the unobscured preview reach the game; a
-Details window above it receives its own new gestures. The first press owns the
+The [shared pointer route](workbench_windowing_design.md#guest-pointer-admission-is-a-host-input-boundary)
+gives a new gesture to the frontmost admitted surface under the pointer. A
+Details window above the preview receives its own new gestures. The first press owns the
 whole gesture through the final button release, so a game drag continues across
 Details and a Details drag never switches to the game. Capture is separate from
 cursor locking and keyboard focus. Hover picking stops over an occluding
@@ -220,42 +222,18 @@ per-frame search index, guest instrumentation, C++ or machine change is involved
 BT entries here represent the existing runtime tree component; this does not
 invent authored-node identities for its internal execution slots.
 
-### Find validation (2026-10-07)
-
-`browser.mjs --studio-actor-find SYSTEM_ROM CART_ROM SCREENSHOT_PNG` exercises
-ordinary menu, pointer and keyboard navigation on software, WebGL2 and WebGPU.
-It covers collapsed members, duplicate machine instances, mixed-case multi-term
-search, cancellation without selection/follow/Details movement, and graph-to-outline
-focus. Actual guest ICU readback verifies that Ctrl+F in the focused game preview
-is not intercepted by Find. Opening and accepting the catalog leave guest cycles,
-heap use and callback counts unchanged.
-
-The fixture is authored through the source model and Reboot, not by manually
-typing the cart. A separate host-triggered physical frame step tests invalidation
-while the picker owns keyboard focus; reopening selects the restored instance.
-Captures under `.bmsx/authoring/actor-find/` show duplicate-result context,
-the revealed member and retained Details/game preview. These are automated
-browser interaction and rendered-UI evidence, not UI-only fixture authorship.
-The focused Actor/behavior/workbench/Quick Input/input-routing bundle passes
-389 tests, including compiled-guest table/function-key aliases. IDE/tests
-typechecks, the Browser Studio debug build, strict architecture-boundary audit
-(zero issues), core-parity and diff checks also pass.
-
 ## Persistent instance Details
 
 The workbench-wide [window and transient-surface design](workbench_windowing_design.md)
-proposes replacing the embedded Details split below with a modeless window and
-an independently subject-bound, lockable Details instance. That design owns the
-stacking/input/lifetime boundary; [Floating Details UX](#floating-details-ux)
-below specifies the feature presentation. The following describes the existing
-embedded composition being replaced.
+owns the stacking/input/lifetime boundary for the modeless Details window.
+[Floating Details UX](#floating-details-ux) below specifies its presentation and
+independently subject-bound, lockable instance model.
 
 Actor Lab composes its existing outline/graph, game preview and property inspector
-instead of replacing the preview with a modal property document. Details occupies
-the resizable lower part of the preview column; closing it restores the preview's
-space. The shared split control supports both axes, including pointer capture and
-focused keyboard resizing. This is local pane composition, not a second docking
-or game-rendering framework.
+without replacing the preview with a modal property document or subtracting
+space from it. Details occupies a separate floating window; its generic
+container owns placement, chrome, collapse and input attachment. There is one
+layout path, with no embedded Details split or docking mode.
 
 The implementation follows [VS Code's Variables view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
 (stable selection identity, retained view state, refresh at model/visibility
@@ -265,18 +243,19 @@ boundaries) and [Godot's remote inspector](https://github.com/godotengine/godot/
 keeps track selection and Details in one investigation context; this does not
 imply importing UE recording or adding guest instrumentation.
 
-- Details follows the explicit selected member; activity-follow still moves only
-  the viewport. It does not choose a different receiver or execute Lua.
+- Unlocked Details follows the explicit selected member; a locked instance keeps
+  its own typed subject. Activity-follow still moves only the viewport. Neither
+  selection nor locking executes Lua.
 - `ActorDetails` formats through `BehaviorRuntimeProperties`, the same retained
   property owner used by Behavior Lens. Dirty invalidation coalesces until the
   visible pane updates. Unchanged paints reuse property rows and measured text.
 - Execution ends guest borrows. History restoration invalidates value caches;
   Details reads the reconciled member in the restored heap, never an intermediate
   seek checkpoint. Missing selections show unavailability instead of another actor.
-- The property reader is embedded, not modal: its focus order joins the tree,
-  graph, preview and sashes. Game focus and the central transport remain usable.
-  Scroll and selected property survive source navigation; explicit Hide dismisses
-  Details, whereas detaching an editor does not.
+- The property reader is modeless client content with a local titlebar/client
+  focus order. Game focus and the central transport remain usable. Scroll and
+  selected property survive source navigation; explicit Hide dismisses Details,
+  whereas detaching an editor retains the window's open intent and model.
 - Source and workbench Back/Forward retain the selected cart, World, actor and
   typed member, graph presentation/viewport and Details property. Navigation uses
   the existing pane-selection/history owner, following [VS Code's editor history](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/history/browser/historyService.ts),
@@ -287,7 +266,7 @@ imply importing UE recording or adding guest instrumentation.
 
 ### Floating Details UX
 
-The target is one modeless Details window per Actor Lab input, initially open
+Actor Lab owns one modeless Details window per input, initially open
 expanded and unlocked when explicitly requested. It follows the selected
 instance without replacing the tree or shrinking the preview. A Details
 instance owns its subject, lock and property-view state independently of the
@@ -311,7 +290,7 @@ owner; it does not leave an orphaned always-on-top inspector. Returning to that
 Actor Lab restores its attachment and placement. An ordinary Hide/reopen within
 that input retains the subject, lock, collapse and property-view state.
 
-The first implementation uses font- and work-area-relative requested dimensions,
+Details uses font- and work-area-relative requested dimensions,
 not desktop-pixel minima or a fixed `384 × 288` canvas assumption. Let `W × H`
 be the root work area, `c` the current common character advance, `l` the current
 font line height and `t = l + 8` the existing inspector-header metric:
@@ -333,15 +312,15 @@ font glyphs and capitalisation remain unchanged.
 
 The title is **Details — subject path**, using the actual actor/member path,
 not only a leaf name. Middle truncation preserves distinguishing suffixes;
-the full path is available through the shared title hover/status presentation.
+the full title appears in the status bar while Details has focus.
 Before a subject is selected, the title is **Details — Select an instance**.
 
 The right-hand titlebar actions are **Lock**, collapse/expand (`-` / `+`), and
 **Hide**, using the existing compact action-bar measurements and hit targets.
 Lock is a persistent checked action: the common checked-button background/text
 distinguishes locked from unlocked without requiring an unavailable padlock
-glyph. Its action description says whether Details follows selection or keeps
-the named instance. It is disabled until a subject exists; once locked it stays
+glyph. Its checked state distinguishes following selection from keeping the
+subject named in the title. It is disabled until a subject exists; once locked it stays
 available for unlocking even if the subject becomes unavailable. Dragging the
 remaining titlebar moves the window without selecting an actor. The property
 inspector supplies client content, not a second titlebar or Hide control.
@@ -363,9 +342,9 @@ the window to a new same-named actor.
 
 #### Collapse, focus and commands
 
-Details starts expanded. The titlebar collapse action is available from the
-first window version; it reduces the window to its titlebar rather than closing
-Details or losing its subject. Expand restores its previous requested size.
+Details starts expanded. The titlebar collapse action reduces the window to its
+titlebar rather than closing Details or losing its subject. Expand restores its
+previous requested size.
 This uses the [container collapse contract](workbench_windowing_design.md#collapsed-window-presentation):
 client hover/capture and owned transients retire, client focus goes to Expand,
 and no property formatting/layout runs solely for the collapsed client.
@@ -386,36 +365,18 @@ state unchanged. It is not a Hide shortcut and does not reserve Escape while
 the game has focus. Tab traverses Details' eligible client and titlebar controls;
 workbench window/region activation provides a keyboard route back to Details.
 
+**Select Running Actor** and **Find in Actor** remain available from Details as
+explicit Actor Lab navigation commands. They change tree selection while a lock
+keeps the Details subject fixed. Instance mutation, behavior-follow and graph
+commands stay in their tree/graph contexts; they do not acquire a misleading
+tree target from Details focus. Property and pin commands keep the Details
+subject as their origin.
+
 Hide clears the Details open intent through the admitted close path and returns
 focus to the tree only when the Details family owned focus. It preserves the
 instance model for reopening. Source navigation, game input and runtime
 transport continue through their existing owners; none depends on the window
 remaining visible.
-
-### Details/navigation validation (2026-10-07)
-
-The real browser workflows pass on software, WebGL2 and WebGPU: actor inspection
-and execution (six gates), plus game input (three gates). They keep Details open
-while delivering keyboard input to Nemesis, advancing and rewinding a physical
-frame, and invoking the fixture actor's ordinary `set_pos` method. Captures show
-the retained selected `x` row changing from `4` to `12`, with `y` changing from
-`8` to `34`; Source opens the actual callback and Back/Forward retains the member,
-property and scroll position. The fixture setup remains automated authoring and
-the assistant provider is local/deterministic, not a live-model reasoning test.
-
-The browser checks exposed two lifecycle defects and now cover their fixes:
-restoring scroll against the departing source editor's bounds, and leaving a
-hidden Details sash focused. Activation no longer performs layout with stale
-geometry; the normal host layout precedes viewport restoration. The sash is
-attached only while its pane is visible.
-
-The Actor/Behavior/workbench unit bundle passes 343 tests. Clean Details refreshes
-perform no guest reads; dirty unchanged values retain rows without reformatting.
-This is not a zero-allocation or total-frame performance claim. IDE/tests
-typechecks, the browser Studio build, architecture audit and diff checks pass.
-This validation predates property pins. [Event-to-frame navigation](studio_event_viewer.md)
-now shares the physical rewind owner; selected event payloads are not live Actor
-Lab handles and do not automatically select actors by emitter display text.
 
 ## Observed value changes
 
@@ -435,7 +396,8 @@ Unlike a DOM animation, BMSX's immediate-mode repaint does not clear the marker.
   property on another actor is not a continuation of the previous property.
 - Details retains values and formatting by semantic field or typed guest key,
   independently of display position. Inserting, removing or reordering siblings
-  therefore does not erase a surviving property's comparison baseline. A
+  therefore does not erase a surviving property's comparison baseline. The
+  selected property and visible scroll anchor also survive sibling changes. A
   property actually absent from a completed observation is released; admitting
   it again starts neutral, rather than reviving stale cached state.
 - Pins own their comparison independently of the current selection. Switching
@@ -456,73 +418,6 @@ the property list and keyed property values are separate. BMSX uses its existing
 typed `RuntimePropertyIndex`, not display labels or serialized Lua paths. This
 preserves guest key kinds and object identity without changing guest iteration
 order.
-
-### Change indication validation (2026-10-07)
-
-`browser.mjs --studio-actor-changes` passes on software, WebGL2 and WebGPU.
-The fixture uses automated source setup through the real editor model, then
-ordinary game-preview input changes an actor's `x` from **9 to 10**. Actual
-Previous/Next Frame commands revisit **9 → 10 → 9 → 10**. Details and pins mark
-the changed values, leave unchanged fields neutral and clear on the next
-unchanged observation. Paused paints, source-tab navigation and the ordinary
-theme shortcut preserve markers without advancing guest cycles, heap or
-callbacks. Actor switching resets Details comparison but retains the pin's.
-
-Captures in `.bmsx/authoring/actor-changes/` were visually reviewed in both
-themes, including the selected property, the pin beside another selected actor,
-rewind and the cleared indication. The live game preview stays visible. This
-is automated browser/runtime evidence, not exclusively manual authoring, physical
-GPU hardware or mobile validation. Existing row/cache tests cover clean-refresh
-guest reads, row reuse and unchanged guest heap; this slice does not claim zero
-host cost.
-
-The existing Find in Actor and pinned-property browser workflows also pass on
-software after the detach-lifecycle correction. The Actor/Behavior/workbench/
-input/theme bundle passes **393 tests**; IDE/tests typechecks, the Studio debug
-build and strict architecture audit (zero issues) pass. The structural core-parity
-audit and diff check are clean. No native runtime behavior was changed or claimed
-as newly verified by those structural checks.
-
-### Property membership reconciliation validation (2026-10-07)
-
-The same browser workflow now changes a real Inventory component through ordinary
-game-preview input: its first numeric entry disappears/reappears while `health`
-changes **90 → 89 → 88**. Previous/Next Frame revisits both transitions. The
-surviving property keeps its value-comparison baseline, selection and visible
-scroll anchor. Unchanged siblings stay neutral; the genuinely removed/re-admitted
-entry starts neutral. Software, WebGL2 and WebGPU pass, and the rendered light/dark
-captures in `.bmsx/authoring/property-identity/` were reviewed. Six paused paints
-perform zero member reads/entry traversals and advance neither guest cycles nor
-guest heap. Source setup remains automated, not a claim of manual-only authoring.
-
-The unchanged browser workflow fails with the previous property-document owner
-in an isolated bundle override, at retained semantic-property identity after
-rewind. Three focused identity/cache tests also failed against that owner before
-the implementation. Additional owner-level checks cover typed keys, actual
-removal/re-admission, shifted closure source caches and independently pinnable
-blackboard slots with duplicate or rebound labels. The broader Actor/Behavior/
-workbench/input/theme bundle passes **401 tests**. IDE/tests typechecks, the Studio
-debug build, strict architecture audit and structural core-parity audit pass.
-
-An isolated Node/V8 projector probe compares the previous and current owners
-using real suspended guest values, after warmup (seven paired runs, five samples
-of 3,000 observations each; median of run medians, microseconds per observation):
-
-| Properties / emission order | Previous | Retained identity |
-| --- | ---: | ---: |
-| 12 / unchanged | 0.53 | 0.55 |
-| 12 / rotating | 4.06 | 0.81 |
-| 128 / unchanged | 5.50 | 6.31 |
-| 128 / rotating | 41.18 | 9.16 |
-
-Rotating 128 entries previously rebuilt 1,920,000 value presentations and captured
-as many identities per run; the retained owner does neither after warmup. The
-unchanged-order route keeps its positional fast path, but this measurement still
-shows a small absolute slowdown, not zero overhead. The typed index and one row
-position are retained host memory proportional to the live document; removals
-release their entries. These numbers measure projection only, not total Studio
-frame time or host GC. Guest cycles/heap remain unchanged. No C++ or guest-runtime
-behavior changed in this slice.
 
 ## Pinned runtime properties
 
@@ -564,32 +459,6 @@ Godot's serialization **Pin Value** feature is not the debugger model used here.
   alias new objects. This lifecycle check also runs while Details is hidden;
   it is distinct from visible value refresh. Retired pins stay visible until
   explicitly removed.
-
-### Pin validation (2026-10-07)
-
-The browser pin workflow passes on software, WebGL2 and WebGPU. It uses the
-ordinary keyboard/right-click property context menu, chooses another real World
-actor, advances a physical frame, rewinds, navigates to source and back, reveals
-the original instance and unpins without closing Details. Captures were visually
-reviewed: the first actor's pinned `x` changes **9 → 10 → 9** while the second
-actor stays selected, with the pin owner visible beside its value. Source setup
-is automated through the real editor model; this is a browser/runtime workflow,
-not a claim of exclusively manual authoring. The fixture intentionally has no
-game graphics; the separate Nemesis game-input workflow verifies the actual live
-game preview and input beside Details.
-
-Together with the three Nemesis input gates and six existing assistant Actor
-inspection/execution gates, **12 browser gates** pass across all three backends.
-The assistant gates use a deterministic local provider, not paid inference.
-**362 Actor/Behavior/workbench/property tests** pass. Focused counters establish
-no guest reads or identity captures across 1,000 clean action-enablement checks;
-filtered warmed property emissions do not reformat values or keys. Read-only pins
-preserve guest heap/cycles, including typed key collisions, history absence,
-discarded-future ID reuse and mutable table contents. These measurements do not
-claim zero total host cost: watched nodes are still enumerated, and FSM event
-descriptions/ActionEffect metadata lookups still do work on dirty readback.
-IDE/tests typechecks, the Studio product build, boundary audit and diff checks
-pass. No machine, cartlib or mirrored C++ runtime representation changed.
 
 ## Lifetimes and representation
 
@@ -639,8 +508,6 @@ pass. No machine, cartlib or mirrored C++ runtime representation changed.
 
 ## Shared execution owner
 
-Ownership (2026-09-24):
-
 - The pane does not own tool execution. `ActorExecutionService` owns admission,
   rendezvous, completion/stop observation, cancellation and machine replacement.
   The controller supplies view-origin cancellation and presents outcomes only.
@@ -656,20 +523,18 @@ Ownership (2026-09-24):
   pauses the physical call and retains performed writes; it never unwinds it.
   No request is parked in World for later mutation.
 
-| Data | TypeScript | C++ | Change |
+| Data | TypeScript | C++ | Boundary |
 | --- | --- | --- | --- |
 | Guest keys/objects | ValueTag and raw scalar / hashId | same guest tags/identity | no machine change |
 | Retained selection | IDE heap-generation-qualified scalar membership path | no IDE selection | tooling only, identity conversion in SuspendedGuestSession |
 | Rendezvous | World receipt and scheduled CPU calls | same Lua World and native CPU | no firmware/cartlib change |
 | Operation/control | IDE explicit operation and completion plan | native Terminal remains firmware-owned | no additional instruction or renderer hook |
 
-Hot-path audit: the workbench after-frame hook adds an O(1) observation of one
-active operation; no per-frame actor scan. The generic guest scheduler reports
-final call entry once per explicit invocation, not per instruction. Target
+The workbench after-frame hook observes one active operation without a per-frame
+actor scan. The generic guest scheduler reports final call entry once per
+explicit invocation, not per instruction. Target
 capture/resolution and argument materialization happen only for an explicit
-operation. The World API and CPU remain unchanged. Godot's separate object
-inspection/mutation messages and VS Code's independent debug-operation lifetime
-were re-read before implementation.
+operation. Execution uses the World API and ordinary CPU scheduler.
 
 ### Conversation API and outcomes
 
@@ -727,129 +592,22 @@ The domain method reader returns semantic method/source information; picker
 labels/layout are produced by the controller, not the runtime reader.
 
 These tools admit the authoring target, not isolated Scenario Lab targets.
-Dedicated conversational prefab discovery/spawn and actor-event conveniences
-are not added here. This does not supply apply/save/build/install receipts or
-complete the reproduce/fix/rerun acceptance gate.
+Conversational prefab discovery/spawn and actor-event conveniences are outside
+this interface. Apply/save/build/install receipts belong to the source/build
+owners, separately from actor execution.
 
-### History-selection follow-through (2026-09-30)
+## Testing owners
 
-The implementation follows the separation in [VS Code's Variables view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts):
-tree identity/view state outlives suspended debugger references, but is retired
-at session replacement. BMSX uses the guest hash identities actually restored
-by its CPU snapshot, not variable-name matching, host object identity or a new
-actor-ID scheme. All public inspection handles still expire on every restore.
+The fixtures below own regressions at their respective boundaries; compilation,
+owner-level tests, rendered browser interaction and physical guest readback
+provide different kinds of evidence.
 
-Only IDE invalidation/composition and Actor Lab readback changed. TS/C++ CPU
-snapshot, World membership, history, guest calls and allocation remain unchanged.
-The existing visible-pane dirty refresh still owns tree traversal. A hidden
-pane additionally resolves once after restore, before its first live execution;
-there is no added per-instruction or ordinary hidden-pane traversal.
-
-The compiled-guest suite verifies fresh restored objects, preserved selection,
-absent actor/child clearing, actual discarded-ID reuse on a new branch, and
-tool-handle expiry. The real browser/World workflow
-passes on software, WebGL2 and WebGPU, including reopening selected properties
-after rewind. A separate ordinary Studio + public MCP acceptance retained the
-selected BT and collapsed FSM across tick 671 → 641 → 671, also while Actor Lab
-was hidden. All 17 observed actor scalars matched after replay. A physical
-Reboot cleared selection as intended. Another public-tool/UI run hid Actor Lab,
-sought from tick 200 to the pre-construction checkpoint at tick 0, then resumed
-live execution. The recreated actor reused hash 3897, but reopening Actor Lab
-required a fresh selection; cancelling that picker left the pane unselected.
-This is not whole-heap equivalence or a new native runtime feature.
-
-## Evidence
-
-`actor_runtime_tools.test.ts` covers compiled guest representations, typed IDs,
-aliases/cycles shared with globals, real class keys versus misleading component
-names, paging/traversal retention, unavailable/empty distinction, source-free
-reads, expiry, ordinary-row reuse and label/restore invalidation.
-
-`studio_actor_tools.test.ts` runs real browser machines, the ordinary HTTP bridge
-and native Codex app-server against a deterministic local Responses provider.
-Its fixture is authored via the real compiler and Save/Reboot: World/prefab and
-cartlib create two actors with the same behavior definitions and different live
-FSM data/selection, BT blackboards and effect activations. It compares tool
-results to the ordinary Actor Lab tree, expands typed values, shows ordinary
-state properties, preserves ordinary World-bound method execution, and checks
-actual frame execution/rewind expiry and historical Actor picker readback.
-This is automated integration evidence, not UI-only fixture authoring, personal
-account authentication or live-model reasoning.
-
-Inspection-slice baseline validation (2026-09-24):
-
-* Actor unit tests: 9 pass. Focused runtime/Actor/IntelliSense bundle: 74 pass.
-* Full Lua suite: 2504 pass, one skip. Rompacker: 182 pass. Assistant integration
-  suite: 45 pass. The Actor workflow passes on software, WebGL2 and WebGPU with
-  eight bounded model requests and one connection per workflow, not polling.
-* Ordinary Studio WebGL2 workflow: pass (8944 host frames). Existing live
-  FSM/BT/ActionEffect, partial rebind, dirty-source and rewind UI workflow:
-  pass (4353 host frames).
-* Browser Studio and Node tooling builds; product typechecks; strict architecture
-  audit (zero issues), core-parity, indentation and diff checks pass. The tests
-  project still has 95 pre-existing diagnostics: the normalized diagnostic
-  multiset matches the pre-slice baseline, with none added or removed.
-* The older Pietious scene suite still fails before reaching Actor Lab: it looks
-  for `scenes/rooms/room_002.lua`, removed by the canonical-YAML restoration.
-  A browser bundle using the unchanged HEAD versions of every modified TS file
-  reproduces the same `openScene` failure. No replacement Lua room or source
-  fallback was introduced. The new actual-World fixture separately exercises
-  the refactored ordinary Actor method/receiver lifecycle on all three backends.
-
-A same-process, compiled-guest microprobe compared the pre-slice projection with
-the new one: warm refresh was approximately 4.8 versus 4.9 microseconds for six
-nodes, and 170 versus 169 microseconds for 260 nodes. First tool traversal was
-0.28–0.76 ms; a retained four-node page approximately 0.62–0.67 microseconds.
-These local samples exclude guest execution, invalidation, rendering, network
-and total GC latency; they are not a general performance improvement claim.
-Unit checks additionally prove unchanged-row reuse and no repeated semantic
-walk/property formatting for repeated tool pages/details in one suspension.
-
-### Execution-slice validation (2026-09-24)
-
-`studio_actor_execution_tools.test.ts` exercises the real browser machine,
-ordinary HTTP bridge and native Codex app-server with a deterministic local
-Responses provider. The compiled World fixture supplies its own methods,
-transition guards and replacement races. Software, WebGL2 and WebGPU pass:
-
-* Discovered actions move only the requested actor; stored methods receive the
-  actual receiver. Return tuples distinguish nil, false and the string `false`.
-* A stored method hits an actual source breakpoint and continues through the
-  conversation tool. A denied FSM transition returns normally but reinspection
-  still reports the previous state. A subsequent allowed transition and keyed
-  timeline scrub change their actual instances.
-* Visible Stop pauses an entered bounded call without undoing writes. A later
-  prompt reads its operation ID and continues that same call to completion.
-  The workflow makes 38 finite provider requests and one connection, not polls.
-* An independently selected Actor Lab keeps its selection. Ordinary prefab
-  spawn, action picker and event emission use the same service, including an event-handler
-  breakpoint resumed with Run > Continue Lua Call. This also reproduces and
-  fixes the ordinary menu's failure to release the source stop.
-* Queued cancellation and retirement after a paused pre-entry reply never enter
-  the requested method. Guest-owned membership, method, timeline-program and
-  World-binding replacement reject stale requests without poisoning the task
-  queue. Dirty source remains uninstalled; completed calls retain user pause.
-
-The fixture setup is automated source authoring, not UI-only authorship. Captures
-in `/tmp/bmsx-studio-chat/actor-execution-*-{conversation,manual-selection,stopped-call,manual-spawn-event}.png`
-show the ordinary views. The fixture has no visual sprites, so these images are
-not evidence of newly rendered actor pixels. The existing image-transport tests
-separately verify actual frame delivery. None of this claims personal-account
-authentication or a live model's reasoning ability.
-
-Validation bundle:
-
-* Operation lifecycle: 9 pass; Actor inspection/identity: 11 pass. Focused
-  Actor/IntelliSense/scheduler bundle: 123 pass. Full Lua suite: 2789 pass, one skip.
-* Full assistant integration suite: 51 pass. The final shared-execution workflow
-  also passes separately on all three backends after the presentation split.
-* Ordinary Studio workflows report PASS on software (8832 host frames), WebGL2
-  (8882) and WebGPU (9570), including source repair, separate scenario targets,
-  pointer interactions and canonical source persistence.
-* BIOS Terminal TS/C++ parity passes; selected-frame evaluation parity passes
-  all 42 O0/O3 cases, including physical slots, scope lifetime and full snapshots.
-  This slice changes neither native Terminal nor CPU/cartlib behavior.
-* Browser Studio and Node tooling debug/release builds and IDE/common/browser/
-  Node typechecks pass. Strict architecture audit: zero issues; core-parity and
-  diff checks pass. The tests-project diagnostic comparison has no additions:
-  94 existing diagnostics remain, with one obsolete slider-test diagnostic removed.
+| Owner | Contract exercised |
+| --- | --- |
+| [`actor_details.test.ts`](../tests/lua/actor_details.test.ts) | Compiled-guest property identity, value comparison, pins, independent Details subjects and history retirement. |
+| [`actor_runtime_tools.test.ts`](../tests/lua/actor_runtime_tools.test.ts) | Typed runtime handles, ordinary Actor Lab composition/navigation, scoped commands and hidden/collapsed lifetime work. |
+| [`actor_state_graph_navigation.test.ts`](../tests/lua/actor_state_graph_navigation.test.ts) | Graph membership, selection, focus/reveal and history identity. |
+| [`actor_execution.test.ts`](../tests/lua/actor_execution.test.ts) | Instance admission, cancellation, physical call control and replacement races. |
+| [`studio_game_input.ts`](../tests/conformance/runtime_replay/studio_game_input.ts) | Ordinary gameplay input beside floating Details and scoped Studio focus. |
+| [`studio_actor_find.ts`](../tests/conformance/runtime_replay/studio_actor_find.ts), [`studio_actor_pins.ts`](../tests/conformance/runtime_replay/studio_actor_pins.ts), [`studio_actor_changes.ts`](../tests/conformance/runtime_replay/studio_actor_changes.ts) | Browser interaction for finding members, pin/source navigation and completed-observation value changes. |
+| [`studio_actor_tools.test.ts`](../tests/platform/studio_actor_tools.test.ts), [`studio_actor_execution_tools.test.ts`](../tests/platform/studio_actor_execution_tools.test.ts) | Conversation inspection/execution through real browser machines, the HTTP bridge and a deterministic provider fixture. |

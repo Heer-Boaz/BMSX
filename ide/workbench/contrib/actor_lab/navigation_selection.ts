@@ -18,9 +18,12 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly detailsOpen: boolean;
 	public readonly detailsSelection: ActorDetailsSelection | undefined;
 	public readonly detailsScroll: number;
+	public readonly detailsSubject: ActorTarget | undefined;
+	public readonly detailsLocked: boolean;
+	public readonly detailsSubjectPath: string;
+	public readonly detailsRetired: boolean;
 	private readonly outlineScroll: number;
 	private readonly splitRatio: number;
-	private readonly detailsRatio: number;
 	public constructor(input: ActorLabInput, worldHashId: number | undefined, public readonly generation: number) {
 		super();
 		this.presentation = input.presentation;
@@ -34,12 +37,15 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 			scrollX: graph.viewport.scrollX, scrollY: graph.viewport.scrollY, zoom: graph.viewport.zoom,
 		};
 		this.follow = input.follow.target;
-		this.detailsOpen = input.detailsOpen;
+		this.detailsOpen = input.detailsWindow.open;
 		this.detailsSelection = input.detailsSelection;
 		this.detailsScroll = input.detailsScroll;
+		this.detailsSubject = input.details?.subject;
+		this.detailsLocked = input.details?.locked ?? false;
+		this.detailsSubjectPath = input.details?.subjectPath ?? '';
+		this.detailsRetired = input.details?.retired ?? false;
 		this.outlineScroll = input.outline.scroll;
 		this.splitRatio = input.split.ratio;
-		this.detailsRatio = input.detailsSplit.ratio;
 	}
 
 	public matches(other: ActorLabNavigationSelection): boolean {
@@ -47,15 +53,19 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 			&& (this.target === undefined ? other.target === undefined : other.target !== undefined && actorTargetsEqual(this.target, other.target))
 			&& (this.graph === undefined ? other.graph === undefined : other.graph !== undefined
 				&& this.graph.kind === other.graph.kind && actorTargetsEqual(this.graph.target, other.graph.target))
-			&& this.detailsOpen === other.detailsOpen && actorDetailsSelectionsEqual(this.detailsSelection, other.detailsSelection);
+			&& this.detailsOpen === other.detailsOpen && this.detailsLocked === other.detailsLocked && this.detailsRetired === other.detailsRetired
+			&& (this.detailsSubject === undefined ? other.detailsSubject === undefined
+				: other.detailsSubject !== undefined && actorTargetsEqual(this.detailsSubject, other.detailsSubject))
+			&& actorDetailsSelectionsEqual(this.detailsSelection, other.detailsSelection);
 	}
 
-	public restoreDetails(input: ActorLabInput): void {
-		input.detailsOpen = this.detailsOpen;
+	public restoreDetails(input: ActorLabInput, admitted: boolean): void {
+		input.detailsWindow.open = this.detailsOpen;
 		input.detailsSelection = this.detailsSelection;
 		input.detailsScroll = this.detailsScroll;
+		input.details?.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
+			admitted ? this.detailsSubjectPath : '', admitted && this.detailsRetired);
 		input.split.resize(this.splitRatio);
-		input.detailsSplit.resize(this.detailsRatio);
 	}
 
 	/** Restore scroll after the pane lays out the reacquired rows and diagram. */

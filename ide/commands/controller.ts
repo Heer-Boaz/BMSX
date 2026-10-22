@@ -188,7 +188,7 @@ export class IdeCommandController {
 			case 'actorLab.emit':
 			case 'actorLab.actions':
 			case 'actorLab.call':
-			case 'actorLab.details':
+			case 'actorLab.details': case 'actorLab.lockDetails':
 			case 'actorLab.stateGraph': case 'actorLab.outline':
 			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
@@ -216,6 +216,7 @@ export class IdeCommandController {
 			case 'contextMenu':
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
+			case 'window.collapse': case 'window.hide':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
@@ -441,7 +442,7 @@ export class IdeCommandController {
 			case 'actorLab.emit':
 			case 'actorLab.actions':
 			case 'actorLab.call':
-			case 'actorLab.details':
+			case 'actorLab.details': case 'actorLab.lockDetails':
 			case 'actorLab.stateGraph': case 'actorLab.outline':
 			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
@@ -469,6 +470,7 @@ export class IdeCommandController {
 			case 'contextMenu':
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
+			case 'window.collapse': case 'window.hide':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':

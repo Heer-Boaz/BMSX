@@ -37,6 +37,26 @@ test('visible image cache reuses decoded pixels and releases backend textures on
 	textures.dispose(); cache.dispose(); assert.equal(releases, 2, 'backend teardown detaches image listeners');
 });
 
+test('attached image leases survive thumbnail frame eviction and release with their owner', async () => {
+	let decodes = 0, releases = 0;
+	const cache = new ImagePreviewCache(async () => { decodes++; return pixels; });
+	const textures = new HostBitmapTextures(() => 1, () => assert.fail('unexpected image update'), () => { releases++; });
+	const first = cache.retain('lightbox'), second = cache.retain('lightbox');
+	await Promise.resolve();
+	const preview = cache.use('lightbox');
+	assert.equal(textures.get(preview.bitmap!), 1);
+	for (let frame = 0; frame < 100; frame++) { cache.beginFrame(); cache.endFrame(); }
+	assert.equal(preview.retired, false);
+	assert.equal(releases, 0);
+	assert.equal(decodes, 1, 'an offscreen thumbnail does not repeatedly decode an attached lightbox');
+	first.dispose(); cache.beginFrame(); cache.endFrame();
+	assert.equal(preview.retired, false, 'the other surface still owns the decoded image');
+	second.dispose(); cache.beginFrame(); cache.endFrame();
+	assert.equal(preview.retired, true);
+	assert.equal(releases, 1);
+	textures.dispose(); cache.dispose();
+});
+
 test('bitmap batches preserve clip and order and do not retarget later game-frame sampling', () => {
 	const image = new HostBitmap(pixels), stream = new HostOverlayQuadStream();
 	stream.reset(100, 100);

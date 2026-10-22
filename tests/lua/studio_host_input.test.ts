@@ -50,7 +50,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 		event => editor.dispatchPointer(event), event => editor.dispatchWheel(event));
 	const pointer = { x: 100, y: 100, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
-	const wheel = { x: 100, y: 100, deltaX: 0, deltaY: 1, modifiers: KeyModifier.none, timestamp: 0 };
+	const wheel = { x: 100, y: 100, deltaX: 0, deltaY: 1, attachmentDeltaY: 1, modifiers: KeyModifier.none, timestamp: 0 };
 	const tick = () => { host.input.pollInput(); return menu.tickInput(); };
 	t.after(async () => {
 		unbindTarget(); menu.dismiss(); inputFocus.setTarget(null);

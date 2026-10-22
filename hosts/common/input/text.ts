@@ -41,6 +41,8 @@ export interface TextInputTarget {
 export interface TextInputHost {
 	readonly textTarget: TextInputTarget | undefined;
 	dispatchKey(event: KeyInputEvent): boolean;
+	/** Pointer source retirement does not cancel keyboard/text gestures. */
+	cancelPointerInput(): void;
 	cancelInput(): void;
 	onDidChangeTarget(listener: () => void): () => void;
 }

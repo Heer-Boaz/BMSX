@@ -114,6 +114,7 @@ test('remote key producer edits in request order with live modifiers independent
 			if (event.code === 'KeyS' && event.modifiers === KeyModifier.ctrl) { saves += 1; return true; }
 			return false;
 		},
+		cancelPointerInput() {},
 		cancelInput() {}, onDidChangeTarget: () => () => {},
 	};
 	input.setEditingInput(host);
@@ -198,6 +199,7 @@ test('remote disconnect releases raw keys without fabricating editor key-up acti
 	let armed = false, invoked = 0;
 	input.setEditingInput({ textTarget: undefined, onDidChangeTarget: () => () => {},
 		dispatchKey(event) { if (event.code === 'Enter') { if (event.down) armed = true; else if (armed) invoked++; } return false; },
+		cancelPointerInput() {},
 		cancelInput() { armed = false; },
 	});
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input));

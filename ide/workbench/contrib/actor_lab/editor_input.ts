@@ -16,6 +16,7 @@ import type { ActorNodeIdentity } from './target';
 import type { ActorDetails, ActorDetailsSelection } from './details';
 import type { ActorLabTabId } from '../../ui/tab/id';
 import type { ActorLabController } from './controller';
+import { WorkbenchWindowModel } from '../../ui/window/model';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab'> {
@@ -28,7 +29,6 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public running = false;
 	public selectionPath: readonly ActorNodeIdentity[] | undefined;
 	public details: ActorDetails | undefined;
-	public detailsOpen = false;
 	public detailsSelection: ActorDetailsSelection | undefined;
 	public detailsScroll = 0;
 	public dirty = true;
@@ -41,8 +41,9 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly split = new WorkbenchSplitView(0.4);
-	public readonly detailsSplit = new WorkbenchSplitView(0.42, 'vertical');
-	public readonly detailsBounds = create_rect_bounds();
+	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	public detailsPlacementInitialized = false;
+	public readonly detailsActions = createWorkbenchActionBar('actorLab.details.title');
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
@@ -75,7 +76,11 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	/** Explicit view navigation records membership once, never on each CPU slice. */
 	public rememberSelection(): void {
 		let row = this.outline.rows[this.outline.selectionIndex];
-		if (row === undefined) { this.selectionPath = undefined; return; }
+		if (row === undefined) {
+			this.selectionPath = undefined;
+			this.details?.followSelection(this.domain, this.worldHashId, this.actorHashId, undefined, this.runtime);
+			return;
+		}
 		const path: ActorNodeIdentity[] = [];
 		for (;;) {
 			const node = row.element.node;
@@ -84,5 +89,6 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 			row = row.parent;
 		}
 		this.selectionPath = path.reverse();
+		this.details?.followSelection(this.domain, this.worldHashId, this.actorHashId, this.selectionPath, this.runtime);
 	}
 }

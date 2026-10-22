@@ -1,17 +1,17 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { COLOR_TAB_BORDER } from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import type { IdeCommandController } from '../../../commands/controller';
+import type { EditorCommandRunner } from '../../../common/commands';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -39,6 +39,9 @@ import type { ActorStateGraph } from './state_graph';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorViewportHit } from './viewport_pick';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import { WorkbenchFloatingWindow } from '../../ui/window/control';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
 	private gameInput!: GameInputControl;
@@ -49,8 +52,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.controller.scrub(this.input, node, time, program, current, finished);
 	private timelineVisible = false;
 	private splitRevision = -1;
-	private detailsSplitRevision = -1;
-	private detailsVisible = false;
 	private restoreDetailsScroll = false;
 	private navigationSelection: ActorLabNavigationSelection | undefined;
 	private renderedTopology = -1;
@@ -62,44 +63,26 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private previewLabelSource = '';
 	private previewLabelWidth = -1;
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	private readonly detailsSplit = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
-	public readonly inspector = new WorkbenchPropertyInspector<ActorDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	public inspector!: WorkbenchPropertyInspector<ActorDetailsProperty>;
+	public detailsWindow!: WorkbenchFloatingWindow;
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
-	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
-		private readonly contextMenu: ContextMenuController) {
+	public constructor(resourcePanel: ResourcePanelController, private readonly commands: EditorCommandRunner,
+		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
+		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resourcePanel);
+		this.focusTarget.scope.surfaceScope = paneSurface.captureScope;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());
-		this.inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.label = 'Hide';
-		this.inspector.onContextMenu = (x, y, keyboard) => {
-			this.input.running = false;
-			const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.property.context'], this.commands, { selectFirst: keyboard });
-			lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
-		};
 		this.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.focusTarget;
 		this.timelineSlider.focusTarget.previous = this.actions.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
-		this.detailsSplit.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
-		for (const target of [this.focusTarget, this.graph.focusTarget, this.inspector.focusTarget]) {
-			target.registerCommand('actorLab.playback', {
-				isEnabled: () => this.controller.viewport.transport.playbackEnabled,
-				run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
-			});
-			target.registerCommand('pause', {
-				isEnabled: () => this.controller.viewport.transport.playbackEnabled,
-				run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
-			});
-			target.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
-			target.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
-			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
-				isEnabled: () => this.controller.viewport.transport.navigation.canStep(direction),
-				run: () => { this.input.running = false; this.controller.viewport.transport.navigation.step(direction); },
-			});
+		for (const target of [this.focusTarget, this.graph.focusTarget]) {
+			this.bindTransportCommands(target);
 			target.registerCommand('actorLab.follow', {
 				isEnabled: () => this.input.follow.target !== undefined || this.controller.selected(this.input) !== undefined,
 				run: () => {
@@ -117,7 +100,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				run: () => {
 					const bar = this.input.presentation === 'outline' ? this.input.actionBar : this.input.stateGraphActions;
 					const bounds = bar.items.find(item => item.command === 'actorLab.more')!.bounds;
-					const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: true });
+					const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: true, invocationOrigin: target });
 					lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
 				},
 			});
@@ -131,27 +114,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			target.registerCommand('actorLab.actions', { isEnabled: () => this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.controller.actions(this.input) });
 			target.registerCommand('actorLab.call', { isEnabled: () => this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.controller.callMethod(this.input) });
 			target.registerCommand('actorLab.details', { isEnabled: () => this.controller.selected(this.input) !== undefined, run: () => {
-				if (!this.inspector.visible) this.showDetails(true);
-				else this.inspector.focusTarget.focus();
+				this.showDetails(true);
 			} });
-			for (const [command, enabled, execute] of [
-				['actorLab.pinProperty', ActorLabController.prototype.canPinProperty, ActorLabController.prototype.pinProperty],
-				['actorLab.unpinProperty', ActorLabController.prototype.canUnpinProperty, ActorLabController.prototype.unpinProperty],
-				['actorLab.revealPinnedProperty', ActorLabController.prototype.canRevealPinnedProperty, ActorLabController.prototype.revealPinnedProperty],
-			] as const) target.registerCommand(command, {
-				isEnabled: () => {
-					const item = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;
-					return this.inspector.visible && item !== undefined && enabled.call(this.controller, this.input, item);
-				},
-				run: () => {
-					const item = this.inspector.model.rows[this.inspector.model.selectionIndex].element;
-					execute.call(this.controller, this.input, item);
-					this.update();
-					const selection = this.inspector.model.rows.findIndex(row => actorDetailsPropertyMatchesSelection(row.element, this.input.detailsSelection));
-					if (selection >= 0) this.inspector.model.select(selection);
-					this.inspector.focusTarget.focus();
-				},
-			});
 			target.registerCommand('actorLab.stateGraph', {
 				isEnabled: () => { const kind = this.controller.selected(this.input)?.kind; return this.input.presentation === 'outline' && (kind === 'machine' || kind === 'state'); },
 				run: () => {
@@ -164,6 +128,112 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			target.registerCommand('actorLab.outline', { isEnabled: () => this.input.presentation === 'graph',
 				run: () => { this.controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
+	}
+	private bindTransportCommands(target: InputFocusTarget): void {
+		target.registerCommand('actorLab.playback', {
+			isEnabled: () => this.controller.viewport.transport.playbackEnabled,
+			run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
+		});
+		target.registerCommand('pause', {
+			isEnabled: () => this.controller.viewport.transport.playbackEnabled,
+			run: () => { this.input.running = this.controller.viewport.transport.togglePlayback(); },
+		});
+		target.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
+		target.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
+		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
+			isEnabled: () => this.controller.viewport.transport.navigation.canStep(direction),
+			run: () => { this.input.running = false; this.controller.viewport.transport.navigation.step(direction); },
+		});
+	}
+	private createDetailsWindow(): void {
+		const input = this.input;
+		this.detailsWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, this.surfaces, this.commands, {
+			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: this.paneSurface,
+			focusReturn: this.focusTarget, getWorkArea: this.getWorkArea,
+			content: {
+				draw: () => drawWorkbenchPropertyInspector(this.inspector),
+				handlePointer: snapshot => { this.inspector.handlePointer(snapshot); },
+				handleWheel: event => this.inspector.handleWheel(event, event.deltaY * editorViewState.lineHeight * 3),
+			},
+			layoutContent: bounds => this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, bounds),
+			retireContentInput: () => this.inspector.hide(),
+			restoreContentInput: () => {
+				this.controller.inspect(input, this.inspector, false, this.focusTarget);
+				this.restoreDetailsScroll = true;
+			},
+			focusContent: () => this.inspector.focusTarget.focus(),
+		});
+		this.inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.detailsWindow.clientFocusTarget, 'client');
+		this.inspector.setFocusOrder(this.detailsWindow.actionFocusTarget, this.detailsWindow.focusTarget);
+		this.inspector.onContextMenu = (x, y, keyboard) => {
+			input.running = false;
+			const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.property.context'], this.commands, { selectFirst: keyboard });
+			lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
+		};
+		for (const target of [this.detailsWindow.focusTarget, this.inspector.focusTarget]) {
+			this.bindTransportCommands(target);
+			for (const command of ['actorLab.select', 'actorLab.find'] as const) {
+				target.registerCommand(command, this.focusTarget.getCommand(command)!);
+			}
+			target.registerCommand('actorLab.lockDetails', {
+				isEnabled: () => input.details!.subject !== undefined,
+				run: () => { this.controller.setDetailsLocked(input, !input.details!.locked); this.update(); },
+			});
+			target.registerCommand('actorLab.details', { isEnabled: () => input.detailsWindow.open, run: () => this.showDetails(true) });
+		}
+		for (const command of ['window.collapse', 'window.hide'] as const) {
+			this.inspector.focusTarget.registerCommand(command, this.detailsWindow.focusTarget.getCommand(command)!);
+		}
+		for (const [command, enabled, execute] of [
+			['actorLab.pinProperty', ActorLabController.prototype.canPinProperty, ActorLabController.prototype.pinProperty],
+			['actorLab.unpinProperty', ActorLabController.prototype.canUnpinProperty, ActorLabController.prototype.unpinProperty],
+			['actorLab.revealPinnedProperty', ActorLabController.prototype.canRevealPinnedProperty, ActorLabController.prototype.revealPinnedProperty],
+		] as const) this.inspector.focusTarget.registerCommand(command, {
+			isEnabled: () => {
+				const item = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;
+				return this.inspector.visible && item !== undefined && enabled.call(this.controller, input, item);
+			},
+			run: () => {
+				const item = this.inspector.model.rows[this.inspector.model.selectionIndex].element;
+				execute.call(this.controller, input, item); this.update();
+				const selection = this.inspector.model.rows.findIndex(row => actorDetailsPropertyMatchesSelection(row.element, input.detailsSelection));
+				if (selection >= 0) this.inspector.model.select(selection);
+				this.inspector.focusTarget.focus();
+			},
+		});
+	}
+	private initializeDetailsPlacement(): void {
+		const input = this.input, model = input.detailsWindow, font = editorViewState.font.renderFont();
+		const minimumWidth = editorViewState.charAdvance * 32 + 12, minimumHeight = font.lineHeight * 7 + 16;
+		model.setMinimumSize(minimumWidth, minimumHeight);
+		if (input.detailsPlacementInitialized) return;
+		const area = this.getWorkArea(), preview = input.previewBounds;
+		const width = Math.max(minimumWidth, (area.right - area.left) / 2);
+		const height = Math.max(minimumHeight, (area.bottom - area.top) / 2);
+		model.setRequestedBounds({ left: preview.right - 4 - width, top: preview.bottom - 4 - height,
+			right: preview.right - 4, bottom: preview.bottom - 4 });
+		input.detailsPlacementInitialized = true;
+	}
+	private updateDetailsWindow(): void {
+		const input = this.input, model = input.detailsWindow, details = input.details!;
+		if (!model.open) { this.controller.followDetailsSelection(input); this.detailsWindow.detach(); return; }
+		this.initializeDetailsPlacement();
+		const attached = this.detailsWindow.visible;
+		if (!attached) this.detailsWindow.show(false);
+		if (!model.collapsed && attached) {
+			const items = this.controller.refreshDetails(input);
+			if (items !== undefined) this.inspector.updateItems(items, actorDetailsPropertiesEqual);
+		} else if (model.collapsed) this.controller.followDetailsSelection(input);
+		model.title = details.title;
+		const lock = input.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!;
+		if (lock.checked !== details.locked) { lock.checked = details.locked; model.invalidate(); }
+		this.detailsWindow.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
+		if (!model.collapsed) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, model.client);
+		if (this.restoreDetailsScroll && this.inspector.visible) {
+			this.inspector.model.viewport.scrollbar.setScroll(input.detailsScroll);
+			this.restoreDetailsScroll = false;
+		}
+		this.detailsWindow.update();
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get showsGameFrame(): boolean { return true; }
@@ -183,17 +253,18 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	protected override activate(): void {
 		this.controller = this.input.controller;
-		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient);
+		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport);
 		super.activate();
+		this.createDetailsWindow();
 		this.renderedTopology = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
-		this.gameInput.setInput(this.input.previewBounds);
+		if (this.controller.viewport.kind === 'direct' || this.controller.viewport.frames.bitmap !== undefined) this.gameInput.setInput(this.input.previewBounds);
 	}
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: ActorLabNavigationSelection): void {
 		if (navigationSelection === undefined) return;
-		this.inspector.hide();
+		this.detailsWindow.detach();
 		this.controller.restoreSelection(this.input, navigationSelection, editorViewState.font.renderFont());
 		this.navigationSelection = navigationSelection;
 		this.renderedTopology = -1;
@@ -201,19 +272,23 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override clearInput(): void {
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
-		this.inspector.hide(); this.gameInput.dispose(); this.actions.clearInput();
+		this.detailsWindow.dispose(); this.inspector.dispose(); this.gameInput.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
-		this.detailsSplit.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
-		this.split.clearInput(); this.detailsSplit.clearInput(); this.detailsVisible = false;
+		this.split.clearInput();
 		// Detaching is not execution; the controller still observes guest invalidation while hidden.
 		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.scrollbar.cancelPointer(); super.clearInput();
 	}
-	public override dispose(): void { pointerHover.release(this); this.inspector.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
+	public override dispose(): void {
+		if (this.hasInput) this.clearInput();
+		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose();
+	}
 	public override update(): void {
 		const input = this.input;
+		if (this.controller.viewport.kind === 'direct' || this.controller.viewport.frames.bitmap !== undefined) this.gameInput.setInput(input.previewBounds);
+		else this.gameInput.clearInput();
 		const readback = input.dirty;
 		const revealed = this.controller.refresh(input);
 		// Controller commands can reconcile before paint; the pane consumes the revision independently.
@@ -228,23 +303,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			this.focusTarget.commandContext = context;
 			this.split.focusTarget.commandContext = context;
 			this.timelineSlider.focusTarget.commandContext = context;
-			this.detailsSplit.focusTarget.commandContext = context;
 			this.actions.setInput(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, context);
 		}
 		this.boundGraph?.layout(editorViewState.font.renderFont());
-		if (input.detailsOpen) {
-			if (!this.inspector.visible) this.showDetails(false);
-			else {
-				const items = this.controller.refreshDetails(input);
-				if (items !== undefined) this.inspector.updateItems(items, actorDetailsPropertiesEqual);
-			}
-		}
-		const detailsChanged = this.detailsVisible !== this.inspector.visible;
-		this.detailsVisible = this.inspector.visible;
-		if (detailsChanged) {
-			if (this.detailsVisible) this.detailsSplit.setInput(input.detailsSplit);
-			else this.detailsSplit.clearInput();
-		}
 		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		if (!this.timelineSlider.focusTarget.hasFocus) input.timeline.cancelPending();
 		input.timeline.refresh(this.controller.selected(input), input.running, this.controller.guest, readback, this.controller.canInteract());
@@ -257,8 +318,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const followChanged = follow.label !== followLabel;
 		follow.label = followLabel;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
-		const viewportChanged = layoutChanged || timelineChanged || graphChanged || detailsChanged
-			|| this.splitRevision !== input.split.revision || this.detailsSplitRevision !== input.detailsSplit.revision;
+		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.split.revision;
 		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
 		if (followChanged || contentsChanged || viewportChanged) {
 			this.updateContentLayout();
@@ -281,16 +341,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.gameInput.focusTarget.previous = input.presentation === 'outline' ? this.split.focusTarget : this.graph.focusTarget;
 		this.gameInput.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;
-		if (this.inspector.visible) {
-			this.gameInput.focusTarget.next = this.detailsSplit.focusTarget;
-			this.detailsSplit.focusTarget.previous = this.gameInput.focusTarget;
-			this.inspector.setFocusOrder(this.detailsSplit.focusTarget, this.focusTarget);
-			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, input.detailsBounds);
-			if (this.restoreDetailsScroll) {
-				this.inspector.model.viewport.scrollbar.setScroll(input.detailsScroll);
-				this.restoreDetailsScroll = false;
-			}
-		}
+		this.updateDetailsWindow();
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
 		this.inspector.update();
@@ -299,7 +350,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.navigationSelection = undefined;
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		drawEditorText(editorViewState.font, this.detailsSplit.focusTarget.hasFocus ? 'RESIZE PANES: UP/DOWN | HOME: RESET'
+		const windowScope = inputFocus.target?.scope;
+		drawEditorText(editorViewState.font, windowScope === this.detailsWindow.scope || windowScope === this.detailsWindow.clientScope ? this.input.details!.title
 			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
 			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : 'RIGHT CLICK: INSPECT'
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
@@ -317,14 +369,18 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 		this.gameInput.draw();
 		drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
-		if (this.inspector.visible) {
-			drawWorkbenchPropertyInspector(this.inspector);
-			drawWorkbenchSplit(this.input.detailsSplit, this.detailsSplit.hovered || this.detailsSplit.focusTarget.hasFocus);
-		}
 	}
 	private showDetails(focus: boolean): void {
-		this.controller.inspect(this.input, this.inspector, focus);
-		this.restoreDetailsScroll = true;
+		updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
+		this.updateContentLayout();
+		const attached = this.detailsWindow.visible;
+		this.input.detailsWindow.open = true;
+		this.updateDetailsWindow();
+		if (attached) this.surfaces.raise(this.detailsWindow.surface!);
+		if (focus) {
+			if (this.input.detailsWindow.collapsed) this.detailsWindow.focusTarget.focus();
+			else this.inspector.focusTarget.focus();
+		}
 	}
 	public onPointerLeave(): void {
 		this.viewportHover = false; this.viewportHit = undefined; this.previewLabel = 'GAME FRAME'; this.previewLabelSource = '';
@@ -367,17 +423,12 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const divider = this.input.split.position;
 		const previewLeft = divider + 6;
 		const previewTop = top + layout.rowHeight + 4;
-		this.input.detailsSplit.layout(previewLeft, top, layout.right - 4, bottom);
-		this.detailsSplitRevision = this.input.detailsSplit.revision;
-		const previewBottom = this.inspector.visible ? this.input.detailsSplit.position - 4 : bottom - 4;
-		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, previewBottom);
-		write_rect_bounds(this.input.detailsBounds, previewLeft, this.input.detailsSplit.position + 4, layout.right - 4, bottom);
+		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, bottom - 4);
 		this.input.outline.updateLayout(4, top, divider, bottom,
 			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
 		this.boundGraph?.viewport.layout(4, top + layout.rowHeight + 4, divider, bottom);
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.inspector.visible && (this.detailsSplit.handlePointer(snapshot) || this.inspector.handlePointer(snapshot))) return true;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
 			if (!this.controller.rewind.seeking) {
 				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);
@@ -430,7 +481,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		return true;
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.inspector.visible && this.inspector.handleWheel(event, event.deltaY * editorViewState.lineHeight * 3)) return;
 		if (this.input.presentation === 'graph') {
 			if (!this.graph.handleWheel(event)) return;
 		} else {

@@ -26,6 +26,20 @@ import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_gra
 import { ActorRuntimeTree, runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
+import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import type { EditorCommandRunner } from '../../ide/common/commands';
+import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -48,7 +62,7 @@ return world`;
 const controllers: ActorLabController[] = [];
 afterEach(() => { for (const controller of controllers) controller.dispose(); controllers.length = 0; });
 
-function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = []) {
+function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = [], quickInput?: QuickInputController) {
 	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
 		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }, ...extraModules]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
@@ -65,7 +79,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	const transport = new RuntimeTransport(runtime, f.execution, f.rewind, f.frameNavigation, () => f.actorExecution.canExecute);
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
-		undefined!, undefined!, undefined!, f.actorExecution, f.rewind, sources,
+		quickInput!, undefined!, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
 	controllers.push(controller);
 	return { ...f, stop: inspection, actors, controller };
@@ -124,22 +138,22 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
-	input.rememberSelection(); input.detailsOpen = true;
+	input.rememberSelection(); input.detailsWindow.open = true;
 	controller.refreshDetails(input);
 	const selectedProperty = captureActorDetailsSelection(input.details!.items.find(item => item.identity !== undefined)!);
 	input.detailsSelection = selectedProperty; input.detailsScroll = 37;
-	input.split.resize(0.55); input.detailsSplit.resize(0.6);
+	input.split.resize(0.55);
 	const saved = controller.captureSelection(input), heap = f.runtime.machine.cpu.luaHeap.usedBytes();
 	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true; controller.refresh(input);
 	const second = controller.captureSelection(input);
 	assert.equal(saved.matches(second), false, 'equal displayed actor IDs do not substitute for physical typed membership');
-	input.detailsSelection = undefined; input.detailsScroll = 0; input.detailsOpen = false;
+	input.detailsSelection = undefined; input.detailsScroll = 0; input.detailsWindow.open = false;
 	controller.restoreSelection(input, saved, font);
 	assert.equal(input.actorHashId, choices[0].hashId);
 	assert.deepEqual(input.selectionPath, saved.target!.path);
 	assert.equal(controller.selected(input)!.kind, 'state');
-	assert.equal(input.detailsOpen, true); assert.deepEqual(input.detailsSelection, selectedProperty); assert.equal(input.detailsScroll, 37);
-	assert.equal(input.split.ratio, 0.55); assert.equal(input.detailsSplit.ratio, 0.6);
+	assert.equal(input.detailsWindow.open, true); assert.deepEqual(input.detailsSelection, selectedProperty); assert.equal(input.detailsScroll, 37);
+	assert.equal(input.split.ratio, 0.55);
 	assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
 	assert.equal(input.running, false);
 	saved.dispose(); second.dispose();
@@ -204,6 +218,149 @@ test('Actor Lab pin and reveal commands keep watch selection separate and return
 	controller.unpinProperty(input, revealed); controller.refreshDetails(input);
 	assert.equal(input.details!.watches.pins.length, 0); assert.equal(controller.canPinProperty(input, revealed), true);
 	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+});
+
+test('locked Details property commands target its subject rather than a newly selected actor', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const choices = readActorChoices(f.sources, f.guest, -1);
+	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
+	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	const subject = input.details!.subject!, path = input.details!.subjectPath;
+	controller.setDetailsLocked(input, true);
+	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true;
+	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
+	assert.equal(input.details!.subject, subject); assert.equal(input.details!.locked, true);
+	const property = input.details!.items.find(item => item.label === 'active')!;
+	assert.equal(property.value, 'true', 'Details still projects the first actor, not the tree-selected inactive actor');
+	assert.equal(controller.canPinProperty(input, property), true);
+	controller.pinProperty(input, property); controller.refreshDetails(input);
+	const pin = input.details!.watches.pins[0];
+	assert.equal(pin.target, subject); assert.ok(pin.item.description.includes(path));
+	assert.equal(controller.canPinProperty(input, property), false); assert.equal(controller.canUnpinProperty(input, property), true);
+	controller.setDetailsLocked(input, false);
+	assert.equal(input.details!.subject!.actorHashId, choices[1].hashId, 'unlock immediately adopts the current tree selection');
+	controller.refreshDetails(input);
+	const second = input.details!.items.find(item => item.watch === undefined && item.label === 'active')!;
+	assert.equal(second.value, 'false');
+	assert.equal(controller.canPinProperty(input, second), true, 'the same semantic field on a different subject is not already pinned');
+	assert.equal(controller.canUnpinProperty(input, second), false);
+});
+
+test('navigation retains the independent Details lock and subject, but never restores them across a retired generation', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
+	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
+	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input); controller.setDetailsLocked(input, true);
+	const subject = input.details!.subject!;
+	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true;
+	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	const saved = controller.captureSelection(input); t.after(() => saved.dispose());
+	assert.equal(saved.detailsSubject, subject); assert.equal(saved.target!.actorHashId, choices[1].hashId);
+	controller.setDetailsLocked(input, false);
+	const unlocked = controller.captureSelection(input); t.after(() => unlocked.dispose());
+	assert.equal(saved.matches(unlocked), false, 'a lock/subject change is a distinct navigation selection');
+	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
+	assert.equal(input.details!.locked, true); assert.equal(input.details!.subject, subject);
+	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
+	f.guest.invalidate('heap-replaced');
+	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
+	assert.equal(input.details!.subject, undefined); assert.equal(input.details!.locked, false);
+});
+
+test('the actual floating pane retains locked pins while collapsed or detached without formatting the hidden client', t => {
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
+	const f = fixture(ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
+function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
+return world`), true, WORLD_SOURCE, [], quickInput);
+	t.after(() => f.stop.dispose());
+	const controller = f.controller, input = controller.resolveInput();
+	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
+	const surfaces = new WorkbenchSurfaceService();
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('actor pane'), isVisible: () => true,
+		getBounds: () => bounds, getClip: () => bounds, draw() {} });
+	const commands: EditorCommandRunner = {
+		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target),
+	};
+	const previousFont = editorViewState.font, previousLineHeight = editorViewState.lineHeight,
+		previousAdvance = editorViewState.charAdvance, previousScrollbar = editorViewState.scrollbarController;
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+	editorViewState.scrollbarController = new ScrollbarController({
+		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
+		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
+	}, () => {}, pointerCapture);
+	const pane = new ActorLabEditorPane({ hide() {} } as ResourcePanelController, commands, contextMenu, surfaces, owner, () => bounds);
+	t.after(() => {
+		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
+		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;
+		editorViewState.charAdvance = previousAdvance; editorViewState.scrollbarController = previousScrollbar;
+	});
+	const choices = readActorChoices(f.sources, f.guest, -1);
+	input.domain = -1; input.actorHashId = choices[0].hashId;
+	pane.setInput(input, bounds); pane.update(); input.outline.selectionIndex = 0; input.rememberSelection();
+	pane.focus(); commands.execute('actorLab.details');
+	const details = input.details!, subject = details.subject!, path = details.subjectPath;
+	controller.pinProperty(input, details.items.find(item => item.label === 'active')!); pane.update();
+	const pin = details.watches.pins[0], preview = { ...input.previewBounds };
+	commands.execute('actorLab.lockDetails', pane.inspector.focusTarget);
+	pane.detailsWindow.setCollapsed(true);
+	assert.equal(pane.inspector.visible, false); assert.equal(input.detailsWindow.open, true);
+	assert.deepEqual(input.previewBounds, preview, 'collapse never reserves or releases a preview split');
+	for (const target of [pane.detailsWindow.focusTarget, pane.inspector.focusTarget]) {
+		assert.equal(commands.isEnabled('actorLab.select', target), true);
+		assert.equal(commands.isEnabled('actorLab.find', target), true);
+		assert.equal(inputFocus.getCommand('actorLab.actions', target), undefined, 'subject mutation cannot accidentally use tree selection');
+		assert.equal(inputFocus.getCommand('actorLab.call', target), undefined);
+	}
+	pane.detailsWindow.focusTarget.focus(); commands.execute('actorLab.select');
+	assert.equal(quickInput.visible, true, 'the real running-actor picker is available from the collapsed Details scope');
+	inputFocus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none)); pane.update();
+	assert.equal(quickInput.visible, false); assert.equal(input.actorHashId, choices[1].hashId);
+	const formatting = t.mock.method(f.guest, 'formatStoredEntries');
+	const valueFormatting = t.mock.method(f.guest, 'formatValue');
+	const projectPins = t.mock.method(details.watches, 'refresh');
+	for (let frame = 0; frame < 1000; frame++) pane.update();
+	assert.equal(formatting.mock.callCount(), 0); assert.equal(projectPins.mock.callCount(), 0);
+	assert.equal(valueFormatting.mock.callCount(), 0);
+	assert.equal(details.subject, subject); assert.equal(details.subjectPath, path); assert.equal(pin.target, subject);
+	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
+	pane.detailsWindow.setCollapsed(false); pane.update();
+	assert.equal(pane.inspector.visible, true); assert.equal(pin.item.value, 'true');
+	assert.equal(details.subject, subject); assert.deepEqual(input.previewBounds, preview);
+	pane.detailsWindow.setCollapsed(true);
+	const saved = pane.getSelection(); t.after(() => saved.dispose());
+	const beforeNavigation = formatting.mock.callCount();
+	pane.setOptions(undefined, saved); pane.update();
+	assert.equal(input.detailsWindow.collapsed, true); assert.equal(details.available, true);
+	assert.equal(details.subject, subject); assert.equal(pin.target, subject);
+	assert.equal(formatting.mock.callCount(), beforeNavigation, 'collapsed navigation resolves the subject without projecting properties');
+	pane.clearInput();
+	assert.equal(input.detailsWindow.open, true); assert.equal(input.detailsWindow.collapsed, true);
+	f.guest.invalidate('history-restored');
+	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_subject') as Closure, []);
+	const before = formatting.mock.callCount();
+	f.guest.willEndHistoryReview();
+	assert.equal(details.retired, true); assert.equal(pin.retired, true);
+	assert.equal(formatting.mock.callCount(), before, 'hidden branch admission resolves identity, not property presentation');
+	pane.setInput(input, bounds); pane.update();
+	assert.equal(pane.inspector.visible, false); assert.equal(details.subject, subject); assert.equal(details.available, false);
+	assert.match(details.title, /UNAVAILABLE$/);
+	f.guest.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('replace_subject') as Closure, []); pane.update();
+	const world = runtimeWorld(f.sources, f.guest, -1)!, replacement = (f.guest.readStringMember(world, '_objects') as Table).getInteger(2) as Table;
+	assert.equal(f.guest.readStringMember(replacement, 'id'), 1);
+	assert.notEqual(replacement.hashId, subject.actorHashId, 'the replacement really is another instance with the original name');
+	pane.detailsWindow.setCollapsed(false); pane.update();
+	assert.equal(details.subject, subject); assert.equal(details.available, false); assert.equal(pin.retired, true);
+	assert.ok(pane.inspector.model.rows.some(row => row.element.label === 'INSTANCE UNAVAILABLE'));
+	pane.detailsWindow.setCollapsed(true);
+	f.guest.invalidate('heap-replaced'); pane.update();
+	assert.equal(details.retired, true); assert.equal(details.subject, subject); assert.equal(pin.retired, true);
 });
 
 test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {

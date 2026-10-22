@@ -156,6 +156,91 @@ test('actor details reads only dirty suspensions and retains warmed property row
 	assert.equal(formatted, 1);
 });
 
+test('locked Details owns an independent typed subject while tree navigation and playback continue', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	const subject = f.details.subject!, path = f.details.subjectPath;
+	assert.equal(f.details.available, true);
+	assert.match(path, /SYSTEM \/ 1$/);
+	assert.equal(f.details.items.find(item => item.label === 'x')!.value, '0');
+	f.details.setLocked(true);
+	f.update(f.otherHashId);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, other.path, f.tree);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(f.details.subject, subject);
+	assert.equal(f.details.subjectPath, path);
+	assert.equal(f.details.items.find(item => item.label === 'x')!.value, '0');
+	f.execute('change_positions'); f.update(f.otherHashId);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(f.details.items.find(item => item.label === 'x')!.value, '1', 'locking fixes identity, not values or inspected time');
+	assert.equal(f.tree.roots[0].hashId, f.otherHashId);
+	f.details.setLocked(false);
+	f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, other.path, f.tree);
+	assert.equal(f.details.subject!.actorHashId, f.otherHashId, 'unlock follows the current explicit selection immediately');
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(f.details.items.find(item => item.label === 'x')!.value, '23');
+	f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, undefined, f.tree);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(f.details.subject, undefined);
+	assert.equal(f.details.title, 'DETAILS — SELECT AN INSTANCE');
+});
+
+test('historical subject absence retains the path, but hidden live-branch admission retires discarded identities', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false); f.details.setLocked(true);
+	const live = f.cpu.captureRuntimeState(), path = f.details.subjectPath, subject = f.details.subject;
+	f.execute('remove_actor');
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, true);
+	assert.equal(f.details.available, false); assert.equal(f.details.retired, false);
+	assert.equal(f.details.subjectPath, path); assert.match(f.details.title, /UNAVAILABLE$/);
+	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(live); f.update();
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, true);
+	assert.equal(f.details.subject, subject); assert.equal(f.details.available, true);
+	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(f.beforeBirth); f.update();
+	// This is the hidden identity-lifetime hook, without a property refresh.
+	f.details.resumeHistory(f.tree, -1, undefined);
+	assert.equal(f.details.retired, true); assert.equal(f.details.available, false);
+	const title = f.details.title;
+	f.cpu.runUntilDepth(0, 100_000); f.update();
+	assert.equal(f.tree.roots[0].hashId, f.actorHashId, 'the new live branch actually reuses the old allocation identity');
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(f.details.retired, true); assert.equal(f.details.available, false); assert.equal(f.details.title, title);
+	f.details.setLocked(false);
+	const current = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, f.tree.roots, f.tree.roots[0], f.guest);
+	f.details.followSelection(-1, current.worldHashId, f.actorHashId, current.path, f.tree);
+	f.details.refreshSubject(f.tree, -1, current.worldHashId, false);
+	assert.equal(f.details.retired, false); assert.equal(f.details.available, true, 'explicit unlock admits the now-selected new instance');
+});
+
+test('locked subject and cross-actor watches share resolved trees and warmed checks do no runtime enumeration', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, f.target.path, f.tree);
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	const property = f.details.items.find(item => item.label === 'x')!;
+	f.details.watches.add(f.target, f.details.subjectPath, property);
+	f.details.setLocked(true); f.update(f.otherHashId);
+	const update = ActorRuntimeTree.prototype.update;
+	const enumerations = t.mock.method(ActorRuntimeTree.prototype, 'update', function(this: ActorRuntimeTree, ...args: Parameters<typeof update>) {
+		return update.apply(this, args);
+	});
+	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
+	assert.equal(enumerations.mock.callCount(), 1, 'the locked subject tree is resolved once and reused by its pins');
+	const subject = f.details.subject, title = f.details.title, items = f.details.items.slice();
+	const reads = t.mock.method(f.guest, 'readStringMember'), formatting = t.mock.method(f.guest, 'formatStoredEntries');
+	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	for (let frame = 0; frame < 1000; frame++) {
+		f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, undefined, f.tree);
+		assert.equal(f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false), undefined);
+	}
+	assert.equal(f.details.subject, subject); assert.equal(f.details.title, title);
+	assert.ok(items.every((item, index) => f.details.items[index] === item));
+	assert.equal(enumerations.mock.callCount(), 1); assert.equal(reads.mock.callCount(), 0); assert.equal(formatting.mock.callCount(), 0);
+	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+});
+
 test('explicit selection changes refresh details without execution and mutable members remain authoritative', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;

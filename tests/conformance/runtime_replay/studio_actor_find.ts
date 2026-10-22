@@ -88,7 +88,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 		&& !collapsed.collapsed && lab.follow.target === undefined,
 		'acceptance expands ancestry and selects the exact duplicate instance while stopping follow');
 	check(outline.selectionIndex >= outline.scroll && outline.selectionIndex < outline.scroll + outline.layout.visibleRowCount
-		&& inspector.visible && lab.details === before.details && lab.previewBounds.bottom < lab.detailsBounds.top
+		&& inspector.visible && lab.details === before.details && pane.detailsWindow.visible && lab.detailsWindow.open
 		&& lab.previewBounds.right > lab.previewBounds.left && lab.previewBounds.bottom > lab.previewBounds.top,
 		'accepted target is visibly revealed while retained Details and the embedded game frame remain available');
 	check(cycles() === before.cycles && runtime.machine.cpu.luaHeap.usedBytes() === before.heap && guest.global('actor_tool_callbacks') === before.callbacks,
@@ -110,7 +110,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 	await test.capture?.('graph-find-return');
 
 	await test.runMenuCommand('pause');
-	await click(lab.previewBounds);
+	await click(test.visiblePreviewPoint(lab.previewBounds));
 	const previewFocus = inputFocus.target;
 	test.setKey('ControlLeft', true); test.setKey('KeyF', true);
 	const usage = hidKeyUsageForCode('KeyF'), address = IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE, mask = 1 << (usage & 31);

@@ -10,6 +10,52 @@ import {
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
+import type { PointerInputEvent } from './pointer_event';
+
+/** DOM/UI masks order secondary before auxiliary; the ICU uses button indices. */
+function inputControllerPointerButtons(buttons: number): number {
+	return ((buttons & ~6) | ((buttons & 2) << 1) | ((buttons & 4) >>> 1)) >>> 0;
+}
+
+/** Admitted input belongs to a recipient, independently of physical-source history. */
+export class PointerInputContribution {
+	private buttons = 0;
+	private xQ16 = 0;
+	private yQ16 = 0;
+	private pendingWheel = 0;
+	private wheelQ16 = 0;
+
+	public admit(event: PointerInputEvent, x: number, y: number): void {
+		this.buttons = ((this.buttons | inputControllerPointerButtons(event.pressedButtons))
+			& ~inputControllerPointerButtons(event.releasedButtons | event.cancelledButtons)) >>> 0;
+		this.xQ16 = encodeSignedFix16(x);
+		this.yQ16 = encodeSignedFix16(y);
+	}
+
+	public admitWheel(x: number, y: number, deltaY: number): void {
+		this.xQ16 = encodeSignedFix16(x);
+		this.yQ16 = encodeSignedFix16(y);
+		this.pendingWheel += deltaY;
+	}
+
+	public pollInput(): void {
+		this.wheelQ16 = encodeSignedFix16(this.pendingWheel);
+		this.pendingWheel = 0;
+	}
+
+	public cancel(): void {
+		this.buttons = 0;
+		this.pendingWheel = 0;
+		this.wheelQ16 = 0;
+	}
+
+	public writeSnapshot(snapshot: InputControllerSnapshot): void {
+		snapshot.pointerButtons = this.buttons;
+		snapshot.pointerXQ16 = this.xQ16;
+		snapshot.pointerYQ16 = this.yQ16;
+		snapshot.pointerWheelQ16 = this.wheelQ16;
+	}
+}
 
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
@@ -52,9 +98,13 @@ export class PointerInput implements PointerInputHandler {
 	private pendingWheelTimestamp = 0;
 	private inputControllerButtons = 0;
 	private routedInputControllerButtons = 0;
+	private blockedAttachmentButtons = 0;
+	private attachmentButtonsAwaitingPoll = false;
 	private inputControllerXQ16 = 0;
 	private inputControllerYQ16 = 0;
 	private inputControllerWheelQ16 = 0;
+	private admittedAttachmentWheelQ16 = 0;
+	private blockedPendingAttachmentWheel = 0;
 
 	constructor(
 		private readonly clock: HostClock,
@@ -66,6 +116,7 @@ export class PointerInput implements PointerInputHandler {
 	public pollInput(): void {
 		const now = this.clock.now();
 		this.routedInputControllerButtons = this.inputControllerButtons;
+		this.attachmentButtonsAwaitingPoll = false;
 		const delta = this.buttonStates['pointer_delta'];
 		const deltaX = this.pendingDeltaX;
 		const deltaY = this.pendingDeltaY;
@@ -114,6 +165,9 @@ export class PointerInput implements PointerInputHandler {
 			wheel.releasedAtMs = now;
 		}
 		this.inputControllerWheelQ16 = encodeSignedFix16(this.pendingAttachmentWheel);
+		this.admittedAttachmentWheelQ16 = this.blockedPendingAttachmentWheel === 0
+			? this.inputControllerWheelQ16 : encodeSignedFix16(this.pendingAttachmentWheel - this.blockedPendingAttachmentWheel);
+		this.blockedPendingAttachmentWheel = 0;
 		this.pendingAttachmentWheel = 0;
 		this.pendingWheel = 0;
 
@@ -142,15 +196,28 @@ export class PointerInput implements PointerInputHandler {
 		return getPressedState(this.buttonStates, btn);
 	}
 
+	/** Event-time physical hold, including edges not yet published by a host poll. */
+	public get buttonsDown(): boolean { return this.inputControllerButtons !== 0; }
+
 	public get positionValid(): boolean {
 		return this.lastPositionValid;
 	}
 
-	public writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void {
-		snapshot.pointerButtons = (snapshot.pointerButtons | this.routedInputControllerButtons) >>> 0;
+	public writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot, supervisor = false): void {
+		const buttons = supervisor ? this.routedInputControllerButtons
+			: this.attachmentButtonsAwaitingPoll ? 0 : this.routedInputControllerButtons & ~this.blockedAttachmentButtons;
+		snapshot.pointerButtons = (snapshot.pointerButtons | buttons) >>> 0;
 		snapshot.pointerXQ16 = this.inputControllerXQ16;
 		snapshot.pointerYQ16 = this.inputControllerYQ16;
-		snapshot.pointerWheelQ16 = this.inputControllerWheelQ16;
+		snapshot.pointerWheelQ16 = supervisor ? this.inputControllerWheelQ16 : this.admittedAttachmentWheelQ16;
+	}
+
+	/** A mode change drains the current gesture and excludes wheel work from its old owner. */
+	public blockCurrentAttachmentInput(): void {
+		this.blockedAttachmentButtons = (this.blockedAttachmentButtons | this.inputControllerButtons) >>> 0;
+		this.attachmentButtonsAwaitingPoll = true;
+		this.admittedAttachmentWheelQ16 = 0;
+		this.blockedPendingAttachmentWheel = this.pendingAttachmentWheel;
 	}
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
@@ -177,12 +244,14 @@ export class PointerInput implements PointerInputHandler {
 		if (bit >= 0) {
 			const mask = 1 << bit;
 			if (down) {
+				if (this.blockedAttachmentButtons !== 0) this.blockedAttachmentButtons = (this.blockedAttachmentButtons | mask) >>> 0;
 				this.inputControllerButtons = (this.inputControllerButtons | mask) >>> 0;
 				if (!wasPressed) {
 					this.pendingButtonPressEdges = (this.pendingButtonPressEdges | mask) >>> 0;
 				}
 			} else {
 				this.inputControllerButtons = (this.inputControllerButtons & ~mask) >>> 0;
+				this.blockedAttachmentButtons = (this.blockedAttachmentButtons & ~mask) >>> 0;
 				if (wasPressed) {
 					this.pendingButtonReleaseEdges = (this.pendingButtonReleaseEdges | mask) >>> 0;
 				}
@@ -211,6 +280,7 @@ export class PointerInput implements PointerInputHandler {
 			state.value = 0;
 		}
 		this.inputControllerButtons = (this.inputControllerButtons & ~buttons) >>> 0;
+		this.blockedAttachmentButtons = (this.blockedAttachmentButtons & ~buttons) >>> 0;
 		this.pendingButtonPressEdges = (this.pendingButtonPressEdges & ~buttons) >>> 0;
 		this.pendingButtonReleaseEdges = (this.pendingButtonReleaseEdges & ~buttons) >>> 0;
 	}
@@ -303,8 +373,12 @@ export class PointerInput implements PointerInputHandler {
 		this.pendingWheelTimestamp = 0;
 		this.inputControllerButtons = 0;
 		this.routedInputControllerButtons = 0;
+		this.blockedAttachmentButtons = 0;
+		this.attachmentButtonsAwaitingPoll = false;
 		this.inputControllerXQ16 = 0;
 		this.inputControllerYQ16 = 0;
 		this.inputControllerWheelQ16 = 0;
+		this.admittedAttachmentWheelQ16 = 0;
+		this.blockedPendingAttachmentWheel = 0;
 	}
 }

@@ -1,6 +1,7 @@
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import type { PointerInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import * as colors from '../../../common/constants';
@@ -19,9 +20,9 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	private shownFrame = -1;
 	private frameLabel = '';
 	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
-		private readonly runtime: Runtime, recipient: InputRecipient) {
+		private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter) {
 		super(resourcePanel);
-		this.gameInput = new GameInputControl(this.focusTarget, recipient);
+		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { commands.transport.togglePlayback(); } });
 		this.focusTarget.next = this.gameInput.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;

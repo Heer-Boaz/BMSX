@@ -48,8 +48,8 @@ export function start() {
 		return (globalThis as any).wheelFixture.read();
 	});
 	assert.deepEqual(ordered, [
-		{ x: 420, y: 320, deltaX: 0.125, deltaY: 0.25, modifiers: KeyModifier.shift, timestamp: 123, pollFrame: 0 },
-		{ x: 500, y: 400, deltaX: -0.125, deltaY: -0.5, modifiers: KeyModifier.ctrl, timestamp: 123, pollFrame: 0 },
+		{ x: 420, y: 320, deltaX: 0.125, deltaY: 0.25, attachmentDeltaY: 10 / 120, modifiers: KeyModifier.shift, timestamp: 123, pollFrame: 0 },
+		{ x: 500, y: 400, deltaX: -0.125, deltaY: -0.5, attachmentDeltaY: -20 / 120, modifiers: KeyModifier.ctrl, timestamp: 123, pollFrame: 0 },
 	]);
 	const sample = () => page.evaluate(() => (globalThis as any).wheelFixture.sample());
 	assert.deepEqual(await sample(), { raw: -10, x: 25 * 65536, y: 30 * 65536, wheel: (-10 / 120 * 65536) >>> 0 });

@@ -12,7 +12,7 @@ export class RemoteInput {
 	private readonly pressedButtons = new Map<string, number>();
 	private readonly pointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
-	private readonly wheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
+	private readonly wheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, attachmentDeltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 
 	public constructor(
 		private readonly input: InputEventSink,
@@ -50,6 +50,7 @@ export class RemoteInput {
 						const wheel = this.wheel, keys = this.pressedKeys;
 						wheel.x = this.pointer.x; wheel.y = this.pointer.y;
 						wheel.deltaY = event.deltaY;
+						wheel.attachmentDeltaY = event.deltaY;
 						wheel.modifiers = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? KeyModifier.shift : 0)
 							| (keys.has('ControlLeft') || keys.has('ControlRight') ? KeyModifier.ctrl : 0)
 								| (keys.has('AltLeft') || keys.has('AltRight') ? KeyModifier.alt : 0)

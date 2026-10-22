@@ -28,7 +28,8 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await press('Enter'); await frame();
 	const lab = getActiveTab();
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorPanes.activePane as ActorLabEditorPane, inspector = pane.inspector;
+	const pane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const inspectionCycles = cycles(), inspectionHeap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
 	const x = inspector.model.rows.findIndex(row => row.element.label === 'x');
@@ -73,8 +74,12 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await test.capture?.('pin-rewound-other-actor');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
 	await test.clickTab(sourceTab.id); await test.clickTab(lab.id); await frame();
+	inspector = pane.inspector;
 	check(inspector.visible && inspector.model.rows[inspector.model.selectionIndex].element.watch === pin,
 		'authoring navigation restores typed pinned selection, not its display label');
+	const restoredView = inspector.model.viewport, restoredRow = inspector.model.rows[inspector.model.selectionIndex];
+	await click({ left: restoredView.bounds.left + 4, right: restoredView.bounds.left + 5,
+		top: restoredView.offsetTop + restoredRow.top + 4, bottom: restoredView.offsetTop + restoredRow.top + 5 });
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance');
 	check(lab.actorHashId === firstActor && inspector.model.rows[inspector.model.selectionIndex].element.watch === undefined
 		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'x',
@@ -88,7 +93,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await test.clickContextCommand('actorLab.unpinProperty');
 	check(lab.details!.watches.pins.length === 0 && inspector.visible && inspector.model.rows.every(row => row.element.watch === undefined),
 		'Unpin removes only the watch and keeps the selected actor Details open');
-	await click(lab.previewBounds);
+	await click(test.visiblePreviewPoint(lab.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null,
 		'property context commands do not steal ordinary game preview focus');
 	await press('ShiftLeft', 'F1');

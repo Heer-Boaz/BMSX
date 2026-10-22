@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -24,8 +24,10 @@ export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparato
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
 	readonly 'play.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'actorLab.details.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'window.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.content': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
@@ -154,6 +156,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.follow' },
 		{ type: 'command', command: 'actorLab.more' },
 	],
+	'actorLab.details.title': [
+		{ type: 'command', command: 'actorLab.lockDetails' },
+		{ type: 'command', command: 'window.collapse' },
+		{ type: 'command', command: 'window.hide' },
+	],
 	'actorLab.property.context': [
 		{ type: 'command', command: 'actorLab.pinProperty' },
 		{ type: 'command', command: 'actorLab.unpinProperty' },
@@ -162,6 +169,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'propertyInspector.source' },
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
+	'window.title': [{ type: 'command', command: 'window.collapse' }, { type: 'command', command: 'window.hide' }],
 	'code.context': [
 		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
 		{ type: 'separator' },

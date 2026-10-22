@@ -8,6 +8,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { inputFocus } from '../../ide/input/focus';
+import { FrameBitmap } from '../../hosts/common/frame_bitmap';
 
 test('focused physical recipients are exclusive; the primary supervisor and host keys remain independent', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
@@ -40,12 +41,16 @@ test('focused physical recipients are exclusive; the primary supervisor and host
 test('a game viewport focus attachment names its recipient and retains one bounds binding across layouts', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const channel = new InputChannel(input), parent = inputFocus.createTarget();
-	const view = new GameInputControl(parent, channel);
-	t.after(() => { view.dispose(); channel.dispose(); inputFocus.setTarget(null); input.dispose(); });
+	const frames = new FrameBitmap();
+	frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
+	const presentation = { kind: 'offscreen', frames } as const;
+	const view = new GameInputControl(parent, channel, presentation);
+	t.after(() => { view.dispose(); frames.dispose(); channel.dispose(); inputFocus.setTarget(null); input.dispose(); });
 	const bounds = { left: 1, top: 2, right: 100, bottom: 80 };
 	view.setInput(bounds); view.focusTarget.focus();
 	const binding = inputFocus.target!.guestInput!;
 	assert.equal(binding.recipient, channel); assert.equal(binding.bounds, bounds);
+	assert.equal(binding.presentation, presentation);
 	for (let layout = 0; layout < 100; layout++) view.setInput(bounds);
 	assert.equal(inputFocus.target!.guestInput, binding, 'idle/layout updates allocate no focus attachment');
 	view.clearInput(); assert.equal(inputFocus.target, parent); assert.equal(view.focusTarget.guestInput, undefined);

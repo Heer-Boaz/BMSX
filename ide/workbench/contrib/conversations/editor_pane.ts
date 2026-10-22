@@ -12,6 +12,8 @@ import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { AssistantTranscriptControl } from '../assistant/transcript_control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ConversationObserverInput } from './editor_input';
@@ -21,9 +23,9 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
-	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder) {
+	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface) {
 		super(resources);
-		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews);
+		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
 		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
 			run: () => { void this.input.conversation.older(); } });
@@ -31,7 +33,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	protected override activate(): void { super.activate(); this.transcriptView.setInput(this.input); this.update(); }
 	public override focus(): void { this.transcriptView.scroll.focusTarget.focus(); }
 	public override clearInput(): void { this.preview.close(); this.previews.dispose(); this.transcriptView.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.clearInput(); this.transcriptView.dispose(); super.dispose(); }
+	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public override update(): void {
 		const input = this.input, { layout, viewport, conversation } = input;
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
@@ -42,6 +44,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 			input.footer.update(conversation, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
 		}
 		const row = layout.rowHeight;
+		this.preview.layout(layout, row);
 		input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
 		const bottom = input.footerTop - 4 - (conversation.workStartedAt !== undefined ? row + 2 : 0);
 		const follow = viewport.scrollTop + viewport.height >= viewport.contentHeight;
@@ -60,17 +63,17 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_STATUS_SUCCESS, font);
 			api.blit_text_inline_with_font(conversation.activity, 16, footerTop - layout.rowHeight - 2, 0, colors.COLOR_STATUS_SUCCESS, font);
 		}
-		this.previews.beginFrame(); this.transcriptView.draw(); this.preview.draw(layout, layout.rowHeight); this.previews.endFrame();
+		this.previews.beginFrame(); this.transcriptView.draw(); this.previews.endFrame();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
-		return this.preview.handlePointer(snapshot) || this.transcriptView.handleSelection(snapshot) || this.transcriptView.scroll.handlePointer(snapshot)
+		return this.transcriptView.handleSelection(snapshot) || this.transcriptView.scroll.handlePointer(snapshot)
 			|| snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
 	public handleKeyboard(_input: KeyInputEvent): void {} // The transcript focus target owns selection and scroll keys.
 	public handleWheel(event: WheelInputSnapshot): void {
-		if (!this.preview.visible) this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+		this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

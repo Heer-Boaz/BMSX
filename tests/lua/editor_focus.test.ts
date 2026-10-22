@@ -1,13 +1,48 @@
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { InputFocusService, inputFocus } from '../../ide/input/focus';
+import { InputFocusService, InputFocusScope, inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, setFieldText, selectAll, backspace, setCursorFromOffset, getCursorOffset } from '../../ide/editor/ui/inline/text_field';
 import { resolveEditorCommandKeybinding } from '../../ide/input/keyboard/command_keybindings';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { executeClipboardAction } from '../../ide/input/clipboard';
+
+test('window scope membership is independent of its focus-return parent and command origin', () => {
+	const focus = new InputFocusService();
+	const tree = focus.createTarget();
+	const windowScope = new InputFocusScope(Symbol('details'));
+	const window = focus.createTarget(tree, windowScope);
+	const property = focus.createTarget(window);
+	property.commandContext = tree;
+	assert.equal(property.scope, windowScope);
+	assert.notEqual(property.scope, tree.scope);
+	assert.equal(window.parent, tree);
+	property.focus();
+	assert.equal(windowScope.lastFocused, property);
+	assert.equal(property.commandContext, tree);
+	window.focus();
+	assert.equal(windowScope.lastFocused, window);
+});
+
+test('surface admission gates focus and keyboard delivery without replacing retained focus state', () => {
+	const focus = new InputFocusService();
+	const content = focus.createTarget(), modal = focus.createTarget();
+	let keys = 0;
+	content.bindKeyboard(() => { keys++; });
+	content.focus();
+	const unbind = focus.bindScopeAdmission(scope => scope === modal.scope);
+	assert.equal(focus.target, content);
+	assert.equal(focus.admittedTarget, null);
+	focus.handleKeyboard(new KeyInputEvent('KeyX', KeyModifier.none, false, true));
+	assert.equal(keys, 0);
+	modal.focus(); content.focus();
+	assert.equal(focus.target, modal, 'blocked underlying content cannot steal focus');
+	unbind(); content.focus();
+	focus.handleKeyboard(new KeyInputEvent('KeyX', KeyModifier.none, false, true));
+	assert.equal(keys, 1);
+});
 
 test('pending clipboard reads cannot edit a control after blur, even when the same target is refocused', async t => {
 	t.after(() => inputFocus.setTarget(null));

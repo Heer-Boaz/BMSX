@@ -1,4 +1,5 @@
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
+import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
@@ -16,8 +17,8 @@ import type { TerminalInput } from './editor_input';
 /** The physical BIOS terminal, not a host REPL or a second line editor. */
 export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	private readonly gameInput: GameInputControl;
-	public constructor(resources: ResourcePanelController, private readonly terminal: BiosTerminal, recipient: InputRecipient) {
-		super(resources); this.gameInput = new GameInputControl(this.focusTarget, recipient);
+	public constructor(resources: ResourcePanelController, private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter) {
+		super(resources); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 	}
 	public override get showsGameFrame(): boolean { return true; }
 	public override focus(): void {

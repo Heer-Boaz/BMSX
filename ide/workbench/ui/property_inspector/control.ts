@@ -21,6 +21,7 @@ export type PropertyInspection<Element> = {
 	readonly items: readonly Element[];
 	/** Embedded details remain visible when focus returns to their owner. */
 	readonly dismissible?: boolean;
+	readonly focusReturn?: InputFocusTarget;
 	canOpenSource(item: Element): boolean;
 	openSource(item: Element): void;
 	onDidClose?(): void;
@@ -47,7 +48,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private returnFocus: InputFocusTarget | null = null;
 	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
 
-	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
+	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget, public readonly chrome: 'header' | 'client' = 'header') {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input), undefined,
 			() => { this.triggerKey = undefined; this.padPressed = false; });
 		this.focusTarget = this.scroll.focusTarget;
@@ -81,11 +82,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public show(input: PropertyInspection<Element>, focus = true): DisposableStore {
 		this.hide();
-		this.capture.cancel();
-		this.returnFocus = focus ? this.focus.target : this.focusTarget.parent;
+		this.returnFocus = input.focusReturn ?? (focus ? this.focus.target : this.focusTarget.parent);
 		this.input = input;
-		this.actionBar.items[0].visible = input.items.some(item => input.canOpenSource(item));
-		this.actionBar.items[1].visible = input.dismissible !== false;
+		this.actionBar.items[0].visible = this.chrome === 'header' && input.items.some(item => input.canOpenSource(item));
+		this.actionBar.items[1].visible = this.chrome === 'header' && input.dismissible !== false;
 		this.updateFocusOrder();
 		this.lifetime = new DisposableStore();
 		this.model.setItems(input.items);
@@ -139,7 +139,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public updateItems(items: readonly Element[], equals: (left: Element, right: Element) => boolean): void {
 		this.model.updateItems(items, equals);
-		const canOpenSource = items.some(item => this.input!.canOpenSource(item));
+		const canOpenSource = this.chrome === 'header' && items.some(item => this.input!.canOpenSource(item));
 		if (this.actionBar.items[0].visible !== canOpenSource) {
 			this.actionBar.items[0].visible = canOpenSource;
 			this.updateFocusOrder();
@@ -158,10 +158,12 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (this.layoutDirty || this.model.font !== font || this.bounds.left !== bounds.left || this.bounds.top !== bounds.top
 			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom) {
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
-			const headerBottom = bounds.top + font.lineHeight + 8;
-			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font);
-			const firstAction = this.actionBar.items.find(item => item.visible);
-			this.title = truncateMeasuredText(this.input!.title, (firstAction === undefined ? bounds.right : firstAction.bounds.left) - bounds.left - 8, measure);
+			const headerBottom = this.chrome === 'header' ? bounds.top + font.lineHeight + 8 : bounds.top;
+			if (this.chrome === 'header') {
+				layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font);
+				const firstAction = this.actionBar.items.find(item => item.visible);
+				this.title = truncateMeasuredText(this.input!.title, (firstAction === undefined ? bounds.right : firstAction.bounds.left) - bounds.left - 8, measure);
+			}
 			write_rect_bounds(this.content, bounds.left, headerBottom, bounds.right, bounds.bottom);
 			this.scroll.lineStep = font.lineHeight;
 			this.layoutDirty = false;

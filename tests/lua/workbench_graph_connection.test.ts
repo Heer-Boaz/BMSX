@@ -111,7 +111,7 @@ test('handle capability changes invalidate stationary hits and revoke pending an
 
 test('source, selection, layout, focus, pane and input interruptions cancel without adopting a new target', () => {
 	for (const active of [false, true]) {
-		for (const reason of ['model', 'selection', 'blur', 'detach', 'blocked', 'viewport', 'lost-release'] as const) {
+		for (const reason of ['model', 'selection', 'blur', 'detach', 'blocked', 'invalid', 'lost-release'] as const) {
 			const f = fixture();
 			f.press('target');
 			if (active) f.capture.dispatch(f.pointer(248, 146), false, 20);
@@ -122,7 +122,7 @@ test('source, selection, layout, focus, pane and input interruptions cancel with
 				case 'blur': f.focus.setTarget(null); break;
 				case 'detach': f.control.clearInput(); f.control.setInput(f.view, f.interaction); break;
 				case 'blocked': f.capture.dispatch(position, true, 40); break;
-				case 'viewport': f.capture.dispatch({ ...position, insideViewport: false }, false, 40); break;
+				case 'invalid': f.capture.dispatch({ ...position, valid: false }, false, 40); break;
 				case 'lost-release': f.capture.dispatch({ ...position, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false, 40); break;
 			}
 			f.control.update();
@@ -133,6 +133,22 @@ test('source, selection, layout, focus, pane and input interruptions cancel with
 			f.control.dispose();
 		}
 	}
+});
+
+test('native-captured connection motion outside the viewport continues but an outside release never commits a stale hit', () => {
+	const f = fixture();
+	f.press('target');
+	f.capture.dispatch(f.pointer(248, 146), false, 20);
+	const feedback = f.control.dragFeedback;
+	assert.ok(feedback !== undefined);
+	const outside = { ...f.pointer(380, 116), insideViewport: false };
+	assert.equal(f.capture.dispatch(outside, false, 40), true);
+	assert.equal(f.control.dragFeedback, feedback);
+	assert.equal(f.interaction.drops.length, 0);
+	f.capture.dispatch({ ...outside, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 60);
+	assert.equal(f.control.dragFeedback, undefined);
+	assert.equal(f.interaction.drops.length, 0);
+	f.control.dispose();
 });
 
 test('valid node snaps, invalid node/space stays free; preview buffers and immutable geometry survive stationary polling', () => {

@@ -14,7 +14,7 @@ import {
 } from './shortcuts';
 
 import { PlayerInput } from './player';
-import { PointerInput } from './pointer';
+import { PointerInput, PointerInputContribution } from './pointer';
 import { GamepadPortRemap } from './gamepad_port_remap';
 import type { HostClock } from '../clock';
 import type {
@@ -154,7 +154,36 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	/** The primary player by default; null means host UI, not another machine. */
 	public guestInputRecipient: InputRecipient | null = this;
+	public readonly pointerContribution = new PointerInputContribution();
+	private readonly inputRecipients: InputRecipient[] = [this];
+	private pointerAdmissionMode: 'physical' | 'routed' = 'physical';
 	private inputControllerPlayback: InputControllerPlayback | null = null;
+
+	/** The actual registered producers, not a previously sampled attachment. */
+	public get pointerButtonsDown(): boolean {
+		for (const pointer of this.inputControllerPointerHandlers) if (pointer.buttonsDown) return true;
+		return false;
+	}
+
+	public setPointerAdmissionMode(mode: 'physical' | 'routed'): void {
+		if (this.pointerAdmissionMode === mode) return;
+		this.pointerAdmissionMode = mode;
+		for (const recipient of this.inputRecipients) recipient.pointerContribution.cancel();
+		if (mode === 'physical') {
+			for (const pointer of this.inputControllerPointerHandlers) pointer.blockCurrentAttachmentInput();
+		}
+	}
+
+	public registerInputRecipient(recipient: InputRecipient): void {
+		this.inputRecipients.push(recipient);
+	}
+
+	public retireInputRecipient(recipient: InputRecipient): void {
+		recipient.pointerContribution.cancel();
+		this.inputRecipients.splice(this.inputRecipients.indexOf(recipient), 1);
+		if (this.guestInputRecipient === recipient) this.guestInputRecipient = null;
+	}
+
 	public resetInput(deviceId?: string): void {
 		if (deviceId !== undefined) {
 			const binding = this.deviceBindings.get(deviceId)!;
@@ -166,10 +195,15 @@ export class Input implements InputControllerInputSource, InputEventSink {
 				this.editingInput?.cancelInput();
 				binding.handler.disconnectSource(binding.deviceId);
 			}
-			else binding.handler.reset();
+			else {
+				binding.handler.reset();
+				if (binding.source === 'pointer') {
+					for (const recipient of this.inputRecipients) recipient.pointerContribution.cancel();
+					this.editingInput?.cancelPointerInput();
+				}
+			}
 			return;
 		}
-		this.editingInput?.cancelInput();
 		this.globalShortcuts.reset();
 		this.hostSupervisorRequestLine = false;
 		this.controlSupervisorRequestLine = false;
@@ -184,6 +218,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			if (binding.assignedPlayer) continue;
 			binding.handler.reset();
 		}
+		for (const recipient of this.inputRecipients) recipient.pointerContribution.cancel();
+		// A lost source is already all-up when the editing owner ends its route.
+		// Unlike a foreground takeover, it leaves no physical hold to drain.
+		this.editingInput?.cancelInput();
 	}
 
 	public cancelPointerButtons(deviceId: string, buttons: number, timestamp: number): void {
@@ -346,6 +384,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.foregroundExclusive = false;
 		this.editingInputListeners.clear();
 		this.guestInputRecipient = null;
+		for (const recipient of this.inputRecipients) recipient.pointerContribution.cancel();
+		this.inputRecipients.length = 0;
 		this.globalShortcuts.reset();
 		// Remove all player inputs
 		this.playerInputs = [];
@@ -606,6 +646,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	 */
 	public pollInput(): void {
 		const now = this.clock.now();
+		if (this.pointerAdmissionMode === 'routed') {
+			for (let index = 0; index < this.inputRecipients.length; index += 1) {
+				this.inputRecipients[index].pointerContribution.pollInput();
+			}
+		}
 		for (let index = 0; index < this.playerInputs.length; index += 1) {
 			const player = this.playerInputs[index];
 			player.pollInput(now);
@@ -632,21 +677,26 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			this.inputControllerPlayback.writeInputControllerSnapshot(snapshot);
 			return;
 		}
-		this.writePhysicalSnapshot(snapshot, context === InputControllerSampleContext.Normal && this.guestInputRecipient !== this);
+		this.writePhysicalSnapshot(snapshot, this, context === InputControllerSampleContext.Supervisor);
 	}
 
 	/** One raw writer for primary/secondary recipients; capture preserves device capabilities. */
-	public writePhysicalSnapshot(snapshot: InputControllerSnapshot, captured: boolean): void {
+	public writePhysicalSnapshot(snapshot: InputControllerSnapshot, recipient: InputRecipient, supervisor = false): void {
+		const captured = !supervisor && this.guestInputRecipient !== recipient;
 		if (captured) snapshot.keyWords.fill(0);
 		else this.sampleInputControllerKeyWords(snapshot.keyWords);
-		snapshot.pointerButtons = 0;
-		snapshot.pointerXQ16 = 0;
-		snapshot.pointerYQ16 = 0;
-		snapshot.pointerWheelQ16 = 0;
 		snapshot.rumbleSupportMask = 0;
-		if (!captured) {
-			for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
-				this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot);
+		if (!supervisor && this.pointerAdmissionMode === 'routed') {
+			recipient.pointerContribution.writeSnapshot(snapshot);
+		} else {
+			snapshot.pointerButtons = 0;
+			snapshot.pointerXQ16 = 0;
+			snapshot.pointerYQ16 = 0;
+			snapshot.pointerWheelQ16 = 0;
+			if (!captured) {
+				for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
+					this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot, supervisor);
+				}
 			}
 		}
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {

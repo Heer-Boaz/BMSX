@@ -1,7 +1,7 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
+import { type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { Scrollbar, ScrollbarDragStart } from './scrollbar';
 
 type ScrollbarGesture = {
@@ -17,7 +17,7 @@ type ScrollbarGesture = {
 export class ScrollbarPointerControl implements PointerCaptureTarget {
 	private gesture: ScrollbarGesture | undefined;
 
-	public constructor(private readonly capture: PointerCaptureService, private readonly scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {}
+	public constructor(private readonly capture: PointerCaptureService, private readonly scope?: PointerCaptureScope) {}
 
 	public readonly cancelPointer = (): void => {
 		this.capture.release(this);

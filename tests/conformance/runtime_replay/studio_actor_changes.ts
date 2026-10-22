@@ -57,7 +57,8 @@ actor_tool_ready = true`)
 	await runPaletteCommand('Actor Lab: Open'); await press('Enter'); await frame();
 	const lab = getActiveTab();
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorPanes.activePane as ActorLabEditorPane, inspector = pane.inspector;
+	const pane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	check(inspector.model.rows.every(row => !row.element.valueChanged), 'initial instance observation is not a value change');
 	const xIndex = inspector.model.rows.findIndex(row => row.element.label === 'x');
@@ -73,9 +74,9 @@ actor_tool_ready = true`)
 		&& inspector.model.rows.every(row => !row.element.valueChanged),
 		'switching actors does not compare unrelated coordinates or alter the pinned baseline');
 	await test.runMenuCommand('pause');
-	await click(lab.previewBounds);
+	await click(test.visiblePreviewPoint(lab.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null && inspector.visible,
-		'ordinary embedded preview receives gameplay input beside retained Details');
+		'ordinary embedded preview receives gameplay input through the unobscured preview beside floating Details');
 	test.setKey('KeyX', true);
 	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'x') === 10, 'actor changes: ordinary player action moves first actor from 9 to 10');
 	test.setKey('KeyX', false);
@@ -90,6 +91,8 @@ actor_tool_ready = true`)
 		previousFrames++;
 	}
 	check(pin.item.value === '9' && pin.item.valueChanged, 'rewind marks the restored pinned coordinate, even with another actor selected');
+	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
+	check(inspector.model.rows[inspector.model.selectionIndex].element.watch === pin, 'Reveal targets the pinned property in focused Details, not the tree selection');
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance'); await frame();
 	let property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element;
 	check(lab.actorHashId === firstActor && property.value === '9' && !property.valueChanged && pin.item.valueChanged,
@@ -109,6 +112,7 @@ actor_tool_ready = true`)
 	for (let index = 0; index < 6; index++) await frame();
 	check(pin.item.valueChanged && property.valueChanged, 'paused repaints retain both completed-observation decorations');
 	await test.clickTab(sourceTab.id); await test.clickTab(lab.id); await frame();
+	inspector = pane.inspector;
 	check(pin.item.valueChanged && property.valueChanged && cycles() === pausedCycles
 		&& runtime.machine.cpu.luaHeap.usedBytes() === pausedHeap && guest.global('actor_tool_callbacks') === callbacks,
 		`paused tab navigation retains decoration without guest work: pin=${pin.item.valueChanged} property=${property.valueChanged} cycles=${cycles()}/${pausedCycles} heap=${runtime.machine.cpu.luaHeap.usedBytes()}/${pausedHeap} callbacks=${guest.global('actor_tool_callbacks')}/${callbacks}`);
@@ -129,6 +133,7 @@ actor_tool_ready = true`)
 		&& inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element.valueChanged !== true,
 		'Previous Frame marks the 10 to 9 pin transition without marking the unchanged selected actor');
 	await test.capture?.('previous-frame-changed');
+	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance'); await frame();
 	const rewound = cycles();
 	await runPaletteCommand('Run: Next Frame');
@@ -141,8 +146,8 @@ actor_tool_ready = true`)
 	await until(() => ide.frameNavigation.active === undefined && cycles() > changed, 'actor changes: next unchanged completed observation');
 	check(pin.item.value === '10' && !pin.item.valueChanged && property.value === '10' && !property.valueChanged,
 		'the next completed unchanged observation clears Details and pin decorations');
-	check(pane.showsGameFrame && inspector.visible && lab.previewBounds.bottom < lab.detailsBounds.top,
-		'change decorations and physical history preserve separate visible game and Details surfaces');
+	check(pane.showsGameFrame && inspector.visible && pane.detailsWindow.visible && lab.detailsWindow.open,
+		'change decorations and physical history preserve the full game preview and independently attached floating Details');
 	await press('Home');
 	await test.capture?.('unchanged-cleared');
 
@@ -164,7 +169,7 @@ actor_tool_ready = true`)
 	const membershipFrames: number[] = [];
 	for (const action of [1, 2]) {
 		const beforeValue = String(91 - action), afterValue = String(90 - action);
-		await runPaletteCommand('Run: Continue from Here'); await click(lab.previewBounds);
+		await runPaletteCommand('Run: Continue from Here'); await click(test.visiblePreviewPoint(lab.previewBounds));
 		check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null,
 			'component mutation is driven by ordinary guest input, not inspector writes');
 		await test.releaseGuestKey('KeyC');

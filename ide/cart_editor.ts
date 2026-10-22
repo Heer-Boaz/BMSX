@@ -1,4 +1,5 @@
 import { type PointerInputEvent, type WheelInputEvent } from '../hosts/common/input/pointer_event';
+import type { DisposableStore } from './common/lifecycle';
 import type { PointerInputSnapshot, WheelInputSnapshot } from './common/models';
 import { projectEditorPointerEvent, projectEditorWheelEvent } from './input/pointer/frame';
 import type { InputRecipient } from '../hosts/common/input/channel';
@@ -98,10 +99,13 @@ import { ensureCursorVisible, updateDesiredColumn } from './editor/ui/view/caret
 import { editorCaretState } from './editor/ui/view/caret/state';
 import { updateBlink } from './editor/ui/inline/text_field';
 import { bindQuickInputFields } from './quick_input/fields';
-import { inputFocus } from './input/focus';
+import { inputFocus, type InputFocusTarget } from './input/focus';
 import type { KeyInputEvent, TextInputHost, TextInputTarget } from '../hosts/common/input/text';
 import { pointerHover } from './input/pointer/hover';
-import { pointerCapture } from './input/pointer/capture';
+import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './input/pointer/capture';
+import { PointerButton } from '../hosts/common/input/pointer_event';
+import { WorkbenchSurfaceService } from './workbench/services/windows/service';
+import type { WorkbenchSurface } from './workbench/services/windows/model';
 import { Scrollbar } from './workbench/ui/scrollbar';
 import { ScrollbarController } from './editor/ui/scrollbar_controller';
 import { clearRuntimeErrorOverlay } from './editor/contrib/runtime_error/navigation';
@@ -128,9 +132,9 @@ import { EditorCompletionController } from './workbench/contrib/code_editor/sugg
 import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
 import { editorInput } from './workbench/contrib/code_editor/input/keyboard/text_input';
-import { handleTextEditorPointerInput } from './input/pointer/dispatch';
+import { handleTextEditorPointerInput, handleWorkbenchChromePointer, handleWorkbenchPanePointer } from './input/pointer/dispatch';
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
-import { handleEditorWheelInput } from './input/pointer/wheel';
+import { handleEditorWheelInput, handleWorkbenchChromeWheel, handleWorkbenchPaneWheel } from './input/pointer/wheel';
 import {
 	clearCodeEditorInputs,
 	getActiveCodeTabContext,
@@ -143,7 +147,7 @@ import {
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
-import { getWorkbenchEditorBounds, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
+import { getWorkbenchEditorBounds, getWorkbenchWorkArea, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { ActionPrompt } from './workbench/contrib/modal/action_prompt';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -218,6 +222,8 @@ export type CartEditor = TextInputHost & {
 	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorPanes: EditorPanes;
+	readonly surfaces: WorkbenchSurfaceService;
+	readonly paneSurface: WorkbenchSurface;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
 	readonly cartMaps: CartMapController;
@@ -271,7 +277,7 @@ export class RuntimeCartEditor implements CartEditor {
 		modifiers: 0, deltaX: 0, deltaY: 0 };
 	public get guestInputRecipient(): InputRecipient | null {
 		if (!this.isActive) return this.input;
-		const viewport = inputFocus.target?.guestInput;
+		const viewport = inputFocus.admittedTarget?.guestInput;
 		return viewport === undefined ? null : viewport.recipient;
 	}
 	public get executionSuspended(): boolean {
@@ -290,12 +296,30 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly commands: IdeCommandController;
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorPanes: EditorPanes;
+	public readonly surfaces: WorkbenchSurfaceService;
+	public readonly paneSurface: WorkbenchSurface;
+	private readonly chromeScope = Symbol('workbench chrome');
+	private readonly rootSurfaceBounds = { left: 0, top: 0,
+		get right() { return editorViewState.viewportWidth; },
+		get bottom() { return editorViewState.viewportHeight; },
+	};
+	private readonly unbindSurfaceAdmission: () => void;
+	private readonly onSurfaceChange = (): void => {
+		pointerHover.clear();
+		const scope = pointerCapture.routeScope;
+		if (scope !== undefined) {
+			const route = this.surfaces.findByScope(scope);
+			if (route === undefined || !this.surfaces.isAdmitted(route)) pointerCapture.cancelScope(scope);
+		}
+		inputFocus.notifyTargetChanged();
+	};
 	public readonly navigation: EditorNavigationController;
 	public readonly cartMaps: CartMapController;
 	public readonly sceneEditor: SceneEditorController;
 	public readonly animations: AnimationEditorController;
 	public readonly actorLab: ActorLabController;
-	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture);
+	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture, () => this.surfaces.changed(),
+		next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope));
 	public readonly quickInput: QuickInputController;
 	public readonly contextMenu: ContextMenuController;
 	public readonly menubar: MenubarController;
@@ -324,6 +348,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeTextModelChanged: () => void;
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindHostInput: () => void;
+	private readonly unbindEditorInputRetirement: () => void;
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
@@ -423,10 +448,51 @@ export class RuntimeCartEditor implements CartEditor {
 		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null, () => this.editorPanes.activePane?.focus());
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorPanes.activePane?.focus());
+		this.runtimeTimeline.focusScope.surfaceScope = this.chromeScope;
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
-		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
+		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
 		this.menubar = new MenubarController(this.contextMenu, this.commands);
-		this.quickInput = new QuickInputController(this.contextMenu);
+		this.quickInput = new QuickInputController(this.contextMenu, () => this.surfaces.changed(),
+			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.quickInput.pointerScope));
+		this.surfaces.attach({
+			role: 'content', captureScope: this.chromeScope, isVisible: () => true,
+			getBounds: () => this.rootSurfaceBounds, getClip: () => this.rootSurfaceBounds,
+			draw: () => this.drawWorkbenchChrome(),
+			handlePointer: snapshot => handleWorkbenchChromePointer(this, snapshot),
+			handleWheel: event => handleWorkbenchChromeWheel(this, event),
+			onRetire: () => pointerCapture.cancelScope(this.chromeScope),
+		});
+		this.paneSurface = this.surfaces.attach({
+			role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true,
+			getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
+			draw: () => {
+				const pane = this.editorPanes.activePane;
+				if (pane === null) drawEditorGroupWatermark(); else pane.draw();
+			},
+			handlePointer: (snapshot, now) => handleWorkbenchPanePointer(this, snapshot, now),
+			handleWheel: event => handleWorkbenchPaneWheel(this, event),
+			onRetire: () => pointerCapture.cancelScope(WORKBENCH_POINTER_SCOPE),
+		});
+
+		this.surfaces.attach({
+			role: 'modal', blockedScope: null, captureScope: this.quickInput.pointerScope,
+			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds,
+			getClip: () => this.rootSurfaceBounds, draw: () => this.quickInput.draw(),
+			handlePointer: snapshot => this.quickInput.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0),
+			handleWheel: event => { this.quickInput.handleWheel(event.deltaY); return true; },
+			onRetire: () => pointerCapture.cancelScope(this.quickInput.pointerScope),
+		});
+		this.surfaces.attach({
+			role: 'modal', blockedScope: null, captureScope: this.actionPrompt.pointerScope,
+			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds,
+			getClip: () => this.rootSurfaceBounds, draw: () => this.actionPrompt.draw(),
+			handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),
+			onRetire: () => pointerCapture.cancelScope(this.actionPrompt.pointerScope),
+		});
+		this.tabBar.focusTarget.scope.surfaceScope = this.chromeScope;
+		this.resourcePanel.focusTarget.scope.surfaceScope = this.chromeScope;
+		problemsPanel.focusTarget.scope.surfaceScope = this.chromeScope;
 		this.resourceEditors = createResourceEditorResolver(
 			this.sources,
 		);
@@ -438,9 +504,9 @@ export class RuntimeCartEditor implements CartEditor {
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
 			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
 			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation),
-			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input),
-			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
+			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input, presenter),
+			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage, this.surfaces, this.paneSurface),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage, this.surfaces, this.paneSurface),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
 				for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
 			}),
@@ -457,8 +523,8 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
-			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu),
-			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input),
+			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
+			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input, presenter),
 			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
 			scenario_lab: () => new ScenarioLabEditorPane(
@@ -467,7 +533,13 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 			),
 		});
-		this.gamePanel = new GamePanel(this.editorPanes, this.commands, input);
+		this.unbindEditorInputRetirement = this.editorPanes.onDidClearEditor(() => {
+			if (this.actionPrompt.visible && this.editorOriginRetired(this.actionPrompt.invocationOrigin)) this.actionPrompt.close('cancel', false);
+			if (this.quickInput.visible && this.editorOriginRetired(this.quickInput.invocationOrigin)) this.quickInput.hide(false);
+			if (this.contextMenu.visible && this.editorOriginRetired(this.contextMenu.invocationOrigin)) this.contextMenu.hide(false);
+		});
+		this.gamePanel = new GamePanel(this.editorPanes, this.commands, input, presenter);
+		this.gamePanel.focusScope.surfaceScope = this.chromeScope;
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorPanes, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
@@ -558,17 +630,24 @@ export class RuntimeCartEditor implements CartEditor {
 		};
 		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);
 		publishDiagnostics();
+		this.unbindSurfaceAdmission = inputFocus.bindScopeAdmission(scope => {
+			const surface = this.surfaces.findByScope(scope.surfaceScope);
+			return surface !== undefined && this.surfaces.isAdmitted(surface);
+		});
 		this.input.setEditingInput(this);
-		this.unbindHostInput = input.onDidChangeEditingInputEnabled(() => inputFocus.notifyTargetChanged());
+		this.unbindHostInput = input.onDidChangeEditingInputEnabled(() => {
+			if (input.editingInputEnabled) pointerCapture.interrupt(input.pointerButtonsDown);
+			inputFocus.notifyTargetChanged();
+		});
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
 	public get acceptsInput(): boolean { return this.isActive && this.input.editingInputEnabled; }
 	public get clipboardTarget(): ClipboardTarget | undefined {
-		return this.acceptsInput ? inputFocus.target?.clipboard : undefined;
+		return this.acceptsInput ? inputFocus.admittedTarget?.clipboard : undefined;
 	}
 	public get textTarget(): TextInputTarget | undefined {
-		return this.acceptsInput ? inputFocus.target?.textInput : undefined;
+		return this.acceptsInput ? inputFocus.admittedTarget?.textInput : undefined;
 	}
 	public onDidChangeTarget(listener: () => void): () => void {
 		const focus = inputFocus.onDidChangeTarget(listener);
@@ -581,8 +660,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.acceptsInput) { event.consumed = true; return true; }
 		this.pointerSnapshot.modifiers = event.modifiers;
 		editorRuntimeState.currentTimeMs = this.clock.now();
-		if (this.actionPrompt.visible) this.actionPrompt.focusTarget.handleKeyboard(event);
-		else handleEditorInput(event, this);
+		handleEditorInput(event, this);
 		return event.consumed;
 	}
 	public dispatchPointer(event: PointerInputEvent): void {
@@ -590,13 +668,13 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
 		if (event.cancelledButtons !== 0) pointerCapture.cancelButtons(event.cancelledButtons);
-		handleTextEditorPointerInput(this.pointerSnapshot, event.timestamp, this);
+		handleTextEditorPointerInput(this.pointerSnapshot, event, this);
 		// Selection and native focus must be published before this trusted gesture returns.
 		if ((event.buttons | event.pressedButtons | event.releasedButtons) !== 0) inputFocus.notifyTargetChanged();
 	}
 
-	public cancelInput(): void {
-		pointerCapture.cancel();
+	public cancelPointerInput(): void {
+		pointerCapture.interrupt(this.input.pointerButtonsDown);
 		clearEditorPointerSelectionState();
 		editorPointerState.lastPointerSnapshot = null;
 		this.pointerSnapshot.valid = false;
@@ -604,17 +682,21 @@ export class RuntimeCartEditor implements CartEditor {
 		this.pointerSnapshot.justPressedButtons = 0;
 		this.pointerSnapshot.justReleasedButtons = 0;
 		pointerHover.clear();
+	}
+
+	public cancelInput(): void {
+		this.cancelPointerInput();
 		inputFocus.cancelInput();
 	}
 
 	public dispatchWheel(event: WheelInputEvent): boolean {
 		if (!this.isActive) return false;
-		if (!this.acceptsInput || this.actionPrompt.visible) return true;
+		if (!this.acceptsInput) return true;
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorWheelEvent(this.display, event, this.wheelSnapshot);
 		const view = activeCodeEditor.view;
 		const row = view?.scrollRow, column = view?.scrollColumn;
-		const consumed = handleEditorWheelInput(this, this.wheelSnapshot);
+		const consumed = handleEditorWheelInput(this, this.wheelSnapshot, event);
 		if (view !== null && (row !== view.scrollRow || column !== view.scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
@@ -630,6 +712,8 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		editorInput.applyOverrides(this.input, true, captureKeys);
+		this.input.setPointerAdmissionMode('routed');
+		if (!wasActive) pointerCapture.interrupt(this.input.pointerButtonsDown);
 		const activeTab = getActiveTab();
 		if (activeTab !== null) setActiveTab(this.editorPanes, activeTab.id);
 		const codeTabActive = activeTab?.kind === 'code_editor';
@@ -687,6 +771,8 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		pointerCapture.cancel();
+		this.input.setPointerAdmissionMode('physical');
 		this.guest.invalidate();
 		pointerHover.clear();
 		const wasActive = this.isActive;
@@ -738,10 +824,9 @@ export class RuntimeCartEditor implements CartEditor {
 		this.tabBar.update();
 		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext, this.editorPanes.activePane?.runtimeTransport);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
-		refreshWorkbenchLayout();
-		if (this.gamePanel.update()) {
-			refreshWorkbenchLayout();
-		}
+		let layoutChanged = refreshWorkbenchLayout();
+		if (this.gamePanel.update()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
+		if (layoutChanged) this.surfaces.changed();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.editorPanes.activePane?.update(deltaSeconds);
 		this.runtimeTimeline.update();
@@ -760,6 +845,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.syncResourcePanelViewport();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
+		this.surfaces.changed();
 	}
 
 	public draw(): void {
@@ -767,23 +853,53 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
+		this.surfaces.draw(api);
+	}
+
+	/** Main-pane replacement retires that input, not root chrome or sibling scopes. */
+	private editorOriginRetired(origin: InputFocusTarget | null): boolean {
+		return origin !== null && (origin.scope.surfaceScope === this.paneSurface.captureScope
+			|| this.surfaces.findByScope(origin.scope.surfaceScope) === undefined);
+	}
+
+	/** Popup attachment lifetime is the source session, not the workbench root. */
+	private readonly attachContextMenuSession = (lifetime: DisposableStore | undefined): void => {
+		if (lifetime === undefined) { this.surfaces.changed(); return; }
+		const origin = this.contextMenu.invocationOrigin;
+		// Commands invoked without a control are explicitly root-chrome actions.
+		// A control's declared scope must already have its real surface attached.
+		const owner = this.surfaces.findByScope(origin === null ? this.chromeScope : origin.scope.surfaceScope)!;
+		const presentationParent = this.surfaces.popupContext(owner);
+		lifetime.add(this.surfaces.attach({
+			role: 'transient', outsidePress: 'consume', captureScope: this.contextMenu.pointerScope,
+			lifetimeOwner: owner, presentationParent,
+			isVisible: () => this.contextMenu.visible, getBounds: () => this.contextMenu.model.bounds,
+			getClip: presentationParent === undefined ? () => this.rootSurfaceBounds : presentationParent.getClip,
+			draw: () => drawContextMenu(this.contextMenu),
+			handlePointer: snapshot => { if (!this.menubar.handlePointer(snapshot)) this.contextMenu.handlePointer(snapshot); },
+			handleWheel: event => { this.contextMenu.handleWheel(event.deltaY); return true; },
+			onRetire: () => {
+				pointerCapture.cancelScope(this.contextMenu.pointerScope);
+				this.contextMenu.hide();
+			},
+		}));
+	};
+
+	private drawWorkbenchChrome(): void {
 		renderTopBar(this.chromeRenderContext, this.menubar);
 		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
-		const activePane = this.editorPanes.activePane;
-		if (activePane === null) drawEditorGroupWatermark();
-		else activePane.draw();
 		this.gamePanel.draw();
 		this.runtimeTimeline.draw(this.overlayRenderer);
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, activePane, this.luaEvaluation, this.serverConnectionState);
-		drawContextMenu(this.contextMenu);
-		this.quickInput.draw();
-		this.actionPrompt.draw();
+		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.luaEvaluation, this.serverConnectionState);
 	}
 
 	public async shutdown(): Promise<void> {
 		this.unbindHostInput();
+		this.unbindEditorInputRetirement();
+		this.unbindSurfaceAdmission();
+		this.surfaces.dispose();
 		this.input.setEditingInput(undefined);
 		this.assistant.dispose();
 		this.observedConversation.dispose();
@@ -815,6 +931,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		editorRuntimeState.active = false;
 		setEditorFeedbackActive(false);
+		this.input.setPointerAdmissionMode('physical');
 		this.input.guestInputRecipient = this.input;
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
 		cancelWorkspaceAutosave();

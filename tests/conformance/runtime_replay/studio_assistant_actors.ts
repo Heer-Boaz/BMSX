@@ -51,17 +51,19 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const nest = lab.outline.rows.findIndex(row => row.element.node.label === 'nest');
 	for (let i = 0; i < nest; i++) await press('ArrowDown');
 	await press('Enter'); await frame();
-	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane, inspector = actorPane.inspector;
-	check(inspector.visible && actorPane.showsGameFrame && lab.previewBounds.bottom < lab.detailsBounds.top,
+	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	let inspector = actorPane.inspector;
+	check(inspector.visible && actorPane.showsGameFrame && actorPane.detailsWindow.visible && lab.detailsWindow.open,
 		'ordinary Details leave the actor outline and game preview visible');
 	await press('End');
 	const retainedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
 	const retainedScroll = inspector.model.viewport.scrollTop;
 	await renderer.capture!('ordinary-state-properties');
 	await test.clickTab(sourceTab.id);
-	check(lab.detailsOpen && !inspector.visible, 'source authoring detaches Details without closing its retained view');
+	check(lab.detailsWindow.open && !inspector.visible, 'source authoring detaches Details without closing its retained view');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lab.id);
+	inspector = actorPane.inspector;
 	check(inspector.visible && inspector.model.rows[inspector.model.selectionIndex].element.label === retainedProperty
 		&& inspector.model.viewport.scrollTop === retainedScroll, 'returning from source restores the Details property and scroll position');
 	await runPaletteCommand('Actor Lab: Inspect Instance');
@@ -73,13 +75,14 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const callbackScroll = inspector.model.viewport.scrollTop;
 	const callbackActor = lab.actorHashId, callbackMember = lab.selectionPath, callbackVersion = source.version;
 	await press('Enter');
-	check(getActiveTab() === sourceTab && lab.detailsOpen && !inspector.visible,
+	check(getActiveTab() === sourceTab && lab.detailsWindow.open && !inspector.visible,
 		'Details Source follows the installed callback without closing the retained Details view');
 	await frame();
 	check(activeCodeEditor.view.cursorRow === ACTOR_TOOLS_SOURCE.split('\n').findIndex(line => line.startsWith('local function callback')),
 		'Details Source opens the installed callback location');
 	await renderer.capture!('details-callback-source');
 	await press('AltLeft', 'ArrowLeft'); await frame();
+	inspector = actorPane.inspector;
 	check(inspector.visible && inspector.model.rows[inspector.model.selectionIndex].element.label === 'UPDATE'
 		&& inspector.model.viewport.scrollTop === callbackScroll && getActiveTab() === lab && lab.actorHashId === callbackActor
 		&& JSON.stringify(lab.selectionPath) === JSON.stringify(callbackMember), 'Back from callback Source restores the selected actor, typed member and Details context');
@@ -89,6 +92,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('AltLeft', 'ArrowRight'); await frame();
 	check(getActiveTab() === sourceTab, 'Forward restores the callback source');
 	await press('AltLeft', 'ArrowLeft'); await frame();
+	inspector = actorPane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Escape');
 	// The inspection refactor must preserve ordinary World-bound method execution.
 	await press('Home');
@@ -102,6 +106,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 		&& inspector.model.rows.find(row => row.element.label === 'y')!.element.value === '8',
 		'open Details display the actor position before the ordinary method call');
 	await renderer.capture!('details-position-before');
+	await press('Escape');
 	await runPaletteCommand('Actor Lab: Call Lua Method');
 	await test.clipboard.writeText('set_pos'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await test.clipboard.writeText('12, 34, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');

@@ -79,7 +79,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 			this.gameInput?.dispose(); this.gameInput = undefined; this.session = session;
 			this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 			if (session !== undefined) {
-				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical);
+				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames });
 				this.focusTarget.next = this.gameInput.focusTarget;
 				this.gameInput.focusTarget.previous = this.focusTarget; this.gameInput.focusTarget.next = this.actions.focusTarget;
 				this.actions.focusTarget.previous = this.gameInput.focusTarget;

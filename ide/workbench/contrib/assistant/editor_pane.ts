@@ -26,6 +26,8 @@ import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
@@ -53,10 +55,11 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder) {
+	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface) {
 		super(resources);
 		this.previews = new ImagePreviewCache(decodeImage);
-		this.preview = new ImagePreviewOverlay(this.previews);
+		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
 		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
@@ -95,7 +98,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.transcriptView.clearInput();
 		super.clearInput();
 	}
-	public override dispose(): void { this.clearInput(); this.actions.dispose(); this.transcriptView.dispose(); super.dispose(); }
+	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.actions.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
 		const { conversation: model, selectedEntry } = this.input;
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
@@ -128,6 +131,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const input = this.input, { layout, viewport, conversation: model } = input;
 		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		const row = layout.rowHeight;
+		this.preview.layout(layout, row);
 		if (changed) {
 			this.transcriptView.scroll.lineStep = row;
 			this.composer.rowHeight = editorViewState.lineHeight;
@@ -226,14 +230,12 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		drawMultilineField(input.draft, input.composer, bounds);
 		if (input.attachments.images.length > 0) this.attachments.draw();
 		this.references.suggestions.draw();
-		this.preview.draw(layout, layout.rowHeight);
 		this.previews.endFrame();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
-		if (this.preview.handlePointer(snapshot)) return true;
 		if (this.input.attachments.images.length > 0 && this.attachments.handlePointer(snapshot)) return true;
 		if (this.references.suggestions.handlePointer(snapshot)) return true;
 		// Actions act on the selected message; scrollbar capture preserves selection/focus.
