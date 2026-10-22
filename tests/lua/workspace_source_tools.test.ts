@@ -21,6 +21,9 @@ import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisens
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { rebuildRuntimeSourceResources } from '../../ide/runtime/sources';
+import { createTextResource, discoverWorkspaceSources } from '../../ide/workspace/workspace';
+import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 
 function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old -- saved\n')]);
@@ -303,11 +306,124 @@ test('new Scenario source stays a review until exclusive creation; discovery con
 	assert.ok(collection.roots.some(root => root.children.some(module => module.resource.path === 'tools_assert.lua')));
 });
 
-for (const end of ['discard', 'disconnect', 'changed', 'collision'] as const) test(`new source review: ${end} does not overwrite source`, async t => {
+for (const [path, source, mode] of [
+	['res/data/events.aem.yaml', '# authored map\nevents: {}\n', 'aem'],
+	['res/data/events.aem.json', '{ "events": {} }\n', 'aem'],
+	['res/data/level.yaml', '# authored level\nwidth: 320\n', 'yaml'],
+] as const) test(`new ${mode} source survives catalog rebuilding and workspace reopening before compilation: ${path}`, async t => {
 	const files = new MemoryWorkspaceFiles();
 	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
 	const f = fixture(t);
-	const result = await f.tools.execute('studio_propose_source', { title: 'New module', domain: 0, path: 'new.lua', source: 'return 1' });
+	const canonicalPath = `carts/nemesis_s/${path}`;
+	t.after(() => workspaceCanonicalSourceCache.delete(canonicalPath));
+	const result = await f.tools.execute('studio_propose_source', { title: 'Authored asset', domain: 0, path, source });
+	assert.ok(result.kind === 'proposal');
+	assert.equal(await files.read(canonicalPath), null);
+	assert.equal(f.sources.resources.some(resource => resource.path === path), false);
+	const [model] = await result.proposal.apply();
+	assert.equal(model.mode, mode);
+	assert.equal(model.buffer.getText(), source);
+	assert.equal((await files.read(canonicalPath))!.contents, source);
+	assert.equal(model.resource.source.sourcemeta, undefined, 'new authored source is not installed asset evidence');
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'pending');
+	assert.equal(f.sources.luaResources.some(resource => resource.path === path), false);
+	rebuildRuntimeSourceResources(f.sources);
+	assert.equal(f.sources.resourceByIdentity.get(resourceIdentityKey(model.resource)), model.resource);
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'pending');
+	const reopened = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
+	await discoverWorkspaceSources(reopened);
+	const resource = reopened.resources.find(resource => resource.path === path)!;
+	assert.ok(resource);
+	const models = new EditorTextModelService(); t.after(() => models.clear());
+	const restored = await resolveTextFileModel(models, reopened, resource);
+	assert.equal(restored.mode, mode);
+	assert.equal(restored.buffer.getText(), source);
+	assert.equal(getTextFileRuntimeSourceStatus(reopened, restored), 'pending');
+});
+
+test('new source review displays and creates the same canonical identity', async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const f = fixture(t);
+	const result = await f.tools.execute('studio_propose_source', { title: 'Canonical map', domain: 0,
+		path: 'res/temporary/../data/events.aem.yaml', source: 'events: {}\n' });
+	assert.ok(result.kind === 'proposal');
+	assert.deepEqual(result.proposal.files[0].identity, { domain: 0, path: 'res/data/events.aem.yaml' });
+	const [model] = await result.proposal.apply();
+	assert.deepEqual(model.identity, result.proposal.files[0].identity);
+	assert.equal((await files.read('carts/nemesis_s/res/data/events.aem.yaml'))!.contents, 'events: {}\n');
+	t.after(() => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
+});
+
+test('structured source creation and reopening share excluded-folder admission', async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
+	for (const directory of ['.bmsx', '.git', '_ignore', 'node_modules', 'test']) {
+		for (const name of ['events.aem.yaml', 'events.aem.json', 'level.yaml']) {
+			const relativePath = `res/${directory}/${name}`;
+			const path = `carts/nemesis_s/${relativePath}`;
+			await assert.rejects(createTextResource(new VirtualHeadlessClock(), sources,
+				{ domain: 0, relativePath, contents: 'events: {}\n' }), /project source folder/);
+			assert.equal(await files.read(path), null);
+			assert.equal(sources.resources.some(resource => resource.path === relativePath), false);
+			await files.write(path, { contents: 'events: {}\n', updatedAt: 1 }, false);
+		}
+	}
+	await discoverWorkspaceSources(sources);
+	assert.deepEqual(sources.resources.map(resource => resource.path), ['cart.lua']);
+});
+
+for (const name of ['events.aem.yaml', 'level.yaml']) test(`workspace reopening rejects duplicate unbuilt asset identities: ${name}`, async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const first = `carts/nemesis_s/res/a/${name}`, second = `carts/nemesis_s/res/b/${name}`;
+	await files.write(first, { contents: '{}\n', updatedAt: 1 }, false);
+	await files.write(second, { contents: '{}\n', updatedAt: 2 }, false);
+	t.after(() => { workspaceCanonicalSourceCache.delete(first); workspaceCanonicalSourceCache.delete(second); });
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
+	await assert.rejects(discoverWorkspaceSources(sources), /already belongs to res\/a\//);
+	assert.deepEqual(sources.resources.map(resource => resource.path), ['cart.lua'], 'no partial structured catalog is published');
+});
+
+test('new structured sources reject logical identities already admitted under another path', async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
+	const clock = new VirtualHeadlessClock();
+	const original = await createTextResource(clock, sources,
+		{ domain: 0, relativePath: 'res/data/events.aem.yaml', contents: 'events: {}\n' });
+	t.after(() => workspaceCanonicalSourceCache.delete('carts/nemesis_s/res/data/events.aem.yaml'));
+	await assert.rejects(createTextResource(clock, sources,
+		{ domain: 0, relativePath: 'res/other/events.aem.json', contents: '{ "events": {} }\n' }), /already belongs to res\/data\/events.aem.yaml/);
+	assert.equal(await files.read('carts/nemesis_s/res/other/events.aem.json'), null);
+	assert.equal(sources.resourceByIdentity.get(resourceIdentityKey(original)), original);
+});
+
+for (const [first, second] of [
+	['res/data/events.aem.yaml', 'res/other/events.aem.json'],
+	['same name.lua', 'samename.lua'],
+] as const) test(`concurrent source creation serializes logical identity admission: ${first}`, async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1)]);
+	const clock = new VirtualHeadlessClock();
+	const creation = createTextResource(clock, sources, { domain: 0, relativePath: first, contents: '{}\n' });
+	const collision = createTextResource(clock, sources, { domain: 0, relativePath: second, contents: '{}\n' });
+	const rejected = assert.rejects(collision, /already belongs to/);
+	const resource = await creation;
+	await rejected;
+	assert.equal((await files.read(`carts/nemesis_s/${first}`))!.contents, '{}\n');
+	assert.equal(await files.read(`carts/nemesis_s/${second}`), null, 'logical collision is rejected before writing another file');
+	assert.equal(sources.resources.filter(candidate => candidate.source.resid === resource.source.resid).length, 1);
+	t.after(() => workspaceCanonicalSourceCache.delete(`carts/nemesis_s/${first}`));
+});
+
+for (const path of ['new.lua', 'res/data/events.aem.yaml']) for (const end of ['discard', 'disconnect', 'changed', 'collision'] as const) test(`new source review ${path}: ${end} does not overwrite source`, async t => {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const f = fixture(t);
+	const result = await f.tools.execute('studio_propose_source', { title: 'New source', domain: 0, path, source: 'return 1' });
 	assert.ok(result.kind === 'proposal');
 	if (end === 'discard') result.proposal.dispose();
 	if (end === 'disconnect') f.connection.abort();
@@ -316,13 +432,13 @@ for (const end of ['discard', 'disconnect', 'changed', 'collision'] as const) te
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 	}
 	if (end === 'collision') {
-		await files.write('carts/nemesis_s/new.lua', { contents: 'return 99', updatedAt: 1 }, false);
+		await files.write(`carts/nemesis_s/${path}`, { contents: 'return 99', updatedAt: 1 }, false);
 		await assert.rejects(async () => result.proposal.apply());
 		assert.equal(result.proposal.state, 'failed');
-		assert.equal((await files.read('carts/nemesis_s/new.lua'))!.contents, 'return 99');
+		assert.equal((await files.read(`carts/nemesis_s/${path}`))!.contents, 'return 99');
 	} else {
 		assert.throws(() => result.proposal.apply());
-		assert.equal(await files.read('carts/nemesis_s/new.lua'), null);
+		assert.equal(await files.read(`carts/nemesis_s/${path}`), null);
 	}
-	assert.equal(f.sources.luaResources.some(resource => resource.path === 'new.lua'), false);
+	assert.equal(f.sources.resources.some(resource => resource.path === path), false);
 });

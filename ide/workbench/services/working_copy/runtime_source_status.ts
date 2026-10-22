@@ -55,7 +55,7 @@ export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, mode
 			// This is the producer input of the installed cooked asset, not the
 			// workspace file or a claim about live guest objects derived from it.
 			const packagedSource = model.resource.source.sourcemeta;
-			if (packagedSource === undefined) return 'untracked';
+			if (packagedSource === undefined) return sources.workspaceTextSources.has(cache.resourceKey) ? 'pending' : 'untracked';
 			installedSource = packagedSource.text;
 			break;
 		}
@@ -65,7 +65,7 @@ export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, mode
 				// The producer retained the exact input to the packaged asset. A
 				// workspace file is not proof of installation; this metadata is.
 				const packagedSource = model.resource.source.sourcemeta;
-				if (packagedSource === undefined) return 'untracked';
+				if (packagedSource === undefined) return sources.workspaceTextSources.has(cache.resourceKey) ? 'pending' : 'untracked';
 				installedSource = packagedSource.text;
 			} else {
 				installedSource = application.installedSource;

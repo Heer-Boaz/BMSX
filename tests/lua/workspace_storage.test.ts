@@ -87,8 +87,8 @@ import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
-	discoverWorkspaceLuaSources,
-	createLuaResource,
+	discoverWorkspaceSources,
+	createTextResource,
 	applyAllWorkspaceSourceOverrides,
 	applyLuaTextModelSources,
 	saveLuaResourceSource,
@@ -2059,12 +2059,12 @@ test('new Lua files belong to their explicit project and are published only afte
 	const path = 'carts/second/experiments/actor.lua';
 	server.files.set(path, { contents: '-- existing unregistered file', updatedAt: 10 });
 	const revision = second.revision;
-	await assert.rejects(createLuaResource(clock, sources, request), /File already exists/);
+	await assert.rejects(createTextResource(clock, sources, request), /File already exists/);
 	assert.equal(second.revision, revision);
 	assert.equal(readLocalWorkspaceRecord(storage, second.projectRootPath, path), null);
 	assert.equal(server.files.get(path)!.contents, '-- existing unregistered file');
 	server.files.delete(path);
-	const resource = await createLuaResource(clock, sources, request);
+	const resource = await createTextResource(clock, sources, request);
 	assert.equal(resource.domain, 1, 'BIOS execution does not select the new file owner');
 	assert.equal(resource.path, 'experiments/actor.lua');
 	assert.equal(second.module2lua['experiments/actor'].normalized_source_path, path);
@@ -2072,15 +2072,15 @@ test('new Lua files belong to their explicit project and are published only afte
 	assert.equal(first.records.length, 1);
 	assert.equal(system.records.length, 1);
 	assert.deepEqual(server.requests.map(request => request.method), ['PUT', 'PUT'], 'exclusive create does not race a separate existence probe');
-	await assert.rejects(createLuaResource(clock, sources, request), /Lua module already exists/);
-	const suite = await createLuaResource(clock, sources, { domain: 1,
+	await assert.rejects(createTextResource(clock, sources, request), /Lua module already exists/);
+	const suite = await createTextResource(clock, sources, { domain: 1,
 		relativePath: 'experiments/simple_assert.lua', contents: "return { kind = 'unit', tests = { sample = function() end } }" });
 	assert.equal(second.path2lua[suite.path].program_module, false);
 	assert.equal(suite.source.resid, '__bmsx_scenario_test__/experiments/simple_assert.lua');
-	const other = await createLuaResource(clock, sources, { ...request, relativePath: 'other/actor.lua' });
+	const other = await createTextResource(clock, sources, { ...request, relativePath: 'other/actor.lua' });
 	assert.notEqual(other.source.resid, resource.source.resid, 'different module paths have distinct ROM asset identities');
 	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua']) {
-		await assert.rejects(createLuaResource(clock, sources, { ...request, relativePath }));
+		await assert.rejects(createTextResource(clock, sources, { ...request, relativePath }));
 	}
 });
 
@@ -2094,7 +2094,7 @@ test('workspace opening discovers saved Lua files without depending on open-tab 
 	server.files.set('carts/project/test/fixture.lua', { contents: '-- excluded by source rules', updatedAt: 20 });
 	const registry = sourceRegistry('-- cart', 'carts/project');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- BIOS', 'machine/bios'), [registry, null], 0);
-	const observed = await discoverWorkspaceLuaSources(sources);
+	const observed = await discoverWorkspaceSources(sources);
 	await applyAllWorkspaceSourceOverrides(sources, new Map(), observed);
 	assert.equal(server.requests.filter(request => request.method === 'GET' && request.path === 'carts/project/experiments/actor.lua').length, 1,
 		'workspace opening reuses discovery reads rather than refetching newly admitted source');
@@ -2106,6 +2106,6 @@ test('workspace opening discovers saved Lua files without depending on open-tab 
 	assert.equal(registry.records.length, 2);
 	assert.equal(sources.cartridgeBlua32MediaDirty[0], true);
 	const revision = registry.revision;
-	await discoverWorkspaceLuaSources(sources);
+	await discoverWorkspaceSources(sources);
 	assert.equal(registry.revision, revision, 'existing packaged and admitted files are not re-registered');
 });

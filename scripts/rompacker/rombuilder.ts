@@ -1,5 +1,5 @@
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
+import { assetIdFromSourceName, structuredTextAssetFromPath } from '../../toolchain/ts/rompack/assets';
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
@@ -391,23 +391,13 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
  */
 export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin' } {
 	const parsed = parse(filepath);
-	const rawName = parsed.name;
-	const normalizedName = assetIdFromSourceName(rawName);
-	let name = normalizedName;
 	const ext = parsed.ext.toLowerCase();
+	const structured = structuredTextAssetFromPath(parsed.base);
+	if (structured !== undefined) return { name: structured.resid, ext, type: structured.type, datatype: structured.format };
+	const name = assetIdFromSourceName(parsed.name);
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' = undefined;
 	let datatype: 'json' | 'yaml' | 'bin' = undefined;
-
-	const getDataSubtype = (currentName: string): 'aem' | 'data' => {
-		if (currentName.includes('.aem')) return 'aem';
-		return 'data';
-	};
-
-	const removeExtension = (currentName: string): string => {
-		// Remove any `.` and the following characters from the name, which must be done after extracting the extension and determining the subtype
-		return currentName.replace(/\..*$/, '');
-	};
 
 	switch (ext) {
 		case '.wav':
@@ -430,27 +420,11 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 				type = 'image';
 			}
 			break;
-		case '.json':
-			datatype = 'json';
-			type = getDataSubtype(name);
-			name = removeExtension(name);
-			break;
 		case '.obj':
 			throw new Error(`Unsupported model format: "${filepath}". Export the model as glTF or GLB.`);
 		case '.gltf':
 		case '.glb':
 			type = 'model';
-			break;
-		case '.yaml':
-		case '.yml':
-			datatype = 'yaml';
-			if (name.endsWith('.collision')) {
-				type = 'collision_map';
-				name = name.slice(0, -'.collision'.length);
-			} else {
-				type = getDataSubtype(name);
-				name = removeExtension(name);
-			}
 			break;
 		case '.bin':
 			type = 'bin';

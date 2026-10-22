@@ -28,7 +28,7 @@ import { editorTextModelService } from '../../../ide/editor/model/model_service'
 import { createRuntimeSourceState, developmentCartridgeSource } from '../../../ide/runtime/sources';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../../ide/workspace/records';
 import { WorkspaceSourceRecovery } from '../../../ide/workbench/services/working_copy/source_recovery';
-import { applyAllWorkspaceSourceOverrides, discoverWorkspaceLuaSources } from '../../../ide/workspace/workspace';
+import { applyAllWorkspaceSourceOverrides, discoverWorkspaceSources } from '../../../ide/workspace/workspace';
 import { PlayRuntimeSession } from '../../../ide/workbench/play_runtime';
 import { StudioWorkbench } from '../../../ide/workbench/workbench';
 import { runStudioHostFrame } from '../../../ide/workbench/frame';
@@ -79,7 +79,7 @@ class HeadlessStudioRuntime {
 			projectRootPath: developmentCartridgeSource(sources)?.projectRootPath ?? sources.systemProjectRootPath,
 			models: editorTextModelService, sources, clock: this.clock, logOutput: this.log });
 		const workspaceDirtyRecords = await this.recovery.initialize();
-		const observed = await discoverWorkspaceLuaSources(sources);
+		const observed = await discoverWorkspaceSources(sources);
 		await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords, observed);
 		await this.recovery.restoreModels();
 		this.workbench = new StudioWorkbench({ runtime: this.runtime, input: this.input, audioOutput: this.audioOutput,

@@ -35,7 +35,7 @@ export type BuiltAemSourceRevision = {
 
 export type AemSourceApplyResult =
 	| { readonly status: 'applied' }
-	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' }
+	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'module-not-installed' | 'asset-not-installed' }
 	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
 
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
@@ -54,6 +54,18 @@ export async function applyAemSourceRevision(
 		// cartridge's globals while the BIOS (or a different cartridge) runs.
 		if (runtime.machine.cpu.activeCartridgeSlot() !== resource.domain) {
 			result = { status: 'not-applied', reason: 'inactive-domain' };
+			return;
+		}
+		const installedSources = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources
+			: sources.cartridgeSlots[resource.domain]!.installedBlua32Sources;
+		if (!installedSources.has('cartlib/aem')) {
+			result = { status: 'not-applied', reason: 'module-not-installed' };
+			return;
+		}
+		const installedPackage = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage
+			: sources.cartridgeSlots[resource.domain]!.package;
+		if (installedPackage.audioevents[resource.source.resid] === undefined) {
+			result = { status: 'not-applied', reason: 'asset-not-installed' };
 			return;
 		}
 		let built: BuiltAemSourceRevision;

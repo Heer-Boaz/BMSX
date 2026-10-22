@@ -2,7 +2,7 @@ import type { HostClock } from '../../../../hosts/common/clock';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDomain } from '../../../common/resource';
 import { showEditorWarningBanner } from '../../../common/feedback_state';
-import { createLuaResource } from '../../../workspace/workspace';
+import { createTextResource } from '../../../workspace/workspace';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
 import { validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -21,7 +21,7 @@ export class ActionStringTester {
 				"{ player = 1, clock = clock.frame, steps = { { key = 'KeyX', down = true, expect = true, max_ticks = 30 }, { key = 'KeyX', down = false, expect = false, max_ticks = 30 } } }",
 				async text => validateLuaTableFieldExpression(text), experiment => {
 					this.quickInput.input('SCENARIO SOURCE', 'Creates a reusable test; no changes to the authoring runtime', 'tests/actionstring_assert.lua', async relativePath => {
-						const resource = await createLuaResource(this.clock, this.sources, { domain, relativePath,
+						const resource = await createTextResource(this.clock, this.sources, { domain, relativePath,
 							contents: actionStringScenarioSource(expression, experiment) });
 						return resource;
 					}, resource => {

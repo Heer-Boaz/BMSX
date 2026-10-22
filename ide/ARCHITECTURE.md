@@ -125,8 +125,12 @@ or source writer is introduced. See [ROM Inspector](../docs/studio_rom_inspector
 of an operation. Changes and teardown retire the entire accepted context,
 including an empty workspace; late results cannot refresh their own edit rights.
 `WorkspaceEditProposal` takes that context and admits exact edits through shared
-model history. Its creation variant invokes exclusive `createLuaResource` only
+model history. Its creation variant invokes exclusive `createTextResource` only
 after approval; previewing a new path creates neither an empty model nor a file.
+File/New and native tools share that owner for Lua, YAML data and AEM sources.
+Workspace text-source admission is independent of installed ROM entries: catalog
+rebuilding merges authored sources with real packed records without inventing
+installed-source metadata. Workspace opening discovers saved, unbuilt sources.
 Text-edit Undo and file creation are different operations. Apply is distinct from
 Save/build/install. Terminal proposals
 cannot execute twice, and a failed operation is not called a successful edit.

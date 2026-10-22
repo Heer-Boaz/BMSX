@@ -128,7 +128,7 @@ export type EditorCommandId =
 	| 'propertyInspector.close'
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.source' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
 	| 'tabs.scrollLeft' | 'tabs.scrollRight'
-	| 'progression.createProgram' | 'input.createBindings' | 'behaviorLens.createEffect' | 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.source' | 'aem.testEvent'
+	| 'progression.createProgram' | 'input.createBindings' | 'behaviorLens.createEffect' | 'aem.create' | 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.source' | 'aem.testEvent'
 	| 'animation.create' | 'animation.createSprite' | 'animation.addTrack' | 'animation.addKey'
 	| 'animation.edit' | 'animation.remove' | 'animation.source' | 'animation.producerSource'
 	| 'animation.fit' | 'animation.snap' | 'animation.addClip' | 'animation.addFrame' | 'animation.addProperty'

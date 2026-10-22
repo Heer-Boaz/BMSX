@@ -79,6 +79,13 @@ export type AemSourceApplication = {
 	failed: boolean;
 };
 
+/** Authored files exist independently of an installed cooked asset. */
+export type WorkspaceTextSource = {
+	readonly domain: ResourceDomain;
+	readonly projectRootPath: string;
+	readonly source: RuntimeResource['source'] & { readonly type: 'aem' | 'data'; readonly source_path: string };
+};
+
 export type RuntimeSourceState = {
 	systemRom: RomToolingLayer<'system'>;
 	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
@@ -92,6 +99,7 @@ export type RuntimeSourceState = {
 	luaResources: RuntimeResource[];
 	/** Loaded authoring resources, independent of the executing source domain. */
 	resources: RuntimeResource[];
+	workspaceTextSources: Map<string, WorkspaceTextSource>;
 	systemProjectRootPath: string;
 	activeCartridgeSlot: ResourceDomain;
 	systemBlua32MediaDirty: boolean;
@@ -217,6 +225,7 @@ export function createRuntimeSourceState(
 		resourceByIdentity: new Map(),
 		luaResources: [],
 		resources: [],
+		workspaceTextSources: new Map(),
 		systemProjectRootPath: systemLuaSources.projectRootPath,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
 		systemBlua32MediaDirty: false,
@@ -504,10 +513,30 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 		SYSTEM_RESOURCE_DOMAIN,
 		state.systemRomSource,
 	);
+	for (const [key, authored] of state.workspaceTextSources) {
+		const registry = runtimeLuaSourceRegistry(state, authored.domain);
+		if (registry === undefined || registry.projectRootPath !== authored.projectRootPath) {
+			state.workspaceTextSources.delete(key);
+			continue;
+		}
+		if (!resources.has(key)) {
+			retainRuntimeResource(previousResources, resources, authored.domain, authored.source.source_path, authored.source);
+		}
+	}
 	sortRuntimeResources(state.luaResources);
 	state.resources.length = 0;
 	for (const resource of resources.values()) state.resources.push(resource);
 	sortRuntimeResources(state.resources);
+}
+
+export function registerWorkspaceTextSources(
+	state: RuntimeSourceState, domain: ResourceDomain, sources: readonly WorkspaceTextSource['source'][],
+): void {
+	const projectRootPath = runtimeLuaSourceRegistry(state, domain)!.projectRootPath;
+	for (const source of sources) {
+		state.workspaceTextSources.set(resourceIdentityKeyFromParts(domain, source.source_path), { domain, source, projectRootPath });
+	}
+	rebuildRuntimeSourceResources(state);
 }
 
 function retainRuntimeResource(

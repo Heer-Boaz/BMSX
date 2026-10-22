@@ -13,16 +13,71 @@ import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { Input } from '../../hosts/common/input/manager';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HostAudioDevice } from '../../hosts/common/audio_device';
+import { HostAudioOutput } from '../../hosts/common/audio_output';
+import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { buildAemSourceRevision } from '../../ide/runtime/aem';
 import { installBlua32Revision } from '../../ide/runtime/hot_resume';
 import { buildBlua32Media, installBlua32Media, prepareBlua32MediaBoot } from '../../ide/runtime/lua_pipeline';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
+import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
-import { saveLuaResourceSource } from '../../ide/workspace/workspace';
+import { createTextResource, saveLuaResourceSource } from '../../ide/workspace/workspace';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
+import { resolveWorkspacePath } from '../../ide/workspace/path';
+
+test('new AEM sources save without applying absent guest modules or unbuilt assets', async t => {
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-aem-source-admission-'));
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files);
+	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
+	const media = await buildScenarioMediaFixture(directory, [], {
+		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [],
+		cartSource: "module<entry>\nlocal aem<const> = require('cartlib/aem')\nwhile true do halt_until_irq end",
+		cartModules: [{ path: 'cartlib/aem', source: 'module<const>\nreturn {}' }],
+	});
+	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
+	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
+	const models = new EditorTextModelService();
+	const clock = new VirtualHeadlessClock();
+	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC,
+		new Input(clock, new HeadlessInputHub(), -1));
+	const runtime = target.runtime;
+	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
+	const tasks = new RuntimeTaskQueue(audio, target.presenter);
+	const saves = new TextFileSaveService(models, clock, sources, new SuspendedGuestSession(runtime), runtime, tasks);
+	t.after(async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); });
+	assert.equal(sources.systemInstalledBlua32Sources.has('cartlib/aem'), false);
+	assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources.has('cartlib/aem'), true);
+
+	for (const [domain, reason] of [[-1, 'module-not-installed'], [0, 'asset-not-installed']] as const) {
+		if (domain === 0) {
+			for (let frame = 0; frame < 100 && !runtime.machine.cpu.isCartridgeExecutionActive(); frame++) target.advanceGame(10000);
+		}
+		assert.equal(runtime.machine.cpu.activeCartridgeSlot(), domain);
+		const resource = await createTextResource(clock, sources, { domain, relativePath: 'res/data/new.aem.yaml', contents: 'events: {}\n' });
+		const model = await resolveTextFileModel(models, sources, resource);
+		const source = '# authored before the first asset build\nevents: {}\n';
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+		const before = sources.currentBlua32Media, systemBytes = sources.systemRom.bytes, cartBytes = sources.cartridgeSlots[0]!.rom.bytes;
+		const result = await saves.save(model).completion;
+		assert.ok(result.status === 'saved');
+		assert.deepEqual(result.application, { status: 'not-applied', reason });
+		assert.equal(files.records.get(resolveWorkspacePath(resource.path, domain === -1 ? sources.systemProjectRootPath : sources.cartridgeSlots[0]!.projectRootPath))!.contents, source);
+		assert.equal(model.dirty, false);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+		assert.equal(sources.aemSourceApplications.size, 0);
+		assert.equal(tasks.failure, undefined);
+		assert.equal(sources.currentBlua32Media, before);
+		assert.equal(sources.systemRom.bytes, systemBytes);
+		assert.equal(sources.cartridgeSlots[0]!.rom.bytes, cartBytes);
+	}
+});
 
 for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks installed code, never pending workspace Lua`, async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-aem-source-scope-'));

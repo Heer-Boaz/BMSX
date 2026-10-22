@@ -22,7 +22,7 @@ import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
-import { discoverWorkspaceLuaSources } from '../../ide/workspace/workspace';
+import { discoverWorkspaceSources } from '../../ide/workspace/workspace';
 import { workspaceRecords } from '../../ide/workspace/records';
 
 async function fixture(t: TestContext) {
@@ -117,7 +117,7 @@ test('Reboot links a newly imported workspace library without compiling or packi
 	const files = workspaceRecords.provider as MemoryWorkspaceFiles;
 	files.records.set('cartlib/new_module.lua', { contents: 'return { value = 37 }', updatedAt: 1 });
 	files.records.set('cartlib/unrelated.lua', { contents: 'end end', updatedAt: 1 });
-	await discoverWorkspaceLuaSources(f.sources);
+	await discoverWorkspaceSources(f.sources);
 	const cart = f.sources.cartridgeSlots[0]!;
 	assert.equal(cart.luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
 	assert.equal(f.sources.cartridgeBlua32MediaDirty[0], false, 'catalog discovery does not change the installed program');

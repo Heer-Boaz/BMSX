@@ -3,9 +3,36 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { finalizeRompack, generateRomAssets } from '../../scripts/rompacker/rombuilder';
+import { finalizeRompack, generateRomAssets, getResMetaByFilename } from '../../scripts/rompacker/rombuilder';
+import { structuredTextAssetFromPath, type StructuredTextAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
+
+test('workspace and packer classify the same authored filenames and asset ids', () => {
+	const filenames: readonly [string, StructuredTextAsset][] = [
+		['res/data/Stage Map.yaml', { type: 'data', resid: 'stagemap', format: 'yaml' }],
+		['res/data/settings.YML', { type: 'data', resid: 'settings', format: 'yaml' }],
+		['configuration.json', { type: 'data', resid: 'configuration', format: 'json' }],
+		['events.aem.yaml', { type: 'aem', resid: 'events', format: 'yaml' }],
+		['res/sound/EVENTS.AEM.JSON', { type: 'aem', resid: 'events', format: 'json' }],
+		['events.aem.extra.yml', { type: 'aem', resid: 'events', format: 'yaml' }],
+		['events.aem_backup.yaml', { type: 'aem', resid: 'events', format: 'yaml' }],
+		['stage.extra.yaml', { type: 'data', resid: 'stage', format: 'yaml' }],
+		['stage.aem.collision.yaml', { type: 'collision_map', resid: 'stage.aem', format: 'yaml' }],
+		['Stage.Extra.Collision.YML', { type: 'collision_map', resid: 'stage.extra', format: 'yaml' }],
+		['stage.collision.json', { type: 'data', resid: 'stage', format: 'json' }],
+		['folder.aem/events.yaml', { type: 'data', resid: 'events', format: 'yaml' }],
+		['.hidden.yaml', { type: 'data', resid: '', format: 'yaml' }],
+	];
+	for (const [path, expected] of filenames) {
+		assert.deepEqual(structuredTextAssetFromPath(path), expected, path);
+		const packed = getResMetaByFilename(path);
+		assert.deepEqual({ type: packed.type, resid: packed.name, format: packed.datatype }, expected, path);
+	}
+	for (const path of ['entry.lua', 'res/sound/shot.wav', 'res/events.aem', '.yaml', 'res/no-extension', 'res/']) {
+		assert.equal(structuredTextAssetFromPath(path), undefined, path);
+	}
+});
 
 test('debug packages retain exact authored text independently of cooked bytes; release packages omit it', async t => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-authored-source-'));

@@ -4,15 +4,15 @@ import { EditorWorkspaceEditConflict } from '../../../editor/model/undo_redo_ser
 import { createTextEditPreview, type TextEditPreviewHunk } from '../../../editor/text/edit_preview';
 import type { WorkspaceSourceContext } from './source_context';
 import type { HostClock } from '../../../../hosts/common/clock';
-import type { LuaResourceCreationRequest, ResourceIdentity } from '../../../common/resource';
+import type { TextResourceCreationRequest, ResourceIdentity } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { createLuaResource } from '../../../workspace/workspace';
+import { createPreparedTextResource, prepareTextResourceCreation } from '../../../workspace/workspace';
 import { resolveTextFileModel } from './text_file_model';
 
 export type WorkspaceEditProposalState = 'pending' | 'applying' | 'applied' | 'discarded' | 'stale' | 'failed';
 export type WorkspaceEditPlan =
 	| { readonly kind: 'edit'; readonly edits: ReadonlyMap<EditorTextModel, EditorModelEdit> }
-	| { readonly kind: 'create'; readonly request: LuaResourceCreationRequest; readonly sources: RuntimeSourceState; readonly clock: HostClock };
+	| { readonly kind: 'create'; readonly request: TextResourceCreationRequest; readonly sources: RuntimeSourceState; readonly clock: HostClock };
 export type WorkspaceEditPreviewFile = { readonly identity: ResourceIdentity; readonly hunks: readonly TextEditPreviewHunk[] } & ({
 	readonly kind: 'edit';
 	readonly model: EditorTextModel;
@@ -28,7 +28,9 @@ export class WorkspaceEditProposal {
 	private stateValue: WorkspaceEditProposalState = 'pending';
 	private reasonValue = '';
 	private readonly settlementListeners = new Set<() => void>();
-	private creation: Extract<WorkspaceEditPlan, { kind: 'create' }> | undefined;
+	private creation: (Omit<Extract<WorkspaceEditPlan, { kind: 'create' }>, 'request'> & {
+		readonly request: ReturnType<typeof prepareTextResourceCreation>;
+	}) | undefined;
 
 	/** The caller transfers its captured context on successful construction. */
 	public constructor(public readonly title: string, private readonly context: WorkspaceSourceContext,
@@ -36,9 +38,10 @@ export class WorkspaceEditProposal {
 		context.assertCurrent();
 		this.kind = plan.kind;
 		if (plan.kind === 'create') {
-			this.creation = { ...plan, request: { ...plan.request } };
-			this.files = [{ kind: 'create', identity: { domain: plan.request.domain, path: plan.request.relativePath },
-				hunks: [{ offset: 0, line: 1, before: '', after: plan.request.contents }] }];
+			const request = prepareTextResourceCreation(plan.request);
+			this.creation = { ...plan, request };
+			this.files = [{ kind: 'create', identity: { domain: request.domain, path: request.path },
+				hunks: [{ offset: 0, line: 1, before: '', after: request.contents }] }];
 		} else {
 			for (const [model, edit] of plan.edits) {
 				if (edit.edits.length === 0) continue;
@@ -85,9 +88,9 @@ export class WorkspaceEditProposal {
 		this.stateValue = 'applying';
 		if (this.creation !== undefined) {
 			const { clock, sources, request } = this.creation;
-			// Exclusive creation uses the same workspace owner as File: New Lua File.
+			// Exclusive creation uses the same workspace owner as File: New.
 			// No empty working copy, catalog entry or filesystem write exists before approval.
-			return createLuaResource(clock, sources, request).then(async resource => {
+			return createPreparedTextResource(clock, sources, request).then(async resource => {
 				const model = await resolveTextFileModel(this.context.models, sources, resource);
 				this.stateValue = 'applied';
 				return [model];

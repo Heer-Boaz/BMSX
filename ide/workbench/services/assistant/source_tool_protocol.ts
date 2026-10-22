@@ -2,7 +2,6 @@ import { StudioToolInputError, toolArguments } from './tool_input';
 import { STUDIO_BEHAVIOR_TOOLS } from './behavior_tool_protocol';
 import type { TextFileSaveResult } from '../working_copy/text_file_save';
 import type { ResourceDomain } from '../../../common/resource';
-import { normalizeRelativeWorkspacePath } from '../../../workspace/path';
 
 export type SourceToolEdit = { offset: number; deleteLength: number; text: string; expectedText: string };
 export type SourceToolRequest =
@@ -26,7 +25,7 @@ export const STUDIO_SOURCE_TOOLS = [
 	...STUDIO_BEHAVIOR_TOOLS,
 	{ name: 'studio_edit_history', description: 'Undo or redo through the ordinary resource/workspace history, using a current source receipt. Compound edits preserve their cross-file dependencies. Requires source-edit authority, independently of the Studio host; does not Save or install. A changed source retires this context: open a new context and read fresh receipts afterwards.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' }, direction: { type: 'string', enum: ['undo', 'redo'] } }, required: ['receipt', 'direction'], additionalProperties: false } },
-	{ name: 'studio_propose_source', description: 'Propose one new Lua source file, including _assert.lua Scenario Lab suites, for explicit Studio review. Choose an installed source domain from studio_list_sources (-1 BIOS, 0/1 cart) and a path relative to its project folder. No file or working copy is created before approval. Apply uses ordinary exclusive workspace creation: existing files are never overwritten. Creation persists source and opens its editor; it does not compile, install, execute or build assets. Closing/discarding a pending review writes nothing. Once creation is accepted its write completes independently of the proposing turn. Read fresh source handles after approval. Use studio_propose_edits for existing files.',
+	{ name: 'studio_propose_source', description: 'Propose one new authored text source for explicit Studio review: Lua (including _assert.lua Scenario suites), YAML data or AEM YAML/JSON under res/. Choose an installed source domain from studio_list_sources (-1 BIOS, 0/1 cart) and a path relative to its project folder. No file or working copy is created before approval. Apply uses ordinary exclusive workspace creation: existing files are never overwritten. Creation persists source and opens its editor; it does not compile, install, execute or build assets. Authored assets remain available before their first build. Closing/discarding a pending review writes nothing. Once creation is accepted its write completes independently of the proposing turn. Read fresh source handles after approval. Use studio_propose_edits for existing files.',
 		inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 1 }, domain: { type: 'integer', enum: [-1, 0, 1] }, path: { type: 'string', minLength: 1 }, source: { type: 'string' } }, required: CREATE_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_source_status', description: 'Read current working-copy dirty state, its relation to installed code/assets and the latest ordinary Studio Save acknowledgement for a current source receipt. Save status is historical: workspace acknowledges the project filesystem, browser acknowledges the browser-owned workspace. A pending Save is not success. Runtime applied only compares source with the installed revision, not successful initialization. YAML compares exact packaged source metadata, not live guest objects; changed source requires an asset rebuild and missing metadata is untracked. Source-only Lua tests are not installed program modules. This does not save, build, execute or refresh expired source authority.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
@@ -61,7 +60,7 @@ export function decodeSourceToolRequest(name: string, input: unknown): SourceToo
 				|| typeof value.source !== 'string' || value.domain !== -1 && value.domain !== 0 && value.domain !== 1) {
 				throw new StudioToolInputError('New source requires a title, installed domain, project-relative path and source text.');
 			}
-			return { name, title: value.title, domain: value.domain, path: normalizeRelativeWorkspacePath(value.path), source: value.source };
+			return { name, title: value.title, domain: value.domain, path: value.path, source: value.source };
 		}
 		case 'studio_list_sources':
 			toolArguments(input, NO_FIELDS);

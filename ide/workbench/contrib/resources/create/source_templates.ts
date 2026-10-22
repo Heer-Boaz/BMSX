@@ -2,6 +2,9 @@ import { quoteLuaString } from '../../../../../toolchain/ts/lua/syntax/string_li
 import { DEFAULT_NEW_LUA_RESOURCE_CONTENT } from '../../../../common/constants';
 
 export type NewLuaSourceKind = 'animation' | 'sprite_animation' | 'empty' | 'action_effect' | 'progression' | 'input';
+export type NewSourceKind = NewLuaSourceKind | 'aem';
+
+export const NEW_AEM_SOURCE = { yaml: 'events: {}\n', json: '{"events": {}}\n' } as const;
 
 /** Starting source, not a second authoring format or a runtime default. Cart code owns installation. */
 export function newLuaSource(kind: NewLuaSourceKind, relativePath: string): string {

@@ -25,7 +25,7 @@ import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
-import { createLuaResource } from '../../ide/workspace/workspace';
+import { createTextResource } from '../../ide/workspace/workspace';
 
 const SCENE = `local game<const> = require('game')
 return { kind='integration', setup=function(t) game.marker=12; t:log('ready') end,
@@ -114,8 +114,8 @@ test('closing preparation cannot create a late world; model clear closes the act
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
 	const f = await fixture(t, optLevel), clock = new VirtualHeadlessClock();
-	await createLuaResource(clock, f.sources, { domain: 0, relativePath: 'empty.lua', contents: '' });
-	const resource = await createLuaResource(clock, f.sources, { domain: 0,
+	await createTextResource(clock, f.sources, { domain: 0, relativePath: 'empty.lua', contents: '' });
+	const resource = await createTextResource(clock, f.sources, { domain: 0,
 		relativePath: 'tests/created_assert.lua', contents: SCENE.replace('12', '78') });
 	f.runs.refreshSources();
 	const module = f.runs.collection.findModuleBySourcePath(0, resource.path);

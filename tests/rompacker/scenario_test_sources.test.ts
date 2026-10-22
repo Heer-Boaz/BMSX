@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
-import { createLuaResource } from '../../ide/workspace/workspace';
+import { createTextResource } from '../../ide/workspace/workspace';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -67,7 +67,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	t.after(async () => { models.clear(); authoring.dispose(); await closeWorkspaceRecords(); });
 	const source = "return { kind = 'unit', tests = { first = function() assert(2 + 2 == 4) end } }";
-	await createLuaResource(new VirtualHeadlessClock(), sources, { domain: 0, relativePath: 'first_assert.lua', contents: source });
+	await createTextResource(new VirtualHeadlessClock(), sources, { domain: 0, relativePath: 'first_assert.lua', contents: source });
 	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (system, slots, model, input) => new OffscreenMachine(system, slots, model, input));
 	t.after(() => runs.dispose());
 	const run = runs.start(runs.collection.findModuleBySourcePath(0, 'first_assert.lua').id);

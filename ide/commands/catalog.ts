@@ -107,6 +107,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.preview': { category: 'Behavior Lens', title: 'Preview Definition' },
 	keepEditor: { category: 'Editor', title: 'Keep Open' },
 	aem: { category: 'Audio Event Map', title: 'Open', shortTitle: 'Audio Events' },
+	'aem.create': { category: 'Audio Events', title: 'New Audio Event Map' },
 	'aem.edit': { category: 'Audio Events', title: 'Edit Property', shortTitle: 'Edit' },
 	'aem.add': { category: 'Audio Events', title: 'Add Event, Rule or Property', shortTitle: 'Add' },
 	'aem.remove': { category: 'Audio Events', title: 'Remove Event, Rule or Property', shortTitle: 'Remove' },

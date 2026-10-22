@@ -18,7 +18,7 @@ export type RuntimeResource = ResourceIdentity & {
 	source: RuntimeResourceSource;
 };
 
-export type LuaResourceCreationRequest = {
+export type TextResourceCreationRequest = {
 	domain: ResourceDomain;
 	relativePath: string;
 	contents: string;

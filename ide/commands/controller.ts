@@ -66,7 +66,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'animation.addClip', 'animation.addFrame', 'animation.addProperty', 'animation.openClip',
 	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
 	'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
-	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
+	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
@@ -164,6 +164,7 @@ export class IdeCommandController {
 			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
 			case 'behaviorLens.testEffect': { const input = getActiveTab()!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
 			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
+			case 'aem.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'aem'); return;
 			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'sprite_animation'); return;
 			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'animation'); return;
 			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'input'); return;
@@ -423,7 +424,7 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
 			case 'builds.start': return this.editor.builds !== undefined;
-			case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
+			case 'aem.create': case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);

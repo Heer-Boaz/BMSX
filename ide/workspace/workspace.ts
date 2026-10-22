@@ -8,8 +8,9 @@ import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
 import {
 	CARTRIDGE_RESOURCE_DOMAINS,
 	SYSTEM_RESOURCE_DOMAIN,
+	resourceIdentityKeyFromParts,
 	type ResourceDomain,
-	type LuaResourceCreationRequest,
+	type TextResourceCreationRequest,
 	type ResourceIdentity,
 	type RuntimeResource,
 } from '../common/resource';
@@ -24,19 +25,23 @@ import {
 	setWorkspaceLuaSourceOverride,
 	workspaceCanonicalSourceCache,
 } from './cache';
-import { createWorkspaceRecord, workspaceRecords, type WorkspaceRecord } from './records';
+import { createWorkspaceRecord, workspaceRecords, type WorkspaceRecord, type WorkspaceRecords } from './records';
 import { joinWorkspacePaths, normalizeRelativeWorkspacePath, stripProjectRootPrefix } from './path';
-import { discoverWorkspaceLuaFiles } from './source_files';
+import { discoverWorkspaceSourceFiles, workspaceTextAssetFromPath } from './source_files';
 import {
 	runtimeLuaSourceRegistry,
 	resolveRuntimeLuaSource,
 	registerRuntimeLuaResource,
+	registerWorkspaceTextSources,
 	runtimeLuaSourceDomain,
 	type RuntimeSourceState,
+	type WorkspaceTextSource,
 } from '../runtime/sources';
 
 export * from './files';
 export { joinWorkspacePaths } from './path';
+
+const workspaceSourceCreations = new WeakMap<LuaSourceRegistry, Promise<void>>();
 
 function markLuaSourceRegistryChanged(sources: RuntimeSourceState, registry: LuaSourceRegistry): void {
 	if (registry === sources.systemLuaSources) {
@@ -114,39 +119,91 @@ export async function saveLuaResourceSource(
 	return result;
 }
 
-export async function createLuaResource(
+/** Canonical identity is captured before review and reused unchanged at creation. */
+export function prepareTextResourceCreation(request: TextResourceCreationRequest) {
+	return { domain: request.domain, path: normalizeRelativeWorkspacePath(request.relativePath), contents: request.contents };
+}
+
+export function createTextResource(
 	clock: HostClock,
 	sources: RuntimeSourceState,
-	request: LuaResourceCreationRequest,
+	request: TextResourceCreationRequest,
 ): Promise<RuntimeResource> {
-	const contents = request.contents;
-	const relativePath = normalizeRelativeWorkspacePath(request.relativePath);
-	if (!relativePath.endsWith('.lua')) throw new Error('New Lua files must have a .lua extension.');
-	if (!isRuntimeLuaSourcePath(relativePath)) throw new Error('This folder is excluded from project Lua sources.');
+	return createPreparedTextResource(clock, sources, prepareTextResourceCreation(request));
+}
+
+export function createPreparedTextResource(
+	clock: HostClock,
+	sources: RuntimeSourceState,
+	request: ReturnType<typeof prepareTextResourceCreation>,
+): Promise<RuntimeResource> {
 	const registry = runtimeLuaSourceRegistry(sources, request.domain)!;
+	const records = workspaceRecords;
+	const previous = workspaceSourceCreations.get(registry);
+	const create = () => createWorkspaceTextResource(clock, sources, request, registry, records);
+	const result = previous === undefined ? create() : previous.then(create);
+	const tail = result.then(() => undefined, () => undefined);
+	workspaceSourceCreations.set(registry, tail);
+	void tail.then(() => {
+		if (workspaceSourceCreations.get(registry) === tail) workspaceSourceCreations.delete(registry);
+	});
+	return result;
+}
+
+async function createWorkspaceTextResource(
+	clock: HostClock,
+	sources: RuntimeSourceState,
+	request: ReturnType<typeof prepareTextResourceCreation>,
+	registry: LuaSourceRegistry,
+	records: WorkspaceRecords,
+): Promise<RuntimeResource> {
+	if (runtimeLuaSourceRegistry(sources, request.domain) !== registry) {
+		throw new Error(`Project closed before creating '${request.path}'.`);
+	}
+	const contents = request.contents;
+	const relativePath = request.path;
 	const path = joinWorkspacePaths(registry.projectRootPath, relativePath);
 	const record = createWorkspaceRecord(clock, contents);
-	const asset = createWorkspaceLuaSourceRecord(registry, path, record);
-	await workspaceRecords.write(path, record, false);
+	let asset: (LuaSourceRecord & { type: 'lua' }) | WorkspaceTextSource['source'];
+	if (relativePath.endsWith('.lua')) {
+		if (!isRuntimeLuaSourcePath(relativePath)) throw new Error('This folder is excluded from project Lua sources.');
+		asset = createWorkspaceLuaSourceRecord(registry, path, record);
+	} else {
+		asset = createWorkspaceTextSourceRecord(workspaceTextAssetPaths(sources, request.domain), relativePath, record);
+	}
+	await records.write(path, record, false);
 	workspaceCanonicalSourceCache.set(path, record);
 	if (runtimeLuaSourceRegistry(sources, request.domain) !== registry) {
 		throw new Error(`Created '${path}', but its project was closed before catalog admission.`);
 	}
-	return admitWorkspaceLuaResource(sources, request.domain, asset);
+	if (asset.type === 'lua') return admitWorkspaceLuaResource(sources, request.domain, asset);
+	registerWorkspaceTextSources(sources, request.domain, [asset]);
+	return sources.resourceByIdentity.get(resourceIdentityKeyFromParts(request.domain, relativePath))!;
 }
 
 /** Source files exist independently of ROM membership or the set of open tabs. */
-export async function discoverWorkspaceLuaSources(sources: RuntimeSourceState): Promise<ReadonlyMap<string, WorkspaceRecord>> {
+export async function discoverWorkspaceSources(sources: RuntimeSourceState): Promise<ReadonlyMap<string, WorkspaceRecord>> {
 	const libraries = sources.cartridgeSlots.some(slot => slot !== null)
-		? await discoverWorkspaceLuaFiles(workspaceRecords.provider, CART_LIBRARY_ROOT) : [];
+		? await discoverWorkspaceSourceFiles(workspaceRecords.provider, CART_LIBRARY_ROOT, false) : [];
 	const readRecords = new Map<string, WorkspaceRecord>();
 	for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 		const registry = runtimeLuaSourceRegistry(sources, domain);
 		if (registry === undefined) continue; // Empty physical cartridge socket.
-		const paths = await discoverWorkspaceLuaFiles(workspaceRecords.provider, registry.projectRootPath);
+		const paths = await discoverWorkspaceSourceFiles(workspaceRecords.provider, registry.projectRootPath, true);
 		if (domain !== SYSTEM_RESOURCE_DOMAIN) paths.push(...libraries);
 		const knownPaths = new Set(registry.records.map(record => record.normalized_source_path));
+		const textSources: WorkspaceTextSource['source'][] = [];
+		const textAssetPaths = workspaceTextAssetPaths(sources, domain);
 		for (const path of paths) {
+			const relativePath = stripProjectRootPrefix(path, registry.projectRootPath);
+			if (!path.endsWith('.lua')) {
+				const record = await workspaceRecords.read(path);
+				if (record === null) throw new Error(`Workspace source disappeared while opening the project: ${path}`);
+				readRecords.set(path, record);
+				workspaceCanonicalSourceCache.set(path, record);
+				textSources.push(createWorkspaceTextSourceRecord(textAssetPaths, relativePath, record));
+				continue;
+			}
 			if (knownPaths.has(path)) continue;
 			const record = readRecords.get(path) ?? await workspaceRecords.read(path);
 			if (record === null) throw new Error(`Workspace source disappeared while opening the project: ${path}`);
@@ -154,11 +211,36 @@ export async function discoverWorkspaceLuaSources(sources: RuntimeSourceState): 
 			admitWorkspaceLuaResource(sources, domain, createWorkspaceLuaSourceRecord(registry, path, record));
 			knownPaths.add(path);
 		}
+		if (textSources.length !== 0) registerWorkspaceTextSources(sources, domain, textSources);
 	}
 	return readRecords;
 }
 
-function createWorkspaceLuaSourceRecord(registry: LuaSourceRegistry, workspacePath: string, record: WorkspaceRecord): LuaSourceRecord {
+function workspaceTextAssetPaths(sources: RuntimeSourceState, domain: ResourceDomain): Map<string, string> {
+	const paths = new Map<string, string>();
+	for (const resource of sources.resources) {
+		if (resource.domain === domain && (resource.source.type === 'aem' || resource.source.type === 'data')) {
+			paths.set(`${resource.source.type}\0${resource.source.resid}`, resource.path);
+		}
+	}
+	return paths;
+}
+
+function createWorkspaceTextSourceRecord(
+	assetPaths: Map<string, string>, relativePath: string, record: WorkspaceRecord,
+): WorkspaceTextSource['source'] {
+	const asset = workspaceTextAssetFromPath(relativePath);
+	if (asset === undefined) throw new Error('Create a Lua source, YAML data file or AEM document under res/ in a project source folder.');
+	const key = `${asset.type}\0${asset.resid}`;
+	const existingPath = assetPaths.get(key);
+	if (existingPath !== undefined && existingPath !== relativePath) {
+		throw new Error(`Asset '${asset.resid}' already belongs to ${existingPath}`);
+	}
+	assetPaths.set(key, relativePath);
+	return { type: asset.type, resid: asset.resid, source_path: relativePath, update_timestamp: record.updatedAt };
+}
+
+function createWorkspaceLuaSourceRecord(registry: LuaSourceRegistry, workspacePath: string, record: WorkspaceRecord): LuaSourceRecord & { type: 'lua' } {
 	const path = stripProjectRootPrefix(workspacePath, registry.projectRootPath);
 	const modulePath = toLuaModulePath(path);
 	if (ROM_GENERATED_MODULE_PATHS.includes(modulePath)) throw new Error(`Lua module '${modulePath}' is generated by the ROM packer.`);

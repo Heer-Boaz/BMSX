@@ -10,7 +10,7 @@ import { HttpError } from '../../scripts/dev/http_security.mjs';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
-import { discoverWorkspaceLuaFiles } from '../../ide/workspace/source_files';
+import { discoverWorkspaceSourceFiles } from '../../ide/workspace/source_files';
 
 async function fixture(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-workspace-publication-'));
@@ -126,7 +126,7 @@ test('direct disk saves publish bytes and timestamps together through the same o
 		await timestamping.promise;
 		const files = collectCartSourceFiles([root]);
 		assert.deepEqual(files, [path], 'filesystem source discovery excludes staging');
-		assert.deepEqual(await discoverWorkspaceLuaFiles(provider, ''), ['entry.lua'], 'Studio source discovery excludes staging');
+		assert.deepEqual(await discoverWorkspaceSourceFiles(provider, '', false), ['entry.lua'], 'Studio source discovery excludes staging');
 		const captured = await prepareRomInputs([root], files);
 		assert.deepEqual(captured.resourceFiles, [path]);
 		assert.equal(captured.files.get(path)!.text, 'return 1');

@@ -16,6 +16,30 @@ export function assetIdFromSourceName(name: string): AssetId {
 	return name.replace(/\s+/g, '').toLowerCase();
 }
 
+export type StructuredTextAsset = ({ readonly type: 'aem' } | { readonly type: 'data' } | { readonly type: 'collision_map' }) & {
+	readonly resid: AssetId;
+	readonly format: 'yaml' | 'json';
+};
+
+/** Authored structured-resource filenames, shared by packing and workspace admission. */
+export function structuredTextAssetFromPath(path: string): StructuredTextAsset | undefined {
+	const filename = path.slice(path.lastIndexOf('/') + 1);
+	const extensionAt = filename.lastIndexOf('.');
+	if (extensionAt <= 0) return;
+	const extension = filename.slice(extensionAt).toLowerCase();
+	let format: StructuredTextAsset['format'];
+	switch (extension) {
+		case '.json': format = 'json'; break;
+		case '.yaml': case '.yml': format = 'yaml'; break;
+		default: return;
+	}
+	const name = assetIdFromSourceName(filename.slice(0, extensionAt));
+	if (format === 'yaml' && name.endsWith('.collision')) {
+		return { type: 'collision_map', resid: name.slice(0, -'.collision'.length), format };
+	}
+	return { type: name.includes('.aem') ? 'aem' : 'data', resid: name.replace(/\..*$/, ''), format };
+}
+
 export interface AudioMeta {
 	audiotype: AudioType;
 	priority: number;

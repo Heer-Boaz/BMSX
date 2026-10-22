@@ -37,7 +37,7 @@ import {
 } from './workspace/storage';
 import {
 	applyAllWorkspaceSourceOverrides,
-	discoverWorkspaceLuaSources,
+	discoverWorkspaceSources,
 } from '../workspace/workspace';
 import type { WorkspaceRecord } from '../workspace/records';
 import {
@@ -87,7 +87,7 @@ export async function initializeIdeFeatures(
 			workspaceFiles,
 			logOutput,
 		);
-		observedSources = await discoverWorkspaceLuaSources(sources);
+		observedSources = await discoverWorkspaceSources(sources);
 	} else {
 		await shutdownWorkspaceStorage();
 	}
