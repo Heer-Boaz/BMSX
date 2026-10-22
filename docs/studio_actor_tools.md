@@ -232,6 +232,12 @@ typechecks, the Browser Studio debug build, strict architecture-boundary audit
 
 ## Persistent instance Details
 
+The workbench-wide [window and transient-surface design](workbench_windowing_design.md)
+proposes replacing the embedded Details split below with a modeless window and
+an independently subject-bound, lockable Details instance. That design owns the
+future stacking/input/lifetime boundary; the following describes the current
+embedded implementation. No floating-window implementation is claimed here.
+
 Actor Lab composes its existing outline/graph, game preview and property inspector
 instead of replacing the preview with a modal property document. Details occupies
 the resizable lower part of the preview column; closing it restores the preview's
