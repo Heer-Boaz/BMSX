@@ -137,7 +137,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		return rootModal === null || this.belongsTo(node, rootModal);
 	}
 
-	/** Detach before callbacks, so callbacks may close or replace related UI. */
+	/** Detach first, then notify the owner before descendant membership is retired. */
 	public retire(surface: WorkbenchSurface): void {
 		const node = surface as Surface;
 		if (node.retired) return;
@@ -146,9 +146,9 @@ export class WorkbenchSurfaceService implements IDisposable {
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		if (node.lifetimeOwner !== undefined) node.lifetimeOwner.owned.splice(node.lifetimeOwner.owned.indexOf(node), 1);
+		node.onRetire?.();
 		while (node.owned.length !== 0) this.retire(node.owned[node.owned.length - 1]);
 		while (node.children.length !== 0) this.retire(node.children[node.children.length - 1]);
-		node.onRetire?.();
 		this.onDidChange();
 	}
 

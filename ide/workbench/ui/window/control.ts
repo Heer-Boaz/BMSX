@@ -95,7 +95,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.focusedIn(this.surface)),
 			handlePointer: snapshot => this.handlePointer(snapshot), handleWheel: () => true,
 			onRetire: () => {
-				const ownedFocus = this.focus.target?.scope === this.scope;
+				const ownedFocus = this.focus.target?.scope === this.scope || this.focusedIn(this.surface);
 				this.surface = undefined;
 				this.capture.cancelScope(this.scope.surfaceScope);
 				this.cancelPointer();
@@ -108,9 +108,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 	}
 
 	public detach(): void {
-		const ownedFocus = this.focusedIn(this.surface);
 		this.surface?.dispose();
-		if (ownedFocus && (this.focus.target?.scope === this.scope || this.focus.target?.scope === this.clientScope)) this.focus.setTarget(this.options.focusReturn);
 	}
 
 	public show(focus = true): void {

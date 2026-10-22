@@ -34,7 +34,7 @@ function fixture() {
 		isEnabled: (command, target) => focus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => focus.executeCommand(command, target),
 	};
-	function window(name: string, left = 40, top = 40) {
+	function window(name: string, left = 40, top = 40, onRetireContent?: () => void) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
 		const actions = createWorkbenchActionBar('window.title');
@@ -42,7 +42,7 @@ function fixture() {
 		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
 			model, actionBar: actions, lifetimeOwner: owner, focusReturn: parent, getWorkArea: () => workArea,
 			content: { draw() { painted += 1; }, handlePointer() { clicked += 1; } },
-			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; },
+			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; onRetireContent?.(); },
 			restoreContentInput() { input = true; restores += 1; }, focusContent() { client.focus(); }, onDidHide() { hidden += 1; },
 		});
 		const client = focus.createTarget(control.clientFocusTarget);
@@ -89,6 +89,31 @@ test('two real overlapping windows share paint/hit order but retain independent 
 	assert.equal(f.focus.target, b.client, 'hiding an unrelated window cannot steal keyboard focus');
 	assert.equal(a.control.surface, undefined); assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
 	assert.equal(f.surfaces.hitTest(140, 120), b.control.clientSurface);
+});
+
+test('surface retirement returns owned client focus without relying on content cleanup', t => {
+	const f = fixture(), a = f.window('RETIRED'), b = f.window('RETAINED', 100, 70);
+	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	a.show(true); b.show();
+	assert.equal(f.focus.target, a.client);
+	a.control.surface!.dispose();
+	assert.equal(a.control.surface, undefined);
+	assert.equal(a.control.clientSurface, undefined);
+	assert.equal(a.input(), false);
+	assert.equal(f.focus.target, f.parent, 'the window owns focus return when its attachment is retired externally');
+	a.show(); b.client.focus();
+	a.control.surface!.dispose();
+	assert.equal(f.focus.target, b.client, 'retiring a sibling attachment never takes focus back');
+});
+
+test('content retirement may transfer focus to a live sibling without a trailing window override', t => {
+	const f = fixture();
+	const a = f.window('RETIRED', 40, 40, () => b.client.focus()), b = f.window('RETAINED', 100, 70);
+	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	a.show(true); b.show();
+	a.control.detach();
+	assert.equal(a.input(), false);
+	assert.equal(f.focus.target, b.client);
 });
 
 test('window drag and all-edge resize use central capture, root work area and current scope', t => {

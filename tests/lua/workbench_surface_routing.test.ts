@@ -32,6 +32,7 @@ import { HostUiInput } from '../../hosts/common/input/ui';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
@@ -193,6 +194,39 @@ test('menu presentation follows its invoking window session and retires on owner
 	assert.equal(next.retired, true);
 	assert.equal(editor.contextMenu.visible, false);
 	assert.equal(inputFocus.target, tree);
+});
+
+test('retiring a real window with its property menu focused returns to an admitted owner', t => {
+	const { editor, extent } = fixture(t);
+	const tree = inputFocus.createTarget(); tree.bindKeyboard(() => {});
+	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
+		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
+		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.paneSurface,
+		focusReturn: tree, getWorkArea: () => extent, content: { draw() {} }, layoutContent() {},
+		retireContentInput: () => inspector.hide(),
+		restoreContentInput: () => inspector.show({ title: 'DETAILS', items: [{ label: 'A', value: 'B', description: '', warning: false }],
+			focusReturn: tree, canOpenSource: () => false, openSource() {} }, false),
+		focusContent: () => inspector.focusTarget.focus(),
+	});
+	const inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, window.clientFocusTarget, 'client');
+	t.after(() => { window.dispose(); inspector.dispose(); });
+	for (const retirement of ['surface', 'detach', 'hide'] as const) {
+		window.show(true);
+		editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
+		const popup = editor.surfaces.findByScope(editor.contextMenu.pointerScope)!;
+		assert.equal(popup.lifetimeOwner, window.clientSurface);
+		assert.equal(inputFocus.target, editor.contextMenu.focusTarget);
+		if (retirement === 'surface') window.surface!.dispose();
+		else if (retirement === 'detach') window.detach();
+		else window.hide();
+		assert.equal(window.surface, undefined);
+		assert.equal(window.clientSurface, undefined);
+		assert.equal(inspector.visible, false);
+		assert.equal(editor.contextMenu.visible, false);
+		assert.equal(popup.retired, true);
+		assert.equal(inputFocus.target, tree, `${retirement} returns focus before its popup ownership is removed`);
+		assert.equal(inputFocus.admittedTarget, tree, 'the returned target is eligible under the real root admission policy');
+	}
 });
 
 test('session popup promotes to its actual root or owner-local modal context, never above the admission boundary', t => {

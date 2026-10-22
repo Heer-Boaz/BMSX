@@ -291,7 +291,17 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('Escape');
 	check(actorPane.showsGameFrame && inspector.visible && actor.detailsWindow.open,
 		'Escape returns focus to the tree without closing modeless Details');
-	await click(actor.detailsActions.items.find(item => item.command === 'window.hide')!.bounds);
+	const detailsReturnFocus = inputFocus.target;
+	await runPaletteCommand('Actor Lab: Inspect Instance');
+	await press('ContextMenu');
+	check(ide.editor.contextMenu.visible && inputFocus.target === ide.editor.contextMenu.focusTarget,
+		'the actual Details property popup owns keyboard focus before owner-driven retirement');
+	// Exercise the owner close path while its promoted popup, not chrome, is focused.
+	actorPane.detailsWindow.hide();
+	check(!ide.editor.contextMenu.visible && !inspector.visible && !actor.detailsWindow.open
+		&& inputFocus.target === detailsReturnFocus && inputFocus.admittedTarget === detailsReturnFocus,
+		'retiring Details returns popup focus to the live tree before client membership is removed');
+	await frame(); await test.capture?.('actor-details-retired-with-popup');
 	await press('ShiftLeft', 'Tab');
 	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
 

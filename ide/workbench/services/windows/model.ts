@@ -8,6 +8,7 @@ export interface WorkbenchSurfaceCallbacks {
 	draw(): void;
 	handlePointer?(snapshot: PointerInputSnapshot, now: number): void;
 	handleWheel?(event: WheelInputSnapshot): boolean;
+	/** Called after detachment, before descendant teardown, while ownership membership is available. */
 	onRetire?(): void;
 }
 

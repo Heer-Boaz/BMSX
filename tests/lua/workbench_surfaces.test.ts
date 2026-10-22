@@ -151,7 +151,13 @@ test('retirement detaches lookup, presentation and lifetime memberships before n
 	const painted: string[] = [];
 	const events: string[] = [];
 	const retained = surfaces.attach({ ...controller('retained', painted), role: 'content' });
-	const owner = surfaces.attach({ ...controller('owner', painted, firstWindow), role: 'window', onRetire: () => { events.push('owner'); } });
+	const owner = surfaces.attach({ ...controller('owner', painted, firstWindow), role: 'window', onRetire: () => {
+		events.push('owner');
+		assert.equal(surfaces.findByScope(owner.captureScope), undefined);
+		assert.equal(surfaces.hitTest(100, 80), retained);
+		assert.equal(surfaces.findByScope(promoted.captureScope), promoted, 'descendant membership remains available to the retiring owner');
+		assert.equal(surfaces.isAdmitted(promoted), false, 'retired ancestry revokes descendant admission before notification');
+	} });
 	const promoted = surfaces.attach({
 		...controller('promoted', painted, secondWindow), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner,
 		onRetire: () => {
@@ -161,12 +167,12 @@ test('retirement detaches lookup, presentation and lifetime memberships before n
 		},
 	});
 	owner.dispose();
-	assert.deepEqual(events, ['promoted', 'owner']);
+	assert.deepEqual(events, ['owner', 'promoted']);
 	assert.equal(surfaces.findByScope(owner.captureScope), undefined);
 	assert.equal(surfaces.findByScope(retained.captureScope), retained);
 	assert.equal(surfaces.isAdmitted(promoted), false);
 	owner.dispose();
-	assert.deepEqual(events, ['promoted', 'owner'], 'disposal remains idempotent');
+	assert.deepEqual(events, ['owner', 'promoted'], 'disposal remains idempotent');
 	surfaces.dispose();
 	assert.equal(surfaces.hitTest(50, 50), null);
 	assert.equal(retained.retired, true);
