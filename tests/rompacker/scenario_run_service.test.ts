@@ -151,6 +151,41 @@ return { kind = 'unit', tests = {
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test('Scenario compilation reads saved test-only libraries without dirtying or rebuilding the gameplay image', async t => {
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-library-'));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	const source = `local helper = require('cartlib/scenario_helper')
+return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } }`;
+	const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
+		systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+		systemModules: [
+			{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value) if not value then raise('old library source') end return value end\nsetmetatable = __bmsx_setmetatable` },
+			...COROUTINE_FIRMWARE_MODULES,
+		],
+		cartSource: 'module<entry>\nreturn',
+		cartAssets: [{ resid: 'cartlib/scenario_helper', type: 'lua', program_module: false,
+			source_path: 'cartlib/scenario_helper.lua', normalized_source_path: 'cartlib/scenario_helper.lua', buffer: Buffer.from('return 1') }],
+	});
+	const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
+	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+	const cartridge = sources.cartridgeSlots[0]!;
+	const helper = cartridge.luaSources.module2lua['cartlib/scenario_helper'];
+	assert.equal(helper.sourceKind, 'library');
+	assert.equal(cartridge.installedBlua32Sources.has(helper.module_path), false);
+	helper.src = helper.base_src = 'return 37';
+	const models = new EditorTextModelService();
+	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
+		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
+	t.after(() => { runs.dispose(); models.clear(); });
+	const module = runs.collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+	const run = runs.start(module.id);
+	for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
+	await runs.wait(run);
+	assert.equal(run.state, 'passed', JSON.stringify(run.items[0].failures));
+	assert.equal(cartridge.rom.bytes, fixture.cartRom);
+	assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
+});
+
 test('both authoring domains retain companion ROM data and source identity; runner errors stop the run', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-slots-'));
 	try {

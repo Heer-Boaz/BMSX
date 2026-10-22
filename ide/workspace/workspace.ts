@@ -105,7 +105,9 @@ export async function saveLuaResourceSource(
 	asset.base_update_timestamp = record.updatedAt;
 	asset.update_timestamp = record.updatedAt;
 	registerLuaSourceRecord(registry, asset);
-	if (asset.program_module) {
+	const installedSources = identity.domain === SYSTEM_RESOURCE_DOMAIN
+		? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[identity.domain]!.installedBlua32Sources;
+	if (asset.sourceKind === 'project' || installedSources.has(asset.module_path)) {
 		markLuaSourceRegistryChanged(sources, registry);
 	}
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
@@ -177,7 +179,8 @@ function createWorkspaceLuaSourceRecord(registry: LuaSourceRegistry, workspacePa
 		module_path: modulePath,
 		update_timestamp: record.updatedAt,
 		generated: false,
-		program_module: !testSource,
+		sourceKind: testSource ? 'source-only' : isCartLibrarySource(modulePath) ? 'library' : 'project',
+		program_module: false,
 	};
 }
 
@@ -186,8 +189,8 @@ function admitWorkspaceLuaResource(sources: RuntimeSourceState, domain: Resource
 	registerLuaSourceRecord(registry, asset);
 	const resource = registerRuntimeLuaResource(sources, domain, asset);
 	// An available library is not part of the installed program until imported.
-	if (!isCartLibrarySource(asset.normalized_source_path)) {
-		if (asset.program_module) registry.can_boot_from_source = true;
+	if (asset.sourceKind !== 'library') {
+		if (asset.sourceKind === 'project') registry.can_boot_from_source = true;
 		markLuaSourceRegistryChanged(sources, registry);
 	}
 	return resource;
@@ -202,10 +205,14 @@ export async function applyWorkspaceOverridesToRegistry(
 		observedSources?: ReadonlyMap<string, WorkspaceRecord>;
 	},
 ): Promise<Set<string>> {
+	const domain = runtimeLuaSourceDomain(sources, params.registry);
 	const result = await applyWorkspaceSourceOverrides({
 		dirtyRecords: params.dirtyRecords,
-		domain: runtimeLuaSourceDomain(sources, params.registry),
+		domain,
 		registry: params.registry,
+		installedSources: domain === SYSTEM_RESOURCE_DOMAIN
+			? sources.systemInstalledBlua32Sources
+			: sources.cartridgeSlots[domain]!.installedBlua32Sources,
 		projectRootPath: params.projectRootPath,
 		observedSources: params.observedSources,
 	});

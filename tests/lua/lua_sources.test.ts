@@ -28,6 +28,8 @@ import {
 } from '../../machine/ts/spec/bmsx/rom_toc';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
+import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
+import { collectProgramSources } from '../../ide/runtime/program_sources';
 
 const textEncoder = new TextEncoder();
 
@@ -161,6 +163,19 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 	assert.equal(retained.normalized_source_path, 'tests/carts/test/cart_assert.lua');
 	assert.equal(registry.module2lua['tests/carts/test/cart_assert'], retained);
 	assert.equal(registry.entrySourcePath, 'cart.lua');
+});
+
+test('packed Scenario sources in the library tree keep their source-only role', () => {
+	const entry = luaEntry('main', 'entry.lua', 'cart', 1);
+	const testPath = 'cartlib/example_assert.lua';
+	const scenario = { ...luaEntry(scenarioTestAssetId(testPath), testPath, 'cart', 1), program_module: false };
+	const source = new TestRomSource([entry, scenario], {
+		main: 'module<entry>\nreturn 1', [scenario.resid]: 'return (',
+	});
+	const registry = buildLuaSources(source, source, makeIndex([entry, scenario]), 'cart', 'entry');
+	assert.equal(registry.path2lua[testPath].sourceKind, 'source-only');
+	const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+	assert.equal(selected.parsed.has('cartlib/example_assert'), false);
 });
 
 test('release BLua32 images do not synthesize editable Lua source records', () => {

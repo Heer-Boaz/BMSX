@@ -1,6 +1,5 @@
 import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
-import { isCartLibrarySource } from '../../toolchain/ts/lua/source_paths';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
@@ -32,7 +31,8 @@ export function collectProgramSources(
 	content: ProgramSourceContent,
 ): ProgramSources {
 	const available = new Map(registry.records.filter(record => content.kind === 'workspace'
-		? record.program_module : content.sources.has(record.module_path)).map(record => [record.module_path, record]));
+		? record.sourceKind !== 'source-only'
+		: content.sources.has(record.module_path)).map(record => [record.module_path, record]));
 	const parsed = new Map<string, ProgramSourceModule>();
 	const load = (path: string): ProgramSourceModule => {
 		let module = parsed.get(path);
@@ -47,7 +47,7 @@ export function collectProgramSources(
 	};
 	const project: ProgramSourceModule[] = [];
 	for (const record of available.values()) {
-		if (!isCartLibrarySource(record.normalized_source_path)) project.push(load(record.module_path));
+		if (record.sourceKind === 'project') project.push(load(record.module_path));
 	}
 	const entry = entrySourcePath === undefined
 		? project[resolveLuaEntryModuleIndex(project)] : load(registry.path2lua[entrySourcePath].module_path);

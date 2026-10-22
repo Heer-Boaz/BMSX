@@ -107,7 +107,7 @@ test('unopened source discovery and registry overrides retire dependent results 
 	assert.ok(service.diagnostics.some(item => item.message.includes("'discovered' is not defined")));
 	registerLuaSourceRecord(registry, { resid: 'provider', type: 'lua', source_path: 'provider.lua',
 		normalized_source_path: 'provider.lua', module_path: 'provider', src: 'discovered = 1', base_src: 'discovered = 1',
-		base_update_timestamp: 0, update_timestamp: 0, generated: false, program_module: true });
+		base_update_timestamp: 0, update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	assert.equal(service.get(reader.identity)!.status, 'pending');
 	service.computePending();
 	assert.deepEqual(service.diagnostics, []);

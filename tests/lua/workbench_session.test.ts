@@ -57,7 +57,7 @@ function registry(root: string, text: string): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'definitions.lua', projectRootPath: root, can_boot_from_source: false, revision: 0 };
 	for (const [path, src] of [['definitions.lua', text], ['tests/first_assert.lua', '-- test one'], ['tests/second_assert.lua', '-- test two']]) {
 		registerLuaSourceRecord(registry, { resid: path === 'definitions.lua' ? path : scenarioTestAssetId(path), type: 'lua', src, base_src: src, base_update_timestamp: 0, update_timestamp: 0,
-			source_path: path, normalized_source_path: resolveWorkspacePath(path, root), module_path: toLuaModulePath(path), generated: false, program_module: path === 'definitions.lua' });
+			source_path: path, normalized_source_path: resolveWorkspacePath(path, root), module_path: toLuaModulePath(path), generated: false, sourceKind: path === 'definitions.lua' ? 'project' : 'source-only', program_module: path === 'definitions.lua' });
 	}
 	return registry;
 }

@@ -93,7 +93,7 @@ function fixture() {
 	for (const module of modules) registerLuaSourceRecord(registry, {
 		resid: module.path, type: 'lua', src: module.source, base_src: module.source, base_update_timestamp: 0,
 		source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua`, module_path: module.path,
-		update_timestamp: 0, generated: false, program_module: true,
+		update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };

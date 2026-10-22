@@ -42,7 +42,7 @@ export function createScenarioTestSourceRecord(
 		module_path: path.slice(0, -4),
 		update_timestamp: timestamp,
 		generated: false,
-		program_module: false,
+		sourceKind: 'source-only', program_module: false,
 	};
 }
 

@@ -3,7 +3,6 @@ import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { Blua32PublicAssetChanges, RomAssetEdit } from '../../toolchain/ts/rompack/blua32_tail';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import type { ProgramSourceModule } from './program_sources';
-import { isCartLibrarySource } from '../../toolchain/ts/lua/source_paths';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { LuaSourceRegistry } from './source_registry';
 
@@ -25,18 +24,20 @@ export function buildLuaSourceAssetChanges(
 	const assetAdditions: RomAsset[] = [];
 	for (const record of registry.records) {
 		if (record.generated) continue;
-		if (record.program_module && isCartLibrarySource(record.normalized_source_path) && !parsed.has(record.module_path)) continue;
-		const source = readWorkspaceLuaSourceText(registry, record);
+		const programModule = parsed.has(record.module_path);
 		const packed = packedLua.get(record.resid);
-		const installed = record.program_module ? installedSources.get(record.module_path)
+		if (record.sourceKind === 'library' && !programModule && packed === undefined) continue;
+		const source = readWorkspaceLuaSourceText(registry, record);
+		const compiledSource = installedSources.get(record.module_path);
+		const installed = compiledSource !== undefined ? compiledSource
 			: packed === undefined ? undefined : utf8FatalDecoder.decode(layer.bytes.subarray(packed.start, packed.end));
-		if (source === installed) continue;
+		if (source === installed && packed?.program_module === programModule) continue;
 		const asset: RomAsset = {
 			resid: record.resid, type: 'lua',
 			source_path: record.source_path, normalized_source_path: record.normalized_source_path,
 			update_timestamp: record.update_timestamp,
 			buffer: sourceEncoder.encode(source),
-			program_module: record.program_module,
+			program_module: programModule,
 		};
 		if (packed !== undefined) luaReplacements.set(record.resid, asset);
 		else assetAdditions.push(asset);

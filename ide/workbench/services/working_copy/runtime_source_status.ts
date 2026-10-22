@@ -41,13 +41,14 @@ export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, mode
 	let failed = false;
 	switch (model.mode) {
 		case 'lua': {
-			if (!cache.programSource.program_module) {
+			if (cache.programSource.sourceKind === 'source-only') {
 				return 'source_only';
 			}
 			const installedSources = model.resource.domain === SYSTEM_RESOURCE_DOMAIN
 				? sources.systemInstalledBlua32Sources
 				: sources.cartridgeSlots[model.resource.domain]!.installedBlua32Sources;
 			installedSource = installedSources.get(cache.programSource.module_path);
+			if (cache.programSource.sourceKind === 'library' && installedSource === undefined) return 'source_only';
 			break;
 		}
 		case 'yaml': {

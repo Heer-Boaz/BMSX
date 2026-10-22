@@ -23,7 +23,7 @@ function sourceRecord(path: string, source: string): LuaSourceRecord {
 		module_path: path.slice(0, -4),
 		update_timestamp: 0,
 		generated: false,
-		program_module: true,
+		sourceKind: 'project', program_module: true,
 	};
 }
 

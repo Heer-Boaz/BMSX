@@ -23,7 +23,7 @@ for (const modelCount of [1, 64, 256, 1024]) {
 		const record = {
 			resid: path, type: 'lua' as const, src: source, base_src: source,
 			base_update_timestamp: 0, source_path: path, normalized_source_path: path,
-			module_path: `module_${index}`, update_timestamp: 0, generated: false, program_module: true,
+			module_path: `module_${index}`, update_timestamp: 0, generated: false, sourceKind: 'project' as const, program_module: true,
 		};
 		registerLuaSourceRecord(registry, record);
 		editorTextModelService.retain({ domain: 0, path, source: record }, 'lua', source);

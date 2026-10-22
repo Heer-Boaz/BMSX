@@ -45,7 +45,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: RESOURCE.path, projectRootPath: '', can_boot_from_source: true, revision: 0 };
 	registerLuaSourceRecord(registry, { resid: RESOURCE.path, type: 'lua', src: source, base_src: source,
 		source_path: RESOURCE.path, normalized_source_path: RESOURCE.path, module_path: 'debugger_probe',
-		update_timestamp: 0, base_update_timestamp: 0, generated: false, program_module: true });
+		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.systemInstalledBlua32Sources = new Map([['debugger_probe', source]]);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };

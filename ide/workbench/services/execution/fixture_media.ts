@@ -7,6 +7,7 @@ import type { LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import type { FixtureMedia } from '../../../testing/fixture_media';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
+import type { ScenarioTestSource } from '../../../../toolchain/ts/rompack/scenario_test';
 
 /** Editable records belong to this build, never to the authoring machine or its debugger. */
 export async function buildFixtureMedia(
@@ -21,6 +22,7 @@ export async function buildFixtureMedia(
 		await applyAllWorkspaceSourceOverrides(sources, new Map(dirtyRecords));
 		applyLuaTextModelSources(sources, programSources);
 		let systemRom = sources.systemRom.bytes;
+		let cartridgeIndex = sources.cartridgeSlots[slot]!.rom.index;
 		const cartridgeSlots: [Uint8Array | null, Uint8Array | null] = [
 			sources.cartridgeSlots[0] === null ? null : sources.cartridgeSlots[0].rom.bytes,
 			sources.cartridgeSlots[1] === null ? null : sources.cartridgeSlots[1].rom.bytes,
@@ -32,13 +34,20 @@ export async function buildFixtureMedia(
 					cartridgeSlots: [sources.cartridgeBlua32MediaDirty[0] ? 'workspace' : null, sources.cartridgeBlua32MediaDirty[1] ? 'workspace' : null] }, 'boot'));
 			if (media.systemLayer !== null) systemRom = media.systemLayer.bytes;
 			for (const index of [0, 1] as const) {
-				if (media.cartridgeLayers[index] !== null) cartridgeSlots[index] = media.cartridgeLayers[index]!.bytes;
+				const layer = media.cartridgeLayers[index];
+				if (layer !== null) {
+					cartridgeSlots[index] = layer.bytes;
+					if (index === slot) cartridgeIndex = layer.index;
+				}
 			}
 		}
-		const sourceOnlyModules = sources.cartridgeSlots[slot]!.luaSources.records
-			.filter(record => !record.program_module && !record.generated)
-			.map(record => ({ sourcePath: record.source_path,
-				source: readWorkspaceLuaSourceText(sources.cartridgeSlots[slot]!.luaSources, record) }));
+		const registry = sources.cartridgeSlots[slot]!.luaSources;
+		const sourceOnlyModules: ScenarioTestSource[] = [];
+		for (const asset of cartridgeIndex.entries) {
+			if (asset.type !== 'lua' || asset.program_module) continue;
+			const record = registry.path2lua[asset.source_path!];
+			sourceOnlyModules.push({ sourcePath: record.source_path, source: readWorkspaceLuaSourceText(registry, record) });
+		}
 		return { systemRom, cartridgeSlots, sourceOnlyModules, machineModel, optLevel: sources.currentBlua32Media.cartridgeSlots[slot]!.symbols!.metadata.optLevel };
 	} finally {
 		releaseWorkspaceSourceOverrides(sources.systemLuaSources);

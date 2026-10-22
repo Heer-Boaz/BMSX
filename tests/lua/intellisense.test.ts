@@ -88,7 +88,7 @@ function createSourceState(files: Record<string, string>, systemRom: Uint8Array)
 			module_path: modulePath,
 			update_timestamp: 0,
 			generated: false,
-			program_module: true,
+			sourceKind: 'project', program_module: true,
 		};
 		registerLuaSourceRecord(systemLuaSources, record);
 	}
@@ -149,7 +149,7 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 		generated: false,
-		program_module: true,
+		sourceKind: 'project', program_module: true,
 	};
 	const systemLuaSources: LuaSourceRegistry = {
 		records: [],

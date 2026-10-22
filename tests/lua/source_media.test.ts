@@ -16,6 +16,31 @@ const originalSource = 'module<entry>\nreturn 1';
 const changedSource = 'module<entry>\nreturn 2';
 const textureBytes = Uint8Array.of(0x12, 0x34, 0x56, 0x78);
 
+test('new imports admit source-only library dependencies without parsing unrelated sources', () => {
+	const registry = sourceRegistry();
+	registry.records[0].src = "module<entry>\nreturn require('cartlib/world/world')";
+	for (const [path, source, installed, sourceKind] of [
+		['cartlib/world/world', "return require('cartlib/registry')", true, 'library'],
+		['cartlib/registry', 'return 42', false, 'library'],
+		['cartlib/unused', 'return (', false, 'library'],
+		['example_assert', 'return (', false, 'source-only'],
+	] as const) registerLuaSourceRecord(registry, {
+		...registry.records[0], resid: path, source_path: `${path}.lua`, normalized_source_path: `${path}.lua`,
+		module_path: path, src: source, base_src: source, program_module: installed, sourceKind,
+	});
+	const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+	assert.deepEqual(selected.modules.map(module => module.path), ['cartlib/world/world', 'cartlib/registry']);
+	assert.equal(selected.parsed.has('cartlib/unused'), false);
+	assert.equal(selected.parsed.has('example_assert'), false);
+	const changes = buildLuaSourceAssetChanges(sourceLayer(true), registry, new Map([['entry', originalSource]]), selected.parsed, undefined);
+	assert.equal(changes.assetAdditions!.find(asset => asset.resid === 'cartlib/registry')!.program_module, true);
+	assert.equal(changes.assetAdditions!.some(asset => asset.resid === 'cartlib/unused'), false);
+	const installed = collectProgramSources(registry, registry.entrySourcePath, [], {
+		kind: 'installed', sources: new Map([['entry', originalSource]]),
+	});
+	assert.deepEqual(installed.modules, [], 'an installed-only rebuild must not adopt newly imported workspace modules');
+});
+
 function sourceRegistry(): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'entry.lua',
@@ -24,13 +49,13 @@ function sourceRegistry(): LuaSourceRegistry {
 	registerLuaSourceRecord(registry, {
 		resid: 'entry', type: 'lua', source_path: 'entry.lua', normalized_source_path: 'entry.lua',
 		module_path: 'entry', src: changedSource, base_src: originalSource,
-		update_timestamp: 1, base_update_timestamp: 0, generated: false, program_module: true,
+		update_timestamp: 1, base_update_timestamp: 0, generated: false, program_module: true, sourceKind: 'project',
 	});
 	return registry;
 }
 
-function sourceLayer(includeLua: boolean): RomSourceLayer<'cart'> {
-	const assets: RomAsset[] = [{ resid: 'entry', type: 'texture', buffer: textureBytes }];
+function sourceLayer(includeLua: boolean, additionalAssets: RomAsset[] = []): RomSourceLayer<'cart'> {
+	const assets: RomAsset[] = [{ resid: 'entry', type: 'texture', buffer: textureBytes }, ...additionalAssets];
 	if (includeLua) {
 		assets.push({
 			resid: 'entry', type: 'lua', source_path: 'entry.lua',
@@ -46,6 +71,29 @@ function sourceLayer(includeLua: boolean): RomSourceLayer<'cart'> {
 	});
 	for (const range of layout.ranges) bytes.set(range.buffer, range.start);
 	return { id: 'cart', bytes, index: { entries: layout.entries, projectRootPath: '', cart_manifest: null } };
+}
+
+for (const included of [false, true]) {
+	test(`${included ? 'importing' : 'removing'} a library publishes membership even when its text is unchanged`, () => {
+		const registry = sourceRegistry();
+		const path = 'cartlib/registry';
+		const source = 'return 42';
+		registerLuaSourceRecord(registry, {
+			...registry.records[0], resid: path, source_path: `${path}.lua`, normalized_source_path: `${path}.lua`,
+			module_path: path, sourceKind: 'library', src: source, base_src: source, program_module: !included,
+		});
+		if (included) registry.records[0].src = `module<entry>\nreturn require('${path}')`;
+		const layer = sourceLayer(true, [{ resid: path, type: 'lua', source_path: `${path}.lua`,
+			buffer: encoder.encode(source), program_module: !included }]);
+		const installed = new Map([['entry', originalSource]]);
+		if (!included) installed.set(path, source);
+		const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+		const changes = buildLuaSourceAssetChanges(layer, registry, installed, selected.parsed, undefined);
+		const published = changes.assetReplacements!.get('lua')!.get(path)!;
+		assert.equal(published.program_module, included);
+		assert.equal(new TextDecoder().decode(published.buffer), source);
+		assert.equal(registry.module2lua[path].program_module, !included, 'compilation does not rewrite packed provenance');
+	});
 }
 
 for (const includeLua of [true, false]) {

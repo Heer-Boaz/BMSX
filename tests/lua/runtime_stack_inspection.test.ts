@@ -25,7 +25,7 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting 
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'stack_probe.lua', projectRootPath: '', can_boot_from_source: true, revision: 0 };
 	registerLuaSourceRecord(registry, { resid: 'stack_probe.lua', type: 'lua', src: source, base_src: source,
 		source_path: 'stack_probe.lua', normalized_source_path: 'stack_probe.lua', module_path: 'stack_probe',
-		update_timestamp: 0, base_update_timestamp: 0, generated: false, program_module: true });
+		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);

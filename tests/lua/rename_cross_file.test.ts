@@ -48,7 +48,7 @@ test('cross file rename updates a retained background model without opening an e
 		base_update_timestamp: 0,
 		update_timestamp: 0,
 		generated: false,
-		program_module: true,
+		sourceKind: 'project', program_module: true,
 	});
 	const sources = createTestRuntimeSourceState(
 		registry,

@@ -27,17 +27,25 @@ import {
 	collectRomAssetSymbols,
 } from '../../toolchain/ts/rompack/asset_symbols';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import { isCartLibrarySource } from '../../toolchain/ts/lua/source_paths';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import { isScenarioTestAsset } from '../../toolchain/ts/rompack/scenario_test';
+
+/** Authoring role; importing a library does not change its role or packed provenance. */
+export type LuaSourceKind = 'project' | 'library' | 'source-only';
 
 export type LuaSourceRecord = RomLuaAsset & {
+	readonly sourceKind: LuaSourceKind;
 	base_src: string;
 	base_update_timestamp: number;
 	module_path: string;
 	generated: boolean;
-	program_module: boolean;
+	/** Membership in the packed source directory, not the current executable. */
+	readonly program_module: boolean;
 };
 type PackedLuaSourceAsset = RomLuaAsset & {
 	payload_id: RomImageDomain;
+	program_module: boolean;
 };
 
 export type LuaSourceRegistry = {
@@ -130,13 +138,16 @@ export function buildLuaSources(
 		const baseEntry = cartSource.getEntry(entry.resid);
 		const src = utf8FatalDecoder.decode(romSource.getBytes(entry));
 		const baseSrc = baseEntry ? utf8FatalDecoder.decode(cartSource.getBytes(baseEntry)) : src;
-		const luaRecord = { ...entry } as LuaSourceRecord;
-		luaRecord.src = src;
-		luaRecord.base_src = baseSrc;
-		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
-		luaRecord.module_path = toLuaModulePath(entry.source_path);
-		luaRecord.generated = ROM_GENERATED_MODULE_PATHS.includes(luaRecord.module_path);
-		luaRecord.program_module = entry.program_module!;
+		const modulePath = toLuaModulePath(entry.source_path);
+		const luaRecord: LuaSourceRecord = {
+			...entry, src, base_src: baseSrc,
+			base_update_timestamp: entry.update_timestamp,
+			module_path: modulePath,
+			generated: ROM_GENERATED_MODULE_PATHS.includes(modulePath),
+			sourceKind: isScenarioTestAsset(entry) ? 'source-only'
+				: isCartLibrarySource(modulePath) ? 'library' : entry.program_module ? 'project' : 'source-only',
+			program_module: entry.program_module,
+		};
 		registerLuaSourceRecord(registry, luaRecord);
 		if (luaRecord.program_module) {
 			programSourceCount += 1;
@@ -173,6 +184,7 @@ export function buildLuaSources(
 			module_path: generatedModulePath,
 			update_timestamp: 0,
 			generated: true,
+			sourceKind: 'project',
 			program_module: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
@@ -187,6 +199,7 @@ export function buildLuaSources(
 			module_path: GX_DISPLAY_PRESET_MODULE_PATH,
 			update_timestamp: 0,
 			generated: true,
+			sourceKind: 'project',
 			program_module: true,
 		});
 		registerLuaSourceRecord(registry, {
@@ -200,6 +213,7 @@ export function buildLuaSources(
 			module_path: GX_REGISTER_MODULE_PATH,
 			update_timestamp: 0,
 			generated: true,
+			sourceKind: 'project',
 			program_module: true,
 		});
 		if (payloadId === 'system') {
@@ -214,6 +228,7 @@ export function buildLuaSources(
 				module_path: BLUA32_FIRMWARE_MODULE_PATH,
 				update_timestamp: 0,
 				generated: true,
+				sourceKind: 'project',
 				program_module: true,
 			});
 		}

@@ -5,8 +5,7 @@ import { captureCurrentLuaSource, captureLuaTextModelSources } from '../../ide/w
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 test('source capture uses the operation document owner, not a global document with the same identity', t => {
-	const record = createScenarioTestSourceRecord('entry.lua', 12, 'return "packed"');
-	record.program_module = true;
+	const record = { ...createScenarioTestSourceRecord('entry.lua', 12, 'return "packed"'), sourceKind: 'project' as const, program_module: true };
 	const sources = createScenarioTestSourceState([record]), models = new EditorTextModelService();
 	const resource = sources.luaResources[0];
 	const local = models.retain(resource, 'lua', record.src);

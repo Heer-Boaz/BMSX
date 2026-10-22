@@ -29,9 +29,11 @@ export function captureCurrentLuaSource(models: EditorTextModelService, sources:
 export function captureLuaTextModelSources(models: EditorTextModelService, sources: RuntimeSourceState, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
 	const snapshots: LuaTextModelSourceSnapshot[] = [];
 	for (const model of models.models) {
-		if (model.mode !== 'lua' || model.readOnly || (!includeSourceOnly && !resolveRuntimeLuaSource(sources, model.resource)!.record.program_module)) {
+		if (model.mode !== 'lua' || model.readOnly) {
 			continue;
 		}
+		const record = resolveRuntimeLuaSource(sources, model.resource)!.record;
+		if (!includeSourceOnly && record.sourceKind === 'source-only') continue;
 		snapshots.push({ ...model.createSnapshot(), domain: model.resource.domain, path: model.resource.path });
 	}
 	return snapshots;

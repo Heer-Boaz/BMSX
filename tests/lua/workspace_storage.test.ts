@@ -85,7 +85,7 @@ import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/wor
 import { recordAemSourceApplyFailure } from '../../ide/runtime/aem';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
 	discoverWorkspaceLuaSources,
 	createLuaResource,
@@ -364,6 +364,8 @@ function sourceRegistry(
 	source: string,
 	projectRootPath = 'offline-cart',
 	sourcePath = 'entry.lua',
+	sourceKind: LuaSourceRecord['sourceKind'] = 'project',
+	programModule = true,
 ): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [],
@@ -385,7 +387,8 @@ function sourceRegistry(
 		module_path: sourcePath.endsWith('.lua') ? sourcePath.slice(0, -4).replaceAll('/', '.') : sourcePath,
 		update_timestamp: 0,
 		generated: false,
-		program_module: true,
+		sourceKind,
+		program_module: programModule,
 	});
 	return registry;
 }
@@ -1647,6 +1650,7 @@ test('workspace override arbitration keeps dirty and canonical namespaces separa
 		dirtyRecords,
 		domain: TEST_DOMAIN,
 		registry,
+		installedSources: new Map([['entry', '-- rom source']]),
 		projectRootPath: 'offline-cart',
 	});
 	assert.equal(asset.src, '-- dirty source');
@@ -1657,6 +1661,7 @@ test('workspace override arbitration keeps dirty and canonical namespaces separa
 		dirtyRecords,
 		domain: TEST_DOMAIN,
 		registry,
+		installedSources: new Map([['entry', '-- rom source']]),
 		projectRootPath: 'offline-cart',
 	});
 	assert.equal(asset.src, '-- saved source');
@@ -1675,6 +1680,7 @@ test('generated compiler sources ignore manifest dirty records', async (t) => {
 		dirtyRecords: new Map([[dirtyPath, { contents: 'return { source_addr = 99 }', updatedAt: 50 }]]),
 		domain: TEST_DOMAIN,
 		registry,
+		installedSources: new Map([['entry', '-- rom source']]),
 		projectRootPath: 'offline-cart',
 	});
 	assert.equal(asset.src, 'return { source_addr = 1 }');
@@ -1721,12 +1727,20 @@ test('runtime source capture retains documents whose buffer differs from install
 	}]);
 });
 
+test('runtime source capture pins available library edits before their first import', (t) => {
+	installBrowserWorkspace(t, new MockStorage());
+	installCodeContext('cartlib/registry.lua', '-- edited library');
+	const registry = sourceRegistry('-- packed library', '', 'cartlib/registry.lua', 'library', false);
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources).map(source => [source.path, source.source]),
+		[['cartlib/registry.lua', '-- edited library']]);
+});
+
 test('runtime source capture excludes source-only Lua documents', (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	installCodeContext('tests/example_assert.lua', '-- edited test');
-	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua');
-	registry.records[0].program_module = false;
+	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua', 'source-only', false);
 	const sources = createTestRuntimeSourceState(
 		sourceRegistry('-- system source'),
 		[registry, null],
@@ -1811,7 +1825,9 @@ test('source status follows a replaced source record under the same retained res
 	registerLuaSourceRecord(registry, { ...registry.records[0], program_module: false });
 	rebuildRuntimeSourceResources(sources);
 	assert.equal(resolveRuntimeResource(sources, model.resource), resource);
-	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'source_only');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map();
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 });
 
 test('source application status keeps equal module paths in their physical execution domains', (t) => {
@@ -1846,11 +1862,26 @@ test('browser canonical Save persists only to its configured file provider', asy
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', 'offline-cart/src/foo.lua'), null);
 });
 
+test('library source status and saves follow installed membership rather than packed provenance', async t => {
+	installBrowserWorkspace(t, new MockStorage());
+	await openWorkspaceRecords(workspaceFiles);
+	for (const installed of [false, true]) {
+		const path = installed ? 'cartlib/imported.lua' : 'cartlib/unused.lua';
+		const registry = sourceRegistry('-- library', '', path, 'library', false);
+		const sources = createTestRuntimeSourceState(sourceRegistry('-- system source', 'machine/bios'), [registry, null], TEST_DOMAIN);
+		if (installed) sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([[registry.records[0].module_path, '-- library']]);
+		const model = installCodeContext(path, '-- library').model;
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), installed ? 'applied' : 'source_only');
+		await saveLuaResourceSource(workspaceEnvironment.clock, sources, { domain: TEST_DOMAIN, path }, '-- changed library');
+		assert.equal(registry.records[0].program_module, false);
+		assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], installed);
+	}
+});
+
 test('source-only Lua saves without scheduling a BLua media rebuild', async (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua');
-	registry.records[0].program_module = false;
+	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua', 'source-only', false);
 	const sources = createTestRuntimeSourceState(
 		sourceRegistry('-- system source', 'machine/bios'),
 		[registry, null],
@@ -2070,7 +2101,8 @@ test('workspace opening discovers saved Lua files without depending on open-tab 
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'experiments/actor.lua' })!;
 	assert.equal(resource.source.type, 'lua');
 	assert.equal(registry.module2lua['experiments/actor'].src, 'return { enabled = true }');
-	assert.equal(registry.module2lua['experiments/actor'].program_module, true);
+	assert.equal(registry.module2lua['experiments/actor'].sourceKind, 'project');
+	assert.equal(registry.module2lua['experiments/actor'].program_module, false);
 	assert.equal(registry.records.length, 2);
 	assert.equal(sources.cartridgeBlua32MediaDirty[0], true);
 	const revision = registry.revision;

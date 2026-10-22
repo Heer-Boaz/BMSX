@@ -391,7 +391,7 @@ export class IdeCommandController {
 				const resource = getActiveTab()?.resource;
 				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
 				const source = resolveRuntimeLuaSource(this.sources, resource);
-				return source !== null && source.record.program_module && !source.record.generated;
+				return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated;
 			}
 			case 'runProject':
 				return this.boots.acceptingRequests && this.runtimeTasks.ready

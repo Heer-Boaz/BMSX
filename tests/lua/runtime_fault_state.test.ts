@@ -106,7 +106,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 		generated: false,
-		program_module: true,
+		sourceKind: 'project', program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, luaSources);
 	const fault = createRuntimeFaultState();

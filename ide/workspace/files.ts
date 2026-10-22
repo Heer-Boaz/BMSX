@@ -86,6 +86,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	domain: ResourceDomain;
 	registry: LuaSourceRegistry;
+	installedSources: ReadonlyMap<string, string>;
 	projectRootPath: string;
 	/** Bytes already read during this workspace-open operation, not a persistent file cache. */
 	observedSources?: ReadonlyMap<string, WorkspaceRecord>;
@@ -152,7 +153,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 		if (asset.src !== winnerSource) {
 			changed = true;
-			if (asset.program_module) {
+			if (asset.sourceKind === 'project' || params.installedSources.has(asset.module_path)) {
 				programChanged = true;
 			}
 		}

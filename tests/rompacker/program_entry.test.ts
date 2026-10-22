@@ -33,7 +33,7 @@ test('program entry selection is prepared without mutation, survives admission, 
 			resid: 'actor', type: 'lua', source_path: 'experiments/actor.lua',
 			normalized_source_path: 'carts/example/experiments/actor.lua', module_path: 'experiments/actor',
 			src: 'local function init<init>() end\ninit()\nreturn 42', base_src: '', base_update_timestamp: 0, update_timestamp: 0,
-			generated: false, program_module: true,
+			generated: false, sourceKind: 'project', program_module: true,
 		});
 		const originalRom = cartridge.rom;
 		const prepared = prepareBlua32MediaBoot(sources, runtime, false,

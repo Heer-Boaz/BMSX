@@ -127,7 +127,7 @@ function installedSources(registry: LuaSourceRegistry): ReadonlyMap<string, stri
 	const sources = new Map<string, string>();
 	for (let index = 0; index < registry.records.length; index += 1) {
 		const record = registry.records[index];
-		sources.set(record.module_path, record.src);
+		if (record.program_module) sources.set(record.module_path, record.src);
 	}
 	return sources;
 }
