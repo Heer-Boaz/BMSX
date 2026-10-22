@@ -116,6 +116,66 @@ scalar identity/geometry. Unchanged suspended pointer queries reuse it; labels
 reformat only when their typed values change. Outside the preview (or under a
 modal) no world lane is scanned.
 
+### Selection-geometry extension boundary
+
+The sprite query above is a geometric query over the current suspended guest,
+not a pixel-exact hit proxy or a draw-time snapshot of the retained preview.
+Extending it to persistent selection overlays and custom renderers requires
+both explicit render ownership and a matching presented-frame observation.
+Neither can be recovered from arbitrary GP0 words.
+
+Renderer-specific interpretation belongs to Studio's read-only inspection
+code, following the existing [cartlib inspection boundary](cartlib_inspection_contract.md).
+It consumes the renderer's actual retained draw data. It must not execute a
+guest selection callback, duplicate the scene/simulation, infer owners from
+coordinates or labels, or introduce project-name branches in the generic picker.
+An extension is admitted with a concrete producer and consumer, not an empty
+plugin framework in anticipation of future renderers.
+
+The distinction is the same one visible in Godot: a
+[visual instance retains its object identity](https://github.com/godotengine/godot/blob/master/scene/3d/visual_instance_3d.cpp),
+while an [editor gizmo interprets mesh geometry for picking](https://github.com/godotengine/godot/blob/master/editor/scene/3d/gizmos/mesh_instance_3d_gizmo_plugin.cpp).
+Those responsibilities do not belong to the physics collider or the pixel
+output alone.
+
+The implementation boundary is:
+
+- **Renderer:** owns the actor/visual association and the geometry actually
+  submitted, including any batching permutation. A draw callback's owner is not
+  automatically the owner of every object it draws. An arbitrary custom batch
+  without that association has no actor-selection geometry; do not attribute
+  it to the callback's parent or synthesize bounding boxes.
+- **Studio observation:** copies only the required scalar guest identities and
+  geometry at a proven draw/submission boundary. Borrowed guest references do
+  not cross execution. Bounds/proxy selection and exact visible-pixel selection
+  are different capabilities; a geometric rectangle must not claim alpha,
+  clipping or occlusion accuracy it does not have.
+- **Presentation:** publishes the observation with the accepted completed game
+  image. Direct previews use the presenter's game-frame identity; offscreen
+  previews use the displayed bitmap's published identity and dimensions. A
+  sample of current actor positions at presentation time is not proof of the
+  earlier draw-time geometry. Geometry has an explicit coordinate space; its
+  mapping uses that frame's scanout, not the latest GPU registers or window size.
+- **Selection and overlay:** hover, persistent actor selection and its outline
+  consume the same published observation. They neither execute the cart nor
+  change gameplay rendering or input routing. Selecting a child behavior refers
+  to its actual owning actor, not an invented independent visual object.
+
+Held, partial and paused UI repaints retain the matching observation instead of
+recomputing it from the latest heap. A seek publishes nothing for an unfinished
+target. A restored image needs its matching retained observation or one rebuilt
+from the actual rendering provenance; missing evidence remains unavailable.
+Target replacement, heap replacement, installed-media changes and history
+branch changes retire the corresponding actor identities. Selection data is
+tooling state, not part of machine savestates or cartridge-visible memory.
+
+Do not add actor IDs to GP0, GTE, device registers, the video presenter or the
+physical render backends. Do not add a second VRAM renderer, synchronous GPU
+readbacks on pointer movement, guest instrumentation calls, or a cartlib 3D
+engine solely to implement editor picking. Debug and release must continue to
+execute the same guest program. Any renderer-domain change must stand on its
+own as real rendering data ownership, not a Studio-only side channel.
+
 ## Find in Actor
 
 **Find in Actor** searches the selected actor's actual runtime hierarchy,
