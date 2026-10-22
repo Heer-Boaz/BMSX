@@ -14,14 +14,14 @@ local renderer<const> = require('scene_renderer')
 local vblank_pending = 0
 
 display.reset_320x240()
+input.add_player(1)
+world:configure({
+	framebuffer_count = 1, gameplay_interval_vblanks = 1, frame_interval_vblanks = 1,
+	spaces = { 'title', 'intro', 'play', 'won', 'over' },
+	systems = { input_system, input_effect_system, aem, bt_system, timeline_system },
+})
 local function init<init>()
 	irq.register(0x0004, function() vblank_pending = vblank_pending + 1 end)
-	input.add_player(1)
-	world:configure({
-		framebuffer_count = 1, gameplay_interval_vblanks = 1, frame_interval_vblanks = 1,
-		spaces = { 'title', 'intro', 'play', 'won', 'over' },
-		systems = { input_system, input_effect_system, aem, bt_system, timeline_system },
-	})
 	game.install()
 	renderer.setup()
 end
