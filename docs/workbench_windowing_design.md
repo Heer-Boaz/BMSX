@@ -27,8 +27,9 @@ boundary remains [Studio ownership](architecture.md#studio-ownership).
 
 ## Production references and what they establish
 
-Source was inspected at these revisions on 2026-10-22. The BMSX decisions below
-are design inferences, not claims that any reference implements this exact UI.
+These production implementations establish the ownership patterns below. BMSX's
+decisions are design inferences, not claims that a reference implements this
+exact UI. Source links pin the relevant revisions.
 
 | Reference | Actual ownership pattern | BMSX consequence |
 | --- | --- | --- |
@@ -49,8 +50,8 @@ would not reproduce their architecture.
 
 ## Current owners and architectural gaps
 
-The inspected implementation baseline is `8888cfcea`. These are current owners,
-not proposed replacements for their domain responsibilities.
+The migration changes composition and admission at their existing owners while
+preserving the content, rendering and physical-input responsibilities below.
 
 | Concern | Live owner | Required change |
 | --- | --- | --- |
@@ -84,16 +85,23 @@ A **window** is a surface with a client area, a focus scope and window chrome.
 The floating-window control supplies title/actions, move/resize and close
 interaction. It does not know what its content inspects or edits.
 
-The model has these concrete roles:
+The model distinguishes the following roles and their planned implementation
+scope. A planned slice is a dependency, not an implementation-status claim.
 
-| Role | Placement and input behaviour | Existing/new case |
-| --- | --- | --- |
-| Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. |
-| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Floating Actor Lab Details. |
-| Contained subwindow | Independently ordered inside a window's client area; cannot paint or receive hits outside that client's effective clip. | Nested inspection/editor surface when a contribution actually needs one. |
-| Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. |
-| Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; an owner-local image preview can block only its pane. |
-| Passive feedback | Paint-only, never a hit target or focus owner. | Selection outline, noninteractive tooltip, drag feedback. |
+| Role | Placement and input behaviour | Product consumer | Planned scope |
+| --- | --- | --- | --- |
+| Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. | A: publish the existing layout roots. |
+| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Floating Actor Lab Details. | C: chrome and first product window. |
+| Contained subwindow | Independently ordered inside a window's client area, bounded by that client's effective clip. | No concrete product consumer yet. | Designed, provisional and not validated by a product consumer; no nested arrangement implementation in A–C. |
+| Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. | A: migrate existing transients. |
+| Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; pane-local image lightbox. | A: root and existing owner-local blocking. |
+| Passive feedback | Paint-only; excluded from hit targeting and focus. | Selection outline, noninteractive tooltip, drag feedback. | A: retain its producing context. |
+
+The contained-subwindow contract preserves an architectural distinction, not a
+framework extension point to implement speculatively. Its first real consumer
+must validate placement, clipping and retirement together and may refine this
+provisional contract. Overlapping window test instances in C test ordinary
+windows, not a promise of multiple Details windows or nested product content.
 
 Use role-specific retained state, not an untyped record with combinations of
 `floating`, `modal`, `popup` and `visible` flags. Layout content references its
@@ -124,6 +132,9 @@ to forward those calls, or a second retained content tree inside the window
 service. A window attachment and its content model have different lifetimes.
 
 ## Ordering, clipping and modality
+
+One ordered surface structure makes the visible frontmost content the admitted
+input target, with modality enforcing an explicit scope boundary.
 
 Each presentation context retains ordered siblings and their owned surface
 groups. Paint traverses back to front; hit testing traverses the same structure
@@ -163,6 +174,21 @@ workbench window navigation remains available.
 Existing pause/execution policy remains in the transport/execution owners, not
 in this modal stack.
 
+The image-preview lightbox is an owner-local modal covering its pane's client
+area. Its backdrop admits the dismissing primary gesture and consumes that
+whole gesture, including the later release; Escape or Enter dismisses it from
+its own focus target. Pointer, wheel, selection, text, clipboard and commands
+for the underlying pane remain blocked until dismissal. An unrelated pane or
+window stays usable. Dismissal restores focus only while the lightbox family
+still owns it. A confirmation action is not a requirement for modality.
+
+Existing conversation and assistant panes use the same lightbox but enforce
+wheel blocking differently: the conversation pane excludes transcript scrolling
+while it is open, whereas the assistant pane still forwards wheel input to
+attachments, suggestions or transcript scrolling. Slice A moves this exclusion
+to the shared admission boundary and tests both consumers, rather than adding
+another pane-local visibility check.
+
 The routed result is a surface and then a control within that surface. If no
 control handles a hit on an opaque window, the event still belongs to the
 window. It never falls through to another window or the game. Transparent
@@ -170,6 +196,9 @@ paint-only feedback is deliberately excluded from targeting. Interactive hover
 content is an anchored transient, not secretly hit-testable feedback.
 
 ## Geometry and layout
+
+The layout owner publishes one set of arranged rectangles for window painting,
+targeting and preview exclusion.
 
 All window arrangement uses the Studio overlay's logical coordinates, obtained
 through the existing display-to-viewport projection. Do not hardcode the tiny
@@ -201,7 +230,29 @@ available area and content clips/scrolls; it does not invent another window or
 discard the requested size. This is ordinary constrained layout, not recovery
 from invalid internal geometry.
 
+### Collapsed window presentation
+
+Collapse reduces an attached window to its titlebar and preserves its expanded
+requested bounds. Its content model, subject and property selection remain
+alive; the client area and owned transients stop painting and receiving input.
+Client hover and continuations are retired through their central owners, with
+any remaining physical hold drained. A drag already owned by unrelated content
+continues unchanged. A collapsed window excludes hits only over its remaining
+titlebar rectangle, exposing the area previously occupied by its client.
+
+If focus was in the client family, collapse moves it to the window's expand
+action. Focus already outside that family stays there. Titlebar move, close and
+expand remain available, and horizontal resizing retains the expanded height;
+vertical client resizing resumes after expansion. Expansion restores the
+requested size subject to the current work area and permits explicit content
+reactivation; it does not silently seize focus from another window. The feature
+chooses the collapse affordance, default state and supported persistence; the
+container owns these geometry/input transitions.
+
 ## One pointer gesture owner
+
+One retained physical gesture keeps its surface route from first press through
+the final release, even across other windows.
 
 The existing producer exposes **one logical canvas pointer**, with button masks,
 occurrence edges and explicit cancellation. Browser contact IDs are platform
@@ -256,6 +307,9 @@ eligibility rule below; hit testing alone does not grant guest wheel input.
 
 ## Guest pointer admission is a host input boundary
 
+Focus admits gameplay keys and pads; the independently resolved pointer route
+admits pointer occurrences into the appropriate guest image.
+
 Keyboard focus, pointer routing and native cursor lock are separate. A focused
 preview receives ordinary gameplay keys/controller input; this neither captures
 all pointer input nor prevents an upper window from receiving a new gesture.
@@ -291,6 +345,11 @@ it. Movement over an occluding window without a guest gesture does not update
 the guest pointer; the last admitted position remains until another admitted
 movement.
 
+UI targeting and guest image projection are separate steps. The browser's
+canvas coordinates are the correct input for Studio's existing logical-viewport
+projection and surface hit testing. They are not already guest-raster
+coordinates. Remote occurrences enter that same UI projection before routing.
+
 Coordinate projection is explicit, not left to a feature callsite. The
 embedded-preview binding supplies its actual displayed-image rectangle and
 presented raster dimensions. Central pointer projection maps an admitted
@@ -304,12 +363,21 @@ The window service and inspectors neither scale guest coordinates nor encode
 fixed-point values.
 
 This implements the existing [pointer coordinate contract](book1/input.md#sec-input-pointer-words),
-not a new coordinate ABI. The current full-canvas browser attachment mapping
-and remote coordinate passthrough do not provide a shared embedded-preview
-projection. Resolve that producer discrepancy in the common admission path for
-active Studio rather than preserving it in separate adapters. Browser and remote
-input must publish the same admitted image coordinates; standalone player
-display mapping remains its host presentation owner's responsibility.
+not a new coordinate ABI. Browser physical-canvas attachment mapping and remote
+coordinate passthrough are separate producer paths; that difference alone does
+not establish a numerical parity failure. Slice D owns the shared
+embedded-preview projection and browser/remote parity tests, separately from B's
+gesture/admission work. Its investigation follows both UI targeting and guest
+publication, including image letterboxing, presentation dimensions and wheel
+units. UI wheel units and guest attachment wheel units remain explicit at their
+producer boundary rather than being confused at a window callsite.
+
+For Studio's routed guest publication, B needs D's presented-image projection at
+integration: the physical-canvas attachment coordinates cannot be used as the
+embedded image contribution. D is therefore a dependency of that part of B,
+not an automatic final cleanup step. UI-only surface routing can be developed
+independently. Standalone-player mapping remains the host presentation owner's
+responsibility; it is not migrated onto Studio admission.
 
 Shift+F1 explicitly releases game keyboard focus and cancels its routed pointer
 gesture, draining held buttons before a new Studio gesture. Root modals revoke
@@ -337,6 +405,9 @@ representation/callsite review.
 
 ## Focus, activation and commands
 
+Each surface family has explicit keyboard focus, activation and command origin,
+so window navigation never changes a feature's semantic target accidentally.
+
 `InputFocusService` remains the sole keyboard/text/clipboard focus owner.
 Window activation is derived from the focused surface family, not another copy
 of the focused control. The window scope retains its last focused eligible
@@ -360,10 +431,13 @@ their own traversal. Window discovery/activation is also exposed
 through the existing command-palette/Quick Input owner; a floating window cannot
 be pointer-only. Region/window traversal uses stable layout/attachment order,
 not the paint order that changes whenever a window is raised. No new global
-gameplay shortcut is assigned by this design. Escape first cancels an active UI
-continuation,
-then dismisses the top applicable transient/modal according to its role; it
-does not close arbitrary modeless windows or steal a gameplay Escape key.
+gameplay shortcut is assigned by this design. Escape is handled once: first by
+an active local UI interaction, then the top applicable transient/modal. If
+neither consumes it, a modeless tool can return focus through its declared
+owner relationship while remaining open. Details returns to the Actor Lab tree,
+without changing its subject, lock, scroll or collapsed state. An Escape that
+dismissed a property menu does not also move focus to the tree. The rule applies
+inside Studio scopes; a gameplay Escape remains gameplay input.
 
 Command origin remains explicit through `InputFocusTarget.commandContext`.
 There is no global "current inspector". Tree commands name tree selection;
@@ -374,6 +448,9 @@ not newly reserved for windows. Layer changes do not imply pause, seek, rebuild
 or guest execution.
 
 ## Attachment, close and disposal
+
+Attachment gives a surface its paint/input lifetime; content state can outlive
+that attachment without retaining active input resources.
 
 The surface service owns actual attachment and subtree retirement. A feature
 may retain an open window/model while its editor input is inactive; it has no
@@ -396,8 +473,8 @@ do not snapshot/restore state around close or issue delayed retry operations.
 
 ## Module responsibilities
 
-These are target owner boundaries, not instructions to create empty modules
-or an API/DI framework before their concrete responsibilities move.
+Concrete responsibilities move to these target owners as each slice supplies
+their actual producer and consumer.
 
 | Location | Responsibility |
 | --- | --- |
@@ -415,6 +492,9 @@ tool APIs, source models, runtime inspection and execution services do not
 depend on window visibility or existence.
 
 ## Retained work and persistence
+
+Retained structure and geometry make unchanged frames cheap; workspace placement
+persists separately from runtime-bound content and input state.
 
 Attach/detach/raise mutate retained sibling order; there is no per-frame sort,
 surface registration, whole-tree rebuild or control-wrapper allocation. Hit
@@ -438,6 +518,9 @@ subjects cannot be resurrected across a new heap/session by saving an actor ID
 or display name. This does not introduce a second source or machine savestate.
 
 ## Actor Lab Details as the first application
+
+Actor Lab gets one reusable, lockable modeless Details window, using the
+[feature UX contract](studio_actor_tools.md#floating-details-ux).
 
 Each Actor Lab input owns one Details instance with its own subject, lock and
 property-view state. The model is not a pane singleton; no multiple-window
@@ -482,43 +565,122 @@ remain unchanged.
 
 ## Implementation order and acceptance
 
-The following is a dependency order, not an implementation claim:
+The slices below separate reviewable owner changes and define their own
+acceptance. They describe planned scope, not a progress register. A establishes
+the surface structure; B and the required portion of D establish guest routing;
+C uses those contracts for the first product window. D remains independently
+reviewable even where its integration is a prerequisite for B.
 
-1. Establish surface structure/order, modal admission and scoped attachment
-   using existing root content, menus, Quick Input, prompts and a local image
-   overlay. Replace their independent root priority and focus-return branches;
-   do not leave a parallel legacy overlay stack behind the new service.
-2. Change central pointer/focus/hover routing and common host pointer admission.
-   Remove global pane/inspector cancellation and the all-devices-from-focus
-   assumption. Prove cross-surface gestures before introducing floating Details.
-3. Add reusable window chrome and contained-child arrangement. Exercise multiple
-   overlapping window instances and owned transients at this general layer;
-   shipping one Details command is not permission for singleton infrastructure.
-4. Separate the Actor Details subject/lock model and attach its existing property
-   content to the window. Delete the embedded Details split path. This is the
-   first new product application, not a workaround for unfinished input owners.
-5. Admit other inspectors or docking/native-window capabilities as their own
-   concrete changes. They must reuse this model rather than introduce another
-   input/lifetime stack.
+### A — Surface order and existing overlay admission
 
-Required independent contracts include:
+Publish the existing layout roots, menus, Quick Input, prompts and image
+lightboxes through one retained surface order. Rendering, pointer and wheel
+routing consume that order, including root/local modal admission and scoped
+attachment/focus return. Existing content controls keep their own geometry.
+Remove the independent overlay precedence lists as their consumers migrate.
 
-- Front/back paint and hit agreement, empty window areas, nested clipping,
-  promoted popups, stationary-hover revocation and wheel exclusion.
-- Primary/secondary/auxiliary combinations, initiating release before another
-  button, complete clicks between host polls, cancellation draining, and
-  synchronous navigation/close during an action.
-- Game-to-window and window-to-game drags, focus click delivery, Shift+F1,
-  outside-canvas native capture, input loss and browser/remote producer parity.
-- Owner-local versus root modality, nested dialogs/submenus, menu dismissal
-  consuming its whole gesture, and nonexclusive same-editor dismissal routing
-  once without replay or delivery into another window/game.
-- Keyboard-only window/region activation, local Tab traversal, text/clipboard,
-  command-origin preservation, and unrelated-window teardown isolation.
-- Lock/unlock across tree selection and settled history, unavailable/retired
-  subjects, hidden identity lifetime and absence of retained guest borrows.
-- Move/resize/viewport constraints, restored placement without restored runtime
-  handles, retained controls and no repeated work when unchanged/hidden.
+Acceptance:
+
+- Paint and hit testing agree front-to-back, including passive feedback and
+  opaque empty areas. Raising or removing a surface revokes covered stationary
+  hover without synthesising motion or scanning obscured actor data.
+- Existing root prompts/Quick Input and menu families preserve command origin,
+  nested submenu order, same-editor nonexclusive dismissal and consumed
+  outside-press behaviour. A dismissal dispatches once, without replay.
+- The same image lightbox blocks wheel, underlying selection and commands in
+  both conversation and assistant panes. Its local scope leaves unrelated
+  content usable; root modal admission blocks all lower surface families.
+- Detaching one owner retires its transients, hover and focus-return links without
+  cancelling an unrelated owner's interaction. Existing input controls remain
+  attached directly rather than through forwarding-only wrappers.
+
+### B — Whole-gesture routing and guest pointer admission
+
+Use one routed gesture record in `PointerCaptureService`. Separate
+focus-derived keyboard/controller admission from admitted pointer contributions
+at the common host input owner. Replace global pane/inspector capture
+cancellation with scoped retirement. Integrate D's image projection where a
+routed preview contribution is published; retain raw physical history at its
+producer.
+
+Acceptance:
+
+- Primary/secondary/auxiliary combinations keep their first surface route until
+  all buttons are up, including when the initiating control finishes early and
+  when a complete click occurs between host polls.
+- Game-to-tool and tool-to-game drags never change recipients mid-gesture.
+  Leaving the canvas preserves native-captured continuation; actual native loss,
+  Shift+F1, owner retirement and newly blocking modality cancel and drain held
+  buttons without a successful drop or newly exposed press.
+- A fresh focus click reaches the visible preview and gameplay once. Hover does
+  not focus. Covered preview hover/wheel cannot publish guest input or trigger
+  actor picking; keyboard/pad focus can remain with the game independently.
+- Recipient snapshot reads preserve the last admitted position, current button
+  contribution and host-update wheel consistently across `Input`/`InputChannel`.
+  Raw sampling cannot leak a held UI press into a newly focused guest.
+- Standalone player input retains its own presentation path. Existing machine
+  snapshot words and TS/C++ device semantics remain unchanged.
+
+### C — Window chrome and floating Actor Lab Details
+
+Add shared move/resize/close/collapse chrome and attach the existing property
+content to one independently subject-bound, lockable Details instance. Remove
+the embedded Details split and its preview-height subtraction, paint/input
+branches and split focus links. A single product instance exercises general
+window ownership without a multi-Details creation command.
+
+Acceptance:
+
+- Two overlapping test windows prove independent subjects, raising, empty-area
+  exclusion, owned popup ordering, focus return and teardown isolation. They
+  are fixtures for a general container, not new product commands.
+- Move/resize observes shared root work-area bounds and font metrics. Collapse
+  hides client input/paint, retires its continuation and transients, keeps the
+  titlebar usable and restores the retained expanded bounds. Small viewports
+  constrain arrangement without discarding requested placement.
+- Keyboard-only activation, local Tab traversal, titlebar actions,
+  text/clipboard and command origin work without new global gameplay shortcuts.
+  Escape consumes one local interaction first, otherwise returns Details focus
+  to the tree while leaving Details open and locked as applicable.
+- Lock/unlock preserves the typed subject across tree navigation, playback and
+  settled history; missing/retired subjects stay unavailable rather than
+  resolving by name. Hidden/collapsed Details retains identity retirement but
+  performs no hidden property layout, formatting or preview picking.
+- Title/path, checked lock action, unavailable presentation and active/inactive
+  chrome follow the [Details UX](studio_actor_tools.md#floating-details-ux).
+  Reopening keeps placement and view state within the same Actor Lab input;
+  workspace persistence never resurrects a runtime handle.
+
+Contained-subwindow arrangement remains designed and provisional until a
+concrete contribution needs it. Its eventual implementation validates nested
+clipping and client-relative placement at that boundary. Other inspectors,
+docking and native windows are separate product changes, each with its own
+consumer and acceptance rather than extra work hidden in C.
+
+### D — Presented-image pointer projection and producer parity
+
+Trace browser and remote pointer occurrences from physical source through UI
+projection and guest publication. Keep canvas/Studio targeting distinct from
+mapping into the actual displayed preview image. Supply one presentation-bound
+image projection and explicit wheel-unit boundary at the common input owner.
+The result is consumed by B's guest contribution, not a second admission router.
+
+Acceptance:
+
+- Equivalent browser/remote occurrences hit the same Studio logical point and
+  publish the same guest image point/button/wheel contribution after admission.
+  Tests include letterboxing, offset/resized previews, native raster dimensions,
+  held image presentation and captured motion outside the image.
+- Current arranged image placement determines projection; the displayed image's
+  dimensions, not the Studio viewport or latest device registers, determine
+  raster scale. The attachment producer enforces the existing image-extent
+  constraint and `PointerInput` owns device-word encoding.
+- UI wheel units and guest attachment wheel units remain separate explicit
+  producer values. Projection/allocation counters verify one required mapping
+  per occurrence, with no duplicate conversion in window/content controls.
+- The dependency on B is checked at guest publication, not inferred from the
+  browser supplying canvas coordinates. The shared preview projection is in
+  place before B is accepted as correct embedded-game routing.
 
 Existing evidence owners include `tests/lua/{pointer_capture,pointer_hover,
 editor_focus,editor_panes,workbench_property_inspector,workbench_context_menu,
@@ -534,6 +696,6 @@ coordinate projection; central pointer/wheel/key dispatch; capture/hover;
 `Input.writePhysicalSnapshot` and `PointerInput` snapshot writing; Actor preview
 hover refresh. Report layout/hit visits, content refresh/measurement counts,
 allocations and frame timings separately. Unit tests/typechecks establish
-contracts, not performance or visible usability. Live Studio validation must
-use the native session/context workflow required by the repository instructions;
-this design review has not executed that workflow or claimed UI evidence.
+contracts, not performance or visible usability. Live Studio validation uses the native
+session/context workflow required by the repository instructions and observes
+actual input, frame/history and visible window behaviour.

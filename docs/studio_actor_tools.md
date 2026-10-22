@@ -72,8 +72,9 @@ These interaction patterns inform the view; they do not require guest tracing.
   in stable tree order. It never oscillates between endpoints or auto-zooms.
   Inactive siblings are not reordered behind active ones.
 - Manual navigation/scroll/pan stops following. Merely interacting with the game
-  preview does not. Details stays beside the preview and selected hierarchy while playback,
-  frame stepping and history review update the inspected values. The compact title contains Actor/Back, Follow, and More; instance
+  preview does not. Details stays available with the preview and selected
+  hierarchy while playback, frame stepping and history review update the
+  inspected values. The compact title contains Actor/Back, Follow, and More; instance
   mutation commands remain in More, the context menu, and the palette.
 - Switching tree/graph carries the explicit selected instance. The graph model,
   zoom and viewport survive returning to the tree and reopening that same machine.
@@ -97,6 +98,16 @@ game. Shift+F1 releases that focus before an inspection click.
 The hover rectangle uses the ordinary neutral border; the accent frame still
 means game input focus. There is no new permanent toolbar, selection mode, or
 guest shortcut.
+
+The [windowing transition](workbench_windowing_design.md#guest-pointer-admission-is-a-host-input-boundary)
+replaces focus-wide pointer admission with the visible-preview rule: a new
+gesture belongs to the frontmost admitted surface under the pointer. With game
+input focus, pointer buttons within the unobscured preview reach the game; a
+Details window above it receives its own new gestures. The first press owns the
+whole gesture through the final button release, so a game drag continues across
+Details and a Details drag never switches to the game. Capture is separate from
+cursor locking and keyboard focus. Hover picking stops over an occluding
+surface, including when that surface opens without pointer movement.
 
 This follows [Godot's CanvasItem picking](https://github.com/godotengine/godot/blob/4.4/editor/plugins/canvas_item_editor_plugin.cpp):
 map the pointer into actual view coordinates, use visible draw geometry and pick
@@ -235,8 +246,9 @@ typechecks, the Browser Studio debug build, strict architecture-boundary audit
 The workbench-wide [window and transient-surface design](workbench_windowing_design.md)
 proposes replacing the embedded Details split below with a modeless window and
 an independently subject-bound, lockable Details instance. That design owns the
-future stacking/input/lifetime boundary; the following describes the current
-embedded implementation. No floating-window implementation is claimed here.
+stacking/input/lifetime boundary; [Floating Details UX](#floating-details-ux)
+below specifies the feature presentation. The following describes the existing
+embedded composition being replaced.
 
 Actor Lab composes its existing outline/graph, game preview and property inspector
 instead of replacing the preview with a modal property document. Details occupies
@@ -272,6 +284,113 @@ imply importing UE recording or adding guest instrumentation.
   stay unselected rather than selecting another instance. Navigation bookmarks
   retire on heap replacement or resuming recorded history; the currently open
   Actor Lab selection continues through its ordinary membership reconciliation.
+
+### Floating Details UX
+
+The target is one modeless Details window per Actor Lab input, initially open
+expanded and unlocked when explicitly requested. It follows the selected
+instance without replacing the tree or shrinking the preview. A Details
+instance owns its subject, lock and property-view state independently of the
+pane's selection. Additional Details creation commands are a separate product
+decision; this design introduces no docking or split compatibility mode.
+
+#### Placement and size
+
+**Initial-placement proposal for validation in slice C:** align Details near
+the lower-right of its own preview, inset by the existing four-logical-pixel
+content margin. This establishes an obvious relationship to Actor Lab without
+binding the window to the preview's clip. Constrain the resulting frame to the
+root work area so its titlebar actions remain reachable. If its requested size
+extends beyond the preview, it can extend over adjacent workbench content.
+
+Thereafter the retained requested position/size takes precedence over initial
+placement. The window may move across the root work area, including over another
+editor group or panel, but not over permanently reserved workbench chrome.
+Activating a different editor input detaches the Actor Lab window with its
+owner; it does not leave an orphaned always-on-top inspector. Returning to that
+Actor Lab restores its attachment and placement. An ordinary Hide/reopen within
+that input retains the subject, lock, collapse and property-view state.
+
+The first implementation uses font- and work-area-relative requested dimensions,
+not desktop-pixel minima or a fixed `384 × 288` canvas assumption. Let `W × H`
+be the root work area, `c` the current common character advance, `l` the current
+font line height and `t = l + 8` the existing inspector-header metric:
+
+| Dimension | Requested minimum | Initial request |
+| --- | --- | --- |
+| Width | `32c + 12`, enough for compact actions and a short subject path. | The larger of the minimum and `W / 2`. |
+| Expanded height | `t + 6l + 8`, retaining six text lines plus client padding. | The larger of the minimum and `H / 2`. |
+| Collapsed height | Titlebar `t` only. | Uses the retained expanded width. |
+
+These are starting geometry choices for C's tiny-font and small-viewport
+validation. The actual arrangement fits the available work area even when it
+is smaller than a requested minimum, while retaining the requested expanded
+dimensions. The ordinary inspector wraps/scrolls its property content. It does
+not scale text or reintroduce a preview split to meet a minimum. Existing tiny
+font glyphs and capitalisation remain unchanged.
+
+#### Titlebar, lock and availability
+
+The title is **Details — subject path**, using the actual actor/member path,
+not only a leaf name. Middle truncation preserves distinguishing suffixes;
+the full path is available through the shared title hover/status presentation.
+Before a subject is selected, the title is **Details — Select an instance**.
+
+The right-hand titlebar actions are **Lock**, collapse/expand (`-` / `+`), and
+**Hide**, using the existing compact action-bar measurements and hit targets.
+Lock is a persistent checked action: the common checked-button background/text
+distinguishes locked from unlocked without requiring an unavailable padlock
+glyph. Its action description says whether Details follows selection or keeps
+the named instance. It is disabled until a subject exists; once locked it stays
+available for unlocking even if the subject becomes unavailable. Dragging the
+remaining titlebar moves the window without selecting an actor. The property
+inspector supplies client content, not a second titlebar or Hide control.
+
+Unlocked Details immediately follows explicit tree/graph selection. Lock keeps
+the typed subject identity while tree navigation continues independently.
+Unlock immediately follows the current selection, including an empty
+selection. The lock fixes identity, not values or time: playback and settled
+history positions keep refreshing that instance. Tree commands use tree
+selection; Details and its property menu use the Details subject.
+
+An absent subject keeps its last subject path, adds **Unavailable** to the title
+and shows the existing unavailable-instance notice in the client with the
+common warning treatment. Subject-dependent mutations/source actions are
+disabled while the exact target is unavailable; Lock, collapse/expand and Hide
+remain usable. A temporary historical absence can resolve when that same
+identity is present again. Heap replacement or retired identity never binds
+the window to a new same-named actor.
+
+#### Collapse, focus and commands
+
+Details starts expanded. The titlebar collapse action is available from the
+first window version; it reduces the window to its titlebar rather than closing
+Details or losing its subject. Expand restores its previous requested size.
+This uses the [container collapse contract](workbench_windowing_design.md#collapsed-window-presentation):
+client hover/capture and owned transients retire, client focus goes to Expand,
+and no property formatting/layout runs solely for the collapsed client.
+Identity retirement still runs while collapsed or hidden.
+
+An active window uses the existing active-tab header/background/text and focus
+border treatment; an inactive window uses inactive header/text and a neutral
+border. Owned property menus belong to the same active family. Z order alone
+does not indicate keyboard focus: programmatic raising never creates an active
+focus treatment. The focused titlebar action or property keeps its ordinary
+local focus indicator. The property inspector retains its familiar content
+colours; no shadow or new font/capitalisation scheme is required.
+
+Escape first cancels a local interaction or dismisses a property popup, consuming
+that key once. Otherwise Escape in Details returns focus to the Actor Lab tree.
+Details remains open, with subject, lock, property selection, scroll and collapse
+state unchanged. It is not a Hide shortcut and does not reserve Escape while
+the game has focus. Tab traverses Details' eligible client and titlebar controls;
+workbench window/region activation provides a keyboard route back to Details.
+
+Hide clears the Details open intent through the admitted close path and returns
+focus to the tree only when the Details family owned focus. It preserves the
+instance model for reopening. Source navigation, game input and runtime
+transport continue through their existing owners; none depends on the window
+remaining visible.
 
 ### Details/navigation validation (2026-10-07)
 
