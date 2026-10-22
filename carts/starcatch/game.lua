@@ -30,7 +30,7 @@ function game:ctor()
 	self.dashes = 0
 	self.dash_unlocked = false
 	self.twin_cannon = false
-	self.event_payload = { score = 0, lives = 3, wave = 0 }
+	self.event_payload = { score = 0, lives = 3, wave = 0, phase = 'title' }
 end
 
 function game:bind()
@@ -62,6 +62,7 @@ function game:emit(event)
 	payload.score = self.score
 	payload.lives = self.lives
 	payload.wave = self.wave
+	payload.phase = self.phase
 	self.events:emit(event, payload)
 end
 
@@ -91,6 +92,7 @@ function game:enter_scene()
 		self:next_enemy()
 	end
 	world:set_gameplay_clock_running(phase == 'play')
+	self:emit('starcatch.scene_entered')
 end
 
 function game:change_scene()
@@ -147,6 +149,7 @@ function game:fire_enemy(enemy)
 			bolt.vy = dy * 2.5 / length
 			bolt.visible = true
 			self.enemy_shots = self.enemy_shots + 1
+			self:emit('starcatch.enemy_fired')
 			break
 		end
 	end

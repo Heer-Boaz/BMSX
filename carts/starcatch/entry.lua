@@ -5,6 +5,7 @@ local input<const> = require('cartlib/input/input')
 local irq<const> = require('cartlib/irq')
 local world<const> = require('cartlib/world/world')
 local input_system<const> = require('cartlib/input/input_system')
+local aem<const> = require('cartlib/aem')
 local input_effect_system<const> = require('cartlib/input/actioneffect/system')
 local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
@@ -19,7 +20,7 @@ local function init<init>()
 	world:configure({
 		framebuffer_count = 1, gameplay_interval_vblanks = 1, frame_interval_vblanks = 1,
 		spaces = { 'title', 'intro', 'play', 'won', 'over' },
-		systems = { input_system, input_effect_system, bt_system, timeline_system },
+		systems = { input_system, input_effect_system, aem, bt_system, timeline_system },
 	})
 	game.install()
 	renderer.setup()

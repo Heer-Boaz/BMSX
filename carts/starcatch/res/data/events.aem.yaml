@@ -1,0 +1,85 @@
+events:
+  starcatch.fired:
+    channel: sfx
+    rules:
+      - go:
+          audio_id: shot
+          priority: 1
+          modulation_params:
+            volumeDelta: -2
+
+  starcatch.enemy_fired:
+    channel: sfx
+    rules:
+      - go:
+          audio_id: enemy_shot
+          priority: 1
+          modulation_params:
+            volumeDelta: -5
+
+  starcatch.enemy_destroyed:
+    channel: sfx
+    rules:
+      - go:
+          audio_id: impact
+          priority: 4
+          modulation_params:
+            volumeDelta: -2
+
+  starcatch.dashed:
+    channel: ui
+    rules:
+      - go:
+          audio_id: dash
+          priority: 4
+
+  starcatch.hurt:
+    channel: ui
+    rules:
+      - go:
+          audio_id: impact
+          priority: 8
+          modulation_params:
+            pitchDelta: -6
+
+  starcatch.upgrade_unlocked:
+    channel: ui
+    rules:
+      - go:
+          audio_id: upgrade
+          priority: 6
+
+  starcatch.scene_entered:
+    channel: ui
+    rules:
+      - when:
+          equals: { phase: intro }
+        go:
+          sequence:
+            - stop: { channel: ui, fade_ms: 0 }
+            - audio_id: arrival
+              priority: 7
+      - when:
+          equals: { phase: play }
+        go:
+          stop: { channel: ui, fade_ms: 20 }
+      - when:
+          equals: { phase: won }
+        go:
+          sequence:
+            - stop: { channel: sfx, fade_ms: 30 }
+            - audio_id: victory
+              priority: 10
+      - when:
+          equals: { phase: over }
+        go:
+          sequence:
+            - stop: { channel: sfx, fade_ms: 20 }
+            - audio_id: defeat
+              priority: 10
+      - when:
+          equals: { phase: title }
+        go:
+          sequence:
+            - stop: { channel: sfx, fade_ms: 0 }
+            - stop: { channel: ui, fade_ms: 0 }

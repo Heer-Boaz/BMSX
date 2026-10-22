@@ -1,4 +1,9 @@
 local progression<const> = require('cartlib/progression')
+local rom_dir<const> = require('cartlib/rom_dir')
+local apu_slot<const>: *word = 0x08000148
+local apu_status<const>: *word = 0x08000178
+local apu_selected_source<const>: *word = 0x0800018c
+local apu_active<const>: *word = 0x08000190
 
 return {
 	kind = 'integration',
@@ -14,12 +19,17 @@ return {
 			t:press('Space', 1)
 			t:wait_until('intro scene', function() return starcatch.phase == 'intro' end, 12)
 			assert(title.closed and #title.objects.items == 0, 'old composition must be unloaded')
+			t:wait_until('arrival audio', function()
+				*apu_slot = 3
+				return (*apu_active & 8) ~= 0 and *apu_selected_source == rom_dir.audio('arrival').addr
+			end, 6)
 			local intro<const> = starcatch.scene
 			local ship<const> = starcatch.player
 			assert(ship.y > 240 and ship.z > 512, 'arrival starts offscreen in depth')
 			t:wait_ticks(35)
 			assert(ship.y < 420 and ship.y > 198 and ship.z < 896 and ship.z > 512)
 			assert(starcatch.shots_fired == 0, 'intro has no gameplay fire')
+			assert((*apu_active & 8) ~= 0 and (*apu_status & 1) == 0)
 			t:capture('arrival')
 			t:wait_until('gameplay scene', function() return starcatch.phase == 'play' end, 180)
 			assert(intro.closed and #intro.objects.items == 0)
@@ -30,7 +40,11 @@ return {
 			assert(starcatch.player.y < 198)
 			t:press('ArrowRight', 6)
 			assert(starcatch.player.x > 160)
+			assert((*apu_active & 8) == 0, 'arrival voice retires before gameplay fire')
 			t:down('Space')
+			t:wait_until('player shot audio', function()
+				return (*apu_active & 1) ~= 0 and *apu_selected_source == rom_dir.audio('shot').addr
+			end, 8)
 			t:wait_ticks(40)
 			t:up('Space')
 			assert(starcatch.shots_fired >= 3 and starcatch.shots_fired <= 8, 'held fire uses the effect cooldown')
@@ -69,7 +83,13 @@ return {
 			assert(saw_charge and starcatch.shots_fired >= 12 and dashed)
 			assert(starcatch.twin_cannon and progression.get(starcatch, 'complete'))
 			assert(starcatch.scene.definition.name == 'won' and #starcatch.player_bolts == 0)
+			t:wait_until('victory audio', function()
+				*apu_slot = 3
+				return (*apu_active & 8) ~= 0 and *apu_selected_source == rom_dir.audio('victory').addr
+			end, 6)
 			t:capture('sector-clear')
+			t:wait_ticks(75)
+			assert(*apu_active == 0 and (*apu_status & 1) == 0, 'finished stingers leave no active or faulted voice')
 		end,
 		['enemy BT shoots, damage effects lose lives, retry owns a fresh scene'] = function(t)
 			t:press('Space', 1)
@@ -79,12 +99,21 @@ return {
 			t:wait_until('enemy fire', function() return starcatch.enemy_shots > 0 end, 240)
 			t:wait_until('game over', function() return starcatch.phase == 'over' end, 800)
 			assert(starcatch.lives == 0 and starcatch.shots_fired == 0)
+			t:wait_until('defeat audio', function()
+				*apu_slot = 3
+				return (*apu_active & 8) ~= 0 and *apu_selected_source == rom_dir.audio('defeat').addr
+			end, 6)
 			assert(play.closed and #play.objects.items == 0, 'all scene-owned bolts must be disposed')
 			t:press('Space', 1)
+			t:wait_until('retry arrival audio', function()
+				*apu_slot = 3
+				return (*apu_active & 8) ~= 0 and *apu_selected_source == rom_dir.audio('arrival').addr
+			end, 8)
 			t:wait_until('fresh gameplay', function() return starcatch.phase == 'play' end, 200)
 			assert(starcatch.player ~= ship and starcatch.score == 0 and starcatch.lives == 3)
 			assert(not starcatch.dash_unlocked and not starcatch.twin_cannon)
 			assert(not progression.get(starcatch, 'complete'))
+			assert((*apu_status & 1) == 0)
 		end,
 	},
 }

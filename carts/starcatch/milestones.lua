@@ -17,8 +17,14 @@ return progression.compile_program({
 	},
 	filters = {},
 	handlers = {
-		unlock_dash = function(game) game.dash_unlocked = true end,
-		unlock_twin = function(game) game.twin_cannon = true end,
+		unlock_dash = function(game)
+			game.dash_unlocked = true
+			game:emit('starcatch.upgrade_unlocked')
+		end,
+		unlock_twin = function(game)
+			game.twin_cannon = true
+			game:emit('starcatch.upgrade_unlocked')
+		end,
 		complete = function(game) game.pending_scene = 'won' end,
 	},
 })
