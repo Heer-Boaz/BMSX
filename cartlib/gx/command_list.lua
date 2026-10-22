@@ -211,6 +211,18 @@ function draw_list:triangle(x0, y0, x1, y1, x2, y2, color)
 	self.word_count = index + 4
 end
 
+-- GTE SXY words and an already prepared GP0 command retain their native form.
+-- Polygon packets must stay within a GX_WRITE DMA admission block.
+function draw_list:triangle_words(command_word, sxy0_word, sxy1_word, sxy2_word)
+	local index<const> = reserve_atomic(self, 4)
+	local words<const>: *word = self.words
+	words[index] = command_word
+	words[index + 1] = sxy0_word
+	words[index + 2] = sxy1_word
+	words[index + 3] = sxy2_word
+	self.word_count = index + 4
+end
+
 function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)
 	local index<const> = reserve_atomic(self, 6)
 	local words<const>: *word = self.words

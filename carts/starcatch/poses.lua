@@ -1,111 +1,51 @@
--- Shared scalar timeline definitions. Positions are pixels; spin is radians.
 local timeline_clock<const> = require('cartlib/timeline/clock_source')
-local poses<const> = {
-    collector_idle = {
-        duration_ms = 1200,
-        clock_source = timeline_clock.frame,
-        playback_mode = 'loop',
-        tracks = {{
-            kind = 'value',
-            path = { 'bob' },
-            interpolation = 'linear',
-            keys = {
-                { time_ms = 0, value = 0 },
-                { time_ms = 600, value = 2 },
-                { time_ms = 1200, value = 0 },
-            },
-        }},
-    },
-    collector_catch = {
-        duration_ms = 240,
-        clock_source = timeline_clock.frame,
-        tracks = {{
-            kind = 'value',
-            path = { 'opening' },
-            interpolation = 'linear',
-            keys = {
-                { time_ms = 0, value = 0 },
-                { time_ms = 70, value = 1 },
-                { time_ms = 240, value = 0 },
-            },
-        }},
-    },
-    collector_hurt = {
-        duration_ms = 300,
-        clock_source = timeline_clock.frame,
-        tracks = {{
-            kind = 'value',
-            path = { 'recoil' },
-            interpolation = 'linear',
-            keys = {
-                { time_ms = 0, value = 0 },
-                { time_ms = 70, value = -10 },
-                { time_ms = 300, value = 0 },
-            },
-        }},
-    },
-    sentinel_idle = {
-        duration_ms = 2400,
-        clock_source = timeline_clock.frame,
-        playback_mode = 'loop',
-        tracks = {
-            {
-                kind = 'value',
-                path = { 'bob' },
-                interpolation = 'linear',
-                keys = {
-                    { time_ms = 0, value = 0 },
-                    { time_ms = 1200, value = 4 },
-                    { time_ms = 2400, value = 0 },
-                },
-            },
-            {
-                kind = 'value',
-                path = { 'spin' },
-                interpolation = 'linear',
-                keys = {
-                    { time_ms = 0, value = 0 },
-                    { time_ms = 2400, value = 6.283185 },
-                },
-            },
-        },
-    },
-    intercept_open = {
-        duration_ms = 140,
-        tracks = {{
-            kind = 'value',
-            path = { 'opening' },
-            interpolation = 'linear',
-            keys = {
-                { time_ms = 0, value = 0 },
-                { time_ms = 140, value = 1 },
-            },
-        }},
-    },
-    sentinel_block = {
-        duration_ms = 260,
-        tracks = {
-            {
-                kind = 'value',
-                path = { 'opening' },
-                interpolation = 'linear',
-                keys = {
-                    { time_ms = 0, value = 1 },
-                    { time_ms = 260, value = 0 },
-                },
-            },
-            {
-                kind = 'value',
-                path = { 'recoil' },
-                interpolation = 'linear',
-                keys = {
-                    { time_ms = 0, value = 0 },
-                    { time_ms = 60, value = -6 },
-                    { time_ms = 260, value = 0 },
-                },
-            },
-        },
-    },
-}
 
-return poses
+return {
+	ship_idle = {
+		duration_ms = 1200, clock_source = timeline_clock.frame, playback_mode = 'loop',
+		tracks = {{ kind = 'value', path = { 'bob' }, interpolation = 'linear',
+			keys = {{ time_ms = 0, value = 0 }, { time_ms = 600, value = 1.5 }, { time_ms = 1200, value = 0 }} }},
+	},
+	arrival = {
+		duration_ms = 1500, clock_source = timeline_clock.frame,
+		tracks = {
+			{ kind = 'value', path = { 'x' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = 160 }, { time_ms = 950, value = 150 }, { time_ms = 1500, value = 160 }} },
+			{ kind = 'value', path = { 'y' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = 420 }, { time_ms = 950, value = 235 }, { time_ms = 1500, value = 198 }} },
+			{ kind = 'value', path = { 'z' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = 896 }, { time_ms = 950, value = 640 }, { time_ms = 1500, value = 512 }} },
+			{ kind = 'value', path = { 'bank' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = -0.35 }, { time_ms = 950, value = 0.15 }, { time_ms = 1500, value = 0 }} },
+		},
+	},
+	fire = {
+		duration_ms = 110,
+		tracks = {{ kind = 'value', path = { 'recoil' }, interpolation = 'linear',
+			keys = {{ time_ms = 0, value = 0 }, { time_ms = 35, value = 3 }, { time_ms = 110, value = 0 }} }},
+	},
+	hurt = {
+		duration_ms = 300, clock_source = timeline_clock.frame,
+		tracks = {{ kind = 'value', path = { 'hit_flash' }, interpolation = 'linear',
+			keys = {{ time_ms = 0, value = 1 }, { time_ms = 300, value = 0 }} }},
+	},
+	dash = {
+		duration_ms = 180,
+		tracks = {
+			{ kind = 'value', path = { 'dash_speed' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = 2.5 }, { time_ms = 140, value = 2.5 }, { time_ms = 180, value = 1 }} },
+			{ kind = 'value', path = { 'dash_shield' }, interpolation = 'linear',
+				keys = {{ time_ms = 0, value = 1 }, { time_ms = 140, value = 1 }, { time_ms = 180, value = 0 }} },
+		},
+	},
+	enemy_charge = {
+		duration_ms = 900,
+		tracks = {{ kind = 'value', path = { 'charge' }, interpolation = 'linear',
+			keys = {{ time_ms = 0, value = 0 }, { time_ms = 700, value = 1 }, { time_ms = 900, value = 0 }} }},
+	},
+	burst = {
+		duration_ms = 260,
+		tracks = {{ kind = 'value', path = { 'pulse' }, interpolation = 'linear',
+			keys = {{ time_ms = 0, value = 2 }, { time_ms = 100, value = 18 }, { time_ms = 260, value = 0 }} }},
+	},
+}
