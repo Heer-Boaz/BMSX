@@ -183,12 +183,6 @@ export type AssignmentTargetInfo = {
 	terminalPropertyName?: string;
 };
 
-export type OptionsParameterUse = {
-	readonly fields: Set<string>;
-	bareReads: number;
-	dynamicReads: number;
-};
-
 export type FsmVisualPrefabDefaults = {
 	readonly imgid?: string;
 	readonly visible?: boolean;

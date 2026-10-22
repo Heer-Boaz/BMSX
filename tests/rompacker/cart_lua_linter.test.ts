@@ -20,6 +20,20 @@ async function withCartLintFixture(name: string, source: string, run: (root: str
 	}
 }
 
+test('cart constructor field use does not define the World spawn options shape', async () => {
+	await withCartLintFixture('cart_lua_linter_world_ctor_options', [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local actor<const> = {}',
+		'function actor:ctor(options)',
+		'    self.game = options.game',
+		'    self.x = 160',
+		'end',
+		"prefab.define({ def_id = 'probe', class = actor })",
+	].join('\n'), async root => {
+		await lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' });
+	});
+});
+
 test('cross-file constant diagnostics retain each source position without retaining syntax', async () => {
 	await withCartLintFixture('cart_lua_linter_source_owners', '-- 😀\r\nlocal shared_name<const> = "first"\r\nreturn shared_name', async root => {
 		await writeFile(join(root, 'other.lua'), '\n-- second source\n\nlocal shared_name<const> = "second"\nreturn shared_name');

@@ -49,7 +49,6 @@ import { lintPureCopyFunctionPattern } from '../lint/rules/lua_cart/pure_copy_fu
 import { lintSelfImgIdAssignmentPattern } from '../lint/rules/lua_cart/self_imgid_assignment_pattern';
 import { lintLocalAssignment } from '../lint/rules/lua_cart/self_property_local_alias_pattern';
 import { lintSetSpaceRoundtripPattern } from '../lint/rules/lua_cart/set_space_roundtrip_pattern';
-import { lintSinglePropertyOptionsParameter } from '../lint/rules/common/single_property_options_parameter_pattern';
 import { lintSplitLocalTableInitPattern } from '../lint/rules/lua_cart/split_local_table_init_pattern';
 import { lintStagedExportLocalCallPattern } from '../lint/rules/lua_cart/staged_export_local_call_pattern';
 import { lintStagedExportLocalTablePattern } from '../lint/rules/lua_cart/staged_export_local_table_pattern';
@@ -146,7 +145,6 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'shadowed_require_alias_pattern',
 	'silent_catch_fallback_pattern',
 	'single_line_method_pattern',
-	'single_property_options_parameter_pattern',
 	'single_use_has_tag_pattern',
 	'single_use_local_pattern',
 	'split_join_roundtrip_pattern',
@@ -313,7 +311,6 @@ export function lintFunctionBody(
 	isMethodDeclaration: boolean,
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
-	lintSinglePropertyOptionsParameter(functionExpression, lint);
 	const isVisualUpdateLike = lintVisualUpdatePattern(functionName, functionExpression, lint);
 	const isGetterOrSetter = lintGetterSetterPattern(functionName, functionExpression, lint);
 	const isBuiltinRecreation = lintBuiltinRecreationPattern(functionName, functionExpression, lint);

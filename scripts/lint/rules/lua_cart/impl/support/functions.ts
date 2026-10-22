@@ -1,5 +1,4 @@
-import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { isIdentifier } from './bindings';
 import { isBuiltinCallExpression } from './calls';
 import { matchesLocalAliasReturnWrapperPattern } from './cart_patterns';
@@ -7,7 +6,6 @@ import { isAssignableStorageExpression, isSimpleCallableExpression } from './exp
 import { getFunctionSingleReturnExpression } from './function_shapes';
 import { getCopiedSourceKey } from './general';
 import { expressionContainsInlineTableOrFunction, findTableFieldByKey, getTableFieldKey } from './table_fields';
-import { OptionsParameterUse } from './types';
 
 export function getFunctionDisplayName(statement: Statement): string {
 	if (statement.kind === SyntaxKind.LocalFunctionStatement) {
@@ -207,134 +205,6 @@ export function matchesBuiltinRecreationPattern(functionExpression: CartFunction
 		return false;
 	}
 	return matchesForwardedArgumentList(expression.arguments, getFunctionParameterNames(functionExpression));
-}
-
-export function collectOptionsParameterUseInStatements(statements: LuaStatementSequence, parameterName: string, use: OptionsParameterUse): void {
-	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
-		const statement = cursor.statement;
-		switch (statement.kind) {
-			case SyntaxKind.LocalAssignmentStatement:
-				for (const value of statement.values) {
-					collectOptionsParameterUseInExpression(value, parameterName, use);
-				}
-				break;
-			case SyntaxKind.AssignmentStatement:
-				for (const left of statement.left) {
-					collectOptionsParameterUseInExpression(left, parameterName, use);
-				}
-				for (const right of statement.right) {
-					collectOptionsParameterUseInExpression(right, parameterName, use);
-				}
-				break;
-			case SyntaxKind.ReturnStatement:
-				for (const expression of statement.expressions) {
-					collectOptionsParameterUseInExpression(expression, parameterName, use);
-				}
-				break;
-			case SyntaxKind.IfStatement:
-				for (const clause of statement.clauses) {
-					if (clause.condition) {
-						collectOptionsParameterUseInExpression(clause.condition, parameterName, use);
-					}
-					collectOptionsParameterUseInStatements(clause.block.body, parameterName, use);
-				}
-				break;
-			case SyntaxKind.WhileStatement:
-				collectOptionsParameterUseInExpression(statement.condition, parameterName, use);
-				collectOptionsParameterUseInStatements(statement.block.body, parameterName, use);
-				break;
-			case SyntaxKind.RepeatStatement:
-				collectOptionsParameterUseInStatements(statement.block.body, parameterName, use);
-				collectOptionsParameterUseInExpression(statement.condition, parameterName, use);
-				break;
-			case SyntaxKind.ForNumericStatement:
-				collectOptionsParameterUseInExpression(statement.start, parameterName, use);
-				collectOptionsParameterUseInExpression(statement.limit, parameterName, use);
-				if (statement.step) {
-					collectOptionsParameterUseInExpression(statement.step, parameterName, use);
-				}
-				collectOptionsParameterUseInStatements(statement.block.body, parameterName, use);
-				break;
-			case SyntaxKind.ForGenericStatement:
-				for (const iterator of statement.iterators) {
-					collectOptionsParameterUseInExpression(iterator, parameterName, use);
-				}
-				collectOptionsParameterUseInStatements(statement.block.body, parameterName, use);
-				break;
-			case SyntaxKind.DoStatement:
-				collectOptionsParameterUseInStatements(statement.block.body, parameterName, use);
-				break;
-			case SyntaxKind.CallStatement:
-				collectOptionsParameterUseInExpression(statement.expression, parameterName, use);
-				break;
-			case SyntaxKind.LocalFunctionStatement:
-			case SyntaxKind.FunctionDeclarationStatement:
-			case SyntaxKind.BreakStatement:
-			case SyntaxKind.HaltUntilIrqStatement:
-			case SyntaxKind.GotoStatement:
-			case SyntaxKind.LabelStatement:
-				break;
-		}
-	}
-}
-
-export function collectOptionsParameterUseInExpression(expression: Expression, parameterName: string, use: OptionsParameterUse): void {
-	switch (expression.kind) {
-		case SyntaxKind.IdentifierExpression:
-			if (expression.name === parameterName) {
-				use.bareReads += 1;
-			}
-			return;
-		case SyntaxKind.MemberExpression:
-			if (isIdentifier(expression.base, parameterName)) {
-				use.fields.add(expression.member.name);
-				return;
-			}
-			collectOptionsParameterUseInExpression(expression.base, parameterName, use);
-			return;
-		case SyntaxKind.IndexExpression:
-			if (isIdentifier(expression.base, parameterName)) {
-				if (expression.index.kind === SyntaxKind.StringLiteralExpression) {
-					use.fields.add(expression.index.value);
-				} else if (expression.index.kind === SyntaxKind.UnaryExpression && expression.index.operator === UnaryOperator.StringId && expression.index.operand.kind === SyntaxKind.StringLiteralExpression) {
-					use.fields.add(expression.index.operand.value);
-				} else {
-					use.dynamicReads += 1;
-				}
-				return;
-			}
-			collectOptionsParameterUseInExpression(expression.base, parameterName, use);
-			collectOptionsParameterUseInExpression(expression.index, parameterName, use);
-			return;
-		case SyntaxKind.CallExpression:
-			collectOptionsParameterUseInExpression(expression.callee, parameterName, use);
-			for (const argument of expression.arguments) {
-				collectOptionsParameterUseInExpression(argument, parameterName, use);
-			}
-			return;
-		case SyntaxKind.BinaryExpression:
-			collectOptionsParameterUseInExpression(expression.left, parameterName, use);
-			collectOptionsParameterUseInExpression(expression.right, parameterName, use);
-			return;
-		case SyntaxKind.UnaryExpression:
-			collectOptionsParameterUseInExpression(expression.operand, parameterName, use);
-			return;
-		case SyntaxKind.TableConstructorExpression:
-			for (const field of expression.fields) {
-				if (field.kind === TableFieldKind.ExpressionKey) {
-					collectOptionsParameterUseInExpression(field.key, parameterName, use);
-				}
-				collectOptionsParameterUseInExpression(field.value, parameterName, use);
-			}
-			return;
-		case SyntaxKind.FunctionExpression:
-		case SyntaxKind.NumericLiteralExpression:
-		case SyntaxKind.StringLiteralExpression:
-		case SyntaxKind.BooleanLiteralExpression:
-		case SyntaxKind.NilLiteralExpression:
-		case SyntaxKind.VarargExpression:
-			return;
-	}
 }
 
 export function getRunCheckGoFunction(entryExpression: Expression): CartFunctionExpression | undefined {

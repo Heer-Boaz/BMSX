@@ -4,11 +4,6 @@ import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushLintIssue, type LintIssue } from '../ts/support/ast';
-import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintContext } from '../../lua_rule';
-import { collectOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
-import { OptionsParameterUse } from '../lua_cart/impl/support/types';
-import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
 export const singlePropertyOptionsParameterPatternRule = defineLintRule('common', 'single_property_options_parameter_pattern');
 
@@ -82,29 +77,6 @@ export function lintSinglePropertyOptionsTypes(file: string, tokens: readonly To
 			tokens[range.nameToken],
 			singlePropertyOptionsParameterPatternRule.name,
 			`Single-property options type "${range.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
-		);
-	}
-}
-
-export function lintSinglePropertyOptionsParameter(functionExpression: CartFunctionExpression, lint: CartLintContext): void {
-	for (const parameter of functionExpression.parameters) {
-		if (!isOptionsParameterName(parameter.name)) {
-			continue;
-		}
-		const use: OptionsParameterUse = {
-			fields: new Set<string>(),
-			bareReads: 0,
-			dynamicReads: 0,
-		};
-		collectOptionsParameterUseInStatements(functionExpression.body.body, parameter.name, use);
-		if (use.fields.size !== 1 || use.bareReads !== 0 || use.dynamicReads !== 0) {
-			continue;
-		}
-		pushIssue(
-			lint,
-			singlePropertyOptionsParameterPatternRule.name,
-			parameter,
-			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,
 		);
 	}
 }
