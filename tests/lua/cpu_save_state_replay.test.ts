@@ -3,13 +3,55 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
-import { createBuiltinFunction, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { createBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
+
+for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as const) test(`checkpoint and GC retain a ${name} above an exact open-result top`, () => {
+	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, op, 7, 0, 0);
+	writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.CALL, 0, 1, 0);
+	writeInstruction(code, 4, OpCode.RET, 7, 1, 0);
+	writeInstruction(code, 5, OpCode.RET, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code,
+		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1 }],
+		closureRelocations: [{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+	});
+	const { cpu } = createTestSystemCpu(image);
+	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
+	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.ExecutionStopped);
+	assert.equal(cpu.rootThread.frames[0].top, 0, 'open CALL accepts zero results without reviving earlier arguments');
+	if (op === OpCode.NEWT) {
+		const weak = cpu.createTable(1, 0);
+		const mode = cpu.createTable(0, 1);
+		mode.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+		weak.metatable = mode;
+		weak.setInteger(1, cpu.readFrameRegister(0, 7));
+		cpu.setGlobalByKey(cpu.stringPool.intern('weak'), ValueTag.Table, NaN, weak);
+		cpu.collectTrackedHeapBytes();
+		assert.ok(weak.getInteger(1) === cpu.readFrameRegister(0, 7), 'reserved registers remain heap roots after top shrinks');
+	}
+	const saved = cpu.captureRuntimeState();
+	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	cpu.restoreRuntimeState(saved);
+	assert.equal(cpu.rootThread.frames[0].registers.getTag(7), op === OpCode.K1 ? ValueTag.Number : ValueTag.Table,
+		'exact-top metadata does not erase reserved register values');
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.equal(values.length, 1);
+	if (op === OpCode.K1) assert.deepEqual(values, [1]);
+	else assert.ok(values[0] === (cpu.getGlobalByKey(cpu.stringPool.find('weak')!) as Table).getInteger(1));
+});
 
 test('the mirrored CPU allocates a closure before its new upvalues and interns the same error prefix', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(`

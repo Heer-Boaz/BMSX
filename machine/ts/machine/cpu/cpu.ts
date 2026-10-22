@@ -4452,8 +4452,9 @@ export class CPU implements MappedPageInvalidator {
 			for (let frameIndex = 0; frameIndex < thread.frames.length; frameIndex += 1) {
 				const frame = thread.frames[frameIndex];
 				const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
-				const registers = new Array<number>(frame.top);
-				for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+				// top delimits open CALL/RET ranges, not the reserved registerfile.
+				const registers = new Array<number>(frame.stackCapacity);
+				for (let registerIndex = 0; registerIndex < frame.stackCapacity; registerIndex += 1) {
 					registers[registerIndex] = captureStoredValueState(
 						frame.registers.getTag(registerIndex),
 						frame.registers.getScalar(registerIndex),
@@ -4975,7 +4976,7 @@ export class CPU implements MappedPageInvalidator {
 			if (frame.closure.heapBytes !== 0) {
 				this.heapObjectStack.push(frame.closure);
 			}
-			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+			for (let registerIndex = 0; registerIndex < frame.stackCapacity; registerIndex += 1) {
 				this.pushHeapRegister(frame.registers, registerIndex);
 			}
 			for (let index = 0; index < frame.varargCount; index += 1) {

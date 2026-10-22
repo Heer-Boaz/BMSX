@@ -149,7 +149,7 @@ void GcHeap::trace() {
 	for (const auto& framePtr : thread->frames) {
 		CallFrame* frame = framePtr.get();
 		markClosure(frame->closure);
-		for (int i = 0; i < frame->top; ++i) {
+		for (int i = 0; i < frame->stackCapacity; ++i) {
 			markValue(frame->registers[static_cast<size_t>(i)]);
 		}
 		for (int i = 0; i < frame->varargCount; ++i) {
@@ -1243,8 +1243,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			frameState.isExceptionFrame = frame.isExceptionFrame;
 			frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
 			frameState.stackCapacity = frame.stackCapacity;
-			frameState.registers.reserve(static_cast<size_t>(frame.top));
-			for (int index = 0; index < frame.top; ++index) {
+			// top delimits open CALL/RET ranges, not the reserved registerfile.
+			frameState.registers.reserve(static_cast<size_t>(frame.stackCapacity));
+			for (int index = 0; index < frame.stackCapacity; ++index) {
 				frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
 			}
 			frameState.varargs.reserve(static_cast<size_t>(frame.varargCount));
