@@ -123,25 +123,45 @@ test('Save rejects unread, expired, read-only and cancelled authority before IO;
 test('project write failure and AEM build failure remain distinct textual wire outcomes', async t => {
 	const f = await fixture(t);
 	t.mock.method(f.runtime.machine.cpu, 'activeCartridgeSlot', () => 0);
+	const cartridge = f.sources.cartridgeSlots[0]!;
+	cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
+	const installedEventMap = {};
+	cartridge.package.audioevents.probe = installedEventMap;
+	const media = f.sources.currentBlua32Media;
+	const persisted = new Map<string, string>();
 	let rejectWrite = false;
 	await openWorkspaceRecords({
 		persistence: 'workspace',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
-		async write() { if (rejectWrite) throw new Error('provider refused write'); },
+		async write(path, record) {
+			if (rejectWrite) throw new Error('provider refused write');
+			persisted.set(path, record.contents);
+		},
 	});
 	rejectWrite = true;
 	const resource: RuntimeResource = { domain: 0, path: 'res/probe.aem.yaml', source: { type: 'aem', resid: 'probe' } };
 	f.sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
-	f.models.retain(resource, 'aem', 'not: [valid');
+	const model = f.models.retain(resource, 'aem', '{}');
+	model.pushEditOperations([{ offset: 0, deleteLength: 2, text: 'not: [valid' }]);
 	const tools = f.tools(), read = await f.read(tools, resource.path);
 	const result = await tools.execute('studio_save_source', { receipt: read.receipt });
 	if (result.kind !== 'source-save' || result.data.status !== 'failed') assert.fail();
 	assert.equal(result.data.error, 'Error: provider refused write');
+	assert.equal(model.dirty, true);
+	assert.equal(model.lastSavedSource, '{}');
+	assert.equal(persisted.has(`carts/nemesis_s/${resource.path}`), false);
+	assert.equal(f.sources.aemSourceApplications.size, 0);
 	rejectWrite = false;
 	const retry = await tools.execute('studio_save_source', { receipt: read.receipt });
-	if (retry.kind !== 'source-save' || retry.data.status !== 'saved' || retry.data.application.status !== 'failed') assert.fail();
+	if (retry.kind !== 'source-save' || retry.data.status !== 'saved' || retry.data.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(retry)}`);
 	assert.equal(retry.data.persistence.status, 'workspace');
 	assert.equal(retry.data.application.phase, 'build'); assert.match(retry.data.application.error, /flow collection/);
+	assert.equal(persisted.get(`carts/nemesis_s/${resource.path}`), read.source);
+	assert.equal(model.lastSavedSource, read.source);
+	assert.equal(model.dirty, false);
+	assert.equal(f.sources.currentBlua32Media, media);
+	assert.equal(cartridge.package.audioevents.probe, installedEventMap);
+	assert.equal(f.sources.aemSourceApplications.get(resourceIdentityKey(resource))!.failed, true);
 	assert.equal(f.tasks.failure, undefined);
 });
 

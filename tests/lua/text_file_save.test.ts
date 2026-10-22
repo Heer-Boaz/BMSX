@@ -55,8 +55,8 @@ async function fixture(t: TestContext) {
 	let readbackFailure: Error | undefined;
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
-	// AEM tests admit a domain then reject input before compilation. Other source
-	// Saves must not depend on the machine or compiler; no guest session is supplied.
+	// AEM tests exercise installation admission and parser rejection, not guest
+	// execution. Other source Saves do not consult the machine or compiler.
 	const runtime = { machine: { cpu: { activeCartridgeSlot: () => sources.activeCartridgeSlot } } } as Runtime;
 	const saves = new TextFileSaveService(models, clock, sources, null, runtime, tasks);
 	await openWorkspaceRecords(files);
@@ -282,16 +282,53 @@ test('recovery storage cannot turn an acknowledged canonical write into a failed
 
 test('AEM build rejection reports saved source separately and does not poison the runtime queue', async t => {
 	const f = await fixture(t);
+	const cartridge = f.sources.cartridgeSlots[0]!;
+	cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
+	const installedEventMap = {};
+	cartridge.package.audioevents.cue = installedEventMap;
+	const media = f.sources.currentBlua32Media;
 	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const result = await f.saves.save(model).completion;
-	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected saved source and rejected AEM');
+	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(result)}`);
 	assert.equal(result.application.phase, 'build');
+	assert.match(String(result.application.error), /flow collection/);
+	assert.deepEqual(result.persistence, { status: 'workspace' });
+	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
 	assert.equal(model.lastSavedSource, '[');
 	assert.equal(model.dirty, false);
+	assert.equal(f.sources.currentBlua32Media, media);
+	assert.equal(cartridge.package.audioevents.cue, installedEventMap);
 	assert.equal(f.tasks.ready, true);
 	assert.equal(f.sources.aemSourceApplications.get('0\0res/cue.aem.yaml')!.failed, true);
 });
+
+for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
+	test(`AEM Save preserves malformed source without building when ${reason}`, async t => {
+		const f = await fixture(t);
+		const cartridge = f.sources.cartridgeSlots[0]!;
+		if (reason === 'module-not-installed') {
+			cartridge.package.audioevents.cue = {};
+		} else {
+			cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
+		}
+		const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+		setSource(model, '[');
+		const media = f.sources.currentBlua32Media;
+		const installedEventMap = cartridge.package.audioevents.cue;
+		const result = await f.saves.save(model).completion;
+		if (result.status !== 'saved') assert.fail('expected saved source');
+		assert.deepEqual(result.application, { status: 'not-applied', reason });
+		assert.deepEqual(result.persistence, { status: 'workspace' });
+		assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
+		assert.equal(model.lastSavedSource, '[');
+		assert.equal(model.dirty, false);
+		assert.equal(f.sources.currentBlua32Media, media);
+		assert.equal(cartridge.package.audioevents.cue, installedEventMap);
+		assert.equal(f.sources.aemSourceApplications.size, 0);
+		assert.equal(f.tasks.ready, true);
+	});
+}
 
 test('inactive AEM saves source without attempting another domain\'s build or guest reload', async t => {
 	const f = await fixture(t);

@@ -124,7 +124,7 @@ export function prepareTextResourceCreation(request: TextResourceCreationRequest
 	return { domain: request.domain, path: normalizeRelativeWorkspacePath(request.relativePath), contents: request.contents };
 }
 
-export function createTextResource(
+export async function createTextResource(
 	clock: HostClock,
 	sources: RuntimeSourceState,
 	request: TextResourceCreationRequest,

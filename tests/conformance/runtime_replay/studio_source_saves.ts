@@ -99,6 +99,30 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === source
 				&& ide.sources.cartridgeBlua32MediaDirty[0] && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
 				'AEM Save relinks the installed Lua; independently saved code stays pending');
+			const validSource = document.buffer.getText(), installedMedia = ide.sources.currentBlua32Media;
+			const invalidSource = 'events: [';
+			document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: invalidSource }]);
+			await press('ControlLeft', 'KeyS');
+			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved',
+				'source saves: invalid installed AEM source is persisted independently of its build');
+			const rejected = ide.textFileSaves.latestOperation(document)!.result!;
+			check(rejected.status === 'saved' && rejected.snapshot.source === invalidSource
+				&& rejected.application.status === 'failed' && rejected.application.phase === 'build',
+				'source saves: real installed AEM reports build rejection, not skipped application or failed persistence');
+			check(!document.dirty && (await files.read(resourcePath))!.contents === invalidSource,
+				'source saves: invalid authored text is still the exact acknowledged canonical source');
+			check(tasks.ready && tasks.failure === undefined && ide.sources.currentBlua32Media === installedMedia
+				&& getTextFileRuntimeSourceStatus(ide.sources, document) === 'failed',
+				'source saves: rejected authoring leaves installed media and the runtime queue intact');
+			await frame(); await test.capture?.('aem-build-rejected-source-saved');
+			document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: validSource }]);
+			await press('ControlLeft', 'KeyS');
+			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved',
+				'source saves: correcting the AEM source applies through the same healthy queue');
+			const corrected = ide.textFileSaves.latestOperation(document)!.result!;
+			check(corrected.status === 'saved' && corrected.snapshot.source === validSource
+				&& corrected.application.status === 'applied' && !document.dirty && tasks.ready,
+				'source saves: a subsequent valid revision persists and applies successfully');
 		}
 		await frame(); await test.capture?.(`${kind}-project-saved`);
 	}

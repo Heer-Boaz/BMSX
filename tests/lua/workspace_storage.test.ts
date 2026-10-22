@@ -89,6 +89,7 @@ import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry }
 import {
 	discoverWorkspaceSources,
 	createTextResource,
+	prepareTextResourceCreation,
 	applyAllWorkspaceSourceOverrides,
 	applyLuaTextModelSources,
 	saveLuaResourceSource,
@@ -2082,6 +2083,36 @@ test('new Lua files belong to their explicit project and are published only afte
 	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua']) {
 		await assert.rejects(createTextResource(clock, sources, { ...request, relativePath }));
 	}
+});
+
+test('text resource preparation throws synchronously while creation rejects malformed paths without publishing anything', async t => {
+	const storage = new MockStorage();
+	const { clock, server } = installWorkspaceServer(t, storage);
+	await openWorkspaceRecords(workspaceFiles);
+	const registry = sourceRegistry('-- cart', 'carts/project');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- BIOS', 'machine/bios'), [registry, null], 0);
+	const revision = registry.revision, resources = sources.resourceByIdentity.size, cachedSources = workspaceCanonicalSourceCache.size;
+	for (const [relativePath, message] of [
+		['../outside.lua', /inside the project folder/],
+		['sub/../../outside.lua', /inside the project folder/],
+		['/absolute.lua', /relative to the project folder/],
+		['C:\\absolute.lua', /relative to the project folder/],
+		['actor?.lua', /Invalid file name/],
+		['', /Enter a file name/],
+		['folder/', /Enter a file name/],
+	] as const) {
+		const request = { domain: 0 as const, relativePath, contents: 'return {}' };
+		assert.throws(() => prepareTextResourceCreation(request), message, 'review preparation remains synchronous');
+		const creation = createTextResource(clock, sources, request);
+		assert.ok(creation instanceof Promise, 'the public IO boundary reports failure through its declared Promise');
+		await assert.rejects(creation, message);
+	}
+	assert.equal(server.requests.length, 0, 'invalid paths never reach the canonical file provider');
+	assert.equal(server.files.size, 0);
+	assert.equal(registry.revision, revision);
+	assert.equal(registry.records.length, 1);
+	assert.equal(sources.resourceByIdentity.size, resources, 'failed creation never publishes a resource identity');
+	assert.equal(workspaceCanonicalSourceCache.size, cachedSources, 'failed creation never publishes cached source');
 });
 
 
