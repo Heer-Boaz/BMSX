@@ -132,7 +132,13 @@ export class ActorLabController {
 		// Read the requested history position, not an intermediate replay checkpoint.
 		if (this.rewind.seeking) return false;
 		let changed = false;
-		if (input.dirty) { changed = this.projection.update(); input.dirty = false; }
+		if (input.dirty) {
+			changed = this.projection.update(); input.dirty = false;
+			if (input.detailsWindow.open && input.detailsWindow.collapsed) {
+				this.followDetailsSelection(input);
+				input.details!.resolveSubject(input.runtime, input.domain, input.worldHashId, input.historical);
+			}
+		}
 		if (input.presentation === 'outline' && input.actorPresent && input.follow.pending !== undefined) {
 			const scope = resolveActorTarget(input.runtime.roots, input.follow.pending, this.guest);
 			if (scope !== undefined) changed = this.projection.revealActive(scope) || changed;

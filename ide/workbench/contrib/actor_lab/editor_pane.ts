@@ -113,7 +113,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			target.registerCommand('actorLab.emit', { isEnabled: () => this.controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => this.controller.emitEvent(this.input) });
 			target.registerCommand('actorLab.actions', { isEnabled: () => this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.controller.actions(this.input) });
 			target.registerCommand('actorLab.call', { isEnabled: () => this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.controller.callMethod(this.input) });
-			target.registerCommand('actorLab.details', { isEnabled: () => this.controller.selected(this.input) !== undefined, run: () => {
+			target.registerCommand('actorLab.details', { isEnabled: () => this.input.detailsWindow.open || this.input.details!.subject !== undefined
+				|| this.controller.selected(this.input) !== undefined, run: () => {
 				this.showDetails(true);
 			} });
 			target.registerCommand('actorLab.stateGraph', {
@@ -350,8 +351,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.navigationSelection = undefined;
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		const windowScope = inputFocus.target?.scope;
-		drawEditorText(editorViewState.font, windowScope === this.detailsWindow.scope || windowScope === this.detailsWindow.clientScope ? this.input.details!.title
+		drawEditorText(editorViewState.font, this.detailsWindow.hasFocus ? this.input.details!.title
 			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
 			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : 'RIGHT CLICK: INSPECT'
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);

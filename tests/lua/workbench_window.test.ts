@@ -106,6 +106,32 @@ test('surface retirement returns owned client focus without relying on content c
 	assert.equal(f.focus.target, b.client, 'retiring a sibling attachment never takes focus back');
 });
 
+test('window focus includes lifetime-owned promoted popups, not unrelated controls or paint order', t => {
+	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 100, 70);
+	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	a.show(); b.show();
+	assert.equal(a.control.hasFocus, false);
+	a.client.focus();
+	assert.equal(a.control.hasFocus, true);
+	const popupScope = new InputFocusScope(Symbol('promoted popup'));
+	const popup = f.surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: a.control.clientSurface!,
+		captureScope: popupScope.surfaceScope, isVisible: () => true,
+		getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const popupFocus = f.focus.createTarget(a.client, popupScope);
+	popupFocus.focus();
+	assert.equal(popup.presentationParent, undefined, 'the popup is promoted outside the window presentation tree');
+	assert.equal(a.control.hasFocus, true);
+	assert.equal(b.control.hasFocus, false);
+	f.surfaces.raise(b.control.surface!);
+	assert.equal(a.control.hasFocus, true, 'raising a sibling cannot change the focused family');
+	b.client.focus();
+	assert.equal(a.control.hasFocus, false);
+	assert.equal(b.control.hasFocus, true);
+	f.parent.focus();
+	assert.equal(b.control.hasFocus, false);
+	popup.dispose();
+});
+
 test('content retirement may transfer focus to a live sibling without a trailing window override', t => {
 	const f = fixture();
 	const a = f.window('RETIRED', 40, 40, () => b.client.focus()), b = f.window('RETAINED', 100, 70);

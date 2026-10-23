@@ -81,6 +81,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 	}
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
+	/** Chrome, client and promoted owned popups form one active window family. */
+	public get hasFocus(): boolean { return this.focusedIn(this.surface); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
 
 	/** Reattaching a pane preserves its input-owned open/collapse/placement model. */
@@ -92,7 +94,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 			captureScope: this.scope.surfaceScope,
 			getBounds: () => options.model.bounds, getClip: () => options.getWorkArea(),
 			isVisible: () => options.model.open,
-			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.focusedIn(this.surface)),
+			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
 			handlePointer: snapshot => this.handlePointer(snapshot), handleWheel: () => true,
 			onRetire: () => {
 				const ownedFocus = this.focus.target?.scope === this.scope || this.focusedIn(this.surface);
