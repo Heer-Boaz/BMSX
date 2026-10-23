@@ -24,11 +24,11 @@ import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
-import { POSITION_AXES, type SceneEditorInput } from './editor_input';
+import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
 import { drawSceneEditor } from './render';
 import { layoutSceneEditor } from './layout';
 import { selectSceneOutlineRow } from './outline';
-import { SceneOptionEditor } from './option_editor';
+import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_editor';
 import type { SceneOptionProperty } from './option_properties';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -71,14 +71,39 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			this.identityFeedback.clear();
 			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
 		};
-		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
+		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => {
+			if (!isKeyJustPressed('Escape', event)) return false;
+			consumeIdeKey('Escape', event);
+			this.showSection('outline');
+			return true;
+		});
+		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'details';
+		this.details.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0;
 		this.details.focusTarget.commandContext = this.focusTarget;
-		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, INTEGER_INPUT_FORMAT, value => {
+		const sectionCommands: SceneEditorSectionCommands = { details: {
+			isEnabled: () => this.hasInput && this.input.outline.selectionIndex >= 0,
+			run: () => this.showSection('details'),
+		}, outline: {
+			isEnabled: () => this.hasInput,
+			run: () => this.showSection('outline'),
+		} };
+		this.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
+		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
+		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.details.focusTarget, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldNumberEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
-		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
-		this.options = new SceneOptionEditor(this.focusTarget, () => this.update(), property => this.revealOption(property));
+		for (const control of this.controls) {
+			control.field.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline' && !control.field.readOnly;
+			control.field.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
+			control.field.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
+		}
+		this.unbindFieldFocus = [
+			this.focusTarget.onDidFocus(() => { this.input.section = 'outline'; }),
+			this.details.focusTarget.onDidFocus(() => { this.input.section = 'details'; }),
+			...this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index))),
+		];
+		this.options = new SceneOptionEditor(this.details.focusTarget, () => this.update(), property => this.revealOption(property), sectionCommands);
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
 			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
@@ -105,9 +130,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public override update(): void {
 		this.controller.refresh(this.input);
 		const changed = this.boundVersion !== this.input.version;
+		const layoutChanged = layoutSceneEditor(this.input, changed, false, this.contentBounds);
 		if (changed) this.bindProperties();
-		if (layoutSceneEditor(this.input, changed, false, this.contentBounds)) {
+		if (changed || layoutChanged) this.bindFocusOrder();
+		if (changed && this.input.outline.selectionIndex < 0) this.details.focusTarget.release();
+		if (layoutChanged) {
 			this.details.lineStep = this.input.outline.layout.rowHeight;
+		}
+		if (layoutChanged && this.input.layout.mode !== 'outline') {
 			for (let index = 0; index < this.controls.length; index += 1) {
 				if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
 			}
@@ -138,28 +168,34 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 
 	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.details.focusTarget.hasFocus); }
 
+	public override focus(): void {
+		if (this.input.layout.mode === 'details') this.details.focusTarget.focus();
+		else this.focusTarget.focus();
+	}
+
+	private showSection(section: SceneEditorSection): void {
+		if (inputFocus.target?.edit?.commit() === false) return;
+		this.input.section = section;
+		this.identityFeedback.clear();
+		this.update();
+		if (section === 'details') this.details.focusTarget.focus();
+		else this.focusTarget.focus();
+	}
+
 	private revealProperty(index: number): void {
+		this.input.section = 'details';
 		const bounds = this.input.properties[index].contentBounds;
 		this.input.details.scrollbar.reveal(bounds.top, bounds.bottom, 2);
 		layoutSceneEditor(this.input, false, false, this.contentBounds);
 	}
 
 	private revealOption(property: SceneOptionProperty): void {
+		this.input.section = 'details';
 		this.input.details.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
 		layoutSceneEditor(this.input, false, false, this.contentBounds);
 	}
 
 	private bindProperties(): void {
-		let previous = this.focusTarget;
-		// An empty scroll area is pointer-focusable but not a Tab stop. Its local
-		// neighbours still belong to this input, never to the preceding member.
-		this.details.focusTarget.previous = this.focusTarget;
-		this.details.focusTarget.next = this.actionBar.focusTarget;
-		if (this.input.outline.selectionIndex >= 0) {
-			previous.next = this.details.focusTarget;
-			previous = this.details.focusTarget;
-		}
-		this.focusTarget.previous = null;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const property = this.input.properties[index];
 			const control = this.controls[index];
@@ -168,27 +204,39 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				// Revoked source targets cannot retain a draft that blur would publish.
 				control.cancel();
 				control.field.focusTarget.release();
-				control.field.focusTarget.previous = null;
-				control.field.focusTarget.next = null;
 			} else {
 				control.setValue(property.value!);
-				previous.next = control.field.focusTarget;
-				control.field.focusTarget.previous = previous;
-				previous = control.field.focusTarget;
 			}
 		}
 		this.options.bind(this.input);
-		for (const control of this.options.controls) {
-			if (control.field.readOnly) continue;
+		this.boundVersion = this.input.version;
+	}
+
+	/** Presentation changes rewire navigation, never rebind a source draft or its history. */
+	private bindFocusOrder(): void {
+		let previous = this.actionBar.focusTarget;
+		this.focusTarget.next = this.focusTarget.previous = null;
+		this.details.focusTarget.next = this.details.focusTarget.previous = null;
+		if (this.input.layout.mode !== 'details') {
+			previous.next = this.focusTarget;
+			this.focusTarget.previous = previous;
+			previous = this.focusTarget;
+		}
+		if (this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0) {
+			previous.next = this.details.focusTarget;
+			this.details.focusTarget.previous = previous;
+			previous = this.details.focusTarget;
+		}
+		for (let index = 0; index < this.controls.length + this.options.controls.length; index += 1) {
+			const control = index < this.controls.length ? this.controls[index] : this.options.controls[index - this.controls.length];
+			control.field.focusTarget.next = control.field.focusTarget.previous = null;
+			if (this.input.layout.mode === 'outline' || control.field.readOnly) continue;
 			previous.next = control.field.focusTarget;
 			control.field.focusTarget.previous = previous;
 			previous = control.field.focusTarget;
 		}
 		previous.next = this.actionBar.focusTarget;
 		this.actionBar.focusTarget.previous = previous;
-		this.actionBar.focusTarget.next = this.focusTarget;
-		this.focusTarget.previous = this.actionBar.focusTarget;
-		this.boundVersion = this.input.version;
 	}
 
 	private select(index: number, toggle: boolean): void {
@@ -200,6 +248,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.bindProperties();
 		revealWorkbenchListSelection(this.input.outline);
 		layoutSceneEditor(this.input, contentChanged, true, this.contentBounds);
+		this.bindFocusOrder();
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
@@ -213,7 +262,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		}
 		if (isKeyJustPressed('Enter', input)) {
 			consumeIdeKey('Enter', input);
-			if (this.focusTarget.next !== null) this.focusTarget.next.focus();
+			if (this.input.outline.selectionIndex >= 0) this.showSection('details');
 		}
 	}
 
@@ -273,10 +322,10 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.actionBar.dispose();
 		this.actionTooltip.detach();
 		this.identityFeedback.dispose();
-		this.details.dispose();
 		this.options.clear();
 		for (const unbind of this.unbindFieldFocus) unbind();
 		for (const control of this.controls) control.dispose();
+		this.details.dispose();
 		super.dispose();
 	}
 
@@ -285,8 +334,9 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.actionBar.clearInput();
 		this.actionTooltip.hide(); this.sourceHovered = false;
 		this.identityFeedback.clear();
-		this.details.clearInput();
+		for (const control of this.controls) { control.cancel(); control.field.focusTarget.release(); }
 		this.options.clear();
+		this.details.clearInput();
 		super.clearInput();
 	}
 }

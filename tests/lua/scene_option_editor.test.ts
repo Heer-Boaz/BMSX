@@ -7,6 +7,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { inputFocus } from '../../ide/input/focus';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/option_editor';
+import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -39,9 +40,11 @@ function fixture(source = SOURCE) {
 		boundSource = model.buffer.getText();
 		installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(boundSource, 'room.lua'))));
 		selectSceneOutlineRow(input, 1);
+		layoutSceneEditor(input, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
 		editor.bind(input);
 	};
-	const editor = new SceneOptionEditor(inputFocus.createTarget(), refresh, () => {});
+	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
+	const editor = new SceneOptionEditor(inputFocus.createTarget(), refresh, () => {}, { outline: navigation, details: navigation });
 	refresh();
 	return { model, input, editor, refresh,
 		control: (label: string) => editor.controls[input.optionProperties.findIndex(property => property.label === label)] };

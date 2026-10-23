@@ -18,49 +18,53 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_CODE_BACKGROUND);
 	api.blit_text_inline_with_font(input.sourceText, layout.left + 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, font);
-	api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
-	api.fill_rect(layout.detailsLeft - 1, layout.top + rowHeight, layout.detailsLeft, layout.bottom, 0, constants.COLOR_HEADER_BUTTON_BORDER);
-	api.blit_text_inline_with_font(layout.detailsTitle, layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
-	api.pushClipRect(outline.layout.contentLeft, outline.layout.contentTop, outline.layout.contentRight, outline.layout.contentBottom);
-	if (outline.roots.length === 0) api.blit_text_inline_with_font('NO DIRECT SCENE DEFINITIONS', 4, outline.layout.contentTop + 2, 0, color, font);
-	const firstRow = outline.scroll | 0;
-	const end = Math.min(outline.rows.length, firstRow + outline.layout.visibleRowCount);
-	for (let index = firstRow; index < end; index += 1) {
-		const node = outline.rows[index];
-		const y = outline.layout.contentTop + (index - firstRow) * rowHeight;
-		const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth;
-		if (index === outline.selectionIndex) api.fill_rect(outline.layout.contentLeft, y,
-			outline.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
-		if (node.children.length > 0) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
-			x + ((outline.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
-		api.blit_text_inline_with_font(node.element.displayLabel, x + outline.layout.twistieWidth, y + 2, 0, color, font);
-	}
-	api.popClipRect();
-	const details = input.details;
-	const bounds = details.bounds;
-	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-	for (const line of input.detailsText) {
-		const top = details.offsetTop + line.top;
-		if (top + font.lineHeight <= bounds.top || top >= bounds.bottom) continue;
-		api.blit_text_inline_with_font(line.text, bounds.left + 4, top, 0, line.warning ? constants.COLOR_STATUS_WARNING : color, font);
-	}
-	if (outline.rows[outline.selectionIndex]?.element.kind === 'member') {
-		for (let index = 0; index < controls.length; index += 1) {
-			const property = input.properties[index];
-			if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
-			api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
-			if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
-			else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+	if (layout.mode !== 'details') api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
+	if (layout.mode === 'split') api.fill_rect(layout.detailsLeft - 1, layout.top + rowHeight, layout.detailsLeft, layout.bottom, 0, constants.COLOR_HEADER_BUTTON_BORDER);
+	if (layout.mode !== 'outline') api.blit_text_inline_with_font(layout.detailsTitle, layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
+	if (layout.mode !== 'details') {
+		api.pushClipRect(outline.layout.contentLeft, outline.layout.contentTop, outline.layout.contentRight, outline.layout.contentBottom);
+		if (outline.roots.length === 0) api.blit_text_inline_with_font('NO DIRECT SCENE DEFINITIONS', outline.layout.contentLeft, outline.layout.contentTop + 2, 0, color, font);
+		const firstRow = outline.scroll | 0;
+		const end = Math.min(outline.rows.length, firstRow + outline.layout.visibleRowCount);
+		for (let index = firstRow; index < end; index += 1) {
+			const node = outline.rows[index];
+			const y = outline.layout.contentTop + (index - firstRow) * rowHeight;
+			const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth;
+			if (index === outline.selectionIndex) api.fill_rect(outline.layout.contentLeft, y,
+				outline.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+			if (node.children.length > 0) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
+				x + ((outline.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
+			api.blit_text_inline_with_font(node.element.displayLabel, x + outline.layout.twistieWidth, y + 2, 0, color, font);
 		}
-		for (let index = 0; index < optionControls.length; index += 1) {
-			const property = input.optionProperties[index];
-			if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
-			if (!optionControls[index].field.readOnly) drawValueInput(optionControls[index], property.bounds);
-			else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
-		}
+		api.popClipRect();
 	}
-	api.popClipRect();
-	details.scrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-	if (detailsFocused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
+	if (layout.mode !== 'outline') {
+		const details = input.details;
+		const bounds = details.bounds;
+		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
+		for (const line of input.detailsText) {
+			const top = details.offsetTop + line.top;
+			if (top + font.lineHeight <= bounds.top || top >= bounds.bottom) continue;
+			api.blit_text_inline_with_font(line.text, bounds.left + 4, top, 0, line.warning ? constants.COLOR_STATUS_WARNING : color, font);
+		}
+		if (outline.rows[outline.selectionIndex]?.element.kind === 'member') {
+			for (let index = 0; index < controls.length; index += 1) {
+				const property = input.properties[index];
+				if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
+				api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
+				if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
+				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+			}
+			for (let index = 0; index < optionControls.length; index += 1) {
+				const property = input.optionProperties[index];
+				if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
+				if (!optionControls[index].field.readOnly) drawValueInput(optionControls[index], property.bounds);
+				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+			}
+		}
+		api.popClipRect();
+		details.scrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		if (detailsFocused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
+	}
 	api.popClipRect();
 }

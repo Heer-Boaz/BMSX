@@ -437,6 +437,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'cartMap.title': [{ type: 'command', command: 'cartMap.source' }],
 	'sceneEditor.title': [
+		{ type: 'command', command: 'sceneEditor.details', icon: 'info' },
+		{ type: 'command', command: 'sceneEditor.outline', icon: 'back' },
 		{ type: 'command', command: 'sceneEditor.source' },
 		{ type: 'command', command: 'sceneEditor.moveMemberUp' },
 		{ type: 'command', command: 'sceneEditor.moveMemberDown' },

@@ -60,7 +60,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details n
 	assert.equal(input.detailsText[0].text, member.label);
 	assert.equal(member.labelClipped, false);
 	layoutSceneEditor(input, false, false, { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 276 });
-	assert.equal(member.labelClipped, true);
+	const tree = input.outline.layout;
+	assert.equal(input.layout.mode, 'outline');
+	assert.equal(member.labelClipped, editorViewState.font.measure(member.label) > tree.contentRight - tree.contentLeft - tree.indentWidth - tree.twistieWidth);
 	selectSceneOutlineRow(input, 0);
 	layoutSceneEditor(input, false, true, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.detailsText[0].text, "'room'");
@@ -71,7 +73,7 @@ function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	configureFontVariant(new VirtualHeadlessClock(), variant, null);
 	const input = scene(t), font = editorViewState.font.renderFont();
 	const area = { left: 0, top: 24, right: 384, bottom: 276 };
-	layoutSceneEditor(input, true, false, { ...area, right: variant === 'tiny' ? 78 : 118 });
+	layoutSceneEditor(input, true, false, { ...area, right: variant === 'tiny' ? 78 : 94 });
 	const focus = new InputFocusService(), parent = focus.createTarget(), treeFocus = focus.createTarget(parent);
 	parent.bindKeyboard(() => {}); treeFocus.bindKeyboard(() => {});
 	const surfaces = new WorkbenchSurfaceService();

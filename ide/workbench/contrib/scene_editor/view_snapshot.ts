@@ -1,9 +1,10 @@
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { selectSceneOutlineRow, type SceneOutlineElement } from './outline';
-import type { SceneEditorInput } from './editor_input';
+import type { SceneEditorInput, SceneEditorSection } from './editor_input';
 
 export type SceneEditorViewSnapshot = {
+	readonly section: SceneEditorSection;
 	readonly selected: { readonly kind: SceneOutlineElement['kind']; readonly span: TrackedTextRange; readonly root: TrackedTextRange } | undefined;
 	readonly collapsed: readonly TrackedTextRange[];
 	readonly outlineScroll: number;
@@ -16,6 +17,7 @@ export function captureSceneEditorView(input: SceneEditorInput): SceneEditorView
 	for (const root of input.outline.roots) if (root.collapsed) collapsed.push({ ...root.element.span });
 	const position = input.position;
 	return {
+		section: input.section,
 		selected: selected === undefined ? undefined : {
 			kind: selected.element.kind,
 			// The retained selection range is mapped even while the pane is hidden.
@@ -23,7 +25,7 @@ export function captureSceneEditorView(input: SceneEditorInput): SceneEditorView
 			root: { ...(selected.parent === null ? selected : selected.parent).element.span },
 		},
 		collapsed,
-		outlineScroll: position === undefined ? input.outline.scroll : position.outlineScroll,
+		outlineScroll: position?.outlineScroll === undefined ? input.outline.scroll : position.outlineScroll,
 		detailsScroll: position === undefined ? input.details.scrollTop : position.detailsScroll,
 	};
 }
@@ -57,5 +59,6 @@ export function restoreSceneEditorView(input: SceneEditorInput, snapshot: SceneE
 	}
 	rebuildWorkbenchTreeRows(input.outline, node);
 	selectSceneOutlineRow(input, input.outline.selectionIndex);
+	input.section = node === null ? 'outline' : snapshot.section;
 	input.position = { outlineScroll: snapshot.outlineScroll, detailsScroll: snapshot.detailsScroll };
 }

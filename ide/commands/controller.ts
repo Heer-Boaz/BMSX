@@ -193,6 +193,7 @@ export class IdeCommandController {
 			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
 			case 'behaviorLens.details':
+			case 'sceneEditor.details': case 'sceneEditor.outline':
 			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
@@ -464,6 +465,7 @@ export class IdeCommandController {
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
 			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
+			case 'sceneEditor.details': case 'sceneEditor.outline':
 			case 'play.more': case 'play.details':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':

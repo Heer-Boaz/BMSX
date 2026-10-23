@@ -42,6 +42,8 @@ export type EditorViewCommandId =
 	| 'cartMap'
 	| 'actorLab'
 	| 'sceneEditor.source'
+	| 'sceneEditor.details'
+	| 'sceneEditor.outline'
 	| 'behaviorLens.source'
 	| 'filter'
 	| 'wrap';

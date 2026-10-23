@@ -70,6 +70,11 @@ for (const [command, kind, path] of [
 	for (let font = 0; font < 2; font++) {
 		const variant = lineHeight(input) === 6 ? 'tiny' : 'msx';
 		t.assert(input.actionBar.bounds.right + 4 === (variant === 'tiny' ? 78 : 118), `${kind}: the real sash did not reach the supported ${variant} minimum`);
+		if (kind === 'scene_editor') {
+			const details = input.actionBar.items.find(item => item.command === 'sceneEditor.details');
+			t.assert(input.layout.mode === 'outline' && input.section === 'outline', 'the narrow Scene toolbar still accompanies two cramped columns');
+			t.assert(details.visible && !details.overflowed && details.icon === 'info', 'compact Details navigation is not a directly reachable native icon');
+		}
 		for (let theme = 0; theme < 2; theme++) {
 			bounded(input); await capture(`${kind}-minimum-${variant}-theme-${theme}`);
 			t.command('theme-toggle'); await t.frames(2);

@@ -72,6 +72,7 @@ export function selectSceneOutlineRow(input: SceneEditorInput, index: number): v
 	input.outline.selectionIndex = index;
 	input.outline.hoverIndex = -1;
 	const row = input.outline.rows[index]?.element;
+	if (row === undefined) input.section = 'outline';
 	input.selectionRange.start = row === undefined ? 0 : row.span.start;
 	input.selectionRange.end = row === undefined ? 0 : row.span.end;
 	input.optionProperties = row?.kind === 'member' && row.entry.kind === 'object'

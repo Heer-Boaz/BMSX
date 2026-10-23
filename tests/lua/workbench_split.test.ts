@@ -20,15 +20,16 @@ test('shared pane sash captures drag, releases on blur/replacement and consumes 
 	t.after(() => { control.dispose(); input.dispose(); });
 	view.layout(100, 20, 1100, 600);
 	control.setInput(view);
+	parent.focus();
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: view.position + 2, viewportY: 40 };
 	assert.equal(control.handlePointer({ ...pointer, viewportX: 200 }), false);
 	assert.equal(control.handlePointer(pointer), true);
-	assert.equal(focus.target, control.focusTarget);
+	assert.equal(focus.target, parent, 'pointer resizing does not blur the active editor or commit its draft');
 	assert.equal(capture.active, true);
 	capture.dispatch({ ...pointer, justPressedButtons: 0, viewportX: 802 }, false, 1);
 	assert.equal(view.position, 800, 'drag retains its initial grip offset');
-	parent.focus();
+	focus.createTarget().focus();
 	assert.equal(capture.active, false);
 	assert.equal(capture.dispatch({ ...pointer, viewportX: 1000 }, false, 2), false);
 	assert.equal(view.position, 800, 'blur retires the gesture, rather than parking it');
@@ -60,13 +61,15 @@ test('vertical split uses its height for drag, limits and focused keyboard resiz
 	t.after(() => { control.dispose(); input.dispose(); });
 	view.layout(150, 100, 300, 1100);
 	control.setInput(view);
+	parent.focus();
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: 200, viewportY: view.position + 2 };
 	assert.equal(control.handlePointer({ ...pointer, viewportX: 301 }), false);
 	assert.equal(control.handlePointer(pointer), true);
 	capture.dispatch({ ...pointer, justPressedButtons: 0, viewportY: 802 }, false, 1);
 	assert.equal(view.position, 800);
-	parent.focus();
+	assert.equal(focus.target, parent, 'vertical pointer resizing retains its editor focus too');
+	focus.createTarget().focus();
 	assert.equal(capture.active, false);
 	control.focusTarget.focus();
 	input.inputButton('keyboard:0', 'ArrowUp', true, 1, 1, 1);

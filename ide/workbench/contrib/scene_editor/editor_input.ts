@@ -15,12 +15,14 @@ import type { SceneSourceDocument } from './model';
 import type { SceneOptionProperty } from './option_properties';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
+export type SceneEditorSection = 'outline' | 'details';
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
 	public version = 0;
+	public section: SceneEditorSection = 'outline';
 	public sourceRevision: symbol | undefined;
 	public document: SceneSourceDocument | undefined;
-	public position: { readonly outlineScroll: number; readonly detailsScroll: number } | undefined;
+	public position: { outlineScroll: number | undefined; readonly detailsScroll: number } | undefined;
 	public parsed: LuaChunk;
 	public sourceText = '';
 	public readonly sourceCaption: string;
@@ -38,9 +40,9 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		value: null as number | null, sourceText: '', text: '', contentBounds: create_rect_bounds(), bounds: create_rect_bounds(),
 	}));
 	public optionProperties: readonly SceneOptionProperty[] = [];
-	public readonly layout: FullWidthWorkbenchLayout & { detailsLeft: number; projectedOffsetTop: number; outlineTitle: string; detailsTitle: string; sourceBounds: RectBounds } = {
+	public readonly layout: FullWidthWorkbenchLayout & { mode: 'split' | SceneEditorSection; splitMinimumWidth: number; detailsLeft: number; projectedOffsetTop: number; outlineTitle: string; detailsTitle: string; sourceBounds: RectBounds } = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		detailsLeft: 0, projectedOffsetTop: 0, outlineTitle: '', detailsTitle: '', sourceBounds: create_rect_bounds(),
+		mode: 'outline', splitMinimumWidth: 0, detailsLeft: 0, projectedOffsetTop: 0, outlineTitle: '', detailsTitle: '', sourceBounds: create_rect_bounds(),
 	};
 
 	public constructor(public readonly workingCopy: EditorTextModel) {

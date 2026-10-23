@@ -1,9 +1,11 @@
 import { ValueInput } from '../../../editor/ui/inline/value_input';
-import type { InputFocusTarget } from '../../../input/focus';
+import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { SceneEditorInput } from './editor_input';
 import type { SceneOptionProperty } from './option_properties';
+
+export type SceneEditorSectionCommands = { readonly outline: FocusCommand; readonly details: FocusCommand };
 
 /** Field drafts belong to one selected source generation and commit to its text history. */
 export class SceneOptionEditor {
@@ -12,7 +14,8 @@ export class SceneOptionEditor {
 	private input: SceneEditorInput | undefined;
 
 	public constructor(private readonly parent: InputFocusTarget,
-		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty) => void) {}
+		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty) => void,
+		private readonly sectionCommands: SceneEditorSectionCommands) {}
 
 	public bind(input: SceneEditorInput): void {
 		this.input = input;
@@ -46,6 +49,9 @@ export class SceneOptionEditor {
 			format: value => value.edit.text,
 			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.document.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
 		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
+		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && !control.field.readOnly;
+		control.field.focusTarget.registerCommand('sceneEditor.details', this.sectionCommands.details);
+		control.field.focusTarget.registerCommand('sceneEditor.outline', this.sectionCommands.outline);
 		this.unbindFocus.push(control.field.focusTarget.onDidFocus(() => this.reveal(this.input!.optionProperties[index])));
 		this.controls.push(control);
 	}

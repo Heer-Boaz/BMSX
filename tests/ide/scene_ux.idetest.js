@@ -38,8 +38,11 @@ for (let font = 0; font < 2; font++) {
 		// Tree -> details viewport -> X/Y/Z -> sx/sy/mode/visible.
 		for (let step = 0; step < 8; step++) await press('Tab');
 		await capture(`scene-${variant}-theme-${theme}-only-visible-field-focused`);
-		await press('Escape');
-		await press('Tab'); await press('Tab'); await press('Digit9');
+		await press('Escape'); await press('Home');
+		const field = input.properties[0].bounds;
+		t.assert(field.bottom > field.top && field.top >= input.details.bounds.top && field.bottom <= input.details.bounds.bottom,
+			'the numeric draft did not start in an actually visible position field');
+		await click((field.left + field.right) / 2, (field.top + field.bottom) / 2); await press('Digit9');
 		unchanged(); await capture(`scene-${variant}-theme-${theme}-numeric-draft`);
 		await press('Escape'); unchanged();
 		t.command('theme-toggle'); await t.frames(2);
@@ -47,42 +50,7 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 
-// The supported Game Panel sash minimum exposes clipped authored members, not fake short names.
-t.command('gameView.togglePanel'); await t.frames(3);
-const sash = input.actionBar.bounds.right + 6;
-t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-for (let font = 0; font < 2; font++) {
-	const variant = input.layout.font.variant;
-	t.assert(input.layout.right - input.layout.left === (variant === 'tiny' ? 78 : 118), 'the actual sash did not reach its supported font-dependent minimum');
-	await focusTree(); await press('Home'); await press('End');
-	t.assert(selected().label === "'curtain'" && selected().labelClipped, 'the narrow keyboard case does not contain a genuinely clipped member label');
-	await capture(`scene-${variant}-minimum-keyboard-curtain-identity`);
-	const list = input.outline.layout;
-	t.controlInput([{ type: 'pointer', x: list.contentLeft + list.twistieWidth + 7, y: list.contentTop + list.rowHeight * 3.5 }]);
-	await capture(`scene-${variant}-minimum-hover-curtain-identity`);
-	await press('Tab'); await press('ShiftLeft', 'Tab'); await press('End');
-	t.assert(selected().label === "'curtain'", 'revisiting keyboard identity changed the selected member');
-	await capture(`scene-${variant}-minimum-keyboard-retained-curtain-identity`);
-	await press('Home'); await press('ArrowDown'); await press('ArrowDown');
-	t.assert(selected().label === "'caption'" && selected().identity.includes('Definition caption.definition_id'), 'keyboard feedback adopted a same-prefix namesake');
-	await capture(`scene-${variant}-minimum-keyboard-caption-identity`);
-	await press('End');
-	for (let step = 0; step < 8; step++) await press('Tab');
-	await capture(`scene-${variant}-minimum-field-focus-without-row-hint`);
-	await press('Escape'); unchanged();
-	const expected = selected().source;
-	t.command('sceneEditor.source'); await t.frames(3);
-	const code = t.activeWorkbenchTab();
-	t.assert(code.kind === 'code_editor' && code.workingCopy === input.workingCopy, 'Source opened another model instead of the retained canonical working copy');
-	t.assert(code.context.view.cursorRow === expected.start.line - 1 && code.context.view.cursorColumn === expected.start.column - 1,
-		'Source did not reveal the exact selected member range');
-	await capture(`scene-${variant}-selected-member-canonical-source`); unchanged();
-	t.command('sceneEditor'); await t.frames(3);
-	t.assert(t.activeWorkbenchTab() === input && selected().label === "'curtain'", 'returning from Source lost the retained authored member');
-	await press('ControlLeft', 'ShiftLeft', 'KeyT');
-}
-t.command('gameView.closePanel'); await t.frames(3); unchanged();
+// Compact navigation, hidden controls and Source lifetimes live in scene_responsive_ux.
+unchanged();
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `Scene workflow logged an error: ${t.logMessage(index).message}`);

@@ -14,19 +14,21 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	private input: WorkbenchSplitView | undefined;
 	private pointerOffset = 0;
 	private readonly unbindKeyboard: () => void;
-	private readonly unbindBlur: () => void;
-	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
+	private unbindPressBlur: (() => void) | undefined;
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => this.handleKeyboard(player));
-		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 	}
 	public setInput(input: WorkbenchSplitView): void { this.clearInput(); this.input = input; }
 	public clearInput(): void { this.cancelPointer(); this.hover.release(this); this.focusTarget.release(); this.input = undefined; }
-	public dispose(): void { this.clearInput(); this.unbindKeyboard(); this.unbindBlur(); }
+	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }
 	public onPointerLeave(): void { this.hovered = false; }
-	public cancelPointer(): void { this.capture.release(this); }
+	public readonly cancelPointer = (): void => {
+		this.capture.release(this);
+		this.unbindPressBlur?.(); this.unbindPressBlur = undefined;
+	};
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const input = this.input;
 		if (input === undefined || !snapshot.valid || !snapshot.insideViewport) return false;
@@ -37,8 +39,11 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 			|| cross >= (horizontal ? input.bounds.bottom : input.bounds.right)) return false;
 		this.hover.visit(this); this.hovered = true;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
-			this.focusTarget.focus(); this.pointerOffset = position - input.position;
+			// Like a scrollbar, pointer resizing keeps the active editor and draft.
+			// Keyboard users reach the sash through its explicit focus order.
+			this.pointerOffset = position - input.position;
 			this.capture.capture(this);
+			this.unbindPressBlur = this.focus.target?.onDidBlur(this.cancelPointer);
 		}
 		return true;
 	}
@@ -46,7 +51,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 		const input = this.input!;
 		input.moveTo((input.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY) - this.pointerOffset);
 	}
-	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.capture.release(this); }
+	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }
 	private handleKeyboard(player: KeyInputEvent): void {
 		const input = this.input!;
 		const keys = input.orientation === 'horizontal' ? HORIZONTAL_KEYS : VERTICAL_KEYS;

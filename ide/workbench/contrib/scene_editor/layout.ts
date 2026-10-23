@@ -6,7 +6,7 @@ import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../comm
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
+import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ui/action_bar';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneEditorInput } from './editor_input';
@@ -17,42 +17,72 @@ const PADDING = 4;
 /** Measure content on invalidation; a scroll only projects the retained field rectangles. */
 export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
 	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds);
-	const measured = changed || contentChanged || selectionChanged;
 	const layout = input.layout;
+	// Each split column needs usable text width; font changes can cross this boundary.
+	if (changed) layout.splitMinimumWidth = 2 * (editorViewState.font.advance('M') * 24 + PADDING * 2 + constants.SCROLLBAR_WIDTH) + 1;
+	const mode = layout.right - layout.left >= layout.splitMinimumWidth ? 'split' : input.section;
+	const measured = changed || contentChanged || selectionChanged || mode !== layout.mode;
+	layout.mode = mode;
 	if (measured) {
 		const rowHeight = layout.rowHeight + PADDING;
-		layout.detailsLeft = (layout.right * 0.52) | 0;
+		layout.detailsLeft = mode === 'split' ? layout.left + ((layout.right - layout.left) >> 1) : layout.left;
 		const contentTop = Math.min(layout.bottom, layout.top + rowHeight * 2);
 		const treeLayout = input.outline.layout;
-		layoutWorkbenchList(treeLayout, PADDING, contentTop, layout.detailsLeft - PADDING, layout.bottom, rowHeight);
+		layoutWorkbenchList(treeLayout, layout.left + PADDING, contentTop,
+			mode === 'details' ? layout.left + PADDING : (mode === 'split' ? layout.detailsLeft : layout.right) - PADDING,
+			mode === 'details' ? contentTop : layout.bottom, rowHeight);
 		// The row-based tree draws whole rows; its hit area excludes a partial last row.
 		treeLayout.contentBottom = treeLayout.contentTop + treeLayout.visibleRowCount * rowHeight;
 		treeLayout.indentWidth = Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
 		treeLayout.twistieWidth = treeLayout.indentWidth;
-		clampWorkbenchListScroll(input.outline);
-		if (changed || contentChanged) layoutSceneOutlineNodes(input.outline.roots, treeLayout);
+		if (mode !== 'details') {
+			clampWorkbenchListScroll(input.outline);
+			layoutSceneOutlineNodes(input.outline.roots, treeLayout);
+		}
+		for (const item of input.actionBar.items) {
+			if (item.command === 'sceneEditor.details') item.visible = mode === 'outline';
+			else if (item.command === 'sceneEditor.outline') item.visible = mode === 'details';
+		}
 		const caption = input.sourceCaption;
-		const actionLeft = Math.min(layout.left + measureText(caption) + PADDING * 3, layout.right - PADDING * 2 - Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight));
+		const iconWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight);
+		const actionWidth = mode === 'split' ? iconWidth : iconWidth * 2 + WORKBENCH_ACTION_BAR_ITEM_SPACING;
+		const actionLeft = Math.min(layout.left + measureText(caption) + PADDING * 3, layout.right - PADDING - actionWidth);
 		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont(), actionLeft);
 		input.sourceText = truncateTextToWidth(caption, input.actionBar.bounds.left - layout.left - PADDING * 2);
 		write_rect_bounds(layout.sourceBounds, layout.left + PADDING, layout.top, input.actionBar.bounds.left - PADDING, layout.top + rowHeight);
-		layout.outlineTitle = truncateTextToWidth('Scenes', layout.detailsLeft - layout.left - PADDING * 2);
-		layout.detailsTitle = truncateTextToWidth('Details', layout.right - layout.detailsLeft - PADDING * 2);
-		const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
-		const height = measureSceneDetails(input, width);
-		input.details.layout(layout.detailsLeft, contentTop, layout.right, layout.bottom, height);
+		layout.outlineTitle = mode === 'details' ? '' : 'Scenes';
+		layout.detailsTitle = mode === 'outline' ? '' : 'Details';
+		if (mode === 'outline') input.details.layout(layout.left, contentTop, layout.left, contentTop, input.details.contentHeight);
+		else {
+			const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
+			const height = measureSceneDetails(input, width);
+			input.details.layout(layout.detailsLeft, contentTop, layout.right, layout.bottom, height);
+		}
 	}
 	const position = input.position;
 	if (position !== undefined) {
-		input.outline.scroll = position.outlineScroll;
-		clampWorkbenchListScroll(input.outline);
-		input.details.scrollbar.setScroll(position.detailsScroll);
-		input.position = undefined;
+		if (position.outlineScroll !== undefined) {
+			input.outline.scroll = position.outlineScroll;
+			if (mode !== 'details') clampWorkbenchListScroll(input.outline);
+			position.outlineScroll = undefined;
+		}
+		// A hidden client has no measured range yet. Its bookmark belongs to
+		// the first visible layout, not the empty viewport's zero range.
+		if (mode !== 'outline') {
+			input.details.scrollbar.setScroll(position.detailsScroll);
+			input.position = undefined;
+		}
 	}
 
 	if (measured || layout.projectedOffsetTop !== input.details.offsetTop) {
-		for (const property of input.properties) input.details.project(property.contentBounds, property.bounds);
-		for (const property of input.optionProperties) input.details.project(property.contentBounds, property.bounds);
+		for (const property of input.properties) {
+			if (mode === 'outline') write_rect_bounds(property.bounds, 0, 0, 0, 0);
+			else input.details.project(property.contentBounds, property.bounds);
+		}
+		for (const property of input.optionProperties) {
+			if (mode === 'outline') write_rect_bounds(property.bounds, 0, 0, 0, 0);
+			else input.details.project(property.contentBounds, property.bounds);
+		}
 		layout.projectedOffsetTop = input.details.offsetTop;
 	}
 	return measured;

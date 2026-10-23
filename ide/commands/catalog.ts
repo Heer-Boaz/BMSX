@@ -189,6 +189,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'actorLab.more': { category: 'Actor Lab', title: 'More Actions', shortTitle: '…' },
 	'actorLab.outline': { category: 'Actor Lab', title: 'Return to Actor Tree', shortTitle: 'Back' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
+	'sceneEditor.details': { category: 'Scene Editor', title: 'Show Details', shortTitle: 'Details' },
+	'sceneEditor.outline': { category: 'Scene Editor', title: 'Back to Scenes', shortTitle: 'Scenes' },
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },
 	'behaviorLens.more': { category: 'Behavior Lens', title: 'More Actions', shortTitle: '…' },
 	'behaviorLens.inspectRuntimeEffect': { category: 'Behavior Lens', title: 'Inspect Granted ActionEffect', shortTitle: 'Live' },
