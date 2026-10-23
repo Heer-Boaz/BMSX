@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -223,4 +225,32 @@ test('GPU filtering reports interior projection changes even when visible endpoi
 	assert.equal(projection.update(history, 'line'), true);
 	assert.deepEqual(projection.rows, [0, 2]);
 	input.dispose();
+});
+
+test('GPU Details expose compact raw fields without discarding observation and paging limits', () => {
+	const record = new GpuOperationSnapshot(4), view = new GpuDebugPresentation();
+	record.sequence = 5; record.kind = GX_GPU_COMMAND_DRAW_POLYGON; record.opcode = 0x20; record.wordCount = 4;
+	record.words.set([0x20332211, 0x00010002, 0x00030004, 0x00050006]);
+	view.update(record, 1, 'geometry');
+	const properties = view.details(record), words = properties.filter(row => row.label.startsWith('Word['));
+	assert.ok(properties.every(row => row.compact === true));
+	assert.equal(properties[0].descriptionDisplay, 'inline'); assert.match(properties[0].description, /not completion/);
+	assert.equal(words.length, record.wordCount); assert.equal(words[0].value, '20332211h');
+	assert.ok(words.every(row => row.descriptionDisplay === 'disclosure' && row.description.includes('not reconstructed original GP0 packets')));
+	const raw = properties.find(row => row.label === 'Raw words')!;
+	assert.equal(raw.descriptionDisplay, 'inline'); assert.match(raw.description, /every active word/);
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		let measurements = 0;
+		const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
+		const bounds = { left: 0, top: 40, right: 384, bottom: 256 };
+		model.setItems(properties); model.layout(font, measure, bounds);
+		const visible = model.rows.filter(row => row.bottom <= bounds.bottom - bounds.top);
+		assert.ok(visible.length >= 10, `${variant}: compact retained fields expose at least ten values, not four paragraph cards (${visible.length})`);
+		assert.equal(model.rows[0].textExpanded, false);
+		const measured = measurements, rows = model.rows;
+		for (let n = 0; n < 1000; n++) { assert.equal(view.update(record, 1, 'geometry'), false); model.layout(font, measure, bounds); }
+		assert.equal(measurements, measured); assert.equal(model.rows, rows); assert.equal(view.properties, properties);
+	}
+
 });

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { IO_GX_GTE_PLUS_BASE } from '../../machine/ts/spec/bmsx/io';
@@ -202,4 +204,49 @@ test('PLUS views preserve accepted operands, display only published results and 
 	view.update(orphan, 1, 'auto');
 	assert.equal(view.points.length, 1); assert.equal(view.points[0].label, 'R');
 	reopened.dispose();
+});
+
+test('GTE compact Details preserve every before/after raw word and visible interpretation limits', () => {
+	const record = new GteCommandSnapshot(), view = new GteDebugPresentation();
+	record.sequence = 5; record.commandWord = 0x00080030; record.beforeData[0] = 0x89abcdef; record.afterData[0] = 0xfedcba98;
+	record.afterControl[31] = 0x00400000;
+	view.update(record, 1, 'auto');
+	const properties = view.details(record), registers = properties.filter(row => /^[DC]\[/.test(row.label));
+	assert.equal(registers.length, 64); assert.ok(properties.every(row => row.compact === true));
+	assert.equal(registers[0].value, '89ABCDEFh -> FEDCBA98h'); assert.match(registers[0].label, /changed/);
+	assert.ok(registers.every(row => row.descriptionDisplay === 'disclosure' && row.description.includes('not an MMIO alias read')));
+	assert.equal(properties[0].descriptionDisplay, 'inline'); assert.match(properties[0].description, /not elapsed frame time/);
+	const flag = properties.find(row => row.label === 'Result FLAG')!;
+	assert.equal(flag.warning, true); assert.equal(flag.descriptionDisplay, 'inline'); assert.match(flag.description, /does not summarize every saturation bit/);
+	const projection = properties.find(row => row.label === 'Projection at issue')!;
+	assert.equal(projection.descriptionDisplay, 'inline'); assert.match(projection.description, /no framebuffer mapping/);
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		let measurements = 0;
+		const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
+		const bounds = { left: 0, top: 40, right: 384, bottom: 256 };
+		model.setItems(properties); model.layout(font, measure, bounds);
+		const visible = model.rows.filter(row => row.bottom <= bounds.bottom - bounds.top);
+		assert.ok(visible.length >= 10, `${variant}: compact retained fields expose at least ten values, not four paragraph cards (${visible.length})`);
+		assert.equal(model.rows[0].textExpanded, false);
+		const measured = measurements, rows = model.rows;
+		for (let n = 0; n < 1000; n++) { assert.equal(view.update(record, 1, 'auto'), false); model.layout(font, measure, bounds); }
+		assert.equal(measurements, measured); assert.equal(model.rows, rows); assert.equal(view.properties, properties);
+	}
+
+});
+
+test('PLUS compact Details keep absent acceptance, result lifetime and writable-bank ambiguity explicit', () => {
+	const record = new GteCommandSnapshot(), view = new GteDebugPresentation();
+	record.sequence = 7; record.kind = 'plus-published'; record.commandWord = 1;
+	record.afterPlus[0] = 0x12345678;
+	view.update(record, 1, 'auto');
+	const properties = view.details(record);
+	assert.ok(properties.every(row => row.compact === true));
+	const flag = properties.find(row => row.label === 'Published FLAG')!;
+	assert.equal(flag.descriptionDisplay, 'inline'); assert.match(flag.description, /Acceptance was not observed/); assert.match(flag.description, /next calculation/);
+	assert.equal(properties.filter(row => row.label.startsWith('Accepted[')).length, 0, 'unobserved accepted operands are not invented from published writable inputs');
+	const published = properties.filter(row => row.label.startsWith('Published['));
+	assert.equal(published.length, 10); assert.equal(published[0].value, '12345678h'); assert.equal(published[0].descriptionDisplay, 'disclosure');
+	assert.match(published[0].description, /not an accepted operand/);
 });

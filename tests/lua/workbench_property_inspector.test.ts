@@ -10,7 +10,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
-import { WorkbenchPropertyInspectorModel, compactPropertyRowHeight, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
+import { WorkbenchPropertyInspectorModel, compactPropertyRowHeight, INSPECTOR_PADDING, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/property_inspector';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -393,7 +393,7 @@ test('compact multiline scalar previews stay on one row and disclose their exact
 	f.press('ArrowRight'); f.layout(); assert.deepEqual(row.value, ['first', 'second']);
 });
 
-function feedbackFixture(t: TestContext) {
+function feedbackFixture(t: TestContext, property: Partial<InspectedProperty> = {}) {
 	const f = fixture(t), surfaces = new WorkbenchSurfaceService();
 	f.bounds.right = 180; f.bounds.bottom = 130;
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
@@ -403,7 +403,7 @@ function feedbackFixture(t: TestContext) {
 	let childRequests = 0;
 	const expansion = { expanded: false, setExpanded(expanded: boolean) { this.expanded = expanded; childRequests++; } };
 	const item: InspectedProperty = { label: '_active_objects_by_definition', value: 'Table #7', description: '', warning: false,
-		compact: true, depth: 2, expansion };
+		compact: true, depth: 2, expansion, ...property };
 	const items: InspectedProperty[] = [item, ...Array.from({ length: 8 }, (_, index) => ({ label: `Scalar ${index}`, value: '0',
 		compact: true, depth: 0, description: '', warning: false }))];
 	f.inspector.show({ title: 'Runtime', items, dismissible: false, canOpenSource: () => false, openSource() {} }, false);
@@ -500,4 +500,100 @@ test('disclosure navigation cancels held keyboard and controller activation befo
 			else if (target === 'source') assert.equal(opened, 1, 'fresh Source activation still works');
 			else assert.equal(childChanges, 1, 'fresh table activation still works');
 		}
+});
+
+test('on-demand compact explanations disclose explicitly without obscuring the initial field grid', t => {
+	const f = fixture(t), description = 'Retained register interpretation. '.repeat(12);
+	const item: InspectedProperty = { label: 'D[0]', value: '12345678h', description, warning: false, compact: true, descriptionDisplay: 'disclosure' };
+	f.inspector.show({ title: 'Hardware', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+	const row = f.inspector.model.rows[0];
+	assert.equal(row.bottom - row.top, compactPropertyRowHeight(f.font));
+	assert.equal(row.textExpandable, true, 'a fitting field still advertises its actual annotation'); assert.deepEqual(row.description, []);
+	assert.equal(f.inspector.focusTarget.clipboard!.copy!(), item.value);
+	const measured = f.measured();
+	for (let n = 0; n < 1000; n++) { f.inspector.update(); f.layout(); }
+	assert.equal(f.measured(), measured);
+	f.press('ArrowRight'); f.layout(); assert.equal(row.textExpanded, true); assert.ok(row.description.join(' ').startsWith('Retained register interpretation.'));
+	assert.ok(row.bottom - row.top > compactPropertyRowHeight(f.font));
+	f.press('ArrowLeft'); f.layout(); assert.equal(row.textExpanded, false); assert.deepEqual(row.description, []);
+	f.press('Enter'); f.layout(); assert.equal(row.textExpanded, true, 'non-source field activation also discloses its explanation');
+});
+
+test('source-capable compact fields retain Enter Source while Right discloses their complete annotation', t => {
+	const f = fixture(t), item: InspectedProperty = { label: 'Source', value: 'file.lua:3', description: 'Captured installed program, not the current editor buffer.',
+		warning: true, compact: true, descriptionDisplay: 'disclosure' };
+	let opened = 0;
+	f.inspector.show({ title: 'Source', items: [item], dismissible: false, canOpenSource: () => true, openSource() { opened++; } }); f.layout();
+	f.press('ArrowRight'); f.layout(); assert.equal(f.inspector.model.rows[0].textExpanded, true); assert.equal(opened, 0);
+	f.press('ArrowLeft'); f.layout(); f.press('Enter'); assert.equal(opened, 1);
+});
+
+
+test('explanation-only hover is opt-in pointer feedback; initial focus leaves the compact hardware grid exposed', t => {
+	const description = 'Retained raw word, not an MMIO alias read.';
+	const f = feedbackFixture(t, { label: 'D[0]', value: '12345678h', depth: 0, expansion: undefined, description, descriptionDisplay: 'disclosure' });
+	f.inspector.focusTarget.focus(); f.layout(); f.paint();
+	assert.equal(f.labels.includes(description), false, 'initial keyboard selection cannot obscure the compact grid with an explanation popup');
+	f.press('ArrowRight'); f.layout(); assert.equal(f.inspector.model.rows[0].textExpanded, true); f.paint();
+	assert.ok(f.labels.join(' ').includes('Retained raw word,'));
+	f.press('ArrowLeft'); f.layout(); f.pointer(); f.layout(); f.paint(); assert.ok(f.labels.includes(description));
+	const measured = f.measurements();
+	for (let n = 0; n < 1000; n++) { f.inspector.update(); f.layout(); }
+	assert.equal(f.measurements(), measured); assert.equal(f.childRequests(), 0);
+	f.parent.focus(); f.paint(); assert.equal(f.labels.includes(description), false);
+});
+
+test('explicit bottom-row Right and pointer disclosure reveal the new row extent after reflow', t => {
+	const f = fixture(t); f.bounds.bottom = 150;
+	const items: InspectedProperty[] = Array.from({ length: 16 }, (_, index) => ({ label: `D[${index}]`, value: '12345678h',
+		description: 'Retained raw register word, before and after this command, not an MMIO alias read.', warning: false,
+		compact: true, descriptionDisplay: 'disclosure' }));
+	const open = () => { f.inspector.show({ title: 'Hardware', items, dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout(); f.press('End'); f.layout(); };
+	for (const method of ['keyboard', 'pointer'] as const) {
+		open();
+		const model = f.inspector.model, view = model.viewport, row = model.rows.at(-1)!;
+		const oldTop = view.offsetTop + row.top;
+		assert.ok(oldTop > view.bounds.top + view.height / 2, 'the collapsed final field really begins near the viewport bottom');
+		if (method === 'keyboard') f.press('ArrowRight');
+		else f.inspector.handlePointer({ valid: true, insideViewport: true, viewportX: view.bounds.left + row.disclosureLeft + 3,
+			viewportY: oldTop + row.headerHeight / 2, pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+		f.layout();
+		assert.equal(row.textExpanded, true);
+		assert.ok(view.offsetTop + row.top >= view.bounds.top && view.offsetTop + row.bottom <= view.bounds.bottom,
+			`${method}: the disclosed explanation is visible without another navigation/scroll action`);
+		const scroll = view.scrollTop; for (let frame = 0; frame < 1000; frame++) f.layout();
+		assert.equal(view.scrollTop, scroll, 'ordinary idle layout does not continuously re-reveal or reset scroll');
+	}
+});
+
+test('oversized explicit text disclosure leads with its field while replacement and hide retire the reveal target', t => {
+	const f = fixture(t); f.bounds.bottom = 110;
+	const item: InspectedProperty = { label: 'D[31]', value: '12345678h', description: 'A complete retained register explanation. '.repeat(100),
+		compact: true, warning: false, descriptionDisplay: 'disclosure' };
+	const items = [...f.items, item];
+	f.inspector.show({ title: 'Hardware', items, dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+	f.press('End'); f.layout(); f.press('ArrowRight'); f.layout();
+	const view = f.inspector.model.viewport, row = f.inspector.model.rows.at(-1)!;
+	assert.ok(row.bottom - row.top > view.height);
+	assert.equal(view.offsetTop + row.top, view.bounds.top + INSPECTOR_PADDING, 'oversized text starts with the actual label rather than its final paragraph');
+	f.press('ArrowLeft'); f.layout(); f.press('ArrowRight');
+	const replacement = { ...item, label: 'Replacement', description: 'Different retained subject.' };
+	f.inspector.updateItems([...items.slice(0, -1), replacement], (left, right) => left === right); f.layout();
+	assert.equal(f.inspector.model.rows.at(-1)!.textExpanded, false, 'a pending reveal never expands a replacement at the same index');
+	f.inspector.hide(); f.show(); f.layout();
+	assert.equal(f.inspector.model.selectionIndex, 0); assert.equal(f.inspector.model.viewport.scrollTop, 0);
+});
+
+
+test('queued navigation supersedes an earlier explicit expansion reveal before the next layout', () => {
+	const font = new Font({ variant: 'tiny' }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+	const items: InspectedProperty[] = Array.from({ length: 10 }, (_, index) => ({ label: `D[${index}]`, value: '12345678h',
+		description: 'A retained register explanation. '.repeat(5), warning: false, compact: true, descriptionDisplay: 'disclosure' }));
+	const bounds = { left: 0, top: 0, right: 180, bottom: 48 }, measure = (s: string, a: number, b: number) => font.measure(s.slice(a, b));
+	model.setItems(items); model.layout(font, measure, bounds); model.select(6); model.setValueExpanded(6, true); model.select(7);
+	model.layout(font, measure, bounds);
+	const selected = model.rows[model.selectionIndex], view = model.viewport;
+	assert.equal(model.selectionIndex, 7);
+	assert.ok(view.offsetTop + selected.top >= bounds.top && view.offsetTop + selected.bottom <= bounds.bottom,
+		'the latest actual navigation owns reveal after reflow, not the earlier expanded row');
 });

@@ -224,7 +224,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			: this.feedbackPointer ? this.model.hoverIndex : -1;
 		const row = this.model.rows[index];
 		if (!this.visible || this.feedbackOwner.retired || row === undefined || row.element.compact !== true || row.textExpanded
-			|| row.label[0] === row.element.label && (row.element.group === true || row.value[0] === row.element.value)) {
+			|| row.label[0] === row.element.label && (row.element.group === true || row.value[0] === row.element.value)
+				&& !(this.feedbackPointer && row.element.descriptionDisplay === 'disclosure' && row.element.description.length !== 0)) {
 			this.feedback!.hide(); return;
 		}
 		const top = view.offsetTop + row.top, bottom = top + row.headerHeight;

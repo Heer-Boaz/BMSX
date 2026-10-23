@@ -25,6 +25,8 @@ import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
@@ -80,7 +82,8 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, private readonly sources: RuntimeSourceState,
-		private readonly sourceNavigation: EditorNavigationController) {
+		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
+		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
 		this.scroll.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
@@ -191,10 +194,11 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				input.following = false;
 				this.refreshSource();
 				const source = this.sourceLocation, properties = this.presentation.details(input.selected).slice();
-				properties.splice(1, 0, { label: input.selected.kind === 'normal' ? 'Issuing source' : 'Acceptance source', value: source === undefined || this.sourceUnavailable ? 'Source unavailable' : `${source.range.path}:${source.range.start.line}:${source.range.start.column}`,
+				properties.splice(1, 0, { compact: true, descriptionDisplay: this.sourceChanged ? 'inline' : 'disclosure', label: input.selected.kind === 'normal' ? 'Issuing source' : 'Acceptance source', value: source === undefined || this.sourceUnavailable ? 'Source unavailable' : `${source.range.path}:${source.range.start.line}:${source.range.start.column}`,
 					description: this.sourceChanged ? 'Source changed since this command was compiled. Source navigation is disabled.' : input.selected.kind === 'normal' ? 'Location belongs to the captured installed program.' : 'Location belongs to the observed command acceptance, not an instruction which later synchronized publication.', warning: this.sourceChanged });
 				this.inspector.show({ title: `GTE EVENT #${input.selected.sequence}`, items: properties, canOpenSource: () => source !== undefined && !this.sourceChanged && !this.sourceUnavailable,
-					openSource: () => this.openSource() }); break;
+					openSource: () => this.openSource() });
+				this.inspector.attachFeedback(this.surfaces, this.paneSurface, this.getWorkArea); break;
 			}
 		}
 	}

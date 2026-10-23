@@ -157,39 +157,39 @@ export class GpuDebugPresentation {
 	/** Explicit Details formats only one raw page; the Raw words view virtualizes the complete operation. */
 	public details(record: GpuOperationSnapshot, rawPage = 0): readonly InspectedProperty[] {
 		this.properties.length = 0;
-		this.properties.push({ label: 'Emitted GPU operation', value: `${gpuOperationName(record)} / ${formatNumberAsHex(record.opcode, 2)}`,
-			description: `${this.summary}\nLogical execution start ${record.startCycles}; actual observation ${record.cycles}. This is not completion, presentation or original GP0 traffic. No CPU/GTE or asset identity is inferred.`, warning: false },
-			{ label: 'Drawing area / offset', value: `${formatNumberAsHex(record.drawingAreaTopLeftWord, 8)} / ${formatNumberAsHex(record.drawingAreaBottomRightWord, 8)} / ${formatNumberAsHex(record.drawingOffsetWord, 8)}`,
+		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'GPU operation', value: `${gpuOperationName(record)} / ${formatNumberAsHex(record.opcode, 2)}`,
+			description: `${this.summary}\nLogical execution start ${record.startCycles}; actual observation ${record.cycles}. This is not completion, presentation or original GP0 traffic. No CPU/GTE or asset identity is inferred. Geometry is a diagram, not exact raster coverage; no historical VRAM image is supplied.`, warning: false },
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Area / offset', value: `${formatNumberAsHex(record.drawingAreaTopLeftWord, 8)} / ${formatNumberAsHex(record.drawingAreaBottomRightWord, 8)} / ${formatNumberAsHex(record.drawingOffsetWord, 8)}`,
 				description: `Latched offset (${gxGpuSigned11(record.drawingOffsetWord)},${rules.gxGpuDrawingOffsetY(record.drawingOffsetWord)}). Polygon/line offsets are integer sums; rectangle origins wrap at signed 11 bits. Fill and transfer operations have their own address rules. Diagram edges do not claim exact raster coverage.`, warning: false },
-			{ label: 'Draw mode / texture page', value: formatNumberAsHex(record.drawModeWord, 8),
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Draw mode', value: formatNumberAsHex(record.drawModeWord, 8),
 				description: `Page (${rules.gxGpuDrawModeTexturePageBaseX(record.drawModeWord)},${rules.gxGpuDrawModeTexturePageBaseY(record.drawModeWord, record.vramYAddressExtensionWord)}), mode ${rules.gxGpuDrawModeTextureMode(record.drawModeWord)}, blend ${rules.gxGpuDrawModeTransparencyMode(record.drawModeWord)}, dither ${rules.gxGpuDrawModeDitherEnabled(record.drawModeWord)}.`, warning: false },
-			{ label: 'Texture window', value: formatNumberAsHex(record.textureWindowWord, 8), description: `U & ${rules.gxGpuTextureWindowAndX(record.textureWindowWord)} | ${rules.gxGpuTextureWindowOrX(record.textureWindowWord)}; V & ${rules.gxGpuTextureWindowAndY(record.textureWindowWord)} | ${rules.gxGpuTextureWindowOrY(record.textureWindowWord)}. No historical VRAM image is inferred.`, warning: false },
-			{ label: 'Mask / VRAM Y extension / skipped parity', value: `${formatNumberAsHex(record.maskBitModeWord, 8)} / ${record.vramYAddressExtensionWord} / ${record.skippedLineParity}`,
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Texture window', value: formatNumberAsHex(record.textureWindowWord, 8), description: `U & ${rules.gxGpuTextureWindowAndX(record.textureWindowWord)} | ${rules.gxGpuTextureWindowOrX(record.textureWindowWord)}; V & ${rules.gxGpuTextureWindowAndY(record.textureWindowWord)} | ${rules.gxGpuTextureWindowOrY(record.textureWindowWord)}. No historical VRAM image is inferred.`, warning: false },
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Mask / Y ext / parity', value: `${formatNumberAsHex(record.maskBitModeWord, 8)} / ${record.vramYAddressExtensionWord} / ${record.skippedLineParity}`,
 				description: 'Latched drawing state; individual operation types determine which fields they consume.', warning: false });
-		if (record.kind <= commands.GX_GPU_COMMAND_DRAW_RECTANGLE) this.properties.push({ label: 'Color operation',
+		if (record.kind <= commands.GX_GPU_COMMAND_DRAW_RECTANGLE) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Color operation',
 			value: `${this.gouraud ? 'Gouraud' : 'Flat'} / ${this.textured ? 'Textured' : 'Untextured'} / blend requested ${rules.gxGpuCommandSemiTransparencyEnabled(record.opcode)}`,
 			description: 'Supplied color and blend request are distinct from destination pixels, texture transparency, mask tests and dither.', warning: false });
-		if (this.triangles.length > 0) this.properties.push({ label: 'Triangle order', value: this.triangles.length === 3 ? '(V0,V1,V2)' : '(V0,V1,V2), then (V2,V1,V3)',
+		if (this.triangles.length > 0) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Triangle order', value: this.triangles.length === 3 ? '(V0,V1,V2)' : '(V0,V1,V2), then (V2,V1,V3)',
 			description: 'Actual polygon decomposition order. The diagram is not a second rasterizer or a proof of pixel coverage.', warning: false });
 		if (record.kind >= commands.GX_GPU_COMMAND_COPY_VRAM_TO_VRAM) {
 			const copy = record.kind === commands.GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, size = record.words[copy ? 3 : 2];
 			const width = gxGpuTransferWidth(size), height = gxGpuTransferHeight(size);
-			this.properties.push({ label: 'Transfer', value: `${width} x ${height}${copy ? ` / source (${rules.gxGpuTransferX(record.words[1])},${rules.gxGpuTransferY(record.words[1], record.vramYAddressExtensionWord)})` : ''}`,
+			this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Transfer', value: `${width} x ${height}${copy ? ` / source (${rules.gxGpuTransferX(record.words[1])},${rules.gxGpuTransferY(record.words[1], record.vramYAddressExtensionWord)})` : ''}`,
 				description: record.kind === commands.GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM
 					? `${record.wordCount - 3} captured payload words supply ${rules.gxGpuTransferEmittedPixelCount(width, height, record.wordCount)}/${width * height} pixels. This emitted operation may be a partial upload prefix.`
 					: 'Logical transfer extents use VRAM addressing and wrapping, not primitive drawing offsets. An emitted readback request is not a READY indication.', warning: false });
 		}
 		if (this.textured) {
 			const texture = record.words[2];
-			this.properties.push({ label: 'Texture color source / CLUT', value: `${rules.gxGpuCommandRawTextureEnabled(record.opcode) ? 'Raw texture' : 'RGB modulated'} / CLUT (${rules.gxGpuTextureClutBaseX(texture)},${rules.gxGpuTextureClutBaseY(texture, record.vramYAddressExtensionWord)})`,
+			this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Texture / CLUT', value: `${rules.gxGpuCommandRawTextureEnabled(record.opcode) ? 'Raw texture' : 'RGB modulated'} / CLUT (${rules.gxGpuTextureClutBaseX(texture)},${rules.gxGpuTextureClutBaseY(texture, record.vramYAddressExtensionWord)})`,
 				description: `Blend requested: ${rules.gxGpuCommandSemiTransparencyEnabled(record.opcode)}. Rectangle UV border corners are implicit extents, including the latched flip directions; only the origin is supplied by the packet.`, warning: false });
 		}
-		for (const vertex of this.vertices) this.properties.push({ label: vertex.label, value: vertex.value,
+		for (const vertex of this.vertices) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: vertex.label, value: vertex.value,
 			description: `Packet XY (${vertex.packetX},${vertex.packetY})${this.hasColor ? `; supplied RGB (${vertex.color & 255},${vertex.color >>> 8 & 255},${vertex.color >>> 16 & 255})` : ''}. Rectangle/transfer border corners after V0 are diagram extents, not additional packet vertices.`, warning: false });
 		const start = rawPage * GPU_RAW_WORDS_PER_PAGE, end = Math.min(record.wordCount, start + GPU_RAW_WORDS_PER_PAGE);
-		this.properties.push({ label: 'Raw words', value: `Page ${rawPage + 1}/${rawPageCount(record)} | words ${start}..${end - 1} of ${record.wordCount}`,
+		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Raw words', value: `Page ${rawPage + 1}/${rawPageCount(record)} | words ${start}..${end - 1} of ${record.wordCount}`,
 			description: 'This page is bounded. View > Raw words exposes every active word with scrolling and Home/End; unused snapshot capacity is not data.', warning: false });
-		for (let index = start; index < end; index++) this.properties.push({ label: `Word[${index}]`, value: formatNumberAsHex(record.words[index], 8), description: `Operation byte offset ${index * 4}. Emitted polyline segments and upload prefixes are not reconstructed original GP0 packets.`, warning: false });
+		for (let index = start; index < end; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `Word[${index}]`, value: formatNumberAsHex(record.words[index], 8), description: `Operation byte offset ${index * 4}. Emitted polyline segments and upload prefixes are not reconstructed original GP0 packets.`, warning: false });
 		return this.properties;
 	}
 }

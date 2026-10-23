@@ -19,6 +19,8 @@ import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
@@ -69,7 +71,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	private status = '';
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
-		private readonly contextMenu: ContextMenuController) {
+		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
+		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
 		this.list.onWillScroll = this.words.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
@@ -140,7 +143,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			case 'gpu.details': {
 				input.following = false;
 				const rawPage = Math.trunc(input.selectedWord / GPU_RAW_WORDS_PER_PAGE);
-				this.inspector.show({ title: `GPU OPERATION #${input.selected.sequence}`, items: this.presentation.details(input.selected, rawPage), canOpenSource: () => false, openSource: () => {} }); break;
+				this.inspector.show({ title: `GPU OPERATION #${input.selected.sequence}`, items: this.presentation.details(input.selected, rawPage), canOpenSource: () => false, openSource: () => {} });
+				this.inspector.attachFeedback(this.surfaces, this.paneSurface, this.getWorkArea); break;
 			}
 			case 'gpu.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;

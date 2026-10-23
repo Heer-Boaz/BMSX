@@ -11,8 +11,10 @@ import { WORKBENCH_ICON_SIZE } from '../icon';
 export type InspectedProperty = Pick<WorkbenchPropertyElement, 'label' | 'value' | 'description' | 'warning'> & {
 	/** The inspecting owner compares observations; painting never advances that baseline. */
 	readonly valueChanged?: boolean;
-	/** Runtime values are compact rows; source excerpts remain full readable documents. */
+	/** Field/value rows are compact; source excerpts remain full readable documents. */
 	readonly compact?: boolean;
+	/** Scalar annotations may be explicitly disclosed; interpretation-critical context remains inline. */
+	readonly descriptionDisplay?: 'inline' | 'disclosure';
 	readonly depth?: number;
 	readonly group?: boolean;
 	readonly expansion?: {
@@ -33,7 +35,7 @@ export type InspectedPropertyRow<Element> = {
 	textExpandable: boolean;
 	textExpanded: boolean;
 	headerHeight: number;
-	measured: { label: string; value: string; description: string; depth: number; compact: boolean; group: boolean };
+	measured: { label: string; value: string; description: string; depth: number; compact: boolean; group: boolean; descriptionDisplay: InspectedProperty['descriptionDisplay'] };
 };
 export const INSPECTOR_PADDING = 4;
 export const INSPECTOR_COMPACT_PADDING = 2;
@@ -54,6 +56,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private dirty = true;
 	private anchorIndex = -1;
 	private anchorOffset = 0;
+	private revealElement: Element | undefined;
 	private readonly expandedText = new WeakSet<Element>();
 
 	public setItems(items: readonly Element[]): void {
@@ -63,6 +66,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		this.hoverIndex = -1;
 		this.viewport.scrollbar.setScroll(0);
 		this.anchorIndex = -1;
+		this.revealElement = undefined;
 		this.dirty = true;
 	}
 
@@ -95,7 +99,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private createRow(element: Element): InspectedPropertyRow<Element> {
 		return { element, label: [], value: [], description: [], top: 0, bottom: 0, labelLeft: 0, valueLeft: 0, disclosureLeft: 0,
 			textExpandable: false, textExpanded: false, headerHeight: 0,
-			measured: { label: '', value: '', description: '', depth: -1, compact: false, group: false } };
+			measured: { label: '', value: '', description: '', depth: -1, compact: false, group: false, descriptionDisplay: undefined } };
 	}
 
 	public layout(font: BFont, measure: TextRangeMeasure, bounds: RectBounds): void {
@@ -112,8 +116,10 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 				row.top = height;
 				const compact = row.element.compact === true, depth = row.element.depth ?? 0, group = row.element.group === true;
 				const padding = compact ? INSPECTOR_COMPACT_PADDING : INSPECTOR_PADDING;
-				const rowChanged = remeasure || row.measured.depth !== depth || row.measured.compact !== compact || row.measured.group !== group;
+				const rowChanged = remeasure || row.measured.depth !== depth || row.measured.compact !== compact || row.measured.group !== group
+					|| row.measured.descriptionDisplay !== row.element.descriptionDisplay;
 				row.measured.depth = depth; row.measured.compact = compact; row.measured.group = group;
+				row.measured.descriptionDisplay = row.element.descriptionDisplay;
 				const textExpanded = compact && row.element.expansion === undefined && this.expandedText.has(row.element);
 				const textExpansionChanged = row.textExpanded !== textExpanded;
 				row.textExpanded = textExpanded;
@@ -138,10 +144,11 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 						row.value[0] = group ? '' : truncateMeasuredText(value, width - row.valueLeft - padding, measure);
 						row.measured.value = row.element.value;
 					}
-					row.textExpandable = row.label[0] !== row.element.label || !group && row.value[0] !== row.element.value;
+					row.textExpandable = row.label[0] !== row.element.label || !group && row.value[0] !== row.element.value
+						|| row.element.descriptionDisplay === 'disclosure' && row.element.description.length !== 0;
 					if (rowChanged || textExpansionChanged || row.measured.description !== row.element.description) {
 						row.description.length = 0;
-						if (row.element.description.length !== 0)
+						if (row.element.descriptionDisplay !== 'disclosure' && row.element.description.length !== 0)
 							for (const line of row.element.description.split('\n')) writeWrappedMeasuredLine(row.description, line,
 								width - row.labelLeft - padding, measure);
 						row.measured.description = row.element.description;
@@ -174,6 +181,13 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 			this.viewport.scrollbar.setScroll(anchor.top + Math.min(this.anchorOffset, anchor.bottom - anchor.top - 1));
 			this.anchorIndex = -1;
 		}
+		// Explicit disclosure reveals the newly measured extent once; ordinary layout preserves its scroll anchor.
+		if (this.revealElement !== undefined) {
+			const element = this.revealElement; this.revealElement = undefined;
+			for (const row of this.rows) if (row.element === element) {
+				this.viewport.scrollbar.reveal(row.top, row.bottom, INSPECTOR_PADDING); break;
+			}
+		}
 	}
 
 	public select(index: number): void {
@@ -181,6 +195,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		this.selectionIndex = clamp(index, 0, this.rows.length - 1);
 		this.hoverIndex = -1;
 		const row = this.rows[this.selectionIndex];
+		if (this.dirty) this.revealElement = row.element;
 		// Reveal the value as well as its label. The scrollbar lead-aligns oversized
 		// rows, so a long callback is still read from its beginning, not its last line.
 		this.viewport.scrollbar.reveal(row.top, row.bottom, INSPECTOR_PADDING);
@@ -191,7 +206,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		const row = this.rows[index];
 		if (row?.element.compact !== true || !row.textExpandable || row.textExpanded === expanded) return false;
 		if (expanded) this.expandedText.add(row.element); else this.expandedText.delete(row.element);
-		this.captureScrollAnchor(); this.dirty = true;
+		this.captureScrollAnchor(); this.revealElement = row.element; this.dirty = true;
 		return true;
 	}
 

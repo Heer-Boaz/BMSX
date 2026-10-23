@@ -176,13 +176,13 @@ export class GteDebugPresentation {
 		this.properties.length = 0;
 		if (record.kind !== 'normal') return this.plusDetails(record);
 		const flag = record.afterControl[31];
-		this.properties.push({ label: 'Captured command', value: `${gteCommandName(record.commandWord)} ${formatNumberAsHex(record.commandWord, 8)}`,
+		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Command', value: `${gteCommandName(record.commandWord)} ${formatNumberAsHex(record.commandWord, 8)}`,
 			description: `${this.summary}\nNominal command cost: ${record.nominalCycles} cycles; not elapsed frame time. SF=${record.commandWord >>> 19 & 1}, LM=${record.commandWord >>> 10 & 1}.`, warning: false },
-			{ label: 'Result FLAG', value: this.flags, description: 'Per-command output; subsequent commands may replace FLAG. ERROR does not summarize every saturation bit.', warning: flag !== 0 },
-			{ label: 'Projection controls at issue', value: `OFX=${decodeSignedQ16_16(record.beforeControl[24])}, OFY=${decodeSignedQ16_16(record.beforeControl[25])}, H=${record.beforeControl[26] & 0xffff}`,
+			{ compact: true, descriptionDisplay: 'inline', label: 'Result FLAG', value: this.flags, description: 'Per-command output; subsequent commands may replace FLAG. ERROR does not summarize every saturation bit.', warning: flag !== 0 },
+			{ compact: true, descriptionDisplay: 'inline', label: 'Projection at issue', value: `OFX=${decodeSignedQ16_16(record.beforeControl[24])}, OFY=${decodeSignedQ16_16(record.beforeControl[25])}, H=${record.beforeControl[26] & 0xffff}`,
 				description: 'H consumes the unsigned low halfword. GTE has no framebuffer mapping. Three inputs are an ordered triple, not proof of a submitted GPU primitive. NCLIP computes area; software chooses culling and clipping.', warning: false });
 		for (const [label, before, after] of [['D', record.beforeData, record.afterData], ['C', record.beforeControl, record.afterControl]] as const) {
-			for (let index = 0; index < 32; index++) this.properties.push({ label: `${label}[${index}]${before[index] !== after[index] ? ' changed' : ''}`,
+			for (let index = 0; index < 32; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `${label}[${index}]${before[index] !== after[index] ? ' changed' : ''}`,
 				value: `${formatNumberAsHex(before[index], 8)} -> ${formatNumberAsHex(after[index], 8)}`,
 				description: 'Raw retained register word before and after this command; not an MMIO alias read.', warning: false });
 		}
@@ -190,23 +190,23 @@ export class GteDebugPresentation {
 	}
 	private plusDetails(record: GteCommandSnapshot): readonly InspectedProperty[] {
 		const accepted = record.kind === 'plus-accepted', hasInputs = accepted || record.acceptedSequence !== undefined;
-		this.properties.push({ label: 'Captured PLUS event', value: gteCommandName(record.commandWord, record.kind),
+		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'PLUS event', value: gteCommandName(record.commandWord, record.kind),
 			description: `${this.summary}\nRaw command ${formatNumberAsHex(record.commandWord, 8)}; selection uses only its low byte. PLUS has no normal SF/LM selectors.`, warning: false },
-			{ label: 'Acceptance / deadline / publication',
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Accept / due / publish',
 				value: `${accepted ? record.cycles : record.acceptedCycles === undefined ? 'Unobserved' : record.acceptedCycles} / ${record.deadlineCycles === undefined ? 'Unobserved' : record.deadlineCycles} / ${accepted ? 'Not in this record' : record.cycles}`,
 				description: `Nominal interval ${record.nominalCycles} cycles. Deadline and actual publication observation are distinct. CYCLES low bits retain the nominal interval; they are not a countdown.`, warning: false },
-			{ label: accepted ? 'Result lifetime' : 'Published FLAG', value: this.flags,
+			{ compact: true, descriptionDisplay: 'inline', label: accepted ? 'Result lifetime' : 'Published FLAG', value: this.flags,
 				description: accepted ? 'RESULT and FLAG in the accepted bank belong to the preceding publication. This immutable event does not gain the pending result later.'
-					: `RESULT_XY, RESULT_Z and FLAG were observed together at publication.${hasInputs ? ` Accepted operands retained from #${record.acceptedSequence}.` : ' Acceptance was not observed; current writable input words do not identify this result\'s operands.'}`, warning: !accepted && record.afterPlus[gte.GX_GTE_PLUS_FLAG] !== 0 });
+					: `RESULT_XY, RESULT_Z and FLAG were observed together at publication.${hasInputs ? ` Accepted operands retained from #${record.acceptedSequence}.` : ' Acceptance was not observed; current writable input words do not identify this result\'s operands.'} Writable inputs at publication may belong to the next calculation.`, warning: !accepted && record.afterPlus[gte.GX_GTE_PLUS_FLAG] !== 0 });
 		if (hasInputs && (record.commandWord & 0xff) === gte.GX_GTE_PLUS_FN_VMAD3) {
 			const scalar = lowSignedHalfword(record.beforePlus[gte.GX_GTE_PLUS_SCALAR]);
-			this.properties.push({ label: 'Coordinate and scalar units', value: `Scalar ${scalar} / 4096 = ${scalar / 4096}`,
+			this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Scalar / units', value: `Scalar ${scalar} / 4096 = ${scalar / 4096}`,
 				description: 'Scalar uses a fixed signed Q12 scale. ADD, MUL and result retain raw coordinate counts in the units chosen by software; the debugger does not assume that those vectors are Q12 or recalculate VMAD3.', warning: false });
 		}
 		for (let bank = 0; bank < 2; bank++) {
 			if (bank === 0 && !hasInputs || bank === 1 && accepted) continue;
 			const words = bank === 0 ? record.beforePlus : record.afterPlus;
-			for (let index = 0; index < 10; index++) this.properties.push({ label: `${bank === 0 ? 'Accepted' : 'Published'} PLUS[${index}] ${PLUS_NAMES[index]}`,
+			for (let index = 0; index < 10; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `${bank === 0 ? 'Accepted' : 'Published'}[${index}] ${PLUS_NAMES[index]}`,
 				value: formatNumberAsHex(words[index], 8), description: bank === 1 && index < 5
 					? 'Writable input at publication. This may already belong to the next calculation; it is not an accepted operand of this result.'
 					: bank === 0 && index >= 5 && index <= 7 ? 'Previous published result/flag, retained at acceptance.' : 'Raw word captured at this phase. Signed lane decoding consumes low halves; ignored upper bits remain visible here.', warning: false });
