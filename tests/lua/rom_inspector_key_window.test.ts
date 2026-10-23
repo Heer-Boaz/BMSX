@@ -126,13 +126,13 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 
 test('key scrolling is passive, its actual Tab ring is complete and Escape returns to the original ROM list without closing', t => {
 	const f = fixture(t); f.key.show();
-	const selection = f.input.model.selection, range = f.input.model.selectedRange, view = f.input.keyViewport;
+	const selection = f.input.model.selection, range = f.input.model.selection?.ranges[0], view = f.input.keyViewport;
 	f.press('End'); assert.equal(view.scrollTop, view.scrollbar.getMaximumScroll());
 	f.press('Home'); assert.equal(view.scrollTop, 0);
 	const client = f.key.window.clientSurface!;
 	assert.equal(client.handleWheel!({ valid: true, insideViewport: true, viewportX: view.bounds.left + 4, viewportY: view.bounds.top + 4,
 		deltaX: 0, deltaY: 1, modifiers: KeyModifier.none }), true);
-	assert.ok(view.scrollTop > 0); assert.equal(f.input.model.selection, selection); assert.equal(f.input.model.selectedRange, range);
+	assert.ok(view.scrollTop > 0); assert.equal(f.input.model.selection, selection); assert.equal(f.input.model.selection?.ranges[0], range);
 	for (const target of [f.key.window.focusTarget, f.key.window.actionFocusTarget, f.key.scroll.focusTarget]) {
 		f.press('Tab'); assert.equal(inputFocus.target, target);
 	}

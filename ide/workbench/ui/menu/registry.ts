@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.content' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -33,7 +33,8 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'problems.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'window.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
-	readonly 'romInspector.content': readonly WorkbenchMenuCommandItem[];
+	readonly 'romInspector.reader.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'romInspector.reader.content': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'events.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'gte.title': readonly WorkbenchMenuCommandItem[];
@@ -233,17 +234,25 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.apply' },
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
-	'romInspector.content': [
+	'romInspector.reader.title': [
+		{ type: 'command', command: 'romInspector.hold', icon: 'pin', checkedIcon: 'unpin' },
+		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.hide', icon: 'close' },
+	],
+	'romInspector.reader.content': [
 		{ type: 'command', command: 'romInspector.content' },
 		{ type: 'command', command: 'romInspector.zoom' },
 		{ type: 'command', command: 'romInspector.collision' },
+		{ type: 'command', command: 'romInspector.source', icon: 'source' },
 	],
 	'romInspector.title': [
-		{ type: 'command', command: 'romInspector.key', icon: 'info' },
+		{ type: 'command', command: 'romInspector.inspect', icon: 'info' },
+		{ type: 'command', command: 'romInspector.key', icon: 'legend' },
 		{ type: 'command', command: 'romInspector.assets' },
 		{ type: 'command', command: 'romInspector.structure' },
 		{ type: 'command', command: 'romInspector.code' },
 		{ type: 'command', command: 'romInspector.sort' },
+		{ type: 'command', command: 'romInspector.source', icon: 'source' },
 	],
 	'gpu.title': [
 		{ type: 'command', command: 'gpu.follow' },

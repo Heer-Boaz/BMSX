@@ -17,7 +17,7 @@ this Studio session. It works without a development server or assistant.
 - `toolchain/ts/rompack/asset_image.ts` decodes image regions and complete
   textures through the existing IMGDEC/GX codecs. Studio and the terminal
   inspector share that decoder. Each snapshot retains at most one decoded
-  atlas; changing the selected preview releases its host bitmap.
+  atlas; changing the inspected subject releases its host bitmap.
 - `ide/workbench/contrib/rom_inspector` owns a normal workbench editor input and
   native presentation. Source navigation goes through the existing resource
   resolver, so edits use the same retained text models and specialized editors.
@@ -38,12 +38,12 @@ ROM, not the newer `currentBlua32Media` after Hot Resume.
 
 Physical sections are analyzed once per input. Asset filtering and ordering run
 when their controls change. Hex and disassembly rows are formatted for the
-visible range. Function instruction addresses are indexed on selection, treating
+visible range. Function instruction addresses are indexed when disassembly is first read, treating
 WIDE and its following word as one logical instruction. Full disassembly dumps
 remain CLI/TUI operations; Studio has no full-dump/export action.
 
-The Assets view filters and sorts TOC entries, previews images/textures, and
-shows typed metadata and file ranges. Layout shows the disjoint physical
+The full-width catalog filters and sorts TOC entries. Inspection never reserves
+a fixed split or removes the Game Panel to make its contents readable. Layout shows the disjoint physical
 sections; clicking the size map selects its section. Map colors distinguish the
 physical section, asset type and auxiliary payload (model texture or collision),
 including the symbols image. The categorical palette is stable across UI themes;
@@ -53,7 +53,7 @@ atlas-image metadata does not acquire fabricated pixel spans. Code browses one
 function at a time. Layout rows use the same category names and swatches as the
 map rather than a generic asset label.
 
-The info action or `ROM Inspector: Show Map Key` opens an optional modeless key.
+The legend action or `ROM Inspector: Show Map Key` opens an optional modeless key.
 It lists the snapshot's present physical categories, largest first, with color,
 name and stored byte amount. Total accounts for the complete image exactly once.
 Subpixel categories remain in the key; logical atlas metadata does not become
@@ -63,13 +63,50 @@ its list scrolls with the keyboard and wheel. Existing window controls move,
 resize, collapse and close it. Escape returns focus to the ROM list without
 closing the key. Placement, open/collapse state and scroll belong to this
 snapshot input, so switching tabs does not retarget or reconstruct its subject.
-The ROM title and content toolbars use the shared responsive overflow.
+The ROM title and inspector toolbars use the shared responsive overflow.
 
-Source opens the existing editor for a resolvable authored resource; it does not
-edit packed bytes. The content picker keeps the selected asset while
-switching between its preview and each actual buffer (data, metadata, model
-texture, collision). A TOC deletion record is an operation, not an empty image:
-it has no preview or stored byte range.
+## Entry inspection
+
+Enter, double-click or the info action (`ROM Inspector: Show Entry Inspector`)
+opens one optional modeless inspector. The catalog remains full-width. The
+inspector uses the shared floating-window container and the root work area,
+so a narrow editor column does not constrain its reading width. Its initial
+placement is in the work area's lower-right corner; requested placement and
+font-measured minimum dimensions remain container-owned thereafter. No second
+embedded inspection layout is retained.
+
+The inspector follows the catalog selection by default. Its pin holds the exact
+snapshot row and physical range while filtering, sorting or changing catalog
+views. Unpinning immediately adopts the current selection, including an empty
+result. Closing and collapsing preserve the held subject, chosen view, reading
+position, bitmap and zoom; reopening an unpinned inspector follows the current
+selection. Escape returns focus to the ROM catalog without closing the window.
+
+A single client surface displays Properties, Preview, or one actual stored byte
+range. The responsive view chooser lists Properties, Preview when supported,
+then the subject's physical buffers (data, metadata, model texture, collision).
+Functions display captured disassembly, not instructions from a later installed
+image or the catalog's current mode. Function Source uses its captured declaration
+identity, not the location of a possibly inlined first instruction. Generated
+functions without their own declaration do not acquire an invented source.
+Properties use the shared readable property inspector without another title strip. Byte columns follow the actual client
+width and font, with shared scrollbars for reading wider disassembly. Reflow
+preserves the reading anchor in byte or logical-instruction units, including
+across font changes and detached-window restoration.
+
+Source in the inspector opens the current authored resource for its displayed
+subject; Source in the catalog operates on its selection. Neither edits packed
+bytes. A TOC deletion record is an operation, not an empty image: it has no
+preview or stored byte range.
+
+The retained inspection document owns its subject, physical ranges, lazy
+metadata and instruction caches, bitmap and collision resources independently
+of the catalog cursor and client attachment. Closed inspectors do not bind or
+decode the selection. Collapsed inspectors may follow identity, but do not
+materialize pixels, metadata or disassembly. View switches retain reading state
+and resources for the same subject. Subject/range replacement retires its own
+chooser and input attempts before changing client data; another owner's chooser
+is never dismissed as a side effect of catalog updates.
 
 Image inspection uses a shared bitmap viewport/control, not the graph editor's
 node-selection model. Fit contains the image without enlarging it; explicit zoom
@@ -80,9 +117,10 @@ own the scaled pixel extents. Shape toggles the stored bounding box and collisio
 pieces from the packed G2D2 buffer, decoded by the shared
 `toolchain/ts/rompack/collision_shape_codec.ts` owner, also used by the terminal
 inspector. It does not reconstruct shapes from pixels or depend on authoring-only
-polygon metadata. Shape paths are prepared once per selected bitmap; pan/zoom
-never decodes it again. Preview/bytes changes retain the bitmap; changing assets
-releases it. The packed collision format and encoder output are unchanged.
+polygon metadata. Shape paths are prepared once per inspected bitmap; pan/zoom
+never decodes it again. Preview/properties/bytes changes retain the bitmap; changing subjects
+releases it. The Shape display preference survives subject changes; collision
+resources and paths do not. The packed collision format and encoder output are unchanged.
 
 Audio playback remains a follow-up. The terminal's heuristic BADP preview must
 not be moved into the shared layer: the machine's BADP decoder already owns the
@@ -106,5 +144,10 @@ change for this view.
   derive section accounting from the object representation, separately from reporting.
 - [VS Code binary editor](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/editors/binaryFileEditor.ts):
   editor contributions route resource opening through the shared resolver.
-- [VS Code image preview](https://github.com/microsoft/vscode/blob/main/extensions/media-preview/media/imagePreview.js):
-  distinct Fit and explicit scales, anchored zoom and retained scroll state.
+- [VS Code Hex Editor scrolling](https://github.com/microsoft/vscode-hexeditor/blob/efa0ce7ce4a945e030ad3db1a4fc3783e9207a8e/media/editor/scrollContainer.tsx):
+  reading offsets are document units; row dimensions project them into pixels.
+- [VS Code media preview](https://github.com/microsoft/vscode/blob/1.95.0/extensions/media-preview/src/mediaPreview.ts):
+  resource identity and resource disposal are distinct from visibility and activity.
+- [ImHex data inspector](https://github.com/WerWolv/ImHex/blob/4308ef2e66cd9afa63f9d178a08adc8f1c9c707f/plugins/builtin/source/content/views/view_data_inspector.cpp):
+  retain the inspected provider/region and invalidate decoded rows on subject or
+  data changes, rather than preparing them during idle paint.

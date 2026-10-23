@@ -259,10 +259,11 @@ await press('ShiftLeft', 'Tab');
 for (const code of ['KeyK', 'KeyO', 'KeyN', 'KeyA', 'KeyM', 'KeyI']) await press(code);
 await press('Enter');
 await press('Home');
+await press('Enter');
 await t.frames(2);
-t.assert(rom.model.selection.label === 'intro_konami' && rom.showingImage,
+t.assert(rom.model.selection.label === 'intro_konami' && rom.readerWindow.open && rom.reader.subject === rom.model.selection && rom.reader.view === 'preview',
 	'the actual ROM image did not resolve through its existing image decoder');
-t.assert(rom.preview.image.width > 0 && rom.preview.image.height > 0, 'ROM image preview has no decoded pixels');
+t.assert(rom.reader.preview.image.width > 0 && rom.reader.preview.image.height > 0, 'ROM image preview has no decoded pixels');
 await matrix('rom-image', rom);
 
 t.assert(authored.context.model.buffer.getText() === source, 'UI presentation changed canonical authored source');

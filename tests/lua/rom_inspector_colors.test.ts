@@ -68,10 +68,8 @@ function fixture(t: TestContext) {
 		Object.assign(input.layout, { left, top: 10, right: left + width, bottom: 280, rowHeight: font.lineHeight, font });
 		write_rect_bounds(input.filterBounds, left + 40, 24, left + width - 4, 24 + font.lineHeight + 6);
 		write_rect_bounds(input.mapBounds, left + 4, 46, left + width - 20, 52);
-		input.list.layout(left + 2, 58, left + width * 0.42, 280, input.model.rows.length * (font.lineHeight * 2 + 4));
-		input.bytes.layout(left + width * 0.42 + 4, 190, left + width - 2, 280, 100);
+		input.list.layout(left + 2, 58, left + width - 2, 280, input.model.rows.length * (font.lineHeight * 2 + 4));
 		layoutWorkbenchActionBar(input.actions, left + width - 4, 12, 16 + font.lineHeight, text => font.measure(text), font.renderFont(), left + 4);
-		layoutWorkbenchActionBar(input.contentActions, left + width - 4, 176, 180 + font.lineHeight, text => font.measure(text), font.renderFont(), left + 4);
 	};
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
@@ -218,9 +216,9 @@ test('one immutable category catalog drives logical assets, meaningful Layout ty
 	f.presentation.update(f.input, true);
 	assert.ok(f.presentation.labels.every(row => row.detail.startsWith(ROM_CATEGORIES.texture.label)),
 		'the actual Layout projection must show Texture, not asset or its owning Model type');
-	const source = model.rows[0], range = model.selectedRange;
+	const source = model.rows[0], range = model.selection?.ranges[0];
 	model.sort = 'size'; model.descending = true; model.project();
-	assert.equal(model.rows[0], source); assert.equal(model.selectedRange, range, 'sorting Layout cannot retarget the original physical range');
+	assert.equal(model.rows[0], source); assert.equal(model.selection?.ranges[0], range, 'sorting Layout cannot retarget the original physical range');
 });
 
 test('the byte key includes genuine subpixel payloads but not zero-only, metadata-only or deleted logical types', t => {
@@ -239,4 +237,25 @@ test('the byte key includes genuine subpixel payloads but not zero-only, metadat
 		assert.ok(!entries.some(entry => entry.category === category), 'logical type membership is not physical byte attribution');
 	assert.equal(entries.find(entry => entry.category === ROM_CATEGORIES.metadata)!.byteLength, header.metadataLength);
 	assert.equal(entries.reduce((sum, entry) => sum + entry.byteLength, 0), input.snapshot.rom.length);
+});
+
+test('catalog selection marks every exact buffer independently of a held inspector subject', t => {
+	const f = fixture(t), { input, presentation } = f;
+	input.model.select(input.model.rows.findIndex(row => row.asset?.resid === 'model'));
+	const subject = input.model.selection!;
+	input.reader.setSubject(subject); input.readerHeld = true;
+	presentation.update(input, true);
+	const scale = (input.mapBounds.right - input.mapBounds.left) / input.snapshot.rom.length;
+	assert.equal(subject.ranges.length, 3);
+	assert.deepEqual(presentation.selectedSpans, subject.ranges.map(range => ({
+		left: input.mapBounds.left + range.start * scale, right: input.mapBounds.left + range.end * scale,
+	})));
+	input.model.select(input.model.rows.findIndex(row => row.asset?.resid === 'audio'));
+	presentation.update(input, false);
+	assert.equal(input.reader.subject, subject);
+	assert.deepEqual(presentation.selectedSpans, input.model.selection!.ranges.map(range => ({
+		left: input.mapBounds.left + range.start * scale, right: input.mapBounds.left + range.end * scale,
+	})), 'map highlights catalog selection, never a held reader range');
+	input.model.filter = 'no-such-entry'; input.model.project(); presentation.update(input, false);
+	assert.deepEqual(presentation.selectedSpans, []);
 });

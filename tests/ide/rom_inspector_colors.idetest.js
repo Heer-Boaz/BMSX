@@ -29,7 +29,7 @@ const physical = inspection.sections.map((section, index) => ({ section, row: ro
 const keyEntries = rom.model.keyEntries;
 const keyFacts = keyEntries.map(entry => ({ entry, category: entry.category, color: entry.category.color,
 	byteLength: entry.byteLength, sizeText: entry.sizeText }));
-t.assert(!rom.keyWindow.open, 'a new ROM input opened a permanent key overlay without a request');
+t.assert(!rom.keyWindow.open && !rom.readerWindow.open, 'a new ROM input opened an inspection window without a request');
 t.assert(keyEntries.reduce((sum, entry) => sum + entry.byteLength, 0) === snapshot.rom.byteLength,
 	'the map key Total counts logical asset attribution instead of disjoint physical bytes');
 for (const entry of keyEntries) t.assert(entry.byteLength === rom.model.sections.reduce((sum, row) =>
@@ -104,7 +104,7 @@ const selectMapSection = async section => {
 	const x = (left + right) / 2, offset = (x - map.left) / width * snapshot.rom.byteLength;
 	t.assert(offset >= section.start && offset < section.end, 'the pointer would not hit the original physical byte range');
 	await click(x, (map.top + map.bottom) / 2);
-	const selected = rom.model.selection, range = rom.model.selectedRange;
+	const selected = rom.model.selection, range = selected.ranges[0];
 	t.assert(rom.model.mode === 'structure' && rom.model.filter === '', 'a physical map click retained an asset-list filter or another table mode');
 	t.assert(selected === section.row && selected.start === section.start && selected.end === section.end
 		&& selected.category === section.category && selected.type === section.category.id,
@@ -125,7 +125,7 @@ const keyWorkflow = async (variant, theme) => {
 	const map = { ...rom.mapBounds }, list = { ...rom.list.bounds };
 	if (theme === 0) {
 		const action = rom.actions.items.find(item => item.command === 'romInspector.key');
-		t.assert(action.visible && !action.overflowed && action.icon === 'info', 'Map Key is not a directly reachable native title icon');
+		t.assert(action.visible && !action.overflowed && action.icon !== undefined && action.icon !== 'info', 'Map Key has no distinct directly reachable native legend icon');
 		await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
 	} else await keyPalette();
 	t.assert(rom.keyWindow.open && !rom.keyWindow.collapsed, 'opening the requested key did not attach its expanded modeless window');
@@ -168,6 +168,94 @@ const keyWorkflow = async (variant, theme) => {
 	unchanged();
 };
 
+const fullCatalog = () => {
+	t.assert(rom.list.bounds.left <= rom.layout.left + 4 && rom.list.bounds.right >= rom.layout.right - 12,
+		'the catalog still shares its allocation with tiny inline properties or byte columns');
+	t.assert(rom.list.bounds.bottom === rom.layout.bottom, 'the catalog lost its full reading height');
+};
+const filterCatalog = async (text, mode) => {
+	t.command(`romInspector.${mode}`); await t.frames(2);
+	const bounds = rom.filterBounds;
+	await click((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
+	await press('ControlLeft', 'KeyA'); await press('Backspace');
+	for (const character of text) await press(character === '.' ? 'Period' : character >= '0' && character <= '9' ? `Digit${character}` : `Key${character.toUpperCase()}`);
+	await press('Enter'); await press('Home');
+	t.assert(rom.model.filter.toLowerCase() === text.toLowerCase() && rom.model.rows.length > 0, 'the actual catalog filter did not select its authored fixture');
+	fullCatalog();
+};
+const readerAction = async command => {
+	const action = rom.readerActions.items.find(item => item.command === command);
+	t.assert(action.visible && !action.overflowed && action.enabled, `${command} is not reachable in the real reader chrome`);
+	await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
+};
+const chooseReaderView = async kind => {
+	const reader = rom.reader;
+	const rangeIndex = kind === 'info' || kind === 'preview' ? -1 : reader.ranges.findIndex(range => range.kind === kind);
+	if (kind !== 'info' && kind !== 'preview') t.assert(rangeIndex >= 0, 'the chosen reader buffer is not physically stored by this subject');
+	const choice = kind === 'info' ? 0 : kind === 'preview' ? 1 : 1 + (reader.canPreviewImage ? 1 : 0) + rangeIndex;
+	t.command('romInspector.content'); await t.frames(2); await press('ControlLeft', 'Home');
+	for (let index = 0; index < choice; index++) await press('ArrowDown');
+	await press('Enter'); await t.frames(2);
+	t.assert(reader.view === (kind === 'info' || kind === 'preview' ? kind : 'bytes'), 'the actual content chooser selected another reading surface');
+	if (rangeIndex >= 0) t.assert(reader.selectedRange === reader.ranges[rangeIndex], 'the buffer chooser changed or reconstructed its physical range');
+};
+const readerImage = async (variant, theme) => {
+	await filterCatalog('konami', 'assets');
+	const subject = rom.model.selection;
+	t.assert(subject.label === 'intro_konami' && subject.kind === 'asset', 'the shipped image row did not retain its exact TOC identity');
+	t.assert(!rom.readerWindow.open, 'a catalog filter opened an unsolicited reader');
+	const catalog = { ...rom.list.bounds };
+	if (theme === 0) {
+		const y = rom.list.bounds.top + (rom.layout.rowHeight * 2 + 4) / 2, x = rom.list.bounds.right - 8;
+		await click(x, y);
+		const filter = rom.filterBounds;
+		await click((filter.left + filter.right) / 2, (filter.top + filter.bottom) / 2);
+		await click(x, y);
+		t.assert(!rom.readerWindow.open, 'an intervening filter press was mistaken for a second consecutive catalog click');
+		await click(x, y);
+	} else await press('Enter');
+	t.assert(rom.readerWindow.open && rom.reader.subject === subject && rom.reader.view === 'preview' && rom.reader.preview.image.width > 0,
+		'ordinary catalog activation did not open the actual image in the modeless reader');
+	t.assert(rom.list.bounds.left === catalog.left && rom.list.bounds.right === catalog.right && rom.list.bounds.bottom === catalog.bottom,
+		'opening the reader reserved permanent catalog space');
+	const bitmap = rom.reader.preview, content = rom.readerContentBounds, client = rom.readerWindow.client;
+	t.assert(content.right - content.left >= client.right - client.left - 16
+		&& content.bottom - content.top >= client.bottom - client.top - rom.layout.rowHeight * 3 - 16,
+		'the reader still stacks metadata and preview into two cramped client regions');
+	await capture(`rom-reader-preview-${variant}-theme-${theme}`);
+	await chooseReaderView('info');
+	t.assert(rom.reader.properties.some(property => property.label === 'Image dimensions'), 'Properties lost the original packed image metadata');
+	await capture(`rom-reader-properties-${variant}-theme-${theme}`);
+	await chooseReaderView('metadata');
+	t.assert(rom.reader.selectedRange.kind === 'metadata' && rom.reader.preview === bitmap, 'raw metadata changed the image subject or discarded its bitmap');
+	if (theme === 0) await capture(`rom-reader-metadata-${variant}`);
+	await chooseReaderView('collision');
+	t.assert(rom.reader.selectedRange.kind === 'collision' && rom.reader.preview === bitmap, 'raw collision bytes were confused with primary image pixels');
+	if (theme === 0) await capture(`rom-reader-collision-${variant}`);
+	await chooseReaderView('preview');
+	t.assert(rom.reader.preview === bitmap, 'view switching decoded another host bitmap');
+	await readerAction('romInspector.hold');
+	t.assert(rom.readerHeld, 'Hold did not retain the actual reader subject');
+	const range = rom.reader.selectedRange;
+	await press('Escape');
+	await filterAssets();
+	t.assert(rom.reader.subject === subject && rom.reader.selectedRange === range && rom.reader.preview === bitmap,
+		'catalog filtering, sorting or mode switching retargeted the held reader');
+	await readerAction('window.collapse');
+	t.assert(rom.readerWindow.collapsed && rom.reader.preview === bitmap, 'collapse discarded the reader resource');
+	if (theme === 1) await capture(`rom-reader-collapsed-${variant}`);
+	await readerAction('window.collapse');
+	await readerAction('window.hide');
+	t.assert(!rom.readerWindow.open && rom.reader.preview === bitmap && rom.reader.subject === subject, 'Hide disposed the held reader document');
+	t.command('romInspector.inspect'); await t.frames(2);
+	t.assert(rom.readerWindow.open && rom.reader.subject === subject && rom.reader.preview === bitmap && rom.readerHeld,
+		'reopening a held reader replaced its exact subject or bitmap with the catalog cursor');
+	await readerAction('romInspector.hold');
+	t.assert(!rom.readerHeld && rom.reader.subject === rom.model.selection, 'Follow did not immediately adopt the current catalog selection');
+	await readerAction('window.hide');
+	unchanged();
+};
+
 const fonts = new Set();
 for (let font = 0; font < 2; font++) {
 	const variant = rom.layout.font.variant; fonts.add(variant);
@@ -193,6 +281,8 @@ for (let font = 0; font < 2; font++) {
 		t.assert(representatives.length > 0, 'the actual proportional ROM map has no visible representative section');
 		for (const section of representatives) await selectMapSection(section);
 		if (theme === 1) await capture(`rom-map-selected-${variant}`);
+		await readerImage(variant, theme);
+		await selectMapSection(representatives[0]);
 		await keyWorkflow(variant, theme);
 		t.command('theme-toggle'); await t.frames(2);
 		unchanged();
@@ -200,6 +290,42 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 t.assert(fonts.size === 2, 'the actual font command did not exercise both native font layouts');
+const authoredRecord = t.sourceState().cartridgeSlots[0].luaSources.records.find(record => record.source_path === model.resource.path);
+t.assert(authoredRecord !== undefined, 'the canonical cart source has no installed Lua source record');
+await filterCatalog(authoredRecord.module_path, 'code');
+const definitions = rom.model.code.symbols.metadata.functionDefinitions;
+for (const row of rom.model.functions)
+	t.assert(row.sourcePath === definitions[row.functionIndex]?.path, 'a function Source follows an inlined first instruction instead of its declaring definition');
+t.assert(rom.model.functions.some(row => row.sourcePath !== undefined) && rom.model.functions.some(row => row.sourcePath === undefined),
+	'the real program did not exercise both authored and generated function source admission');
+const functionIndex = rom.model.rows.findIndex(row => row.kind === 'function' && row.sourcePath === authoredRecord.module_path);
+t.assert(functionIndex >= 0, 'the compiled module has no function mapped to the original authored source');
+for (let index = 0; index < functionIndex; index++) await press('ArrowDown');
+const fn = rom.model.selection;
+t.assert(fn.kind === 'function' && fn.sourcePath === authoredRecord.module_path, 'the actual compiled cart function did not retain its installed module source identity');
+await press('Enter');
+t.assert(rom.readerWindow.open && rom.reader.subject === fn && rom.reader.view === 'bytes' && rom.reader.instructions.length > 0,
+	'the reader did not display the selected function from its own captured program image');
+await capture('rom-reader-disassembly');
+await press('PageDown'); await press('ArrowRight');
+const instructionScroll = rom.readerBytes.scrollTop, instructionHorizontal = rom.readerHorizontal.getScroll();
+t.assert(instructionScroll > 0, 'Page Down did not navigate the actual function instruction viewport');
+await readerAction('romInspector.hold');
+await readerAction('window.collapse'); await readerAction('window.collapse');
+t.assert(rom.readerBytes.scrollTop === instructionScroll && rom.readerHorizontal.getScroll() === instructionHorizontal,
+	'collapse changed the held function instruction viewport');
+await press('Escape');
+await filterCatalog('konami', 'assets');
+t.assert(rom.model.selection !== fn && rom.reader.subject === fn && rom.reader.selectedRange === fn.ranges[0],
+	'catalog navigation borrowed the cursor for a held function reader');
+t.command('romInspector.inspect'); await t.frames(2); t.command('romInspector.source'); await t.frames(3);
+t.assert(t.activeWorkbenchTab().kind === 'code_editor' && t.activeWorkbenchTab().workingCopy === model,
+	'Reader Source opened the catalog cursor resource instead of the held function canonical source');
+t.assert(await openCartridge() === rom && rom.reader.subject === fn && rom.readerHeld && rom.readerWindow.open,
+	'source navigation replaced the snapshot or held reader document');
+t.assert(rom.readerBytes.scrollTop === instructionScroll && rom.readerHorizontal.getScroll() === instructionHorizontal,
+	'editor detachment discarded the held function instruction viewport');
+await readerAction('romInspector.hold'); await readerAction('window.hide');
 // The same real controls remain explained and reachable beside the Game Panel.
 for (let font = 0; font < 2; font++) {
 	const variant = rom.layout.font.variant;
@@ -209,8 +335,8 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'KeyA');
 	for (const character of 'KONAMI') await press(`Key${character}`);
 	await press('Enter'); await press('Home');
-	t.assert(rom.model.selection.label === 'intro_konami' && rom.showingImage,
-		'the actual image preview did not supply the content-toolbar minimum-width case');
+	t.assert(rom.model.selection.label === 'intro_konami' && rom.model.selection.kind === 'asset',
+		'the actual catalog did not retain the image subject for the minimum-width reader case');
 	const keyAction = rom.actions.items.find(item => item.command === 'romInspector.key');
 	t.controlInput([{ type: 'pointer', x: (keyAction.bounds.left + keyAction.bounds.right) / 2,
 		y: (keyAction.bounds.top + keyAction.bounds.bottom) / 2 }]); await t.frames(2);
@@ -224,7 +350,7 @@ for (let font = 0; font < 2; font++) {
 		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 	}
 	t.assert(rom.layout.right === (variant === 'tiny' ? 78 : 118), 'the real ROM sash did not reach the supported font minimum');
-	for (const [bar, left] of [[rom.actions, rom.layout.left + 4], [rom.contentActions, rom.bytes.bounds.left + 4]]) {
+	for (const [bar, left] of [[rom.actions, rom.layout.left + 4]]) {
 		for (const item of bar.items) if (item.visible && !item.overflowed)
 			t.assert(item.bounds.left >= left && item.bounds.right <= rom.layout.right - 4, 'a painted ROM action escaped its actual content region');
 		if (bar.overflow.button.visible) t.assert(bar.overflow.button.bounds.left >= left
@@ -253,6 +379,54 @@ for (let font = 0; font < 2; font++) {
 	await press('Enter');
 	t.assert(t.activeWorkbenchTab() === rom && !rom.keyWindow.open,
 		'Window Close from the key client did not reach the actual window owner or closed the ROM editor instead');
+	fullCatalog();
+	await press('Enter');
+	const imageSubject = rom.model.selection, image = rom.reader.preview, viewport = rom.reader.imageView;
+	t.assert(rom.readerWindow.open && rom.reader.subject === imageSubject && rom.reader.view === 'preview'
+		&& rom.readerWindow.bounds.right > rom.layout.right && rom.readerWindow.bounds.right - rom.readerWindow.bounds.left > rom.layout.right - rom.layout.left,
+		'the entry reader was constrained to the narrow catalog instead of the root work area');
+	await capture(`rom-minimum-root-reader-${variant}`);
+	await chooseReaderView('info'); await capture(`rom-minimum-reader-properties-${variant}`); await chooseReaderView('preview');
+	t.command('romInspector.zoom'); await t.frames(2); await press('ControlLeft', 'End'); await press('Enter');
+	await press('Home'); await press('ArrowRight'); await press('PageDown');
+	const imageX = viewport.horizontal.getScroll(), imageY = viewport.vertical.getScroll();
+	t.assert(viewport.mode === 16 && imageX > 0 && imageY > 0, 'the actual image zoom and page controls did not navigate the snapshot pixels');
+	await readerAction('window.collapse'); await readerAction('window.collapse'); await readerAction('window.hide');
+	await press('Enter');
+	t.assert(rom.reader.preview === image && rom.reader.subject === imageSubject && viewport.mode === 16
+		&& viewport.horizontal.getScroll() === imageX && viewport.vertical.getScroll() === imageY,
+		'collapse or Hide/reopen replaced the image bitmap or its retained zoom/pan');
+	await readerAction('window.hide');
+	if (font === 0) {
+		await filterCatalog('blua32', 'structure');
+		const programSection = physical.find(section => section.kind === 'blua32');
+		const programIndex = rom.model.rows.indexOf(programSection.row);
+		t.assert(programIndex >= 0, 'the real Layout catalog omitted its physical program image');
+		for (let index = 0; index < programIndex; index++) await press('ArrowDown');
+		t.assert(rom.model.selection === programSection.row, 'catalog navigation selected another physical program section');
+		await press('Enter'); await chooseReaderView('blua32'); await press('PageDown');
+		const range = rom.reader.selectedRange, window = rom.readerWindow, anchors = [];
+		for (let pass = 0; pass < 2; pass++) {
+			const lineHeight = rom.layout.font.lineHeight;
+			const rowCount = rom.readerBytes.contentHeight / lineHeight;
+			const columns = [16, 8, 4, 2, 1].find(columns => Math.trunc((range.end - range.start + columns - 1) / columns) === rowCount);
+			t.assert(columns !== undefined, 'the measured byte viewport does not describe the exact physical range');
+			anchors.push({ columns, address: range.start + Math.trunc(rom.readerBytes.scrollTop / lineHeight) * columns });
+			if (pass === 0) {
+				t.assert(anchors[0].address > range.start, 'Page Down did not move the actual raw byte reading address');
+				await capture('rom-reader-bytes-before-resize');
+				const x = window.bounds.right - 1, y = (window.bounds.top + window.bounds.bottom) / 2;
+				t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+				t.controlInput([{ type: 'pointer', x: window.bounds.left + window.minimumWidth - 1, y }]); await t.frames(2);
+				t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+			}
+		}
+		await capture('rom-reader-bytes-after-resize');
+		t.assert(anchors[0].columns !== anchors[1].columns, 'the real resize did not exercise a byte-column reflow');
+		t.assert(anchors[0].address === anchors[1].address,
+			`byte-column reflow changed the actual reading address ${anchors[0].address} -> ${anchors[1].address}`);
+		await readerAction('window.hide');
+	}
 	unchanged(); await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 t.command('gameView.closePanel'); await t.frames(3);

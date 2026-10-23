@@ -23,11 +23,13 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 	private anchorScrollY = 0;
 
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
-		parent: InputFocusTarget, private readonly scope?: PointerCaptureScope) {
+		parent: InputFocusTarget, private readonly scope?: PointerCaptureScope, keyboard?: (input: KeyInputEvent) => boolean) {
 		this.scrollbar = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== null;
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
+			if (!keyboard?.(input)) this.handleKeyboard(input);
+		});
 		this.unbindBlur = this.focusTarget.onDidBlur(this.cancelPointer);
 	}
 

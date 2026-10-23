@@ -6,13 +6,14 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { PointerSnapshot } from '../../ide/common/models';
+import { consumeIdeKey, isKeyJustPressed } from '../../ide/input/keyboard/key_input';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchImageControl } from '../../ide/workbench/ui/image_control';
 import { WorkbenchImageViewport } from '../../ide/workbench/ui/image_viewport';
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, keyboard?: (event: KeyInputEvent) => boolean) {
 	const view = new WorkbenchImageViewport();
 	view.setImage(800, 600);
 	view.layout(20, 30, 223, 133);
@@ -20,7 +21,7 @@ function fixture(t: TestContext) {
 	view.horizontal.setScroll(200); view.vertical.setScroll(100);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
-	const control = new WorkbenchImageControl(focus, capture, parent);
+	const control = new WorkbenchImageControl(focus, capture, parent, undefined, keyboard);
 	control.setInput(view);
 	const pointer = (x: number, y: number, held = 0, down = 0, up = 0): PointerSnapshot => {
 		const snapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -149,4 +150,24 @@ test('image navigation and zoom consume real keyboard edges only through image f
 	assert.equal(f.view.horizontal.getScroll(), 600); assert.equal(f.view.vertical.getScroll(), 500);
 	assert.equal(press('KeyA'), false, 'unowned gameplay/typing keys are not swallowed');
 	f.control.clearInput(); assert.equal(f.focus.target, f.parent);
+});
+
+
+test('the image owner handles its local escape without replacing image navigation or swallowing unowned keys', t => {
+	const f = fixture(t, event => {
+		if (!isKeyJustPressed('Escape', event)) return false;
+		consumeIdeKey('Escape', event); f.parent.focus(); return true;
+	});
+	f.control.focusTarget.focus();
+	const right = new KeyInputEvent('ArrowRight', KeyModifier.none);
+	f.focus.handleKeyboard(right);
+	assert.equal(right.consumed, true); assert.equal(f.view.horizontal.getScroll(), 216);
+	const typing = new KeyInputEvent('KeyA', KeyModifier.none);
+	f.focus.handleKeyboard(typing); assert.equal(typing.consumed, false);
+	f.pointer(80, 70, PointerButton.Primary, PointerButton.Primary);
+	assert.equal(f.capture.active, true);
+	const escape = new KeyInputEvent('Escape', KeyModifier.none);
+	f.focus.handleKeyboard(escape);
+	assert.equal(escape.consumed, true); assert.equal(f.focus.target, f.parent);
+	assert.equal(f.capture.active, false, 'focus-return ends the image pan through the existing blur owner');
 });

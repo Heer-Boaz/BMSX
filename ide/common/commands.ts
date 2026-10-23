@@ -82,7 +82,7 @@ export type EditorPlayCommandId =
 	| 'play.details' | 'play.more';
 
 export type EditorCommandId =
-	| 'romInspector.key' | 'romInspector.assets' | 'romInspector.structure' | 'romInspector.code' | 'romInspector.sort' | 'romInspector.source' | 'romInspector.content' | 'romInspector.zoom' | 'romInspector.collision'
+	| 'romInspector.inspect' | 'romInspector.hold' | 'romInspector.key' | 'romInspector.assets' | 'romInspector.structure' | 'romInspector.code' | 'romInspector.sort' | 'romInspector.source' | 'romInspector.content' | 'romInspector.zoom' | 'romInspector.collision'
 	| 'events.clear' | 'events.filter' | 'events.details' | 'events.goToFrame' | 'events.previousFrame' | 'events.nextFrame' | 'events.more'
 	| 'gpu.follow' | 'gpu.view' | 'gpu.details' | 'gpu.goToFrame' | 'gpu.filter' | 'gpu.clear' | 'gpu.more'
 	| 'gte.follow' | 'gte.view' | 'gte.details' | 'gte.source' | 'gte.goToFrame' | 'gte.filter' | 'gte.clear' | 'gte.more'
