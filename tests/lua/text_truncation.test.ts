@@ -45,3 +45,27 @@ test('wrapped text reports clipping from actual consumed ranges, not the last gl
 	assert.equal(writeWrappedMeasuredText(lines, 'one two', 4, 4, 2, measure), false);
 	assert.deepEqual(lines, ['one', 'two']);
 });
+
+test('bounded text lays out mandatory line breaks before word wrapping and counts every visual row', () => {
+	const lines: string[] = [];
+	assert.equal(writeWrappedMeasuredText(lines, 'summary\nsource\n  ^', 20, 20, 3, measure), false);
+	assert.deepEqual(lines, ['summary', 'source', '  ^']);
+	assert.equal(writeWrappedMeasuredText(lines, 'one two\nthree four\nfive', 4, 6, 3, measure), true);
+	assert.deepEqual(lines, ['one', 'two', 'three…']);
+	assert.ok(lines.every(line => !line.includes('\n')));
+	assert.equal(writeWrappedMeasuredText(lines, '\n\nlast', 20, 20, 3, measure), false);
+	assert.deepEqual(lines, ['', '', 'last']);
+	assert.equal(writeWrappedMeasuredText(lines, 'last\n', 20, 20, 2, measure), false);
+	assert.deepEqual(lines, ['last', '']);
+	assert.equal(writeWrappedMeasuredText(lines, 'last\n', 20, 20, 1, measure), true);
+	assert.deepEqual(lines, ['last…']);
+});
+
+test('hard lines share the same bounded budget without splitting surrogate pairs', () => {
+	const lines: string[] = [];
+	assert.equal(writeWrappedMeasuredText(lines, '😀😀\n😀😀😀\nlast', 1, 2, 3, measure), true);
+	assert.deepEqual(lines, ['😀', '😀', '😀…']);
+	assert.ok(lines.every(line => line.isWellFormed()));
+	assert.equal(writeWrappedMeasuredText(lines, '\n   \n', 20, 20, 3, measure), false);
+	assert.deepEqual(lines, ['', '', '']);
+});

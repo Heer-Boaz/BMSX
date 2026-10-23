@@ -226,23 +226,33 @@ export function writeWrappedMeasuredText(
 	lines.length = 0;
 	let lineStart = skipLeadingHorizontalWhitespace(text, 0, text.length);
 	let lineWidth = firstLineWidth;
-	for (let lineIndex = 0; lineIndex < maxLines && lineStart < text.length; lineIndex += 1) {
-		const lineEnd = findMeasuredWrapEnd(text, lineStart, text.length, lineWidth, measureRange);
+	let remaining = lineStart < text.length;
+	let hardBreak = -1, hardEnd = -1;
+	for (let lineIndex = 0; lineIndex < maxLines && remaining; lineIndex += 1) {
+		if (lineStart > hardEnd) {
+			hardBreak = text.indexOf('\n', lineStart);
+			hardEnd = hardBreak < 0 ? text.length : hardBreak;
+		}
+		const lineEnd = lineStart === hardEnd ? hardEnd : findMeasuredWrapEnd(text, lineStart, hardEnd, lineWidth, measureRange);
 		const trimmedEnd = trimTrailingHorizontalWhitespace(text, lineStart, lineEnd);
 		lines.push(text.slice(lineStart, trimmedEnd));
-		lineStart = skipLeadingHorizontalWhitespace(text, lineEnd, text.length);
+		lineStart = skipLeadingHorizontalWhitespace(text, lineEnd, hardEnd);
+		if (lineStart === hardEnd) {
+			remaining = hardBreak >= 0;
+			if (remaining) lineStart = hardBreak + 1;
+		}
 		lineWidth = subsequentWidth;
 	}
 	if (lines.length === 0) {
 		lines.push('');
-		return lineStart < text.length;
+		return remaining;
 	}
-	if (lineStart < text.length) {
+	if (remaining) {
 		const lastIndex = lines.length - 1;
 		const lastLineWidth = lines.length === 1 ? firstLineWidth : subsequentWidth;
 		lines[lastIndex] = appendMeasuredTruncationMarker(lines[lastIndex], lastLineWidth, measureRange, truncationMarker);
 	}
-	return lineStart < text.length;
+	return remaining;
 }
 
 /** Word-wrap ranges let styled text retain its source spans without searching substrings. */
